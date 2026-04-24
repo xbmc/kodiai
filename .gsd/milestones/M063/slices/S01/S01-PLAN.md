@@ -71,7 +71,7 @@ Steps:
   - Files: `src/lib/review-continuation-lifecycle.ts`, `src/lib/review-continuation-lifecycle.test.ts`, `src/lib/review-first-pass.ts`, `src/lib/retry-scope-reducer.ts`, `src/knowledge/types.ts`
   - Verify: bun test src/lib/review-continuation-lifecycle.test.ts
 
-- [ ] **T02: Wire the review handler through the continuation lifecycle seam** `est:1h15m`
+- [x] **T02: Wire the review handler through the continuation lifecycle seam** `est:1h15m`
   Replace the timeout-specialized continuation block in `src/handlers/review.ts` with orchestration over the extracted lifecycle planner while keeping the real publication path and coordinator semantics intact. This task closes the actual product requirement: a bounded first pass should enqueue continuation automatically through the live handler-owned job flow, and queued continuation must recheck publish authority before mutating the bounded review surface.
 
 ## Failure Modes

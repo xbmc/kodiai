@@ -75,6 +75,10 @@ import {
   normalizeReviewFirstPass,
   type ReviewFirstPassPayload,
 } from "../lib/review-first-pass.ts";
+import {
+  planReviewContinuation,
+  settleReviewContinuation,
+} from "../lib/review-continuation-lifecycle.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
@@ -4709,57 +4713,99 @@ export function createReviewHandler(deps: {
                 ? "not scheduled (GitHub-visible findings already posted)"
                 : "not scheduled";
             let retrySummaryNote: string | undefined;
-            let retryPlan: {
-              reviewOutputKey: string;
-              timeoutSeconds: number;
-              scopeRatio: number;
-              files: string[];
-              timeoutEstimate: ReturnType<typeof estimateTimeoutRisk>;
-              checkpointEnabled: boolean;
-            } | null = null;
+            let retryPlan: ReturnType<typeof planReviewContinuation> | null = null;
 
-            if (!isChronicTimeout && !hasPublishedInlines) {
-              const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
-              const retryScope = computeRetryScope({
-                allFiles: riskScores,
-                filesAlreadyReviewed: timeoutReviewedFiles,
-                totalFiles: timeoutTotalFiles,
+            if (timeoutFirstPass) {
+              retryPlan = planReviewContinuation({
+                reviewOutputKey,
+                firstPass: timeoutFirstPass,
+                checkpoint,
+                riskScores,
+                timeoutSeconds: timeoutDuration,
+                hasPublishedInlineFindings: hasPublishedInlines,
+                isChronicTimeout,
+                estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
+                  const retryLinesChanged = files.reduce((sum, filePath) => {
+                    const stats = perFileStats.get(filePath);
+                    if (!stats) return sum;
+                    return sum + stats.added + stats.removed;
+                  }, 0);
+                  return estimateTimeoutRisk({
+                    fileCount: files.length,
+                    linesChanged: retryLinesChanged,
+                    languageComplexity,
+                    isLargePR: false,
+                    baseTimeoutSeconds: timeoutSeconds,
+                  });
+                },
               });
 
-              if (retryScope.filesToReview.length > 0) {
-                const retryFiles = retryScope.filesToReview.map((f) => f.filePath);
-                const retryLinesChanged = retryFiles.reduce((sum, filePath) => {
-                  const stats = perFileStats.get(filePath);
-                  if (!stats) return sum;
-                  return sum + stats.added + stats.removed;
-                }, 0);
-                const retryTimeoutEstimate = estimateTimeoutRisk({
-                  fileCount: retryFiles.length,
-                  linesChanged: retryLinesChanged,
-                  languageComplexity,
-                  isLargePR: false,
-                  baseTimeoutSeconds: retryTimeout,
-                });
-                const retryCheckpointEnabled =
-                  retryTimeoutEstimate.riskLevel === "medium" ||
-                  retryTimeoutEstimate.riskLevel === "high";
+              switch (retryPlan.decision) {
+                case "schedule-continuation":
+                  retryState = "scheduled reduced-scope retry";
+                  retrySummaryNote = "Scheduling a reduced-scope retry.";
+                  break;
+                case "skip-continuation":
+                  switch (retryPlan.reason) {
+                    case "chronic-timeout":
+                      retryState = "skipped (frequent timeouts for this repo/author)";
+                      break;
+                    case "inline-output-already-published":
+                      retryState = "not scheduled (GitHub-visible findings already posted)";
+                      retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
+                      break;
+                    case "no-remaining-scope":
+                      retryState = "not scheduled (no remaining files outside analyzed progress)";
+                      retrySummaryNote = "Retry not scheduled because no remaining files were outside the analyzed progress.";
+                      break;
+                    case "invalid-checkpoint-scope":
+                      retryState = "not scheduled (invalid checkpoint scope)";
+                      retrySummaryNote = "Retry not scheduled because checkpoint scope was malformed.";
+                      break;
+                    case "zero-evidence-failure": {
+                      retryState = "not scheduled (zero-evidence timeout)";
+                      const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
+                      const retryScope = computeRetryScope({
+                        allFiles: riskScores,
+                        filesAlreadyReviewed: timeoutReviewedFiles,
+                        totalFiles: timeoutTotalFiles,
+                      });
 
-                retryPlan = {
-                  reviewOutputKey: `${reviewOutputKey}-retry-1`,
-                  timeoutSeconds: retryTimeout,
-                  scopeRatio: retryScope.scopeRatio,
-                  files: retryFiles,
-                  timeoutEstimate: retryTimeoutEstimate,
-                  checkpointEnabled: retryCheckpointEnabled,
-                };
-                retryState = "scheduled reduced-scope retry";
-                retrySummaryNote = "Scheduling a reduced-scope retry.";
-              } else {
-                retryState = "not scheduled (no remaining files outside analyzed progress)";
-                retrySummaryNote = "Retry not scheduled because no remaining files were outside the analyzed progress.";
+                      if (retryScope.filesToReview.length > 0) {
+                        const continuationFiles = retryScope.filesToReview.map((file) => file.filePath);
+                        const timeoutEstimate = estimateTimeoutRisk({
+                          fileCount: continuationFiles.length,
+                          linesChanged: continuationFiles.reduce((sum, filePath) => {
+                            const stats = perFileStats.get(filePath);
+                            if (!stats) return sum;
+                            return sum + stats.added + stats.removed;
+                          }, 0),
+                          languageComplexity,
+                          isLargePR: false,
+                          baseTimeoutSeconds: retryTimeout,
+                        });
+                        retryPlan = {
+                          decision: "schedule-continuation",
+                          reason: "remaining-scope-available",
+                          reviewOutputKey,
+                          continuationReviewOutputKey: `${reviewOutputKey}-retry-1`,
+                          continuationNumber: 1,
+                          continuationFiles,
+                          scopeRatio: retryScope.scopeRatio,
+                          timeoutSeconds: retryTimeout,
+                          checkpointEnabled: timeoutEstimate.riskLevel === "medium" || timeoutEstimate.riskLevel === "high",
+                          timeoutEstimate,
+                          firstPass: timeoutFirstPass,
+                          checkpoint,
+                        };
+                        retryState = "scheduled reduced-scope retry";
+                        retrySummaryNote = "Scheduling a reduced-scope retry.";
+                      }
+                      break;
+                    }
+                  }
+                  break;
               }
-            } else if (hasPublishedInlines) {
-              retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
             }
 
             // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
@@ -4910,10 +4956,10 @@ export function createReviewHandler(deps: {
             // Retry is only useful when no GitHub-visible output was published.
             // If inline comments were already posted, avoid a retry that could
             // create additional noise or duplicates.
-            if (retryPlan) {
-              const retryReviewOutputKey = retryPlan.reviewOutputKey;
+            if (retryPlan?.decision === "schedule-continuation") {
+              const retryReviewOutputKey = retryPlan.continuationReviewOutputKey;
               const retryTimeout = retryPlan.timeoutSeconds;
-              const retryFiles = retryPlan.files;
+              const retryFiles = retryPlan.continuationFiles;
               const retryTimeoutEstimate = retryPlan.timeoutEstimate;
               const retryCheckpointEnabled = retryPlan.checkpointEnabled;
               const retryScopeRatio = retryPlan.scopeRatio;
@@ -5195,59 +5241,7 @@ export function createReviewHandler(deps: {
                       retryResult.conclusion === "success" ||
                       (retryResult.isTimeout && retryHasResults)
                     ) {
-                      const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
-                      const mergedCheckpoint = checkpoint && retryCheckpoint
-                        ? {
-                            ...checkpoint,
-                            filesReviewed: Array.from(new Set([
-                              ...checkpoint.filesReviewed,
-                              ...retryCheckpoint.filesReviewed,
-                            ])),
-                            summaryDraft: retryCheckpoint.summaryDraft || checkpoint.summaryDraft,
-                            totalFiles: Math.max(checkpoint.totalFiles, retryCheckpoint.totalFiles),
-                            partialCommentId: checkpoint.partialCommentId ?? retryCheckpoint.partialCommentId,
-                          }
-                        : checkpoint ?? retryCheckpoint;
-                      const mergedFirstPass = normalizeReviewFirstPass({
-                        boundedness: reviewBoundedness,
-                        checkpoint: mergedCheckpoint,
-                        outcome: {
-                          conclusion: result.conclusion,
-                          stopReason: result.stopReason,
-                          failureSubtype: result.failureSubtype,
-                          isTimeout: result.isTimeout,
-                          published: true,
-                        },
-                      });
-
-                      if (mergedFirstPass?.state !== "bounded-first-pass") {
-                        logger.warn(
-                          {
-                            deliveryId: retryDeliveryId,
-                            prNumber: pr.number,
-                            reviewOutputKey,
-                          },
-                          "Retry merge skipped because bounded first-pass state became non-publishable",
-                        );
-                        return;
-                      }
-
-                      const mergedBody = formatPartialReviewComment({
-                        summaryDraft:
-                          retryCheckpoint?.summaryDraft ??
-                          checkpoint?.summaryDraft ??
-                          "Review completed with reduced scope.",
-                        firstPass: mergedFirstPass,
-                        timedOutAfterSeconds: timeoutDuration,
-                        isRetryResult: true,
-                        retryFilesReviewed,
-                      });
-
-                      const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
-                      const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
-                      const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
-
-                      if (!commentIdToUpdate) {
+                      if (!checkpoint) {
                         logger.warn(
                           { deliveryId: retryDeliveryId, prNumber: pr.number },
                           "No partial comment ID available for retry update",
@@ -5255,64 +5249,135 @@ export function createReviewHandler(deps: {
                         return;
                       }
 
-                      if (canPublishReviewWorkOutput(
-                        retryReviewWorkAttempt.attemptId,
-                        "retry partial review merge",
-                        retryDeliveryId,
-                      )) {
-                        setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
-                        await retryOctokit.rest.issues.updateComment({
-                          owner: apiOwner,
-                          repo: apiRepo,
-                          comment_id: commentIdToUpdate,
-                          body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
+                      const settlementDecision = settleReviewContinuation({
+                        reviewOutputKey,
+                        continuationReviewOutputKey: retryReviewOutputKey,
+                        baseCheckpoint: checkpoint,
+                        continuationCheckpoint: retryCheckpoint,
+                        continuationPublished: retryResult.published ?? false,
+                      });
+
+                      if (settlementDecision.decision === "merge-continuation") {
+                        const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
+                        const mergedFirstPass = normalizeReviewFirstPass({
+                          boundedness: reviewBoundedness,
+                          checkpoint: settlementDecision.mergedCheckpoint,
+                          outcome: {
+                            conclusion: result.conclusion,
+                            stopReason: result.stopReason,
+                            failureSubtype: result.failureSubtype,
+                            isTimeout: result.isTimeout,
+                            published: true,
+                          },
                         });
 
-                        try {
-                          await upsertReviewDetailsComment({
-                            octokit: retryOctokit,
-                            owner: apiOwner,
-                            repo: apiRepo,
-                            prNumber: pr.number,
-                            reviewOutputKey,
-                            body: buildReviewDetailsBody({
-                              reviewFirstPass: mergedFirstPass,
-                            }),
-                            botHandles: [githubApp.getAppSlug(), "claude"],
-                            recheckCanPublish: () =>
-                              canPublishReviewWorkOutput(
-                                retryReviewWorkAttempt.attemptId,
-                                "retry Review Details merge",
-                                retryDeliveryId,
-                              ),
-                          });
-                        } catch (reviewDetailsErr) {
+                        if (mergedFirstPass?.state !== "bounded-first-pass") {
                           logger.warn(
                             {
-                              ...baseLog,
-                              gate: "review-details-output",
-                              gateResult: "retry-merge-failed",
+                              deliveryId: retryDeliveryId,
+                              prNumber: pr.number,
                               reviewOutputKey,
-                              err: reviewDetailsErr,
+                              settlementReason: settlementDecision.reason,
                             },
-                            "Failed to refresh Review Details after retry merge",
+                            "Retry merge skipped because bounded first-pass state became non-publishable",
                           );
+                          return;
                         }
 
+                        const mergedBody = formatPartialReviewComment({
+                          summaryDraft:
+                            settlementDecision.mergedCheckpoint.summaryDraft ||
+                            retryCheckpoint?.summaryDraft ||
+                            checkpoint?.summaryDraft ||
+                            "Review completed with reduced scope.",
+                          firstPass: mergedFirstPass,
+                          timedOutAfterSeconds: timeoutDuration,
+                          isRetryResult: true,
+                          retryFilesReviewed,
+                        });
+
+                        const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
+                        const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
+                        const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
+
+                        if (!commentIdToUpdate) {
+                          logger.warn(
+                            { deliveryId: retryDeliveryId, prNumber: pr.number },
+                            "No partial comment ID available for retry update",
+                          );
+                          return;
+                        }
+
+                        if (canPublishReviewWorkOutput(
+                          retryReviewWorkAttempt.attemptId,
+                          "retry partial review merge",
+                          retryDeliveryId,
+                        )) {
+                          setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
+                          await retryOctokit.rest.issues.updateComment({
+                            owner: apiOwner,
+                            repo: apiRepo,
+                            comment_id: commentIdToUpdate,
+                            body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
+                          });
+
+                          try {
+                            await upsertReviewDetailsComment({
+                              octokit: retryOctokit,
+                              owner: apiOwner,
+                              repo: apiRepo,
+                              prNumber: pr.number,
+                              reviewOutputKey,
+                              body: buildReviewDetailsBody({
+                                reviewFirstPass: mergedFirstPass,
+                              }),
+                              botHandles: [githubApp.getAppSlug(), "claude"],
+                              recheckCanPublish: () =>
+                                canPublishReviewWorkOutput(
+                                  retryReviewWorkAttempt.attemptId,
+                                  "retry Review Details merge",
+                                  retryDeliveryId,
+                                ),
+                            });
+                          } catch (reviewDetailsErr) {
+                            logger.warn(
+                              {
+                                ...baseLog,
+                                gate: "review-details-output",
+                                gateResult: "retry-merge-failed",
+                                reviewOutputKey,
+                                err: reviewDetailsErr,
+                              },
+                              "Failed to refresh Review Details after retry merge",
+                            );
+                          }
+
+                          logger.info(
+                            {
+                              deliveryId: retryDeliveryId,
+                              prNumber: pr.number,
+                              retryConclusion: retryResult.conclusion,
+                              retryFilesReviewed,
+                              partialCommentId,
+                              settlementReason: settlementDecision.reason,
+                            },
+                            "Retry complete -- updated partial review comment with merged results",
+                          );
+
+                          // Cleanup checkpoint data after successful merge
+                          knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                          knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                        }
+                      } else {
                         logger.info(
                           {
                             deliveryId: retryDeliveryId,
                             prNumber: pr.number,
                             retryConclusion: retryResult.conclusion,
-                            retryFilesReviewed,
-                            partialCommentId,
+                            settlementReason: settlementDecision.reason,
                           },
-                          "Retry complete -- updated partial review comment with merged results",
+                          "Retry produced no additional results -- keeping original partial review",
                         );
-
-                        // Cleanup checkpoint data after successful merge
-                        knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
-                        knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
                       }
                     } else {
                       logger.info(
