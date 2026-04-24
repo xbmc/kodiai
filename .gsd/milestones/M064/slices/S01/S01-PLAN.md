@@ -38,7 +38,7 @@ What remains before the milestone is truly usable end-to-end: S02 must wire the 
   - Files: `src/handlers/review.ts`, `src/jobs/review-work-coordinator.ts`, `src/knowledge/types.ts`, `src/knowledge/store.ts`, `src/handlers/review.test.ts`, `src/telemetry/types.ts`
   - Verify: bun test src/handlers/review.test.ts
 
-- [ ] **T03: Add deterministic canonical-state verifier coverage for authority outcomes** `est:1.5h`
+- [x] **T03: Add deterministic canonical-state verifier coverage for authority outcomes** `est:1.5h`
   Create a verifier/query path that exercises the canonical family store directly and proves the slice demo scenarios from durable state: merge, quiet-settlement, blocked/no-follow-up, and superseded stale-attempt suppression. Reuse the M063 verification style but make canonical state—not comment bodies or telemetry rows—the answer source. Add scenario-driven tests for the verifier so the contract stays machine-checkable and maps back to R067, R071, R072, and R073.
   - Files: `scripts/verify-m064-s01.ts`, `scripts/verify-m064-s01.test.ts`, `src/knowledge/types.ts`, `src/knowledge/store.ts`, `src/handlers/review.test.ts`
   - Verify: bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json

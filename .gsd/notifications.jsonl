@@ -483,3 +483,9 @@
 {"id":"f49d1942-43c4-43d4-857e-8a2dd5c7892d","ts":"2026-04-24T06:59:15.355Z","severity":"warning","message":"[safety] content: Milestone roadmap has 0 slice(s) — expected at least 1","source":"notify","read":false}
 {"id":"b74c0d92-3a28-42d3-8f90-168e0ccaeccf","ts":"2026-04-24T07:06:01.161Z","severity":"info","message":"Committed: feat: Added the canonical continuation-family migration, typed store co…","source":"notify","read":false}
 {"id":"ec4860f6-c000-4af8-8fc5-f2d7f290d1e1","ts":"2026-04-24T07:06:01.308Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"7ad34e00-0918-432e-a5de-1ad9218deced","ts":"2026-04-24T07:14:34.575Z","severity":"info","message":"Committed: feat: Wired review coordinator timeout and continuation transitions int…","source":"notify","read":false}
+{"id":"0dbaad1c-a14c-4c92-ad04-9e230979c8b8","ts":"2026-04-24T07:14:34.613Z","severity":"warning","message":"[safety] file-change: src/db/migrations/039-continuation-family-state.sql — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"bd0d0cb6-94dd-43f8-bf10-263d363c0523","ts":"2026-04-24T07:14:34.614Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"a12e6317-a5fd-444f-a3f9-3459d873e7e8","ts":"2026-04-24T07:14:41.202Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"66b1901f-fe06-4603-b017-fbfb390c9098","ts":"2026-04-24T07:14:41.216Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"4f7dc9db-7645-4f27-b6a6-97dbc60fcf73","ts":"2026-04-24T07:14:41.229Z","severity":"warning","message":"[safety] file-change: src/db/migrations/039-continuation-family-state.sql — Modified but not in task plan's expected output","source":"notify","read":false}
