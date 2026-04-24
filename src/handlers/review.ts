@@ -5273,6 +5273,71 @@ export function createReviewHandler(deps: {
                       });
 
                       if (settlementDecision.decision === "merge-continuation") {
+                        let continuationRevisionCounts: DeltaClassification["counts"] | null = null;
+                        if (knowledgeStore?.getPriorReviewFindings) {
+                          try {
+                            const priorFindings = await knowledgeStore.getPriorReviewFindings({
+                              repo: `${apiOwner}/${apiRepo}`,
+                              prNumber: pr.number,
+                            });
+                            if (priorFindings.length > 0) {
+                              const currentFindings = await extractFindingsFromReviewComments({
+                                octokit: await githubApp.getInstallationOctokit(event.installationId),
+                                owner: apiOwner,
+                                repo: apiRepo,
+                                prNumber: pr.number,
+                                reviewOutputKey,
+                                logger,
+                                baseLog,
+                              });
+                              continuationRevisionCounts = classifyFindingDeltas({
+                                currentFindings: currentFindings.map((finding) => ({
+                                  filePath: finding.filePath,
+                                  title: finding.title,
+                                  severity: finding.severity,
+                                  category: finding.category,
+                                  commentId: finding.commentId,
+                                  suppressed: false,
+                                  confidence: 100,
+                                })),
+                                priorFindings,
+                                fingerprintFn: fingerprintFindingTitle,
+                              }).counts;
+                            }
+                          } catch (err) {
+                            logger.warn(
+                              {
+                                ...baseLog,
+                                gate: "continuation-delta",
+                                gateResult: "failed",
+                                reviewOutputKey,
+                                err,
+                              },
+                              "Continuation delta classification failed (fail-open, merging without revision labels)",
+                            );
+                          }
+                        }
+
+                        if (
+                          continuationRevisionCounts
+                          && continuationRevisionCounts.new === 0
+                          && continuationRevisionCounts.stillOpen === 0
+                          && continuationRevisionCounts.resolved === 0
+                        ) {
+                          logger.info(
+                            {
+                              deliveryId: retryDeliveryId,
+                              prNumber: pr.number,
+                              retryConclusion: retryResult.conclusion,
+                              settlementReason: "no-meaningful-delta",
+                            },
+                            "Retry produced no additional results -- keeping original partial review",
+                          );
+                          knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                          knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                          return;
+                        }
+
                         const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
                         const mergedFirstPass = normalizeReviewFirstPass({
                           boundedness: reviewBoundedness,
@@ -5310,6 +5375,7 @@ export function createReviewHandler(deps: {
                           timedOutAfterSeconds: timeoutDuration,
                           isRetryResult: true,
                           retryFilesReviewed,
+                          continuationRevisionCounts,
                         });
 
                         const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);

@@ -47,7 +47,7 @@ Must-haves:
   - Files: `src/handlers/review.ts`, `src/lib/partial-review-formatter.ts`, `src/handlers/review.test.ts`, `src/handlers/review-idempotency.ts`
   - Verify: bun test ./src/handlers/review.test.ts --filter "timeout" && bun test ./src/handlers/review.test.ts --filter "retry merge"
 
-- [ ] **T02: Render explicit continuation revisions without noisy no-delta churn** `est:1.5h`
+- [x] **T02: Render explicit continuation revisions without noisy no-delta churn** `est:1.5h`
   Use the existing delta-classifier seam to make continuation-visible revisions legible on the canonical comment while keeping no-meaningful-delta continuation quiet.
 
 Steps:
