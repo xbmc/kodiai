@@ -1,7 +1,3 @@
-{"id":"7bb72868-dcc7-40cf-8771-2a683a637cfc","ts":"2026-04-09T11:28:27.776Z","severity":"info","message":"Auto-mode started. Will loop through 3 milestones.","source":"notify","read":true}
-{"id":"61dba044-69cf-49e1-9e5b-3a4a88ba9f27","ts":"2026-04-09T11:28:27.778Z","severity":"info","message":"Pre-flight: 39 milestones queued. All have full context.","source":"notify","read":true}
-{"id":"b65273e6-41a8-40d3-9aa3-228f91a067ab","ts":"2026-04-09T11:28:58.360Z","severity":"warning","message":"Session creation timed out or was cancelled for execute-task M045/S01/T03. Will retry.","source":"notify","read":true}
-{"id":"6729a040-e3d0-4cda-b4eb-c7ee2e230f91","ts":"2026-04-09T11:28:58.370Z","severity":"info","message":"Auto-mode stopped — Session creation failed. Session: $432.30 · 918.29M tokens · 1310 units","source":"notify","read":true}
 {"id":"0696c9fb-b23f-414d-a88a-f54324a17164","ts":"2026-04-09T11:28:58.370Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":true}
 {"id":"a297d09b-211c-4c9c-b4be-7a0b8778d925","ts":"2026-04-09T16:02:15.119Z","severity":"info","message":"Auto-mode started. Will loop through 3 milestones.","source":"notify","read":true}
 {"id":"fed18bd5-cfa8-4a1e-a448-4b283e74fc03","ts":"2026-04-09T16:02:15.121Z","severity":"info","message":"Pre-flight: 39 milestones queued. All have full context.","source":"notify","read":true}
@@ -498,3 +494,7 @@
 {"id":"133f9e5b-1585-44aa-98b1-038e8acf1648","ts":"2026-04-24T09:53:11.821Z","severity":"warning","message":"Artifact missing for complete-milestone M065 — retrying (attempt 1)","source":"notify","read":false}
 {"id":"f15e8f2d-cb11-496f-bfde-693347cf89d3","ts":"2026-04-24T09:53:12.355Z","severity":"warning","message":"[dispatch] Implementation artifact check inconclusive for M065 — proceeding (git context unavailable)","source":"workflow-logger","read":false}
 {"id":"ff1fef6d-f62c-4258-88c3-b0a1832ab5b7","ts":"2026-04-24T09:54:10.942Z","severity":"warning","message":"[recovery] verify-fail complete-milestone M065: existsSync false for /home/keith/src/kodiai/.gsd/milestones/M065/M065-SUMMARY.md","source":"workflow-logger","read":false}
+{"id":"47b03b31-b142-403c-abe1-25a396f9b9d4","ts":"2026-04-24T09:54:11.281Z","severity":"info","message":"Committed: chore: auto-commit after complete-milestone","source":"notify","read":false}
+{"id":"d191670e-0340-4e43-935e-e7ed6f1cd56d","ts":"2026-04-24T09:54:11.306Z","severity":"warning","message":"Artifact missing for complete-milestone M065 — retrying (attempt 2)","source":"notify","read":false}
+{"id":"8804d26e-8395-4bcb-95a0-b33d0e0c9545","ts":"2026-04-24T09:54:11.836Z","severity":"warning","message":"[dispatch] Implementation artifact check inconclusive for M065 — proceeding (git context unavailable)","source":"workflow-logger","read":false}
+{"id":"f0afde27-029a-41ca-85f2-14284a00b545","ts":"2026-04-24T09:55:58.040Z","severity":"warning","message":"[recovery] verify-fail complete-milestone M065: existsSync false for /home/keith/src/kodiai/.gsd/milestones/M065/M065-SUMMARY.md","source":"workflow-logger","read":false}
