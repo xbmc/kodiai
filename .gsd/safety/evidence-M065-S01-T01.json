@@ -1,0 +1,48 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_wDOD5IDzDdVhqZvmS1k2uIL3|fc_09da35746df154af0169eb29a0116881919304fd7ebe16c64f",
+    "command": "rg --files scripts | rg 'verify-m065(\\.test)?\\.ts$'",
+    "exitCode": 1,
+    "outputSnippet": "(no output)\n\nCommand exited with code 1",
+    "timestamp": 1777019296576
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_xIHLAPHTsxVNAQU1YhJxvkA4|fc_09da35746df154af0169eb29a011748191a13cf16581185e86",
+    "command": "find . -path './node_modules' -prune -o -path './.git' -prune -o -name 'verify-m065*' -print",
+    "exitCode": 0,
+    "outputSnippet": "(no output)",
+    "timestamp": 1777019296576
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_nyerWQkusm81C1JvVFtBjB81|fc_09da35746df154af0169eb29a8f2988191a09fcffe9827a8e4",
+    "command": "rg -n \"mock\\.module|spyOn\\(|vi\\.mock|jest\\.mock\" scripts src test",
+    "exitCode": 2,
+    "outputSnippet": "rg: test: No such file or directory (os error 2)\nsrc/execution/executor.test.ts:201:// Pattern used here: mock the imported module functions using mock.module() which\nsrc/execution/executor.test.ts:202:// Bun supports. We call mock.module() in beforeEach / afterEach to control behavior.\nsrc/execution/executor.test.ts:308:// Since Bun's mock.module() requires the module specifier to match exactly\nsrc/knowledge/cluster-scheduler.test.ts:31:    mock.module(\"./cluster-store.ts\", () => ({\nsrc/knowled",
+    "timestamp": 1777019305449
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_NnKRrOsFUqnLWNO4TK4YQrJF|fc_09da35746df154af0169eb29bb4a908191a2dec35892b8446f",
+    "path": "scripts/verify-m065.test.ts",
+    "timestamp": 1777019394607
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_nKfTa3pslbrZwgqiJNWIKl6L|fc_09da35746df154af0169eb2a0531c88191ad4e80a49aa4739d",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\nerror: Cannot find module './verify-m065.ts?case=0.9116721046583393' from '/home/keith/src/kodiai/scripts/verify-m065.test.ts'\n(fail) verify-m065 > parse args accepts --json and rejects unknown flags [1.00ms]\nerror: Cannot find module './verify-m065.ts?case=0.11521114533022758' from '/home/keith/src/kodiai/scripts/verify-m065.test.ts'\n(fail) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligatio",
+    "timestamp": 1777019397765
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_dOHtZKyO1BWxG0zv8T1Ow4OW|fc_09da35746df154af0169eb2a08ef208191bd1a9412241b143a",
+    "command": "bun test scripts/verify-m065.test.ts -t \"stable top-level check ids\"",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\nerror: Cannot find module './verify-m065.ts?case=0.5472677425023482' from '/home/keith/src/kodiai/scripts/verify-m065.test.ts'\n(fail) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [1.00ms]\n\n 0 pass\n 7 filtered out\n 1 fail\nRan 1 test across 1 file. [75.00ms]\n\n\nCommand exited with code 1",
+    "timestamp": 1777019401699
+  }
+]
