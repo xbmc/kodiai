@@ -376,3 +376,8 @@
 {"id":"20696657-03c1-4a15-90eb-0516ee709d15","ts":"2026-04-24T03:12:15.315Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
 {"id":"ac08117b-f266-4e82-935e-d4818434713a","ts":"2026-04-24T03:12:15.337Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
 {"id":"4d7165e2-4ad3-4dce-b1db-a6be4a286a42","ts":"2026-04-24T03:12:15.349Z","severity":"warning","message":"[safety] file-change: src/handlers/mention.test.ts — Modified but not in task plan's expected output\n[safety] file-change: src/handlers/review.test.ts — Modified but not in task plan's expected output","source":"notify","read":false}
+{"id":"cd232d48-c8e2-4619-8d53-67fa9bcb5e3d","ts":"2026-04-24T03:27:07.551Z","severity":"info","message":"Committed: test: Added the integrated M061 S05 token-reduction verifier and regres…","source":"notify","read":false}
+{"id":"b0216470-d665-4238-85a5-fa445ba35fb1","ts":"2026-04-24T03:27:07.586Z","severity":"warning","message":"[safety] file-change: package.json — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"7cbe69c9-ddcb-438d-a7a4-88d35c726401","ts":"2026-04-24T03:27:07.587Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"52863d3c-7822-4242-9239-de8eb39b8f69","ts":"2026-04-24T03:27:07.735Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"fbd8296b-ef6d-4035-ac60-bea66bc9917f","ts":"2026-04-24T03:27:07.748Z","severity":"warning","message":"[safety] file-change: package.json — Modified but not in task plan's expected output","source":"notify","read":false}

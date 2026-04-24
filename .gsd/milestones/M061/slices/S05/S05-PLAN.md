@@ -82,7 +82,7 @@ Create the milestone-level proof entrypoint that turns the existing S01-S04 proo
   - Files: `scripts/verify-m061-s05.ts`, `scripts/verify-m061-s05.test.ts`, `scripts/usage-report.ts`, `scripts/verify-m061-s01.ts`, `scripts/verify-m061-s02.ts`, `scripts/verify-m061-s03.ts`, `scripts/verify-m061-s04.ts`
   - Verify: bun test scripts/usage-report.test.ts scripts/verify-m061-s01.test.ts scripts/verify-m061-s02.test.ts scripts/verify-m061-s03.test.ts scripts/verify-m061-s04.test.ts scripts/verify-m061-s05.test.ts
 
-- [ ] **T02: Pin the M061 regression gate for mention, review, retrieval, and reporting behavior** `est:75m`
+- [x] **T02: Pin the M061 regression gate for mention, review, retrieval, and reporting behavior** `est:75m`
   ## Description
 Add a separate regression gate CLI that runs the exact suite set protecting small/normal behavior while token-efficiency proof evolves. Keeping this separate from the live-telemetry verifier ensures DB-unavailable environments still have a meaningful blocking gate for R069.
 
