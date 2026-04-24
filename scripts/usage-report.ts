@@ -11,6 +11,8 @@ type CliOptions = {
   help: boolean;
 };
 
+export const USAGE_REPORT_QUERY_TIMEOUT_MS = 5_000;
+
 export type UsageReportSummary = {
   totalExecutions: number;
   totalInputTokens: number;
@@ -421,6 +423,28 @@ export async function queryUsageReport(sql: Sql, filters: { repo: string | null;
   };
 }
 
+export async function queryUsageReportWithTimeout(
+  sql: Sql,
+  filters: { repo: string | null; since: string | null },
+  timeoutMs = USAGE_REPORT_QUERY_TIMEOUT_MS,
+): Promise<UsageReportQueryResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      queryUsageReport(sql, filters),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`Timed out querying telemetry Postgres after ${timeoutMs}ms.`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 function normalizeSince(value: string): string {
   const relativeMatch = value.match(/^(\d+)d$/);
   if (relativeMatch) {
@@ -509,7 +533,7 @@ export async function runUsageReportCli(args: string[], env: NodeJS.ProcessEnv =
   let client: ReturnType<typeof createDbClient> | null = null;
   try {
     client = createDbClient({ connectionString, logger });
-    const result = await queryUsageReport(client.sql, {
+    const result = await queryUsageReportWithTimeout(client.sql, {
       repo: options.repo,
       since: options.since,
     });
@@ -533,7 +557,7 @@ export async function runUsageReportCli(args: string[], env: NodeJS.ProcessEnv =
     });
     return { report, exitCode: 0 };
   } finally {
-    await client?.close();
+    await client?.sql.end({ timeout: 0 });
   }
 }
 

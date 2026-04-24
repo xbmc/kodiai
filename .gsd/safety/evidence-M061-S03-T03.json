@@ -1,0 +1,254 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_aKNHfny7RYp0klkP4VlhnUWQ|fc_030c1ac08999ad4e0169ead09a0eb08191a9be4c4224223db3",
+    "command": "rg --files scripts | rg 'verify-m061-s03|usage-report'",
+    "exitCode": 0,
+    "outputSnippet": "scripts/usage-report.ts\nscripts/usage-report.test.ts\n",
+    "timestamp": 1776996506406
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_zPisUGpWRwLUeKhQLJ6jicxR|fc_030c1ac08999ad4e0169ead09a0ebc8191838967a17a6f36f9",
+    "command": "rg -n \"verify-m061-s03|review\\.user-prompt|review\\.main|prompt_section_events\" scripts src | head -n 200",
+    "exitCode": 0,
+    "outputSnippet": "scripts/usage-report.test.ts:45:        promptKinds: [\"review.main\"],\nscripts/usage-report.test.ts:71:        promptKind: \"review.main\",\nscripts/usage-report.test.ts:136:    expect(report.deliveryBreakdown[0]?.promptKinds).toContain(\"review.main\");\nscripts/usage-report.ts:228:    lines.push(\"- No prompt_section_events rows matched the requested filters.\");\nscripts/usage-report.ts:343:    LEFT JOIN prompt_section_events p\nscripts/usage-report.ts:372:    FROM prompt_section_events\nsrc/handlers/rev",
+    "timestamp": 1776996506406
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_N0W8i0iE5kUgtgbmljfGyBU6|fc_030c1ac08999ad4e0169ead09f7fd4819181486d1147936f61",
+    "command": "rg -n \"sectionName:|name:\" src/execution/review-prompt.ts src/execution/prompt-section-metrics.ts src/handlers/review.test.ts | head -n 200",
+    "exitCode": 0,
+    "outputSnippet": "src/execution/review-prompt.ts:1695:  const sectionBlocks: Array<{ sectionName: string; text: string; truncated?: boolean }> = [];\nsrc/execution/review-prompt.ts:1706:  const pushSection = (sectionName: string, lines: string[]) => {\nsrc/execution/review-prompt.ts:1712:  const pushBudgetedSection = (sectionName: string, lines: string[], maxChars: number) => {\nsrc/execution/prompt-section-metrics.ts:4:  sectionName: string;\nsrc/execution/prompt-section-metrics.ts:24:      sectionName: section.sect",
+    "timestamp": 1776996511680
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_czJ07VsdvcpijKX8iqX8Ndfr|fc_030c1ac08999ad4e0169ead0a785d08191aa5b42d4b69a9aec",
+    "command": "rg --files scripts | rg 'verify-m061-s01.*test|verify-m061'",
+    "exitCode": 0,
+    "outputSnippet": "scripts/verify-m061-s01.ts\nscripts/verify-m061-s02.ts\nscripts/verify-m061-s02.test.ts\nscripts/verify-m061-s01.test.ts\n",
+    "timestamp": 1776996519702
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_fUGreezSQzfJAjC1qwYKEPtc|fc_030c1ac08999ad4e0169ead0a785e08191a8121fa2ea3cd9f5",
+    "command": "rg -n \"evaluateM061S01BaselineProof|runM061S01BaselineProofCli|renderM061S01BaselineProof\" scripts -g '*.test.ts'",
+    "exitCode": 0,
+    "outputSnippet": "scripts/verify-m061-s01.test.ts:4:  evaluateM061S01BaselineProof,\nscripts/verify-m061-s01.test.ts:6:  renderM061S01BaselineProof,\nscripts/verify-m061-s01.test.ts:33:    const report = evaluateM061S01BaselineProof({\nscripts/verify-m061-s01.test.ts:154:    expect(renderM061S01BaselineProof(report)).toContain(\"Final verdict: PASS\");\nscripts/verify-m061-s01.test.ts:155:    expect(renderM061S01BaselineProof(report)).toContain(\"Usage report snapshot\");\nscripts/verify-m061-s01.test.ts:159:    const rep",
+    "timestamp": 1776996519702
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_QyPB6tuks4L0sFxy38PN1cZA|fc_030c1ac08999ad4e0169ead0cb20a08191af7155e97c35f152",
+    "path": "scripts/usage-report.test.ts",
+    "timestamp": 1776996557813
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_LCJwv1Cu5EVx9H2hMXOmSnvD|fc_030c1ac08999ad4e0169ead0d60238819180589b73f347f683",
+    "path": "scripts/usage-report.test.ts",
+    "timestamp": 1776996569124
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_9Ab49O9FsFsCzu89a8aHnym0|fc_030c1ac08999ad4e0169ead0db869881918ca6e82a1cb7d5a3",
+    "path": "scripts/usage-report.test.ts",
+    "timestamp": 1776996573704
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_vzyCfHIG9yngreHHRK0QqjSP|fc_030c1ac08999ad4e0169ead0e050cc8191a70907eac63ff873",
+    "path": "scripts/verify-m061-s03.test.ts",
+    "timestamp": 1776996615274
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_9IR7jTNB7tZN2yGxsmUkWcGF|fc_030c1ac08999ad4e0169ead1098eac81919d2ea8b548ddc50c",
+    "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s03.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/usage-report.test.ts:\n(pass) buildUsageReport > marks access as missing and fails open when no connection string is available [1.00ms]\n(pass) buildUsageReport > builds truthful attribution surfaces from live-schema aggregates\n(pass) renderUsageReportText > renders preflight access state and operator-visible attribution sections [8.00ms]\n(pass) renderUsageReportText > renders fail-open guidance when telemetry access is unavailable\n\nscripts/verify-m061-s03.test.",
+    "timestamp": 1776996618377
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_TEP5QUwB1QiiHhiyEJwaKJx5|fc_030c1ac08999ad4e0169ead11437c08191998649dbecaf0686",
+    "path": "scripts/verify-m061-s03.ts",
+    "timestamp": 1776996686292
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_ImOQPFwQVJZwwZi7olwsvbOu|fc_030c1ac08999ad4e0169ead1524a0c81918d186b3d031d7f21",
+    "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s03.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/usage-report.test.ts:\n(pass) buildUsageReport > marks access as missing and fails open when no connection string is available [1.00ms]\n(pass) buildUsageReport > builds truthful attribution surfaces from live-schema aggregates\n(pass) renderUsageReportText > renders preflight access state and operator-visible attribution sections [6.00ms]\n(pass) renderUsageReportText > renders fail-open guidance when telemetry access is unavailable [1.00ms]\n\nscripts/verify-m061-",
+    "timestamp": 1776996690670
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_X7v8eB8bFFNWr264OhULycuI|fc_030c1ac08999ad4e0169ead158815c8191bbc85f140a0e9bee",
+    "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s03.test.ts && bun scripts/verify-m061-s03.ts --json",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/usage-report.test.ts:\n(pass) buildUsageReport > marks access as missing and fails open when no connection string is available\n(pass) buildUsageReport > builds truthful attribution surfaces from live-schema aggregates [1.00ms]\n(pass) renderUsageReportText > renders preflight access state and operator-visible attribution sections [6.00ms]\n(pass) renderUsageReportText > renders fail-open guidance when telemetry access is unavailable\n\nscripts/verify-m061-s03.test.",
+    "timestamp": 1776996697788
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_uxVk9p8RXmkfZyhFftAdv6sJ|fc_030c1ac08999ad4e0169ead17e71bc81919dcf1efab9e94752",
+    "command": "bun scripts/verify-m061-s03.ts --json",
+    "exitCode": 1,
+    "outputSnippet": "Command timed out after 15 seconds",
+    "timestamp": 1776996735147
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_AkV5mNNNxIyBGcExys4g49ze|fc_030c1ac08999ad4e0169ead2154c4c8191b09091ea7df2d234",
+    "command": "env | rg '^(DATABASE_URL|TEST_DATABASE_URL)=' || true",
+    "exitCode": 0,
+    "outputSnippet": "(no output)",
+    "timestamp": 1776996886100
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_iZGHxXUq1v10Q983W1F7NXeo|fc_030c1ac08999ad4e0169ead2154c54819198c658e45dc7742b",
+    "command": "python - <<'PY'\nimport os\nprint('DATABASE_URL' in os.environ, 'TEST_DATABASE_URL' in os.environ)\nPY",
+    "exitCode": 127,
+    "outputSnippet": "/home/keith/.local/bin/python: 2: exec: /home/keith/src/sf-str-reporting/.gsd/worktrees/M001/.venv/bin/python: not found\n\n\nCommand exited with code 127",
+    "timestamp": 1776996886100
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_wFwp8iMGh3ATLBsp3ti0WlOY|fc_030c1ac08999ad4e0169ead21d720c81918b020e206e7f97ae",
+    "command": "bun -e \"import('./scripts/verify-m061-s03.ts').then(() => { console.log('done'); process.exit(0); })\"",
+    "exitCode": 0,
+    "outputSnippet": "done\n",
+    "timestamp": 1776996894572
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_UTJwR3AyIk9Bu2nOHAApbOTS|fc_030c1ac08999ad4e0169ead2240e948191b2d4506a2b48d236",
+    "command": "bun -e \"import('./scripts/verify-m061-s03.ts').then(async (m) => { const result = await m.runM061S03ReviewSectionProofCli(['--json']); console.log(JSON.stringify(result)); process.exit(0); })\"",
+    "exitCode": 0,
+    "outputSnippet": "(no output)",
+    "timestamp": 1776996903216
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_arnyzwCkFNeHsPiJPpWz1dRl|fc_030c1ac08999ad4e0169ead22edcc08191b4a5042a084aa7d8",
+    "command": "bun -e \"console.log('start'); import('./scripts/verify-m061-s03.ts').then(async (m) => { console.log('imported'); const result = await m.runM061S03ReviewSectionProofCli(['--json']); console.log('after', JSON.stringify(result)); process.exit(0); })\"",
+    "exitCode": 0,
+    "outputSnippet": "start\nimported\n",
+    "timestamp": 1776996912022
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_SPmuTBV7UXdnGLaSlU8bjdL9|fc_030c1ac08999ad4e0169ead234e7e481918ac1e459747683eb",
+    "command": "if [ -f .env ]; then rg -n '^(DATABASE_URL|TEST_DATABASE_URL)=' .env -o --replace '$1=<set>'; else echo 'no .env'; fi",
+    "exitCode": 0,
+    "outputSnippet": "9:DATABASE_URL=<set>\n",
+    "timestamp": 1776996918135
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_r82YFXSHmtqYFoFF64JM2bFA|fc_030c1ac08999ad4e0169ead244aab48191af528e091828ad27",
+    "command": "rg -n \"\\.end\\(|connect_timeout|idle_timeout|postgres\\(\" node_modules/postgres -g '*.d.ts' -g '*.js' | head -n 80",
+    "exitCode": 0,
+    "outputSnippet": "node_modules/postgres/src/errors.js:30:function postgres(x) {\nnode_modules/postgres/src/index.js:153:      idle_timeout: null,\nnode_modules/postgres/src/index.js:373:      Promise.all(connections.map(c => c.end()).concat(\nnode_modules/postgres/src/index.js:374:        listen.sql ? listen.sql.end({ timeout: 0 }) : [],\nnode_modules/postgres/src/index.js:375:        subscribe.sql ? subscribe.sql.end({ timeout: 0 }) : []\nnode_modules/postgres/src/index.js:381:    await Promise.all(connections.map(c ",
+    "timestamp": 1776996933477
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_KzzZOuNt24tfoTwUPOUede8X|fc_030c1ac08999ad4e0169ead244aac8819180cf9752a64c665c",
+    "command": "rg -n \"function end|end\\(\" node_modules/postgres -g '*.d.ts' -g '*.js' | head -n 80",
+    "exitCode": 0,
+    "outputSnippet": "node_modules/postgres/src/bytes.js:54:  end(at = 1) {\nnode_modules/postgres/src/index.js:365:  async function end({ timeout = null } = {}) {\nnode_modules/postgres/src/index.js:373:      Promise.all(connections.map(c => c.end()).concat(\nnode_modules/postgres/src/index.js:374:        listen.sql ? listen.sql.end({ timeout: 0 }) : [],\nnode_modules/postgres/src/index.js:375:        subscribe.sql ? subscribe.sql.end({ timeout: 0 }) : []\nnode_modules/postgres/src/index.js:381:    await Promise.all(conn",
+    "timestamp": 1776996933477
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_T9YLoxLIMpnztsR92znqvZYv|fc_030c1ac08999ad4e0169ead244aad0819198292b589b3f4950",
+    "command": "rg -n \"createDbClient\\(\" src scripts | head -n 40",
+    "exitCode": 0,
+    "outputSnippet": "scripts/wiki-embedding-repair.ts:154:  const db = createDbClient({ logger });\nscripts/wiki-embedding-repair.ts:253:  const db = createDbClient({ logger });\nscripts/verify-m056-s01.ts:304:  const client = createDbClient({ connectionString, logger });\nscripts/embedding-comparison.ts:140:  const db = createDbClient({ logger });\nscripts/verify-m056-s02.ts:340:  const client = createDbClient({ connectionString, logger });\nscripts/backfill-issues.ts:112:  const db = createDbClient({ logger });\nscripts",
+    "timestamp": 1776996933477
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_86jkS0iuK6EEMa4qJ0i9Zyxj|fc_030c1ac08999ad4e0169ead25948cc819190a0b9d8301a9a74",
+    "path": "scripts/usage-report.ts",
+    "timestamp": 1776996956190
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_RR09Y9PufQM7fHWTiCgfepUH|fc_030c1ac08999ad4e0169ead2603fa8819197a6d42135144552",
+    "path": "scripts/usage-report.ts",
+    "timestamp": 1776996970053
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_oWPnkJBVTYRiW4ARN5PY8L2X|fc_030c1ac08999ad4e0169ead26da2788191bb5c2fba66cd6bfa",
+    "path": "scripts/usage-report.ts",
+    "timestamp": 1776996978922
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_p3Y0sly3rQXkzkTDVfTsyTD9|fc_030c1ac08999ad4e0169ead27757cc819182be1d9abce7a675",
+    "path": "scripts/usage-report.ts",
+    "timestamp": 1776996985145
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_qiB8aa74uEUYdDGh0hiop97R|fc_030c1ac08999ad4e0169ead27b56208191990cbc463431ee9c",
+    "path": "scripts/usage-report.ts",
+    "timestamp": 1776996988810
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_05u7oUrBu9wU3m9m3kzqWFUD|fc_030c1ac08999ad4e0169ead280fcac8191ba1789bed4f77439",
+    "path": "scripts/verify-m061-s03.ts",
+    "timestamp": 1776996993734
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_MEsU3Hp8UzBO1Soh3Z1hxQg6|fc_030c1ac08999ad4e0169ead2859b84819189091e81bd38fb42",
+    "path": "scripts/verify-m061-s03.ts",
+    "timestamp": 1776996999407
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_qaJmye1rbBtaumX2duHUZzCE|fc_030c1ac08999ad4e0169ead28b2d1c8191a97f1b5966a38863",
+    "path": "scripts/verify-m061-s03.ts",
+    "timestamp": 1776997005465
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_3llP0FObF4scCyqZuYkZ6hvy|fc_030c1ac08999ad4e0169ead28f748881919bb374445464d0b0",
+    "path": "scripts/verify-m061-s03.ts",
+    "timestamp": 1776997009002
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_ZSISVCQlDQlsvu2ELFEeOeK8|fc_030c1ac08999ad4e0169ead295c6708191b3b636b3730cff93",
+    "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s03.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/usage-report.test.ts:\n(pass) buildUsageReport > marks access as missing and fails open when no connection string is available [1.00ms]\n(pass) buildUsageReport > builds truthful attribution surfaces from live-schema aggregates\n(pass) renderUsageReportText > renders preflight access state and operator-visible attribution sections [6.00ms]\n(pass) renderUsageReportText > renders fail-open guidance when telemetry access is unavailable [1.00ms]\n\nscripts/verify-m061-",
+    "timestamp": 1776997014295
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_FBaaQItoiXnQ75cu2PRlPkro|fc_030c1ac08999ad4e0169ead29a89048191ab5a515a4fc82d99",
+    "command": "bun scripts/verify-m061-s03.ts --json",
+    "exitCode": 0,
+    "outputSnippet": "{\n  \"command\": \"verify:m061:s03\",\n  \"generatedAt\": \"2026-04-24T02:16:59.986Z\",\n  \"filters\": {\n    \"repo\": null,\n    \"since\": null\n  },\n  \"preflight\": {\n    \"databaseAccess\": \"unavailable\",\n    \"detail\": \"connect ECONNREFUSED 127.0.0.1:5432\"\n  },\n  \"overallPassed\": false,\n  \"checks\": [\n    {\n      \"id\": \"M061-S03-PREFLIGHT\",\n      \"title\": \"Live Postgres telemetry is reachable\",\n      \"passed\": false,\n      \"detail\": \"connect ECONNREFUSED 127.0.0.1:5432\"\n    }\n  ],\n  \"observed\": {\n    \"reviewUser",
+    "timestamp": 1776997019923
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_9Bs9lM9BjBZPZ54WTYbZIwvm|fc_030c1ac08999ad4e0169ead29fae90819194eb787d90983ea2",
+    "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s03.test.ts && bun scripts/verify-m061-s03.ts --json",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/usage-report.test.ts:\n(pass) buildUsageReport > marks access as missing and fails open when no connection string is available [1.00ms]\n(pass) buildUsageReport > builds truthful attribution surfaces from live-schema aggregates\n(pass) renderUsageReportText > renders preflight access state and operator-visible attribution sections [7.00ms]\n(pass) renderUsageReportText > renders fail-open guidance when telemetry access is unavailable\n\nscripts/verify-m061-s03.test.",
+    "timestamp": 1776997024273
+  }
+]

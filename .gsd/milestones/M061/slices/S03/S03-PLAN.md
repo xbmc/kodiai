@@ -44,7 +44,7 @@
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/execution/review-prompt.ts`
   - Verify: bun test src/handlers/review.test.ts
 
-- [ ] **T03: Add operator proof for section budgets and truncation visibility** `est:3h`
+- [x] **T03: Add operator proof for section budgets and truncation visibility** `est:3h`
   Extend the operator proof surface so S03 can be re-verified without inspecting raw prompts. Add a dedicated verifier script/test pair that reuses the Postgres-backed usage-report query layer and checks for named `review.full / review.user-prompt / <section>` rows plus truncation evidence on review sections. Update any usage-report fixtures/tests needed so the canonical reporting surface remains aligned with the new review section names instead of assuming a single review block. The proof should fail open when Postgres access is unavailable, matching the S01 operator pattern.
   - Files: `scripts/verify-m061-s03.ts`, `scripts/verify-m061-s03.test.ts`, `scripts/usage-report.ts`, `scripts/usage-report.test.ts`, `scripts/verify-m061-s01.ts`
   - Verify: bun test scripts/usage-report.test.ts scripts/verify-m061-s03.test.ts && bun scripts/verify-m061-s03.ts --json

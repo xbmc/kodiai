@@ -42,7 +42,7 @@ function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): Us
         deliveryId: "review-1",
         repo: "xbmc/xbmc",
         taskType: "review.full",
-        promptKinds: ["review.main"],
+        promptKinds: ["review.user-prompt"],
         sectionCount: 3,
         promptEstimatedTokens: 900,
         llmInputTokens: 800,
@@ -68,8 +68,8 @@ function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): Us
     promptSections: [
       {
         taskType: "review.full",
-        promptKind: "review.main",
-        sectionName: "diff-context",
+        promptKind: "review.user-prompt",
+        sectionName: "review-change-context",
         executions: 2,
         totalEstimatedTokens: 500,
         totalCharCount: 2000,
@@ -133,8 +133,8 @@ describe("buildUsageReport", () => {
     expect(report.summary.totalExecutions).toBe(4);
     expect(report.summary.cacheEffectiveness).toBe(0.25);
     expect(report.taskTypes[0]?.taskType).toBe("review.full");
-    expect(report.deliveryBreakdown[0]?.promptKinds).toContain("review.main");
-    expect(report.promptSections[0]?.sectionName).toBe("diff-context");
+    expect(report.deliveryBreakdown[0]?.promptKinds).toContain("review.user-prompt");
+    expect(report.promptSections[0]?.sectionName).toBe("review-change-context");
     expect(report.rateLimits[0]?.avgCacheHitRate).toBe(0.5);
   });
 });
