@@ -32,7 +32,7 @@ Consumes the existing review boundedness seam, checkpoint persistence, partial-r
   - Files: `src/lib/review-boundedness.ts`, `src/lib/review-first-pass.ts`, `src/lib/review-boundedness.test.ts`, `src/lib/review-first-pass.test.ts`, `src/knowledge/types.ts`
   - Verify: bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-first-pass.test.ts
 
-- [ ] **T02: Route constrained review publication through the bounded first-pass contract** `est:3h`
+- [x] **T02: Route constrained review publication through the bounded first-pass contract** `est:3h`
   Apply the new contract at the root-cause seam in `src/handlers/review.ts`. Replace the split between timeout partial publication and dead-end `max_turns` fallback with one bounded-first-pass projection that uses checkpoint or triage evidence when available, preserves the existing `reviewOutputKey` identity, and keeps true hard failure only for zero-evidence runs. Update partial-review formatting and Review Details rendering so both consume the same normalized state, including covered/remaining scope and bounded reason. Keep the summary structure valid for `comment-server` and do not add a second public surface. Record executor skills in the rendered frontmatter as `test-driven-development`, `verification-before-completion`, `systematic-debugging`, and `observability`.
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/lib/partial-review-formatter.ts`, `src/lib/partial-review-formatter.test.ts`, `src/lib/review-utils.ts`, `src/lib/review-utils.test.ts`, `src/lib/review-first-pass.ts`, `src/handlers/review-idempotency.ts`
   - Verify: bun test ./src/lib/partial-review-formatter.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts

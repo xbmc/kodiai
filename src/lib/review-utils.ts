@@ -20,6 +20,7 @@ import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import type { ReviewBoundednessContract } from "./review-boundedness.ts";
+import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +90,96 @@ export type TimeoutReviewDetailsProgress = {
   findingCount: number;
   retryState: string;
 };
+
+function formatBoundedReason(reason: ReviewFirstPassPayload["boundedReason"]): string {
+  if (reason === "max-turns") {
+    return "max-turns";
+  }
+  if (reason === "large-pr") {
+    return "large-PR triage";
+  }
+  return "timeout";
+}
+
+function formatEvidenceSource(source: ReviewFirstPassPayload["evidenceSource"]): string {
+  if (source === "checkpoint") {
+    return "checkpoint evidence";
+  }
+  if (source === "boundedness") {
+    return "boundedness evidence";
+  }
+  return "no trustworthy evidence";
+}
+
+export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
+  reasonLabel: string;
+  evidenceLabel: string;
+  summaryClause: (timedOutAfterSeconds?: number) => string;
+  detailLines: string[];
+} {
+  const reasonLabel = formatBoundedReason(firstPass.boundedReason);
+  const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
+
+  const summaryClause = (timedOutAfterSeconds?: number): string => {
+    if (firstPass.state === "zero-evidence-failure") {
+      const timeoutSuffix = firstPass.boundedReason === "timeout" && typeof timedOutAfterSeconds === "number"
+        ? ` (${timedOutAfterSeconds}s)`
+        : "";
+      return `hit ${reasonLabel}${timeoutSuffix} with no trustworthy structured evidence`;
+    }
+
+    const coveredScope = firstPass.coveredScope;
+    const remainingScope = firstPass.remainingScope;
+    const timeoutSuffix = firstPass.boundedReason === "timeout" && typeof timedOutAfterSeconds === "number"
+      ? `; ${timedOutAfterSeconds}s`
+      : "";
+
+    if (coveredScope && remainingScope) {
+      return `stopped at ${reasonLabel} after covering ${coveredScope.reviewedFiles} of ${coveredScope.totalFiles} files from ${evidenceLabel} (${remainingScope.remainingFiles} remaining${timeoutSuffix})`;
+    }
+
+    if (coveredScope) {
+      return `stopped at ${reasonLabel} after covering ${coveredScope.reviewedFiles} of ${coveredScope.totalFiles} files from ${evidenceLabel}${timeoutSuffix ? ` (${timeoutSuffix.slice(2)})` : ""}`;
+    }
+
+    return `stopped at ${reasonLabel} using ${evidenceLabel}${timeoutSuffix ? ` (${timeoutSuffix.slice(2)})` : ""}`;
+  };
+
+  if (firstPass.state === "zero-evidence-failure") {
+    return {
+      reasonLabel,
+      evidenceLabel,
+      summaryClause,
+      detailLines: [
+        `- Constrained outcome: zero-evidence hard failure after ${reasonLabel}`,
+        "- Publication eligibility: ineligible",
+      ],
+    };
+  }
+
+  const detailLines = [
+    `- Bounded first-pass: ${reasonLabel} via ${evidenceLabel}`,
+    ...(firstPass.coveredScope
+      ? [`- Covered scope: ${firstPass.coveredScope.reviewedFiles}/${firstPass.coveredScope.totalFiles} changed files`]
+      : []),
+    ...(firstPass.remainingScope
+      ? [`- Remaining scope: ${firstPass.remainingScope.remainingFiles}/${firstPass.remainingScope.totalFiles} changed files`]
+      : []),
+    ...(typeof firstPass.findingCount === "number"
+      ? [`- First-pass findings captured: ${firstPass.findingCount}`]
+      : []),
+    `- Publication eligibility: ${firstPass.publication.eligible ? "eligible" : "ineligible"}`,
+    ...(firstPass.publication.hasPublishedOutput ? ["- Public review output already exists for this first pass"] : []),
+    ...(firstPass.continuationPending ? ["- Continuation state: pending follow-up review"] : []),
+  ];
+
+  return {
+    reasonLabel,
+    evidenceLabel,
+    summaryClause,
+    detailLines,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -364,6 +455,7 @@ export function formatReviewDetailsSummary(params: {
     totalFiles: number;
   };
   reviewBoundedness?: ReviewBoundednessContract | null;
+  reviewFirstPass?: ReviewFirstPassPayload | null;
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
@@ -396,6 +488,7 @@ export function formatReviewDetailsSummary(params: {
     findingCounts,
     largePRTriage,
     reviewBoundedness,
+    reviewFirstPass,
     feedbackSuppressionCount,
     keywordParsing,
     profileSelection,
@@ -437,10 +530,12 @@ export function formatReviewDetailsSummary(params: {
           `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
           `- Retry state: ${timeoutProgress.retryState}`,
         ]
-      : [
-          `- Files reviewed: ${filesReviewed}`,
-          `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
-        ]),
+      : reviewFirstPass
+        ? describeReviewFirstPass(reviewFirstPass).detailLines
+        : [
+            `- Files reviewed: ${filesReviewed}`,
+            `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
+          ]),
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     ...(hasBoundedProfileDetails && reviewBoundedness
       ? [

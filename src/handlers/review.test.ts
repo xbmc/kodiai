@@ -8705,7 +8705,7 @@ describe("createReviewHandler enqueue routing", () => {
 });
 
 describe("createReviewHandler timeout resilience", () => {
-  test("full timeout with no output posts partial timeout comment and enqueues a reduced-scope retry", async () => {
+  test("full timeout with no structured evidence stays a hard failure but still enqueues a reduced-scope retry", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
@@ -8853,21 +8853,12 @@ describe("createReviewHandler timeout resilience", () => {
       }),
     );
 
-    const partial = createdCommentBodies.find((b) => b.includes("**Partial review**"));
-    expect(partial).toBeDefined();
-    expect(partial!).toContain("timed out after analyzing 0");
-    expect(partial!).toContain("Scheduling a reduced-scope retry");
+    const boundedComment = createdCommentBodies.find((b) => b.includes("**Bounded first-pass review**"));
+    expect(boundedComment).toBeUndefined();
 
     const reviewDetails = createdCommentBodies.find((b) => b.includes("<summary>Review Details</summary>"));
-    expect(reviewDetails).toBeDefined();
-    expect(reviewDetails!).toContain("- Total wall-clock:");
-    expect(reviewDetails!).toContain("- Phase timings:");
-    expect(reviewDetails!).toContain("queue wait: unavailable");
-    expect(reviewDetails!).toContain("workspace preparation:");
-    expect(reviewDetails!).toContain("retrieval/context assembly:");
-    expect(reviewDetails!).toContain("executor handoff: unavailable");
-    expect(reviewDetails!).toContain("remote runtime: unavailable");
-    expect(reviewDetails!).toContain("publication:");
+    expect(reviewDetails).toBeUndefined();
+    expect(createdCommentBodies.length).toBeGreaterThan(0);
 
     const retryContext = enqueuedContexts.find((context) => context.action === "review-retry");
     expect(retryContext).toEqual({
@@ -9027,9 +9018,9 @@ describe("createReviewHandler timeout resilience", () => {
       }),
     );
 
-    const partial = createdCommentBodies.find((body) => body.includes("**Partial review**"));
+    const partial = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
     expect(partial).toBeDefined();
-    expect(partial!).toContain("timed out after analyzing 1 of 3 files");
+    expect(partial!).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
     expect(partial!).toContain("Found two issues before timeout.");
     expect(partial!).toContain("Scheduling a reduced-scope retry.");
 
@@ -9048,7 +9039,7 @@ describe("createReviewHandler timeout resilience", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("suppresses timeout Review Details publication when publish rights are lost after partial review", async () => {
+  test("suppresses timeout Review Details publication when publish rights are lost after bounded first-pass output", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
@@ -9146,7 +9137,15 @@ describe("createReviewHandler timeout resilience", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: createKnowledgeStoreStub({
-        getCheckpoint: () => null,
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 1,
+          summaryDraft: "Found one issue before timeout.",
+          totalFiles: 1,
+        }),
         updateCheckpointCommentId: () => undefined,
         deleteCheckpoint: () => undefined,
       }) as never,
@@ -9202,7 +9201,7 @@ describe("createReviewHandler timeout resilience", () => {
       }),
     );
 
-    const partial = createdCommentBodies.find((body) => body.includes("**Partial review**"));
+    const partial = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
     const reviewDetails = createdCommentBodies.find((body) => body.includes("<summary>Review Details</summary>"));
 
     expect(partial).toBeDefined();
@@ -9441,10 +9440,8 @@ describe("createReviewHandler timeout resilience", () => {
     await queuedRetryJob!(queueMetadata);
 
     expect(executeCount).toBe(2);
-    expect(createdCommentBodies.some((body) => body.includes("**Partial review**"))).toBeTrue();
-    expect(updatedCommentBody).toBeDefined();
-    expect(updatedCommentBody).toContain("Retry found one issue.");
-    expect(updatedCommentBody).toContain("in retry");
+    expect(createdCommentBodies.some((body) => body.includes("**Bounded first-pass review**"))).toBeFalse();
+    expect(updatedCommentBody).toBeUndefined();
     expect(completedAttemptIds).toEqual(["review-work-1", "review-work-2"]);
 
     await workspaceFixture.cleanup();
@@ -9686,11 +9683,11 @@ describe("createReviewHandler timeout resilience", () => {
     await queuedRetryJob!(queueMetadata);
 
     expect(executeCount).toBe(2);
-    expect(createdCommentBodies.some((body) => body.includes("**Partial review**"))).toBeTrue();
+    expect(createdCommentBodies.some((body) => body.includes("**Bounded first-pass review**"))).toBeFalse();
     expect(updatedCommentBody).toBeUndefined();
     expect(completedAttemptIds).toEqual(["review-work-1", "review-work-3", "review-work-2"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping retry partial review merge because publish rights were superseded"),
+      entries.some((entry) => entry.message === "No partial comment ID available for retry update"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -12980,6 +12977,119 @@ describe("createReviewHandler bounded review disclosure", () => {
 
 
 describe("createReviewHandler failure fallback publication", () => {
+  test("publishes bounded first-pass output for max-turns when checkpoint evidence exists", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const createdCommentBodies: string[] = [];
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        ) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: { id: 501 } };
+              },
+              updateComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "max_turns",
+          failureSubtype: "error_max_turns",
+          durationMs: 1,
+          numTurns: 25,
+          sessionId: "session-failure-bounded-first-pass",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 2,
+          summaryDraft: "Found two issues before max-turns.",
+          totalFiles: 3,
+        }),
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    const boundedComment = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
+    expect(boundedComment).toBeDefined();
+    expect(boundedComment).toContain("stopped at max-turns after covering 1 of 3 files from checkpoint evidence");
+    expect(boundedComment).toContain("Found two issues before max-turns.");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("posts a helpful PR error comment when review execution fails without publishing output", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();

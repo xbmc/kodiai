@@ -71,6 +71,10 @@ import {
   type ReviewBoundednessContract,
 } from "../lib/review-boundedness.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
+import {
+  normalizeReviewFirstPass,
+  type ReviewFirstPassPayload,
+} from "../lib/review-first-pass.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
@@ -4067,7 +4071,10 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
         const reviewCompletedAt = new Date().toISOString();
-        const buildReviewDetailsBody = (timeoutProgress?: TimeoutReviewDetailsProgress): string => {
+        const buildReviewDetailsBody = (params?: {
+          timeoutProgress?: TimeoutReviewDetailsProgress;
+          reviewFirstPass?: ReviewFirstPassPayload | null;
+        }): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
             filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
@@ -4081,6 +4088,7 @@ export function createReviewHandler(deps: {
               totalFiles: tieredFiles.totalFiles,
             } : undefined,
             reviewBoundedness,
+            reviewFirstPass: params?.reviewFirstPass,
             feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
             keywordParsing: parsedIntent,
             profileSelection,
@@ -4094,7 +4102,7 @@ export function createReviewHandler(deps: {
               publicationPhaseStartedAt,
               totalPhaseStartAt,
             }),
-            timeoutProgress,
+            timeoutProgress: params?.timeoutProgress,
           });
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
@@ -4668,7 +4676,18 @@ export function createReviewHandler(deps: {
               timeoutInlineFindings.length,
             );
             const timeoutTotalFiles = checkpoint?.totalFiles ?? changedFiles.length;
-            const hasPartialResults = timeoutFindingCount > 0 || timeoutReviewedFiles.length > 0;
+            const timeoutFirstPass = normalizeReviewFirstPass({
+              boundedness: reviewBoundedness,
+              checkpoint,
+              outcome: {
+                conclusion: result.conclusion,
+                stopReason: result.stopReason,
+                failureSubtype: result.failureSubtype,
+                isTimeout: result.isTimeout,
+                published: result.published,
+              },
+            });
+            const hasPartialResults = timeoutFirstPass?.state === "bounded-first-pass";
 
             // Step 2: Check chronic timeout threshold before publishing
             const recentTimeouts = await telemetryStore.countRecentTimeouts?.(
@@ -4740,28 +4759,15 @@ export function createReviewHandler(deps: {
               retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
             }
 
-            // Step 3: Publish partial review with disclaimer.
-            // IMPORTANT: also publish a placeholder partial review when we have
-            // a full timeout (no checkpoint + no inline output) so we can
-            // (a) inform the user and (b) attach a retry result.
+            // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
             const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines
-              ? "Review timed out with findings posted inline above."
+              ? "Review stopped after GitHub-visible findings were already posted."
               : hasPartialResults
-                ? "Review timed out after partial progress was recorded."
-                : "Review timed out before producing output.");
+                ? "Review stopped after structured first-pass progress was recorded."
+                : "Review stopped before producing trustworthy structured output.");
             const summaryDraft = retrySummaryNote
               ? `${summaryDraftBase}\n\n${retrySummaryNote}`
               : summaryDraftBase;
-            const partialBody = formatPartialReviewComment({
-              summaryDraft,
-              filesReviewed: timeoutReviewedFiles.length,
-              totalFiles: timeoutTotalFiles,
-              timedOutAfterSeconds: timeoutDuration,
-              isRetrySkipped: isChronicTimeout,
-              retrySkipReason: isChronicTimeout
-                ? "Retry skipped -- this repo has timed out frequently for this author."
-                : undefined,
-            });
             const timeoutReviewDetails = {
               analyzedFiles: timeoutReviewedFiles.length,
               totalFiles: timeoutTotalFiles,
@@ -4770,8 +4776,17 @@ export function createReviewHandler(deps: {
             };
 
             const octokit = extractionOctokit;
-            if (canPublishVisibleOutput("timeout partial review")) {
+            if (timeoutFirstPass?.state === "bounded-first-pass" && canPublishVisibleOutput("bounded first-pass review")) {
               setReviewWorkPhase("publish");
+              const partialBody = formatPartialReviewComment({
+                summaryDraft,
+                firstPass: timeoutFirstPass,
+                timedOutAfterSeconds: timeoutDuration,
+                isRetrySkipped: isChronicTimeout,
+                retrySkipReason: isChronicTimeout
+                  ? "Retry skipped -- this repo has timed out frequently for this author."
+                  : undefined,
+              });
               const partialComment = await octokit.rest.issues.createComment({
                 owner: apiOwner,
                 repo: apiRepo,
@@ -4805,14 +4820,18 @@ export function createReviewHandler(deps: {
                   deliveryId: event.id,
                   prNumber: pr.number,
                   partialCommentId,
-                  filesReviewed: timeoutReviewedFiles.length,
+                  boundedReason: timeoutFirstPass.boundedReason,
+                  evidenceSource: timeoutFirstPass.evidenceSource,
+                  coveredFiles: timeoutFirstPass.coveredScope?.reviewedFiles ?? null,
+                  remainingFiles: timeoutFirstPass.remainingScope?.remainingFiles ?? null,
                   findingCount: timeoutFindingCount,
                   hasPartialResults,
                   isChronicTimeout,
                   recentTimeouts,
                   retryState,
+                  zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
                 },
-                "Published partial review on timeout",
+                "Published bounded first-pass review on timeout",
               );
 
               try {
@@ -4823,7 +4842,10 @@ export function createReviewHandler(deps: {
                     repo: apiRepo,
                     prNumber: pr.number,
                     reviewOutputKey,
-                    body: buildReviewDetailsBody(timeoutReviewDetails),
+                    body: buildReviewDetailsBody({
+                      timeoutProgress: timeoutReviewDetails,
+                      reviewFirstPass: timeoutFirstPass,
+                    }),
                     botHandles: [githubApp.getAppSlug(), "claude"],
                   });
                 }
@@ -4865,6 +4887,20 @@ export function createReviewHandler(deps: {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
                 }
               }
+            }
+
+            if (timeoutFirstPass?.state === "zero-evidence-failure") {
+              logger.warn(
+                {
+                  deliveryId: event.id,
+                  prNumber: pr.number,
+                  boundedReason: timeoutFirstPass.boundedReason,
+                  evidenceSource: timeoutFirstPass.evidenceSource,
+                  zeroEvidenceFailure: true,
+                  reviewOutputKey,
+                },
+                "Constrained timeout remained a zero-evidence hard failure",
+              );
             }
 
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
@@ -5154,13 +5190,36 @@ export function createReviewHandler(deps: {
                       (retryResult.isTimeout && retryHasResults)
                     ) {
                       const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
+                      const mergedFirstPass = normalizeReviewFirstPass({
+                        boundedness: reviewBoundedness,
+                        checkpoint: checkpoint ?? retryCheckpoint,
+                        outcome: {
+                          conclusion: result.conclusion,
+                          stopReason: result.stopReason,
+                          failureSubtype: result.failureSubtype,
+                          isTimeout: result.isTimeout,
+                          published: true,
+                        },
+                      });
+
+                      if (mergedFirstPass?.state !== "bounded-first-pass") {
+                        logger.warn(
+                          {
+                            deliveryId: retryDeliveryId,
+                            prNumber: pr.number,
+                            reviewOutputKey,
+                          },
+                          "Retry merge skipped because bounded first-pass state became non-publishable",
+                        );
+                        return;
+                      }
+
                       const mergedBody = formatPartialReviewComment({
                         summaryDraft:
                           retryCheckpoint?.summaryDraft ??
                           checkpoint?.summaryDraft ??
                           "Review completed with reduced scope.",
-                        filesReviewed: timeoutReviewedFiles.length,
-                        totalFiles: timeoutTotalFiles,
+                        firstPass: mergedFirstPass,
                         timedOutAfterSeconds: timeoutDuration,
                         isRetryResult: true,
                         retryFilesReviewed,
@@ -5344,7 +5403,30 @@ export function createReviewHandler(deps: {
           const exhaustedTurnBudget =
             result.stopReason === "max_turns" ||
             result.failureSubtype === "error_max_turns";
-          const failureBody = exhaustedTurnBudget
+          const failureCheckpoint = exhaustedTurnBudget
+            ? (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null
+            : null;
+          const failureFirstPass = exhaustedTurnBudget
+            ? normalizeReviewFirstPass({
+                boundedness: reviewBoundedness,
+                checkpoint: failureCheckpoint,
+                outcome: {
+                  conclusion: result.conclusion,
+                  stopReason: result.stopReason,
+                  failureSubtype: result.failureSubtype,
+                  isTimeout: result.isTimeout,
+                  published: result.published,
+                },
+              })
+            : null;
+          const failureBody = exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass"
+            ? formatPartialReviewComment({
+                summaryDraft:
+                  failureCheckpoint?.summaryDraft ??
+                  "Review stopped before finishing, but trustworthy bounded first-pass evidence was preserved.",
+                firstPass: failureFirstPass,
+              })
+            : exhaustedTurnBudget
             ? [
                 "> **Kodiai ran out of steps while reviewing this PR**",
                 "",
@@ -5364,6 +5446,23 @@ export function createReviewHandler(deps: {
                 "",
                 "Try requesting another review if you want a fresh attempt.",
               ].join("\n");
+
+          if (exhaustedTurnBudget) {
+            logger.info(
+              {
+                deliveryId: event.id,
+                prNumber: pr.number,
+                reviewOutputKey,
+                boundedReason: failureFirstPass?.boundedReason ?? null,
+                evidenceSource: failureFirstPass?.evidenceSource ?? "none",
+                zeroEvidenceFailure: failureFirstPass?.state !== "bounded-first-pass",
+                publicationEligible: failureFirstPass?.publication.eligible ?? false,
+              },
+              failureFirstPass?.state === "bounded-first-pass"
+                ? "Publishing bounded first-pass output after max-turns"
+                : "Max-turns ended as a zero-evidence hard failure",
+            );
+          }
 
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {

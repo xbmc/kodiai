@@ -1,6 +1,19 @@
 import { describe, it, expect } from "bun:test";
 import { formatReviewDetailsSummary } from "./review-utils.ts";
+import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
+
+const BOUNDED_TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
+  state: "bounded-first-pass",
+  boundedReason: "timeout",
+  evidenceSource: "checkpoint",
+  coveredScope: { reviewedFiles: 1, totalFiles: 3 },
+  remainingScope: { remainingFiles: 2, totalFiles: 3 },
+  findingCount: 2,
+  publication: { eligible: true, hasPublishedOutput: false },
+  continuationPending: true,
+  zeroEvidenceFailure: false,
+};
 
 const BASE_PARAMS = {
   reviewOutputKey: "test-key-001",
@@ -21,6 +34,38 @@ const BASE_PARAMS = {
 };
 
 describe("formatReviewDetailsSummary", () => {
+  it("renders bounded first-pass diagnostics from the normalized contract", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: BOUNDED_TIMEOUT_FIRST_PASS,
+    });
+
+    expect(result).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(result).toContain("- Covered scope: 1/3 changed files");
+    expect(result).toContain("- Remaining scope: 2/3 changed files");
+    expect(result).toContain("- First-pass findings captured: 2");
+    expect(result).toContain("- Publication eligibility: eligible");
+  });
+
+  it("renders zero-evidence hard failure explicitly instead of bounded success", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        state: "zero-evidence-failure",
+        boundedReason: "max-turns",
+        evidenceSource: "none",
+        publication: { eligible: false, hasPublishedOutput: false },
+        continuationPending: false,
+        zeroEvidenceFailure: true,
+      },
+    });
+
+    expect(result).toContain("- Constrained outcome: zero-evidence hard failure after max-turns");
+    expect(result).toContain("- Publication eligibility: ineligible");
+    expect(result).not.toContain("- Bounded first-pass:");
+    expect(result).not.toContain("- Covered scope:");
+  });
+
   it("renders contributor-experience contract wording without raw tier leakage", () => {
     const cases = [
       {
