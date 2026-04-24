@@ -1,0 +1,120 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_cJsHC9vcDm29OGIijFe3W88D|fc_03b8f1956f0852d90169eb305071848191b039c9a66b37822f",
+    "command": "rg -n \"LIVE-LARGE-PR-PROOF|verify:m065:s02|rollout_obligations\" scripts/verify-*.ts scripts/verify-*.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "scripts/verify-m065.test.ts:25:    | \"M065-LIVE-LARGE-PR-PROOF\"\nscripts/verify-m065.test.ts:50:  rollout_obligations: {\nscripts/verify-m065.test.ts:167:      \"M065-LIVE-LARGE-PR-PROOF\",\nscripts/verify-m065.test.ts:200:        \"M065-LIVE-LARGE-PR-PROOF\",\nscripts/verify-m065.test.ts:203:      failing_check_id: \"M065-LIVE-LARGE-PR-PROOF\",\nscripts/verify-m065.test.ts:248:        id: \"M065-LIVE-LARGE-PR-PROOF\",\nscripts/verify-m065.test.ts:255:          report_key: \"rollout_obligations.liveLargePrProo",
+    "timestamp": 1777021008964
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_TdA3wsyxbKpwk8kCamIyHr31|fc_03b8f1956f0852d90169eb305a83408191be8265a26728c5fa",
+    "path": "scripts/verify-m065.test.ts",
+    "timestamp": 1777021112397
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_TYZFvdqSblAVu0yj2zkAKkm2|fc_03b8f1956f0852d90169eb30bb633881918346d9dec10529f0",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [2.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [1.00ms]\n255 |     const report = await evaluateM065({ generatedAt: FIXED_TIME });\n256 | \n257 |     expect(nestedMocks.evaluateM062S03).toHaveBeenCalledTimes(1);\n258 |     expect(nestedMocks.evaluateM063S03).toHaveBeenCalledTimes(1);\n259 |     expect(n",
+    "timestamp": 1777021116221
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_jVvWl3hEsBmnQ11I9QiNcUbZ|fc_03b8f1956f0852d90169eb30c571188191855b772352c99edd",
+    "path": "scripts/verify-m065.ts",
+    "timestamp": 1777021223645
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_MkBXBtObLkPkvYFGMgOcw2PV|fc_03b8f1956f0852d90169eb313747e08191b12e10685c708811",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [3.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [1.00ms]\n(pass) verify-m065 > evaluate preserves authoritative nested reports intact and leaves only S03 pending when S02 passes [2.00ms]\n373 |     );\n374 | \n375 |     expect(report.success).toBe(false);\n376 |     expect(report.status_code).toBe(\"m065_",
+    "timestamp": 1777021240092
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_Trk9rxBIYLJ3mzVHK1dQnUS8|fc_03b8f1956f0852d90169eb314393288191b2d1ec6fe89decd7",
+    "path": "scripts/verify-m065.test.ts",
+    "timestamp": 1777021254395
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_zMutPYRKafLuZifjWN0EU3RD|fc_03b8f1956f0852d90169eb314860d88191a00388d26c7a18d8",
+    "path": "scripts/verify-m065.test.ts",
+    "timestamp": 1777021262441
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_On3AUH56xYoVJmMCsCd6JbRp|fc_03b8f1956f0852d90169eb3156993081918737cff43607410f",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [3.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [1.00ms]\n(pass) verify-m065 > evaluate preserves authoritative nested reports intact and leaves only S03 pending when S02 passes [3.00ms]\n(pass) verify-m065 > evaluate fails loudly when the S02 report is malformed instead of inventing authority [2.00ms",
+    "timestamp": 1777021271454
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_prvV3N4I7pViUPtveZzoM6VI|fc_03b8f1956f0852d90169eb315699408191a8b953852ca3f531",
+    "command": "bun test scripts/verify-m065-s02.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [60.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing [1.00ms]\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle suffic",
+    "timestamp": 1777021271454
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_pKFv2xk2g1QNndxGu1sFGIoU|fc_03b8f1956f0852d90169eb3156994881919d2d5af363dbf03c",
+    "command": "bun run verify:m065 -- --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m065.ts --json\n{\n  \"command\": \"verify:m065\",\n  \"generated_at\": \"2026-04-24T09:01:11.538Z\",\n  \"success\": false,\n  \"status_code\": \"m065_nested_verifier_failed\",\n  \"check_ids\": [\n    \"M065-M062-PREREQUISITE\",\n    \"M065-M063-PREREQUISITE\",\n    \"M065-M064-PREREQUISITE\",\n    \"M065-LIVE-LARGE-PR-PROOF\",\n    \"M065-FRESH-REGRESSION-PROOF\"\n  ],\n  \"checks\": [\n    {\n      \"id\": \"M065-M062-PREREQUISITE\",\n      \"passed\": true,\n      \"skipped\": false,\n      \"status_code\": \"nested_report_ok",
+    "timestamp": 1777021271454
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_e65KU4bbrxz3W4oznzHpFu0g|fc_03b8f1956f0852d90169eb315ebf3481918a980079cc8ecec9",
+    "command": "rg -n \"reviewOutputKey|baseReviewOutputKey|kodiai-review-output\" scripts src -g'*.ts' | head -n 80",
+    "exitCode": 0,
+    "outputSnippet": "scripts/verify-m063-s01.test.ts:16:    reviewOutputKey: string;\nscripts/verify-m063-s01.test.ts:138:        cleanupReviewOutputKeys: [settlement!.reviewOutputKey, \"bogus-key\"],\nscripts/verify-m048-s02.ts:33:  reviewOutputKey: string;\nscripts/verify-m048-s02.ts:176:    \"  --baseline-review-output-key  Required baseline reviewOutputKey to compare\",\nscripts/verify-m048-s02.ts:178:    \"  --candidate-review-output-key Required candidate reviewOutputKey to compare\",\nscripts/verify-m048-s02.ts:190:  re",
+    "timestamp": 1777021279631
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_jM7hbsvn4aqnLMwY4CTwUU72|fc_03b8f1956f0852d90169eb31661cdc819186e3e1e4f4de5d9d",
+    "command": "rg -n \"verify:m065:s02 -- --review-output-key|m065:s02|review-output:v1|delivery-dliveproof|large-pr\" .gsd scripts src -g'*.md' -g'*.ts' | head -n 200",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/review-idempotency.test.ts:142:    expect(parseReviewOutputKey(\"kodiai-review-output:v1:bad\")).toBeNull();\nscripts/verify-m064-s03.test.ts:119:      baseReviewOutputKey: \"kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-404:head-abcdef1234567890\",\nscripts/verify-m064-s03.test.ts:142:        \"kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890-retry-2\",\nscripts/verify-m064-s03.t",
+    "timestamp": 1777021287958
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_Dejv0bE5rBnvzsX4KHDQcDYu|fc_03b8f1956f0852d90169eb3183f8508191972fe119af06b1d5",
+    "path": "scripts/verify-m065.ts",
+    "timestamp": 1777021316832
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_9TPhsyys2dQHg7vkFEsbXE92|fc_03b8f1956f0852d90169eb3189be9c8191b3b04591cca6da43",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [2.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [2.00ms]\n(pass) verify-m065 > evaluate preserves authoritative nested reports intact and leaves only S03 pending when S02 passes [3.00ms]\n(pass) verify-m065 > evaluate fails loudly when the S02 report is malformed instead of inventing authority [1.00ms",
+    "timestamp": 1777021322545
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_Adc3z7R2DHdyNMyD9hx62o6k|fc_03b8f1956f0852d90169eb3189beb081919dad3ed2ab0a875b",
+    "command": "bun test scripts/verify-m065-s02.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [56.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing [1.00ms]\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle suffic",
+    "timestamp": 1777021322545
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_RsiubdD7ZygxbvnBwUACMtk6|fc_03b8f1956f0852d90169eb3189beb481919f88a29fa0c48d45",
+    "command": "bun run verify:m065 -- --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m065.ts --json\nGET /repos/xbmc/kodiai/pulls/101/comments?per_page=100&page=1&sort=created&direction=desc - 403 with id BF7C:19864A:16D0809:1725B22:69EB31A4 in 374ms\nverify:m065 failed: M065-LIVE-LARGE-PR-PROOF:nested_report_failed\n{\n  \"command\": \"verify:m065\",\n  \"generated_at\": \"2026-04-24T09:02:02.643Z\",\n  \"success\": false,\n  \"status_code\": \"m065_nested_verifier_failed\",\n  \"check_ids\": [\n    \"M065-M062-PREREQUISITE\",\n    \"M065-M063-PREREQUISITE\",\n    \"M065-M064-PREREQUISITE",
+    "timestamp": 1777021322545
+  }
+]

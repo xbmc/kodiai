@@ -38,7 +38,7 @@
   - Files: `scripts/verify-m065-s02.ts`, `scripts/verify-m065-s02.test.ts`, `src/review-audit/phase-timing-evidence.ts`, `src/review-audit/review-output-artifacts.ts`, `src/knowledge/continuation-operator-evidence.ts`
   - Verify: bun test scripts/verify-m065-s02.test.ts
 
-- [ ] **T03: Wire the S02 report into `verify:m065` and keep S03 pending** `est:75m`
+- [x] **T03: Wire the S02 report into `verify:m065` and keep S03 pending** `est:75m`
   Replace the current S02 placeholder in the top-level milestone verifier with the real nested `verify:m065:s02` report while preserving the S01 composition pattern. Update `verify-m065.ts` and its tests so `M065-LIVE-LARGE-PR-PROOF` reflects the injected S02 result instead of a hardcoded pending slot, but leave `M065-FRESH-REGRESSION-PROOF` pending for S03. The task must preserve stable drill-down metadata, keep nested authoritative reports intact, and verify that the top-level command still exits truthfully: valid-but-pending remains allowed when only the fresh regression proof is missing.
   - Files: `scripts/verify-m065.ts`, `scripts/verify-m065.test.ts`, `scripts/verify-m065-s02.ts`, `package.json`
   - Verify: bun test scripts/verify-m065.test.ts && bun test scripts/verify-m065-s02.test.ts

@@ -1,6 +1,7 @@
 import { evaluateM062S03 } from "./verify-m062-s03.ts";
 import { evaluateM063S03 } from "./verify-m063-s03.ts";
 import { evaluateM064S03 } from "./verify-m064-s03.ts";
+import { evaluateM065S02 } from "./verify-m065-s02.ts";
 
 export const M065_CHECK_IDS = [
   "M065-M062-PREREQUISITE",
@@ -27,9 +28,41 @@ export type M065CheckStatusCode =
   | "pending_fresh_regression_proof"
   | "rollout_obligation_satisfied";
 
-type NestedCommand = "verify:m062:s03" | "verify:m063:s03" | "verify:m064:s03";
-type NestedReportKey = "nested_reports.m062" | "nested_reports.m063" | "nested_reports.m064";
+type PrerequisiteCommand = "verify:m062:s03" | "verify:m063:s03" | "verify:m064:s03";
+type PrerequisiteReportKey = "nested_reports.m062" | "nested_reports.m063" | "nested_reports.m064";
 type RolloutState = "pending" | "satisfied";
+
+type NestedReportContract = {
+  command: PrerequisiteCommand;
+  generated_at: string;
+  success: boolean;
+  status_code: string;
+  issues: string[];
+  [key: string]: unknown;
+};
+
+type S02NestedReportContract = {
+  command: "verify:m065:s02";
+  generated_at: string;
+  success: boolean;
+  status_code: string;
+  issues: string[];
+  check_ids: string[];
+  checks: unknown[];
+  failing_check_id: string | null;
+  review_output_key: string | null;
+  normalized_review_output_key: string | null;
+  delivery_id: string | null;
+  repo: string | null;
+  proof_target: {
+    review_output_key: string | null;
+    base_review_output_key: string | null;
+    delivery_id: string | null;
+    repo: string | null;
+    pr_number: number | null;
+  };
+  [key: string]: unknown;
+};
 
 export type M065Check = {
   id: M065CheckId;
@@ -51,15 +84,6 @@ export type M065RolloutObligation = {
   drill_down_command: string;
 };
 
-type NestedReportContract = {
-  command: NestedCommand;
-  generated_at: string;
-  success: boolean;
-  status_code: string;
-  issues: string[];
-  [key: string]: unknown;
-};
-
 export type M065Report = {
   command: "verify:m065";
   generated_at: string;
@@ -71,6 +95,7 @@ export type M065Report = {
     m062: NestedReportContract | null;
     m063: NestedReportContract | null;
     m064: NestedReportContract | null;
+    s02: S02NestedReportContract | null;
   };
   rollout_obligations: {
     liveLargePrProof: M065RolloutObligation;
@@ -86,7 +111,10 @@ type VerifyM065Args = {
 };
 
 const ROLLOUT_DRILL_DOWN_COMMAND = "bun run verify:m065 -- --json";
+const S02_DRILL_DOWN_COMMAND = "bun run verify:m065:s02 -- --json";
 const REQUIRED_NESTED_FIELDS = "command, generated_at, success, status_code, and issues";
+const REQUIRED_S02_FIELDS = `${REQUIRED_NESTED_FIELDS}, check_ids, checks, failing_check_id, review_output_key, normalized_review_output_key, delivery_id, repo, and proof_target`;
+const REPRESENTATIVE_REVIEW_OUTPUT_KEY = "kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101";
 
 function buildInvalidArgReport(params: { generatedAt?: string; issue: string }): M065Report {
   return {
@@ -96,21 +124,31 @@ function buildInvalidArgReport(params: { generatedAt?: string; issue: string }):
     status_code: "m065_invalid_arg",
     check_ids: [...M065_CHECK_IDS],
     checks: [],
-    nested_reports: { m062: null, m063: null, m064: null },
-    rollout_obligations: buildPendingRolloutObligations(),
+    nested_reports: { m062: null, m063: null, m064: null, s02: null },
+    rollout_obligations: buildRolloutObligations(),
     failing_check_id: null,
     issues: [params.issue],
   };
 }
 
-function buildPendingRolloutObligations(): M065Report["rollout_obligations"] {
-  return {
-    liveLargePrProof: {
-      state: "pending",
+function buildRolloutObligations(params?: { s02?: S02NestedReportContract | null }): M065Report["rollout_obligations"] {
+  const s02 = params?.s02 ?? null;
+  const liveLargePrProof = s02 && s02.success
+    ? {
+      state: "satisfied" as const,
+      source: "nested_reports.s02",
+      detail: "Representative live large-PR proof is satisfied by authoritative verify:m065:s02 evidence.",
+      drill_down_command: S02_DRILL_DOWN_COMMAND,
+    }
+    : {
+      state: "pending" as const,
       source: null,
       detail: "Reserved for live large-PR proof from S02.",
       drill_down_command: ROLLOUT_DRILL_DOWN_COMMAND,
-    },
+    };
+
+  return {
+    liveLargePrProof,
     freshRegressionProof: {
       state: "pending",
       source: null,
@@ -120,7 +158,7 @@ function buildPendingRolloutObligations(): M065Report["rollout_obligations"] {
   };
 }
 
-function isNestedReportContract(value: unknown, command: NestedCommand): value is NestedReportContract {
+function isNestedReportContract(value: unknown, command: PrerequisiteCommand): value is NestedReportContract {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -134,10 +172,43 @@ function isNestedReportContract(value: unknown, command: NestedCommand): value i
     && record.issues.every((item) => typeof item === "string");
 }
 
+function isS02NestedReportContract(value: unknown): value is S02NestedReportContract {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record.command !== "verify:m065:s02"
+    || typeof record.generated_at !== "string"
+    || typeof record.success !== "boolean"
+    || typeof record.status_code !== "string"
+    || !Array.isArray(record.issues)
+    || !record.issues.every((item) => typeof item === "string")
+    || !Array.isArray(record.check_ids)
+    || !record.check_ids.every((item) => typeof item === "string")
+    || !Array.isArray(record.checks)
+    || !(typeof record.failing_check_id === "string" || record.failing_check_id === null)
+    || !(typeof record.review_output_key === "string" || record.review_output_key === null)
+    || !(typeof record.normalized_review_output_key === "string" || record.normalized_review_output_key === null)
+    || !(typeof record.delivery_id === "string" || record.delivery_id === null)
+    || !(typeof record.repo === "string" || record.repo === null)
+    || !record.proof_target
+    || typeof record.proof_target !== "object") {
+    return false;
+  }
+
+  const proofTarget = record.proof_target as Record<string, unknown>;
+  return (typeof proofTarget.review_output_key === "string" || proofTarget.review_output_key === null)
+    && (typeof proofTarget.base_review_output_key === "string" || proofTarget.base_review_output_key === null)
+    && (typeof proofTarget.delivery_id === "string" || proofTarget.delivery_id === null)
+    && (typeof proofTarget.repo === "string" || proofTarget.repo === null)
+    && (typeof proofTarget.pr_number === "number" || proofTarget.pr_number === null);
+}
+
 function buildNestedCheck(params: {
   id: Extract<M065CheckId, "M065-M062-PREREQUISITE" | "M065-M063-PREREQUISITE" | "M065-M064-PREREQUISITE">;
-  nestedName: NestedCommand;
-  reportKey: NestedReportKey;
+  nestedName: PrerequisiteCommand;
+  reportKey: PrerequisiteReportKey;
   report: unknown;
 }): { check: M065Check; issue: string | null; malformed: boolean; failed: boolean } {
   const drillDownCommand = `bun run ${params.nestedName} -- --json`;
@@ -200,31 +271,79 @@ function buildNestedCheck(params: {
   };
 }
 
-function buildRolloutChecks(): M065Check[] {
-  return [
-    {
+function buildLiveProofCheck(params: {
+  report: unknown;
+}): { check: M065Check; issue: string | null; malformed: boolean; failed: boolean } {
+  if (!isS02NestedReportContract(params.report)) {
+    return {
+      check: {
+        id: "M065-LIVE-LARGE-PR-PROOF",
+        passed: false,
+        skipped: false,
+        status_code: "nested_report_malformed",
+        detail: `verify:m065:s02 omitted one or more required fields: ${REQUIRED_S02_FIELDS}.`,
+        drill_down: {
+          command: S02_DRILL_DOWN_COMMAND,
+          report_key: "nested_reports.s02",
+        },
+      },
+      issue: "M065-LIVE-LARGE-PR-PROOF: malformed nested report from verify:m065:s02",
+      malformed: true,
+      failed: false,
+    };
+  }
+
+  if (!params.report.success) {
+    return {
+      check: {
+        id: "M065-LIVE-LARGE-PR-PROOF",
+        passed: false,
+        skipped: false,
+        status_code: "nested_report_failed",
+        detail: `verify:m065:s02 failed with status_code=${params.report.status_code}. Run ${S02_DRILL_DOWN_COMMAND} for drill-down.`,
+        drill_down: {
+          command: S02_DRILL_DOWN_COMMAND,
+          report_key: "nested_reports.s02",
+          nested_status_code: params.report.status_code,
+        },
+      },
+      issue: `M065-LIVE-LARGE-PR-PROOF: verify:m065:s02 returned ${params.report.status_code}`,
+      malformed: false,
+      failed: true,
+    };
+  }
+
+  return {
+    check: {
       id: "M065-LIVE-LARGE-PR-PROOF",
       passed: true,
-      skipped: true,
-      status_code: "pending_live_large_pr_proof",
-      detail: "M065 still needs live large-PR proof before milestone closeout.",
+      skipped: false,
+      status_code: "rollout_obligation_satisfied",
+      detail: "Representative live large-PR proof is satisfied by authoritative verify:m065:s02 evidence.",
       drill_down: {
-        command: ROLLOUT_DRILL_DOWN_COMMAND,
-        report_key: "rollout_obligations.liveLargePrProof",
+        command: S02_DRILL_DOWN_COMMAND,
+        report_key: "nested_reports.s02",
+        nested_status_code: params.report.status_code,
       },
     },
-    {
-      id: "M065-FRESH-REGRESSION-PROOF",
-      passed: true,
-      skipped: true,
-      status_code: "pending_fresh_regression_proof",
-      detail: "M065 still needs fresh non-large regression proof before milestone closeout.",
-      drill_down: {
-        command: ROLLOUT_DRILL_DOWN_COMMAND,
-        report_key: "rollout_obligations.freshRegressionProof",
-      },
+    issue: null,
+    malformed: false,
+    failed: false,
+  };
+}
+
+function buildFreshRegressionCheck(): M065Check {
+  return {
+    id: "M065-FRESH-REGRESSION-PROOF",
+    passed: true,
+    skipped: true,
+    status_code: "pending_fresh_regression_proof",
+    detail: "M065 still needs fresh non-large regression proof before milestone closeout.",
+    drill_down: {
+      command: ROLLOUT_DRILL_DOWN_COMMAND,
+      report_key: "rollout_obligations.freshRegressionProof",
     },
-  ];
+  };
 }
 
 function deriveOverallStatus(checks: M065Check[]): Pick<M065Report, "success" | "status_code" | "failing_check_id" | "issues"> {
@@ -285,7 +404,7 @@ function usage(): string {
   return [
     "Usage: bun run verify:m065 -- [--json]",
     "",
-    "Composes the authoritative M062, M063, and M064 verifier families without flattening nested evidence.",
+    "Composes the authoritative M062, M063, M064, and M065 S02 verifier families without flattening nested evidence.",
     "",
     "Options:",
     "  --json       Print machine-readable JSON output",
@@ -295,14 +414,23 @@ function usage(): string {
 
 export async function evaluateM065(params?: { generatedAt?: string }): Promise<M065Report> {
   const generatedAt = params?.generatedAt ?? new Date().toISOString();
-  const [m062, m063, m064] = await Promise.all([
+  const [m062, m063, m064, s02] = await Promise.all([
     evaluateM062S03({ generatedAt }),
     Promise.resolve(evaluateM063S03({ generatedAt })),
     evaluateM064S03({ generatedAt }),
+    evaluateM065S02({
+      generatedAt,
+      reviewOutputKey: REPRESENTATIVE_REVIEW_OUTPUT_KEY,
+    }),
   ]);
 
-  const nested_reports = { m062, m063, m064 };
-  const nestedChecks = [
+  const nested_reports = {
+    m062: isNestedReportContract(m062, "verify:m062:s03") ? m062 : null,
+    m063: isNestedReportContract(m063, "verify:m063:s03") ? m063 : null,
+    m064: isNestedReportContract(m064, "verify:m064:s03") ? m064 : null,
+    s02: isS02NestedReportContract(s02) ? s02 : null,
+  };
+  const prerequisiteChecks = [
     buildNestedCheck({
       id: "M065-M062-PREREQUISITE",
       nestedName: "verify:m062:s03",
@@ -322,8 +450,9 @@ export async function evaluateM065(params?: { generatedAt?: string }): Promise<M
       report: m064,
     }).check,
   ];
-  const rolloutChecks = buildRolloutChecks();
-  const checks = [...nestedChecks, ...rolloutChecks];
+  const liveProofCheck = buildLiveProofCheck({ report: s02 }).check;
+  const freshRegressionCheck = buildFreshRegressionCheck();
+  const checks = [...prerequisiteChecks, liveProofCheck, freshRegressionCheck];
   const overall = deriveOverallStatus(checks);
 
   return {
@@ -334,7 +463,7 @@ export async function evaluateM065(params?: { generatedAt?: string }): Promise<M
     check_ids: [...M065_CHECK_IDS],
     checks,
     nested_reports,
-    rollout_obligations: buildPendingRolloutObligations(),
+    rollout_obligations: buildRolloutObligations({ s02: nested_reports.s02 }),
     failing_check_id: overall.failing_check_id,
     issues: overall.issues,
   };
@@ -352,6 +481,7 @@ export function renderM065Report(report: M065Report): string {
     `- verify:m062:s03: ${report.nested_reports.m062?.success ? "PASS" : "FAIL"} (${report.nested_reports.m062?.status_code ?? "missing"})`,
     `- verify:m063:s03: ${report.nested_reports.m063?.success ? "PASS" : "FAIL"} (${report.nested_reports.m063?.status_code ?? "missing"})`,
     `- verify:m064:s03: ${report.nested_reports.m064?.success ? "PASS" : "FAIL"} (${report.nested_reports.m064?.status_code ?? "missing"})`,
+    `- verify:m065:s02: ${report.nested_reports.s02?.success ? "PASS" : "FAIL"} (${report.nested_reports.s02?.status_code ?? "missing"})`,
     "",
     "Top-level checks:",
   ];
