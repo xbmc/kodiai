@@ -116,7 +116,7 @@ What remains before the milestone is truly usable end-to-end: S03 must make oper
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/knowledge/types.ts`, `src/knowledge/store.ts`, `src/jobs/review-work-coordinator.ts`
   - Verify: bun test src/handlers/review.test.ts
 
-- [ ] **T03: Add deterministic proof for orchestration failure and supersession scenarios** `est:1.5h`
+- [x] **T03: Add deterministic proof for orchestration failure and supersession scenarios** `est:1.5h`
   Close the slice with a machine-checkable proof surface that exercises the real orchestration failure paths rather than relying on ad hoc log inspection. This task packages the slice demo into a deterministic verifier/regression command that future agents can rerun when continuation-family truth looks suspicious.
 
 ## Steps

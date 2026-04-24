@@ -1,5 +1,3 @@
-{"id":"a593a133-34d1-4363-b62f-300031d38d76","ts":"2026-04-08T22:33:46.050Z","severity":"warning","message":"[engine] gsd-db: failed to open existing database: UNIQUE constraint failed: verification_evidence.task_id, verification_evidence.slice_id, verification_evidence.milestone_id, verification_evidence.command, verification_evidence.verdict","source":"workflow-logger","read":true}
-{"id":"94e87612-f927-412f-a952-56418645b538","ts":"2026-04-08T22:33:46.050Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":true}
 {"id":"2e873826-4b54-4796-a2cf-a54a6fbac226","ts":"2026-04-08T22:33:47.286Z","severity":"info","message":"Analyzing codebase...","source":"notify","read":true}
 {"id":"a1a8fe35-ed82-4ea0-beba-644d9ef5df69","ts":"2026-04-08T22:33:47.399Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":true}
 {"id":"cbc05d2f-d3b4-4212-b8c3-5e64d6b777ba","ts":"2026-04-08T22:33:47.399Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":true}
@@ -497,3 +495,6 @@
 {"id":"356abd53-ec03-4f32-9755-2546d496d563","ts":"2026-04-24T07:29:02.707Z","severity":"info","message":"Committed: feat: Made review checkpoint acknowledgements wait for durable save com…","source":"notify","read":false}
 {"id":"1a5331c2-f83b-4031-9419-55a307005615","ts":"2026-04-24T07:29:02.934Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"83c850f6-2eea-4fb4-a8bd-c276bbdde81d","ts":"2026-04-24T07:29:02.936Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"2dbf063f-c6c3-4f24-9069-75068c0dd0de","ts":"2026-04-24T07:45:20.235Z","severity":"info","message":"Committed: feat: Hardened review continuation-family state so enqueue failures, re…","source":"notify","read":false}
+{"id":"74bf0da7-4db7-4ceb-ab86-7f598e3822a9","ts":"2026-04-24T07:45:26.987Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"067ded38-8d7c-461b-b9c5-55608ea8aa46","ts":"2026-04-24T07:45:27.004Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}

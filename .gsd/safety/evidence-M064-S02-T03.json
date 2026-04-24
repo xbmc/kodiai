@@ -1,0 +1,98 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_auXb29fpiUtjgbaaHCsBXoHp|fc_05ce2c28aa5cd6e60169eb1fbb93148191907ab2e13fb4952e",
+    "command": "rg -n \"continuation-family|projectionStatus|finalStopReason|supersededByAttemptId|enqueue failure|retry failure|degraded|superseded\" src/handlers/review.test.ts scripts src/handlers/review.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/review.test.ts:420:      entries.some((entry) => entry.message === \"Skipping auto-approval because publish rights were superseded\"),\nsrc/handlers/review.test.ts:469:      supersededRunKeys: [],\nsrc/handlers/review.test.ts:1388:  test(\"degraded search enrichment falls back to a generic degraded contract instead of legacy regular wording\", async () => {\nsrc/handlers/review.test.ts:1408:    expect(result.prompt).toContain(\"Contributor-experience contract: generic-degraded.\");\nsrc/handl",
+    "timestamp": 1777016764048
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_DVcL78CNITrK2GkXVegeC08d|fc_05ce2c28aa5cd6e60169eb1fc720f48191bdd289f2541e2ca0",
+    "command": "rg -n \"enqueue.*canonical|queue unavailable|retry enqueue|awaiting-continuation|review-retry\" src/handlers/review.test.ts | sed -n '1,80p'",
+    "exitCode": 0,
+    "outputSnippet": "157:          throw new Error(\"queue unavailable\");\n190:    ).rejects.toThrow(\"queue unavailable\");\n8745:        if (context?.action === \"review-retry\") {\n8866:    const retryContext = enqueuedContexts.find((context) => context.action === \"review-retry\");\n8868:      action: \"review-retry\",\n8869:      jobType: \"pull-request-review-retry\",\n8901:        if (context?.action === \"review-retry\") {\n9057:    expect(enqueuedContexts.find((context) => context.action === \"review-retry\")).toEqual({\n9058:   ",
+    "timestamp": 1777016775901
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_vMCvxepVVwQg86jg3l6bAuGL|fc_05ce2c28aa5cd6e60169eb1fd58eb08191a78f490dcc100c30",
+    "command": "test -e scripts/verify-m064-s02.ts && echo exists || echo missing",
+    "exitCode": 0,
+    "outputSnippet": "missing\n",
+    "timestamp": 1777016790032
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_X5o2rcNb6wujq6El80fxe4VS|fc_05ce2c28aa5cd6e60169eb1fd58ec0819184fa1367368c3ebf",
+    "command": "test -e scripts/verify-m064-s02.test.ts && echo exists || echo missing",
+    "exitCode": 0,
+    "outputSnippet": "missing\n",
+    "timestamp": 1777016790032
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_hFKszbF5nMMcv4KuHdEGl9kB|fc_05ce2c28aa5cd6e60169eb1fdb42f88191a27bae5d2169e293",
+    "path": "scripts/verify-m064-s02.test.ts",
+    "timestamp": 1777016834919
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_OA9hjUktrHWDXdi5dphjVqCb|fc_05ce2c28aa5cd6e60169eb20058bfc81919ba825806665c866",
+    "command": "bun test scripts/verify-m064-s02.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m064-s02.test.ts:\nerror: Cannot find module './verify-m064-s02.ts' from '/home/keith/src/kodiai/scripts/verify-m064-s02.test.ts'\n(fail) verify-m064-s02 > parse args accepts --json and optional --scenario\nerror: Cannot find module './verify-m064-s02.ts' from '/home/keith/src/kodiai/scripts/verify-m064-s02.test.ts'\n(fail) verify-m064-s02 > evaluate default matrix reports truthful canonical outcomes for failure and supersession scenarios\nerror: Cannot find",
+    "timestamp": 1777016838319
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_Gi3w4Fi4NJjU3SBtvUHXHh0c|fc_05ce2c28aa5cd6e60169eb2013449881918e06b6b334f3bcae",
+    "path": "scripts/verify-m064-s02.ts",
+    "timestamp": 1777017013563
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_N8DSOzpyO8houeY9dDTwYeAs|fc_05ce2c28aa5cd6e60169eb20b8cf9c8191b2e73367ba1d052d",
+    "path": "package.json",
+    "timestamp": 1777017020313
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_znd5tG8px6Ki7fetmHc9A4lo|fc_05ce2c28aa5cd6e60169eb20befd50819183f7a41238699663",
+    "command": "bun test scripts/verify-m064-s02.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m064-s02.test.ts:\n(pass) verify-m064-s02 > parse args accepts --json and optional --scenario [146.00ms]\n43 |   test(\"evaluate default matrix reports truthful canonical outcomes for failure and supersession scenarios\", async () => {\n44 |     const { evaluateM064S02 } = await loadModule();\n45 | \n46 |     const report = await evaluateM064S02({ generatedAt: \"2026-04-24T07:45:00.000Z\" });\n47 | \n48 |     expect(report.success).toBe(true);\n                    ",
+    "timestamp": 1777017023670
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_zSRg22yrQWstQBOei7EkvuNQ|fc_05ce2c28aa5cd6e60169eb20c544d081918fe5eaa16bc36d5e",
+    "path": "scripts/verify-m064-s02.ts",
+    "timestamp": 1777017034429
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_TheErmUzYvz9OrxpJlO56xtO|fc_05ce2c28aa5cd6e60169eb20cf1cd88191a0d87c746a178764",
+    "command": "bun test scripts/verify-m064-s02.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m064-s02.test.ts:\n(pass) verify-m064-s02 > parse args accepts --json and optional --scenario [149.00ms]\n(pass) verify-m064-s02 > evaluate default matrix reports truthful canonical outcomes for failure and supersession scenarios [120.00ms]\n(pass) verify-m064-s02 > evaluate scenario rejects malformed canonical state that loses final stop reason truth [44.00ms]\n(pass) verify-m064-s02 > evaluate scenario rejects malformed canonical state that loses superses",
+    "timestamp": 1777017039804
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_BAfZHaIUfvlpHMOd1aUT65E8|fc_05ce2c28aa5cd6e60169eb20f9866c8191a680bd0eca161ab5",
+    "command": "bun run verify:m064:s02 -- --json",
+    "exitCode": 0,
+    "outputSnippet": "$ bun scripts/verify-m064-s02.ts --json\n{\n  \"command\": \"verify:m064:s02\",\n  \"generated_at\": \"2026-04-24T07:51:22.002Z\",\n  \"scenario_count\": 4,\n  \"success\": true,\n  \"status_code\": \"m064_s02_ok\",\n  \"scenarios\": [\n    {\n      \"scenarioId\": \"retry-enqueue-failure\",\n      \"success\": true,\n      \"statusCode\": \"canonical-blocked\",\n      \"familyKey\": \"acme/repo#101\",\n      \"baseReviewOutputKey\": \"kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef12",
+    "timestamp": 1777017081835
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_sbYzNlTK8jgBRxU8A8lozj79|fc_05ce2c28aa5cd6e60169eb21047d5c8191881f67cc1bfe44e6",
+    "command": "python3 - <<'PY'\nimport subprocess, time, shlex\ncmd = ['bun','run','verify:m064:s02','--','--json']\nstart = time.time()\nproc = subprocess.run(cmd, capture_output=True, text=True)\nend = time.time()\nprint(f'EXIT={proc.returncode}')\nprint(f'DURATION_MS={int((end-start)*1000)}')\nprint(proc.stdout)\nif proc.stderr:\n    print('STDERR:')\n    print(proc.stderr)\nPY",
+    "exitCode": 0,
+    "outputSnippet": "EXIT=0\nDURATION_MS=321\n{\n  \"command\": \"verify:m064:s02\",\n  \"generated_at\": \"2026-04-24T07:51:33.504Z\",\n  \"scenario_count\": 4,\n  \"success\": true,\n  \"status_code\": \"m064_s02_ok\",\n  \"scenarios\": [\n    {\n      \"scenarioId\": \"retry-enqueue-failure\",\n      \"success\": true,\n      \"statusCode\": \"canonical-blocked\",\n      \"familyKey\": \"acme/repo#101\",\n      \"baseReviewOutputKey\": \"kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890\",\n      ",
+    "timestamp": 1777017093286
+  }
+]
