@@ -12,10 +12,11 @@ CREATE TABLE continuation_family_state (
   superseded_by_attempt_id TEXT,
   UNIQUE (family_key, base_review_output_key),
   CONSTRAINT continuation_family_authoritative_outcome_check CHECK (
-    authoritative_outcome IN ('blocked', 'merged', 'quiet-settled', 'superseded')
+    authoritative_outcome IN ('blocked', 'continuation-pending', 'merged', 'quiet-settled', 'superseded')
   ),
   CONSTRAINT continuation_family_final_stop_reason_check CHECK (
     final_stop_reason IN (
+      'awaiting-continuation',
       'merged-continuation-results',
       'no-follow-up',
       'settled-without-update',

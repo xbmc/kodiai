@@ -17,7 +17,13 @@ import type {
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
-import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
+import type {
+  KnowledgeStore,
+  PriorFinding,
+  ContinuationFamilyAuthoritativeOutcome,
+  ContinuationFamilyFinalStopReason,
+  ContinuationFamilyProjectionStatus,
+} from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
@@ -1908,6 +1914,71 @@ export function createReviewHandler(deps: {
         setReviewWorkPhaseForAttempt(reviewWorkAttempt.attemptId, phase);
       }
 
+      function getBaseReviewOutputKey(currentReviewOutputKey: string): string {
+        return currentReviewOutputKey.replace(/-retry-\d+$/, "");
+      }
+
+      function getAttemptOrdinal(attemptId: string): number {
+        const match = /(?:^|[^\d])(\d+)$/.exec(attemptId);
+        return match ? Number.parseInt(match[1] ?? "0", 10) : 0;
+      }
+
+      async function persistContinuationFamilyState(params: {
+        authoritativeAttemptId: string;
+        authoritativeAttemptOrdinal?: number;
+        authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
+        finalStopReason: ContinuationFamilyFinalStopReason;
+        projectionStatus: ContinuationFamilyProjectionStatus;
+        supersededByAttemptId?: string | null;
+        reviewOutputKey?: string;
+      }): Promise<void> {
+        if (!knowledgeStore?.upsertContinuationFamilyState) {
+          return;
+        }
+
+        const authoritativeAttemptOrdinal = params.authoritativeAttemptOrdinal
+          ?? getAttemptOrdinal(params.authoritativeAttemptId);
+        if (!Number.isFinite(authoritativeAttemptOrdinal) || authoritativeAttemptOrdinal < 1) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "continuation-family-state",
+              gateResult: "skipped",
+              reason: "invalid-attempt-ordinal",
+              authoritativeAttemptId: params.authoritativeAttemptId,
+            },
+            "Skipping canonical continuation-family state write because the attempt ordinal was invalid",
+          );
+          return;
+        }
+
+        try {
+          await knowledgeStore.upsertContinuationFamilyState({
+            familyKey: reviewFamilyKey,
+            baseReviewOutputKey: getBaseReviewOutputKey(params.reviewOutputKey ?? reviewOutputKey),
+            authoritativeAttemptId: params.authoritativeAttemptId,
+            authoritativeAttemptOrdinal,
+            authoritativeOutcome: params.authoritativeOutcome,
+            finalStopReason: params.finalStopReason,
+            projectionStatus: params.projectionStatus,
+            supersededByAttemptId: params.supersededByAttemptId ?? null,
+          });
+        } catch (err) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "continuation-family-state",
+              gateResult: "degraded",
+              authoritativeAttemptId: params.authoritativeAttemptId,
+              authoritativeOutcome: params.authoritativeOutcome,
+              finalStopReason: params.finalStopReason,
+              err,
+            },
+            "Failed to persist canonical continuation-family state",
+          );
+        }
+      }
+
       function canPublishReviewWorkOutput(
         attemptId: string,
         outputLabel: string,
@@ -1920,6 +1991,16 @@ export function createReviewHandler(deps: {
         const currentAttempt = reviewWorkCoordinator
           .getSnapshot(reviewFamilyKey)
           ?.attempts.find((attempt) => attempt.attemptId === attemptId);
+        const supersededByAttemptId = currentAttempt?.supersededByAttemptId ?? null;
+        if (supersededByAttemptId) {
+          void persistContinuationFamilyState({
+            authoritativeAttemptId: supersededByAttemptId,
+            authoritativeOutcome: "superseded",
+            finalStopReason: "superseded-by-newer-attempt",
+            projectionStatus: "canonical",
+            supersededByAttemptId,
+          });
+        }
         logger.info(
           {
             ...baseLog,
@@ -1929,7 +2010,7 @@ export function createReviewHandler(deps: {
             skipReason: "publish-rights-lost",
             reviewFamilyKey,
             reviewWorkAttemptId: attemptId,
-            supersededByAttemptId: currentAttempt?.supersededByAttemptId ?? null,
+            supersededByAttemptId,
           },
           `Skipping ${outputLabel} because publish rights were superseded`,
         );
@@ -4967,6 +5048,15 @@ export function createReviewHandler(deps: {
               );
             }
 
+            if (retryPlan?.decision !== "schedule-continuation") {
+              await persistContinuationFamilyState({
+                authoritativeAttemptId: reviewWorkAttempt.attemptId,
+                authoritativeOutcome: "blocked",
+                finalStopReason: "no-follow-up",
+                projectionStatus: "canonical",
+              });
+            }
+
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
             // Retry is only useful when no GitHub-visible output was published.
             // If inline comments were already posted, avoid a retry that could
@@ -5029,6 +5119,14 @@ export function createReviewHandler(deps: {
                 lane: "review",
                 deliveryId: retryDeliveryId,
                 phase: "claimed",
+              });
+
+              await persistContinuationFamilyState({
+                authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                authoritativeOutcome: "continuation-pending",
+                finalStopReason: "awaiting-continuation",
+                projectionStatus: "pending",
+                reviewOutputKey: retryReviewOutputKey,
               });
 
               // Fire-and-forget enqueue -- do not await the retry result.
@@ -5333,6 +5431,13 @@ export function createReviewHandler(deps: {
                             },
                             "Retry produced no additional results -- keeping original partial review",
                           );
+                          await persistContinuationFamilyState({
+                            authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                            authoritativeOutcome: "quiet-settled",
+                            finalStopReason: "settled-without-update",
+                            projectionStatus: "canonical",
+                            reviewOutputKey: retryReviewOutputKey,
+                          });
                           knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
                           knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
                           return;
@@ -5452,6 +5557,14 @@ export function createReviewHandler(deps: {
                             "Retry complete -- updated partial review comment with merged results",
                           );
 
+                          await persistContinuationFamilyState({
+                            authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                            authoritativeOutcome: "merged",
+                            finalStopReason: "merged-continuation-results",
+                            projectionStatus: "canonical",
+                            reviewOutputKey: retryReviewOutputKey,
+                          });
+
                           // Cleanup checkpoint data after successful merge
                           knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
                           knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
@@ -5466,6 +5579,13 @@ export function createReviewHandler(deps: {
                           },
                           "Retry produced no additional results -- keeping original partial review",
                         );
+                        await persistContinuationFamilyState({
+                          authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                          authoritativeOutcome: "quiet-settled",
+                          finalStopReason: "settled-without-update",
+                          projectionStatus: "canonical",
+                          reviewOutputKey: retryReviewOutputKey,
+                        });
                       }
                     } else {
                       logger.info(

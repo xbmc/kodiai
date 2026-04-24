@@ -1,0 +1,110 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_rNS93zYLpIxEo7PxBZTSIpk4|fc_0169302e3ffa64e00169eb167375c4819181da5d49ca842240",
+    "command": "rg -n \"continuation|checkpoint|resilience|canPublish|setPhase|reviewWorkCoordinator|settleReviewContinuation|planReviewContinuation|reviewOutputKey|partial review|Skipping auto-approval|publish rights\" src/handlers/review.ts src/handlers/review.test.ts src/jobs/review-work-coordinator.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/jobs/review-work-coordinator.ts:51:  canPublish(attemptId: string): boolean;\nsrc/jobs/review-work-coordinator.ts:52:  setPhase(attemptId: string, phase: ReviewWorkPhase): ReviewWorkAttempt | null;\nsrc/jobs/review-work-coordinator.ts:193:    canPublish(attemptId) {\nsrc/jobs/review-work-coordinator.ts:203:    setPhase(attemptId, phase) {\nsrc/handlers/review.ts:79:  planReviewContinuation,\nsrc/handlers/review.ts:80:  settleReviewContinuation,\nsrc/handlers/review.ts:81:} from \"../lib/review-cont",
+    "timestamp": 1777014389013
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_lc8FfHvyVkhWxJTBUnN8rNhi|fc_0169302e3ffa64e00169eb1686a02481919db2cf194e272bbc",
+    "command": "rg -n \"upsertContinuationFamilyState|getContinuationFamilyState|ContinuationFamily|projectionStatus|supersededByAttemptId|authoritativeAttemptOrdinal\" src/handlers/review.ts src/handlers/review.test.ts src/knowledge/types.ts src/knowledge/store.ts src/telemetry/types.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/review.ts:1932:            supersededByAttemptId: currentAttempt?.supersededByAttemptId ?? null,\nsrc/knowledge/types.ts:160:export type ContinuationFamilyAuthoritativeOutcome =\nsrc/knowledge/types.ts:166:export type ContinuationFamilyFinalStopReason =\nsrc/knowledge/types.ts:172:export type ContinuationFamilyProjectionStatus =\nsrc/knowledge/types.ts:177:export type ContinuationFamilyStateRecord = {\nsrc/knowledge/types.ts:181:  authoritativeAttemptOrdinal: number;\nsrc/knowledge/types.",
+    "timestamp": 1777014407150
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_YtG1ootVTxyapETn6yOcGlvr|fc_0169302e3ffa64e00169eb169fd5508191adb06cea39571023",
+    "command": "rg -n \"continuation_family_state|authoritative_outcome|final_stop_reason|projection_status\" src/db/migrations",
+    "exitCode": 0,
+    "outputSnippet": "src/db/migrations/039-continuation-family-state.sql:1:CREATE TABLE continuation_family_state (\nsrc/db/migrations/039-continuation-family-state.sql:9:  authoritative_outcome TEXT NOT NULL,\nsrc/db/migrations/039-continuation-family-state.sql:10:  final_stop_reason TEXT NOT NULL,\nsrc/db/migrations/039-continuation-family-state.sql:11:  projection_status TEXT NOT NULL,\nsrc/db/migrations/039-continuation-family-state.sql:14:  CONSTRAINT continuation_family_authoritative_outcome_check CHECK (\nsrc/db/m",
+    "timestamp": 1777014432370
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_ThLny60hkmeEdDJPFs3bVeOo|fc_0169302e3ffa64e00169eb16c9b13881919222d638ae161d08",
+    "command": "ls src/db/migrations | sort | tail -n 10",
+    "exitCode": 0,
+    "outputSnippet": "035-generated-rules.down.sql\n035-generated-rules.sql\n036-suggestion-cluster-models.down.sql\n036-suggestion-cluster-models.sql\n037-contributor-profile-trust.down.sql\n037-contributor-profile-trust.sql\n038-prompt-section-events.down.sql\n038-prompt-section-events.sql\n039-continuation-family-state.down.sql\n039-continuation-family-state.sql\n",
+    "timestamp": 1777014474207
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_U9bJLBMDraFZPVFDMCA1epZN|fc_0169302e3ffa64e00169eb16db15c08191bcda2de5c96b31a3",
+    "command": "rg -n \"not scheduled|chronic timeout|no remaining|zero-evidence|follow-up review pending|Retry not scheduled|bounded first-pass review on timeout|Published bounded first-pass review on timeout\" src/handlers/review.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "9768:    expect(initialReviewDetails).toContain(\"- Continuation state: follow-up review pending for remaining scope\");\n9785:    expect(mergedPartialComment).toContain(\"- Continuation state: follow-up review pending for remaining scope\");\n14695:    expect(reviewDetails).toContain(\"- Continuation state: follow-up review pending for remaining scope\");\n",
+    "timestamp": 1777014491895
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_Pmi3AU07exEcqNZiUqOhBXaP|fc_0169302e3ffa64e00169eb16f18a288191ba184bf6e3c4d579",
+    "command": "rg -n \"retry-1|baseReviewOutputKey|derive.*ReviewOutputKey|reviewOutputKey.*retry\" src/handlers/review.ts src/lib src/handlers/review.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/review.ts:4799:                          continuationReviewOutputKey: `${reviewOutputKey}-retry-1`,\nsrc/handlers/review.ts:5025:              const retryDeliveryId = `${event.id}-retry-1`;\nsrc/handlers/review.ts:5053:                        localBranch: \"pr-review-retry-1\",\nsrc/handlers/review.ts:5198:                      reviewOutputKey: retryReviewOutputKey,\nsrc/handlers/review.ts:5232:                            reviewOutputKey: retryReviewOutputKey,\nsrc/handlers/review.test.ts:",
+    "timestamp": 1777014514075
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_jAfsHjhNS6JMfEQYUqt5bUEn|fc_0169302e3ffa64e00169eb16f72ae8819195722e0fc3961ff1",
+    "path": "src/knowledge/types.ts",
+    "timestamp": 1777014521729
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_ynBSUoblPnY9nM9u0jnt4o60|fc_0169302e3ffa64e00169eb16fb31bc8191ad0590780d28a287",
+    "path": "src/db/migrations/039-continuation-family-state.sql",
+    "timestamp": 1777014528113
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_jwYnXvjoZMCEuPUCxDgeDzHj|fc_0169302e3ffa64e00169eb1712ab308191bb0c477dbd8ee8ef",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1777014669145
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_qy2stdpgvRL6twFPLnvKpGHD|fc_0169302e3ffa64e00169eb17ad79348191af1541bfe0d9db4d",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014702546
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_dwDjGN3EkBNA6XG1PudzAHBT|fc_0169302e3ffa64e00169eb17b6643c8191abeab4e0ced88eca",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014732380
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_iucp2St3R9Uk9kIOOKnFPeZ2|fc_0169302e3ffa64e00169eb17dbe0fc8191ab399b7ad1a1c268",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014753570
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_vGb9MGMifcNuiKtwcTRgy8QN|fc_0169302e3ffa64e00169eb17e652208191b761a1b95072f2fe",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014761271
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_y5545295PCmfaFcXf0gCidrW|fc_0169302e3ffa64e00169eb17f3b0108191afb65aba6a7e21d2",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014773878
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_xv9DZtZhPyr8R6aYUV96TEoT|fc_0169302e3ffa64e00169eb17f7e8b48191bf9d87c85fdfaf2e",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014781490
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_wHsDa4wWZUUYKmTtgSYadUkc|fc_0169302e3ffa64e00169eb17ffe57c8191839444d8ea7c72b7",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777014790959
+  }
+]

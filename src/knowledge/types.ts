@@ -159,11 +159,13 @@ export type CheckpointRecord = {
 
 export type ContinuationFamilyAuthoritativeOutcome =
   | "blocked"
+  | "continuation-pending"
   | "merged"
   | "quiet-settled"
   | "superseded";
 
 export type ContinuationFamilyFinalStopReason =
+  | "awaiting-continuation"
   | "merged-continuation-results"
   | "no-follow-up"
   | "settled-without-update"

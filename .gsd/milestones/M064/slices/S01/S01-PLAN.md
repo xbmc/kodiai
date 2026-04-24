@@ -33,7 +33,7 @@ What remains before the milestone is truly usable end-to-end: S02 must wire the 
   - Files: `src/db/migrations/039-continuation-family-state.sql`, `src/db/migrations/039-continuation-family-state.down.sql`, `src/knowledge/types.ts`, `src/knowledge/store.ts`, `src/knowledge/store.test.ts`, `src/handlers/review-idempotency.ts`
   - Verify: bun test src/knowledge/store.test.ts
 
-- [ ] **T02: Project coordinator authority transitions into canonical lifecycle state** `est:2h`
+- [x] **T02: Project coordinator authority transitions into canonical lifecycle state** `est:2h`
   Wire the runtime publish gate from D188 into the new canonical store so authoritative attempt changes, supersession, and terminal outcomes are persisted durably during review/continuation handling. Update the coordinator-facing orchestration in `src/handlers/review.ts` to write canonical rows for initial timeout, continuation scheduling, continuation merge, quiet settlement, and stale-attempt suppression without letting late attempts overwrite newer authority. Keep `review_checkpoints` and `resilience_events` as projection/scratch surfaces only, but record projection status in canonical state so degraded writes are explicit instead of inferred.
   - Files: `src/handlers/review.ts`, `src/jobs/review-work-coordinator.ts`, `src/knowledge/types.ts`, `src/knowledge/store.ts`, `src/handlers/review.test.ts`, `src/telemetry/types.ts`
   - Verify: bun test src/handlers/review.test.ts

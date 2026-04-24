@@ -481,3 +481,5 @@
 {"id":"92480244-993e-4b49-a8d0-70961337d37a","ts":"2026-04-24T06:59:15.341Z","severity":"warning","message":"[safety] content: Milestone roadmap has 0 slice(s) — expected at least 1","source":"workflow-logger","read":false}
 {"id":"47d8c422-5d03-4491-9449-392732e381db","ts":"2026-04-24T06:59:15.342Z","severity":"warning","message":"Content validation: Milestone roadmap has 0 slice(s) — expected at least 1","source":"notify","read":false}
 {"id":"f49d1942-43c4-43d4-857e-8a2dd5c7892d","ts":"2026-04-24T06:59:15.355Z","severity":"warning","message":"[safety] content: Milestone roadmap has 0 slice(s) — expected at least 1","source":"notify","read":false}
+{"id":"b74c0d92-3a28-42d3-8f90-168e0ccaeccf","ts":"2026-04-24T07:06:01.161Z","severity":"info","message":"Committed: feat: Added the canonical continuation-family migration, typed store co…","source":"notify","read":false}
+{"id":"ec4860f6-c000-4af8-8fc5-f2d7f290d1e1","ts":"2026-04-24T07:06:01.308Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
