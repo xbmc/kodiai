@@ -144,7 +144,7 @@
   - Files: `scripts/verify-m063-s03.ts`, `scripts/verify-m063-s03.test.ts`, `package.json`, `src/execution/review-prompt.test.ts`
   - Verify: bun test scripts/verify-m063-s03.test.ts && bun run verify:m063:s03 -- --json
 
-- [ ] **T03: Re-prove authority-safe same-surface continuation writes on the shipped retry path** `est:45m`
+- [x] **T03: Re-prove authority-safe same-surface continuation writes on the shipped retry path** `est:45m`
   Extend the real handler-path coverage so S03 proves the final same-surface continuation write path still respects publish authority after S02 collapsed continuation onto one canonical comment. Focus on the retry merge path in `src/handlers/review.ts`: canonical summary merge, nested Review Details refresh, and quiet no-delta settlement. Make the tests assert on actual public mutations and suppression logs; only touch handler code if the new assertions expose a genuine gap.
 
 ## Failure Modes
