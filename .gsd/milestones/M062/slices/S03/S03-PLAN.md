@@ -45,7 +45,7 @@ Steps:
   - Files: `scripts/verify-m062-s03.test.ts`, `scripts/verify-m062-s03.ts`, `scripts/verify-m062-s01.test.ts`, `package.json`
   - Verify: bun test ./scripts/verify-m062-s03.test.ts ./scripts/verify-m062-s01.test.ts
 
-- [ ] **T03: Run the milestone proof sweep and polish failure diagnostics** `est:45m`
+- [x] **T03: Run the milestone proof sweep and polish failure diagnostics** `est:45m`
   Close the slice by running the full deterministic proof stack and tightening report wording if any failure output is ambiguous. This task exists so S03 ends with a trustworthy operator-facing gate, not just new code that compiles locally.
 
 Steps:

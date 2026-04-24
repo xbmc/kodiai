@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_EPsNfdQjXPzMG8CE1UJKEVUl|fc_07bc847d529460710169eaf8b3da108191a1070bf8796f27e3",
+    "command": "python3 - <<'PY'\nimport subprocess, time, json\ncmd = ['bun','test','./scripts/verify-m062-s03.test.ts','./scripts/verify-m062-s01.test.ts']\nstart=time.time(); p=subprocess.run(cmd, capture_output=True, text=True)\nprint(p.stdout, end='')\nprint(p.stderr, end='')\nprint(f'__EXIT_CODE__={p.returncode}')\nprint(f'__DURATION_MS__={int((time.time()-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m062-s03.test.ts:\n(pass) verify-m062-s03 > parse args accepts --json and optional --scenario [18.00ms]\n(pass) verify-m062-s03 > evaluate default matrix reports bounded parity and zero-evidence rejection with stable scenario classifications [4.00ms]\n(pass) verify-m062-s03 > evaluate scenario surfaces invalid contract issues for malformed normalized payloads [1.00ms]\n(pass) verify-m062-s03 > evaluate scenario degrades missing remaining scope to truthful u",
+    "timestamp": 1777006772656
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_ggxhDwiubdusUzdvsCj3oGR4|fc_07bc847d529460710169eaf8b3da2481919ca881dfb4eb73cf",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = ['bun','test','./src/lib/review-utils.test.ts','./src/lib/partial-review-formatter.test.ts','./src/handlers/review.test.ts']\nstart=time.time(); p=subprocess.run(cmd, capture_output=True, text=True)\nprint(p.stdout, end='')\nprint(p.stderr, end='')\nprint(f'__EXIT_CODE__={p.returncode}')\nprint(f'__DURATION_MS__={int((time.time()-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/lib/review-utils.test.ts:\n(pass) formatReviewDetailsSummary > renders bounded first-pass diagnostics from the normalized contract [1.00ms]\n(pass) formatReviewDetailsSummary > renders zero-evidence hard failure explicitly instead of bounded success\n(pass) formatReviewDetailsSummary > degrades truthfully when remaining scope is missing instead of implying exhaustive coverage\n(pass) formatReviewDetailsSummary > degrades truthfully when covered scope is missing instea",
+    "timestamp": 1777006772656
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_kzc08N3FeXijJsdu2D1dWJvB|fc_07bc847d529460710169eaf8b3da30819187636e8d744249d9",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = ['bun','run','verify:m062:s01','--','--json']\nstart=time.time(); p=subprocess.run(cmd, capture_output=True, text=True)\nprint(p.stdout, end='')\nprint(p.stderr, end='')\nprint(f'__EXIT_CODE__={p.returncode}')\nprint(f'__DURATION_MS__={int((time.time()-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "{\n  \"command\": \"verify:m062:s01\",\n  \"generated_at\": \"2026-04-24T04:59:32.736Z\",\n  \"scenario_count\": 4,\n  \"success\": true,\n  \"status_code\": \"m062_s01_ok\",\n  \"scenarios\": [\n    {\n      \"scenarioId\": \"timeout-checkpoint\",\n      \"success\": true,\n      \"statusCode\": \"bounded-first-pass\",\n      \"reviewOutputKey\": \"kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-timeout-checkpoint:head-abc123\",\n      \"state\": \"bounded-first-pass\",\n      \"boundedReason\": \"timeo",
+    "timestamp": 1777006772656
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_0LoL6z1EQCwYqciRQN84NG1v|fc_07bc847d529460710169eaf8b3da388191ae0526fa6ac15d69",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = ['bun','run','verify:m062:s03','--','--json']\nstart=time.time(); p=subprocess.run(cmd, capture_output=True, text=True)\nprint(p.stdout, end='')\nprint(p.stderr, end='')\nprint(f'__EXIT_CODE__={p.returncode}')\nprint(f'__DURATION_MS__={int((time.time()-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "{\n  \"command\": \"verify:m062:s03\",\n  \"generated_at\": \"2026-04-24T04:59:32.755Z\",\n  \"scenario_count\": 4,\n  \"success\": true,\n  \"status_code\": \"m062_s03_ok\",\n  \"scenarios\": [\n    {\n      \"scenarioId\": \"timeout-checkpoint\",\n      \"success\": true,\n      \"statusCode\": \"bounded-parity-ok\",\n      \"state\": \"bounded-first-pass\",\n      \"boundedReason\": \"timeout\",\n      \"evidenceSource\": \"checkpoint\",\n      \"boundedCommentEligible\": true,\n      \"boundedCommentRendered\": true,\n      \"reviewDetailsRendered\": t",
+    "timestamp": 1777006772656
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_fIiVldbFsFmSr9FOX0h68P3D|fc_07bc847d529460710169eaf8b3da408191af005758b0a87253",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = ['bun','run','tsc','--noEmit']\nstart=time.time(); p=subprocess.run(cmd, capture_output=True, text=True)\nprint(p.stdout, end='')\nprint(p.stderr, end='')\nprint(f'__EXIT_CODE__={p.returncode}')\nprint(f'__DURATION_MS__={int((time.time()-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "__EXIT_CODE__=0\n__DURATION_MS__=10122\n",
+    "timestamp": 1777006772656
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_98iuppm2Nplqatai6cyb7rTc|fc_07bc847d529460710169eaf8c3054081919630588dd816c1e5",
+    "command": "python3 - <<'PY'\nimport subprocess, time, json, sys\nchecks = [\n    ['bun','run','verify:m062:s03','--','--json'],\n    ['bun','run','verify:m062:s03','--','--json'],\n    ['bun','run','verify:m062:s03','--','--scenario','large-pr-bounded','--json'],\n]\nstart=time.time()\noutputs=[]\nfor cmd in checks:\n    p=subprocess.run(cmd, capture_output=True, text=True)\n    if p.returncode != 0:\n        sys.stdout.write(p.stdout)\n        sys.stderr.write(p.stderr)\n        print(f'__EXIT_CODE__={p.returncode}')\n        print(f'__DURATION_MS__={int((time.time()-start)*1000)}')\n        raise SystemExit(0)\n    outputs.append(json.loads(p.stdout))\n\ndef normalize(report):\n    report = dict(report)\n    report.pop('generated_at', None)\n    return report\n\nsame = normalize(outputs[0]) == normalize(outputs[1])\nprint(json.dumps({\n    'default_runs_match_ignoring_generated_at': same,\n    'default_scenario_count': outputs[0]['scenario_count'],\n    'single_scenario_id': outputs[2]['scenarios'][0]['scenarioId'],\n    'single_status': outputs[2]['scenarios'][0]['statusCode'],\n    'default_issue_count': len(outputs[0]['issues']),\n}, indent=2))\nprint('__EXIT_CODE__=0')\nprint(f'__DURATION_MS__={int((time.time()-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "{\n  \"default_runs_match_ignoring_generated_at\": true,\n  \"default_scenario_count\": 4,\n  \"single_scenario_id\": \"large-pr-bounded\",\n  \"single_status\": \"bounded-parity-ok\",\n  \"default_issue_count\": 0\n}\n__EXIT_CODE__=0\n__DURATION_MS__=98\n",
+    "timestamp": 1777006794563
+  }
+]
