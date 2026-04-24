@@ -2203,7 +2203,7 @@ describe("createMentionHandler conversational review wiring", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("reply mention stays conversational when finding lookup throws", async () => {
+  test("reply mention stays conversational and light when finding lookup throws", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
     const prNumber = 101;
@@ -2343,8 +2343,9 @@ describe("createMentionHandler conversational review wiring", () => {
     );
 
     expect(executeCalls).toBe(1);
-    expect(capturedPrompt).toContain("## Review Comment Thread Context");
-    expect(capturedPrompt).toContain("Can you clarify this?");
+    expect(capturedPrompt).not.toContain("## Review Comment Thread Context");
+    expect(capturedPrompt).not.toContain("## Conversation History");
+    expect(capturedPrompt).toContain("## User's Question");
     expect(capturedPrompt).not.toContain("This is a follow-up to a review finding:");
     expect(capturedPrompt).not.toContain("Finding: [");
     expect(threadReplies).toHaveLength(0);

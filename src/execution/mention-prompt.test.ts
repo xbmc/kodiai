@@ -53,7 +53,49 @@ function expectInOrder(haystack: string, markers: string[]): void {
 }
 
 describe("buildMentionPrompt", () => {
-  test("returns named prompt-section metrics for mention prompts", () => {
+  test("omits heavy context headings from ordinary conversational mention prompts", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Can you sanity-check this?",
+    });
+
+    expect(prompt).not.toContain("## Conversation History");
+    expect(prompt).not.toContain("## Pull Request Context");
+    expect(prompt).not.toContain("## Review Comment Thread Context");
+    expect(prompt).toContain("## User's Question");
+  });
+
+  test("preserves rich explicit-review context headings when the staged context admits them", () => {
+    const prompt = buildMentionPrompt({
+      mention: reviewThreadMention(),
+      mentionContext: [
+        "## Conversation History",
+        "",
+        "turn 1",
+        "",
+        "## Pull Request Context",
+        "",
+        "Title: PR title",
+        "",
+        "## Inline Review Comment Context",
+        "",
+        "File: src/index.ts",
+        "",
+        "## Review Comment Thread Context",
+        "",
+        "please explain this",
+      ].join("\n"),
+      userQuestion: "Please do a full review.",
+    });
+
+    expect(prompt).toContain("## Conversation History");
+    expect(prompt).toContain("## Pull Request Context");
+    expect(prompt).toContain("## Inline Review Comment Context");
+    expect(prompt).toContain("## Review Comment Thread Context");
+  });
+
+  test("keeps mention user-prompt metrics stable while relying on staged mention context sections", () => {
     const result = buildMentionPromptDetails({
       mention: baseMention(),
       mentionContext: "## Conversation History\n\nhello",

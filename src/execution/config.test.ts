@@ -590,6 +590,81 @@ test("reads mention.allowedUsers from YAML", async () => {
   }
 });
 
+test("defaults mention admission policy to a light conversational path", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.admission).toEqual({
+      conversational: {
+        includeConversationHistory: false,
+        includePrMetadata: false,
+        includeReviewThread: false,
+      },
+      explicitReview: {
+        includeConversationHistory: true,
+        includePrMetadata: true,
+        includeReviewThread: true,
+      },
+    });
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses mention admission policy from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "mention:",
+        "  admission:",
+        "    conversational:",
+        "      includeConversationHistory: true",
+        "      includePrMetadata: true",
+        "      includeReviewThread: false",
+        "    explicitReview:",
+        "      includeConversationHistory: true",
+        "      includePrMetadata: true",
+        "      includeReviewThread: true",
+        "",
+      ].join("\n"),
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.admission.conversational.includeConversationHistory).toBe(true);
+    expect(config.mention.admission.conversational.includePrMetadata).toBe(true);
+    expect(config.mention.admission.conversational.includeReviewThread).toBe(false);
+    expect(config.mention.admission.explicitReview.includeReviewThread).toBe(true);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid mention admission policy falls back to conservative defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "mention:",
+        "  admission:",
+        "    conversational:",
+        "      includeConversationHistory: maybe",
+        "",
+      ].join("\n"),
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.admission.conversational.includeConversationHistory).toBe(false);
+    expect(config.mention.admission.conversational.includePrMetadata).toBe(false);
+    expect(config.mention.admission.explicitReview.includeReviewThread).toBe(true);
+    expect(warnings.some((warning) => warning.section === "mention")).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 test("defaults mention.conversation when omitted", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {

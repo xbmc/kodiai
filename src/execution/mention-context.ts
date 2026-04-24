@@ -7,6 +7,13 @@ import {
 } from "../lib/sanitizer.ts";
 import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 
+export type MentionContextAdmissionPolicy = {
+  includeConversationHistory: boolean;
+  includePrMetadata: boolean;
+  includeReviewThread: boolean;
+  includeInlineReviewContext: boolean;
+};
+
 export type BuildMentionContextOptions = {
   /** Max number of conversation comments to include (after filtering). */
   maxComments?: number;
@@ -36,6 +43,8 @@ export type BuildMentionContextOptions = {
   } | null;
   /** Optional pino logger — warnings are silently dropped if not provided. */
   logger?: Logger;
+  /** Controls which mention-context sections are admitted for this request shape. */
+  admissionPolicy?: MentionContextAdmissionPolicy;
 };
 
 const DEFAULT_MAX_COMMENTS = 20;
@@ -43,6 +52,13 @@ const DEFAULT_MAX_COMMENT_CHARS = 800;
 const DEFAULT_MAX_CONVERSATION_CHARS = 16_000;
 const DEFAULT_MAX_API_PAGES = 10;
 const DEFAULT_MAX_PR_BODY_CHARS = 1200;
+
+const DEFAULT_ADMISSION_POLICY: MentionContextAdmissionPolicy = {
+  includeConversationHistory: true,
+  includePrMetadata: true,
+  includeReviewThread: true,
+  includeInlineReviewContext: true,
+};
 
 type IssueComment = {
   id?: number;
@@ -90,6 +106,7 @@ export async function buildMentionContextDetails(
   options: BuildMentionContextOptions = {},
 ): Promise<PromptBuildResult> {
   const log = options.logger;
+  const admissionPolicy = options.admissionPolicy ?? DEFAULT_ADMISSION_POLICY;
   const maxComments = options.maxComments ?? DEFAULT_MAX_COMMENTS;
   const maxCommentChars = options.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS;
   const maxConversationChars =
@@ -97,8 +114,7 @@ export async function buildMentionContextDetails(
   const maxThreadChars = options.maxThreadChars ?? maxConversationChars;
   const maxApiPages = options.maxApiPages ?? DEFAULT_MAX_API_PAGES;
   const maxPrBodyChars = options.maxPrBodyChars ?? DEFAULT_MAX_PR_BODY_CHARS;
-
-  const lines: string[] = [];
+  const sectionBlocks: Array<{ sectionName: string; text: string }> = [];
   const scaleNotes: string[] = [];
 
   async function listIssueCommentsBounded(): Promise<{
@@ -128,8 +144,6 @@ export async function buildMentionContextDetails(
 
       all.push(...(data as IssueComment[]));
 
-      // Early exit: if there's no trigger time, we only need the most recent
-      // `maxComments` comments, and we're already paging newest-first.
       if (!mention.commentCreatedAt && maxComments > 0 && all.length >= maxComments) {
         return {
           comments: all,
@@ -139,18 +153,12 @@ export async function buildMentionContextDetails(
         };
       }
 
-      // If we have a trigger time, try to avoid scanning forever through newer
-      // comments after the trigger. Once we've fetched some comments older than
-      // the trigger and have enough eligible comments, we'll stop.
       if (typeof triggerTs === "number" && data.length > 0) {
         const oldestFetched = data[data.length - 1] as IssueComment | undefined;
         const oldestFetchedTs = oldestFetched
           ? new Date(oldestFetched.created_at).getTime()
           : NaN;
 
-        // Early exit: once we've reached comments older than the trigger and have
-        // enough eligible comments to fill the cap, older pages won't change the
-        // bounded output.
         if (maxComments > 0 && oldestFetchedTs < triggerTs) {
           const eligible = filterCommentsToTriggerTime(
             all,
@@ -181,8 +189,6 @@ export async function buildMentionContextDetails(
       }
     }
 
-    // We hit the page cap. We can't know if more pages exist, but the last
-    // page was full-sized, which strongly suggests there is more.
     if (typeof triggerTs === "number" && all.length > 0) {
       const oldestOverall = all[all.length - 1] as IssueComment | undefined;
       const oldestOverallTs = oldestOverall
@@ -201,315 +207,323 @@ export async function buildMentionContextDetails(
     };
   }
 
-  // --- Conversation context (issue/PR comments) ---
-  const {
-    comments: comments,
-    scannedPages,
-    hitPageCap,
-    hitTriggerTimeCap,
-  } = await listIssueCommentsBounded();
+  if (admissionPolicy.includeConversationHistory) {
+    try {
+      const {
+        comments,
+        scannedPages,
+        hitPageCap,
+        hitTriggerTimeCap,
+      } = await listIssueCommentsBounded();
 
-  if (hitPageCap) {
-    scaleNotes.push(
-      `Conversation history scan capped at ${scannedPages} page(s) of issue comments (pagination guardrail).`,
-    );
-  }
-  if (hitTriggerTimeCap && mention.commentCreatedAt) {
-    scaleNotes.push(
-      `Conversation history may include comments after trigger time because scan did not reach older pages before ${mention.commentCreatedAt}.`,
-    );
-  }
-
-  const safeComments = filterCommentsToTriggerTime(
-    comments,
-    mention.commentCreatedAt,
-  ).filter((c) => !isLegacyBotTrackingComment(c.body));
-
-  // Ensure determinism regardless of API ordering.
-  const sortedComments = [...safeComments].sort((a, b) => {
-    const aTime = new Date(a.created_at).getTime();
-    const bTime = new Date(b.created_at).getTime();
-    if (aTime !== bTime) return aTime - bTime;
-    return (a.id ?? 0) - (b.id ?? 0);
-  });
-
-  if (maxComments > 0 && sortedComments.length > maxComments) {
-    scaleNotes.push(
-      `Only the last ${maxComments} comment(s) were included (comment count cap).`,
-    );
-  }
-
-  const boundedComments =
-    maxComments > 0 ? sortedComments.slice(-maxComments) : [];
-
-  lines.push("## Conversation History");
-  lines.push(
-    `Included: ${boundedComments.length} comment(s) (filtered to trigger time: ${mention.commentCreatedAt})`,
-  );
-  lines.push("");
-
-  let remainingConversationChars = Math.max(0, maxConversationChars);
-  let didHitConversationCharCap = false;
-  let didTruncateAnyComment = false;
-
-  for (const comment of boundedComments) {
-    const author = comment.user?.login ?? "unknown";
-    const bodyRaw = comment.body ?? "(empty)";
-    const bodySanitized = sanitizeContent(bodyRaw);
-
-    if (remainingConversationChars <= 0) {
-      if (!didHitConversationCharCap) {
-        didHitConversationCharCap = true;
+      if (hitPageCap) {
         scaleNotes.push(
-          `Conversation history truncated due to ${maxConversationChars} character cap across included comments.`,
+          `Conversation history scan capped at ${scannedPages} page(s) of issue comments (pagination guardrail).`,
         );
       }
-      break;
-    }
+      if (hitTriggerTimeCap && mention.commentCreatedAt) {
+        scaleNotes.push(
+          `Conversation history may include comments after trigger time because scan did not reach older pages before ${mention.commentCreatedAt}.`,
+        );
+      }
 
-    const truncatedBody = truncateDeterministic(bodySanitized, maxCommentChars);
-    if (truncatedBody.truncated) {
-      didTruncateAnyComment = true;
-    }
+      const safeComments = filterCommentsToTriggerTime(
+        comments,
+        mention.commentCreatedAt,
+      ).filter((comment) => !isLegacyBotTrackingComment(comment.body));
 
-    // Apply the global conversation character budget after per-comment truncation.
-    const finalBody =
-      truncatedBody.text.length <= remainingConversationChars
-        ? truncatedBody.text
-        : truncateDeterministic(truncatedBody.text, remainingConversationChars).text;
+      const sortedComments = [...safeComments].sort((a, b) => {
+        const aTime = new Date(a.created_at).getTime();
+        const bTime = new Date(b.created_at).getTime();
+        if (aTime !== bTime) return aTime - bTime;
+        return (a.id ?? 0) - (b.id ?? 0);
+      });
 
-    if (finalBody.length < truncatedBody.text.length && !didHitConversationCharCap) {
-      didHitConversationCharCap = true;
-      scaleNotes.push(
-        `Conversation history truncated due to ${maxConversationChars} character cap across included comments.`,
+      if (maxComments > 0 && sortedComments.length > maxComments) {
+        scaleNotes.push(
+          `Only the last ${maxComments} comment(s) were included (comment count cap).`,
+        );
+      }
+
+      const boundedComments = maxComments > 0 ? sortedComments.slice(-maxComments) : [];
+      const lines: string[] = [
+        "## Conversation History",
+        `Included: ${boundedComments.length} comment(s) (filtered to trigger time: ${mention.commentCreatedAt})`,
+        "",
+      ];
+
+      let remainingConversationChars = Math.max(0, maxConversationChars);
+      let didHitConversationCharCap = false;
+      let didTruncateAnyComment = false;
+
+      for (const comment of boundedComments) {
+        const author = comment.user?.login ?? "unknown";
+        const bodyRaw = comment.body ?? "(empty)";
+        const bodySanitized = sanitizeContent(bodyRaw);
+
+        if (remainingConversationChars <= 0) {
+          if (!didHitConversationCharCap) {
+            didHitConversationCharCap = true;
+            scaleNotes.push(
+              `Conversation history truncated due to ${maxConversationChars} character cap across included comments.`,
+            );
+          }
+          break;
+        }
+
+        const truncatedBody = truncateDeterministic(bodySanitized, maxCommentChars);
+        if (truncatedBody.truncated) {
+          didTruncateAnyComment = true;
+        }
+
+        const finalBody =
+          truncatedBody.text.length <= remainingConversationChars
+            ? truncatedBody.text
+            : truncateDeterministic(truncatedBody.text, remainingConversationChars).text;
+
+        if (finalBody.length < truncatedBody.text.length && !didHitConversationCharCap) {
+          didHitConversationCharCap = true;
+          scaleNotes.push(
+            `Conversation history truncated due to ${maxConversationChars} character cap across included comments.`,
+          );
+        }
+
+        remainingConversationChars = Math.max(0, remainingConversationChars - finalBody.length);
+        lines.push(`### @${author} (${comment.created_at})`);
+        lines.push(finalBody);
+        lines.push("");
+      }
+
+      if (didTruncateAnyComment) {
+        scaleNotes.push(
+          `One or more individual comments were truncated to ${maxCommentChars} characters.`,
+        );
+      }
+
+      sectionBlocks.push({
+        sectionName: "mention-conversation-history",
+        text: lines.join("\n").trim() + "\n",
+      });
+    } catch (error) {
+      log?.warn(
+        { err: error, owner: mention.owner, repo: mention.repo, issueNumber: mention.issueNumber },
+        "Failed to build conversation history mention context; omitting section",
       );
     }
-
-    remainingConversationChars = Math.max(0, remainingConversationChars - finalBody.length);
-    lines.push(`### @${author} (${comment.created_at})`);
-    lines.push(finalBody);
-    lines.push("");
   }
 
-  if (didTruncateAnyComment) {
-    scaleNotes.push(
-      `One or more individual comments were truncated to ${maxCommentChars} characters.`,
-    );
-  }
+  if (admissionPolicy.includePrMetadata && mention.prNumber !== undefined) {
+    try {
+      const { data: pr } = await octokit.rest.pulls.get({
+        owner: mention.owner,
+        repo: mention.repo,
+        pull_number: mention.prNumber,
+      });
 
-  // --- PR metadata ---
-  if (mention.prNumber !== undefined) {
-    const { data: pr } = await octokit.rest.pulls.get({
-      owner: mention.owner,
-      repo: mention.repo,
-      pull_number: mention.prNumber,
-    });
+      const lines = [
+        "## Pull Request Context",
+        `Title: ${sanitizeContent(pr.title ?? "")}`,
+        `Author: ${pr.user?.login ?? "unknown"}`,
+        `Branches: ${pr.head.ref} -> ${pr.base.ref}`,
+      ];
 
-    lines.push("## Pull Request Context");
-    lines.push(`Title: ${sanitizeContent(pr.title)}`);
-    lines.push(`Author: ${pr.user?.login ?? "unknown"}`);
-    lines.push(`Branches: ${pr.head.ref} -> ${pr.base.ref}`);
-
-    if (pr.body) {
-      const bodySanitized = sanitizeContent(pr.body);
-      const bodyTruncated = truncateDeterministic(bodySanitized, maxPrBodyChars);
-      if (bodyTruncated.truncated) {
-        scaleNotes.push(
-          `PR description truncated to ${maxPrBodyChars} characters.`,
-        );
+      if (pr.body) {
+        const bodySanitized = sanitizeContent(pr.body);
+        const bodyTruncated = truncateDeterministic(bodySanitized, maxPrBodyChars);
+        if (bodyTruncated.truncated) {
+          scaleNotes.push(`PR description truncated to ${maxPrBodyChars} characters.`);
+        }
+        lines.push("", "Description:", bodyTruncated.text);
       }
-      lines.push("");
-      lines.push("Description:");
-      lines.push(bodyTruncated.text);
-    }
 
-    lines.push("");
+      sectionBlocks.push({
+        sectionName: "mention-pr-metadata",
+        text: lines.join("\n").trim() + "\n",
+      });
+    } catch (error) {
+      log?.warn(
+        { err: error, owner: mention.owner, repo: mention.repo, prNumber: mention.prNumber },
+        "Failed to build PR metadata mention context; omitting section",
+      );
+    }
   }
 
-  // --- Inline review comment context (diff + file/line) ---
-  if (mention.surface === "pr_review_comment") {
-    lines.push("## Inline Review Comment Context");
+  if (admissionPolicy.includeInlineReviewContext && mention.surface === "pr_review_comment") {
+    const lines = ["## Inline Review Comment Context"];
     if (mention.filePath) lines.push(`File: ${mention.filePath}`);
     if (mention.fileLine !== undefined) lines.push(`Line: ${mention.fileLine}`);
     lines.push("");
 
     if (mention.diffHunk) {
-      lines.push("Diff hunk:");
-      lines.push("```diff");
-      lines.push(sanitizeContent(mention.diffHunk));
-      lines.push("```");
-      lines.push("");
+      lines.push("Diff hunk:", "```diff", sanitizeContent(mention.diffHunk), "```", "");
     }
+
+    sectionBlocks.push({
+      sectionName: "mention-inline-review-context",
+      text: lines.join("\n").trim() + "\n",
+    });
   }
 
   if (
+    admissionPolicy.includeReviewThread &&
     mention.surface === "pr_review_comment" &&
     mention.inReplyToId !== undefined &&
     mention.prNumber !== undefined
   ) {
-    let parent: ReviewComment | null = null;
     try {
-      const parentResponse = await octokit.rest.pulls.getReviewComment({
-        owner: mention.owner,
-        repo: mention.repo,
-        comment_id: mention.inReplyToId,
-      });
-      parent = parentResponse.data as ReviewComment;
-    } catch (error) {
-      const status = (error as { status?: number }).status;
-      if (status === 404) {
-        log?.warn(
-          {
-            owner: mention.owner,
-            repo: mention.repo,
-            parentCommentId: mention.inReplyToId,
-          },
-          "Skipping review comment thread context because parent comment was not found",
-        );
-      } else {
-        throw error;
-      }
-    }
-
-    if (parent) {
-      lines.push("## Review Comment Thread Context");
-
-      const reviewOutputMarkerRe = /<!-- kodiai:review-output-key:[^>]+ -->/;
-      const isKodiaiFinding = reviewOutputMarkerRe.test(parent.body ?? "");
-      if (isKodiaiFinding && options.findingLookup) {
-        let finding: Awaited<ReturnType<NonNullable<BuildMentionContextOptions["findingLookup"]>>>;
-        try {
-          finding = await options.findingLookup(
-            `${mention.owner}/${mention.repo}`,
-            mention.inReplyToId,
-          );
-        } catch (error) {
+      let parent: ReviewComment | null = null;
+      try {
+        const parentResponse = await octokit.rest.pulls.getReviewComment({
+          owner: mention.owner,
+          repo: mention.repo,
+          comment_id: mention.inReplyToId,
+        });
+        parent = parentResponse.data as ReviewComment;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 404) {
           log?.warn(
-            {
-              owner: mention.owner,
-              repo: mention.repo,
-              parentCommentId: mention.inReplyToId,
-              err: error,
-            },
-            "Skipping finding metadata in mention context because lookup failed",
+            { owner: mention.owner, repo: mention.repo, parentCommentId: mention.inReplyToId },
+            "Skipping review comment thread context because parent comment was not found",
           );
-          finding = null;
+        } else {
+          throw error;
         }
-        if (finding) {
-          lines.push(
-            `Original finding: [${finding.severity.toUpperCase()}] ${finding.category}`,
-          );
-          lines.push(`File: ${finding.filePath}`);
-          if (finding.startLine !== null) {
-            lines.push(`Line: ${finding.startLine}`);
+      }
+
+      if (parent) {
+        const lines = ["## Review Comment Thread Context"];
+        const reviewOutputMarkerRe = /<!-- kodiai:review-output-key:[^>]+ -->/;
+        const isKodiaiFinding = reviewOutputMarkerRe.test(parent.body ?? "");
+        if (isKodiaiFinding && options.findingLookup) {
+          let finding: Awaited<ReturnType<NonNullable<BuildMentionContextOptions["findingLookup"]>>>;
+          try {
+            finding = await options.findingLookup(
+              `${mention.owner}/${mention.repo}`,
+              mention.inReplyToId,
+            );
+          } catch (error) {
+            log?.warn(
+              {
+                owner: mention.owner,
+                repo: mention.repo,
+                parentCommentId: mention.inReplyToId,
+                err: error,
+              },
+              "Skipping finding metadata in mention context because lookup failed",
+            );
+            finding = null;
           }
-          lines.push(`Title: ${finding.title}`);
-          lines.push("");
+          if (finding) {
+            lines.push(
+              `Original finding: [${finding.severity.toUpperCase()}] ${finding.category}`,
+              `File: ${finding.filePath}`,
+            );
+            if (finding.startLine !== null) {
+              lines.push(`Line: ${finding.startLine}`);
+            }
+            lines.push(`Title: ${finding.title}`, "");
+          }
         }
-      }
 
-      const threadResponse = await octokit.rest.pulls.listReviewComments({
-        owner: mention.owner,
-        repo: mention.repo,
-        pull_number: mention.prNumber,
-        per_page: 100,
-        sort: "created",
-        direction: "asc",
-      });
-
-      let threadRoot = mention.inReplyToId;
-      if (parent.in_reply_to_id !== undefined) {
-        threadRoot = parent.in_reply_to_id;
-      }
-
-      const allReviewComments = threadResponse.data as ReviewComment[];
-      const threadComments = allReviewComments
-        .filter(
-          (comment) =>
-            comment.id === threadRoot || comment.in_reply_to_id === threadRoot,
-        )
-        .filter((comment) => comment.id !== mention.commentId)
-        .sort((a, b) => {
-          const aTime = new Date(a.created_at).getTime();
-          const bTime = new Date(b.created_at).getTime();
-          if (aTime !== bTime) return aTime - bTime;
-          return a.id - b.id;
+        const threadResponse = await octokit.rest.pulls.listReviewComments({
+          owner: mention.owner,
+          repo: mention.repo,
+          pull_number: mention.prNumber,
+          per_page: 100,
+          sort: "created",
+          direction: "asc",
         });
 
-      if (threadComments.length === 0) {
-        lines.push("No earlier comments found in this thread.");
-        lines.push("");
-      } else {
-        const olderThreadCount = Math.max(0, threadComments.length - 3);
-        let remainingThreadChars = Math.max(0, maxThreadChars);
-        let didHitThreadCharCap = false;
-        let didTruncateOldThreadTurn = false;
+        let threadRoot = mention.inReplyToId;
+        if (parent.in_reply_to_id !== undefined) {
+          threadRoot = parent.in_reply_to_id;
+        }
 
-        for (const [index, comment] of threadComments.entries()) {
-          if (remainingThreadChars <= 0) {
-            if (!didHitThreadCharCap) {
-              didHitThreadCharCap = true;
-              scaleNotes.push(
-                `Review thread context truncated due to ${maxThreadChars} character cap.`,
-              );
+        const allReviewComments = threadResponse.data as ReviewComment[];
+        const threadComments = allReviewComments
+          .filter((comment) => comment.id === threadRoot || comment.in_reply_to_id === threadRoot)
+          .filter((comment) => comment.id !== mention.commentId)
+          .sort((a, b) => {
+            const aTime = new Date(a.created_at).getTime();
+            const bTime = new Date(b.created_at).getTime();
+            if (aTime !== bTime) return aTime - bTime;
+            return a.id - b.id;
+          });
+
+        if (threadComments.length === 0) {
+          lines.push("No earlier comments found in this thread.", "");
+        } else {
+          const olderThreadCount = Math.max(0, threadComments.length - 3);
+          let remainingThreadChars = Math.max(0, maxThreadChars);
+          let didHitThreadCharCap = false;
+          let didTruncateOldThreadTurn = false;
+
+          for (const [index, comment] of threadComments.entries()) {
+            if (remainingThreadChars <= 0) {
+              if (!didHitThreadCharCap) {
+                didHitThreadCharCap = true;
+                scaleNotes.push(`Review thread context truncated due to ${maxThreadChars} character cap.`);
+              }
+              break;
             }
-            break;
+
+            const author = comment.user?.login ?? "unknown";
+            const bodyRaw = comment.body ?? "(empty)";
+            const bodySanitized = sanitizeContent(bodyRaw);
+            const isOlderThreadTurn = index < olderThreadCount;
+            const perCommentCap = isOlderThreadTurn ? Math.min(200, maxCommentChars) : maxCommentChars;
+            const truncatedBody = truncateDeterministic(bodySanitized, perCommentCap);
+
+            if (isOlderThreadTurn && truncatedBody.truncated) {
+              didTruncateOldThreadTurn = true;
+            }
+
+            const finalBody =
+              truncatedBody.text.length <= remainingThreadChars
+                ? truncatedBody.text
+                : truncateDeterministic(truncatedBody.text, remainingThreadChars).text;
+
+            if (finalBody.length < truncatedBody.text.length && !didHitThreadCharCap) {
+              didHitThreadCharCap = true;
+              scaleNotes.push(`Review thread context truncated due to ${maxThreadChars} character cap.`);
+            }
+
+            remainingThreadChars = Math.max(0, remainingThreadChars - finalBody.length);
+            lines.push(`### @${author} (${comment.created_at})`, finalBody, "");
           }
 
-          const author = comment.user?.login ?? "unknown";
-          const bodyRaw = comment.body ?? "(empty)";
-          const bodySanitized = sanitizeContent(bodyRaw);
-          const isOlderThreadTurn = index < olderThreadCount;
-          const perCommentCap = isOlderThreadTurn ? Math.min(200, maxCommentChars) : maxCommentChars;
-          const truncatedBody = truncateDeterministic(bodySanitized, perCommentCap);
-
-          if (isOlderThreadTurn && truncatedBody.truncated) {
-            didTruncateOldThreadTurn = true;
-          }
-
-          const finalBody =
-            truncatedBody.text.length <= remainingThreadChars
-              ? truncatedBody.text
-              : truncateDeterministic(truncatedBody.text, remainingThreadChars).text;
-
-          if (finalBody.length < truncatedBody.text.length && !didHitThreadCharCap) {
-            didHitThreadCharCap = true;
+          if (didTruncateOldThreadTurn) {
             scaleNotes.push(
-              `Review thread context truncated due to ${maxThreadChars} character cap.`,
+              "Older review thread turns were truncated to 200 characters to preserve recent context.",
             );
           }
-
-          remainingThreadChars = Math.max(0, remainingThreadChars - finalBody.length);
-
-          lines.push(`### @${author} (${comment.created_at})`);
-          lines.push(finalBody);
-          lines.push("");
         }
 
-        if (didTruncateOldThreadTurn) {
-          scaleNotes.push(
-            "Older review thread turns were truncated to 200 characters to preserve recent context.",
-          );
-        }
+        sectionBlocks.push({
+          sectionName: "mention-review-thread-context",
+          text: lines.join("\n").trim() + "\n",
+        });
       }
+    } catch (error) {
+      log?.warn(
+        { err: error, owner: mention.owner, repo: mention.repo, prNumber: mention.prNumber },
+        "Failed to build review thread mention context; omitting section",
+      );
     }
   }
 
-  const header: string[] = [];
   if (scaleNotes.length > 0) {
-    header.push(
-      "## Scale Notes",
-      "Some context was omitted due to scale guardrails:",
-      ...scaleNotes.map((n) => `- ${n}`),
-      "",
-    );
+    sectionBlocks.unshift({
+      sectionName: "scale-notes",
+      text: [
+        "## Scale Notes",
+        "Some context was omitted due to scale guardrails:",
+        ...scaleNotes.map((note) => `- ${note}`),
+        "",
+      ].join("\n"),
+    });
   }
-
-  const sectionBlocks: Array<{ sectionName: string; text: string }> = [];
-  if (header.length > 0) {
-    sectionBlocks.push({ sectionName: "scale-notes", text: header.join("\n") });
-  }
-  sectionBlocks.push({ sectionName: "conversation-history", text: lines.join("\n").trim() + "\n" });
 
   return buildPromptBuildResult(sectionBlocks, "");
 }

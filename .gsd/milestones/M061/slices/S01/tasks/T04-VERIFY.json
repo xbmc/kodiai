@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T04",
+  "unitId": "M061/S01/T04",
+  "timestamp": 1776992180127,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/telemetry/store.test.ts src/execution/mention-context.test.ts src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts scripts/usage-report.test.ts scripts/phase72-telemetry-follow-through.test.ts scripts/phase75-live-ops-verification-closure.test.ts",
+      "exitCode": 0,
+      "durationMs": 185,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run lint",
+      "exitCode": 0,
+      "durationMs": 6822,
+      "verdict": "pass"
+    }
+  ]
+}

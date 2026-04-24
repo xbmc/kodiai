@@ -4,10 +4,10 @@
 
 ## Slices
 
-- [ ] **S01: S01** `risk:high` `depends:[]`
+- [x] **S01: S01** `risk:high` `depends:[]`
   > After this: operators can inspect real Postgres-backed token, prompt-composition, and cache-effectiveness evidence for mention/review executions instead of relying on stale or incomplete usage reporting.
 
-- [ ] **S02: Mention Flow Context Diet** `risk:high` `depends:[S01]`
+- [ ] **S02: S02** `risk:high` `depends:[]`
   > After this: standard conversational mentions answer with smaller default prompts because long thread history, candidate code pointers, and PR diff bodies are staged in only when the request shape truly needs them.
 
 - [ ] **S03: Review Prompt Compaction and Budget Enforcement** `risk:high` `depends:[S01]`

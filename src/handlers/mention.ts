@@ -41,7 +41,11 @@ import {
   containsMention,
   stripMention,
 } from "./mention-types.ts";
-import { buildMentionContext, buildMentionContextDetails } from "../execution/mention-context.ts";
+import {
+  buildMentionContext,
+  buildMentionContextDetails,
+  type MentionContextAdmissionPolicy,
+} from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
 import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
@@ -1045,6 +1049,22 @@ export function createMentionHandler(deps: {
     return reviewDirect.test(normalized) || reviewAsk.test(normalized);
   }
 
+  function deriveMentionAdmissionPolicy(params: {
+    explicitReviewRequest: boolean;
+    config: Awaited<ReturnType<typeof loadRepoConfig>>["config"];
+  }): MentionContextAdmissionPolicy {
+    const source = params.explicitReviewRequest
+      ? params.config.mention.admission.explicitReview
+      : params.config.mention.admission.conversational;
+
+    return {
+      includeConversationHistory: source.includeConversationHistory,
+      includePrMetadata: source.includePrMetadata,
+      includeReviewThread: params.explicitReviewRequest ? source.includeReviewThread : false,
+      includeInlineReviewContext: params.explicitReviewRequest,
+    };
+  }
+
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
     const possibleHandles = [appSlug, "kodai", "claude"];
@@ -1842,8 +1862,13 @@ export function createMentionHandler(deps: {
         // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
         let mentionContext = "";
         let mentionContextSectionMetrics: import("../telemetry/types.ts").PromptSectionMetric[] = [];
+        const mentionAdmissionPolicy = deriveMentionAdmissionPolicy({
+          explicitReviewRequest,
+          config,
+        });
         try {
           const mentionContextResult = await buildMentionContextDetails(octokit, mention, {
+            admissionPolicy: mentionAdmissionPolicy,
             findingLookup,
             maxThreadChars: config.mention.conversation.contextBudgetChars,
           });
