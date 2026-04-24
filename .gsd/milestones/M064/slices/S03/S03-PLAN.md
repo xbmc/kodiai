@@ -42,7 +42,7 @@
   - Files: `scripts/verify-m064-s03.ts`, `scripts/verify-m064-s03.test.ts`, `package.json`, `src/knowledge/continuation-operator-evidence.ts`, `scripts/usage-report.ts`
   - Verify: bun test scripts/verify-m064-s03.test.ts
 
-- [ ] **T03: Regress prior canonical contracts and prove slice-close verification** `est:45m`
+- [x] **T03: Regress prior canonical contracts and prove slice-close verification** `est:45m`
   Finish the slice by running the new S03 proof surface alongside the existing M064 verifiers so the operator report remains subordinate to canonical truth rather than redefining it. If minor gaps appear during verification, tighten report wording or scenario fixtures instead of weakening expectations. Update any affected tests so the slice closes with one executable verification chain covering the new report plus prior S01/S02 canonical-state guarantees.
   - Files: `scripts/verify-m064-s01.test.ts`, `scripts/verify-m064-s02.test.ts`, `scripts/verify-m064-s03.ts`, `scripts/verify-m064-s03.test.ts`, `package.json`
   - Verify: bun test src/knowledge/continuation-operator-evidence.test.ts && bun test scripts/verify-m064-s03.test.ts && bun run verify:m064:s03 -- --json && bun test scripts/verify-m064-s01.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s01 -- --json && bun run verify:m064:s02 -- --json
