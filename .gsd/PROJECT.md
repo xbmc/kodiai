@@ -20,13 +20,15 @@ Milestone M062 is complete as the large-PR truth baseline:
 - Requirements `R061` and `R064` are validated with fresh milestone-close evidence from verifier tests, handler/formatter tests, deterministic verifier runs, and a clean TypeScript compile gate.
 - M062 now has two deterministic proof surfaces: `verify:m062:s01` for bounded-vs-dead-end first-pass classification and `verify:m062:s03` for visible-surface truthfulness parity.
 
-Milestone M063 is in progress on continuation redesign:
-- S01 is complete: large-PR bounded first passes now plan automatic continuation through a dedicated lifecycle seam instead of timeout-branch-local handler logic.
-- S02 is complete: continuation now deepens one canonical visible review surface anchored to the base `reviewOutputKey`, refreshes nested Review Details in place, renders explicit revision summaries when findings change, and keeps no-delta settlement publicly quiet.
-- `src/lib/review-continuation-lifecycle.ts` owns continuation planning and settlement decisions, keeping the base `reviewOutputKey` as the public lifecycle identity while deriving continuation passes with a stable `-retry-1` suffix.
-- `src/handlers/review.ts` now orchestrates automatic enqueue, same-surface merge/no-delta settlement, and stale-authority suppression through that shared lifecycle contract and the existing `ReviewWorkCoordinator` checks.
-- `scripts/verify-m063-s01.ts` proves automatic continuation scheduling, settlement classification, and stale-authority suppression; `scripts/verify-m063-s02.ts` proves same-surface ownership, explicit revision visibility, and quiet no-delta settlement.
-- Requirements `R062`, `R063`, and `R065` are now validated on shipped paths. S03 remains to prove prompt/context narrowing and end-state authority safety across the final continuation write paths.
+Milestone M063 is now functionally complete at the slice level:
+- S01 established automatic continuation planning and settlement through `src/lib/review-continuation-lifecycle.ts`, removing timeout-branch-local continuation behavior.
+- S02 collapsed continuation onto one canonical visible review surface anchored to the base `reviewOutputKey`, refreshed nested Review Details in place, rendered explicit revision summaries, and kept no-delta settlement publicly quiet.
+- S03 added deterministic proof that continuation stays materially narrower than the first pass and remains authority-safe on shipped same-surface retry paths.
+- `scripts/verify-m063-s01.ts` proves automatic continuation scheduling, settlement classification, and stale-authority suppression.
+- `scripts/verify-m063-s02.ts` proves same-surface ownership, explicit revision visibility, and quiet no-delta settlement.
+- `scripts/verify-m063-s03.ts` proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required prompt sections, and stays truthful about sufficient-but-bounded coverage rather than claiming exhaustive review.
+- `src/handlers/review.test.ts` now proves stale/superseded retry attempts cannot overwrite the canonical summary, cannot refresh nested Review Details after losing publish rights, and keep no-delta settlement as a public no-op.
+- Requirement `R066` is validated with fresh slice-close evidence; M063 now has deterministic proof for lifecycle scheduling, same-surface revision behavior, bounded continuation shaping, and last-mile authority safety.
 
 The prior token-accounting track (M061) remains supporting infrastructure: Postgres-backed telemetry, prompt-section accounting, mention-context reduction, and reuse evidence continue to provide observability and verification surfaces for later review-work milestones.
 
@@ -39,7 +41,9 @@ The prior token-accounting track (M061) remains supporting infrastructure: Postg
 - **Continuation lifecycle seam:** automatic large-PR follow-up is driven by `planReviewContinuation(...)` and `settleReviewContinuation(...)`, which separate scheduling/settlement rules from handler orchestration and keep continuation pass keys distinct from the public lifecycle key.
 - **Canonical continuation surface:** the bounded first-pass comment is the only public lifecycle surface for continuation. It carries the base `reviewOutputKey` marker, owns the nested Review Details block, and is refreshed in place by timeout and retry merge paths.
 - **Revision visibility contract:** continuation merges classify deltas against prior findings and render explicit revision summaries for new, still-open, and resolved findings. All-zero deltas settle quietly without public comment churn.
-- **Deterministic proof:** `scripts/verify-m062-s01.ts` validates bounded-vs-dead-end classification from the production first-pass seam, `scripts/verify-m062-s03.ts` validates visible-surface semantic alignment, `scripts/verify-m063-s01.ts` validates automatic continuation scheduling/settlement/authority suppression, and `scripts/verify-m063-s02.ts` validates same-surface ownership and revision/no-delta behavior.
+- **Bounded continuation proof seam:** continuation narrowing is proved against production `buildReviewPromptDetails(...)` section metrics rather than mocked prompt snapshots; `review-change-context` must shrink, first-pass-only `review-size-context` may disappear, and reused knowledge context may remain equal.
+- **Authority-safe retry publishing:** final same-surface retry writes recheck publish rights independently for canonical summary merge and nested Review Details refresh, preventing stale continuation from overwriting newer review state.
+- **Deterministic proof:** `scripts/verify-m062-s01.ts` validates bounded-vs-dead-end classification from the production first-pass seam, `scripts/verify-m062-s03.ts` validates visible-surface semantic alignment, `scripts/verify-m063-s01.ts` validates automatic continuation scheduling/settlement/authority suppression, `scripts/verify-m063-s02.ts` validates same-surface ownership and revision/no-delta behavior, and `scripts/verify-m063-s03.ts` validates bounded continuation shaping and truthful authority-safe completion.
 - **Telemetry baseline:** Usage and verifier scripts read live Postgres telemetry via `createDbClient()` and fail open with explicit database access states instead of consulting stale SQLite paths.
 
 ## Capability Contract
@@ -54,4 +58,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M055: Live hardening and rollout proof.
 - [x] M061: Token-accounting baseline and reduction proof track (supporting observability infrastructure).
 - [x] M062: Large-PR truth baseline — bounded first-pass contract, visible review coherence, and deterministic truthfulness verifier complete.
-- [ ] M063: Continuation redesign — S01 automatic lifecycle and S02 same-surface revision semantics complete; S03 bounded continuation shaping and authority-safe proof remain.
+- [ ] M063: Continuation redesign — all three slices are complete; pending milestone-level validation and closure artifacts.

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M063/S03/T03",
+  "timestamp": 1777012657394,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/handlers/review.test.ts --filter \"retry\"",
+      "exitCode": 0,
+      "durationMs": 6427,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m063:s02 -- --json",
+      "exitCode": 0,
+      "durationMs": 46,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 9436,
+      "verdict": "pass"
+    }
+  ]
+}

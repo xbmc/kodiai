@@ -87,28 +87,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: None
 - Notes: Owned by M048 S03 because trigger-shape continuity and verifier failure behavior land there.
 
-### R065 — Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
-- Class: correctness
-- Status: active
-- Description: Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
-- Why it matters: A bounded first pass can be incomplete, but later correction must remain legible to users and operators
-- Source: user
-- Primary owning slice: M063/S02
-- Supporting slices: none
-- Validation: mapped
-- Notes: Revisions are allowed; silent mutation is not.
-
-### R066 — Continuation stops after sufficient high-risk coverage is achieved and must disclose that the review is sufficient-but-bounded rather than exhaustive
-- Class: constraint
-- Status: active
-- Description: Continuation stops after sufficient high-risk coverage is achieved and must disclose that the review is sufficient-but-bounded rather than exhaustive
-- Why it matters: The redesign should optimize for truthful sufficiency rather than pretending exhaustive eventual coverage is always practical
-- Source: user
-- Primary owning slice: M063/S03
-- Supporting slices: M065/S02
-- Validation: mapped
-- Notes: The stopping contract is explicitly non-exhaustive.
-
 ### R067 — New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
 - Class: continuity
 - Status: active
@@ -684,6 +662,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Validated by M062. Fresh milestone-close verification passed: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"`; timeout, max-turns, and large-PR bounded scenarios all reported `bounded-parity-ok` for bounded reason, covered scope, remaining scope, and continuation state), and `bun run tsc --noEmit` (exit 0). The visible review surfaces now truthfully report covered scope, remaining scope, and continuation status from one coherent contract.
 - Notes: S02 completed the visible bounded-review rendering contract; S03 remains responsible for a milestone-level deterministic proof harness that guards this contract against regression.
 
+### R065 — Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
+- Class: correctness
+- Status: validated
+- Description: Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
+- Why it matters: A bounded first pass can be incomplete, but later correction must remain legible to users and operators
+- Source: user
+- Primary owning slice: M063/S02
+- Supporting slices: none
+- Validation: Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; the merge-revisions scenario reported `same-surface-revised` with explicit revision visibility and the no-delta scenario reported `same-surface-quiet-settlement` with no public churn), and `bun run tsc --noEmit` (exit 0). Continuation revisions are now rendered explicitly on the canonical surface instead of silently rewriting prior visible conclusions.
+- Notes: Revisions are allowed; silent mutation is not.
+
+### R066 — Continuation stops after sufficient high-risk coverage is achieved and must disclose that the review is sufficient-but-bounded rather than exhaustive
+- Class: constraint
+- Status: validated
+- Description: Continuation stops after sufficient high-risk coverage is achieved and must disclose that the review is sufficient-but-bounded rather than exhaustive
+- Why it matters: The redesign should optimize for truthful sufficiency rather than pretending exhaustive eventual coverage is always practical
+- Source: user
+- Primary owning slice: M063/S03
+- Supporting slices: M065/S02
+- Validation: Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths.
+- Notes: The stopping contract is explicitly non-exhaustive.
+
 ### R068 — Large-PR continuation and comment evolution are backed by durable operator evidence so maintainers can tell why continuation progressed, stopped, failed, or was superseded
 - Class: operability
 - Status: validated
@@ -809,8 +809,8 @@ This file is the explicit capability and coverage contract for the project.
 | R062 | continuity | validated | M063/S01 | none | M063/S01 verified automatic bounded-review continuation with fresh evidence: `bun test src/lib/review-continuation-lifecycle.test.ts` (12 pass), `bun test src/handlers/review.test.ts --filter "continuation"` (147 pass, including continuation enqueue/merge/suppression coverage), and `bun test scripts/verify-m063-s01.test.ts && bun run scripts/verify-m063-s01.ts --json` (`status_code: m063_s01_ok`, proving schedule, merge, no-delta settlement, and stale-authority suppression). |
 | R063 | continuity | validated | M063/S02 | none | Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; scenarios reported `same-surface-pending`, `same-surface-revised`, and `same-surface-quiet-settlement` with `visibleSurfaceCount: 1` and `continuationSurfaceCount: 0`), and `bun run tsc --noEmit` (exit 0). Continuation now updates one canonical visible review surface anchored to the base reviewOutputKey without creating an extra lifecycle comment. |
 | R064 | failure-visibility | validated | M062/S02 | M063/S02 | Validated by M062. Fresh milestone-close verification passed: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"`; timeout, max-turns, and large-PR bounded scenarios all reported `bounded-parity-ok` for bounded reason, covered scope, remaining scope, and continuation state), and `bun run tsc --noEmit` (exit 0). The visible review surfaces now truthfully report covered scope, remaining scope, and continuation status from one coherent contract. |
-| R065 | correctness | active | M063/S02 | none | mapped |
-| R066 | constraint | active | M063/S03 | M065/S02 | mapped |
+| R065 | correctness | validated | M063/S02 | none | Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; the merge-revisions scenario reported `same-surface-revised` with explicit revision visibility and the no-delta scenario reported `same-surface-quiet-settlement` with no public churn), and `bun run tsc --noEmit` (exit 0). Continuation revisions are now rendered explicitly on the canonical surface instead of silently rewriting prior visible conclusions. |
+| R066 | constraint | validated | M063/S03 | M065/S02 | Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths. |
 | R067 | continuity | active | M064/S01 | none | mapped |
 | R068 | operability | validated | M064/S02 | M065/S02 | M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. |
 | R069 | quality-attribute | validated | M065/S01 | none | M061/S05 pinned and passed mention, review, retrieval, reporting, and verifier regression suites via `bun scripts/phase-m061-token-regression-gate.ts`, preserving non-large-PR behavior and publication semantics while token-reduction work evolves. |
@@ -818,7 +818,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 12
-- Mapped to slices: 12
-- Validated: 55 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R068, R069)
+- Active requirements: 10
+- Mapped to slices: 10
+- Validated: 57 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R068, R069)
 - Unmapped active requirements: 0

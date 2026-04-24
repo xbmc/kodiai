@@ -1,0 +1,18 @@
+{
+  "id": "ddec8e96-d787-423e-93ca-0bf71ccfe3d7",
+  "runtime": "python",
+  "purpose": "print only M063 verification class fields",
+  "script_chars": 722,
+  "started_at": "2026-04-24T06:43:11.229Z",
+  "finished_at": "2026-04-24T06:43:11.252Z",
+  "exit_code": 0,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 23,
+  "stdout_bytes": 1766,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "/home/keith/src/kodiai/.gsd/exec/ddec8e96-d787-423e-93ca-0bf71ccfe3d7.stdout",
+  "stderr_path": "/home/keith/src/kodiai/.gsd/exec/ddec8e96-d787-423e-93ca-0bf71ccfe3d7.stderr"
+}

@@ -469,3 +469,7 @@
 {"id":"a0e90f38-eeed-4b40-87ae-c126c64cfb0e","ts":"2026-04-24T06:22:10.089Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
 {"id":"d9ea44a6-896f-49bb-960d-fde2ebf8934c","ts":"2026-04-24T06:28:40.330Z","severity":"info","message":"Committed: test: Added the `verify:m063:s03` bounded-continuation verifier, its te…","source":"notify","read":false}
 {"id":"0bb975f7-1f24-4e4c-ba92-c5bc0e8f10b2","ts":"2026-04-24T06:28:40.530Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"e8813852-cf07-49a6-beee-05ab7cf536aa","ts":"2026-04-24T06:37:37.359Z","severity":"info","message":"Committed: test: Extended retry handler coverage to prove stale continuation canno…","source":"notify","read":false}
+{"id":"bc82b6b0-e285-4eda-b528-e83addbca133","ts":"2026-04-24T06:37:53.319Z","severity":"info","message":"Verification gate: 3/3 checks passed","source":"notify","read":false}
+{"id":"d340a83b-f604-4569-9e8a-4314cb9bb9f7","ts":"2026-04-24T06:45:00.519Z","severity":"warning","message":"[dispatch] Implementation artifact check inconclusive for M063 — proceeding (git context unavailable)","source":"workflow-logger","read":false}
+{"id":"629ef168-4756-4a33-b8d0-24d4d36900d3","ts":"2026-04-24T06:45:55.025Z","severity":"warning","message":"[recovery] verify-fail complete-milestone M063: existsSync false for /home/keith/src/kodiai/.gsd/milestones/M063/M063-SUMMARY.md","source":"workflow-logger","read":false}

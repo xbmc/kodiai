@@ -1,0 +1,12 @@
+verificationContract:
+Each slice must verify the real user-visible contract it introduces, not just internal helpers. S01 closes only when handler/integration tests prove bounded large-PR first passes automatically continue through the real orchestration path. S02 closes only when formatter/handler/publication tests prove one stable visible surface, explicit revision wording, and truthful no-delta settlement. S03 closes only when a deterministic verifier or equivalent machine-readable proof demonstrates continuation prompt narrowing and authority-safe final writes on the assembled lifecycle.
+---
+verificationIntegration:
+Milestone acceptance requires one integrated proof path that starts from a bounded large-PR first pass, exercises automatic continuation, updates the same review identity in place, and shows that stale continuation cannot publish over newer authoritative state on the M063 path. Fixture-based proof is acceptable for M063 if it exercises the real handler/publication seams and leaves live rollout proof to M065.
+---
+verificationOperational:
+Structured lifecycle evidence must remain attributable: continuation planning reason, pass identity/base identity, settlement reason, authority loss, and boundedness/prompt-shaping metrics should all be inspectable from tests or verifier output. No slice should rely on opaque branch-local behavior to explain why continuation did or did not deepen the review.
+---
+verificationUat:
+A reviewer looking at the PR should experience one evolving review: first a bounded first-pass review, then the same visible surface deepened in place if continuation adds value, with explicit revision wording when earlier findings change and no extra lifecycle comment if continuation adds nothing meaningful.
+---
