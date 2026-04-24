@@ -1,0 +1,88 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_Vl2i7jBjbXRno9Bl7oCMVlxr|fc_0ad5a0c766313a530169eacf9f896881919ae85b67c5ef76d0",
+    "command": "rg -n \"buildReviewPromptDetails|prompt_section|review\\.user-prompt|buildPromptSectionRecord|promptSections|sections\" src/handlers/review.ts src/handlers/review.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/review.ts:47:  buildReviewPromptDetails,\nsrc/handlers/review.ts:50:import { buildPromptSectionRecord } from \"../execution/prompt-section-metrics.ts\";\nsrc/handlers/review.ts:3096:        const reviewPromptResult = buildReviewPromptDetails({\nsrc/handlers/review.ts:3186:          buildPromptSectionRecord({\nsrc/handlers/review.ts:3190:            promptKind: \"review.user-prompt\",\nsrc/handlers/review.ts:3191:            sections: reviewPromptResult.sections,\nsrc/handlers/review.ts:3217: ",
+    "timestamp": 1776996256355
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_22quNShX0K27lBwAp0ZWyBTt|fc_0ad5a0c766313a530169eacfab87e08191983559e1b8eb53ae",
+    "command": "rg -n \"type PromptSection|promptSections:|recordPromptSections|buildPromptSectionRecord|PromptSectionRecord|sections:\" src | head -n 80",
+    "exitCode": 0,
+    "outputSnippet": "src/llm/cost-tracker.ts:9:import type { TelemetryStore, LlmCostRecord, PromptSectionRecord } from \"../telemetry/types.ts\";\nsrc/llm/cost-tracker.ts:61:  trackPromptSections(params: PromptSectionRecord): Promise<void>;\nsrc/llm/cost-tracker.ts:147:        await telemetryStore.recordPromptSections(params);\nsrc/handlers/review.ts:50:import { buildPromptSectionRecord } from \"../execution/prompt-section-metrics.ts\";\nsrc/handlers/review.ts:3186:          buildPromptSectionRecord({\nsrc/handlers/review.ts",
+    "timestamp": 1776996268341
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_kK0Ue3ZhzcntHo1ZexOV57M0|fc_0ad5a0c766313a530169eacfbc33d48191ba726d4cd701ed2f",
+    "command": "rg -n \"recordPromptSections|promptSections|prompt_section|review.user-prompt|truncated\" src/handlers/review.test.ts | tail -n 80",
+    "exitCode": 0,
+    "outputSnippet": "(no output)",
+    "timestamp": 1776996284767
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_vCoLc19L4qFXbO5LdwdVwtnk|fc_0ad5a0c766313a530169eacfc413cc8191ac6f6595462c0510",
+    "command": "rg -n \"retry|isTimeout|recordLlmCost|telemetryStore:|runSingleAuthorTierEvent|createReviewHandler\\(\" src/handlers/review.test.ts | head -n 120",
+    "exitCode": 0,
+    "outputSnippet": "81:    createReviewHandler({\n111:      telemetryStore: noopTelemetryStore,\n146:    createReviewHandler({\n173:      telemetryStore: noopTelemetryStore,\n310:    createReviewHandler({\n331:      telemetryStore: noopTelemetryStore,\n359:      telemetryStore: noopTelemetryStore,\n739:    createReviewHandler({\n745:      telemetryStore: noopTelemetryStore,\n783:    createReviewHandler({\n789:      telemetryStore: noopTelemetryStore,\n823:    createReviewHandler({\n829:      telemetryStore: noopTelemetryStore,",
+    "timestamp": 1776996293583
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_orKNRLxeMk60f77YOMDMcD2B|fc_0ad5a0c766313a530169eacfcfec848191b724d197bf893f2a",
+    "command": "rg -n \"timed-out review|retry path|review-retry|timeout_partial|retryCheckpoint|retryScope|pull_request.review-retry|isTimeout: true|retryReviewOutputKey\" src/handlers/review.test.ts | head -n 80",
+    "exitCode": 0,
+    "outputSnippet": "1775:  test(\"retry path still idempotently skips duplicate output when ingress dedup is missed\", async () => {\n8742:        if (context?.action === \"review-retry\") {\n8801:            isTimeout: true,\n8872:    const retryContext = enqueuedContexts.find((context) => context.action === \"review-retry\");\n8874:      action: \"review-retry\",\n8875:      jobType: \"pull-request-review-retry\",\n8907:        if (context?.action === \"review-retry\") {\n8958:          isTimeout: true,\n9043:    expect(enqueuedCont",
+    "timestamp": 1776996304494
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_qedrZodzWZrtbfa44hGE6yAE|fc_0ad5a0c766313a530169eacfe107e881918d08d6cddef83b4f",
+    "command": "rg -n \"sectionName:|truncated: true|MAX_.*CHARS|budget|buildPromptBuildResult\\(|buildReviewPromptDetails\\(\" src/execution/review-prompt.ts | head -n 120",
+    "exitCode": 0,
+    "outputSnippet": "28:const DEFAULT_MAX_TITLE_CHARS = 200;\n29:const DEFAULT_MAX_PR_BODY_CHARS = 2000;\n132:  return { text: `${clipped}\\n...[truncated]`, truncated: true };\n948:const MAX_EXCERPT_CHARS = 200;\n983:      MAX_EXCERPT_CHARS,\n1007:const MAX_CLUSTER_SAMPLE_CHARS = 150;\n1025:      MAX_CLUSTER_SAMPLE_CHARS,\n1050:const MAX_WIKI_EXCERPT_CHARS = 200;\n1118:      MAX_WIKI_EXCERPT_CHARS,\n1278:// Helper: Character budget utilities for enrichment sections\n1280:const MAX_ADVISORY_SECTION_CHARS = 500;\n1281:const MAX_",
+    "timestamp": 1776996323452
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_SAv44vRp98lMNMxqyJl8D6yI|fc_0ad5a0c766313a530169eacffa1d1c8191bdd204035e745e7c",
+    "command": "rg -n \"describe\\(\\\"createReviewHandler timeout resilience\\\"|describe\\(\" src/handlers/review.test.ts | sed -n '90,120p'",
+    "exitCode": 0,
+    "outputSnippet": "(no output)",
+    "timestamp": 1776996347166
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_DxIDdHQbd3pwJKDpXGydtQb4|fc_0ad5a0c766313a530169eacfff55588191932cab8e93eb7a0b",
+    "command": "rg -n 'describe\\(\"createReviewHandler timeout resilience\"|describe\\(' src/handlers/review.test.ts | tail -n 40",
+    "exitCode": 0,
+    "outputSnippet": "77:describe(\"createReviewHandler coordinator wiring\", () => {\n127:describe(\"createReviewHandler queued-claim cleanup\", () => {\n675:describe(\"resolveAuthorTierFromSources\", () => {\n717:describe(\"createReviewHandler review_requested gating\", () => {\n1052:describe(\"createReviewHandler auto profile selection\", () => {\n1584:describe(\"createReviewHandler open-event reviewer requests\", () => {\n1676:describe(\"createReviewHandler review_requested idempotency\", () => {\n2708:describe(\"createReviewHandler f",
+    "timestamp": 1776996351989
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_bmUHxZGrrvRwoNTrAs7HRzOt|fc_0ad5a0c766313a530169ead00abd948191ac37bed28115129b",
+    "command": "rg -n 'review-instructions|pushBudgetedSection\\(|pushSection\\(\"review' src/execution/review-prompt.ts | tail -n 20",
+    "exitCode": 0,
+    "outputSnippet": "1767:  pushSection(\"review-pr-context\", prContextLines);\n1781:  pushBudgetedSection(\"review-change-context\", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);\n1806:  pushBudgetedSection(\"review-size-context\", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);\n1825:  pushBudgetedSection(\"review-graph-context\", graphContextLines, REVIEW_SECTION_BUDGETS.graphContext);\n1887:  pushBudgetedSection(\"review-knowledge-context\", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);",
+    "timestamp": 1776996363547
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_p97ryTMmMWOHJE3NRdMIsxvN|fc_0ad5a0c766313a530169ead01b7b688191871cec56f1f3c8e5",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1776996428990
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_up6USEyNEDg8lGYCda20wj22|fc_0ad5a0c766313a530169ead054074c81919f2507c26bcb68be",
+    "command": "bun test src/handlers/review.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [162.00ms]\n(pass) resolveAuthorTierFromSources > prefers cont",
+    "timestamp": 1776996436539
+  }
+]

@@ -39,7 +39,7 @@
   - Files: `src/execution/review-prompt.ts`, `src/execution/review-prompt.test.ts`, `src/execution/prompt-section-metrics.ts`
   - Verify: bun test src/execution/review-prompt.test.ts
 
-- [ ] **T02: Wire multi-section review prompt telemetry through initial and retry review execution** `est:3h`
+- [x] **T02: Wire multi-section review prompt telemetry through initial and retry review execution** `est:3h`
   Update the review handler so both the normal review flow and the reduced-scope retry flow persist the new section arrays returned by `buildReviewPromptDetails()` without collapsing them back into one bucket. Add or extend handler tests to assert that `promptKind: "review.user-prompt"` remains stable while multiple named section rows are emitted for review execution, including truncation metadata when the prompt builder reports it. Keep the work wiring-only: the handler should consume the new prompt-builder contract rather than recomputing section metrics itself.
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/execution/review-prompt.ts`
   - Verify: bun test src/handlers/review.test.ts
