@@ -442,6 +442,83 @@ describe("verify-m065", () => {
     });
   });
 
+  test("evaluate treats malformed raw S03 output as a nested contract failure instead of pending proof", async () => {
+    const malformedS03 = {
+      command: "verify:m065:s03",
+      generated_at: FIXED_TIME,
+      success: true,
+      status_code: "m065_s03_ok",
+      issues: [],
+    };
+    const { evaluateM065 } = await loadModuleWithNestedReports({ s03: malformedS03 });
+
+    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const failingCheck = report.checks.find(
+      (check: TopLevelCheck) => check.id === "M065-FRESH-REGRESSION-PROOF",
+    );
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_nested_contract_failed");
+    expect(report.failing_check_id).toBe("M065-FRESH-REGRESSION-PROOF");
+    expect(report.nested_reports.s03).toBeNull();
+    expect(failingCheck).toEqual({
+      id: "M065-FRESH-REGRESSION-PROOF",
+      passed: false,
+      skipped: false,
+      status_code: "nested_report_malformed",
+      detail:
+        "verify:m065:s03 omitted one or more required fields: command, generated_at, success, status_code, and issues, check_ids, checks, failing_check_id, and rollout_obligation.",
+      drill_down: {
+        command: "bun run verify:m065:s03 -- --json",
+        report_key: "nested_reports.s03",
+      },
+    });
+    expect(report.rollout_obligations.freshRegressionProof).toEqual({
+      state: "failed",
+      source: null,
+      detail: "Fresh non-large regression proof is malformed and cannot be trusted.",
+      drill_down_command: "bun run verify:m065:s03 -- --json",
+    });
+  });
+
+  test("evaluate keeps earlier S02 failure ahead of a later failing S03 report", async () => {
+    const s02 = buildS02Report({
+      success: false,
+      status_code: "m065_s02_nested_verifier_failed",
+      failing_check_id: "M065-S02-VISIBLE-REVIEW-PROOF",
+      issues: ["M065-S02-VISIBLE-REVIEW-PROOF: verify:m049:s02 returned m049_s02_review_missing"],
+    });
+    const s03 = buildS03Report({
+      success: false,
+      status_code: "m065_s03_verifier_failed",
+      failing_check_id: "M065-S03-FRESH-REGRESSION-EVIDENCE",
+      issues: ["M065-S03-FRESH-REGRESSION-EVIDENCE: verify:m061:regression reported one or more failing regression suites: M061-REG-MENTION-01."],
+      rollout_obligation: {
+        state: "failed",
+        source: "nested_reports.regression_gate",
+        detail: "Fresh non-large regression proof is failing and requires rerun packaging.",
+        drill_down_command: "bun run verify:m065:s03 -- --json",
+      },
+    });
+    const { evaluateM065 } = await loadModuleWithNestedReports({ s02, s03 });
+
+    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_nested_verifier_failed");
+    expect(report.failing_check_id).toBe("M065-LIVE-LARGE-PR-PROOF");
+    expect(report.checks.find((check: TopLevelCheck) => check.id === "M065-LIVE-LARGE-PR-PROOF")).toMatchObject({
+      passed: false,
+      skipped: false,
+      status_code: "nested_report_failed",
+    });
+    expect(report.checks.find((check: TopLevelCheck) => check.id === "M065-FRESH-REGRESSION-PROOF")).toMatchObject({
+      passed: false,
+      skipped: false,
+      status_code: "nested_report_failed",
+    });
+  });
+
   test("evaluate fails loudly when the S02 report is malformed instead of inventing authority", async () => {
     const { evaluateM065 } = await loadModuleWithNestedReports({
       s02: {

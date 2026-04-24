@@ -1,0 +1,98 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_JQzkqMjXtPa6NNudyA8wa3S3|fc_06e15c41e01b14db0169eb393dd8348191b541f59a78914a43",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [4.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [2.00ms]\n(pass) verify-m065 > evaluate preserves authoritative nested reports intact and leaves only S03 pending when S02 passes [3.00ms]\n(pass) verify-m065 > evaluate satisfies fresh regression proof once nested S03 evidence is present [1.00ms]\n(pass)",
+    "timestamp": 1777023294211
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_TNOVjkUGFvNkknx7Hptgr7hX|fc_06e15c41e01b14db0169eb393dd864819186922dd4091b2769",
+    "command": "bun test scripts/verify-m065-s03.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s03.test.ts:\n(pass) verify-m065-s03 > parse args accepts --json and --help and rejects unknown flags\n(pass) verify-m065-s03 > exports stable check ids, preserves nested regression payload, and satisfies rollout packaging when all proofs are present [2.00ms]\n(pass) verify-m065-s03 > fails the fresh regression check but preserves wrapped suite ids when the authoritative regression gate is red [1.00ms]\n(pass) verify-m065-s03 > fails loudly for malform",
+    "timestamp": 1777023294211
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_BEQgtGse6MJ6OYlEXElLr68R|fc_06e15c41e01b14db0169eb3946cf0c8191abd45889ea215879",
+    "path": "scripts/verify-m065.test.ts",
+    "timestamp": 1777023332776
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_A7MEs8h0s6qQNCDnbyX4Dd4C|fc_06e15c41e01b14db0169eb396974708191a5ced4061611f1db",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [2.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [2.00ms]\n(pass) verify-m065 > evaluate preserves authoritative nested reports intact and leaves only S03 pending when S02 passes [3.00ms]\n(pass) verify-m065 > evaluate satisfies fresh regression proof once nested S03 evidence is present [2.00ms]\n456 | ",
+    "timestamp": 1777023338252
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_Nck1ue8DWcDbzLESEl7kMdtI|fc_06e15c41e01b14db0169eb397b650c81918199b84550d3c5c4",
+    "path": "scripts/verify-m065.ts",
+    "timestamp": 1777023370010
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_3OVJDwuNSYBjJkr09uJ4CHlS|fc_06e15c41e01b14db0169eb398b9fec8191858fe5724b14c101",
+    "path": "scripts/verify-m065.ts",
+    "timestamp": 1777023378174
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_oIaYbrHBKwFlTnCQTbAF9pml|fc_06e15c41e01b14db0169eb3998c01c8191b7183a554968ecdd",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [3.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [1.00ms]\n394 |           report_key: \"rollout_obligations.freshRegressionProof\",\n395 |         },\n396 |       },\n397 |     ]);\n398 | \n399 |     expect(report.rollout_obligations).toEqual({\n                                             ^\nerror: expect(re",
+    "timestamp": 1777023385098
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_j2Nuf7R96X5AUyjEQE9hwOlY|fc_06e15c41e01b14db0169eb3998c0248191908032a200f434d9",
+    "command": "bun test scripts/verify-m065-s03.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s03.test.ts:\n(pass) verify-m065-s03 > parse args accepts --json and --help and rejects unknown flags\n(pass) verify-m065-s03 > exports stable check ids, preserves nested regression payload, and satisfies rollout packaging when all proofs are present [4.00ms]\n(pass) verify-m065-s03 > fails the fresh regression check but preserves wrapped suite ids when the authoritative regression gate is red\n(pass) verify-m065-s03 > fails loudly for malformed nested",
+    "timestamp": 1777023385098
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_E22zYDhfXrSKS1ObmLasqTg3|fc_06e15c41e01b14db0169eb3998c0308191b6fc133a31f3d5d1",
+    "command": "bun run verify:m065 -- --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m065.ts --json\nGET /repos/xbmc/kodiai/pulls/101/comments?per_page=100&page=1&sort=created&direction=desc - 403 with id A19A:232D3E:19AF065:1A0F5BC:69EB39AD in 456ms\nverify:m065 failed: M065-LIVE-LARGE-PR-PROOF:nested_report_failed\n{\n  \"command\": \"verify:m065\",\n  \"generated_at\": \"2026-04-24T09:36:25.210Z\",\n  \"success\": false,\n  \"status_code\": \"m065_nested_verifier_failed\",\n  \"check_ids\": [\n    \"M065-M062-PREREQUISITE\",\n    \"M065-M063-PREREQUISITE\",\n    \"M065-M064-PREREQUISITE",
+    "timestamp": 1777023385098
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_EZUWUZhIrU4vlCr3Tpwhz7gZ|fc_06e15c41e01b14db0169eb39b4463c819195d77883837ab2bf",
+    "path": "scripts/verify-m065.ts",
+    "timestamp": 1777023415267
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_3cbj5PTFPNS9fwdw2erEqyIl|fc_06e15c41e01b14db0169eb39bc9d7c81919c8219816955b29b",
+    "command": "bun test scripts/verify-m065.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065.test.ts:\n(pass) verify-m065 > parse args accepts --json and rejects unknown flags [3.00ms]\n(pass) verify-m065 > stable top-level check ids stay pinned to nested prerequisites plus rollout obligations [2.00ms]\n(pass) verify-m065 > evaluate preserves authoritative nested reports intact and leaves only S03 pending when S02 passes [3.00ms]\n(pass) verify-m065 > evaluate satisfies fresh regression proof once nested S03 evidence is present [2.00ms]\n(pass)",
+    "timestamp": 1777023421410
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_DOXZUw9QQYAOwLEMCUi0jZac|fc_06e15c41e01b14db0169eb39bc9d8881918e6fe850dba9a85e",
+    "command": "bun test scripts/verify-m065-s03.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s03.test.ts:\n(pass) verify-m065-s03 > parse args accepts --json and --help and rejects unknown flags\n(pass) verify-m065-s03 > exports stable check ids, preserves nested regression payload, and satisfies rollout packaging when all proofs are present [4.00ms]\n(pass) verify-m065-s03 > fails the fresh regression check but preserves wrapped suite ids when the authoritative regression gate is red [1.00ms]\n(pass) verify-m065-s03 > fails loudly for malform",
+    "timestamp": 1777023421410
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_eAGdRH4fu3cnCi0QsOcBVTcY|fc_06e15c41e01b14db0169eb39bc9d908191ac8dde53b785dff1",
+    "command": "bun run verify:m065 -- --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m065.ts --json\nGET /repos/xbmc/kodiai/pulls/101/comments?per_page=100&page=1&sort=created&direction=desc - 403 with id A374:377F62:1AF5EEA:1B55CAC:69EB39CB in 337ms\nverify:m065 failed: M065-LIVE-LARGE-PR-PROOF:nested_report_failed\n{\n  \"command\": \"verify:m065\",\n  \"generated_at\": \"2026-04-24T09:37:01.504Z\",\n  \"success\": false,\n  \"status_code\": \"m065_nested_verifier_failed\",\n  \"check_ids\": [\n    \"M065-M062-PREREQUISITE\",\n    \"M065-M063-PREREQUISITE\",\n    \"M065-M064-PREREQUISITE",
+    "timestamp": 1777023421410
+  }
+]

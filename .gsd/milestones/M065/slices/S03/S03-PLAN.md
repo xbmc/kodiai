@@ -53,7 +53,7 @@ Must-haves:
   - Files: `scripts/verify-m065-s03.ts`, `scripts/verify-m065-s03.test.ts`, `docs/runbooks/m065-rollout-proof.md`, `docs/runbooks/review-requested-debug.md`, `docs/runbooks/recent-review-audit.md`, `package.json`
   - Verify: bun test scripts/verify-m065-s03.test.ts && bun run verify:m065:s03 -- --json
 
-- [ ] **T03: Compose S03 into the top-level M065 verifier and keep failure drill-down mechanical** `est:75m`
+- [x] **T03: Compose S03 into the top-level M065 verifier and keep failure drill-down mechanical** `est:75m`
   Replace the fresh-regression placeholder in `verify:m065` with the authoritative nested S03 report while preserving the S01/S02 composition pattern. `M065-FRESH-REGRESSION-PROOF` should now be satisfied, failed, or malformed based on `nested_reports.s03`, and the milestone report should keep pointing operators to the exact drill-down commands without changing the top-level CLI shape.
 
 Must-haves:

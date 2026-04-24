@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-24T09:22:35Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-24T09:22:35Z","fingerprint":"1f52c48d8bdf54065ca4c146a93b7a721c515b08","fileCount":500,"truncated":true} -->
+Generated: 2026-04-24T09:34:20Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-04-24T09:34:20Z","fingerprint":"48a19ebece9a171b05562cf8d54021b33bcb1d47","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -40,6 +40,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/operations/embedding-integrity.md`
 
 ### docs/runbooks/
+- `docs/runbooks/m065-rollout-proof.md`
 - `docs/runbooks/mentions.md`
 - `docs/runbooks/recent-review-audit.md`
 - `docs/runbooks/review-requested-debug.md`
@@ -156,4 +157,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(32 files: 32 .ts)*
+- *(31 files: 31 .ts)*

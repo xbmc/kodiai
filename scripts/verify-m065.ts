@@ -153,9 +153,9 @@ function buildInvalidArgReport(params: { generatedAt?: string; issue: string }):
   };
 }
 
-function buildRolloutObligations(params?: { s02?: S02NestedReportContract | null; s03?: S03NestedReportContract | null }): M065Report["rollout_obligations"] {
+function buildRolloutObligations(params?: { s02?: S02NestedReportContract | null; s03?: unknown }): M065Report["rollout_obligations"] {
   const s02 = params?.s02 ?? null;
-  const s03 = params?.s03 ?? null;
+  const s03 = params?.s03;
   const liveLargePrProof = s02 && s02.success
     ? {
       state: "satisfied" as const,
@@ -170,19 +170,26 @@ function buildRolloutObligations(params?: { s02?: S02NestedReportContract | null
       drill_down_command: ROLLOUT_DRILL_DOWN_COMMAND,
     };
 
-  const freshRegressionProof = s03 == null
+  const freshRegressionProof = typeof s03 === "undefined" || s03 === null
     ? {
       state: "pending" as const,
       source: null,
       detail: "Reserved for fresh non-large regression proof from S03.",
       drill_down_command: ROLLOUT_DRILL_DOWN_COMMAND,
     }
-    : {
-      state: s03.rollout_obligation.state,
-      source: s03.success ? "nested_reports.s03" : s03.rollout_obligation.source,
-      detail: s03.rollout_obligation.detail,
-      drill_down_command: S03_DRILL_DOWN_COMMAND,
-    };
+    : !isS03NestedReportContract(s03)
+      ? {
+        state: "failed" as const,
+        source: null,
+        detail: "Fresh non-large regression proof is malformed and cannot be trusted.",
+        drill_down_command: S03_DRILL_DOWN_COMMAND,
+      }
+      : {
+        state: s03.rollout_obligation.state,
+        source: s03.success ? "nested_reports.s03" : s03.rollout_obligation.source,
+        detail: s03.rollout_obligation.detail,
+        drill_down_command: S03_DRILL_DOWN_COMMAND,
+      };
 
   return {
     liveLargePrProof,
@@ -583,7 +590,7 @@ export async function evaluateM065(params?: { generatedAt?: string }): Promise<M
     }).check,
   ];
   const liveProofCheck = buildLiveProofCheck({ report: s02 }).check;
-  const freshRegressionCheck = buildFreshRegressionCheck({ report: nested_reports.s03 }).check;
+  const freshRegressionCheck = buildFreshRegressionCheck({ report: s03 }).check;
   const checks = [...prerequisiteChecks, liveProofCheck, freshRegressionCheck];
   const overall = deriveOverallStatus(checks);
 
@@ -595,7 +602,7 @@ export async function evaluateM065(params?: { generatedAt?: string }): Promise<M
     check_ids: [...M065_CHECK_IDS],
     checks,
     nested_reports,
-    rollout_obligations: buildRolloutObligations({ s02: nested_reports.s02, s03: nested_reports.s03 }),
+    rollout_obligations: buildRolloutObligations({ s02: nested_reports.s02, s03 }),
     failing_check_id: overall.failing_check_id,
     issues: overall.issues,
   };
