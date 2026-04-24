@@ -1,0 +1,170 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_0wdBb1MqN5UMraTS3KvJu1FJ|fc_0585680c3b2004f30169eb038aabf48191b72cce754065e94b",
+    "command": "rg -n \"reviewOutputKey|Review Details|timeout|retry merge|continuation|canonical comment|marker\" src/handlers/review.ts src/lib/partial-review-formatter.ts src/handlers/review.test.ts src/handlers/review-idempotency.ts src/lib/review-continuation-lifecycle.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/lib/partial-review-formatter.ts:44:    lines.push(\"> Consider splitting large PRs to stay within the review timeout budget.\");\nsrc/handlers/review-idempotency.ts:39:  reviewOutputKey: string;\nsrc/handlers/review-idempotency.ts:40:  marker: string;\nsrc/handlers/review-idempotency.ts:49:  reviewOutputKey: string;\nsrc/handlers/review-idempotency.ts:74:  marker: string;\nsrc/handlers/review-idempotency.ts:87:      if (item.body?.includes(params.marker)) {\nsrc/handlers/review-idempotency.ts:136:  ",
+    "timestamp": 1777009547541
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_yxD3IYqF8NJNgyLoELqVeehk|fc_0585680c3b2004f30169eb0399c6e0819193b5442576bea110",
+    "command": "rg -n \"Bounded first-pass review|buildReviewOutputMarker\\(|timeout Review Details comment|retry Review Details merge|summary comment not found|standalone Review Details\" src/handlers/review.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "1744:            publishedMarkers.add(buildReviewOutputMarker(context.reviewOutputKey));\n1842:            publishedMarkers.add(buildReviewOutputMarker(context.reviewOutputKey));\n1991:    const marker = buildReviewOutputMarker(expectedReviewOutputKey);\n4623:    const marker = buildReviewOutputMarker(reviewOutputKey);\n4773:    const marker = buildReviewOutputMarker(reviewOutputKey);\n5001:    const marker = buildReviewOutputMarker(reviewOutputKey);\n5178:      buildReviewOutputMarker(reviewOutputKey",
+    "timestamp": 1777009562638
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_TFgAeehyuKBJgrFcaZbIURXH|fc_0585680c3b2004f30169eb03a23bb88191a99b6703f0eb2e9e",
+    "command": "rg -n \"function buildReviewDetailsMarker|export function buildReviewDetailsMarker|buildReviewDetailsMarker\\(\" src/lib/review-utils.ts src/handlers/review.ts src/handlers/review.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/lib/review-utils.ts:335:export function buildReviewDetailsMarker(reviewOutputKey: string): string {\nsrc/lib/review-utils.ts:715:    buildReviewDetailsMarker(reviewOutputKey),\nsrc/handlers/review.ts:662:  const marker = buildReviewDetailsMarker(reviewOutputKey);\n",
+    "timestamp": 1777009571115
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_O4pcAQuSRxUPxETZ5ODwvISt|fc_0585680c3b2004f30169eb03ad81248191a7f6e68693553ee9",
+    "path": "src/lib/partial-review-formatter.ts",
+    "timestamp": 1777009583246
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_8n4q3uLB5uLsEoZWWZ4ESDIt|fc_0585680c3b2004f30169eb03b0fcb08191a076780316d30b05",
+    "path": "src/lib/partial-review-formatter.ts",
+    "timestamp": 1777009587319
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_A772KX9fIGi7tvAIpFo5Co1I|fc_0585680c3b2004f30169eb03b5078c81919ceb712665be1efb",
+    "path": "src/lib/partial-review-formatter.ts",
+    "timestamp": 1777009591416
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_OQwTOGThkA1Xwl1GYbTS5d8h|fc_0585680c3b2004f30169eb03b8ea908191993896a5132b7d48",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009596693
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_MkayXVypDarxzvUxYZa5UCck|fc_0585680c3b2004f30169eb03c32d548191afc24ee776598f30",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009607623
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_KtMft96XrZuXOhFlbs8Ru64T|fc_0585680c3b2004f30169eb03c9288c81919b070481de63b079",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009615358
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_CA2irTqF6KQ36F13zjCGrr9o|fc_0585680c3b2004f30169eb03d350cc8191b67c6e47b9819443",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009626288
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_SEw78mPfo917wlmLSQP7PeP3|fc_0585680c3b2004f30169eb03de92a48191bfe3cf92d1f2ea80",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1777009639955
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_WwtwxBPnwKmQZi8nd1YhhpzP|fc_0585680c3b2004f30169eb03eb56848191a36223fcd391fca2",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1777009659720
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_XzTRSD1dhBpSJMnTngR8lAug|fc_0585680c3b2004f30169eb03ffe4f08191a818f4b5a87355ff",
+    "command": "bun test ./src/handlers/review.test.ts --filter \"timeout|retry merge\"",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator [3.00ms]\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [2.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [138.00ms]\n(pass) resolveAuthorTierFromSources > prefers cont",
+    "timestamp": 1777009664445
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_tnUeaOw67AEORj4FPoBJm2Lb|fc_0585680c3b2004f30169eb041ac37c8191a4b1bae98f2341fc",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009715444
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_qbdKyihwR57ZNB6QXUCKegbD|fc_0585680c3b2004f30169eb04371f848191b27c84b289e4fb85",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009734403
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_V0nWaKGdkN2zYEARrHFxqL4z|fc_0585680c3b2004f30169eb044873948191874d67ac1ddb2a1e",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009745204
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_pusSj4ara7B6t9xndsZMCOCK|fc_0585680c3b2004f30169eb045496a48191986f7518e36d7d7e",
+    "path": "src/handlers/review.ts",
+    "timestamp": 1777009756459
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_fhOp6VoFiifPEHgNklWTppQi|fc_0585680c3b2004f30169eb04606268819183341c552a2c89fc",
+    "command": "bun test ./src/handlers/review.test.ts --filter \"timeout|retry merge\"",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [6.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [139.00ms]\n(pass) resolveAuthorTierFromSources > prefers contributor p",
+    "timestamp": 1777009760898
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_elEmoIlTwwyE6uT7qIBUBee9|fc_0585680c3b2004f30169eb046cc15c8191a9e51c06ff065a49",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1777009781482
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_HbaLNutr7SfG7AC326SWsxsl|fc_0585680c3b2004f30169eb0478cd2481919410e636cb9dbf92",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1777009786732
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_4s32JOvMU3wELt5J2l2tLvwn|fc_0585680c3b2004f30169eb047d3afc8191a0c327b970ee1101",
+    "path": "src/handlers/review.test.ts",
+    "timestamp": 1777009801371
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_pCkNU5BOhYPzLH3ynTUzKC6R|fc_0585680c3b2004f30169eb048bc08c81918c7744aa9356d717",
+    "command": "bun test ./src/handlers/review.test.ts --filter \"timeout|retry merge\"",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator [3.00ms]\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [128.00ms]\n(pass) resolveAuthorTierFromSources > prefers cont",
+    "timestamp": 1777009804604
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_VqD0FWYXOYT4AgxxUgwtdeLP|fc_0585680c3b2004f30169eb0497b50881919e8d09e9c229870c",
+    "command": "bun test ./src/handlers/review.test.ts --filter \"timeout\" && bun test ./src/handlers/review.test.ts --filter \"retry merge\"",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [132.00ms]\n(pass) resolveAuthorTierFromSources > prefers cont",
+    "timestamp": 1777009816513
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_H8yFuNBDEW3DkMjuMTONtBqI|fc_0585680c3b2004f30169eb04c2f8ac8191a1600c8abf09df08",
+    "command": "python3 - <<'PY'\nimport subprocess, time, shlex\ncmd = ['bun','test','./src/handlers/review.test.ts','--filter','timeout']\nstart = time.time()\nproc = subprocess.run(cmd, capture_output=True, text=True)\ndur = int((time.time()-start)*1000)\nprint(f'EXIT={proc.returncode}')\nprint(f'DURATION_MS={dur}')\nprint(proc.stdout)\nprint(proc.stderr)\nPY",
+    "exitCode": 0,
+    "outputSnippet": "EXIT=0\nDURATION_MS=5629\nbun test v1.3.8 (b64edcb4)\n\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [5.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [158.00ms]\n(pass) resolveAuthorTierF",
+    "timestamp": 1777009859855
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_zE9wo6ht01c7DCrF9U9SsyXE|fc_0585680c3b2004f30169eb04c2f8c0819197bfbaa7a3d1733c",
+    "command": "python3 - <<'PY'\nimport subprocess, time, shlex\ncmd = ['bun','test','./src/handlers/review.test.ts','--filter','retry merge']\nstart = time.time()\nproc = subprocess.run(cmd, capture_output=True, text=True)\ndur = int((time.time()-start)*1000)\nprint(f'EXIT={proc.returncode}')\nprint(f'DURATION_MS={dur}')\nprint(proc.stdout)\nprint(proc.stderr)\nPY",
+    "exitCode": 0,
+    "outputSnippet": "EXIT=0\nDURATION_MS=5562\nbun test v1.3.8 (b64edcb4)\n\n\nsrc/handlers/review.test.ts:\n(pass) createReviewHandler coordinator wiring > logs when the review handler falls back to a private coordinator [1.00ms]\n(pass) createReviewHandler queued-claim cleanup > releases a pre-enqueue automatic claim when queueing fails [6.00ms]\n(pass) createReviewHandler queued-claim cleanup > older queued automatic review stays suppressed after a newer explicit review finishes first [149.00ms]\n(pass) resolveAuthorTierF",
+    "timestamp": 1777009859855
+  }
+]

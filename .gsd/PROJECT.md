@@ -20,7 +20,12 @@ Milestone M062 is complete as the large-PR truth baseline:
 - Requirements `R061` and `R064` are validated with fresh milestone-close evidence from verifier tests, handler/formatter tests, deterministic verifier runs, and a clean TypeScript compile gate.
 - M062 now has two deterministic proof surfaces: `verify:m062:s01` for bounded-vs-dead-end first-pass classification and `verify:m062:s03` for visible-surface truthfulness parity.
 
-The next roadmap focus is M063 continuation redesign: automatic background continuation, in-place visible review updates, and explicit revision semantics on the same review lifecycle.
+Milestone M063 is in progress on continuation redesign:
+- S01 is complete: large-PR bounded first passes now plan automatic continuation through a dedicated lifecycle seam instead of timeout-branch-local handler logic.
+- `src/lib/review-continuation-lifecycle.ts` owns continuation planning and settlement decisions, keeping the base `reviewOutputKey` as the public lifecycle identity while deriving continuation passes with a stable `-retry-1` suffix.
+- `src/handlers/review.ts` now orchestrates automatic enqueue, merge/no-delta settlement, and stale-authority suppression through that shared lifecycle contract and the existing `ReviewWorkCoordinator` checks.
+- `scripts/verify-m063-s01.ts` provides deterministic proof for schedule, merge, no-delta, and stale-authority-suppressed scenarios on the shipped S01 paths.
+- Requirement `R062` is now validated for the shipped automatic-continuation contract; S02 and S03 remain to add same-surface revision semantics and measurable prompt narrowing with end-state authority proof.
 
 The prior token-accounting track (M061) remains supporting infrastructure: Postgres-backed telemetry, prompt-section accounting, mention-context reduction, and reuse evidence continue to provide observability and verification surfaces for later review-work milestones.
 
@@ -30,8 +35,9 @@ The prior token-accounting track (M061) remains supporting infrastructure: Postg
 - **Execution:** Azure Container App Jobs dispatch per review; the agent writes `result.json` to a shared Azure Files mount.
 - **Review identity:** `reviewOutputKey` plus HTML markers create a stable visible review identity across GitHub surfaces.
 - **Large-PR first-pass contract:** `normalizeReviewFirstPass` is the single structured seam for constrained review outcomes. It prefers checkpoint evidence over inferred counts, omits unsupported scope fields, and preserves an explicit `zero-evidence-failure` state when no truthful first-pass evidence exists.
+- **Continuation lifecycle seam:** automatic large-PR follow-up is now driven by `planReviewContinuation(...)` and `settleReviewContinuation(...)`, which separate scheduling/settlement rules from handler orchestration and keep continuation pass keys distinct from the public lifecycle key.
 - **Visible review coherence:** Partial-review output and Review Details both derive bounded reason, evidence source, covered scope, remaining scope, and continuation state from the same normalized first-pass payload; timeout/retry data is additive metadata rather than an alternate wording path.
-- **Deterministic proof:** `scripts/verify-m062-s01.ts` validates bounded-vs-dead-end classification from the production first-pass seam, and `scripts/verify-m062-s03.ts` validates that the bounded public comment and Review Details stay semantically aligned on the same scenarios.
+- **Deterministic proof:** `scripts/verify-m062-s01.ts` validates bounded-vs-dead-end classification from the production first-pass seam, `scripts/verify-m062-s03.ts` validates visible-surface semantic alignment, and `scripts/verify-m063-s01.ts` validates automatic continuation scheduling, settlement classification, and stale-authority suppression from the production continuation seam.
 - **Telemetry baseline:** Usage and verifier scripts read live Postgres telemetry via `createDbClient()` and fail open with explicit database access states instead of consulting stale SQLite paths.
 
 ## Capability Contract
@@ -46,3 +52,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M055: Live hardening and rollout proof.
 - [x] M061: Token-accounting baseline and reduction proof track (supporting observability infrastructure).
 - [x] M062: Large-PR truth baseline — bounded first-pass contract, visible review coherence, and deterministic truthfulness verifier complete.
+- [ ] M063: Continuation redesign — S01 automatic continuation lifecycle complete; S02 same-surface revisions and S03 bounded continuation + authority proof remain.

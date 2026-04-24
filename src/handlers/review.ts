@@ -698,6 +698,51 @@ async function upsertReviewDetailsComment(params: {
   return response.data.id;
 }
 
+function mergeReviewDetailsIntoSummaryBody(params: {
+  summaryBody: string;
+  reviewDetailsBlock: string;
+  requireDegradationDisclosure: boolean;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+}): string {
+  let updatedReviewDetails = params.reviewDetailsBlock;
+  let summaryBody = ensureReviewBoundednessDisclosureInSummary(
+    params.summaryBody,
+    params.reviewBoundedness,
+  );
+  if (params.requireDegradationDisclosure) {
+    summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
+  }
+
+  const bodyCounts = parseSeverityCountsFromBody(summaryBody);
+  const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
+  if (bodyTotal > 0) {
+    updatedReviewDetails = updatedReviewDetails.replace(
+      /- Findings: (\d+) critical, (\d+) major, (\d+) medium, (\d+) minor/,
+      (_match, c, ma, me, mi) => {
+        const total = {
+          critical: parseInt(c) + bodyCounts.critical,
+          major: parseInt(ma) + bodyCounts.major,
+          medium: parseInt(me) + bodyCounts.medium,
+          minor: parseInt(mi) + bodyCounts.minor,
+        };
+        return `- Findings: ${total.critical} critical, ${total.major} major, ${total.medium} medium, ${total.minor} minor (includes ${bodyTotal} from summary observations)`;
+      }
+    );
+  }
+
+  const closingTag = '</details>';
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
+  if (lastCloseIdx === -1) {
+    return `${summaryBody}\n\n${updatedReviewDetails}`;
+  }
+
+  const before = summaryBody.slice(0, lastCloseIdx);
+  const after = summaryBody.slice(lastCloseIdx);
+  const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
+  const beforeWithoutExistingDetails = before.replace(existingReviewDetailsPattern, "\n").trimEnd();
+  return `${beforeWithoutExistingDetails}\n\n${updatedReviewDetails}\n${after}`;
+}
+
 async function appendReviewDetailsToSummary(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   owner: string;
@@ -732,49 +777,12 @@ async function appendReviewDetailsToSummary(params: {
   }
 
   let summaryBody = summaryComment.body!;
-  summaryBody = ensureReviewBoundednessDisclosureInSummary(
+  const updatedBody = mergeReviewDetailsIntoSummaryBody({
     summaryBody,
-    params.reviewBoundedness,
-  );
-  if (params.requireDegradationDisclosure) {
-    summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
-  }
-
-  // Merge severity counts from summary body observations into the findings line
-  const bodyCounts = parseSeverityCountsFromBody(summaryBody);
-  const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
-  if (bodyTotal > 0) {
-    updatedReviewDetails = updatedReviewDetails.replace(
-      /- Findings: (\d+) critical, (\d+) major, (\d+) medium, (\d+) minor/,
-      (_match, c, ma, me, mi) => {
-        const total = {
-          critical: parseInt(c) + bodyCounts.critical,
-          major: parseInt(ma) + bodyCounts.major,
-          medium: parseInt(me) + bodyCounts.medium,
-          minor: parseInt(mi) + bodyCounts.minor,
-        };
-        return `- Findings: ${total.critical} critical, ${total.major} major, ${total.medium} medium, ${total.minor} minor (includes ${bodyTotal} from summary observations)`;
-      }
-    );
-  }
-
-  // Insert review details block INSIDE the summary's <details> block (before
-  // the last </details> tag) so it renders as a nested collapsible. If a
-  // Review Details block already exists, replace it so the helper remains safe
-  // to call again after final publication timing is known.
-  const closingTag = '</details>';
-  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
-  let updatedBody: string;
-  if (lastCloseIdx === -1) {
-    // Fallback: append as before if structure is unexpected
-    updatedBody = `${summaryBody}\n\n${updatedReviewDetails}`;
-  } else {
-    const before = summaryBody.slice(0, lastCloseIdx);
-    const after = summaryBody.slice(lastCloseIdx);
-    const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
-    const beforeWithoutExistingDetails = before.replace(existingReviewDetailsPattern, "\n").trimEnd();
-    updatedBody = `${beforeWithoutExistingDetails}\n\n${updatedReviewDetails}\n${after}`;
-  }
+    reviewDetailsBlock: updatedReviewDetails,
+    requireDegradationDisclosure: params.requireDegradationDisclosure,
+    reviewBoundedness: params.reviewBoundedness,
+  });
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
     return undefined;
@@ -4830,6 +4838,7 @@ export function createReviewHandler(deps: {
               const partialBody = formatPartialReviewComment({
                 summaryDraft,
                 firstPass: timeoutFirstPass,
+                reviewOutputKey,
                 timedOutAfterSeconds: timeoutDuration,
                 isRetrySkipped: isChronicTimeout,
                 retrySkipReason: isChronicTimeout
@@ -4885,18 +4894,24 @@ export function createReviewHandler(deps: {
 
               try {
                 if (canPublishVisibleOutput("timeout Review Details comment")) {
-                  await upsertReviewDetailsComment({
-                    octokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    body: buildReviewDetailsBody({
+                  const mergedPartialBody = mergeReviewDetailsIntoSummaryBody({
+                    summaryBody: partialBody,
+                    reviewDetailsBlock: buildReviewDetailsBody({
                       timeoutProgress: timeoutReviewDetails,
                       reviewFirstPass: timeoutFirstPass,
                     }),
-                    botHandles: [githubApp.getAppSlug(), "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
                   });
+
+                  if (canPublishVisibleOutput("timeout Review Details comment")) {
+                    await octokit.rest.issues.updateComment({
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      comment_id: partialCommentId,
+                      body: sanitizeOutgoingMentions(mergedPartialBody, [githubApp.getAppSlug(), "claude"]),
+                    });
+                  }
                 }
               } catch (reviewDetailsErr) {
                 logger.warn(
@@ -5291,6 +5306,7 @@ export function createReviewHandler(deps: {
                             checkpoint?.summaryDraft ||
                             "Review completed with reduced scope.",
                           firstPass: mergedFirstPass,
+                          reviewOutputKey,
                           timedOutAfterSeconds: timeoutDuration,
                           isRetryResult: true,
                           retryFilesReviewed,
@@ -5322,23 +5338,29 @@ export function createReviewHandler(deps: {
                           });
 
                           try {
-                            await upsertReviewDetailsComment({
-                              octokit: retryOctokit,
-                              owner: apiOwner,
-                              repo: apiRepo,
-                              prNumber: pr.number,
-                              reviewOutputKey,
-                              body: buildReviewDetailsBody({
+                            const mergedBodyWithDetails = mergeReviewDetailsIntoSummaryBody({
+                              summaryBody: mergedBody,
+                              reviewDetailsBlock: buildReviewDetailsBody({
                                 reviewFirstPass: mergedFirstPass,
                               }),
-                              botHandles: [githubApp.getAppSlug(), "claude"],
-                              recheckCanPublish: () =>
-                                canPublishReviewWorkOutput(
-                                  retryReviewWorkAttempt.attemptId,
-                                  "retry Review Details merge",
-                                  retryDeliveryId,
-                                ),
+                              requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                              reviewBoundedness,
                             });
+
+                            if (
+                              canPublishReviewWorkOutput(
+                                retryReviewWorkAttempt.attemptId,
+                                "retry Review Details merge",
+                                retryDeliveryId,
+                              )
+                            ) {
+                              await retryOctokit.rest.issues.updateComment({
+                                owner: apiOwner,
+                                repo: apiRepo,
+                                comment_id: commentIdToUpdate,
+                                body: sanitizeOutgoingMentions(mergedBodyWithDetails, [githubApp.getAppSlug(), "claude"]),
+                              });
+                            }
                           } catch (reviewDetailsErr) {
                             logger.warn(
                               {

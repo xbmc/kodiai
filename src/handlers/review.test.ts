@@ -8916,6 +8916,7 @@ describe("createReviewHandler timeout resilience", () => {
       cleanupStale: async () => 0,
     };
 
+    const issueComments = new Map<number, string>();
     let nextCommentId = 130;
     const octokit = {
       rest: {
@@ -8925,12 +8926,19 @@ describe("createReviewHandler timeout resilience", () => {
           listCommits: async () => ({ data: [] }),
         },
         issues: {
-          listComments: async () => ({ data: [] }),
+          listComments: async () => ({
+            data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+          }),
           createComment: async (params: { body: string }) => {
             createdCommentBodies.push(params.body);
-            return { data: { id: nextCommentId++ } };
+            const id = nextCommentId++;
+            issueComments.set(id, params.body);
+            return { data: { id } };
           },
-          updateComment: async () => ({ data: {} }),
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            issueComments.set(params.comment_id, params.body);
+            return { data: {} };
+          },
         },
         reactions: {
           createForIssue: async () => ({ data: {} }),
@@ -9021,18 +9029,30 @@ describe("createReviewHandler timeout resilience", () => {
       }),
     );
 
-    const partial = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
+    const partial = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
     expect(partial).toBeDefined();
     expect(partial!).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
     expect(partial!).toContain("Found two issues before timeout.");
     expect(partial!).toContain("Scheduling a reduced-scope retry.");
+    expect(partial!).toContain(buildReviewOutputMarker(buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    })));
+    expect(partial!).toContain("<summary>Review Details</summary>");
+    expect(partial!).toContain("- Analyzed progress before timeout: 1/3 changed files");
+    expect(partial!).toContain("- Findings captured before timeout: 2 total");
+    expect(partial!).toContain("- Retry state: scheduled reduced-scope retry");
+    expect(partial!).not.toContain("- Files reviewed: 3");
 
-    const reviewDetails = createdCommentBodies.find((body) => body.includes("<summary>Review Details</summary>"));
-    expect(reviewDetails).toBeDefined();
-    expect(reviewDetails!).toContain("- Analyzed progress before timeout: 1/3 changed files");
-    expect(reviewDetails!).toContain("- Findings captured before timeout: 2 total");
-    expect(reviewDetails!).toContain("- Retry state: scheduled reduced-scope retry");
-    expect(reviewDetails!).not.toContain("- Files reviewed: 3");
+    const reviewDetails = Array.from(issueComments.values()).find((body) =>
+      body.includes("<summary>Review Details</summary>") && body !== partial
+    );
+    expect(reviewDetails).toBeUndefined();
 
     expect(enqueuedContexts.find((context) => context.action === "review-retry")).toEqual({
       action: "review-retry",
@@ -9687,6 +9707,8 @@ describe("createReviewHandler timeout resilience", () => {
       body.includes("<summary>Review Details</summary>")
     );
     expect(initialPartialComment).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
+    expect(initialPartialComment).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(initialReviewDetails).toBe(initialPartialComment);
     expect(initialReviewDetails).toContain("- Covered scope: 1/3 changed files");
     expect(initialReviewDetails).toContain("- Continuation state: follow-up review pending for remaining scope");
 
@@ -9696,16 +9718,16 @@ describe("createReviewHandler timeout resilience", () => {
     expect(entries.some((entry) => entry.message === "Retry complete -- updated partial review comment with merged results")).toBeTrue();
 
     const mergedPartialComment = issueComments.get(600);
-    const mergedReviewDetails = issueComments.get(601);
 
     expect(mergedPartialComment).toBeDefined();
     expect(mergedPartialComment).toContain("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.");
     expect(mergedPartialComment).toContain("stopped at timeout after covering 2 of 3 files from checkpoint evidence");
-    expect(mergedReviewDetails).toBeDefined();
-    expect(mergedReviewDetails).toContain("<summary>Review Details</summary>");
-    expect(mergedReviewDetails).toContain("- Covered scope: 2/3 changed files");
-    expect(mergedReviewDetails).toContain("- Remaining scope: 1/3 changed files");
-    expect(mergedReviewDetails).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(mergedPartialComment).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(mergedPartialComment).toContain("<summary>Review Details</summary>");
+    expect(mergedPartialComment).toContain("- Covered scope: 2/3 changed files");
+    expect(mergedPartialComment).toContain("- Remaining scope: 1/3 changed files");
+    expect(mergedPartialComment).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(issueComments.get(601)).toBeUndefined();
 
     await workspaceFixture.cleanup();
   });

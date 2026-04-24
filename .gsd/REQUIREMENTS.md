@@ -87,17 +87,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: None
 - Notes: Owned by M048 S03 because trigger-shape continuity and verifier failure behavior land there.
 
-### R062 — When a large-PR review is bounded, Kodiai automatically continues review work in the background without requiring a manual follow-up command
-- Class: continuity
-- Status: active
-- Description: When a large-PR review is bounded, Kodiai automatically continues review work in the background without requiring a manual follow-up command
-- Why it matters: The large-PR experience should not depend on humans remembering to ask for deeper review after the first bounded pass
-- Source: user
-- Primary owning slice: M063/S01
-- Supporting slices: none
-- Validation: mapped
-- Notes: Automatic continuation is the default path once the bounded first-pass contract exists.
-
 ### R063 — Automatic continuation updates the same visible review surface in place and must not create an additional public comment for the same review lifecycle
 - Class: continuity
 - Status: active
@@ -673,6 +662,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Validated by M062. Fresh milestone-close verification passed: `bun test ./scripts/verify-m062-s03.test.ts ./scripts/verify-m062-s01.test.ts` (20/20), `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s01 -- --json` (`status_code: "m062_s01_ok"` across 4 scenarios), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"` with three `bounded-parity-ok` scenarios and one `dead-end-rejected` zero-evidence scenario), and `bun run tsc --noEmit` (exit 0). The milestone proves large PRs now return a truthful bounded first review instead of a dead `max_turns` failure when structured evidence exists.
 - Notes: First-pass contract for the redesign track. This is about useful bounded output, not yet automatic continuation.
 
+### R062 — When a large-PR review is bounded, Kodiai automatically continues review work in the background without requiring a manual follow-up command
+- Class: continuity
+- Status: validated
+- Description: When a large-PR review is bounded, Kodiai automatically continues review work in the background without requiring a manual follow-up command
+- Why it matters: The large-PR experience should not depend on humans remembering to ask for deeper review after the first bounded pass
+- Source: user
+- Primary owning slice: M063/S01
+- Supporting slices: none
+- Validation: M063/S01 verified automatic bounded-review continuation with fresh evidence: `bun test src/lib/review-continuation-lifecycle.test.ts` (12 pass), `bun test src/handlers/review.test.ts --filter "continuation"` (147 pass, including continuation enqueue/merge/suppression coverage), and `bun test scripts/verify-m063-s01.test.ts && bun run scripts/verify-m063-s01.ts --json` (`status_code: m063_s01_ok`, proving schedule, merge, no-delta settlement, and stale-authority suppression).
+- Notes: Validated for the shipped S01 lifecycle contract: automatic continuation through the real handler path, explicit merge/settlement decisions, and stale-authority suppression. Later milestone slices still extend same-surface revision semantics and prompt narrowing.
+
 ### R064 — The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
 - Class: failure-visibility
 - Status: validated
@@ -806,7 +806,7 @@ This file is the explicit capability and coverage contract for the project.
 | R059 | functional | validated | M021/S03 | none | M021/S03 summary plus src/triage/triage-agent.ts, src/handlers/mention.ts, and src/execution/mention-prompt.ts prove template diffing, needs-info label recommendation, mention-prompt triage context injection, and fail-open cooldown-gated mention integration with passing triage/config/mention/MCP tests. |
 | R060 | functional | deferred | M021/S03 | none | M021/S03 summary plus src/triage/triage-agent.ts, src/handlers/mention.ts, and src/execution/mention-prompt.ts prove template diffing, needs-info label recommendation, mention-prompt triage context injection, and fail-open cooldown-gated mention integration with passing triage/config/mention/MCP tests. |
 | R061 | core-capability | validated | M062/S01 | none | Validated by M062. Fresh milestone-close verification passed: `bun test ./scripts/verify-m062-s03.test.ts ./scripts/verify-m062-s01.test.ts` (20/20), `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s01 -- --json` (`status_code: "m062_s01_ok"` across 4 scenarios), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"` with three `bounded-parity-ok` scenarios and one `dead-end-rejected` zero-evidence scenario), and `bun run tsc --noEmit` (exit 0). The milestone proves large PRs now return a truthful bounded first review instead of a dead `max_turns` failure when structured evidence exists. |
-| R062 | continuity | active | M063/S01 | none | mapped |
+| R062 | continuity | validated | M063/S01 | none | M063/S01 verified automatic bounded-review continuation with fresh evidence: `bun test src/lib/review-continuation-lifecycle.test.ts` (12 pass), `bun test src/handlers/review.test.ts --filter "continuation"` (147 pass, including continuation enqueue/merge/suppression coverage), and `bun test scripts/verify-m063-s01.test.ts && bun run scripts/verify-m063-s01.ts --json` (`status_code: m063_s01_ok`, proving schedule, merge, no-delta settlement, and stale-authority suppression). |
 | R063 | continuity | active | M063/S02 | none | mapped |
 | R064 | failure-visibility | validated | M062/S02 | M063/S02 | Validated by M062. Fresh milestone-close verification passed: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"`; timeout, max-turns, and large-PR bounded scenarios all reported `bounded-parity-ok` for bounded reason, covered scope, remaining scope, and continuation state), and `bun run tsc --noEmit` (exit 0). The visible review surfaces now truthfully report covered scope, remaining scope, and continuation status from one coherent contract. |
 | R065 | correctness | active | M063/S02 | none | mapped |
@@ -818,7 +818,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 14
-- Mapped to slices: 14
-- Validated: 53 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R064, R068, R069)
+- Active requirements: 13
+- Mapped to slices: 13
+- Validated: 54 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R064, R068, R069)
 - Unmapped active requirements: 0

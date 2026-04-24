@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M062",
-      "label": "M062: Large-PR truth baseline",
+      "id": "milestone:M063",
+      "label": "M063: Continuation-driven review execution",
       "type": "milestone",
-      "description": "Active milestone: M062",
+      "description": "Active milestone: M063",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:planning",
+      "label": "Phase: planning",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4550,6 +4550,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M062",
+      "label": "M062: Large-PR truth baseline",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-ROADMAP.md"
+    },
+    {
       "id": "slice:M062:S01",
       "label": "S01: Bounded first-pass contract",
       "type": "slice",
@@ -4625,11 +4632,29 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M063",
-      "label": "M063: M063",
-      "type": "milestone",
+      "id": "slice:M063:S01",
+      "label": "S01: Automatic continuation lifecycle contract",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M063/M063-ROADMAP.md"
+      "sourceFile": "milestones/M063/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M063:S01:T01",
+      "label": "T01: Extract a dedicated continuation lifecycle planner from the timeout branch",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M063:S01:T02",
+      "label": "T02: Wire the review handler through the continuation lifecycle seam",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M063:S01:T03",
+      "label": "T03: Add a deterministic verifier for the automatic continuation lifecycle contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
     },
     {
       "id": "milestone:M064",
@@ -4644,6 +4669,214 @@
       "type": "milestone",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M065/M065-ROADMAP.md"
+    },
+    {
+      "id": "decision:M062:1",
+      "label": "Chose a hybrid large-PR review contract: publish a useful bounded first pass now and allow deeper follow-up review later, instead of framing constrained runs as all-or-nothing success or failure.",
+      "type": "decision",
+      "description": "Source: M062-ROADMAP.md/Vision",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:2",
+      "label": "Introduced one normalized bounded first-pass state for timeout, large-PR boundedness, and checkpoint-backed `max_turns` outcomes, reserving hard failure for zero-evidence runs.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:3",
+      "label": "Reused the S01 scenario matrix inside the milestone verifier and checked semantic parity on production renderers instead of snapshotting proof-only prose.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:4",
+      "label": "The workspace TypeScript gate had to be treated as slice-closeout scope, not background noise; leaving unrelated compile regressions unresolved would have made the bounded-review proof unreliable.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:5",
+      "label": "Retry metadata must remain additive to first-pass state. When retry-merge math was allowed to act like a second coverage source, reviewed totals drifted into double-counting.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:6",
+      "label": "Deterministic fixture-based verifiers were sufficient and preferable here because the milestone needed stable proof of review truthfulness before later live continuation redesign work.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:7",
+      "label": "Normalize constrained large-PR outcomes into one machine-checkable payload before formatting or publishing any user-visible surface.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:8",
+      "label": "Keep public bounded comments and Review Details on one shared wording contract, and degrade toward explicit uncertainty instead of inferring exhaustive coverage.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:9",
+      "label": "Build milestone verifiers by exercising production formatter seams and checking semantic parity keys such as reason, covered scope, remaining scope, and continuation state.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:10",
+      "label": "The prior attempt at completing the milestone failed because the completion artifact was never written to disk even though verification commands had already been run.",
+      "type": "decision",
+      "description": "Source: M062-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M062:11",
+      "label": "Cross-session memory capture was unreliable during the milestone; repeated `capture_thought` attempts failed at the tool layer, so durable decisions had to remain documented in slice summaries until closeout.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:1",
+      "label": "The workspace TypeScript gate had to be treated as slice-closeout scope, not background noise; leaving unrelated compile regressions unresolved would have made the bounded-review proof unreliable.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:2",
+      "label": "Retry metadata must remain additive to first-pass state. When retry-merge math was allowed to act like a second coverage source, reviewed totals drifted into double-counting.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:3",
+      "label": "Deterministic fixture-based verifiers were sufficient and preferable here because the milestone needed stable proof of review truthfulness before later live continuation redesign work.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:4",
+      "label": "Normalize constrained large-PR outcomes into one machine-checkable payload before formatting or publishing any user-visible surface.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:5",
+      "label": "Keep public bounded comments and Review Details on one shared wording contract, and degrade toward explicit uncertainty instead of inferring exhaustive coverage.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:6",
+      "label": "Build milestone verifiers by exercising production formatter seams and checking semantic parity keys such as reason, covered scope, remaining scope, and continuation state.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:7",
+      "label": "The prior attempt at completing the milestone failed because the completion artifact was never written to disk even though verification commands had already been run.",
+      "type": "lesson",
+      "description": "Source: M062-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M062:8",
+      "label": "Cross-session memory capture was unreliable during the milestone; repeated `capture_thought` attempts failed at the tool layer, so durable decisions had to remain documented in slice summaries until closeout.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M062:1",
+      "label": "Normalize constrained large-PR outcomes into one machine-checkable payload before formatting or publishing any user-visible surface.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M062:2",
+      "label": "Keep public bounded comments and Review Details on one shared wording contract, and degrade toward explicit uncertainty instead of inferring exhaustive coverage.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M062:3",
+      "label": "Build milestone verifiers by exercising production formatter seams and checking semantic parity keys such as reason, covered scope, remaining scope, and continuation state.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M062:4",
+      "label": "The prior attempt at completing the milestone failed because the completion artifact was never written to disk even though verification commands had already been run.",
+      "type": "pattern",
+      "description": "Source: M062-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M062:5",
+      "label": "Cross-session memory capture was unreliable during the milestone; repeated `capture_thought` attempts failed at the tool layer, so durable decisions had to remain documented in slice summaries until closeout.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M062:1",
+      "label": "The prior attempt at completing the milestone failed because the completion artifact was never written to disk even though verification commands had already been run.",
+      "type": "lesson",
+      "description": "Source: M062-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M062:2",
+      "label": "Cross-session memory capture was unreliable during the milestone; repeated `capture_thought` attempts failed at the tool layer, so durable decisions had to remain documented in slice summaries until closeout.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/M062-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -8762,7 +8995,187 @@
       "to": "task:M062:S03:T03",
       "type": "contains",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M063",
+      "to": "slice:M063:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M063:S01",
+      "to": "task:M063:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M063:S01",
+      "to": "task:M063:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M063:S01",
+      "to": "task:M063:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "decision:M062:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "lesson:M062:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "pattern:M062:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "pattern:M062:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "pattern:M062:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "pattern:M062:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "pattern:M062:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "surprise:M062:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "surprise:M062:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-04-24T05:04:39.639Z"
+  "builtAt": "2026-04-24T05:39:28.972Z"
 }

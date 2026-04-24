@@ -1,9 +1,11 @@
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { buildReviewFirstPassPublicSummary } from "./review-utils.ts";
+import { buildReviewOutputMarker } from "../handlers/review-idempotency.ts";
 
 export type PartialReviewParams = {
   summaryDraft: string;
   firstPass: ReviewFirstPassPayload;
+  reviewOutputKey?: string;
   timedOutAfterSeconds?: number;
   isRetrySkipped?: boolean;
   retrySkipReason?: string;
@@ -46,6 +48,11 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
 
   lines.push("");
   lines.push(summaryDraft);
+
+  if (params.reviewOutputKey) {
+    lines.push("");
+    lines.push(buildReviewOutputMarker(params.reviewOutputKey));
+  }
 
   return lines.join("\n");
 }
