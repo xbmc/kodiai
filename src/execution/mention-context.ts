@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import { createHash } from "node:crypto";
 import type { MentionEvent } from "../handlers/mention-types.ts";
 import {
   filterCommentsToTriggerTime,
@@ -60,6 +61,12 @@ const DEFAULT_ADMISSION_POLICY: MentionContextAdmissionPolicy = {
   includeInlineReviewContext: true,
 };
 
+export type MentionContextFingerprintResult = {
+  fingerprint: string | null;
+  status: "complete" | "incomplete";
+  missingSignals: string[];
+};
+
 type IssueComment = {
   id?: number;
   body?: string | null;
@@ -72,9 +79,332 @@ type ReviewComment = {
   id: number;
   body?: string | null;
   created_at: string;
+  updated_at?: string;
   in_reply_to_id?: number;
   user?: { login?: string | null } | null;
 };
+
+type PullRequestMetadata = {
+  title?: string | null;
+  body?: string | null;
+  user?: { login?: string | null } | null;
+  head?: { ref?: string | null } | null;
+  base?: { ref?: string | null } | null;
+  updated_at?: string | null;
+};
+
+function sha256(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function listFingerprintHash(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return sha256(sanitizeContent(value));
+}
+
+async function listIssueCommentsBounded(
+  octokit: Octokit,
+  mention: MentionEvent,
+  maxApiPages: number,
+  maxComments: number,
+): Promise<{
+  comments: IssueComment[];
+  scannedPages: number;
+  hitPageCap: boolean;
+  hitTriggerTimeCap: boolean;
+}> {
+  const perPage = 100;
+  const all: IssueComment[] = [];
+
+  const triggerTs = mention.commentCreatedAt
+    ? new Date(mention.commentCreatedAt).getTime()
+    : undefined;
+  let hitTriggerTimeCap = false;
+
+  for (let page = 1; page <= maxApiPages; page++) {
+    const { data } = await octokit.rest.issues.listComments({
+      owner: mention.owner,
+      repo: mention.repo,
+      issue_number: mention.issueNumber,
+      per_page: perPage,
+      page,
+      sort: "created",
+      direction: "desc",
+    });
+
+    all.push(...(data as IssueComment[]));
+
+    if (!mention.commentCreatedAt && maxComments > 0 && all.length >= maxComments) {
+      return {
+        comments: all,
+        scannedPages: page,
+        hitPageCap: false,
+        hitTriggerTimeCap: false,
+      };
+    }
+
+    if (typeof triggerTs === "number" && data.length > 0) {
+      const oldestFetched = data[data.length - 1] as IssueComment | undefined;
+      const oldestFetchedTs = oldestFetched
+        ? new Date(oldestFetched.created_at).getTime()
+        : NaN;
+
+      if (maxComments > 0 && oldestFetchedTs < triggerTs) {
+        const eligible = filterCommentsToTriggerTime(
+          all,
+          mention.commentCreatedAt,
+        ).filter((c) => !isLegacyBotTrackingComment(c.body));
+        if (eligible.length >= maxComments) {
+          return {
+            comments: all,
+            scannedPages: page,
+            hitPageCap: false,
+            hitTriggerTimeCap: false,
+          };
+        }
+      }
+
+      if (oldestFetchedTs >= triggerTs && page === maxApiPages) {
+        hitTriggerTimeCap = true;
+      }
+    }
+
+    if (data.length < perPage) {
+      return {
+        comments: all,
+        scannedPages: page,
+        hitPageCap: false,
+        hitTriggerTimeCap,
+      };
+    }
+  }
+
+  if (typeof triggerTs === "number" && all.length > 0) {
+    const oldestOverall = all[all.length - 1] as IssueComment | undefined;
+    const oldestOverallTs = oldestOverall
+      ? new Date(oldestOverall.created_at).getTime()
+      : NaN;
+    if (oldestOverallTs >= triggerTs) {
+      hitTriggerTimeCap = true;
+    }
+  }
+
+  return {
+    comments: all,
+    scannedPages: maxApiPages,
+    hitPageCap: true,
+    hitTriggerTimeCap,
+  };
+}
+
+export async function buildMentionContextFingerprint(
+  octokit: Octokit,
+  mention: MentionEvent,
+  options: BuildMentionContextOptions = {},
+): Promise<MentionContextFingerprintResult> {
+  const log = options.logger;
+  const admissionPolicy = options.admissionPolicy ?? DEFAULT_ADMISSION_POLICY;
+  const maxComments = options.maxComments ?? DEFAULT_MAX_COMMENTS;
+  const maxApiPages = options.maxApiPages ?? DEFAULT_MAX_API_PAGES;
+  const maxConversationChars = options.maxConversationChars ?? DEFAULT_MAX_CONVERSATION_CHARS;
+  const maxThreadChars = options.maxThreadChars ?? maxConversationChars;
+  const maxPrBodyChars = options.maxPrBodyChars ?? DEFAULT_MAX_PR_BODY_CHARS;
+  const missingSignals: string[] = [];
+
+  const fingerprintPayload: Record<string, unknown> = {
+    version: 1,
+    repo: `${mention.owner}/${mention.repo}`.toLowerCase(),
+    surface: mention.surface,
+    issueNumber: mention.issueNumber,
+    prNumber: mention.prNumber ?? null,
+    commentId: mention.commentId,
+    commentCreatedAt: mention.commentCreatedAt,
+    admissionPolicy,
+    limits: {
+      maxComments,
+      maxConversationChars,
+      maxThreadChars,
+      maxPrBodyChars,
+    },
+  };
+
+  if (admissionPolicy.includeConversationHistory) {
+    try {
+      const { comments } = await listIssueCommentsBounded(
+        octokit,
+        mention,
+        maxApiPages,
+        maxComments,
+      );
+      const safeComments = filterCommentsToTriggerTime(
+        comments,
+        mention.commentCreatedAt,
+      )
+        .filter((comment) => !isLegacyBotTrackingComment(comment.body))
+        .sort((a, b) => {
+          const aTime = new Date(a.created_at).getTime();
+          const bTime = new Date(b.created_at).getTime();
+          if (aTime !== bTime) return aTime - bTime;
+          return (a.id ?? 0) - (b.id ?? 0);
+        });
+      const boundedComments = maxComments > 0 ? safeComments.slice(-maxComments) : [];
+      const summarizedComments: Array<Record<string, unknown>> = [];
+      for (const comment of boundedComments) {
+        if (typeof comment.id !== "number" || !comment.created_at) {
+          missingSignals.push("conversation-comment-identity");
+          return { fingerprint: null, status: "incomplete", missingSignals };
+        }
+        summarizedComments.push({
+          id: comment.id,
+          createdAt: comment.created_at,
+          updatedAt: comment.updated_at ?? null,
+          bodyHash: listFingerprintHash(comment.body),
+        });
+      }
+      fingerprintPayload.conversationComments = summarizedComments;
+    } catch (error) {
+      log?.warn(
+        { err: error, owner: mention.owner, repo: mention.repo, issueNumber: mention.issueNumber },
+        "Failed to build mention context fingerprint from conversation history; bypassing cache",
+      );
+      missingSignals.push("conversation-history-unavailable");
+      return { fingerprint: null, status: "incomplete", missingSignals };
+    }
+  }
+
+  if (admissionPolicy.includePrMetadata && mention.prNumber !== undefined) {
+    try {
+      const { data } = await octokit.rest.pulls.get({
+        owner: mention.owner,
+        repo: mention.repo,
+        pull_number: mention.prNumber,
+      });
+      const pr = data as PullRequestMetadata;
+      const headRef = pr.head?.ref ?? null;
+      const baseRef = pr.base?.ref ?? null;
+      if (!headRef || !baseRef) {
+        missingSignals.push("pr-refs");
+        return { fingerprint: null, status: "incomplete", missingSignals };
+      }
+      fingerprintPayload.prMetadata = {
+        titleHash: listFingerprintHash(pr.title),
+        bodyHash: listFingerprintHash(pr.body),
+        updatedAt: pr.updated_at ?? null,
+        headRef,
+        baseRef,
+      };
+    } catch (error) {
+      log?.warn(
+        { err: error, owner: mention.owner, repo: mention.repo, prNumber: mention.prNumber },
+        "Failed to build mention context fingerprint from PR metadata; bypassing cache",
+      );
+      missingSignals.push("pr-metadata-unavailable");
+      return { fingerprint: null, status: "incomplete", missingSignals };
+    }
+  }
+
+  if (admissionPolicy.includeInlineReviewContext && mention.surface === "pr_review_comment") {
+    fingerprintPayload.inlineReviewContext = {
+      filePath: mention.filePath ?? null,
+      fileLine: mention.fileLine ?? null,
+      diffHunkHash: listFingerprintHash(mention.diffHunk),
+      parentCommentId: mention.inReplyToId ?? null,
+    };
+  }
+
+  if (
+    admissionPolicy.includeReviewThread
+    && mention.surface === "pr_review_comment"
+    && mention.inReplyToId !== undefined
+    && mention.prNumber !== undefined
+  ) {
+    try {
+      let parent: ReviewComment | null = null;
+      try {
+        const parentResponse = await octokit.rest.pulls.getReviewComment({
+          owner: mention.owner,
+          repo: mention.repo,
+          comment_id: mention.inReplyToId,
+        });
+        parent = parentResponse.data as ReviewComment;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 404) {
+          missingSignals.push("review-thread-parent-missing");
+          return { fingerprint: null, status: "incomplete", missingSignals };
+        }
+        throw error;
+      }
+
+      if (!parent || typeof parent.id !== "number" || !parent.created_at) {
+        missingSignals.push("review-thread-parent-identity");
+        return { fingerprint: null, status: "incomplete", missingSignals };
+      }
+
+      const threadResponse = await octokit.rest.pulls.listReviewComments({
+        owner: mention.owner,
+        repo: mention.repo,
+        pull_number: mention.prNumber,
+        per_page: 100,
+        sort: "created",
+        direction: "asc",
+      });
+
+      let threadRoot = mention.inReplyToId;
+      if (parent.in_reply_to_id !== undefined) {
+        threadRoot = parent.in_reply_to_id;
+      }
+
+      const threadComments = (threadResponse.data as ReviewComment[])
+        .filter((comment) => comment.id === threadRoot || comment.in_reply_to_id === threadRoot)
+        .filter((comment) => comment.id !== mention.commentId)
+        .sort((a, b) => {
+          const aTime = new Date(a.created_at).getTime();
+          const bTime = new Date(b.created_at).getTime();
+          if (aTime !== bTime) return aTime - bTime;
+          return a.id - b.id;
+        });
+
+      const summarizedThread: Array<Record<string, unknown>> = [];
+      for (const comment of threadComments) {
+        if (typeof comment.id !== "number" || !comment.created_at) {
+          missingSignals.push("review-thread-comment-identity");
+          return { fingerprint: null, status: "incomplete", missingSignals };
+        }
+        summarizedThread.push({
+          id: comment.id,
+          createdAt: comment.created_at,
+          updatedAt: comment.updated_at ?? null,
+          bodyHash: listFingerprintHash(comment.body),
+          parentId: comment.in_reply_to_id ?? null,
+        });
+      }
+
+      fingerprintPayload.reviewThread = {
+        rootCommentId: threadRoot,
+        parentCommentId: parent.id,
+        parentBodyHash: listFingerprintHash(parent.body),
+        parentUpdatedAt: parent.updated_at ?? null,
+        comments: summarizedThread,
+      };
+    } catch (error) {
+      log?.warn(
+        { err: error, owner: mention.owner, repo: mention.repo, prNumber: mention.prNumber },
+        "Failed to build mention context fingerprint from review thread; bypassing cache",
+      );
+      missingSignals.push("review-thread-unavailable");
+      return { fingerprint: null, status: "incomplete", missingSignals };
+    }
+  }
+
+  return {
+    fingerprint: sha256(JSON.stringify(fingerprintPayload)),
+    status: "complete",
+    missingSignals,
+  };
+}
 
 function truncateDeterministic(
   input: string,
@@ -117,96 +447,6 @@ export async function buildMentionContextDetails(
   const sectionBlocks: Array<{ sectionName: string; text: string }> = [];
   const scaleNotes: string[] = [];
 
-  async function listIssueCommentsBounded(): Promise<{
-    comments: IssueComment[];
-    scannedPages: number;
-    hitPageCap: boolean;
-    hitTriggerTimeCap: boolean;
-  }> {
-    const perPage = 100;
-    const all: IssueComment[] = [];
-
-    const triggerTs = mention.commentCreatedAt
-      ? new Date(mention.commentCreatedAt).getTime()
-      : undefined;
-    let hitTriggerTimeCap = false;
-
-    for (let page = 1; page <= maxApiPages; page++) {
-      const { data } = await octokit.rest.issues.listComments({
-        owner: mention.owner,
-        repo: mention.repo,
-        issue_number: mention.issueNumber,
-        per_page: perPage,
-        page,
-        sort: "created",
-        direction: "desc",
-      });
-
-      all.push(...(data as IssueComment[]));
-
-      if (!mention.commentCreatedAt && maxComments > 0 && all.length >= maxComments) {
-        return {
-          comments: all,
-          scannedPages: page,
-          hitPageCap: false,
-          hitTriggerTimeCap: false,
-        };
-      }
-
-      if (typeof triggerTs === "number" && data.length > 0) {
-        const oldestFetched = data[data.length - 1] as IssueComment | undefined;
-        const oldestFetchedTs = oldestFetched
-          ? new Date(oldestFetched.created_at).getTime()
-          : NaN;
-
-        if (maxComments > 0 && oldestFetchedTs < triggerTs) {
-          const eligible = filterCommentsToTriggerTime(
-            all,
-            mention.commentCreatedAt,
-          ).filter((c) => !isLegacyBotTrackingComment(c.body));
-          if (eligible.length >= maxComments) {
-            return {
-              comments: all,
-              scannedPages: page,
-              hitPageCap: false,
-              hitTriggerTimeCap: false,
-            };
-          }
-        }
-
-        if (oldestFetchedTs >= triggerTs && page === maxApiPages) {
-          hitTriggerTimeCap = true;
-        }
-      }
-
-      if (data.length < perPage) {
-        return {
-          comments: all,
-          scannedPages: page,
-          hitPageCap: false,
-          hitTriggerTimeCap,
-        };
-      }
-    }
-
-    if (typeof triggerTs === "number" && all.length > 0) {
-      const oldestOverall = all[all.length - 1] as IssueComment | undefined;
-      const oldestOverallTs = oldestOverall
-        ? new Date(oldestOverall.created_at).getTime()
-        : NaN;
-      if (oldestOverallTs >= triggerTs) {
-        hitTriggerTimeCap = true;
-      }
-    }
-
-    return {
-      comments: all,
-      scannedPages: maxApiPages,
-      hitPageCap: true,
-      hitTriggerTimeCap,
-    };
-  }
-
   if (admissionPolicy.includeConversationHistory) {
     try {
       const {
@@ -214,7 +454,7 @@ export async function buildMentionContextDetails(
         scannedPages,
         hitPageCap,
         hitTriggerTimeCap,
-      } = await listIssueCommentsBounded();
+      } = await listIssueCommentsBounded(octokit, mention, maxApiPages, maxComments);
 
       if (hitPageCap) {
         scaleNotes.push(

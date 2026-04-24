@@ -44,6 +44,7 @@ import {
 import {
   buildMentionContext,
   buildMentionContextDetails,
+  buildMentionContextFingerprint,
   type MentionContextAdmissionPolicy,
 } from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
@@ -53,6 +54,7 @@ import { buildPromptSectionRecord } from "../execution/prompt-section-metrics.ts
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
+import { buildSearchCacheKey, createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import {
   type ErrorCategory,
   classifyError,
@@ -162,6 +164,11 @@ export function createMentionHandler(deps: {
   sql?: import("../db/client.ts").Sql;
   /** Optional in-memory coordinator for same-PR review-family publish rights. */
   reviewWorkCoordinator?: ReviewWorkCoordinator;
+  /** Optional derived-context cache store overrides for mention-context reuse tests/fail-open wiring. */
+  mentionDerivedContextCacheOptions?: Pick<
+    SearchCacheOptions<PromptBuildResult>,
+    "ttlMs" | "store" | "inFlightStore"
+  >;
   logger: Logger;
 }): void {
   const {
@@ -176,6 +183,7 @@ export function createMentionHandler(deps: {
     gistPublisher,
     sql,
     reviewWorkCoordinator: injectedReviewWorkCoordinator,
+    mentionDerivedContextCacheOptions,
     logger,
   } = deps;
 
@@ -192,6 +200,22 @@ export function createMentionHandler(deps: {
       "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
     );
   }
+
+  let mentionDerivedContextCacheErrorCount = 0;
+  const mentionDerivedContextCache = createSearchCache<PromptBuildResult>({
+    ...mentionDerivedContextCacheOptions,
+    onError: (error) => {
+      mentionDerivedContextCacheErrorCount += 1;
+      logger.warn(
+        {
+          err: error,
+          gate: "mention-derived-context-cache",
+          gateResult: "degraded",
+        },
+        "Mention derived-context cache degraded; bypassing cache for this request",
+      );
+    },
+  });
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -1924,6 +1948,8 @@ export function createMentionHandler(deps: {
         // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
         let mentionContext = "";
         let mentionContextSectionMetrics: import("../telemetry/types.ts").PromptSectionMetric[] = [];
+        let mentionDerivedContextCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
+        let mentionDerivedContextCacheReason: string | null = null;
         const mentionAdmissionPolicy = deriveMentionAdmissionPolicy({
           explicitReviewRequest,
           config,
@@ -1933,14 +1959,57 @@ export function createMentionHandler(deps: {
           mention.prNumber !== undefined
           && (explicitReviewRequest || isDiffSeekingMentionRequest(writeIntent.request));
         try {
-          const mentionContextResult = await buildMentionContextDetails(octokit, mention, {
+          const fingerprintResult = await buildMentionContextFingerprint(octokit, mention, {
             admissionPolicy: mentionAdmissionPolicy,
             findingLookup,
             maxThreadChars: config.mention.conversation.contextBudgetChars,
+            logger,
           });
-          mentionContext = mentionContextResult.text;
-          mentionContextSectionMetrics = mentionContextResult.sections;
+
+          if (fingerprintResult.fingerprint) {
+            const cacheKey = buildSearchCacheKey({
+              repo: `${mention.owner}/${mention.repo}`,
+              searchType: "mention-derived-context",
+              query: `${mention.surface}:${mention.issueNumber}:${mention.commentId}`,
+              extra: {
+                fingerprint: fingerprintResult.fingerprint,
+              },
+            });
+            const cacheErrorsBeforeLookup = mentionDerivedContextCacheErrorCount;
+            let loaderExecuted = false;
+            const mentionContextResult = await mentionDerivedContextCache.getOrLoad(
+              cacheKey,
+              async () => {
+                loaderExecuted = true;
+                return await buildMentionContextDetails(octokit, mention, {
+                  admissionPolicy: mentionAdmissionPolicy,
+                  findingLookup,
+                  maxThreadChars: config.mention.conversation.contextBudgetChars,
+                });
+              },
+            );
+            mentionContext = mentionContextResult.text;
+            mentionContextSectionMetrics = mentionContextResult.sections;
+            const cacheDegraded = mentionDerivedContextCacheErrorCount > cacheErrorsBeforeLookup;
+            mentionDerivedContextCacheStatus = cacheDegraded
+              ? "degraded"
+              : loaderExecuted
+                ? "miss"
+                : "hit";
+          } else {
+            mentionDerivedContextCacheStatus = "bypass";
+            mentionDerivedContextCacheReason = fingerprintResult.missingSignals.join(",") || "incomplete-fingerprint";
+            const mentionContextResult = await buildMentionContextDetails(octokit, mention, {
+              admissionPolicy: mentionAdmissionPolicy,
+              findingLookup,
+              maxThreadChars: config.mention.conversation.contextBudgetChars,
+            });
+            mentionContext = mentionContextResult.text;
+            mentionContextSectionMetrics = mentionContextResult.sections;
+          }
         } catch (err) {
+          mentionDerivedContextCacheStatus = "degraded";
+          mentionDerivedContextCacheReason = "context-build-failed";
           logger.warn(
             { err, surface: mention.surface, issueNumber: mention.issueNumber },
             "Failed to build mention context; proceeding with empty context",
@@ -2773,6 +2842,10 @@ export function createMentionHandler(deps: {
             failureSubtype: result.failureSubtype,
             usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
             toolUseNames: result.toolUseNames ?? [],
+            mentionDerivedContextCacheStatus,
+            ...(mentionDerivedContextCacheReason
+              ? { mentionDerivedContextCacheReason }
+              : {}),
             ...(explicitReviewRequest
               ? {
                 explicitReviewRequest: true,

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M061/S04/T01",
+  "timestamp": 1776998015423,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/knowledge/retrieval.test.ts src/knowledge/retrieval.e2e.test.ts src/knowledge/multi-query-retrieval.test.ts",
+      "exitCode": 0,
+      "durationMs": 152,
+      "verdict": "pass"
+    }
+  ],
+  "postExecutionChecks": [
+    {
+      "category": "pattern",
+      "target": "src/knowledge/retrieval.ts",
+      "passed": true,
+      "message": "File src/knowledge/retrieval.ts mixes async/await with .then() promise chaining — consider using consistent async style",
+      "blocking": false
+    }
+  ]
+}

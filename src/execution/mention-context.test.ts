@@ -4,6 +4,7 @@ import type { MentionEvent } from "../handlers/mention-types.ts";
 import {
   buildMentionContext,
   buildMentionContextDetails,
+  buildMentionContextFingerprint,
   type MentionContextAdmissionPolicy,
 } from "./mention-context.ts";
 
@@ -919,6 +920,147 @@ describe("buildMentionContext", () => {
     const truncatedCount = (ctx.match(/\.\.\.\[truncated\]/g) ?? []).length;
     expect(truncatedCount).toBe(2);
     expect(ctx).toContain("Older review thread turns were truncated to 200 characters");
+  });
+
+  test("fingerprint changes when admitted PR metadata or policy knobs change", async () => {
+    const mention: MentionEvent = {
+      surface: "pr_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 123,
+      commentBody: "@kodiai question",
+      commentAuthor: "carol",
+      commentCreatedAt: "2025-01-15T12:00:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
+    };
+
+    const octokitA = makeOctokit({
+      comments: [
+        {
+          id: 1,
+          created_at: "2025-01-15T11:00:00Z",
+          updated_at: "2025-01-15T11:01:00Z",
+          body: "hello world",
+          user: { login: "alice" },
+        },
+      ],
+      pr: {
+        title: "PR title",
+        body: "original body",
+        updated_at: "2025-01-15T11:30:00Z",
+        user: { login: "pr-author" },
+        head: { ref: "feature" },
+        base: { ref: "main" },
+      },
+    });
+    const octokitB = makeOctokit({
+      comments: [
+        {
+          id: 1,
+          created_at: "2025-01-15T11:00:00Z",
+          updated_at: "2025-01-15T11:01:00Z",
+          body: "hello world",
+          user: { login: "alice" },
+        },
+      ],
+      pr: {
+        title: "PR title",
+        body: "changed body",
+        updated_at: "2025-01-15T11:31:00Z",
+        user: { login: "pr-author" },
+        head: { ref: "feature" },
+        base: { ref: "main" },
+      },
+    });
+
+    const basePolicy: MentionContextAdmissionPolicy = {
+      includeConversationHistory: true,
+      includePrMetadata: true,
+      includeReviewThread: false,
+      includeInlineReviewContext: false,
+    };
+
+    const base = await buildMentionContextFingerprint(octokitA, mention, {
+      admissionPolicy: basePolicy,
+      maxThreadChars: 200,
+    });
+    const changedPr = await buildMentionContextFingerprint(octokitB, mention, {
+      admissionPolicy: basePolicy,
+      maxThreadChars: 200,
+    });
+    const changedPolicy = await buildMentionContextFingerprint(octokitA, mention, {
+      admissionPolicy: {
+        ...basePolicy,
+        includeConversationHistory: false,
+      },
+      maxThreadChars: 200,
+    });
+
+    expect(base.status).toBe("complete");
+    expect(changedPr.status).toBe("complete");
+    expect(changedPolicy.status).toBe("complete");
+    expect(base.fingerprint).not.toBeNull();
+    expect(base.fingerprint).not.toBe(changedPr.fingerprint);
+    expect(base.fingerprint).not.toBe(changedPolicy.fingerprint);
+  });
+
+  test("fingerprint fails open when admitted comment identity is incomplete", async () => {
+    const mention: MentionEvent = {
+      surface: "issue_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: undefined,
+      commentId: 123,
+      commentBody: "@kodiai question",
+      commentAuthor: "carol",
+      commentCreatedAt: "2025-01-15T12:00:00Z",
+      headRef: undefined,
+      baseRef: undefined,
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
+    };
+
+    const octokit = makeOctokit({
+      comments: [
+        {
+          created_at: "2025-01-15T11:00:00Z",
+          updated_at: "2025-01-15T11:01:00Z",
+          body: "missing id should bypass cache",
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const result = await buildMentionContextFingerprint(octokit, mention, {
+      admissionPolicy: {
+        includeConversationHistory: true,
+        includePrMetadata: false,
+        includeReviewThread: false,
+        includeInlineReviewContext: false,
+      },
+    });
+
+    expect(result.status).toBe("incomplete");
+    expect(result.fingerprint).toBeNull();
+    expect(result.missingSignals).toContain("conversation-comment-identity");
   });
 
   test("uses maxThreadChars budget for review thread context", async () => {

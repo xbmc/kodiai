@@ -123,7 +123,7 @@ Remove duplicate embedding generation inside one `createRetriever().retrieve()` 
   - Files: `src/knowledge/retrieval.ts`, `src/knowledge/multi-query-retrieval.ts`, `src/knowledge/retrieval.test.ts`, `src/knowledge/retrieval.e2e.test.ts`, `src/knowledge/multi-query-retrieval.test.ts`
   - Verify: bun test src/knowledge/retrieval.test.ts src/knowledge/retrieval.e2e.test.ts src/knowledge/multi-query-retrieval.test.ts
 
-- [ ] **T02: Cache bounded mention derived context behind truthful state fingerprints** `est:4h`
+- [x] **T02: Cache bounded mention derived context behind truthful state fingerprints** `est:4h`
   ---
 estimated_steps: 5
 estimated_files: 5

@@ -12226,3 +12226,247 @@ describe("PR surface implicit write intent detection", () => {
     await workspaceFixture.cleanup();
   });
 });
+
+describe("createMentionHandler mention derived-context cache", () => {
+  test("reuses identical mention context state and misses when the fingerprinted state drifts", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture([
+      "mention:",
+      "  enabled: true",
+      "  admission:",
+      "    conversational:",
+      "      includeConversationHistory: true",
+      "      includePrMetadata: false",
+      "      includeReviewThread: false",
+      "    explicitReview:",
+      "      includeConversationHistory: true",
+      "      includePrMetadata: true",
+      "      includeReviewThread: true",
+    ].join("\n") + "\n");
+    const { logger, infoCalls } = createMockLogger();
+
+    let listCommentsCalls = 0;
+    const prompts: string[] = [];
+    const issueComments = [
+      {
+        id: 1,
+        body: "Initial conversation turn",
+        created_at: "2025-01-15T11:00:00Z",
+        updated_at: "2025-01-15T11:01:00Z",
+        user: { login: "alice" },
+      },
+    ];
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      },
+      workspaceManager: {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      },
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            reactions: {
+              createForIssueComment: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => {
+                listCommentsCalls += 1;
+                return { data: issueComments };
+              },
+              createComment: async () => ({ data: {} }),
+            },
+            pulls: {
+              list: async () => ({ data: [] }),
+              get: async () => ({ data: {} }),
+              createReplyForReviewComment: async () => ({ data: {} }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          prompts.push(ctx.prompt ?? "");
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-cache",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    const event = buildIssueCommentMentionEvent({
+      issueNumber: 77,
+      commentBody: "@kodiai what does this do?",
+    });
+
+    await handler!(event);
+    await handler!(event);
+    issueComments[0] = {
+      ...issueComments[0],
+      updated_at: "2025-01-15T11:02:00Z",
+    };
+    await handler!(event);
+
+    expect(listCommentsCalls).toBe(5);
+    expect(prompts).toHaveLength(3);
+    expect(prompts[0]).toBe(prompts[1]);
+    expect(prompts[1]).toBe(prompts[2]);
+
+    const cacheStatuses = infoCalls
+      .filter((entry) => entry.message === "Mention execution completed")
+      .map((entry) => entry.bindings.mentionDerivedContextCacheStatus);
+    expect(cacheStatuses).toEqual(["miss", "hit", "miss"]);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("degrades fail-open when mention derived-context cache bookkeeping throws", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture([
+      "mention:",
+      "  enabled: true",
+      "  admission:",
+      "    conversational:",
+      "      includeConversationHistory: true",
+      "      includePrMetadata: false",
+      "      includeReviewThread: false",
+      "    explicitReview:",
+      "      includeConversationHistory: true",
+      "      includePrMetadata: true",
+      "      includeReviewThread: true",
+    ].join("\n") + "\n");
+    const { logger, infoCalls, warnCalls } = createMockLogger();
+    const failingStore = {
+      get: () => {
+        throw new Error("cache get failed");
+      },
+      set: () => {
+        throw new Error("cache set failed");
+      },
+      delete: () => undefined,
+      entries: function* () {
+        return;
+      },
+    };
+
+    let listCommentsCalls = 0;
+    let executorCalls = 0;
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      },
+      workspaceManager: {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      },
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            reactions: {
+              createForIssueComment: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => {
+                listCommentsCalls += 1;
+                return {
+                  data: [
+                    {
+                      id: 1,
+                      body: "Initial conversation turn",
+                      created_at: "2025-01-15T11:00:00Z",
+                      updated_at: "2025-01-15T11:01:00Z",
+                      user: { login: "alice" },
+                    },
+                  ],
+                };
+              },
+              createComment: async () => ({ data: {} }),
+            },
+            pulls: {
+              list: async () => ({ data: [] }),
+              get: async () => ({ data: {} }),
+              createReplyForReviewComment: async () => ({ data: {} }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalls += 1;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-cache-degraded",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      mentionDerivedContextCacheOptions: {
+        store: failingStore as never,
+      },
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai what does this do?",
+      }),
+    );
+
+    expect(executorCalls).toBe(1);
+    expect(listCommentsCalls).toBe(2);
+    expect(
+      warnCalls.some((entry) => entry.message === "Mention derived-context cache degraded; bypassing cache for this request"),
+    ).toBe(true);
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.mentionDerivedContextCacheStatus).toBe("degraded");
+
+    await workspaceFixture.cleanup();
+  });
+});

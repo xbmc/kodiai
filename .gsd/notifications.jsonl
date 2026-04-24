@@ -361,3 +361,6 @@
 {"id":"5564882b-af95-4fb7-bb2e-e989f9f07e51","ts":"2026-04-24T02:07:52.285Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"d149fd7c-99d6-4326-a580-43aaffdceb46","ts":"2026-04-24T02:17:52.831Z","severity":"info","message":"Committed: test: Added an S03 review-section verifier and aligned usage-report cov…","source":"notify","read":false}
 {"id":"d8f3123c-9a49-48a7-8dfd-b575c8c4e880","ts":"2026-04-24T02:17:53.076Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"7cac1bcc-813c-4796-a0c0-a6bba791deec","ts":"2026-04-24T02:33:35.387Z","severity":"info","message":"Committed: test: Added request-scoped query embedding reuse and reuse provenance t…","source":"notify","read":false}
+{"id":"275f23d7-a28d-4f48-848c-07a9d4f800e7","ts":"2026-04-24T02:33:35.585Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"36d9bebe-611c-4c6b-8cee-75ba2071ad72","ts":"2026-04-24T02:33:35.587Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
