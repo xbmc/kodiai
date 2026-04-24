@@ -135,12 +135,102 @@ function baseDiffAnalysis(overrides: Partial<DiffAnalysis> = {}): DiffAnalysis {
   };
 }
 
-test("buildReviewPromptDetails returns named prompt-section metrics", () => {
-  const result = buildReviewPromptDetails(baseContext());
-  expect(result.sections).toHaveLength(1);
-  expect(result.sections[0]?.sectionName).toBe("review-user-prompt");
-  expect(result.sections[0]?.charCount).toBe(result.text.length);
-  expect(result.sections[0]?.estimatedTokens).toBe(Math.ceil(result.text.length / 4));
+test("buildReviewPromptDetails returns budgeted named prompt-section metrics", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    changedFiles: Array.from({ length: 260 }, (_, index) => `src/file-${index}.ts`),
+    largePRContext: {
+      fullReviewFiles: Array.from({ length: 40 }, (_, index) => `src/full-${index}.ts`),
+      abbreviatedFiles: Array.from({ length: 40 }, (_, index) => `src/abbrev-${index}.ts`),
+      mentionOnlyCount: 12,
+      totalFiles: 92,
+    },
+    incrementalContext: {
+      lastReviewedHeadSha: "abc1234def5678",
+      changedFilesSinceLastReview: Array.from({ length: 80 }, (_, index) => `src/review-${index}.ts`),
+      unresolvedPriorFindings: Array.from({ length: 16 }, (_, index) => ({
+        filePath: `src/finding-${index}.ts`,
+        title: `Prior finding ${index}`,
+        severity: "major",
+        category: "correctness",
+      })),
+    },
+    unifiedResults: Array.from({ length: 10 }, (_, index) => ({
+      id: `chunk-${index}`,
+      sourceType: "review_comment",
+      sourceLabel: `Review precedent ${index}`,
+      sourceUrl: `https://example.com/${index}`,
+      text: `Unified context ${index} `.repeat(60),
+      score: 1 - index / 100,
+      rrfScore: 1 - index / 100,
+      distance: index / 100,
+      owner: "acme",
+      repo: "app",
+    })),
+    contextWindow: "Assembled unified knowledge context. ".repeat(80),
+    graphBlastRadius: {
+      changedFiles: ["src/index.ts"],
+      impactedFiles: Array.from({ length: 30 }, (_, index) => ({
+        path: `src/impact-${index}.ts`,
+        score: 0.9,
+        confidence: 0.82,
+        reasons: ["reachable from changed symbol"],
+        languages: ["TypeScript"],
+      })),
+      likelyTests: Array.from({ length: 12 }, (_, index) => ({
+        path: `src/impact-${index}.test.ts`,
+        score: 0.7,
+        confidence: 0.74,
+        reasons: ["covers changed symbol"],
+        languages: ["TypeScript"],
+      })),
+      probableDependents: Array.from({ length: 12 }, (_, index) => ({
+        stableKey: `dep-${index}`,
+        symbolName: `dependent${index}`,
+        qualifiedName: `app::dependent${index}`,
+        filePath: `src/dep-${index}.ts`,
+        score: 0.68,
+        confidence: 0.72,
+        reasons: ["calls changed symbol"],
+      })),
+      graphStats: {
+        changedFilesRequested: 1,
+        changedFilesFound: 1,
+        files: 32,
+        nodes: 140,
+        edges: 260,
+      },
+    },
+    structuralImpact: makeStructuralImpact({
+      impactedFiles: Array.from({ length: 30 }, (_, index) => ({
+        path: `src/structural-${index}.ts`,
+        score: 0.9,
+        confidence: 0.85,
+        reasons: ["propagates from changed symbol"],
+        languages: ["TypeScript"],
+      })),
+    }),
+    activeRules: Array.from({ length: 12 }, (_, index) => ({
+      id: `rule-${index}`,
+      title: `Rule ${index}`,
+      rationale: `Keep this invariant ${index}`,
+      signalScore: 0.6,
+    })),
+    customInstructions: "Custom review instruction. ".repeat(100),
+  }));
+
+  expect(result.sections.map((section) => section.sectionName)).toEqual([
+    "review-pr-context",
+    "review-change-context",
+    "review-size-context",
+    "review-graph-context",
+    "review-knowledge-context",
+    "review-instructions",
+  ]);
+  expect(result.sections.every((section) => section.charCount > 0)).toBe(true);
+  expect(result.sections.every((section) => section.estimatedTokens === Math.ceil(section.charCount / 4))).toBe(true);
+  expect(result.sections.some((section) => section.truncated === true)).toBe(true);
+  expect(result.text).toContain("You are reviewing pull request #42 in acme/app.");
+  expect(result.text).toContain("## Knowledge Context");
 });
 
 test("default config includes severity classification guidelines", () => {
