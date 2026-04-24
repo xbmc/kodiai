@@ -5,6 +5,8 @@ import type {
   AuthorCacheEntry,
   AuthorCacheTier,
   CheckpointRecord,
+  ContinuationFamilyStateKey,
+  ContinuationFamilyStateRecord,
   DepBumpMergeHistoryRecord,
   FeedbackReaction,
   FindingByCommentId,
@@ -671,6 +673,78 @@ export function createKnowledgeStore(opts: {
         UPDATE review_checkpoints SET partial_comment_id = ${commentId}
         WHERE review_output_key = ${reviewOutputKey}
       `;
+    },
+
+    async upsertContinuationFamilyState(record: ContinuationFamilyStateRecord): Promise<void> {
+      await sql`
+        INSERT INTO continuation_family_state (
+          family_key,
+          base_review_output_key,
+          authoritative_attempt_id,
+          authoritative_attempt_ordinal,
+          authoritative_outcome,
+          final_stop_reason,
+          projection_status,
+          superseded_by_attempt_id
+        ) VALUES (
+          ${record.familyKey},
+          ${record.baseReviewOutputKey},
+          ${record.authoritativeAttemptId},
+          ${record.authoritativeAttemptOrdinal},
+          ${record.authoritativeOutcome},
+          ${record.finalStopReason},
+          ${record.projectionStatus},
+          ${record.supersededByAttemptId ?? null}
+        )
+        ON CONFLICT (family_key, base_review_output_key)
+        DO UPDATE SET
+          authoritative_attempt_id = EXCLUDED.authoritative_attempt_id,
+          authoritative_attempt_ordinal = EXCLUDED.authoritative_attempt_ordinal,
+          authoritative_outcome = EXCLUDED.authoritative_outcome,
+          final_stop_reason = EXCLUDED.final_stop_reason,
+          projection_status = EXCLUDED.projection_status,
+          superseded_by_attempt_id = EXCLUDED.superseded_by_attempt_id,
+          updated_at = now()
+        WHERE EXCLUDED.authoritative_attempt_ordinal >= continuation_family_state.authoritative_attempt_ordinal
+      `;
+    },
+
+    async getContinuationFamilyState(key: ContinuationFamilyStateKey): Promise<ContinuationFamilyStateRecord | null> {
+      const rows = await sql`
+        SELECT
+          family_key,
+          base_review_output_key,
+          authoritative_attempt_id,
+          authoritative_attempt_ordinal,
+          authoritative_outcome,
+          final_stop_reason,
+          projection_status,
+          superseded_by_attempt_id,
+          created_at,
+          updated_at
+        FROM continuation_family_state
+        WHERE family_key = ${key.familyKey}
+          AND base_review_output_key = ${key.baseReviewOutputKey}
+        LIMIT 1
+      `;
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const row = rows[0]!;
+      return {
+        familyKey: row.family_key,
+        baseReviewOutputKey: row.base_review_output_key,
+        authoritativeAttemptId: row.authoritative_attempt_id,
+        authoritativeAttemptOrdinal: Number(row.authoritative_attempt_ordinal),
+        authoritativeOutcome: row.authoritative_outcome,
+        finalStopReason: row.final_stop_reason,
+        projectionStatus: row.projection_status,
+        supersededByAttemptId: row.superseded_by_attempt_id,
+        createdAt: typeof row.created_at === "string" ? row.created_at : (row.created_at as Date).toISOString(),
+        updatedAt: typeof row.updated_at === "string" ? row.updated_at : (row.updated_at as Date).toISOString(),
+      };
     },
 
     checkpoint(): void {
