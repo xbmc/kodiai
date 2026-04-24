@@ -14,10 +14,10 @@
 - [x] **S01: S01** `risk:high` `depends:[]`
   > After this: After this slice, a deterministic canonical-state query/verifier can show the authoritative continuation family record for merge, quiet-settlement, blocked, and superseded scenarios directly from durable state, including the winning attempt and final stop reason.
 
-- [ ] **S02: S02** `risk:high` `depends:[]`
+- [x] **S02: S02** `risk:high` `depends:[]`
   > After this: After this slice, running the real continuation path through timeout, retry, quiet settlement, and supersession scenarios updates one canonical lifecycle record while stale attempts are unable to overwrite authority or falsely report checkpoint durability.
 
-- [ ] **S03: Canonical-state-first operator evidence and projection-status proof** `risk:medium` `depends:[S01,S02]`
+- [ ] **S03: S03** `risk:medium` `depends:[]`
   > After this: After this slice, an operator can run one deterministic report/verifier and see final authoritative outcome, stop reason, winning attempt, and any degraded projection statuses for a continuation family without log correlation.
 
 ## Boundary Map

@@ -109,17 +109,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Mapped during M064 planning; milestone verification must show telemetry/checkpoint/report projection failures degrade to explicit projection status while canonical lifecycle truth remains queryable.
 - Notes: Introduced by M064 planning from research candidate requirement on projection-status visibility.
 
-### R075 — Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
-- Class: correctness
-- Status: active
-- Description: Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
-- Why it matters: A non-awaited checkpoint save can misreport success and undermine continuation evidence durability.
-- Source: M064
-- Primary owning slice: M064/S02
-- Supporting slices: none
-- Validation: Mapped during M064 planning; regression coverage must prove checkpoint tools do not report saved=true before durable persistence completes or fails.
-- Notes: Introduced by M064 planning from research candidate requirement on checkpoint acknowledgment reliability.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -761,6 +750,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M064/S01 verifier output returns controlled finalStopReason values (merged-continuation-results, settled-without-update, no-follow-up, superseded-by-newer-attempt) directly from canonical continuation-family state; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json.
 - Notes: Introduced by M064 planning from research candidate requirement on explicit final stop reason contract.
 
+### R075 — Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
+- Class: correctness
+- Status: validated
+- Description: Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
+- Why it matters: A non-awaited checkpoint save can misreport success and undermine continuation evidence durability.
+- Source: M064
+- Primary owning slice: M064/S02
+- Supporting slices: none
+- Validation: M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`. Checkpoint acknowledgements now wait for durable save completion, rejected saves return an error result instead of `saved: true`, and the canonical-state verifier proves retry enqueue failure, retry execution failure, telemetry degradation, and stale supersession outcomes from continuation-family state.
+- Notes: Introduced by M064 planning from research candidate requirement on checkpoint acknowledgment reliability.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -874,11 +874,11 @@ This file is the explicit capability and coverage contract for the project.
 | R072 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output now returns authoritativeAttemptId and authoritativeAttemptOrdinal directly from canonical continuation-family state for merged, quiet-settled, blocked, and superseded scenarios; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json. |
 | R073 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output returns controlled finalStopReason values (merged-continuation-results, settled-without-update, no-follow-up, superseded-by-newer-attempt) directly from canonical continuation-family state; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json. |
 | R074 | operational | active | M064/S03 | M064/S02 | Mapped during M064 planning; milestone verification must show telemetry/checkpoint/report projection failures degrade to explicit projection status while canonical lifecycle truth remains queryable. |
-| R075 | correctness | active | M064/S02 | none | Mapped during M064 planning; regression coverage must prove checkpoint tools do not report saved=true before durable persistence completes or fails. |
+| R075 | correctness | validated | M064/S02 | none | M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`. Checkpoint acknowledgements now wait for durable save completion, rejected saves return an error result instead of `saved: true`, and the canonical-state verifier proves retry enqueue failure, retry execution failure, telemetry degradation, and stale supersession outcomes from continuation-family state. |
 
 ## Coverage Summary
 
-- Active requirements: 11
-- Mapped to slices: 11
-- Validated: 61 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073)
+- Active requirements: 10
+- Mapped to slices: 10
+- Validated: 62 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R075)
 - Unmapped active requirements: 0
