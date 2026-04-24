@@ -1065,6 +1065,68 @@ export function createMentionHandler(deps: {
     };
   }
 
+  function isCodeSeekingMentionRequest(question: string): boolean {
+    const normalized = stripIssueIntentWrappers(question).toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    const directCodeIntent = /\b(where\s+is|which\s+file|what\s+file|show\s+me|point\s+me|find|locate|trace|walk\s+me\s+through|inspect|debug|look\s+at)\b/;
+    const codeSubject = /\b(code|implementation|logic|handler|function|module|class|component|query|workflow|prompt|diff|stack|error|bug|regression|test|file|path|line|symbol|readme|docs?)\b/;
+    const fileReference = /\b[a-z0-9._/-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|yml|yaml|sql|py|rb|go|rs|java|kt|swift|cpp|cc|c|h)\b/;
+    const codeSyntax = /[`/]|::|->|\bsrc\//;
+
+    if (directCodeIntent.test(normalized) && (codeSubject.test(normalized) || fileReference.test(normalized) || codeSyntax.test(normalized))) {
+      return true;
+    }
+
+    const implementationQuestion = /\b(how\s+does|why\s+does|what\s+does)\b/;
+    if (implementationQuestion.test(normalized) && (codeSubject.test(normalized) || fileReference.test(normalized) || codeSyntax.test(normalized))) {
+      return true;
+    }
+
+    const locationQuestion = /\b(file|path|line|symbol|function|module|class|component)\b/;
+    if (locationQuestion.test(normalized) && /\b(where|which|show|find|locate)\b/.test(normalized)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function isDiffSeekingMentionRequest(question: string): boolean {
+    const normalized = stripIssueIntentWrappers(question).toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    const diffNoun = /\b(diff|patch|changes|changed files|delta|hunk|stat|files changed)\b/;
+    const diffVerb = /\b(show|inspect|review|analyze|walk\s+through|summarize|explain|compare|check)\b/;
+    const comparePhrase = /\bwhat\s+changed\b/;
+
+    return comparePhrase.test(normalized) || (diffNoun.test(normalized) && diffVerb.test(normalized));
+  }
+
+  function buildMentionRetrievalBody(params: {
+    userQuestion: string;
+    mentionContext: string;
+    allowHeavyContext: boolean;
+    allowDiffContext: boolean;
+    explicitReviewRequest: boolean;
+  }): string {
+    if (params.explicitReviewRequest) {
+      return params.mentionContext;
+    }
+
+    const summaryLines = [params.userQuestion.trim()];
+    if (params.allowHeavyContext && params.mentionContext.trim().length > 0) {
+      summaryLines.push(params.mentionContext.trim());
+    } else if (params.allowDiffContext) {
+      summaryLines.push("diff-inspection request");
+    }
+
+    return summaryLines.filter((line) => line.length > 0).join("\n\n");
+  }
+
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
     const possibleHandles = [appSlug, "kodai", "claude"];
@@ -1866,6 +1928,10 @@ export function createMentionHandler(deps: {
           explicitReviewRequest,
           config,
         });
+        const allowIssueCodePointers = isIssueThreadComment && isCodeSeekingMentionRequest(writeIntent.request);
+        const allowPrDiffContext =
+          mention.prNumber !== undefined
+          && (explicitReviewRequest || isDiffSeekingMentionRequest(writeIntent.request));
         try {
           const mentionContextResult = await buildMentionContextDetails(octokit, mention, {
             admissionPolicy: mentionAdmissionPolicy,
@@ -1881,7 +1947,7 @@ export function createMentionHandler(deps: {
           );
         }
 
-        if (isIssueThreadComment) {
+        if (allowIssueCodePointers) {
           try {
             const issueCodeContext = await buildIssueCodeContext({
               workspaceDir: workspace.dir,
@@ -2000,8 +2066,15 @@ export function createMentionHandler(deps: {
         let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
         if (retriever && config.knowledge?.retrieval?.enabled) {
           try {
+            const retrievalBody = buildMentionRetrievalBody({
+              userQuestion: writeIntent.request,
+              mentionContext,
+              allowHeavyContext: allowIssueCodePointers,
+              allowDiffContext: allowPrDiffContext,
+              explicitReviewRequest,
+            });
             let filePaths: string[] = [];
-            if (mention.prNumber !== undefined && mention.baseRef) {
+            if ((explicitReviewRequest || allowPrDiffContext) && mention.prNumber !== undefined && mention.baseRef) {
               // Try three-dot diff first; fall back to two-dot if merge-base unreachable (shallow clone).
               let diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
                 .quiet()
@@ -2045,7 +2118,7 @@ export function createMentionHandler(deps: {
             const retrievalTopK = Math.max(1, Math.min(config.knowledge?.retrieval?.topK ?? 5, 3));
             const variants = buildRetrievalVariants({
               title: writeIntent.request,
-              body: mentionContext,
+              body: retrievalBody,
               conventionalType: null,
               prLanguages,
               riskSignals: [mention.surface, mention.inReplyToId !== undefined ? "reply-thread" : "single-mention"],
@@ -2155,7 +2228,7 @@ export function createMentionHandler(deps: {
         const PR_DIFF_MAX_CHARS = 8_000;
         let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined;
         // mention.baseRef is the PR base branch (e.g. "main"), set by the event parser.
-        if (mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
+        if (allowPrDiffContext && mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
           try {
             // Try three-dot diff first (shows only changes introduced by the PR branch).
             // Falls back to two-dot diff when the merge base isn't reachable — this can happen

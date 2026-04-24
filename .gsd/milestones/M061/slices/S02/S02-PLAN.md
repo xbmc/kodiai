@@ -36,7 +36,7 @@
   - Files: `src/handlers/mention.ts`, `src/execution/mention-context.ts`, `src/execution/mention-prompt.ts`, `src/execution/config.ts`, `src/execution/mention-context.test.ts`, `src/execution/mention-prompt.test.ts`
   - Verify: bun test ./src/execution/mention-context.test.ts ./src/execution/mention-prompt.test.ts
 
-- [ ] **T02: Gate candidate code pointers, PR diff prefetch, and retrieval inputs off the same policy** `est:90m`
+- [x] **T02: Gate candidate code pointers, PR diff prefetch, and retrieval inputs off the same policy** `est:90m`
   Close the expensive secondary paths so the context diet is real instead of cosmetic. In `src/handlers/mention.ts`, only build issue-thread code pointers when the issue question looks code-seeking, only prefetch PR diff context for explicit review or clearly diff-inspection requests, and ensure retrieval query construction no longer consumes a fully built rich mention context on the light conversational path. If needed, add a small helper seam near `src/knowledge/multi-query-retrieval.ts` or the mention handler so retrieval variants consume the staged summary/body intended for the chosen path. Prove the preserved `review.full` boundary and the reduced `mention.response` boundary with integration-oriented handler tests. Executors should load `test-driven-development` before coding and `verify-before-complete` before closing the task.
   - Files: `src/handlers/mention.ts`, `src/execution/issue-code-context.ts`, `src/knowledge/multi-query-retrieval.ts`, `src/handlers/mention.test.ts`
   - Verify: bun test ./src/handlers/mention.test.ts

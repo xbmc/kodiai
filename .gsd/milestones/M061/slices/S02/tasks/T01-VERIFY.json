@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M061/S02/T01",
+  "timestamp": 1776994161710,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/execution/mention-context.test.ts ./src/execution/mention-prompt.test.ts",
+      "exitCode": 0,
+      "durationMs": 34,
+      "verdict": "pass"
+    }
+  ]
+}
