@@ -34,7 +34,7 @@ Steps:
   - Files: `scripts/verify-m062-s03.ts`, `scripts/verify-m062-s01.ts`, `src/lib/review-utils.ts`, `src/lib/partial-review-formatter.ts`
   - Verify: bun test ./scripts/verify-m062-s03.test.ts --filter "verify-m062-s03"
 
-- [ ] **T02: Lock the verifier contract with regression tests and script wiring** `est:60m`
+- [x] **T02: Lock the verifier contract with regression tests and script wiring** `est:60m`
   Add targeted Bun tests and package wiring so the new verifier becomes a stable regression gate instead of an ad hoc script. Keep assertions semantic: verify scenario classifications, parity signals, zero-evidence rejection, single-scenario targeting, JSON shape, and package script registration without snapshotting whole comment bodies.
 
 Steps:
