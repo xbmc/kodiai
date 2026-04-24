@@ -364,3 +364,5 @@
 {"id":"7cac1bcc-813c-4796-a0c0-a6bba791deec","ts":"2026-04-24T02:33:35.387Z","severity":"info","message":"Committed: test: Added request-scoped query embedding reuse and reuse provenance t…","source":"notify","read":false}
 {"id":"275f23d7-a28d-4f48-848c-07a9d4f800e7","ts":"2026-04-24T02:33:35.585Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"36d9bebe-611c-4c6b-8cee-75ba2071ad72","ts":"2026-04-24T02:33:35.587Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"1db46dc9-dfed-4c35-8d44-a484d1b5926a","ts":"2026-04-24T02:46:31.053Z","severity":"info","message":"Committed: test: Added truthful mention derived-context fingerprint caching with h…","source":"notify","read":false}
+{"id":"3d9f3c68-95bc-42c9-ad96-b81796f72a24","ts":"2026-04-24T02:46:39.878Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

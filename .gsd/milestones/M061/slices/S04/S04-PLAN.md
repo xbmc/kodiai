@@ -204,7 +204,7 @@ Add a thin mention-side cache wrapper around the expensive derived-context seam.
   - Files: `src/handlers/mention.ts`, `src/execution/mention-context.ts`, `src/execution/mention-prompt.ts`, `src/lib/search-cache.ts`, `src/handlers/mention.test.ts`, `src/execution/mention-context.test.ts`, `src/execution/mention-prompt.test.ts`
   - Verify: bun test src/execution/mention-context.test.ts src/execution/mention-prompt.test.ts src/handlers/mention.test.ts
 
-- [ ] **T03: Reuse review prompt artifacts safely across identical review state** `est:4h`
+- [x] **T03: Reuse review prompt artifacts safely across identical review state** `est:4h`
   ---
 estimated_steps: 5
 estimated_files: 5

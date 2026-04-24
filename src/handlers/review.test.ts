@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { collectDiffContext, createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
+import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
@@ -6827,9 +6827,9 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
       buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
     );
 
-    expect(embedCalls).toHaveLength(3);
+    expect(embedCalls).toHaveLength(2);
     expect(embedCalls.some((query) => query.includes("files:"))).toBe(true);
-    expect(retrieveCalls).toHaveLength(3);
+    expect(retrieveCalls).toHaveLength(2);
     expect(maxInFlightEmbeds).toBeLessThanOrEqual(2);
 
     const sharedIdx = capturedPrompt.indexOf("shared bug");
@@ -6837,7 +6837,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
     const shapeOnlyIdx = capturedPrompt.indexOf("shape-only bug");
     expect(sharedIdx).toBeGreaterThan(-1);
     expect(intentOnlyIdx).toBeGreaterThan(-1);
-    expect(shapeOnlyIdx).toBeGreaterThan(-1);
+    expect(shapeOnlyIdx).toBe(-1);
 
     await workspaceFixture.cleanup();
   });
@@ -6983,7 +6983,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
     );
 
     expect(capturedPrompt).toContain("intent variant finding");
-    expect(capturedPrompt).toContain("shape variant finding");
+    expect(capturedPrompt).not.toContain("shape variant finding");
 
     await workspaceFixture.cleanup();
   });
@@ -10018,6 +10018,500 @@ describe("createReviewHandler review prompt section telemetry", () => {
   });
 });
 
+describe("review prompt derived cache", () => {
+  test("buildReviewPromptFingerprint bypasses malformed prompt state", () => {
+    expect(
+      buildReviewPromptFingerprint({
+        owner: "acme",
+        repo: "repo",
+        prNumber: 101,
+        prTitle: "Prompt fingerprint",
+        prBody: "",
+        prAuthor: "octocat",
+        baseBranch: "main",
+        headBranch: "feature",
+        changedFiles: [],
+      }),
+    ).toEqual({
+      fingerprint: null,
+      missingSignals: ["changed-files"],
+    });
+  });
+
+  test("reuses identical review prompt artifacts across identical review state", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const queueMetadata = createQueueRunMetadata();
+    const promptSectionsByRun: Array<Array<{ sectionName: string; charCount: number; estimatedTokens: number; truncated?: boolean }>> = [];
+    let promptBuilderCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(queueMetadata),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { promptSections: Array<{ sections: Array<{ sectionName: string; charCount: number; estimatedTokens: number; truncated?: boolean }> }> }) => {
+          promptSectionsByRun.push(context.promptSections[0]?.sections ?? []);
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: `session-review-cache-${promptSectionsByRun.length}`,
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewPromptBuilder: (context) => {
+        promptBuilderCalls += 1;
+        return {
+          text: `prompt:${context.changedFiles.join(",")}:${context.customInstructions ?? "none"}`,
+          sections: [
+            {
+              sectionName: "review-pr-context",
+              sectionPosition: 0,
+              charCount: 12,
+              estimatedTokens: 3,
+            },
+            {
+              sectionName: "review-instructions",
+              sectionPosition: 1,
+              charCount: 24,
+              estimatedTokens: 6,
+            },
+          ],
+        };
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    const event = buildReviewRequestedEvent({
+      requested_reviewer: { login: "kodiai[bot]" },
+      pull_request: {
+        number: 101,
+        draft: false,
+        title: "Review prompt cache hit",
+        body: "",
+        commits: 0,
+        additions: 1,
+        deletions: 0,
+        user: { login: "octocat" },
+        base: { ref: "main", sha: "mainsha" },
+        head: {
+          sha: "abcdef1234567890",
+          ref: "feature",
+          repo: {
+            full_name: "acme/repo",
+            name: "repo",
+            owner: { login: "acme" },
+          },
+        },
+        labels: [],
+      },
+    });
+
+    await handler!(event);
+    await handler!(event);
+
+    expect(promptBuilderCalls).toBe(1);
+    expect(promptSectionsByRun).toHaveLength(2);
+    expect(promptSectionsByRun[0]).toEqual(promptSectionsByRun[1]);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("misses reused review prompt artifacts when review state drifts", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const queueMetadata = createQueueRunMetadata();
+    let promptBuilderCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(queueMetadata),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: `session-review-cache-drift-${promptBuilderCalls}`,
+          model: "test-model",
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewPromptBuilder: (context) => {
+        promptBuilderCalls += 1;
+        return {
+          text: `prompt:${context.changedFiles.join(",")}`,
+          sections: [
+            {
+              sectionName: "review-pr-context",
+              sectionPosition: 0,
+              charCount: 10,
+              estimatedTokens: 3,
+            },
+          ],
+        };
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({
+      requested_reviewer: { login: "kodiai[bot]" },
+      pull_request: {
+        number: 101,
+        draft: false,
+        title: "Review prompt cache miss",
+        body: "",
+        commits: 0,
+        additions: 1,
+        deletions: 0,
+        user: { login: "octocat" },
+        base: { ref: "main", sha: "mainsha" },
+        head: {
+          sha: "abcdef1234567890",
+          ref: "feature",
+          repo: {
+            full_name: "acme/repo",
+            name: "repo",
+            owner: { login: "acme" },
+          },
+        },
+        labels: [],
+      },
+    }));
+
+    await handler!(buildReviewRequestedEvent({
+      requested_reviewer: { login: "kodiai[bot]" },
+      pull_request: {
+        number: 101,
+        draft: false,
+        title: "Review prompt cache miss",
+        body: "",
+        commits: 0,
+        additions: 1,
+        deletions: 0,
+        user: { login: "octocat" },
+        base: { ref: "main", sha: "mainsha" },
+        head: {
+          sha: "fedcba0987654321",
+          ref: "feature",
+          repo: {
+            full_name: "acme/repo",
+            name: "repo",
+            owner: { login: "acme" },
+          },
+        },
+        labels: [],
+      },
+    }));
+
+    expect(promptBuilderCalls).toBe(2);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("reduced-scope retry misses naturally and degraded cache falls back to rebuild", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const queueMetadata = createQueueRunMetadata();
+    const promptTexts: string[] = [];
+    const { logger, entries } = createCaptureLogger();
+    let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
+    let promptBuilderCalls = 0;
+
+    const failingStore = {
+      get: () => {
+        throw new Error("cache read unavailable");
+      },
+      set: () => {
+        throw new Error("cache write unavailable");
+      },
+      delete: () => undefined,
+      entries: function* () {
+      },
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: { action?: string },
+      ) => {
+        if (context?.action === "review-retry") {
+          queuedRetryJob = fn as (metadata: JobQueueRunMetadata) => Promise<unknown>;
+          return undefined as T;
+        }
+        return fn(queueMetadata);
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { eventType: string; prompt: string }) => {
+          promptTexts.push(context.prompt);
+          if (context.eventType === "pull_request.review-retry") {
+            return {
+              conclusion: "success",
+              published: false,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-review-retry-success",
+              model: "test-model",
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              stopReason: "end_turn",
+            };
+          }
+          return {
+            conclusion: "error",
+            isTimeout: true,
+            published: false,
+            errorMessage: "timeout",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-review-retry-timeout",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "timeout",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => null,
+        updateCheckpointCommentId: () => undefined,
+        deleteCheckpoint: () => undefined,
+      }) as never,
+      reviewPromptDerivedCacheOptions: {
+        store: failingStore,
+      },
+      reviewPromptBuilder: (context) => {
+        promptBuilderCalls += 1;
+        return {
+          text: `prompt:${context.changedFiles.join(",")}:${context.customInstructions ?? "none"}`,
+          sections: [
+            {
+              sectionName: "review-pr-context",
+              sectionPosition: 0,
+              charCount: 10,
+              estimatedTokens: 3,
+            },
+          ],
+        };
+      },
+      logger: logger as never,
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Retry prompt cache miss",
+          body: "",
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    expect(queuedRetryJob).toBeDefined();
+    await queuedRetryJob!(queueMetadata);
+
+    expect(promptBuilderCalls).toBe(2);
+    expect(promptTexts).toHaveLength(2);
+    expect(promptTexts[0]).not.toBe(promptTexts[1]);
+    expect(promptTexts[1]).toContain("This is a retry of a timed-out review with reduced scope.");
+    expect(
+      entries.some((entry) => entry.message === "Review derived prompt cache degraded; bypassing cache for this request"),
+    ).toBeTrue();
+    expect(
+      entries.filter((entry) => entry.message === "Resolved review prompt derived-cache state").every((entry) => entry.data?.gateResult === "degraded"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+});
+
 describe("createReviewHandler author-tier search cache integration", () => {
   async function runAuthorTierScenario(params: {
     eventIds: [string, string];
@@ -11053,7 +11547,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     });
 
     expect(executeCount).toBe(1);
-    expect(queries).toHaveLength(3);
+    expect(queries).toHaveLength(2);
     expect(queries[0]).not.toContain("author:");
     expect(queries.join("\n")).not.toMatch(
       /\b(first-time|regular|core|newcomer|developing|established|senior)\b/,

@@ -5,6 +5,7 @@ import type {
   PullRequestSynchronizeEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
+import { createHash } from "node:crypto";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
@@ -47,7 +48,7 @@ import {
   buildReviewPromptDetails,
   matchPathInstructions,
 } from "../execution/review-prompt.ts";
-import { buildPromptSectionRecord } from "../execution/prompt-section-metrics.ts";
+import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import {
   DEFAULT_EMPTY_INTENT,
   parsePRIntent,
@@ -155,6 +156,7 @@ import {
   buildSearchCacheKey,
   createSearchCache,
   type SearchCache,
+  type SearchCacheOptions,
 } from "../lib/search-cache.ts";
 import { detectDependsBump, type DependsBumpInfo } from "../lib/depends-bump-detector.ts";
 import {
@@ -223,6 +225,173 @@ type AuthorTierSearchEnrichment = {
   skippedQueries: number;
   degradationPath: "none" | "search-api-rate-limit";
 };
+
+type ReviewPromptBuildContext = Parameters<typeof buildReviewPromptDetails>[0];
+
+export type ReviewPromptFingerprintResult = {
+  fingerprint: string | null;
+  missingSignals: string[];
+};
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function hashPromptString(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return sha256Hex(value);
+}
+
+function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
+  if (!values) {
+    return { values: [], missingSignals: [] };
+  }
+
+  const normalized = values
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .filter((value) => value.length > 0);
+
+  if (values.length > 0 && normalized.length !== values.length) {
+    return { values: null, missingSignals: [signal] };
+  }
+
+  return {
+    values: Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b)),
+    missingSignals: [],
+  };
+}
+
+function summarizeRetrievalContextFingerprint(
+  retrievalContext: ReviewPromptBuildContext["retrievalContext"],
+): { value: Record<string, unknown> | null; missingSignals: string[] } {
+  if (!retrievalContext) {
+    return { value: null, missingSignals: [] };
+  }
+
+  const summarizedFindings: Array<Record<string, unknown>> = [];
+  for (const finding of retrievalContext.findings) {
+    if (
+      typeof finding.findingText !== "string"
+      || typeof finding.severity !== "string"
+      || typeof finding.category !== "string"
+      || typeof finding.path !== "string"
+      || typeof finding.outcome !== "string"
+      || typeof finding.sourceRepo !== "string"
+      || !Number.isFinite(finding.distance)
+    ) {
+      return { value: null, missingSignals: ["retrieval-fingerprint-data"] };
+    }
+
+    summarizedFindings.push({
+      findingTextHash: sha256Hex(finding.findingText),
+      severity: finding.severity,
+      category: finding.category,
+      path: finding.path,
+      line: finding.line ?? null,
+      snippetHash: hashPromptString(finding.snippet),
+      outcome: finding.outcome,
+      distance: Number(finding.distance.toFixed(6)),
+      sourceRepo: finding.sourceRepo.toLowerCase(),
+    });
+  }
+
+  return {
+    value: {
+      maxChars: retrievalContext.maxChars ?? null,
+      findings: summarizedFindings,
+    },
+    missingSignals: [],
+  };
+}
+
+export function buildReviewPromptFingerprint(
+  context: ReviewPromptBuildContext,
+): ReviewPromptFingerprintResult {
+  const missingSignals: string[] = [];
+
+  const owner = context.owner.trim().toLowerCase();
+  const repo = context.repo.trim().toLowerCase();
+  const baseBranch = context.baseBranch.trim();
+  const headBranch = context.headBranch.trim();
+  const prAuthor = context.prAuthor.trim();
+  const normalizedChangedFiles = normalizePromptStringList(context.changedFiles, "changed-files");
+  const focusAreas = normalizePromptStringList(context.focusAreas, "focus-areas");
+  const ignoredAreas = normalizePromptStringList(context.ignoredAreas, "ignored-areas");
+  const prLabels = normalizePromptStringList(context.prLabels, "pr-labels");
+  const focusHints = normalizePromptStringList(context.focusHints, "focus-hints");
+  const retrievalSummary = summarizeRetrievalContextFingerprint(context.retrievalContext);
+
+  missingSignals.push(...normalizedChangedFiles.missingSignals, ...focusAreas.missingSignals, ...ignoredAreas.missingSignals, ...prLabels.missingSignals, ...focusHints.missingSignals, ...retrievalSummary.missingSignals);
+
+  if (!owner || !repo) missingSignals.push("repo-identity");
+  if (!Number.isInteger(context.prNumber) || context.prNumber <= 0) missingSignals.push("pr-number");
+  if (!baseBranch || !headBranch) missingSignals.push("pr-refs");
+  if (normalizedChangedFiles.values !== null && normalizedChangedFiles.values.length === 0) missingSignals.push("changed-files");
+  if (typeof context.prTitle !== "string") missingSignals.push("pr-title");
+  if (!prAuthor) missingSignals.push("pr-author");
+
+  if (missingSignals.length > 0) {
+    return { fingerprint: null, missingSignals: Array.from(new Set(missingSignals)) };
+  }
+
+  const fingerprintPayload = {
+    version: 1,
+    repo: `${owner}/${repo}`,
+    prNumber: context.prNumber,
+    prTitleHash: sha256Hex(context.prTitle),
+    prBodyHash: hashPromptString(context.prBody),
+    prAuthor,
+    baseBranch,
+    headBranch,
+    changedFiles: normalizedChangedFiles.values,
+    customInstructionsHash: hashPromptString(context.customInstructions),
+    checkpointEnabled: context.checkpointEnabled ?? false,
+    mode: context.mode ?? "standard",
+    severityMinLevel: context.severityMinLevel ?? "minor",
+    focusAreas: focusAreas.values,
+    ignoredAreas: ignoredAreas.values,
+    maxComments: context.maxComments ?? null,
+    suppressionsHash: hashPromptString(JSON.stringify(context.suppressions ?? [])),
+    minConfidence: context.minConfidence ?? null,
+    diffAnalysisHash: hashPromptString(JSON.stringify(context.diffAnalysis ?? null)),
+    matchedPathInstructionsHash: hashPromptString(JSON.stringify(context.matchedPathInstructions ?? [])),
+    incrementalContextHash: hashPromptString(JSON.stringify(context.incrementalContext ?? null)),
+    retrievalContext: retrievalSummary.value,
+    reviewPrecedentsHash: hashPromptString(JSON.stringify(context.reviewPrecedents ?? [])),
+    wikiKnowledgeHash: hashPromptString(JSON.stringify(context.wikiKnowledge ?? [])),
+    filesByLanguageHash: hashPromptString(JSON.stringify(context.filesByLanguage ?? null)),
+    outputLanguage: context.outputLanguage ?? null,
+    prLabels: prLabels.values,
+    focusHints: focusHints.values,
+    conventionalTypeHash: hashPromptString(JSON.stringify(context.conventionalType ?? null)),
+    deltaContextHash: hashPromptString(JSON.stringify(context.deltaContext ?? null)),
+    largePRContextHash: hashPromptString(JSON.stringify(context.largePRContext ?? null)),
+    authorTier: context.authorTier ?? null,
+    contributorExperienceContractHash: hashPromptString(JSON.stringify(context.contributorExperienceContract ?? null)),
+    authorExpertiseHash: hashPromptString(JSON.stringify(context.authorExpertise ?? [])),
+    depBumpContextHash: hashPromptString(JSON.stringify(context.depBumpContext ?? null)),
+    searchRateLimitDegradationHash: hashPromptString(JSON.stringify(context.searchRateLimitDegradation ?? null)),
+    isDraft: context.isDraft ?? false,
+    unifiedResultsHash: hashPromptString(JSON.stringify(context.unifiedResults ?? [])),
+    contextWindowHash: hashPromptString(context.contextWindow),
+    clusterPatternsHash: hashPromptString(JSON.stringify(context.clusterPatterns ?? [])),
+    linkedIssuesHash: hashPromptString(JSON.stringify(context.linkedIssues ?? null)),
+    activeRulesHash: hashPromptString(JSON.stringify(context.activeRules ?? [])),
+    graphBlastRadiusHash: hashPromptString(JSON.stringify(context.graphBlastRadius ?? null)),
+    graphContextOptionsHash: hashPromptString(JSON.stringify(context.graphContextOptions ?? null)),
+    structuralImpactHash: hashPromptString(JSON.stringify(context.structuralImpact ?? null)),
+    reviewBoundednessHash: hashPromptString(JSON.stringify(context.reviewBoundedness ?? null)),
+    publishToolNamesHash: hashPromptString(JSON.stringify(context.publishToolNames ?? [])),
+  };
+
+  return {
+    fingerprint: sha256Hex(JSON.stringify(fingerprintPayload)),
+    missingSignals: [],
+  };
+}
 
 const REVIEW_PHASE_ORDER = [
   "queue wait",
@@ -1312,6 +1481,13 @@ export function createReviewHandler(deps: {
   searchCache?: SearchCache<number>;
   /** Optional injection for deterministic tests. */
   searchCacheFactory?: () => SearchCache<number>;
+  /** Optional derived prompt cache store overrides for review prompt reuse tests/fail-open wiring. */
+  reviewPromptDerivedCacheOptions?: Pick<
+    SearchCacheOptions<PromptBuildResult>,
+    "ttlMs" | "store" | "inFlightStore"
+  >;
+  /** Optional prompt builder override for review prompt reuse tests. */
+  reviewPromptBuilder?: typeof buildReviewPromptDetails;
   /** Optional code snippet store for hunk embedding. */
   codeSnippetStore?: CodeSnippetStore;
   /** Optional contributor profile store for 4-tier expertise-based reviews. */
@@ -1354,6 +1530,8 @@ export function createReviewHandler(deps: {
     scopeCoordinator,
     searchCache: injectedSearchCache,
     searchCacheFactory,
+    reviewPromptDerivedCacheOptions,
+    reviewPromptBuilder = buildReviewPromptDetails,
     codeSnippetStore,
     contributorProfileStore,
     slackBotToken,
@@ -1382,6 +1560,22 @@ export function createReviewHandler(deps: {
     );
   }
 
+  let reviewPromptDerivedCacheErrorCount = 0;
+  const reviewPromptDerivedCache = createSearchCache<PromptBuildResult>({
+    ...reviewPromptDerivedCacheOptions,
+    onError: (error) => {
+      reviewPromptDerivedCacheErrorCount += 1;
+      logger.warn(
+        {
+          err: error,
+          gate: "review-derived-prompt-cache",
+          gateResult: "degraded",
+        },
+        "Review derived prompt cache degraded; bypassing cache for this request",
+      );
+    },
+  });
+
   let authorPrCountSearchCache: SearchCache<number> | undefined;
   if (injectedSearchCache) {
     authorPrCountSearchCache = injectedSearchCache;
@@ -1396,6 +1590,54 @@ export function createReviewHandler(deps: {
         "Search cache initialization failed (fail-open, continuing without search cache)",
       );
       authorPrCountSearchCache = undefined;
+    }
+  }
+
+  async function buildReviewPromptResultWithCache(params: {
+    cacheQuery: string;
+    context: ReviewPromptBuildContext;
+    statusTarget: { status: "hit" | "miss" | "degraded" | "bypass"; reason: string | null };
+  }): Promise<PromptBuildResult> {
+    const fingerprintResult = buildReviewPromptFingerprint(params.context);
+    if (!fingerprintResult.fingerprint) {
+      params.statusTarget.status = "bypass";
+      params.statusTarget.reason = fingerprintResult.missingSignals.join(",") || "incomplete-fingerprint";
+      return reviewPromptBuilder(params.context);
+    }
+
+    const cacheKey = buildSearchCacheKey({
+      repo: `${params.context.owner}/${params.context.repo}`,
+      searchType: "review-derived-prompt",
+      query: params.cacheQuery,
+      extra: {
+        fingerprint: fingerprintResult.fingerprint,
+      },
+    });
+
+    const cacheErrorsBeforeLookup = reviewPromptDerivedCacheErrorCount;
+    let loaderExecuted = false;
+    try {
+      const result = await reviewPromptDerivedCache.getOrLoad(cacheKey, async () => {
+        loaderExecuted = true;
+        return reviewPromptBuilder(params.context);
+      });
+      const cacheDegraded = reviewPromptDerivedCacheErrorCount > cacheErrorsBeforeLookup;
+      params.statusTarget.status = cacheDegraded ? "degraded" : loaderExecuted ? "miss" : "hit";
+      params.statusTarget.reason = cacheDegraded ? "cache-bookkeeping-error" : null;
+      return result;
+    } catch (error) {
+      params.statusTarget.status = "degraded";
+      params.statusTarget.reason = "prompt-build-failed";
+      logger.warn(
+        {
+          err: error,
+          gate: "review-derived-prompt-cache",
+          gateResult: "degraded",
+          cacheQuery: params.cacheQuery,
+        },
+        "Review prompt cache lookup failed; rebuilding directly",
+      );
+      return reviewPromptBuilder(params.context);
     }
   }
 
@@ -3093,7 +3335,9 @@ export function createReviewHandler(deps: {
 
         setReviewWorkPhase("prompt-build");
         // Build review prompt
-        const reviewPromptResult = buildReviewPromptDetails({
+        let reviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
+        let reviewPromptDerivedCacheReason: string | null = null;
+        const reviewPromptBuildContext = {
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -3180,7 +3424,18 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
+        } satisfies ReviewPromptBuildContext;
+        const reviewPromptCacheState = {
+          status: reviewPromptDerivedCacheStatus,
+          reason: reviewPromptDerivedCacheReason,
+        };
+        const reviewPromptResult = await buildReviewPromptResultWithCache({
+          cacheQuery: `initial:${pr.number}:${pr.head.sha ?? "unknown-head-sha"}`,
+          context: reviewPromptBuildContext,
+          statusTarget: reviewPromptCacheState,
         });
+        reviewPromptDerivedCacheStatus = reviewPromptCacheState.status;
+        reviewPromptDerivedCacheReason = reviewPromptCacheState.reason;
         const reviewPrompt = reviewPromptResult.text;
         const reviewPromptSections = [
           buildPromptSectionRecord({
@@ -3191,6 +3446,15 @@ export function createReviewHandler(deps: {
             sections: reviewPromptResult.sections,
           }),
         ];
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-derived-prompt-cache",
+            gateResult: reviewPromptDerivedCacheStatus,
+            ...(reviewPromptDerivedCacheReason ? { reason: reviewPromptDerivedCacheReason } : {}),
+          },
+          "Resolved review prompt derived-cache state",
+        );
         reviewPhaseTimings.set(
           "retrieval/context assembly",
           createReviewPhaseTiming({
@@ -4666,7 +4930,9 @@ export function createReviewHandler(deps: {
                         : retryInstruction;
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
-                    const retryPromptResult = buildReviewPromptDetails({
+                    let retryReviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
+                    let retryReviewPromptDerivedCacheReason: string | null = null;
+                    const retryPromptBuildContext = {
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
@@ -4735,7 +5001,18 @@ export function createReviewHandler(deps: {
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
+                    } satisfies ReviewPromptBuildContext;
+                    const retryPromptCacheState = {
+                      status: retryReviewPromptDerivedCacheStatus,
+                      reason: retryReviewPromptDerivedCacheReason,
+                    };
+                    const retryPromptResult = await buildReviewPromptResultWithCache({
+                      cacheQuery: `retry:${pr.number}:${retryReviewOutputKey}`,
+                      context: retryPromptBuildContext,
+                      statusTarget: retryPromptCacheState,
                     });
+                    retryReviewPromptDerivedCacheStatus = retryPromptCacheState.status;
+                    retryReviewPromptDerivedCacheReason = retryPromptCacheState.reason;
                     const retryPrompt = retryPromptResult.text;
                     const retryPromptSections = [
                       buildPromptSectionRecord({
@@ -4746,6 +5023,16 @@ export function createReviewHandler(deps: {
                         sections: retryPromptResult.sections,
                       }),
                     ];
+                    logger.info(
+                      {
+                        ...baseLog,
+                        deliveryId: retryDeliveryId,
+                        gate: "review-derived-prompt-cache",
+                        gateResult: retryReviewPromptDerivedCacheStatus,
+                        ...(retryReviewPromptDerivedCacheReason ? { reason: retryReviewPromptDerivedCacheReason } : {}),
+                      },
+                      "Resolved retry review prompt derived-cache state",
+                    );
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({
