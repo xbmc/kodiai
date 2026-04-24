@@ -17,7 +17,7 @@
 - [x] **S02: S02** `risk:high` `depends:[]`
   > After this: After this slice, running the real continuation path through timeout, retry, quiet settlement, and supersession scenarios updates one canonical lifecycle record while stale attempts are unable to overwrite authority or falsely report checkpoint durability.
 
-- [ ] **S03: S03** `risk:medium` `depends:[]`
+- [x] **S03: S03** `risk:medium` `depends:[]`
   > After this: After this slice, an operator can run one deterministic report/verifier and see final authoritative outcome, stop reason, winning attempt, and any degraded projection statuses for a continuation family without log correlation.
 
 ## Boundary Map

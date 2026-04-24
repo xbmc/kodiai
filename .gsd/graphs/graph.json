@@ -9,8 +9,8 @@
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:planning",
-      "label": "Phase: planning",
+      "id": "concept:phase:validating-milestone",
+      "label": "Phase: validating-milestone",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4764,6 +4764,31 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M064:S03",
+      "label": "S03: Canonical-state-first operator evidence and projection-status proof",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M064:S03:T01",
+      "label": "T01: Add canonical operator-evidence resolver and report builder",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M064:S03:T02",
+      "label": "T02: Ship the S03 verifier/report command and lock its operator contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M064:S03:T03",
+      "label": "T03: Regress prior canonical contracts and prove slice-close verification",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "milestone:M065",
       "label": "M065: M065",
       "type": "milestone",
@@ -9409,6 +9434,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M064",
+      "to": "slice:M064:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M064:S03",
+      "to": "task:M064:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M064:S03",
+      "to": "task:M064:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M064:S03",
+      "to": "task:M064:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M062",
       "to": "decision:M062:1",
       "type": "relates_to",
@@ -9709,5 +9758,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-04-24T07:54:34.192Z"
+  "builtAt": "2026-04-24T08:11:44.848Z"
 }

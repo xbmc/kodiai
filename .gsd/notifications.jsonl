@@ -1,7 +1,3 @@
-{"id":"f641b3e3-46f0-4c7a-bbe8-c62476d10dd6","ts":"2026-04-08T22:36:57.939Z","severity":"info","message":"Created global GSD skill preferences at /home/keith/.gsd/preferences.md","source":"notify","read":true}
-{"id":"6730b2e5-b1d8-4481-8ac2-8d001dc97b03","ts":"2026-04-08T22:36:57.945Z","severity":"info","message":"Building forensic report...","source":"notify","read":true}
-{"id":"30c0512d-3780-4df0-b019-1c5ae1649575","ts":"2026-04-08T22:36:57.945Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":true}
-{"id":"e6c0ca03-a0d7-44de-9f44-1aa7a3e93257","ts":"2026-04-08T22:36:59.644Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":true}
 {"id":"3c2a21e6-ca12-46b3-b79d-67604a0f3045","ts":"2026-04-08T22:36:59.820Z","severity":"info","message":"Forensic report saved: .gsd/forensics/report-2026-04-08-22-36-59.md","source":"notify","read":true}
 {"id":"f80dbf25-bab4-44d0-abef-82a8145eb51c","ts":"2026-04-08T23:13:09.858Z","severity":"info","message":"Auto-mode started. Will loop through 4 milestones.","source":"notify","read":true}
 {"id":"2759a291-b81b-4620-b874-04ab89d979be","ts":"2026-04-08T23:13:09.861Z","severity":"info","message":"Pre-flight: 39 milestones queued. All have full context.","source":"notify","read":true}
@@ -498,3 +494,7 @@
 {"id":"d9777ee4-3c93-4b8d-972e-d5c8dc8f6693","ts":"2026-04-24T08:02:34.617Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"af78f229-85ab-474d-b2da-96211a449519","ts":"2026-04-24T08:07:54.881Z","severity":"info","message":"Committed: test: Added the verify:m064:s03 operator-evidence verifier and report c…","source":"notify","read":false}
 {"id":"8c7fbcf0-f38d-4005-abc3-b2c27c30d134","ts":"2026-04-24T08:07:55.045Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"ff49b54c-c280-47c3-a5e6-c764b030918c","ts":"2026-04-24T08:09:01.786Z","severity":"info","message":"Committed: feat: Closed M064/S03 by rerunning the full canonical regression chain…","source":"notify","read":false}
+{"id":"c9637e52-3caa-4bcb-ae9c-70588c0158b6","ts":"2026-04-24T08:09:03.088Z","severity":"info","message":"Verification gate: 7/7 checks passed","source":"notify","read":false}
+{"id":"064adc4c-6067-483d-840e-f40d873ca3fb","ts":"2026-04-24T08:15:06.302Z","severity":"warning","message":"[dispatch] Implementation artifact check inconclusive for M064 — proceeding (git context unavailable)","source":"workflow-logger","read":false}
+{"id":"e397f4de-9bd1-4da2-a392-790113e69a3f","ts":"2026-04-24T08:15:44.270Z","severity":"warning","message":"[recovery] verify-fail complete-milestone M064: existsSync false for /home/keith/src/kodiai/.gsd/milestones/M064/M064-SUMMARY.md","source":"workflow-logger","read":false}

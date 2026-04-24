@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M064/S03/T03",
+  "timestamp": 1777018141820,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/knowledge/continuation-operator-evidence.test.ts",
+      "exitCode": 0,
+      "durationMs": 100,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test scripts/verify-m064-s03.test.ts",
+      "exitCode": 0,
+      "durationMs": 101,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m064:s03 -- --json",
+      "exitCode": 0,
+      "durationMs": 36,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test scripts/verify-m064-s01.test.ts",
+      "exitCode": 0,
+      "durationMs": 97,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test scripts/verify-m064-s02.test.ts",
+      "exitCode": 0,
+      "durationMs": 580,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m064:s01 -- --json",
+      "exitCode": 0,
+      "durationMs": 30,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m064:s02 -- --json",
+      "exitCode": 0,
+      "durationMs": 294,
+      "verdict": "pass"
+    }
+  ]
+}
