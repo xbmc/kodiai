@@ -37,7 +37,7 @@ Consumes the existing review boundedness seam, checkpoint persistence, partial-r
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/lib/partial-review-formatter.ts`, `src/lib/partial-review-formatter.test.ts`, `src/lib/review-utils.ts`, `src/lib/review-utils.test.ts`, `src/lib/review-first-pass.ts`, `src/handlers/review-idempotency.ts`
   - Verify: bun test ./src/lib/partial-review-formatter.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts
 
-- [ ] **T03: Ship a deterministic verifier for bounded first-pass versus dead-end failure** `est:2h`
+- [x] **T03: Ship a deterministic verifier for bounded first-pass versus dead-end failure** `est:2h`
   Lock the slice with a dedicated proof surface modeled after the M048 verifier style, but scoped to this contract. Add a pure-code `verify:m062:s01` harness plus regression tests that classify representative scenarios such as timeout with checkpoint evidence, `max_turns` with checkpoint evidence, large-PR boundedness without timeout, and zero-evidence failure. The harness should prove that bounded-first-pass publication and hard failure are distinguished by structured state, not by brittle string matching alone, while still checking package-script wiring and human/JSON output consistency. Record executor skills in the rendered frontmatter as `test-driven-development`, `verification-before-completion`, and `observability`.
   - Files: `scripts/verify-m062-s01.ts`, `scripts/verify-m062-s01.test.ts`, `package.json`, `src/lib/review-first-pass.ts`, `src/handlers/review.ts`
   - Verify: bun test ./scripts/verify-m062-s01.test.ts && bun run verify:m062:s01 -- --json && bun run tsc --noEmit

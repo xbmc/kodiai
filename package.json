@@ -90,6 +90,7 @@
     "verify:m061:s04": "bun scripts/verify-m061-s04.ts",
     "verify:m061:s05": "bun scripts/verify-m061-s05.ts",
     "verify:m061:regression": "bun scripts/phase-m061-token-regression-gate.ts",
+    "verify:m062:s01": "bun scripts/verify-m062-s01.ts",
     "verify:m054:s02": "bun scripts/verify-m054-s02.ts",
     "verify:m054:s03": "bun scripts/verify-m054-s03.ts",
     "verify:m054:s04": "bun scripts/verify-m054-s04.ts",
