@@ -86,7 +86,7 @@ export function estimateTimeoutRisk(params: {
     riskLevel = "high";
   }
 
-  // Dynamic timeout: range [0.5x, 1.5x] of base, clamped [30, 1800]
+  // Dynamic timeout: range [0.5x, 1.5x] of base, clamped so total budget stays within platform max
   const rawTimeout = baseTimeoutSeconds * (0.5 + complexity);
   const maxRemoteRuntimeBudgetSeconds = Math.max(
     30,
