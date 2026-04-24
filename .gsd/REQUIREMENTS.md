@@ -109,6 +109,61 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
+### R071 — Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
+- Class: functional
+- Status: active
+- Description: Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
+- Why it matters: Runtime-only coordinator state is not enough for operator truth or restart-safe supersession semantics.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: Mapped during M064 planning; milestone verification must prove durable state survives restart-shaped rehydration and remains the source of truth over projections.
+- Notes: Introduced by M064 planning from research candidate requirement on durable canonical continuation-family state.
+
+### R072 — Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
+- Class: operational
+- Status: active
+- Description: Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
+- Why it matters: Operators currently infer the winning attempt from telemetry and log correlation, which is fragile under retries and supersession.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: Mapped during M064 planning; milestone proof must show authoritative attempt identity is queryable directly from canonical state and remains stable under supersession.
+- Notes: Introduced by M064 planning from research candidate requirement on explicit authoritative attempt identity.
+
+### R073 — Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
+- Class: operational
+- Status: active
+- Description: Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
+- Why it matters: Operators need one direct answer for why continuation stopped, and that answer is currently spread across helpers, logs, and telemetry.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: Mapped during M064 planning; milestone proof must show final stop reason is returned directly from canonical state across merge, quiet settlement, blocked, and superseded outcomes.
+- Notes: Introduced by M064 planning from research candidate requirement on explicit final stop reason contract.
+
+### R074 — Projection failures for continuation lifecycle evidence are surfaced as projection status on top of canonical state instead of creating ambiguity about lifecycle truth.
+- Class: operational
+- Status: active
+- Description: Projection failures for continuation lifecycle evidence are surfaced as projection status on top of canonical state instead of creating ambiguity about lifecycle truth.
+- Why it matters: Telemetry, checkpoints, and reports may fail independently; operators still need an unambiguous authoritative lifecycle answer.
+- Source: M064
+- Primary owning slice: M064/S03
+- Supporting slices: M064/S02
+- Validation: Mapped during M064 planning; milestone verification must show telemetry/checkpoint/report projection failures degrade to explicit projection status while canonical lifecycle truth remains queryable.
+- Notes: Introduced by M064 planning from research candidate requirement on projection-status visibility.
+
+### R075 — Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
+- Class: correctness
+- Status: active
+- Description: Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
+- Why it matters: A non-awaited checkpoint save can misreport success and undermine continuation evidence durability.
+- Source: M064
+- Primary owning slice: M064/S02
+- Supporting slices: none
+- Validation: Mapped during M064 planning; regression coverage must prove checkpoint tools do not report saved=true before durable persistence completes or fails.
+- Notes: Introduced by M064 planning from research candidate requirement on checkpoint acknowledgment reliability.
+
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -690,10 +745,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Large-PR continuation and comment evolution are backed by durable operator evidence so maintainers can tell why continuation progressed, stopped, failed, or was superseded
 - Why it matters: Operators need attributable lifecycle evidence instead of guessing from GitHub-visible output alone
 - Source: inferred
-- Primary owning slice: M064/S02
+- Primary owning slice: M064/S03
 - Supporting slices: M065/S02
-- Validation: M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface.
-- Notes: Operator-visible evidence surface for the evolving review lifecycle.
+- Validation: M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. M064 must extend this by proving continuation lifecycle truth resolves from canonical family state directly, with explicit projection-status reporting when supporting evidence lags or fails.
+- Notes: M061 validated the earlier operator-evidence surface. M064 tightens the contract so continuation lifecycle evidence must resolve from canonical continuation-family state first, with telemetry/checkpoint/report rows treated as projections.
 
 ### R069 — The redesign must preserve small and normal PR behavior and avoid regressing review latency, noise, or publication semantics on non-large PRs
 - Class: quality-attribute
@@ -812,13 +867,18 @@ This file is the explicit capability and coverage contract for the project.
 | R065 | correctness | validated | M063/S02 | none | Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; the merge-revisions scenario reported `same-surface-revised` with explicit revision visibility and the no-delta scenario reported `same-surface-quiet-settlement` with no public churn), and `bun run tsc --noEmit` (exit 0). Continuation revisions are now rendered explicitly on the canonical surface instead of silently rewriting prior visible conclusions. |
 | R066 | constraint | validated | M063/S03 | M065/S02 | Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths. |
 | R067 | continuity | active | M064/S01 | none | mapped |
-| R068 | operability | validated | M064/S02 | M065/S02 | M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. |
+| R068 | operability | validated | M064/S03 | M065/S02 | M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. M064 must extend this by proving continuation lifecycle truth resolves from canonical family state directly, with explicit projection-status reporting when supporting evidence lags or fails. |
 | R069 | quality-attribute | validated | M065/S01 | none | M061/S05 pinned and passed mention, review, retrieval, reporting, and verifier regression suites via `bun scripts/phase-m061-token-regression-gate.ts`, preserving non-large-PR behavior and publication semantics while token-reduction work evolves. |
 | R070 | launchability | active | M065/S02 | none | mapped |
+| R071 | functional | active | M064/S01 | M064/S02,M064/S03 | Mapped during M064 planning; milestone verification must prove durable state survives restart-shaped rehydration and remains the source of truth over projections. |
+| R072 | operational | active | M064/S01 | M064/S02,M064/S03 | Mapped during M064 planning; milestone proof must show authoritative attempt identity is queryable directly from canonical state and remains stable under supersession. |
+| R073 | operational | active | M064/S01 | M064/S02,M064/S03 | Mapped during M064 planning; milestone proof must show final stop reason is returned directly from canonical state across merge, quiet settlement, blocked, and superseded outcomes. |
+| R074 | operational | active | M064/S03 | M064/S02 | Mapped during M064 planning; milestone verification must show telemetry/checkpoint/report projection failures degrade to explicit projection status while canonical lifecycle truth remains queryable. |
+| R075 | correctness | active | M064/S02 | none | Mapped during M064 planning; regression coverage must prove checkpoint tools do not report saved=true before durable persistence completes or fails. |
 
 ## Coverage Summary
 
-- Active requirements: 10
-- Mapped to slices: 10
+- Active requirements: 15
+- Mapped to slices: 15
 - Validated: 57 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R068, R069)
 - Unmapped active requirements: 0

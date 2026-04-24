@@ -157,6 +157,41 @@ export type CheckpointRecord = {
   createdAt?: string;
 };
 
+export type ContinuationFamilyAuthoritativeOutcome =
+  | "blocked"
+  | "merged"
+  | "quiet-settled"
+  | "superseded";
+
+export type ContinuationFamilyFinalStopReason =
+  | "merged-continuation-results"
+  | "no-follow-up"
+  | "settled-without-update"
+  | "superseded-by-newer-attempt";
+
+export type ContinuationFamilyProjectionStatus =
+  | "canonical"
+  | "degraded"
+  | "pending";
+
+export type ContinuationFamilyStateRecord = {
+  familyKey: string;
+  baseReviewOutputKey: string;
+  authoritativeAttemptId: string;
+  authoritativeAttemptOrdinal: number;
+  authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
+  finalStopReason: ContinuationFamilyFinalStopReason;
+  projectionStatus: ContinuationFamilyProjectionStatus;
+  supersededByAttemptId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ContinuationFamilyStateKey = {
+  familyKey: string;
+  baseReviewOutputKey: string;
+};
+
 export type RunStatus = 'pending' | 'running' | 'completed' | 'superseded';
 
 export type RunStateCheck = {
@@ -237,6 +272,8 @@ export type KnowledgeStore = {
   getCheckpoint?(reviewOutputKey: string): Promise<CheckpointRecord | null>;
   deleteCheckpoint?(reviewOutputKey: string): Promise<void>;
   updateCheckpointCommentId?(reviewOutputKey: string, commentId: number): Promise<void>;
+  upsertContinuationFamilyState?(record: ContinuationFamilyStateRecord): Promise<void>;
+  getContinuationFamilyState?(key: ContinuationFamilyStateKey): Promise<ContinuationFamilyStateRecord | null>;
   checkpoint(): void;
   close(): void;
 };
