@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M062/S03/T03",
+  "timestamp": 1777006822321,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m062-s03.test.ts ./scripts/verify-m062-s01.test.ts",
+      "exitCode": 0,
+      "durationMs": 39,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts",
+      "exitCode": 127,
+      "durationMs": 120102,
+      "verdict": "fail"
+    },
+    {
+      "command": "bun run verify:m062:s01 -- --json",
+      "exitCode": 0,
+      "durationMs": 37,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m062:s03 -- --json",
+      "exitCode": 0,
+      "durationMs": 41,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 9681,
+      "verdict": "pass"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

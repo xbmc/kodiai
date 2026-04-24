@@ -16,7 +16,7 @@
 - [x] **S02: S02** `risk:medium` `depends:[]`
   > After this: After this: the visible review surface states what was covered, what remains, and whether continuation is still in progress, using one coherent comment contract.
 
-- [ ] **S03: S03** `risk:medium` `depends:[]`
+- [x] **S03: S03** `risk:medium` `depends:[]`
   > After this: After this: operators can run a deterministic verifier that proves the bounded large-PR baseline behaves truthfully before continuation redesign starts.
 
 ## Boundary Map
