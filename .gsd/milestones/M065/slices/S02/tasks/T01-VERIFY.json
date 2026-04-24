@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M065/S02/T01",
+  "timestamp": 1777020496969,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test scripts/verify-m065-s02.test.ts",
+      "exitCode": 0,
+      "durationMs": 115,
+      "verdict": "pass"
+    }
+  ]
+}

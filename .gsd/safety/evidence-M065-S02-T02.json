@@ -1,0 +1,78 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_AvRD8ujMNm2l7dsqUoOlH0HZ|fc_03382624290b80a10169eb2e781ea08191b9350184e9ed722f",
+    "command": "rg -n \"M065|representative live|operator evidence|verify:m065:s02|m065_s02\" . -g '!node_modules'",
+    "exitCode": 0,
+    "outputSnippet": "./package.json:102:    \"verify:m065:s02\": \"bun scripts/verify-m065-s02.ts\",\n./scripts/verify-m065-s02.ts:3:export const M065_S02_CHECK_IDS = [\n./scripts/verify-m065-s02.ts:4:  \"M065-S02-IDENTITY-CORRELATION\",\n./scripts/verify-m065-s02.ts:5:  \"M065-S02-RUNTIME-TIMING-EVIDENCE\",\n./scripts/verify-m065-s02.ts:6:  \"M065-S02-VISIBLE-REVIEW-PROOF\",\n./scripts/verify-m065-s02.ts:7:  \"M065-S02-CANONICAL-OPERATOR-EVIDENCE\",\n./scripts/verify-m065-s02.ts:8:  \"M065-S02-REPRESENTATIVE-LIVE-BUNDLE\",\n./scripts/v",
+    "timestamp": 1777020536650
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_SYpFTR8SRA28FWNYnkEeu3rP|fc_03382624290b80a10169eb2e9f36d88191830effca1f371c0b",
+    "path": "scripts/verify-m065-s02.test.ts",
+    "timestamp": 1777020714361
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_oFc3NOkt9jQWDdWUKHR0eLv9|fc_03382624290b80a10169eb2f2ed1a88191a146fa2b99b2fa36",
+    "command": "bun test scripts/verify-m065-s02.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [2.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle sufficiency\n293 ",
+    "timestamp": 1777020720272
+  },
+  {
+    "kind": "write",
+    "toolCallId": "call_24eRPVCJHh3cxZG2v9geCOW2|fc_03382624290b80a10169eb2f3f4fb48191a404c3faf2ca1532",
+    "path": "scripts/verify-m065-s02.ts",
+    "timestamp": 1777020871045
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_FnSZfBVaBikxBcplYFayq7Su|fc_03382624290b80a10169eb2fc9f24c8191bd04e00ba607915c",
+    "command": "bun test scripts/verify-m065-s02.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [91.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle sufficiency\n(pa",
+    "timestamp": 1777020874800
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_1ScfrPSowGsPrrpwdM8yq9B5|fc_03382624290b80a10169eb2fd3f5a48191aee4c1645089a01c",
+    "command": "bun test scripts/verify-m065-s02.test.ts --filter \"representative live bundle\"",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [43.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing [1.00ms]\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle suffic",
+    "timestamp": 1777020884321
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_cEamQ48CurHlDnFj9Qy8mygH|fc_03382624290b80a10169eb2fde662481919c011dcb413ac395",
+    "command": "bun run verify:m065:s02 -- --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --repo xbmc/kodiai --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m065-s02.ts --review-output-key \"kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\" --repo xbmc/kodiai --json\nGET /repos/xbmc/kodiai/pulls/101/comments?per_page=100&page=1&sort=created&direction=desc - 403 with id 83C6:353C48:16073BB:1659F08:69EB2FEF in 479ms\n{\n  \"command\": \"verify:m065:s02\",\n  \"generated_at\": \"2026-04-24T08:54:55.208Z\",\n  \"success\": false,\n  \"status_code\": \"m065_s02_nested_verifier_failed\",\n  \"revie",
+    "timestamp": 1777020895146
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_hEO1KYssAX1TivmB4jjOxqtv|fc_03382624290b80a10169eb300ce194819192824c3af896b46e",
+    "command": "/usr/bin/time -f 'DURATION_MS=%e' bun test scripts/verify-m065-s02.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [68.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle sufficiency\n(pa",
+    "timestamp": 1777020941706
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_vPOYEQTiaNoY3Kh0wM1n1fEg|fc_03382624290b80a10169eb300ce1a48191b5dd6dada0f7b44a",
+    "command": "/usr/bin/time -f 'DURATION_MS=%e' bun test scripts/verify-m065-s02.test.ts --filter \"representative live bundle\"",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nscripts/verify-m065-s02.test.ts:\n(pass) verify-m065-s02 > parse args accepts review-output-key plus optional delivery-id, repo, and json [61.00ms]\n(pass) verify-m065-s02 > parse args does not consume the next flag when an option value is missing\n(pass) verify-m065-s02 > parse args rejects unknown flags with a named invalidArg result\n(pass) verify-m065-s02 > stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle sufficiency\n(pa",
+    "timestamp": 1777020941706
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_aXe8GFYdGkSfpKB3yyunDSdq|fc_03382624290b80a10169eb300ce1ac819185de6c9246014161",
+    "command": "/usr/bin/time -f 'DURATION_MS=%e' bun run verify:m065:s02 -- --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --repo xbmc/kodiai --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m065-s02.ts --review-output-key \"kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\" --repo xbmc/kodiai --json\nGET /repos/xbmc/kodiai/pulls/101/comments?per_page=100&page=1&sort=created&direction=desc - 403 with id CBF8:1F989:16004CD:16535F8:69EB3010 in 338ms\n{\n  \"command\": \"verify:m065:s02\",\n  \"generated_at\": \"2026-04-24T08:55:41.804Z\",\n  \"success\": false,\n  \"status_code\": \"m065_s02_nested_verifier_failed\",\n  \"review",
+    "timestamp": 1777020941706
+  }
+]

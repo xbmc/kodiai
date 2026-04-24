@@ -1,11 +1,73 @@
 import { describe, expect, test } from "bun:test";
 import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
 
-type NestedReport = {
-  command: string;
+type RuntimeReport = {
+  command: "verify:m048:s01";
   generated_at: string;
+  review_output_key: string | null;
+  delivery_id: string | null;
   success: boolean;
   status_code: string;
+  issues: string[];
+  evidence?: {
+    conclusion?: string | null;
+    published?: boolean | null;
+  } | null;
+  [key: string]: unknown;
+};
+
+type VisibleReport = {
+  command: "verify:m049:s02";
+  generated_at: string;
+  repo: string;
+  review_output_key: string | null;
+  delivery_id: string | null;
+  success: boolean;
+  status_code: string;
+  issues: string[];
+  artifact?: {
+    prNumber: number;
+    source: string;
+    lane: string | null;
+    reviewState: string | null;
+  } | null;
+  bodyContract?: {
+    valid: boolean;
+  } | null;
+  [key: string]: unknown;
+};
+
+type OperatorRecord = {
+  recordId: string;
+  success: boolean;
+  statusCode: string;
+  detail: string;
+  reviewOutputKey: string;
+  baseReviewOutputKey: string | null;
+  familyKey: string | null;
+  repoFullName: string | null;
+  prNumber: number | null;
+  action: string | null;
+  deliveryId: string | null;
+  effectiveDeliveryId: string | null;
+  retryAttempt: number | null;
+  authoritativeAttemptId: string | null;
+  authoritativeAttemptOrdinal: number | null;
+  authoritativeOutcome: string | null;
+  finalStopReason: string | null;
+  projectionStatus: string | null;
+  supersededByAttemptId: string | null;
+  issues: string[];
+};
+
+type OperatorReport = {
+  command: "verify:m064:s03";
+  generated_at: string;
+  mode: string;
+  record_count: number;
+  success: boolean;
+  status_code: string;
+  records: OperatorRecord[];
   issues: string[];
   [key: string]: unknown;
 };
@@ -46,9 +108,9 @@ type JsonReport = {
     };
   }>;
   nested_reports: {
-    runtimeTiming: NestedReport | null;
-    visibleReview: NestedReport | null;
-    operatorEvidence: NestedReport | null;
+    runtimeTiming: RuntimeReport | null;
+    visibleReview: VisibleReport | null;
+    operatorEvidence: OperatorReport | null;
   };
   failing_check_id: JsonReport["check_ids"][number] | null;
   issues: string[];
@@ -67,18 +129,88 @@ function makeReviewKey(overrides?: Partial<{
     owner: overrides?.owner ?? "xbmc",
     repo: overrides?.repo ?? "kodiai",
     prNumber: overrides?.prNumber ?? 101,
-    action: overrides?.action ?? "review_requested",
+    action: overrides?.action ?? "mention-review",
     deliveryId: overrides?.deliveryId ?? "delivery-101",
     headSha: overrides?.headSha ?? "head-101",
   });
 }
 
-function makeNestedReport(overrides?: Partial<NestedReport>): NestedReport {
+function makeRuntimeReport(overrides?: Partial<RuntimeReport>): RuntimeReport {
   return {
-    command: "verify:nested",
+    command: "verify:m048:s01",
     generated_at: "2026-04-24T09:45:00.000Z",
+    review_output_key: makeReviewKey(),
+    delivery_id: "delivery-101",
     success: true,
-    status_code: "nested_ok",
+    status_code: "m048_s01_ok",
+    issues: [],
+    evidence: {
+      conclusion: "success",
+      published: true,
+    },
+    ...overrides,
+  };
+}
+
+function makeVisibleReport(overrides?: Partial<VisibleReport>): VisibleReport {
+  return {
+    command: "verify:m049:s02",
+    generated_at: "2026-04-24T09:45:00.000Z",
+    repo: "xbmc/kodiai",
+    review_output_key: makeReviewKey(),
+    delivery_id: "delivery-101",
+    success: true,
+    status_code: "m049_s02_ok",
+    issues: [],
+    artifact: {
+      prNumber: 101,
+      source: "review",
+      lane: "explicit",
+      reviewState: "APPROVED",
+    },
+    bodyContract: {
+      valid: true,
+    },
+    ...overrides,
+  };
+}
+
+function makeOperatorRecord(overrides?: Partial<OperatorRecord>): OperatorRecord {
+  return {
+    recordId: "operator-lookup",
+    success: true,
+    statusCode: "canonical",
+    detail: "Resolved canonical continuation-family state with outcome=merged.",
+    reviewOutputKey: makeReviewKey(),
+    baseReviewOutputKey: makeReviewKey(),
+    familyKey: "xbmc/kodiai#101",
+    repoFullName: "xbmc/kodiai",
+    prNumber: 101,
+    action: "mention-review",
+    deliveryId: "delivery-101",
+    effectiveDeliveryId: "delivery-101",
+    retryAttempt: null,
+    authoritativeAttemptId: "review-work-2",
+    authoritativeAttemptOrdinal: 2,
+    authoritativeOutcome: "merged",
+    finalStopReason: "merged-continuation-results",
+    projectionStatus: "canonical",
+    supersededByAttemptId: null,
+    issues: [],
+    ...overrides,
+  };
+}
+
+function makeOperatorReport(overrides?: Partial<OperatorReport>): OperatorReport {
+  const record = makeOperatorRecord();
+  return {
+    command: "verify:m064:s03",
+    generated_at: "2026-04-24T09:45:00.000Z",
+    mode: "operator-lookup",
+    record_count: 1,
+    success: true,
+    status_code: "m064_s03_ok",
+    records: [record],
     issues: [],
     ...overrides,
   };
@@ -146,35 +278,28 @@ describe("verify-m065-s02", () => {
     ]);
   });
 
-  test("evaluate returns the pinned contract shape with explicit proof-target identity and nested subproof slots", async () => {
+  test("representative live bundle passes only when runtime, visible review, and canonical operator evidence agree on the same base identity", async () => {
     const { evaluateM065S02 } = await loadModule();
     const reviewOutputKey = makeReviewKey();
-    const runtimeTiming = makeNestedReport({
-      command: "verify:m048:s01",
-      status_code: "m048_s01_ok",
-    });
-    const visibleReview = makeNestedReport({
-      command: "verify:m049:s02",
-      status_code: "m049_s02_ok",
-    });
-    const operatorEvidence = makeNestedReport({
-      command: "verify:m064:s03",
-      status_code: "m064_s03_ok",
-    });
 
     const report = await evaluateM065S02({
       reviewOutputKey,
       generatedAt: "2026-04-24T09:45:00.000Z",
-      nestedReports: {
-        runtimeTiming,
-        visibleReview,
-        operatorEvidence,
-      },
+      runtimeTimingEvaluator: async ({ reviewOutputKey: nestedKey, deliveryId }) =>
+        makeRuntimeReport({ review_output_key: nestedKey, delivery_id: deliveryId }),
+      visibleReviewEvaluator: async ({ repo, reviewOutputKey: nestedKey }) =>
+        makeVisibleReport({ repo, review_output_key: nestedKey }),
+      operatorEvidenceEvaluator: async ({ reviewOutputKey: nestedKey }) =>
+        makeOperatorReport({
+          records: [makeOperatorRecord({ reviewOutputKey: nestedKey, baseReviewOutputKey: nestedKey })],
+        }),
     });
 
     expect(report).toMatchObject({
       command: "verify:m065:s02",
       generated_at: "2026-04-24T09:45:00.000Z",
+      success: true,
+      status_code: "m065_s02_ok",
       review_output_key: reviewOutputKey,
       normalized_review_output_key: reviewOutputKey,
       delivery_id: "delivery-101",
@@ -186,18 +311,6 @@ describe("verify-m065-s02", () => {
         repo: "xbmc/kodiai",
         pr_number: 101,
       },
-      check_ids: [
-        "M065-S02-IDENTITY-CORRELATION",
-        "M065-S02-RUNTIME-TIMING-EVIDENCE",
-        "M065-S02-VISIBLE-REVIEW-PROOF",
-        "M065-S02-CANONICAL-OPERATOR-EVIDENCE",
-        "M065-S02-REPRESENTATIVE-LIVE-BUNDLE",
-      ],
-      nested_reports: {
-        runtimeTiming,
-        visibleReview,
-        operatorEvidence,
-      },
     } satisfies Partial<JsonReport>);
 
     expect(report.checks).toEqual([
@@ -206,7 +319,7 @@ describe("verify-m065-s02", () => {
         passed: true,
         skipped: false,
         status_code: "identity_correlated",
-        detail: "reviewOutputKey is the authoritative proof target; explicit repo and delivery filters agree.",
+        detail: "reviewOutputKey is normalized to the captured base identity and all explicit or nested identities agree.",
         drill_down: {
           command: "bun run verify:m065:s02 -- --json",
           report_key: "proof_target",
@@ -250,19 +363,53 @@ describe("verify-m065-s02", () => {
       },
       {
         id: "M065-S02-REPRESENTATIVE-LIVE-BUNDLE",
-        passed: false,
-        skipped: true,
-        status_code: "representative_bundle_pending",
-        detail: "T01 pins the live-proof contract only; T02 must prove the bundle is representative.",
+        passed: true,
+        skipped: false,
+        status_code: "representative_bundle_ok",
+        detail: "Runtime timing, visible review proof, and canonical operator evidence describe the same captured live large-PR run.",
         drill_down: {
           command: "bun run verify:m065:s02 -- --json",
           report_key: "checks[4]",
         },
       },
     ]);
-    expect(report.success).toBe(false);
-    expect(report.status_code).toBe("m065_s02_live_proof_pending");
-    expect(report.failing_check_id).toBe("M065-S02-REPRESENTATIVE-LIVE-BUNDLE");
+    expect(report.failing_check_id).toBeNull();
+    expect(report.issues).toEqual([]);
+  });
+
+  test("representative live bundle normalizes retry review-output keys back to the base key before evaluating nested proofs", async () => {
+    const { evaluateM065S02 } = await loadModule();
+    const baseReviewOutputKey = makeReviewKey();
+    const retryKey = `${baseReviewOutputKey}-retry-2`;
+
+    const runtimeCalls: Array<{ reviewOutputKey: string; deliveryId: string }> = [];
+    const visibleCalls: Array<{ repo: string; reviewOutputKey: string }> = [];
+    const operatorCalls: Array<{ reviewOutputKey: string }> = [];
+
+    const report = await evaluateM065S02({
+      reviewOutputKey: retryKey,
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async (params) => {
+        runtimeCalls.push(params);
+        return makeRuntimeReport({ review_output_key: params.reviewOutputKey, delivery_id: params.deliveryId });
+      },
+      visibleReviewEvaluator: async (params) => {
+        visibleCalls.push(params);
+        return makeVisibleReport({ repo: params.repo, review_output_key: params.reviewOutputKey });
+      },
+      operatorEvidenceEvaluator: async (params) => {
+        operatorCalls.push(params);
+        return makeOperatorReport({ records: [makeOperatorRecord({ reviewOutputKey: params.reviewOutputKey, baseReviewOutputKey: params.reviewOutputKey })] });
+      },
+    });
+
+    expect(runtimeCalls).toEqual([{ reviewOutputKey: baseReviewOutputKey, deliveryId: "delivery-101" }]);
+    expect(visibleCalls).toEqual([{ repo: "xbmc/kodiai", reviewOutputKey: baseReviewOutputKey }]);
+    expect(operatorCalls).toEqual([{ reviewOutputKey: baseReviewOutputKey }]);
+    expect(report.review_output_key).toBe(retryKey);
+    expect(report.normalized_review_output_key).toBe(baseReviewOutputKey);
+    expect(report.proof_target.base_review_output_key).toBe(baseReviewOutputKey);
+    expect(report.success).toBe(true);
   });
 
   test("evaluate rejects malformed nested report blocks instead of flattening or omitting them", async () => {
@@ -271,14 +418,14 @@ describe("verify-m065-s02", () => {
     const report = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
-      nestedReports: {
-        runtimeTiming: {
-          command: "verify:m048:s01",
-          generated_at: "2026-04-24T09:45:00.000Z",
-          success: true,
-          issues: [],
-        },
-      },
+      runtimeTimingEvaluator: async () => ({
+        command: "verify:m048:s01",
+        generated_at: "2026-04-24T09:45:00.000Z",
+        success: true,
+        issues: [],
+      }),
+      visibleReviewEvaluator: async () => makeVisibleReport(),
+      operatorEvidenceEvaluator: async () => makeOperatorReport(),
     });
 
     expect(report.success).toBe(false);
@@ -293,6 +440,125 @@ describe("verify-m065-s02", () => {
         report_key: "nested_reports.runtimeTiming",
       },
     });
+  });
+
+  test("representative live bundle fails when nested proofs disagree on delivery, repo, or PR identity", async () => {
+    const { evaluateM065S02 } = await loadModule();
+
+    const report = await evaluateM065S02({
+      reviewOutputKey: makeReviewKey(),
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async () => makeRuntimeReport({ delivery_id: "delivery-999" }),
+      visibleReviewEvaluator: async () => makeVisibleReport({ repo: "other/repo", artifact: { prNumber: 999, source: "review", lane: "explicit", reviewState: "APPROVED" } }),
+      operatorEvidenceEvaluator: async () => makeOperatorReport(),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_s02_nested_verifier_failed");
+    expect(report.failing_check_id).toBe("M065-S02-IDENTITY-CORRELATION");
+    expect(report.checks.find((check) => check.id === "M065-S02-IDENTITY-CORRELATION")).toMatchObject({
+      passed: false,
+      skipped: false,
+      status_code: "identity_mismatch",
+    });
+    expect(report.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining("runtime timing evidence delivery_id mismatch"),
+      expect.stringContaining("visible review proof repo mismatch"),
+      expect.stringContaining("visible review proof pr_number mismatch"),
+    ]));
+  });
+
+  test("representative live bundle fails when runtime evidence is unavailable even if the other seams pass", async () => {
+    const { evaluateM065S02 } = await loadModule();
+
+    const report = await evaluateM065S02({
+      reviewOutputKey: makeReviewKey(),
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async () => makeRuntimeReport({ success: false, status_code: "m048_s01_azure_unavailable", issues: ["Azure Log Analytics query failed: timed out"] }),
+      visibleReviewEvaluator: async () => makeVisibleReport(),
+      operatorEvidenceEvaluator: async () => makeOperatorReport(),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_s02_nested_verifier_failed");
+    expect(report.failing_check_id).toBe("M065-S02-RUNTIME-TIMING-EVIDENCE");
+    expect(report.issues).toContain("M065-S02-RUNTIME-TIMING-EVIDENCE: verify:m048:s01 returned m048_s01_azure_unavailable");
+  });
+
+  test("representative live bundle fails when visible review proof reports duplicate or drifting artifacts", async () => {
+    const { evaluateM065S02 } = await loadModule();
+
+    const report = await evaluateM065S02({
+      reviewOutputKey: makeReviewKey(),
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async () => makeRuntimeReport(),
+      visibleReviewEvaluator: async () => makeVisibleReport({ success: false, status_code: "m049_s02_duplicate_visible_outputs", issues: ["multiple matching review artifacts"] }),
+      operatorEvidenceEvaluator: async () => makeOperatorReport(),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_s02_nested_verifier_failed");
+    expect(report.failing_check_id).toBe("M065-S02-VISIBLE-REVIEW-PROOF");
+  });
+
+  test("representative live bundle fails when operator evidence is missing or malformed", async () => {
+    const { evaluateM065S02 } = await loadModule();
+
+    const missingCanonical = await evaluateM065S02({
+      reviewOutputKey: makeReviewKey(),
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async () => makeRuntimeReport(),
+      visibleReviewEvaluator: async () => makeVisibleReport(),
+      operatorEvidenceEvaluator: async () => makeOperatorReport({ success: false, status_code: "m064_s03_ok", records: [makeOperatorRecord({ success: false, statusCode: "missing-canonical-row" })] }),
+    });
+
+    expect(missingCanonical.success).toBe(false);
+    expect(missingCanonical.status_code).toBe("m065_s02_nested_verifier_failed");
+    expect(missingCanonical.failing_check_id).toBe("M065-S02-CANONICAL-OPERATOR-EVIDENCE");
+
+    const malformed = await evaluateM065S02({
+      reviewOutputKey: makeReviewKey(),
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async () => makeRuntimeReport(),
+      visibleReviewEvaluator: async () => makeVisibleReport(),
+      operatorEvidenceEvaluator: async () => ({
+        command: "verify:m064:s03",
+        generated_at: "2026-04-24T09:45:00.000Z",
+        success: true,
+        status_code: "m064_s03_ok",
+        issues: [],
+      }),
+    });
+
+    expect(malformed.success).toBe(false);
+    expect(malformed.status_code).toBe("m065_s02_nested_contract_failed");
+    expect(malformed.failing_check_id).toBe("M065-S02-CANONICAL-OPERATOR-EVIDENCE");
+  });
+
+  test("representative live bundle accepts only canonical operator truth and rejects pending, degraded, or superseded family state", async () => {
+    const { evaluateM065S02 } = await loadModule();
+
+    for (const operatorStatus of ["pending", "degraded", "superseded"] as const) {
+      const report = await evaluateM065S02({
+        reviewOutputKey: makeReviewKey(),
+        generatedAt: "2026-04-24T09:45:00.000Z",
+        runtimeTimingEvaluator: async () => makeRuntimeReport(),
+        visibleReviewEvaluator: async () => makeVisibleReport(),
+        operatorEvidenceEvaluator: async () => makeOperatorReport({
+          records: [makeOperatorRecord({ statusCode: operatorStatus, projectionStatus: operatorStatus === "degraded" ? "degraded" : "canonical", authoritativeOutcome: operatorStatus === "pending" ? "continuation-pending" : operatorStatus === "superseded" ? "superseded" : "merged" })],
+        }),
+      });
+
+      expect(report.success).toBe(false);
+      expect(report.status_code).toBe("m065_s02_nested_verifier_failed");
+      expect(report.failing_check_id).toBe("M065-S02-REPRESENTATIVE-LIVE-BUNDLE");
+      expect(report.checks.find((check) => check.id === "M065-S02-REPRESENTATIVE-LIVE-BUNDLE")).toMatchObject({
+        passed: false,
+        skipped: false,
+        status_code: "representative_bundle_insufficient",
+      });
+      expect(report.issues).toContain(`M065-S02-REPRESENTATIVE-LIVE-BUNDLE: operator evidence status ${operatorStatus} is not sufficient for representative live proof.`);
+    }
   });
 
   test("main invalid arg rejects missing review-output-key, malformed review-output-key, malformed repo, and delivery mismatches before evaluation", async () => {
@@ -418,8 +684,8 @@ describe("verify-m065-s02", () => {
       evaluate: async ({ reviewOutputKey }) => ({
         command: "verify:m065:s02",
         generated_at: "2026-04-24T09:45:00.000Z",
-        success: false,
-        status_code: "m065_s02_live_proof_pending",
+        success: true,
+        status_code: "m065_s02_ok",
         review_output_key: reviewOutputKey,
         normalized_review_output_key: reviewOutputKey,
         delivery_id: "delivery-101",
@@ -444,15 +710,15 @@ describe("verify-m065-s02", () => {
           visibleReview: null,
           operatorEvidence: null,
         },
-        failing_check_id: "M065-S02-REPRESENTATIVE-LIVE-BUNDLE",
+        failing_check_id: null,
         issues: [],
       }),
     });
 
     const jsonReport = JSON.parse(jsonStdout.join("")) as JsonReport;
-    expect(jsonExit).toBe(1);
+    expect(jsonExit).toBe(0);
     expect(jsonReport.command).toBe("verify:m065:s02");
-    expect(jsonReport.status_code).toBe("m065_s02_live_proof_pending");
+    expect(jsonReport.status_code).toBe("m065_s02_ok");
   });
 
   test("package.json wires verify:m065:s02 to the dedicated verifier script", async () => {

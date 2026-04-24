@@ -33,7 +33,7 @@
   - Files: `scripts/verify-m065-s02.ts`, `scripts/verify-m065-s02.test.ts`, `package.json`
   - Verify: bun test scripts/verify-m065-s02.test.ts
 
-- [ ] **T02: Compose representative live-proof evidence across runtime, visible surface, and operator truth** `est:105m`
+- [x] **T02: Compose representative live-proof evidence across runtime, visible surface, and operator truth** `est:105m`
   Implement the S02 verifier by composing existing proof seams instead of redesigning runtime behavior. The task should normalize identity from the base `reviewOutputKey`, cross-check explicit `deliveryId`/`repo` overrides, reuse Azure phase timing evidence, exact GitHub review artifact proof, and continuation-family operator evidence, then fail explicitly when the bundle is unrepresentative or contradictory. Keep the logic narrow: no PR discovery, no retry-key anchoring, and no hidden success when any subproof is missing. If a small shared helper naturally emerges for representative-bundle evaluation or stable check construction, extract it under `src/review-audit/` only if it reduces duplication.
   - Files: `scripts/verify-m065-s02.ts`, `scripts/verify-m065-s02.test.ts`, `src/review-audit/phase-timing-evidence.ts`, `src/review-audit/review-output-artifacts.ts`, `src/knowledge/continuation-operator-evidence.ts`
   - Verify: bun test scripts/verify-m065-s02.test.ts
