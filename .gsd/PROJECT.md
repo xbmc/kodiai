@@ -6,23 +6,23 @@ Kodiai is an AI-powered GitHub bot that reviews pull requests, triages issues, a
 
 ## Core Value
 
-High-signal, truthful automated review on every PR. The current roadmap focus is making large-PR review behavior honest and verifiable so constrained runs publish useful first-pass output instead of dying in a misleading failure state.
+High-signal, truthful automated review on every PR. The current roadmap focus is continuation-aware large-PR review: the first pass must be useful and honest, and later passes must deepen coverage without rewriting history silently.
 
 ## Current State
 
 The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-Milestone M062 is now complete as the large-PR truth baseline:
-- S01 established a normalized bounded first-pass contract for constrained large-PR reviews.
+Milestone M062 is complete as the large-PR truth baseline:
+- S01 established `normalizeReviewFirstPass`, the single normalized bounded first-pass contract for constrained large-PR reviews.
 - S02 unified the visible bounded-review contract across the public partial comment and Review Details so both surfaces report the same covered scope, remaining scope, bounded reason, and continuation state.
-- S03 added `verify:m062:s03`, a deterministic milestone verifier that runs the S01 scenario matrix through the production bounded-comment and Review Details renderers and proves scenario-level parity plus zero-evidence rejection.
+- S03 added `verify:m062:s03`, a deterministic milestone verifier that runs the S01 scenario matrix through the production bounded-comment and Review Details renderers and proves semantic parity plus explicit zero-evidence rejection.
 - Timeout partial publication, retry-merged updates, and bounded `max_turns` fallback now all publish through the same shared formatter contract instead of branch-local prose.
-- Requirement `R064` remains validated by formatter tests, handler integration tests, and a clean TypeScript compile gate.
-- M062 now has two deterministic proof surfaces: `verify:m062:s01` for bounded/dead-end first-pass classification and `verify:m062:s03` for visible-surface truthfulness parity.
+- Requirements `R061` and `R064` are validated with fresh milestone-close evidence from verifier tests, handler/formatter tests, deterministic verifier runs, and a clean TypeScript compile gate.
+- M062 now has two deterministic proof surfaces: `verify:m062:s01` for bounded-vs-dead-end first-pass classification and `verify:m062:s03` for visible-surface truthfulness parity.
 
 The next roadmap focus is M063 continuation redesign: automatic background continuation, in-place visible review updates, and explicit revision semantics on the same review lifecycle.
 
-The prior token-accounting track (M061) established Postgres-backed telemetry, prompt-section accounting, mention-context reduction, and reuse evidence that now remain as supporting infrastructure rather than the active planning focus.
+The prior token-accounting track (M061) remains supporting infrastructure: Postgres-backed telemetry, prompt-section accounting, mention-context reduction, and reuse evidence continue to provide observability and verification surfaces for later review-work milestones.
 
 ## Architecture / Key Patterns
 
