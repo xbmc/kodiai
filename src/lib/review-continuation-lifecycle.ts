@@ -120,7 +120,7 @@ function mergeCheckpointState(params: {
       ...baseCheckpoint.filesReviewed,
       ...continuationCheckpoint.filesReviewed,
     ])),
-    findingCount: continuationCheckpoint.findingCount,
+    findingCount: Math.max(baseCheckpoint.findingCount, continuationCheckpoint.findingCount),
     summaryDraft: continuationCheckpoint.summaryDraft || baseCheckpoint.summaryDraft,
     totalFiles: Math.max(baseCheckpoint.totalFiles, continuationCheckpoint.totalFiles),
     partialCommentId: baseCheckpoint.partialCommentId ?? continuationCheckpoint.partialCommentId,
@@ -211,6 +211,7 @@ export function planReviewContinuation(
     timeoutSeconds: continuationTimeoutSeconds,
     files: continuationFiles,
   });
+  const scheduledTimeoutSeconds = Math.max(30, timeoutEstimate.dynamicTimeoutSeconds);
 
   return {
     decision: "schedule-continuation",
@@ -220,7 +221,7 @@ export function planReviewContinuation(
     continuationNumber: 1,
     continuationFiles,
     scopeRatio: retryScope.scopeRatio,
-    timeoutSeconds: continuationTimeoutSeconds,
+    timeoutSeconds: scheduledTimeoutSeconds,
     checkpointEnabled: timeoutEstimate.riskLevel === "medium" || timeoutEstimate.riskLevel === "high",
     timeoutEstimate,
     firstPass,

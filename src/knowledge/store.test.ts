@@ -842,6 +842,53 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
       expect(state?.supersededByAttemptId).toBe("review-work-3");
     });
 
+    test("older continuation attempts emit a debug log when the ordinal guard rejects them", async () => {
+      const familyKey = "acme/repo#44-log";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-44:action-opened:delivery-125:head-ghi-log";
+      const debugCalls: Array<{ bindings: Record<string, unknown>; message: string }> = [];
+      const logger = {
+        ...mockLogger,
+        debug: (bindings: Record<string, unknown>, message: string) => {
+          debugCalls.push({ bindings, message });
+        },
+      } as unknown as import("pino").Logger;
+      const loggingStore = createKnowledgeStore({ sql, logger });
+
+      await loggingStore.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "superseded",
+        finalStopReason: "superseded-by-newer-attempt",
+        projectionStatus: "degraded",
+        supersededByAttemptId: "review-work-3",
+      });
+
+      await loggingStore.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-1",
+        authoritativeAttemptOrdinal: 1,
+        authoritativeOutcome: "merged",
+        finalStopReason: "merged-continuation-results",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      expect(debugCalls).toEqual([
+        {
+          bindings: expect.objectContaining({
+            familyKey,
+            baseReviewOutputKey,
+            authoritativeAttemptId: "review-work-1",
+            attemptOrdinal: 1,
+          }),
+          message: "Continuation family state update skipped due to ordinal conflict",
+        },
+      ]);
+    });
+
     test("newer continuation attempts replace older canonical rows", async () => {
       const familyKey = "acme/repo#45";
       const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-45:action-opened:delivery-126:head-jkl";

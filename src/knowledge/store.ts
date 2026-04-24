@@ -676,7 +676,7 @@ export function createKnowledgeStore(opts: {
     },
 
     async upsertContinuationFamilyState(record: ContinuationFamilyStateRecord): Promise<void> {
-      await sql`
+      const result = await sql`
         INSERT INTO continuation_family_state (
           family_key,
           base_review_output_key,
@@ -707,6 +707,18 @@ export function createKnowledgeStore(opts: {
           updated_at = now()
         WHERE EXCLUDED.authoritative_attempt_ordinal >= continuation_family_state.authoritative_attempt_ordinal
       `;
+
+      if (result.count === 0) {
+        logger.debug(
+          {
+            familyKey: record.familyKey,
+            baseReviewOutputKey: record.baseReviewOutputKey,
+            authoritativeAttemptId: record.authoritativeAttemptId,
+            attemptOrdinal: record.authoritativeAttemptOrdinal,
+          },
+          "Continuation family state update skipped due to ordinal conflict",
+        );
+      }
     },
 
     async getContinuationFamilyState(key: ContinuationFamilyStateKey): Promise<ContinuationFamilyStateRecord | null> {
