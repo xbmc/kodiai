@@ -6,7 +6,7 @@
  */
 
 import type { Logger } from "pino";
-import type { TelemetryStore, LlmCostRecord } from "../telemetry/types.ts";
+import type { TelemetryStore, LlmCostRecord, PromptSectionRecord } from "../telemetry/types.ts";
 import { estimateCost } from "./pricing.ts";
 import { extractProvider } from "./providers.ts";
 
@@ -53,6 +53,12 @@ export type CostTracker = {
     deliveryId?: string;
     error?: string;
   }): Promise<void>;
+
+  /**
+   * Track prompt-section accounting for an invocation.
+   * Stores section sizes and estimated tokens by named section, never raw text.
+   */
+  trackPromptSections(params: PromptSectionRecord): Promise<void>;
 };
 
 /**
@@ -132,6 +138,22 @@ export function createCostTracker(deps: {
         logger.warn(
           { err, model: params.model, taskType: params.taskType },
           "Failed to track Agent SDK cost",
+        );
+      }
+    },
+
+    async trackPromptSections(params): Promise<void> {
+      try {
+        await telemetryStore.recordPromptSections(params);
+      } catch (err) {
+        logger.warn(
+          {
+            err,
+            deliveryId: params.deliveryId,
+            taskType: params.taskType,
+            promptKind: params.promptKind,
+          },
+          "Failed to track prompt-section telemetry",
         );
       }
     },

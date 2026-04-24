@@ -80,6 +80,9 @@ coverage/
 
 # ── GSD baseline (auto-generated) ──
 .gsd/completed-units.json
+.gsd/completed-units*.json
+.gsd/event-log.jsonl
+.gsd/gsd.db*
 
 # local git worktrees
 .worktrees/
@@ -98,3 +101,6 @@ coverage/
 
 # ── GSD baseline (auto-generated) ──
 .bg-shell/
+
+# ── GSD baseline (auto-generated) ──
+.mcp.json

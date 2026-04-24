@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-19T00:55:21Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-19T00:55:21Z","fingerprint":"89a08bbe1c744f67d6a23f5fd2dceea118cd70ad","fileCount":500,"truncated":true} -->
+Generated: 2026-04-23T23:19:08Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-04-23T23:19:08Z","fingerprint":"fbbbcc795e7eed5ad5182e376d7c8b6cf5daa794","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -16,6 +16,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docker-compose.yml`
 - `Dockerfile`
 - `Dockerfile.agent`
+- `eslint.config.mjs`
 - `package.json`
 - `README.md`
 
@@ -44,6 +45,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/review-requested-debug.md`
 - `docs/runbooks/scale.md`
 - `docs/runbooks/slack-integration.md`
+- `docs/runbooks/slack-webhook-relay.md`
 - `docs/runbooks/xbmc-cutover.md`
 - `docs/runbooks/xbmc-ops.md`
 
@@ -53,6 +55,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/smoke/phase74-reliability-regression-gate.md`
 - `docs/smoke/phase75-live-ops-verification-closure.md`
 - `docs/smoke/phase80-slack-operator-hardening.md`
+- `docs/smoke/slack-webhook-relay.md`
 - `docs/smoke/xbmc-kodiai-write-flow.md`
 - `docs/smoke/xbmc-xbmc-write-flow.md`
 
@@ -60,8 +63,12 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/contributor-calibration/xbmc-manifest.json`
 - `fixtures/contributor-calibration/xbmc-snapshot.json`
 
+### fixtures/slack-webhook-relay/
+- `fixtures/slack-webhook-relay/accepted.json`
+- `fixtures/slack-webhook-relay/suppressed.json`
+
 ### scripts/
-- *(119 files: 116 .ts, 3 .sh)*
+- *(171 files: 168 .ts, 3 .sh)*
 
 ### src/
 - `src/config.test.ts`
@@ -84,7 +91,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(63 files: 63 .sql)*
+- *(74 files: 74 .sql)*
 
 ### src/enforcement/
 - `src/enforcement/index.ts`
@@ -130,12 +137,14 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(27 files: 27 .ts)*
+- *(28 files: 28 .ts)*
 
 ### src/jobs/
 - `src/jobs/aca-launcher.test.ts`
 - `src/jobs/aca-launcher.ts`
+- `src/jobs/fork-manager.test.ts`
 - `src/jobs/fork-manager.ts`
+- `src/jobs/gist-publisher.test.ts`
 - `src/jobs/gist-publisher.ts`
 - `src/jobs/queue.test-helpers.ts`
 - `src/jobs/queue.test.ts`
@@ -147,4 +156,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(143 files: 143 .ts)*
+- *(72 files: 72 .ts)*
