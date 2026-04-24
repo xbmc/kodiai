@@ -41,10 +41,11 @@ import {
   containsMention,
   stripMention,
 } from "./mention-types.ts";
-import { buildMentionContext } from "../execution/mention-context.ts";
+import { buildMentionContext, buildMentionContextDetails } from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
-import { buildMentionPrompt } from "../execution/mention-prompt.ts";
-import { buildReviewPrompt, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
+import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildPromptSectionRecord } from "../execution/prompt-section-metrics.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
@@ -1840,11 +1841,14 @@ export function createMentionHandler(deps: {
         // Build mention context (conversation + PR metadata + inline diff context)
         // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
         let mentionContext = "";
+        let mentionContextSectionMetrics: import("../telemetry/types.ts").PromptSectionMetric[] = [];
         try {
-          mentionContext = await buildMentionContext(octokit, mention, {
+          const mentionContextResult = await buildMentionContextDetails(octokit, mention, {
             findingLookup,
             maxThreadChars: config.mention.conversation.contextBudgetChars,
           });
+          mentionContext = mentionContextResult.text;
+          mentionContextSectionMetrics = mentionContextResult.sections;
         } catch (err) {
           logger.warn(
             { err, surface: mention.surface, issueNumber: mention.issueNumber },
@@ -1860,13 +1864,22 @@ export function createMentionHandler(deps: {
             });
 
             if (issueCodeContext.contextBlock.trim().length > 0) {
-              const contextParts = [
-                mentionContext.trim(),
+              const codePointerSection = [
                 "## Candidate Code Pointers",
                 "",
                 issueCodeContext.contextBlock.trim(),
+              ].join("\n");
+              const contextParts = [
+                mentionContext.trim(),
+                codePointerSection,
               ].filter((part) => part.length > 0);
               mentionContext = `${contextParts.join("\n")}`;
+              mentionContextSectionMetrics.push({
+                sectionName: "candidate-code-pointers",
+                sectionPosition: mentionContextSectionMetrics.length,
+                charCount: codePointerSection.length,
+                estimatedTokens: Math.ceil(codePointerSection.length / 4),
+              });
             }
           } catch (err) {
             logger.warn(
@@ -2161,6 +2174,7 @@ export function createMentionHandler(deps: {
 
         setReviewWorkPhase("prompt-build");
         let prompt: string;
+        let promptSections: import("../telemetry/types.ts").PromptSectionRecord[] = [];
         let explicitReviewPromptFileCount: number | undefined;
         if (explicitReviewRequest && mention.prNumber !== undefined) {
           const explicitReviewPrNumber = mention.prNumber;
@@ -2227,7 +2241,7 @@ export function createMentionHandler(deps: {
             .map((label) => typeof label === "string" ? label : label.name)
             .filter((label): label is string => typeof label === "string" && label.length > 0);
 
-          prompt = buildReviewPrompt({
+          const reviewPromptResult = buildReviewPromptDetails({
             owner: mention.owner,
             repo: mention.repo,
             prNumber: mention.prNumber,
@@ -2267,8 +2281,18 @@ export function createMentionHandler(deps: {
               "mcp__github_inline_comment__create_inline_comment",
             ],
           });
+          prompt = reviewPromptResult.text;
+          promptSections = [
+            buildPromptSectionRecord({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              taskType: "review.full",
+              promptKind: "review.user-prompt",
+              sections: reviewPromptResult.sections,
+            }),
+          ];
         } else {
-          prompt = buildMentionPrompt({
+          const mentionPromptResult = buildMentionPromptDetails({
             mention,
             mentionContext,
             retrievalContext,
@@ -2278,14 +2302,28 @@ export function createMentionHandler(deps: {
               .filter((s) => (s ?? "").trim().length > 0)
               .join("\n\n"),
             outputLanguage: config.review.outputLanguage,
-            // Unified cross-corpus context (KI-11/KI-12)
             unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
             contextWindow: contextWindowForPrompt,
-            // Triage context for issue mentions (TRIA-03)
             triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
-            // Pre-fetched PR diff (prevents turn exhaustion on review-intent mentions)
             prDiffContext,
           });
+          prompt = mentionPromptResult.text;
+          promptSections = [
+            buildPromptSectionRecord({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              taskType: "mention.response",
+              promptKind: "mention.context",
+              sections: mentionContextSectionMetrics,
+            }),
+            buildPromptSectionRecord({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              taskType: "mention.response",
+              promptKind: "mention.user-prompt",
+              sections: mentionPromptResult.sections,
+            }),
+          ].filter((record) => record.sections.length > 0);
         }
 
         // Cap max turns for read-only conversational PR mentions.
@@ -2330,6 +2368,7 @@ export function createMentionHandler(deps: {
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
           prompt,
+          promptSections,
           reviewOutputKey,
           maxTurnsOverride: mentionMaxTurns,
           knowledgeStore: deps.knowledgeStore,
@@ -2676,6 +2715,14 @@ export function createMentionHandler(deps: {
             });
           } catch (err) {
             logger.warn({ err }, "Telemetry write failed (non-blocking)");
+          }
+
+          try {
+            for (const promptSectionRecord of result.promptSections ?? promptSections) {
+              await telemetryStore.recordPromptSections(promptSectionRecord);
+            }
+          } catch (err) {
+            logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
           }
 
           // Cost warning (CONFIG-11)

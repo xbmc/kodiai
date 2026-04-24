@@ -5,6 +5,7 @@ import {
   filterCommentsToTriggerTime,
   sanitizeContent,
 } from "../lib/sanitizer.ts";
+import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 
 export type BuildMentionContextOptions = {
   /** Max number of conversation comments to include (after filtering). */
@@ -83,11 +84,11 @@ function isLegacyBotTrackingComment(body: string | null | undefined): boolean {
  * - PR metadata for PR surfaces
  * - Inline review metadata + diff hunk for pr_review_comment
  */
-export async function buildMentionContext(
+export async function buildMentionContextDetails(
   octokit: Octokit,
   mention: MentionEvent,
   options: BuildMentionContextOptions = {},
-): Promise<string> {
+): Promise<PromptBuildResult> {
   const log = options.logger;
   const maxComments = options.maxComments ?? DEFAULT_MAX_COMMENTS;
   const maxCommentChars = options.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS;
@@ -504,5 +505,19 @@ export async function buildMentionContext(
     );
   }
 
-  return header.concat(lines).join("\n").trim() + "\n";
+  const sectionBlocks: Array<{ sectionName: string; text: string }> = [];
+  if (header.length > 0) {
+    sectionBlocks.push({ sectionName: "scale-notes", text: header.join("\n") });
+  }
+  sectionBlocks.push({ sectionName: "conversation-history", text: lines.join("\n").trim() + "\n" });
+
+  return buildPromptBuildResult(sectionBlocks, "");
+}
+
+export async function buildMentionContext(
+  octokit: Octokit,
+  mention: MentionEvent,
+  options: BuildMentionContextOptions = {},
+): Promise<string> {
+  return (await buildMentionContextDetails(octokit, mention, options)).text;
 }

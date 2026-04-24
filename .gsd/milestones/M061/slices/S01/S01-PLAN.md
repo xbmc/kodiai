@@ -56,7 +56,7 @@ Assumption to document in code/tests: prompt-section accounting records sizes/es
   - Files: `src/telemetry/types.ts`, `src/telemetry/store.ts`, `src/telemetry/store.test.ts`, `src/db/migrations/011-prompt-section-events.sql`, `src/llm/cost-tracker.ts`, `src/llm/generate.ts`, `src/execution/types.ts`
   - Verify: bun test src/telemetry/store.test.ts
 
-- [ ] **T02: Instrument mention and review prompt builders with named section metrics** `est:2h`
+- [x] **T02: Instrument mention and review prompt builders with named section metrics** `est:2h`
   Capture prompt-section accounting at the actual mention/review construction seams, then thread the resulting metrics into the execution/runtime path. The instrumentation must stay deterministic, bounded, and text-free so later slices can compare prompt size by section without storing prompt bodies.
 
 Note for executors: cover both conversational mention context and the large review prompt builder sections because S02 and S03 depend on these seams.

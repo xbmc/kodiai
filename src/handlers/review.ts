@@ -44,8 +44,10 @@ import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import {
   buildReviewPrompt,
+  buildReviewPromptDetails,
   matchPathInstructions,
 } from "../execution/review-prompt.ts";
+import { buildPromptSectionRecord } from "../execution/prompt-section-metrics.ts";
 import {
   DEFAULT_EMPTY_INTENT,
   parsePRIntent,
@@ -3091,7 +3093,7 @@ export function createReviewHandler(deps: {
 
         setReviewWorkPhase("prompt-build");
         // Build review prompt
-        const reviewPrompt = buildReviewPrompt({
+        const reviewPromptResult = buildReviewPromptDetails({
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -3179,6 +3181,16 @@ export function createReviewHandler(deps: {
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
         });
+        const reviewPrompt = reviewPromptResult.text;
+        const reviewPromptSections = [
+          buildPromptSectionRecord({
+            deliveryId: event.id,
+            repo: `${apiOwner}/${apiRepo}`,
+            taskType: "review.full",
+            promptKind: "review.user-prompt",
+            sections: reviewPromptResult.sections,
+          }),
+        ];
         reviewPhaseTimings.set(
           "retrieval/context assembly",
           createReviewPhaseTiming({
@@ -3202,6 +3214,7 @@ export function createReviewHandler(deps: {
           taskType: "review.full",
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
+          promptSections: reviewPromptSections,
           reviewOutputKey,
           deliveryId: event.id,
           knowledgeStore,
@@ -3998,6 +4011,14 @@ export function createReviewHandler(deps: {
             logger.warn({ err }, "Telemetry write failed (non-blocking)");
           }
 
+          try {
+            for (const promptSectionRecord of result.promptSections ?? reviewPromptSections) {
+              await telemetryStore.recordPromptSections(promptSectionRecord);
+            }
+          } catch (err) {
+            logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
+          }
+
           // Cost warning (CONFIG-11)
           if (
             config.telemetry.costWarningUsd > 0 &&
@@ -4645,7 +4666,7 @@ export function createReviewHandler(deps: {
                         : retryInstruction;
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
-                    const retryPrompt = buildReviewPrompt({
+                    const retryPromptResult = buildReviewPromptDetails({
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
@@ -4674,7 +4695,6 @@ export function createReviewHandler(deps: {
                       retrievalContext: retrievalCtx,
                       reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
                       wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
-                      // Unified cross-corpus retrieval on retry path (KI-13)
                       unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
                       contextWindow: contextWindowForPrompt,
                       filesByLanguage: diffAnalysis?.filesByLanguage,
@@ -4716,6 +4736,16 @@ export function createReviewHandler(deps: {
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
                     });
+                    const retryPrompt = retryPromptResult.text;
+                    const retryPromptSections = [
+                      buildPromptSectionRecord({
+                        deliveryId: retryDeliveryId,
+                        repo: `${apiOwner}/${apiRepo}`,
+                        taskType: "review.full",
+                        promptKind: "review.user-prompt",
+                        sections: retryPromptResult.sections,
+                      }),
+                    ];
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({
@@ -4730,6 +4760,7 @@ export function createReviewHandler(deps: {
                       taskType: "review.full",
                       triggerBody: "",
                       prompt: retryPrompt,
+                      promptSections: retryPromptSections,
                       reviewOutputKey: retryReviewOutputKey,
                       deliveryId: retryDeliveryId,
                       dynamicTimeoutSeconds: retryTimeout,
@@ -4743,6 +4774,16 @@ export function createReviewHandler(deps: {
                       const retryHasResults =
                         (retryCheckpoint?.findingCount ?? 0) >= 1 ||
                         (retryResult.published ?? false);
+
+                      if (config.telemetry.enabled) {
+                        try {
+                          for (const promptSectionRecord of retryResult.promptSections ?? retryPromptSections) {
+                            await telemetryStore.recordPromptSections(promptSectionRecord);
+                          }
+                        } catch (err) {
+                          logger.warn({ err }, "Retry prompt-section telemetry write failed (non-blocking)");
+                        }
+                      }
 
                       if (config.telemetry.enabled) {
                         try {

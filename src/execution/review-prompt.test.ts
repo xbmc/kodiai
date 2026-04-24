@@ -15,6 +15,7 @@ import {
   buildRetrievalContextSection,
   buildReviewedCategoriesLine,
   buildReviewPrompt,
+  buildReviewPromptDetails,
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
   buildEpistemicBoundarySection,
@@ -133,6 +134,14 @@ function baseDiffAnalysis(overrides: Partial<DiffAnalysis> = {}): DiffAnalysis {
     ...overrides,
   };
 }
+
+test("buildReviewPromptDetails returns named prompt-section metrics", () => {
+  const result = buildReviewPromptDetails(baseContext());
+  expect(result.sections).toHaveLength(1);
+  expect(result.sections[0]?.sectionName).toBe("review-user-prompt");
+  expect(result.sections[0]?.charCount).toBe(result.text.length);
+  expect(result.sections[0]?.estimatedTokens).toBe(Math.ceil(result.text.length / 4));
+});
 
 test("default config includes severity classification guidelines", () => {
   const prompt = buildReviewPrompt(baseContext());

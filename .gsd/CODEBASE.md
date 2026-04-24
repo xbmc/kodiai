@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-23T23:19:08Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-23T23:19:08Z","fingerprint":"fbbbcc795e7eed5ad5182e376d7c8b6cf5daa794","fileCount":500,"truncated":true} -->
+Generated: 2026-04-24T00:27:51Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-04-24T00:27:51Z","fingerprint":"8b64d8ee987af278161c819851f42b92c1706014","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -91,7 +91,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(74 files: 74 .sql)*
+- *(76 files: 76 .sql)*
 
 ### src/enforcement/
 - `src/enforcement/index.ts`
@@ -156,4 +156,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(72 files: 72 .ts)*
+- *(70 files: 70 .ts)*

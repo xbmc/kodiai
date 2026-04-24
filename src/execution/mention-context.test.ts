@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import type { Octokit } from "@octokit/rest";
 import type { MentionEvent } from "../handlers/mention-types.ts";
-import { buildMentionContext } from "./mention-context.ts";
+import { buildMentionContext, buildMentionContextDetails } from "./mention-context.ts";
 
 function makeOctokit(params: {
   comments: Array<{
@@ -73,6 +73,50 @@ function makeOctokit(params: {
 }
 
 describe("buildMentionContext", () => {
+  test("returns named prompt-section metrics for bounded mention context", async () => {
+    const octokit = makeOctokit({
+      comments: [
+        {
+          id: 1,
+          created_at: "2025-01-15T11:00:00Z",
+          body: "hello world",
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "issue_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: undefined,
+      commentId: 123,
+      commentBody: "@kodiai question",
+      commentAuthor: "carol",
+      commentCreatedAt: "2025-01-15T12:00:00Z",
+      headRef: undefined,
+      baseRef: undefined,
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
+    };
+
+    const result = await buildMentionContextDetails(octokit, mention);
+
+    expect(result.text).toContain("## Conversation History");
+    expect(result.sections.map((section) => section.sectionName)).toEqual([
+      "conversation-history",
+    ]);
+    expect(result.sections[0]?.charCount).toBe(result.text.length);
+    expect(result.sections[0]?.estimatedTokens).toBe(Math.ceil(result.text.length / 4));
+  });
+
   test("excludes comments newer than trigger timestamp (TOCTOU)", async () => {
     const trigger = "2025-01-15T12:00:00Z";
 

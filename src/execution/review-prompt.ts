@@ -23,6 +23,7 @@ import {
   type ContributorExperienceContract,
 } from "../contributor/experience-contract.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1609,7 +1610,7 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
  * blocks for issues, and do nothing if the PR is clean (silent approval is
  * handled by the calling handler).
  */
-export function buildReviewPrompt(context: {
+export function buildReviewPromptDetails(context: {
   owner: string;
   repo: string;
   prNumber: number;
@@ -1680,22 +1681,17 @@ export function buildReviewPrompt(context: {
     degradationPath: string;
   } | null;
   isDraft?: boolean;
-  // Unified cross-corpus retrieval (KI-13/KI-17)
   unifiedResults?: UnifiedRetrievalChunk[];
   contextWindow?: string;
-  // Review pattern clustering (CLST-03)
   clusterPatterns?: ClusterPatternMatch[];
-  // PR-issue linking (PRLINK-03)
   linkedIssues?: LinkResult;
-  // Generated active rules (M036/S02)
   activeRules?: SanitizedActiveRule[];
-  // Graph-derived review context (M040/S03): blast-radius result + packing options
   graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
-}): string {
+}): PromptBuildResult {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
 
@@ -2282,5 +2278,95 @@ export function buildReviewPrompt(context: {
   const outputLangSection = buildOutputLanguageSection(context.outputLanguage ?? "en");
   if (outputLangSection) lines.push("", outputLangSection);
 
-  return lines.join("\n");
+  const sectionText = lines.join("\n");
+  return buildPromptBuildResult([
+    {
+      sectionName: "review-user-prompt",
+      text: sectionText,
+    },
+  ]);
+}
+
+export function buildReviewPrompt(context: {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  prTitle: string;
+  prBody: string;
+  prAuthor: string;
+  baseBranch: string;
+  headBranch: string;
+  changedFiles: string[];
+  customInstructions?: string;
+  checkpointEnabled?: boolean;
+  mode?: "standard" | "enhanced";
+  severityMinLevel?: "critical" | "major" | "medium" | "minor";
+  focusAreas?: string[];
+  ignoredAreas?: string[];
+  maxComments?: number;
+  suppressions?: Array<string | SuppressionPattern>;
+  minConfidence?: number;
+  diffAnalysis?: DiffAnalysis;
+  matchedPathInstructions?: MatchedInstruction[];
+  incrementalContext?: {
+    lastReviewedHeadSha: string;
+    changedFilesSinceLastReview: string[];
+    unresolvedPriorFindings: PriorFinding[];
+  } | null;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      path: string;
+      line?: number;
+      snippet?: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+    maxChars?: number;
+  } | null;
+  reviewPrecedents?: ReviewCommentMatch[];
+  wikiKnowledge?: WikiKnowledgeMatch[];
+  filesByLanguage?: Record<string, string[]>;
+  outputLanguage?: string;
+  prLabels?: string[];
+  focusHints?: string[];
+  conventionalType?: ConventionalCommitType | null;
+  deltaContext?: DeltaReviewContext | null;
+  largePRContext?: {
+    fullReviewFiles: string[];
+    abbreviatedFiles: string[];
+    mentionOnlyCount: number;
+    totalFiles: number;
+  } | null;
+  authorTier?: AuthorTier;
+  contributorExperienceContract?: Partial<
+    Pick<
+      ContributorExperienceContract,
+      "state" | "promptPolicy" | "promptTier" | "degradationPath"
+    >
+  > | null;
+  authorExpertise?: { dimension: string; topic: string; score: number }[];
+  depBumpContext?: DepBumpContext | null;
+  searchRateLimitDegradation?: {
+    degraded: boolean;
+    retryAttempts: number;
+    skippedQueries: number;
+    degradationPath: string;
+  } | null;
+  isDraft?: boolean;
+  unifiedResults?: UnifiedRetrievalChunk[];
+  contextWindow?: string;
+  clusterPatterns?: ClusterPatternMatch[];
+  linkedIssues?: LinkResult;
+  activeRules?: SanitizedActiveRule[];
+  graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
+  graphContextOptions?: GraphContextOptions;
+  structuralImpact?: StructuralImpactPayload | null;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+  publishToolNames?: string[];
+}): string {
+  return buildReviewPromptDetails(context).text;
 }

@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import type { MentionEvent } from "../handlers/mention-types.ts";
-import { buildMentionPrompt } from "./mention-prompt.ts";
+import { buildMentionPrompt, buildMentionPromptDetails } from "./mention-prompt.ts";
 
 function baseMention(): MentionEvent {
   return {
@@ -53,6 +53,20 @@ function expectInOrder(haystack: string, markers: string[]): void {
 }
 
 describe("buildMentionPrompt", () => {
+  test("returns named prompt-section metrics for mention prompts", () => {
+    const result = buildMentionPromptDetails({
+      mention: baseMention(),
+      mentionContext: "## Conversation History\n\nhello",
+      userQuestion: "Please review and approve if clean.",
+    });
+
+    expect(result.text).toContain("## User's Question");
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0]?.sectionName).toBe("mention-user-prompt");
+    expect(result.sections[0]?.charCount).toBe(result.text.length);
+    expect(result.sections[0]?.estimatedTokens).toBe(Math.ceil(result.text.length / 4));
+  });
+
   test("includes conciseness guidance and shared collapsed APPROVE grammar instructions", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
