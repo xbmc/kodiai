@@ -13,11 +13,23 @@ machine-checkable evidence.
   - `OPS75-ONCE-02` duplicate detection query returns zero duplicate identities
 - Fail-open completion when telemetry persistence is intentionally failed:
   - `OPS75-FAILOPEN-01` forced-failure identities persist zero telemetry rows
-  - `OPS75-FAILOPEN-02` those identities still complete in `executions`
+  - `OPS75-FAILOPEN-02` those identities still complete in `telemetry_events`
 
 ## Required Inputs
 
 Collect live identities before running the command.
+
+Before you collect the identity sets below, run the slice baseline proof once:
+
+```sh
+bun run verify:m061:s01 -- --repo <owner/repo> --since 7d
+```
+
+That preflight confirms the live Postgres-backed operator surfaces can already see:
+
+- `review.full`, `mention.response`, and `slack.response` task-path attribution
+- named prompt-section telemetry for review + mention prompt builders
+- delivery-level attribution and cache evidence without touching the removed SQLite path
 
 ### Preflight (blocking)
 
@@ -88,6 +100,8 @@ bun run verify:phase75 \
 Optional machine-readable evidence output:
 
 ```sh
+bun run verify:m061:s01 -- --repo <owner/repo> --since 7d --json
+
 bun run verify:phase75 \
   --review <review-prime> \
   --review <review-hit> \

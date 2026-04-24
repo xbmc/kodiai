@@ -70,7 +70,7 @@ Keep the reporting surface focused on truthful attribution: token totals, cost t
   - Files: `scripts/usage-report.ts`, `scripts/usage-report.test.ts`, `scripts/phase72-telemetry-follow-through.ts`, `scripts/phase72-telemetry-follow-through.test.ts`, `scripts/phase75-live-ops-verification-closure.ts`, `scripts/phase75-live-ops-verification-closure.test.ts`, `src/db/client.ts`
   - Verify: bun test scripts/usage-report.test.ts scripts/phase72-telemetry-follow-through.test.ts scripts/phase75-live-ops-verification-closure.test.ts
 
-- [ ] **T04: Publish the baseline proof and operator runbook updates** `est:1h`
+- [x] **T04: Publish the baseline proof and operator runbook updates** `est:1h`
   Finish the slice by documenting and verifying the repaired reporting path. Update smoke/runbook docs to the new Postgres-backed commands, add a dedicated baseline proof command if the existing scripts are not sufficient, and ensure the slice-level verification exercises mention/review/slack path attribution plus prompt-section visibility.
 
 This task closes the integration loop so downstream slices can consume a stable baseline evidence surface instead of reverse-engineering scripts or schema changes.

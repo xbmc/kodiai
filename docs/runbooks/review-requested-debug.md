@@ -298,6 +298,14 @@ Expected:
 
 Use these snippets while running `docs/smoke/phase72-telemetry-follow-through.md`.
 
+Before you use the identity-specific SQL below, run the baseline proof command once for the same repo/time window:
+
+```sh
+bun run verify:m061:s01 -- --repo <owner/repo> --since 7d
+```
+
+That command proves the operator report surface already exposes review/mention/slack attribution, named prompt sections, delivery-level rows, and cache evidence from Postgres before you debug a specific delivery set.
+
 ### 1) Duplicate emission check (`delivery_id + event_type`)
 
 ```sql
@@ -357,6 +365,17 @@ If conclusions are present but telemetry rows are missing, treat it as a telemet
 Use these procedures to produce the production evidence needed for OPS75 closure.
 Cache checks are scoped to the review handler only -- the mention handler does not
 use Search API cache and never emits `rate_limit_events` rows.
+
+Before collecting OPS75 identities, run the baseline proof command once:
+
+```sh
+bun run verify:m061:s01 -- --repo <owner/repo> --since 7d
+```
+
+Expected slice-level baseline result:
+- `M061-S01-TASK-PATH-ATTRIBUTION` passes for `review.full`, `mention.response`, and `slack.response`
+- `M061-S01-PROMPT-SECTIONS` passes for mention/review prompt builders
+- `M061-S01-DELIVERY-BREAKDOWN` and `M061-S01-CACHE-EVIDENCE` pass against the same Postgres-backed reporting surface
 
 ### Cache-Hit Trigger Procedure
 
@@ -600,7 +619,7 @@ SELECT
   event_type,
   conclusion,
   created_at
-FROM executions
+FROM telemetry_events
 WHERE delivery_id IN ('<failopen-id-1>', '<failopen-id-2>')
 ORDER BY created_at ASC;
 ```
