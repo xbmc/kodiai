@@ -285,7 +285,7 @@ Cache the pure, bounded review prompt-build artifact behind a truthful fingerpri
   - Files: `src/handlers/review.ts`, `src/execution/review-prompt.ts`, `src/lib/search-cache.ts`, `src/handlers/review.test.ts`, `src/execution/review-prompt.test.ts`
   - Verify: bun test src/execution/review-prompt.test.ts src/handlers/review.test.ts
 
-- [ ] **T04: Prove reuse and degraded fallback through canonical reporting surfaces** `est:3h`
+- [x] **T04: Prove reuse and degraded fallback through canonical reporting surfaces** `est:3h`
   ---
 estimated_steps: 4
 estimated_files: 4

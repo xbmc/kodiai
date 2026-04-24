@@ -66,12 +66,26 @@ export type UsageRateLimitRow = {
   degradationCount: number;
 };
 
+export type UsageReuseEvidenceRow = {
+  evidenceType: string;
+  executions: number;
+  hitExecutions: number;
+  missExecutions: number;
+  degradedExecutions: number;
+  bypassExecutions: number;
+  reusedUnits: number;
+  primaryWorkUnits: number;
+  avgReuseRate: number;
+  statuses: string[];
+};
+
 export type UsageReportQueryResult = {
   summary: UsageReportSummary;
   taskTypes: UsageTaskTypeRow[];
   deliveryBreakdown: UsageDeliveryRow[];
   promptSections: UsagePromptSectionRow[];
   rateLimits: UsageRateLimitRow[];
+  reuseEvidence: UsageReuseEvidenceRow[];
 };
 
 export type UsageReport = {
@@ -92,6 +106,7 @@ export type UsageReport = {
   deliveryBreakdown: UsageDeliveryRow[];
   promptSections: UsagePromptSectionRow[];
   rateLimits: UsageRateLimitRow[];
+  reuseEvidence: UsageReuseEvidenceRow[];
 };
 
 function emptySummary(): UsageReportSummary {
@@ -135,6 +150,7 @@ export function buildUsageReport(input: {
     deliveryBreakdown: [],
     promptSections: [],
     rateLimits: [],
+    reuseEvidence: [],
   };
 
   return {
@@ -153,6 +169,7 @@ export function buildUsageReport(input: {
     deliveryBreakdown: result.deliveryBreakdown,
     promptSections: result.promptSections,
     rateLimits: result.rateLimits,
+    reuseEvidence: result.reuseEvidence,
   };
 }
 
@@ -236,6 +253,17 @@ export function renderUsageReportText(report: UsageReport): string {
     }
   }
 
+  lines.push("", "Reuse evidence");
+  if (report.reuseEvidence.length === 0) {
+    lines.push("- No reuse evidence rows matched the requested filters.");
+  } else {
+    for (const row of report.reuseEvidence) {
+      lines.push(
+        `- ${row.evidenceType}: executions=${row.executions} hits=${row.hitExecutions} misses=${row.missExecutions} degraded=${row.degradedExecutions} bypass=${row.bypassExecutions} reused_units=${row.reusedUnits} primary_work_units=${row.primaryWorkUnits} avg_reuse_rate=${formatPercent(row.avgReuseRate)} statuses=${row.statuses.join(", ") || "none"}`,
+      );
+    }
+  }
+
   lines.push("", "Cache effectiveness");
   if (report.rateLimits.length === 0) {
     lines.push("- No rate_limit_events rows matched the requested filters.");
@@ -274,6 +302,9 @@ export function renderUsageReportCsv(report: UsageReport): string {
   }
   for (const row of report.promptSections) {
     lines.push(`prompt_section,${JSON.stringify(`${row.taskType}/${row.promptKind}/${row.sectionName}`)},${JSON.stringify(row)}`);
+  }
+  for (const row of report.reuseEvidence) {
+    lines.push(`reuse_evidence,${JSON.stringify(row.evidenceType)},${JSON.stringify(row)}`);
   }
   for (const row of report.rateLimits) {
     lines.push(`rate_limit,${JSON.stringify(row.taskType)},${JSON.stringify(row)}`);
@@ -395,6 +426,7 @@ async function fetchRateLimits(sql: Sql, repo: string | null, since: string | nu
      AND (${since}::timestamptz IS NULL OR l.created_at >= ${since}::timestamptz)
     WHERE (${repo}::text IS NULL OR r.repo = ${repo})
       AND (${since}::timestamptz IS NULL OR r.created_at >= ${since}::timestamptz)
+      AND r.event_type NOT LIKE 'reuse.%'
     GROUP BY COALESCE(l.task_type, r.event_type)
     ORDER BY executions DESC, "taskType" ASC
   `;
@@ -405,13 +437,47 @@ async function fetchRateLimits(sql: Sql, repo: string | null, since: string | nu
   }));
 }
 
+async function fetchReuseEvidence(sql: Sql, repo: string | null, since: string | null): Promise<UsageReuseEvidenceRow[]> {
+  const rows = await sql<UsageReuseEvidenceRow[]>`
+    SELECT
+      CASE
+        WHEN r.event_type LIKE 'reuse.retrieval-query-embedding%' THEN 'retrieval.query-embedding'
+        WHEN r.event_type = 'reuse.mention-derived-context' THEN 'mention.derived-context'
+        WHEN r.event_type = 'reuse.review-derived-prompt' THEN 'review.derived-prompt'
+        ELSE r.event_type
+      END AS "evidenceType",
+      COUNT(*)::int AS executions,
+      COALESCE(SUM(CASE WHEN split_part(COALESCE(r.degradation_path, 'unknown'), ':', 1) = 'hit' THEN 1 ELSE 0 END), 0)::int AS "hitExecutions",
+      COALESCE(SUM(CASE WHEN split_part(COALESCE(r.degradation_path, 'unknown'), ':', 1) = 'miss' THEN 1 ELSE 0 END), 0)::int AS "missExecutions",
+      COALESCE(SUM(CASE WHEN split_part(COALESCE(r.degradation_path, 'unknown'), ':', 1) = 'degraded' THEN 1 ELSE 0 END), 0)::int AS "degradedExecutions",
+      COALESCE(SUM(CASE WHEN split_part(COALESCE(r.degradation_path, 'unknown'), ':', 1) = 'bypass' THEN 1 ELSE 0 END), 0)::int AS "bypassExecutions",
+      COALESCE(SUM(r.skipped_queries), 0)::int AS "reusedUnits",
+      COALESCE(SUM(r.retry_attempts), 0)::int AS "primaryWorkUnits",
+      COALESCE(AVG(r.cache_hit_rate), 0)::float8 AS "avgReuseRate",
+      COALESCE(array_remove(array_agg(DISTINCT split_part(COALESCE(r.degradation_path, 'unknown'), ':', 1)), NULL), ARRAY[]::text[]) AS statuses
+    FROM rate_limit_events r
+    WHERE (${repo}::text IS NULL OR r.repo = ${repo})
+      AND (${since}::timestamptz IS NULL OR r.created_at >= ${since}::timestamptz)
+      AND r.event_type LIKE 'reuse.%'
+    GROUP BY 1
+    ORDER BY 1 ASC
+  `;
+
+  return rows.map((row) => ({
+    ...row,
+    avgReuseRate: roundRatio(row.avgReuseRate),
+    statuses: [...row.statuses].sort(),
+  }));
+}
+
 export async function queryUsageReport(sql: Sql, filters: { repo: string | null; since: string | null }): Promise<UsageReportQueryResult> {
-  const [summary, taskTypes, deliveryBreakdown, promptSections, rateLimits] = await Promise.all([
+  const [summary, taskTypes, deliveryBreakdown, promptSections, rateLimits, reuseEvidence] = await Promise.all([
     fetchSummary(sql, filters.repo, filters.since),
     fetchTaskTypes(sql, filters.repo, filters.since),
     fetchDeliveryBreakdown(sql, filters.repo, filters.since),
     fetchPromptSections(sql, filters.repo, filters.since),
     fetchRateLimits(sql, filters.repo, filters.since),
+    fetchReuseEvidence(sql, filters.repo, filters.since),
   ]);
 
   return {
@@ -420,6 +486,7 @@ export async function queryUsageReport(sql: Sql, filters: { repo: string | null;
     deliveryBreakdown,
     promptSections,
     rateLimits,
+    reuseEvidence,
   };
 }
 
@@ -490,7 +557,7 @@ export function parseUsageReportArgs(args: string[]): CliOptions {
 }
 
 function printUsage(): void {
-  console.log(`Kodiai telemetry usage report\n\nUsage:\n  bun scripts/usage-report.ts [--repo <owner/repo>] [--since <Nd|YYYY-MM-DD|ISO>] [--json|--csv]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable\n  - Surfaces token totals, cost totals, cache effectiveness, task-path attribution, and prompt-section summaries`);
+  console.log(`Kodiai telemetry usage report\n\nUsage:\n  bun scripts/usage-report.ts [--repo <owner/repo>] [--since <Nd|YYYY-MM-DD|ISO>] [--json|--csv]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable\n  - Surfaces token totals, cost totals, cache effectiveness, task-path attribution, prompt-section summaries, and reuse evidence`);
 }
 
 function snapshotProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {

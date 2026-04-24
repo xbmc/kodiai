@@ -2205,6 +2205,32 @@ export function createMentionHandler(deps: {
               triggerType: "question",
             });
 
+            if (config.telemetry.enabled) {
+              try {
+                const totalEmbeddingLookups = (result?.provenance.embeddingRequests ?? 0) + (result?.provenance.embeddingCacheHits ?? 0);
+                await telemetryStore.recordRateLimitEvent({
+                  deliveryId: event.id,
+                  executionIdentity: `${event.id}:reuse.retrieval-query-embedding.mention`,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  prNumber: mention.prNumber,
+                  eventType: "reuse.retrieval-query-embedding.mention",
+                  cacheHitRate: totalEmbeddingLookups > 0
+                    ? (result?.provenance.embeddingCacheHits ?? 0) / totalEmbeddingLookups
+                    : 0,
+                  skippedQueries: result?.provenance.embeddingCacheHits ?? 0,
+                  retryAttempts: result?.provenance.embeddingRequests ?? 0,
+                  degradationPath: result == null
+                    ? "degraded"
+                    : (result.provenance.embeddingCacheHits > 0 ? "hit" : "miss"),
+                });
+              } catch (err) {
+                logger.warn(
+                  { err, surface: mention.surface, issueNumber: mention.issueNumber },
+                  "Mention retrieval reuse telemetry write failed (non-blocking)",
+                );
+              }
+            }
+
             // Capture unified cross-corpus results (KI-11/KI-12)
             if (result && result.unifiedResults && result.unifiedResults.length > 0) {
               unifiedResultsForPrompt = result.unifiedResults;
@@ -2866,6 +2892,24 @@ export function createMentionHandler(deps: {
 
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
+          try {
+            await telemetryStore.recordRateLimitEvent({
+              deliveryId: event.id,
+              executionIdentity: `${event.id}:reuse.mention-derived-context`,
+              repo: `${mention.owner}/${mention.repo}`,
+              prNumber: mention.prNumber,
+              eventType: "reuse.mention-derived-context",
+              cacheHitRate: mentionDerivedContextCacheStatus === "hit" ? 1 : 0,
+              skippedQueries: mentionDerivedContextCacheStatus === "hit" ? 1 : 0,
+              retryAttempts: mentionDerivedContextCacheStatus === "hit" ? 0 : 1,
+              degradationPath: mentionDerivedContextCacheReason
+                ? `${mentionDerivedContextCacheStatus}:${mentionDerivedContextCacheReason}`
+                : mentionDerivedContextCacheStatus,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Mention reuse telemetry write failed (non-blocking)");
+          }
+
           try {
             await telemetryStore.record({
               deliveryId: event.id,

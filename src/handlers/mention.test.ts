@@ -12229,6 +12229,7 @@ describe("PR surface implicit write intent detection", () => {
 
 describe("createMentionHandler mention derived-context cache", () => {
   test("reuses identical mention context state and misses when the fingerprinted state drifts", async () => {
+    const reuseTelemetry: Array<Record<string, unknown>> = [];
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture([
       "mention:",
@@ -12312,7 +12313,12 @@ describe("createMentionHandler mention derived-context cache", () => {
           };
         },
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordRateLimitEvent: async (entry) => {
+          reuseTelemetry.push(entry as Record<string, unknown>);
+        },
+      },
       logger: logger as never,
     });
 
@@ -12341,6 +12347,10 @@ describe("createMentionHandler mention derived-context cache", () => {
       .filter((entry) => entry.message === "Mention execution completed")
       .map((entry) => entry.bindings.mentionDerivedContextCacheStatus);
     expect(cacheStatuses).toEqual(["miss", "hit", "miss"]);
+    const reuseStatuses = reuseTelemetry
+      .filter((entry) => entry.eventType === "reuse.mention-derived-context")
+      .map((entry) => entry.degradationPath);
+    expect(reuseStatuses).toEqual(["miss", "hit", "miss"]);
 
     await workspaceFixture.cleanup();
   });

@@ -10039,6 +10039,7 @@ describe("review prompt derived cache", () => {
   });
 
   test("reuses identical review prompt artifacts across identical review state", async () => {
+    const reuseTelemetry: Array<Record<string, unknown>> = [];
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
@@ -10113,7 +10114,12 @@ describe("review prompt derived cache", () => {
           };
         },
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordRateLimitEvent: async (entry) => {
+          reuseTelemetry.push(entry as Record<string, unknown>);
+        },
+      },
       reviewPromptBuilder: (context) => {
         promptBuilderCalls += 1;
         return {
@@ -10171,6 +10177,10 @@ describe("review prompt derived cache", () => {
     expect(promptBuilderCalls).toBe(1);
     expect(promptSectionsByRun).toHaveLength(2);
     expect(promptSectionsByRun[0]).toEqual(promptSectionsByRun[1]);
+    const promptReuseStatuses = reuseTelemetry
+      .filter((entry) => entry.eventType === "reuse.review-derived-prompt")
+      .map((entry) => entry.degradationPath);
+    expect(promptReuseStatuses).toEqual(["miss", "hit"]);
 
     await workspaceFixture.cleanup();
   });
@@ -11122,11 +11132,12 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
     expect(searchCallCount).toBe(2);
     expect(executeCount).toBe(1);
-    expect(rateLimitEvents).toHaveLength(1);
-    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
-    expect(rateLimitEvents[0]?.retryAttempts).toBe(1);
-    expect(rateLimitEvents[0]?.skippedQueries).toBe(0);
-    expect(rateLimitEvents[0]?.degradationPath).toBe("none");
+    const searchTelemetryEvents = rateLimitEvents.filter((event) => event.eventType === "pull_request.review_requested");
+    expect(searchTelemetryEvents).toHaveLength(1);
+    expect(searchTelemetryEvents[0]?.cacheHitRate).toBe(0);
+    expect(searchTelemetryEvents[0]?.retryAttempts).toBe(1);
+    expect(searchTelemetryEvents[0]?.skippedQueries).toBe(0);
+    expect(searchTelemetryEvents[0]?.degradationPath).toBe("none");
   });
 
   test("degrades author-tier enrichment after second rate limit and adds partial disclaimer to prompt", async () => {
@@ -11159,17 +11170,18 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(searchCallCount).toBe(2);
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
+    const searchTelemetryEvents = rateLimitEvents.filter((event) => event.eventType === "pull_request.review_requested");
     const emittedIdentities = new Set(
-      rateLimitEvents.map((event) => `${event.deliveryId}:${event.eventType}`),
+      searchTelemetryEvents.map((event) => `${event.deliveryId}:${event.eventType}`),
     );
-    expect(rateLimitEvents).toHaveLength(1);
+    expect(searchTelemetryEvents).toHaveLength(1);
     expect(emittedIdentities.size).toBe(1);
-    expect(rateLimitEvents[0]?.deliveryId).toBe("delivery-123");
-    expect(rateLimitEvents[0]?.eventType).toBe("pull_request.review_requested");
-    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
-    expect(rateLimitEvents[0]?.retryAttempts).toBe(1);
-    expect(rateLimitEvents[0]?.skippedQueries).toBe(1);
-    expect(rateLimitEvents[0]?.degradationPath).toBe("search-api-rate-limit");
+    expect(searchTelemetryEvents[0]?.deliveryId).toBe("delivery-123");
+    expect(searchTelemetryEvents[0]?.eventType).toBe("pull_request.review_requested");
+    expect(searchTelemetryEvents[0]?.cacheHitRate).toBe(0);
+    expect(searchTelemetryEvents[0]?.retryAttempts).toBe(1);
+    expect(searchTelemetryEvents[0]?.skippedQueries).toBe(1);
+    expect(searchTelemetryEvents[0]?.degradationPath).toBe("search-api-rate-limit");
   });
 
   test("injects exactly one degraded disclosure sentence into published summary output", async () => {
@@ -11234,8 +11246,9 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
-    expect(emittedIdentities).toHaveLength(1);
-    expect(emittedIdentities[0]).toBe("delivery-123:pull_request.review_requested");
+    const searchTelemetryIdentities = emittedIdentities.filter((identity) => identity.endsWith(":pull_request.review_requested"));
+    expect(searchTelemetryIdentities).toHaveLength(1);
+    expect(searchTelemetryIdentities[0]).toBe("delivery-123:pull_request.review_requested");
   });
 
   test("degraded review path passes bounded retrieval context without malformed retrieval sections", async () => {
@@ -11406,8 +11419,9 @@ describe("createReviewHandler author-tier search cache integration", () => {
     });
 
     expect(executeCount).toBe(1);
-    expect(rateLimitEvents).toHaveLength(1);
-    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+    const searchTelemetryEvents = rateLimitEvents.filter((event) => event.eventType === "pull_request.review_requested");
+    expect(searchTelemetryEvents).toHaveLength(1);
+    expect(searchTelemetryEvents[0]?.cacheHitRate).toBe(0);
   });
 
   test("ignores unsupported cached contributor tiers and falls back to live classification", async () => {
@@ -11569,9 +11583,10 @@ describe("createReviewHandler author-tier search cache integration", () => {
       },
     });
 
-    expect(rateLimitEvents).toHaveLength(2);
-    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
-    expect(rateLimitEvents[1]?.cacheHitRate).toBe(1);
+    const searchTelemetryEvents = rateLimitEvents.filter((event) => event.eventType === "pull_request.review_requested");
+    expect(searchTelemetryEvents).toHaveLength(2);
+    expect(searchTelemetryEvents[0]?.cacheHitRate).toBe(0);
+    expect(searchTelemetryEvents[1]?.cacheHitRate).toBe(1);
   });
 
   test("keeps telemetry miss on Search cache fail-open direct lookup", async () => {
@@ -11601,8 +11616,9 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
     expect(searchCallCount).toBe(1);
     expect(executeCount).toBe(1);
-    expect(rateLimitEvents).toHaveLength(1);
-    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+    const searchTelemetryEvents = rateLimitEvents.filter((event) => event.eventType === "pull_request.review_requested");
+    expect(searchTelemetryEvents).toHaveLength(1);
+    expect(searchTelemetryEvents[0]?.cacheHitRate).toBe(0);
   });
 });
 

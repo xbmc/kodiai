@@ -101,6 +101,32 @@ function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): Us
         degradationCount: 0,
       },
     ],
+    reuseEvidence: [
+      {
+        evidenceType: "mention.derived-context",
+        executions: 2,
+        hitExecutions: 1,
+        missExecutions: 1,
+        degradedExecutions: 0,
+        bypassExecutions: 0,
+        reusedUnits: 1,
+        primaryWorkUnits: 1,
+        avgReuseRate: 0.5,
+        statuses: ["hit", "miss"],
+      },
+      {
+        evidenceType: "retrieval.query-embedding",
+        executions: 1,
+        hitExecutions: 1,
+        missExecutions: 0,
+        degradedExecutions: 0,
+        bypassExecutions: 0,
+        reusedUnits: 2,
+        primaryWorkUnits: 1,
+        avgReuseRate: 0.6667,
+        statuses: ["hit"],
+      },
+    ],
     ...overrides,
   };
 }
@@ -136,6 +162,8 @@ describe("buildUsageReport", () => {
     expect(report.deliveryBreakdown[0]?.promptKinds).toContain("review.user-prompt");
     expect(report.promptSections[0]?.sectionName).toBe("review-change-context");
     expect(report.rateLimits[0]?.avgCacheHitRate).toBe(0.5);
+    expect(report.reuseEvidence[0]?.evidenceType).toBe("mention.derived-context");
+    expect(report.reuseEvidence[1]?.reusedUnits).toBe(2);
   });
 });
 
@@ -156,6 +184,8 @@ describe("renderUsageReportText", () => {
     expect(text).toContain("review.full");
     expect(text).toContain("Prompt-section summaries");
     expect(text).toContain("conversation-history");
+    expect(text).toContain("Reuse evidence");
+    expect(text).toContain("retrieval.query-embedding");
     expect(text).toContain("Cache effectiveness");
   });
 

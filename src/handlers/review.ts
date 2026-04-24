@@ -2976,6 +2976,32 @@ export function createReviewHandler(deps: {
               triggerType: "pr_review",
             });
 
+            if (config.telemetry.enabled) {
+              try {
+                const totalEmbeddingLookups = (result?.provenance.embeddingRequests ?? 0) + (result?.provenance.embeddingCacheHits ?? 0);
+                await telemetryStore.recordRateLimitEvent({
+                  deliveryId: event.id,
+                  executionIdentity: `${event.id}:reuse.retrieval-query-embedding.main`,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  eventType: "reuse.retrieval-query-embedding.main",
+                  cacheHitRate: totalEmbeddingLookups > 0
+                    ? (result?.provenance.embeddingCacheHits ?? 0) / totalEmbeddingLookups
+                    : 0,
+                  skippedQueries: result?.provenance.embeddingCacheHits ?? 0,
+                  retryAttempts: result?.provenance.embeddingRequests ?? 0,
+                  degradationPath: result == null
+                    ? "degraded"
+                    : (result.provenance.embeddingCacheHits > 0 ? "hit" : "miss"),
+                });
+              } catch (err) {
+                logger.warn(
+                  { ...baseLog, err },
+                  "Review retrieval reuse telemetry write failed (non-blocking)",
+                );
+              }
+            }
+
             // Capture unified cross-corpus results (KI-13/KI-17)
             if (result && result.unifiedResults && result.unifiedResults.length > 0) {
               unifiedResultsForPrompt = result.unifiedResults;
@@ -4248,6 +4274,24 @@ export function createReviewHandler(deps: {
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
           try {
+            await telemetryStore.recordRateLimitEvent({
+              deliveryId: event.id,
+              executionIdentity: `${event.id}:reuse.review-derived-prompt`,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              eventType: "reuse.review-derived-prompt",
+              cacheHitRate: reviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+              skippedQueries: reviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+              retryAttempts: reviewPromptDerivedCacheStatus === "hit" ? 0 : 1,
+              degradationPath: reviewPromptDerivedCacheReason
+                ? `${reviewPromptDerivedCacheStatus}:${reviewPromptDerivedCacheReason}`
+                : reviewPromptDerivedCacheStatus,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Review derived-prompt reuse telemetry write failed (non-blocking)");
+          }
+
+          try {
             await telemetryStore.record({
               deliveryId: event.id,
               repo: `${apiOwner}/${apiRepo}`,
@@ -5174,6 +5218,24 @@ export function createReviewHandler(deps: {
                     }
 
                     if (config.telemetry.enabled) {
+                      try {
+                        await telemetryStore.recordRateLimitEvent({
+                          deliveryId: retryDeliveryId,
+                          executionIdentity: `${retryDeliveryId}:reuse.review-derived-prompt`,
+                          repo: `${apiOwner}/${apiRepo}`,
+                          prNumber: pr.number,
+                          eventType: "reuse.review-derived-prompt",
+                          cacheHitRate: retryReviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+                          skippedQueries: retryReviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+                          retryAttempts: retryReviewPromptDerivedCacheStatus === "hit" ? 0 : 1,
+                          degradationPath: retryReviewPromptDerivedCacheReason
+                            ? `${retryReviewPromptDerivedCacheStatus}:${retryReviewPromptDerivedCacheReason}`
+                            : retryReviewPromptDerivedCacheStatus,
+                        });
+                      } catch (err) {
+                        logger.warn({ err }, "Retry derived-prompt reuse telemetry write failed (non-blocking)");
+                      }
+
                       try {
                         await telemetryStore.record({
                           deliveryId: retryDeliveryId,
