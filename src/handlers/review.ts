@@ -1979,6 +1979,51 @@ export function createReviewHandler(deps: {
         }
       }
 
+      async function persistDegradedContinuationFamilyState(params: {
+        authoritativeAttemptId: string;
+        authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
+        finalStopReason: ContinuationFamilyFinalStopReason;
+        supersededByAttemptId?: string | null;
+        reviewOutputKey?: string;
+      }): Promise<void> {
+        await persistContinuationFamilyState({
+          ...params,
+          projectionStatus: "degraded",
+        });
+      }
+
+      async function finalizeContinuationAttempt(params: {
+        attemptId: string;
+        fallbackOutcome: ContinuationFamilyAuthoritativeOutcome;
+        fallbackStopReason: ContinuationFamilyFinalStopReason;
+        reviewOutputKey?: string;
+      }): Promise<void> {
+        const currentAttempt = reviewWorkCoordinator
+          .getSnapshot(reviewFamilyKey)
+          ?.attempts.find((attempt) => attempt.attemptId === params.attemptId);
+        const supersededByAttemptId = currentAttempt?.supersededByAttemptId ?? null;
+
+        if (supersededByAttemptId) {
+          await persistContinuationFamilyState({
+            authoritativeAttemptId: supersededByAttemptId,
+            authoritativeOutcome: "superseded",
+            finalStopReason: "superseded-by-newer-attempt",
+            projectionStatus: "canonical",
+            supersededByAttemptId,
+            reviewOutputKey: params.reviewOutputKey,
+          });
+          return;
+        }
+
+        await persistContinuationFamilyState({
+          authoritativeAttemptId: params.attemptId,
+          authoritativeOutcome: params.fallbackOutcome,
+          finalStopReason: params.fallbackStopReason,
+          projectionStatus: "canonical",
+          reviewOutputKey: params.reviewOutputKey,
+        });
+      }
+
       function canPublishReviewWorkOutput(
         attemptId: string,
         outputLabel: string,
@@ -4803,6 +4848,7 @@ export function createReviewHandler(deps: {
                 : "not scheduled";
             let retrySummaryNote: string | undefined;
             let retryPlan: ReturnType<typeof planReviewContinuation> | null = null;
+            let continuationProjectionDegraded = false;
 
             if (timeoutFirstPass) {
               retryPlan = planReviewContinuation({
@@ -5030,6 +5076,7 @@ export function createReviewHandler(deps: {
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  continuationProjectionDegraded = true;
                 }
               }
             }
@@ -5053,7 +5100,7 @@ export function createReviewHandler(deps: {
                 authoritativeAttemptId: reviewWorkAttempt.attemptId,
                 authoritativeOutcome: "blocked",
                 finalStopReason: "no-follow-up",
-                projectionStatus: "canonical",
+                projectionStatus: continuationProjectionDegraded ? "degraded" : "canonical",
               });
             }
 
@@ -5097,6 +5144,13 @@ export function createReviewHandler(deps: {
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  continuationProjectionDegraded = true;
+                  await persistDegradedContinuationFamilyState({
+                    authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                    authoritativeOutcome: "continuation-pending",
+                    finalStopReason: "awaiting-continuation",
+                    reviewOutputKey: retryReviewOutputKey,
+                  });
                 }
               }
 
@@ -5653,6 +5707,12 @@ export function createReviewHandler(deps: {
                       },
                       "Retry failed with error",
                     );
+                    await finalizeContinuationAttempt({
+                      attemptId: retryReviewWorkAttempt.attemptId,
+                      fallbackOutcome: "blocked",
+                      fallbackStopReason: "no-follow-up",
+                      reviewOutputKey: retryReviewOutputKey,
+                    });
                   } finally {
                     if (retryWorkspace) {
                       await retryWorkspace.cleanup();
@@ -5676,7 +5736,13 @@ export function createReviewHandler(deps: {
                   key: reviewFamilyKey,
                   jobType: "pull-request-review-retry",
                   prNumber: pr.number,
-                }).catch((err) => {
+                }).catch(async (err) => {
+                  await finalizeContinuationAttempt({
+                    attemptId: retryReviewWorkAttempt.attemptId,
+                    fallbackOutcome: "blocked",
+                    fallbackStopReason: "no-follow-up",
+                    reviewOutputKey: retryReviewOutputKey,
+                  });
                   reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId);
                   logger.error(
                     { err, deliveryId: event.id, prNumber: pr.number },

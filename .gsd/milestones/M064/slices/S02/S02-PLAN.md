@@ -67,7 +67,7 @@ What remains before the milestone is truly usable end-to-end: S03 must make oper
   - Files: `src/execution/mcp/checkpoint-server.ts`, `src/execution/mcp/checkpoint-server.test.ts`
   - Verify: bun test src/execution/mcp/checkpoint-server.test.ts
 
-- [ ] **T02: Harden canonical-state transitions for retry enqueue, retry execution, and projection failures** `est:2h`
+- [x] **T02: Harden canonical-state transitions for retry enqueue, retry execution, and projection failures** `est:2h`
   Wire the real review timeout/retry path so canonical continuation-family state stays truthful when downstream projections or retry execution fail. This task advances R067 by extending supersession-safe authority writes to the live orchestration gaps, and supports R074 by degrading projection status instead of leaving ambiguity in logs.
 
 ## Steps
