@@ -41,7 +41,7 @@
   - Files: `src/handlers/mention.ts`, `src/execution/issue-code-context.ts`, `src/knowledge/multi-query-retrieval.ts`, `src/handlers/mention.test.ts`
   - Verify: bun test ./src/handlers/mention.test.ts
 
-- [ ] **T03: Publish a slice proof that measures conversational mention reduction on the canonical telemetry path** `est:60m`
+- [x] **T03: Publish a slice proof that measures conversational mention reduction on the canonical telemetry path** `est:60m`
   Turn the new gating behavior into durable operator evidence instead of snapshot assertions. Extend the current S01 evidence surfaces by adding or updating report/proof helpers so operators can inspect reduced `mention.response` prompt sections by name while still seeing the richer explicit-review path. Add a dedicated `scripts/verify-m061-s02.ts` proof command (and tests) that exercises the canonical report/query layer, proves the presence/shape of the staged mention sections, and stays fail-open when Postgres is unavailable. Keep the proof aligned with S01’s `prompt_section_events` pattern instead of inventing a slice-local metric source. Executors should load `write-docs` only if runbook/help text needs an update, plus `verify-before-complete` before completion.
   - Files: `scripts/usage-report.ts`, `scripts/usage-report.test.ts`, `scripts/verify-m061-s01.ts`, `scripts/verify-m061-s01.test.ts`, `scripts/verify-m061-s02.ts`, `scripts/verify-m061-s02.test.ts`
   - Verify: bun test ./scripts/usage-report.test.ts ./scripts/verify-m061-s01.test.ts ./scripts/verify-m061-s02.test.ts

@@ -1,6 +1,5 @@
 import { parseArgs } from "node:util";
-import pino from "pino";
-import { createDbClient, type Sql } from "../src/db/client.ts";
+import type { Sql } from "../src/db/client.ts";
 
 type AccessState = "available" | "missing" | "unavailable";
 
@@ -470,7 +469,11 @@ function printUsage(): void {
   console.log(`Kodiai telemetry usage report\n\nUsage:\n  bun scripts/usage-report.ts [--repo <owner/repo>] [--since <Nd|YYYY-MM-DD|ISO>] [--json|--csv]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable\n  - Surfaces token totals, cost totals, cache effectiveness, task-path attribution, and prompt-section summaries`);
 }
 
-export async function runUsageReportCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<{ report: UsageReport; exitCode: number }> {
+function snapshotProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env };
+}
+
+export async function runUsageReportCli(args: string[], env: NodeJS.ProcessEnv = snapshotProcessEnv()): Promise<{ report: UsageReport; exitCode: number }> {
   const options = parseUsageReportArgs(args);
   if (options.help) {
     printUsage();
@@ -498,6 +501,10 @@ export async function runUsageReportCli(args: string[], env: NodeJS.ProcessEnv =
     return { report, exitCode: 0 };
   }
 
+  const [{ default: pino }, { createDbClient }] = await Promise.all([
+    import("pino"),
+    import("../src/db/client.ts"),
+  ]);
   const logger = pino({ level: "silent" });
   let client: ReturnType<typeof createDbClient> | null = null;
   try {

@@ -1,6 +1,4 @@
 import { parseArgs } from "node:util";
-import pino from "pino";
-import { createDbClient } from "../src/db/client.ts";
 import { queryUsageReport } from "./usage-report.ts";
 
 type AccessState = "available" | "missing" | "unavailable";
@@ -242,9 +240,13 @@ function printUsage(): void {
   console.log(`M061 S02 mention context diet proof\n\nUsage:\n  bun scripts/verify-m061-s02.ts [--repo <owner/repo>] [--since <Nd|YYYY-MM-DD|ISO>] [--json]`);
 }
 
+function snapshotProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env };
+}
+
 export async function runM061S02MentionContextProofCli(
   args: string[],
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = snapshotProcessEnv(),
 ): Promise<{ report: MentionContextDietProofReport; exitCode: number; json: boolean }> {
   const options = parseM061S02Args(args);
   if (options.help) {
@@ -275,6 +277,10 @@ export async function runM061S02MentionContextProofCli(
     };
   }
 
+  const [{ default: pino }, { createDbClient }] = await Promise.all([
+    import("pino"),
+    import("../src/db/client.ts"),
+  ]);
   const logger = pino({ level: "silent" });
   let client: ReturnType<typeof createDbClient> | null = null;
   try {

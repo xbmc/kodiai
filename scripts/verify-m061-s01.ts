@@ -1,7 +1,5 @@
 import { parseArgs } from "node:util";
 import { queryUsageReport, renderUsageReportText } from "./usage-report.ts";
-import pino from "pino";
-import { createDbClient } from "../src/db/client.ts";
 
 type AccessState = "available" | "missing" | "unavailable";
 
@@ -291,9 +289,13 @@ function printUsage(): void {
   console.log(`M061 S01 baseline telemetry proof\n\nUsage:\n  bun scripts/verify-m061-s01.ts [--repo <owner/repo>] [--since <Nd|YYYY-MM-DD|ISO>] [--json]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Verifies baseline task-path attribution for review.full, mention.response, and slack.response\n  - Verifies named prompt-section visibility for review + mention flows\n  - Fails open with explicit database access status when Postgres is unavailable`);
 }
 
+function snapshotProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env };
+}
+
 export async function runM061S01BaselineProofCli(
   args: string[],
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = snapshotProcessEnv(),
 ): Promise<{ report: BaselineProofReport; exitCode: number; json: boolean }> {
   const options = parseM061S01Args(args);
   if (options.help) {
@@ -324,6 +326,10 @@ export async function runM061S01BaselineProofCli(
     };
   }
 
+  const [{ default: pino }, { createDbClient }] = await Promise.all([
+    import("pino"),
+    import("../src/db/client.ts"),
+  ]);
   const logger = pino({ level: "silent" });
   let client: ReturnType<typeof createDbClient> | null = null;
   try {
