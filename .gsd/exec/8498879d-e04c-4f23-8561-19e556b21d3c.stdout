@@ -1,0 +1,110 @@
+.gsd/KNOWLEDGE.md => publishResolution=approval | approval-bridge
+.gsd/activity/2994-execute-task-M050-S02-T03.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890\\\ | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/2995-complete-slice-M050-S02.jsonl => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-86:action-opened:delivery-c0010770-39db-11f1-9fbe-dccb5d333798:head-eac00160633cc405960a45d179f64325ac524724 | publishResolution=approval | Review phase timing summary | approval-bridge
+.gsd/activity/2996-validate-milestone-M050.jsonl => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-86:action-opened:delivery-c0010770-39db-11f1-9fbe-dccb5d333798:head-eac00160633cc405960a45d179f64325ac524724
+.gsd/activity/2997-complete-milestone-M050.jsonl => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-86:action-opened:delivery-c0010770-39db-11f1-9fbe-dccb5d333798:head-eac00160633cc405960a45d179f64325ac524724 | Review phase timing summary
+.gsd/activity/2998-complete-milestone-M050.jsonl => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-86:action-opened:delivery-c0010770-39db-11f1-9fbe-dccb5d333798:head-eac00160633cc405960a45d179f64325ac524724 | publishResolution=approval | approval-bridge
+.gsd/activity/2999-execute-task-M051-S01-T01.jsonl => kodiai-review-output:v1:bad\ | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3000-execute-task-M051-S01-T02.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3001-execute-task-M051-S01-T03.jsonl => kodiai-review-output:v1:bad\ | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3002-complete-slice-M051-S01.jsonl => kodiai-review-output:v1:\ | publishResolution=approval | Review phase timing summary | approval-bridge
+.gsd/activity/3003-execute-task-M051-S02-T01.jsonl => kodiai-review-output:v1:bad\
+.gsd/activity/3004-execute-task-M051-S02-T02.jsonl => publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3005-execute-task-M051-S02-T03.jsonl => kodiai-review-output:v1:\ | approval-bridge
+.gsd/activity/3006-complete-slice-M051-S02.jsonl => publishResolution=approval | Review phase timing summary | approval-bridge
+.gsd/activity/3007-research-slice-M051-S03.jsonl => kodiai-review-output:v1:test\ | Review phase timing summary | published-output
+.gsd/activity/3008-plan-slice-M051-S03.jsonl => Review phase timing summary | published-output
+.gsd/activity/3012-complete-slice-M051-S03.jsonl => Review phase timing summary
+.gsd/activity/3013-validate-milestone-M051.jsonl => approval-bridge
+.gsd/activity/3014-complete-milestone-M051.jsonl => publishResolution=approval | Review phase timing summary | approval-bridge
+.gsd/activity/3015-research-slice-M053-S01.jsonl => approval-bridge
+.gsd/activity/3017-validate-milestone-M002.jsonl => published-output
+.gsd/activity/3039-execute-task-M021-S04-T01.jsonl => approval-bridge
+.gsd/activity/3040-execute-task-M021-S04-T02.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3043-research-slice-M021-S05.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-123:head-abcdef1234\ | approval-bridge
+.gsd/activity/3045-execute-task-M021-S05-T01.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-123:head-abcdef1234\
+.gsd/activity/3060-complete-milestone-M053.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3061-research-slice-M054-S01.jsonl => Review phase timing summary | submitted-approval
+.gsd/activity/3065-complete-slice-M054-S01.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3066-research-slice-M054-parallel-research.jsonl => Review phase timing summary | approval-bridge
+.gsd/activity/3067-plan-slice-M054-S02.jsonl => approval-bridge
+.gsd/activity/3068-execute-task-M054-S02-T01.jsonl => approval-bridge
+.gsd/activity/3069-execute-task-M054-S02-T02.jsonl => approval-bridge
+.gsd/activity/3070-execute-task-M054-S02-T03.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3071-complete-slice-M054-S02.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3073-execute-task-M054-S03-T01.jsonl => approval-bridge
+.gsd/activity/3075-complete-slice-M054-S03.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3076-research-slice-M054-S04.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3084-research-slice-M055-S01.jsonl => approval-bridge
+.gsd/activity/3088-complete-slice-M055-S01.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3094-research-slice-M055-S03.jsonl => publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3095-plan-slice-M055-S03.jsonl => publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3097-execute-task-M055-S03-T02.jsonl => publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3099-complete-slice-M055-S03.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3101-complete-milestone-M055.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3106-complete-slice-M056-S01.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3118-complete-milestone-M056.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3119-research-slice-M057-parallel-research.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-123:head-abcdef1234\ | approval-bridge
+.gsd/activity/3124-complete-slice-M057-S01.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3129-complete-slice-M057-S02.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3135-complete-slice-M057-S03.jsonl => approval-bridge
+.gsd/activity/3141-complete-slice-M057-S04.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3143-complete-milestone-M057.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3148-complete-slice-M058-S01.jsonl => kodiai-review-output:v1:test\ | publishResolution=approval | approval-bridge
+.gsd/activity/3149-complete-slice-M058-S01.jsonl => publishResolution=approval | approval-bridge
+.gsd/activity/3188-research-slice-M061-S01.jsonl => publishResolution=approval | published-output
+.gsd/activity/3192-execute-task-M061-S01-T03.jsonl => approval-bridge
+.gsd/activity/3224-research-slice-M062-S01.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-123:head-abcdef1234\ | published-output
+.gsd/activity/3238-research-slice-M062-S03.jsonl => kodiai-review-output:v1:test\ | approval-bridge
+.gsd/activity/3243-complete-slice-M062-S03.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-timeout-checkpoint:head-abc123\
+.gsd/activity/3249-plan-slice-M063-S01.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-123:head-abcdef1234\ | submitted-approval
+.gsd/activity/3273-plan-slice-M064-S01.jsonl => kodiai-review-output:v1:test\
+.gsd/activity/3294-complete-milestone-M064.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890\
+.gsd/activity/3295-research-milestone-M065.jsonl => kodiai-review-output:v1:test\ | publishResolution=approval | Review phase timing summary | submitted-approval
+.gsd/activity/3302-research-slice-M065-S02.jsonl => kodiai-review-output:v1:test\ | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3303-plan-slice-M065-S02.jsonl => Review phase timing summary | approval-bridge
+.gsd/activity/3304-execute-task-M065-S02-T01.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-404:head-abcdef1234567890\ | Review phase timing summary | approval-bridge
+.gsd/activity/3305-execute-task-M065-S02-T02.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\ | Review phase timing summary | approval-bridge
+.gsd/activity/3306-execute-task-M065-S02-T03.jsonl => kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890\ | Review phase timing summary
+.gsd/activity/3307-complete-slice-M065-S02.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 | Review phase timing summary
+.gsd/activity/3308-reassess-roadmap-M065-S02.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101
+.gsd/activity/3309-research-slice-M065-S03.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3310-plan-slice-M065-S03.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3311-execute-task-M065-S03-T01.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\
+.gsd/activity/3312-execute-task-M065-S03-T02.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\ | publishResolution=executor | Review phase timing summary | published-output
+.gsd/activity/3313-execute-task-M065-S03-T03.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\ | Review phase timing summary
+.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61.
+.gsd/milestones/M043/slices/S05/tasks/T03-SUMMARY.md => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61|DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai
+.gsd/milestones/M051/slices/S03/S03-RESEARCH.md => Review phase timing summary
+.gsd/milestones/M065/slices/S02/S02-SUMMARY.md => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101
+.gsd/milestones/M065/slices/S02/tasks/T02-SUMMARY.md => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101
+.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | Review phase timing summary | approval-bridge
+.gsd/worktrees/pr-trim-m051m060/.gsd/KNOWLEDGE.md => publishResolution=approval | approval-bridge
+.gsd/worktrees/pr-trim-m051m060/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.gsd/worktrees/pr-trim-m051m060/.gsd/milestones/M051/slices/S03/S03-RESEARCH.md => Review phase timing summary
+.gsd/worktrees/pr-trim-m051m060/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | Review phase timing summary | approval-bridge
+.worktrees/deploy-pr90/.gsd/KNOWLEDGE.md => publishResolution=approval | approval-bridge
+.worktrees/deploy-pr90/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/deploy-pr90/.gsd/milestones/M051/slices/S03/S03-RESEARCH.md => Review phase timing summary
+.worktrees/deploy-pr90/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | Review phase timing summary | approval-bridge
+.worktrees/fix-review-failure-fallback/.gsd/KNOWLEDGE.md => publishResolution=approval | approval-bridge
+.worktrees/fix-review-failure-fallback/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/fix-review-failure-fallback/.gsd/milestones/M051/slices/S03/S03-RESEARCH.md => Review phase timing summary
+.worktrees/fix-review-failure-fallback/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | Review phase timing summary | approval-bridge
+.worktrees/hotfix-explicit-review-escape-hatch/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/hotfix-explicit-review-escape-hatch/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | approval-bridge
+.worktrees/m050-timeout-hardening/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/m050-timeout-hardening/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | approval-bridge
+.worktrees/m052-slack-webhook-relay/.gsd/KNOWLEDGE.md => publishResolution=approval | approval-bridge
+.worktrees/m052-slack-webhook-relay/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/m052-slack-webhook-relay/.gsd/milestones/M051/slices/S03/S03-RESEARCH.md => Review phase timing summary
+.worktrees/m052-slack-webhook-relay/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | Review phase timing summary | approval-bridge
+.worktrees/pr-explicit-review-escape-hatch/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/pr-explicit-review-escape-hatch/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | approval-bridge
+.worktrees/pr82-conflicts/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/pr82-conflicts/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | approval-bridge
+.worktrees/release-v0.30/.gsd/KNOWLEDGE.md => publishResolution=approval | approval-bridge
+.worktrees/release-v0.30/.gsd/milestones/M002/slices/S08/S08-SUMMARY.md => published-output
+.worktrees/release-v0.30/.gsd/milestones/M051/slices/S03/S03-RESEARCH.md => Review phase timing summary
+.worktrees/release-v0.30/.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61 | publishResolution=existing | Review phase timing summary | approval-bridge

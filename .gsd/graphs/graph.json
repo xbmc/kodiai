@@ -9,8 +9,8 @@
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:planning",
-      "label": "Phase: planning",
+      "id": "concept:phase:validating-milestone",
+      "label": "Phase: validating-milestone",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4836,6 +4836,31 @@
     {
       "id": "task:M065:S02:T03",
       "label": "T03: Wire the S02 report into `verify:m065` and keep S03 pending",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M065:S03",
+      "label": "S03: Fresh regression guard and operator rerun packaging",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M065/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M065:S03:T01",
+      "label": "T01: Pin the M065 S03 verifier contract around fresh regression proof and rerun packaging",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M065:S03:T02",
+      "label": "T02: Implement fresh-regression wrapper logic and machine-checkable M065 rollout runbook packaging",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M065:S03:T03",
+      "label": "T03: Compose S03 into the top-level M065 verifier and keep failure drill-down mechanical",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -9752,6 +9777,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M065",
+      "to": "slice:M065:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M065:S03",
+      "to": "task:M065:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M065:S03",
+      "to": "task:M065:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M065:S03",
+      "to": "task:M065:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M062",
       "to": "decision:M062:1",
       "type": "relates_to",
@@ -10208,5 +10257,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-04-24T09:08:57.847Z"
+  "builtAt": "2026-04-24T09:48:49.509Z"
 }

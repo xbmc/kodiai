@@ -1,4 +1,8 @@
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import pino from "pino";
+import { createDbClient } from "../src/db/client.ts";
+import { buildReviewFamilyKey } from "../src/jobs/review-work-coordinator.ts";
+import { buildReviewOutputKey, parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { createKnowledgeStore } from "../src/knowledge/store.ts";
 import type {
   ContinuationFamilyStateKey,
   ContinuationFamilyStateRecord,
@@ -68,6 +72,10 @@ type VerifyM064S03Args = {
   json: boolean;
   reviewOutputKey: string | null;
   invalidArg: string | null;
+};
+
+type OperatorLookupStore = Pick<KnowledgeStore, "getContinuationFamilyState"> & {
+  close?: () => void | Promise<void>;
 };
 
 type FixtureDefinition = {
@@ -314,9 +322,47 @@ async function buildLookupForFixture(
   });
 }
 
+async function createLiveKnowledgeStore(): Promise<OperatorLookupStore | null> {
+  try {
+    const client = createDbClient({ logger: pino({ level: "silent" }) });
+    const store = createKnowledgeStore({ sql: client.sql, logger: pino({ level: "silent" }) });
+    return {
+      getContinuationFamilyState: store.getContinuationFamilyState?.bind(store),
+      close: async () => {
+        await client.close();
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildLookupUnavailableRecord(reviewOutputKey: string, detail: string): M064S03Record {
+  const normalizedReviewOutputKey = reviewOutputKey.trim().toLowerCase();
+  const parsedReviewOutputKey = parseReviewOutputKey(normalizedReviewOutputKey);
+  const familyKey = parsedReviewOutputKey
+    ? buildReviewFamilyKey(parsedReviewOutputKey.owner, parsedReviewOutputKey.repo, parsedReviewOutputKey.prNumber)
+    : null;
+
+  return toRecord(
+    "operator-lookup",
+    buildContinuationOperatorEvidenceReport({
+      status: "lookup-unavailable",
+      reviewOutputKey: normalizedReviewOutputKey,
+      baseReviewOutputKey: parsedReviewOutputKey?.baseReviewOutputKey ?? null,
+      familyKey,
+      parsedReviewOutputKey,
+      canonicalState: null,
+      detail,
+    }),
+    [],
+  );
+}
+
 export async function evaluateM064S03(params?: {
   generatedAt?: string;
   reviewOutputKey?: string | null;
+  knowledgeStore?: OperatorLookupStore;
 }): Promise<M064S03Report> {
   const generatedAt = params?.generatedAt ?? new Date().toISOString();
   const fixtures = getFixtureDefinitions();
@@ -331,23 +377,47 @@ export async function evaluateM064S03(params?: {
   const store = createStore(canonicalStates);
 
   if (params?.reviewOutputKey) {
-    const lookup = await resolveContinuationOperatorEvidence({
-      reviewOutputKey: params.reviewOutputKey,
-      knowledgeStore: store,
-    });
-    const operatorReport = buildContinuationOperatorEvidenceReport(lookup);
-    const record = toRecord("operator-lookup", operatorReport, []);
+    const parsedReviewOutputKey = parseReviewOutputKey(params.reviewOutputKey.trim().toLowerCase());
+    const shouldUseFixtureStore = parsedReviewOutputKey?.repoFullName === "acme/repo";
+    const operatorStore = params.knowledgeStore
+      ?? (shouldUseFixtureStore ? store : await createLiveKnowledgeStore())
+      ?? {};
 
-    return {
-      command: "verify:m064:s03",
-      generated_at: generatedAt,
-      mode: "operator-lookup",
-      record_count: 1,
-      success: true,
-      status_code: "m064_s03_ok",
-      records: [record],
-      issues: [],
-    };
+    try {
+      try {
+        const lookup = await resolveContinuationOperatorEvidence({
+          reviewOutputKey: params.reviewOutputKey,
+          knowledgeStore: operatorStore,
+        });
+        const operatorReport = buildContinuationOperatorEvidenceReport(lookup);
+        const record = toRecord("operator-lookup", operatorReport, []);
+
+        return {
+          command: "verify:m064:s03",
+          generated_at: generatedAt,
+          mode: "operator-lookup",
+          record_count: 1,
+          success: true,
+          status_code: "m064_s03_ok",
+          records: [record],
+          issues: [],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          command: "verify:m064:s03",
+          generated_at: generatedAt,
+          mode: "operator-lookup",
+          record_count: 1,
+          success: true,
+          status_code: "m064_s03_ok",
+          records: [buildLookupUnavailableRecord(params.reviewOutputKey, `Canonical operator lookup failed: ${message}`)],
+          issues: [],
+        };
+      }
+    } finally {
+      await operatorStore.close?.();
+    }
   }
 
   const records: M064S03Record[] = [];

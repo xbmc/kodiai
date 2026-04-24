@@ -1,0 +1,7 @@
+count 6
+scripts/verify-m065.ts => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101
+.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61
+.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61.
+.gsd/state-manifest.json => kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61|DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai
+.gsd/activity/3311-execute-task-M065-S03-T01.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\
+.gsd/activity/3307-complete-slice-M065-S02.jsonl => kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101\\\

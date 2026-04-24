@@ -1,0 +1,18 @@
+{
+  "id": "8498879d-e04c-4f23-8561-19e556b21d3c",
+  "runtime": "python",
+  "purpose": "search repo logs for potential M065 live proof artifacts",
+  "script_chars": 793,
+  "started_at": "2026-04-24T09:40:37.755Z",
+  "finished_at": "2026-04-24T09:40:39.934Z",
+  "exit_code": 0,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 2179,
+  "stdout_bytes": 15783,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "/home/keith/src/kodiai/.gsd/exec/8498879d-e04c-4f23-8561-19e556b21d3c.stdout",
+  "stderr_path": "/home/keith/src/kodiai/.gsd/exec/8498879d-e04c-4f23-8561-19e556b21d3c.stderr"
+}

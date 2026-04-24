@@ -1,0 +1,18 @@
+{
+  "id": "e3e00d5c-a09b-4030-b8a8-3f372c9c0e5a",
+  "runtime": "python",
+  "purpose": "find candidate live reviewOutputKeys for M065",
+  "script_chars": 809,
+  "started_at": "2026-04-24T09:40:14.507Z",
+  "finished_at": "2026-04-24T09:40:22.865Z",
+  "exit_code": 0,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 8358,
+  "stdout_bytes": 1131,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "/home/keith/src/kodiai/.gsd/exec/e3e00d5c-a09b-4030-b8a8-3f372c9c0e5a.stdout",
+  "stderr_path": "/home/keith/src/kodiai/.gsd/exec/e3e00d5c-a09b-4030-b8a8-3f372c9c0e5a.stderr"
+}

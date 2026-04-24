@@ -165,6 +165,46 @@ describe("verify-m064-s03", () => {
     });
   });
 
+  test("evaluate operator lookup mode honors an injected live knowledge store for non-fixture review keys", async () => {
+    const { evaluateM064S03 } = await loadModule();
+    const reviewOutputKey = "kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61";
+
+    const report = await evaluateM064S03({
+      generatedAt: "2026-04-24T08:15:00.000Z",
+      reviewOutputKey,
+      knowledgeStore: {
+        getContinuationFamilyState: async () => ({
+          familyKey: "xbmc/kodiai#80",
+          baseReviewOutputKey: reviewOutputKey,
+          authoritativeAttemptId: "review-work-9",
+          authoritativeAttemptOrdinal: 9,
+          authoritativeOutcome: "merged",
+          finalStopReason: "merged-continuation-results",
+          projectionStatus: "canonical",
+          supersededByAttemptId: null,
+        }),
+      },
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.mode).toBe("operator-lookup");
+    expect(report.records[0]).toMatchObject({
+      recordId: "operator-lookup",
+      statusCode: "canonical",
+      familyKey: "xbmc/kodiai#80",
+      repoFullName: "xbmc/kodiai",
+      prNumber: 80,
+      action: "mention-review",
+      deliveryId: "66b4ee50-32bc-11f1-9eeb-89b961f025e8",
+      effectiveDeliveryId: "66b4ee50-32bc-11f1-9eeb-89b961f025e8",
+      authoritativeAttemptId: "review-work-9",
+      authoritativeAttemptOrdinal: 9,
+      authoritativeOutcome: "merged",
+      finalStopReason: "merged-continuation-results",
+      projectionStatus: "canonical",
+    });
+  });
+
   test("main rejects malformed operator lookup args with a named invalid-arg status", async () => {
     const { main } = await loadModule();
     const stdoutChunks: string[] = [];
