@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
   M061_S05_CHECK_IDS,
@@ -245,6 +246,19 @@ function buildUsageResult(overrides: Partial<UsageReportQueryResult> = {}): Usag
 }
 
 describe("verify m061 s05 integrated token reduction proof", () => {
+  test("package.json wires the complete M061 proof surface", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.["verify:m061:s03"]).toBe("bun scripts/verify-m061-s03.ts");
+    expect(packageJson.scripts?.["verify:m061:s04"]).toBe("bun scripts/verify-m061-s04.ts");
+    expect(packageJson.scripts?.["verify:m061:s05"]).toBe("bun scripts/verify-m061-s05.ts");
+    expect(packageJson.scripts?.["verify:m061:regression"]).toBe("bun scripts/phase-m061-token-regression-gate.ts");
+  });
+
   test("parses supported cli args", () => {
     expect(M061_S05_CHECK_IDS).toEqual([
       "M061-S05-PREFLIGHT",

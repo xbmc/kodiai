@@ -114,7 +114,7 @@ Add a separate regression gate CLI that runs the exact suite set protecting smal
   - Files: `scripts/phase80-slack-regression-gate.ts`, `scripts/phase-m061-token-regression-gate.ts`, `scripts/phase-m061-token-regression-gate.test.ts`, `src/execution/mention-context.test.ts`, `src/execution/mention-prompt.test.ts`, `src/handlers/mention.test.ts`, `src/execution/review-prompt.test.ts`, `src/handlers/review.test.ts`, `src/knowledge/retrieval.test.ts`, `src/knowledge/retrieval.e2e.test.ts`, `src/knowledge/multi-query-retrieval.test.ts`, `scripts/usage-report.test.ts`, `scripts/verify-m061-s01.test.ts`, `scripts/verify-m061-s02.test.ts`, `scripts/verify-m061-s03.test.ts`, `scripts/verify-m061-s04.test.ts`
   - Verify: bun test scripts/phase-m061-token-regression-gate.test.ts && bun scripts/phase-m061-token-regression-gate.ts
 
-- [ ] **T03: Expose the complete M061 operator proof surface and prove it end-to-end** `est:45m`
+- [x] **T03: Expose the complete M061 operator proof surface and prove it end-to-end** `est:45m`
   ## Description
 Wire the new and existing proof surfaces into `package.json`, then close the slice with the exact smoke/regression commands the roadmap promises. This task exists so operators can discover and rerun S03/S04/S05 proof entrypoints and the final regression gate without knowing script filenames.
 

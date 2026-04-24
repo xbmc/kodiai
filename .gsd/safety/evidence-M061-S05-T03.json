@@ -1,0 +1,36 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_glUbs8dZ4f34CPQueL6M7HUm|fc_07ceedb9636d819e0169eae422db948191b32b7adc26f4c38e",
+    "command": "rg -n \"verify:m061:s0[345]|verify:m061:regression|package\\.json|scripts\\s*:\\s*\\{\" scripts src -g '*.test.ts'",
+    "exitCode": 0,
+    "outputSnippet": "scripts/verify-m048-s02.test.ts:400:  test(\"package.json wires verify:m048:s02 to the compare script\", async () => {\nscripts/verify-m048-s02.test.ts:401:    const packageJson = await Bun.file(new URL(\"../package.json\", import.meta.url)).json() as {\nscripts/verify-m047-s02.test.ts:336:      readFileSync(new URL(\"../package.json\", import.meta.url), \"utf8\"),\nscripts/verify-m059-s02.test.ts:23:    scripts: {\nscripts/verify-m059-s02.test.ts:38:- Use \\`package:<name>\\` for package-script entrypoints f",
+    "timestamp": 1777001507240
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_rM2VeybQz0EnOM1u0uE36slM|fc_07ceedb9636d819e0169eae4312bf08191a7d5e6c7d0e7418f",
+    "path": "package.json",
+    "timestamp": 1777001524563
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_7byzvNVMVNZF5G3NFvfAOzl4|fc_07ceedb9636d819e0169eae43b22048191980086815f223a68",
+    "path": "scripts/verify-m061-s05.test.ts",
+    "timestamp": 1777001532764
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_2hFJt0WYiJmHRtgvtGycvE39|fc_07ceedb9636d819e0169eae43ef7348191b6be710c9cd2b563",
+    "path": "scripts/verify-m061-s05.test.ts",
+    "timestamp": 1777001540412
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_RQaMMAiGeRo0Wz6ZFpec4A7p|fc_07ceedb9636d819e0169eae44a6ae48191929a14abf0b8548c",
+    "command": "python3 - <<'PY'\nimport subprocess, time, shlex\ncommands = [\n  \"bun test scripts/usage-report.test.ts scripts/verify-m061-s01.test.ts scripts/verify-m061-s02.test.ts scripts/verify-m061-s03.test.ts scripts/verify-m061-s04.test.ts scripts/verify-m061-s05.test.ts scripts/phase-m061-token-regression-gate.test.ts\",\n  \"bun test src/execution/mention-context.test.ts src/execution/mention-prompt.test.ts src/handlers/mention.test.ts src/execution/review-prompt.test.ts src/handlers/review.test.ts src/knowledge/retrieval.test.ts src/knowledge/retrieval.e2e.test.ts src/knowledge/multi-query-retrieval.test.ts\",\n  \"bun scripts/verify-m061-s05.ts --json\",\n  \"bun scripts/phase-m061-token-regression-gate.ts\",\n  \"bun run lint\",\n  \"bun run verify:m061:s03 --json\",\n  \"bun run verify:m061:s04 --json\",\n  \"bun run verify:m061:s05 --json\",\n  \"bun run verify:m061:regression\",\n]\nfor cmd in commands:\n    print(f\"\\n>>> {cmd}\")\n    start = time.time()\n    proc = subprocess.run(cmd, shell=True, text=True, capture_output=True)\n    dur = int((time.time()-start)*1000)\n    print(proc.stdout, end=\"\")\n    if proc.stderr:\n        print(proc.stderr, end=\"\", file=__import__('sys').stderr)\n    print(f\"<<< exit={proc.returncode} duration_ms={dur}\")\n    if proc.returncode != 0:\n        raise SystemExit(proc.returncode)\nPY",
+    "exitCode": 0,
+    "outputSnippet": "(pass) draft PR review prompt > isDraft true with deltaContext does not include draft badge (delta takes precedence)\n(pass) formatReviewPrecedents > empty matches produces no section\n(pass) formatReviewPrecedents > single match formats correctly with PR number, author, date, file path\n(pass) formatReviewPrecedents > multiple matches sorted by distance (best first)\n(pass) formatReviewPrecedents > long chunk text truncated to 200 chars at word boundary\n(pass) formatReviewPrecedents > matches witho",
+    "timestamp": 1777001552214
+  }
+]

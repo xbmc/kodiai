@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M061/S05/T02",
+  "timestamp": 1777001473033,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test scripts/phase-m061-token-regression-gate.test.ts",
+      "exitCode": 0,
+      "durationMs": 109,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun scripts/phase-m061-token-regression-gate.ts",
+      "exitCode": 0,
+      "durationMs": 11632,
+      "verdict": "pass"
+    }
+  ]
+}

@@ -381,3 +381,5 @@
 {"id":"7cbe69c9-ddcb-438d-a7a4-88d35c726401","ts":"2026-04-24T03:27:07.587Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
 {"id":"52863d3c-7822-4242-9239-de8eb39b8f69","ts":"2026-04-24T03:27:07.735Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"fbd8296b-ef6d-4035-ac60-bea66bc9917f","ts":"2026-04-24T03:27:07.748Z","severity":"warning","message":"[safety] file-change: package.json — Modified but not in task plan's expected output","source":"notify","read":false}
+{"id":"301714ef-5e61-44f1-bc9c-c42ea22cbb05","ts":"2026-04-24T03:31:12.980Z","severity":"info","message":"Committed: feat: Added the M061 token regression gate CLI with pinned mention, rev…","source":"notify","read":false}
+{"id":"215f1e77-aa79-45ae-bc8f-54d121b19a08","ts":"2026-04-24T03:31:24.784Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
