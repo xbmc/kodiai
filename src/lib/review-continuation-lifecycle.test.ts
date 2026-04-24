@@ -105,6 +105,42 @@ describe("planReviewContinuation", () => {
     });
   });
 
+  test("uses the continuation timeout estimate for the scheduled retry budget", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint(),
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+        ["src/d.ts", 70],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      estimateContinuationTimeout: ({ files }) => ({
+        riskLevel: "high",
+        dynamicTimeoutSeconds: 45,
+        reasoning: `${files.length} files adjusted`,
+        shouldReduceScope: true,
+      }),
+    });
+
+    expect(decision).toEqual(
+      expect.objectContaining({
+        decision: "schedule-continuation",
+        timeoutSeconds: 45,
+        timeoutEstimate: expect.objectContaining({
+          dynamicTimeoutSeconds: 45,
+        }),
+      }),
+    );
+  });
+
   test("suppresses continuation planning for zero-evidence failures", async () => {
     const mod = await loadLifecycleModule();
     expect(mod).not.toBeNull();
@@ -424,6 +460,36 @@ describe("settleReviewContinuation", () => {
       continuationReviewOutputKey: "review-123-retry-1",
       cleanupReviewOutputKeys: ["review-123", "review-123-retry-1"],
     });
+  });
+
+  test("preserves higher base finding counts when continuation checkpoint is attempt-scoped", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const settlement = mod!.settleReviewContinuation({
+      reviewOutputKey: "review-123",
+      continuationReviewOutputKey: "review-123-retry-1",
+      baseCheckpoint: makeCheckpoint({
+        findingCount: 3,
+      }),
+      continuationCheckpoint: makeCheckpoint({
+        reviewOutputKey: "review-123-retry-1",
+        filesReviewed: ["src/c.ts"],
+        findingCount: 1,
+        summaryDraft: "Continuation draft",
+      }),
+      continuationPublished: false,
+    });
+
+    expect(settlement).toEqual(
+      expect.objectContaining({
+        decision: "merge-continuation",
+        mergedCheckpoint: expect.objectContaining({
+          findingCount: 3,
+          filesReviewed: ["src/a.ts", "src/b.ts", "src/c.ts"],
+        }),
+      }),
+    );
   });
 
   test("treats published continuation output as merge-ready even without checkpoint findings", async () => {
