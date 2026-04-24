@@ -1,5 +1,8 @@
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
-import { buildReviewFirstPassPublicSummary } from "./review-utils.ts";
+import {
+  buildReviewFirstPassPublicSummary,
+  type TimeoutBudgetDetails,
+} from "./review-utils.ts";
 import { buildReviewOutputMarker } from "../handlers/review-idempotency.ts";
 
 export type ContinuationRevisionCounts = {
@@ -13,6 +16,7 @@ export type PartialReviewParams = {
   firstPass: ReviewFirstPassPayload;
   reviewOutputKey?: string;
   timedOutAfterSeconds?: number;
+  timeoutBudget?: TimeoutBudgetDetails | null;
   isRetrySkipped?: boolean;
   retrySkipReason?: string;
   isRetryResult?: boolean;
@@ -40,6 +44,7 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
     summaryDraft,
     firstPass,
     timedOutAfterSeconds,
+    timeoutBudget,
     isRetrySkipped,
     retrySkipReason,
     isRetryResult,
@@ -52,7 +57,7 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
 
   const lines: string[] = [];
 
-  lines.push(`> **Bounded first-pass review** -- ${buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds)}.`);
+  lines.push(`> **Bounded first-pass review** -- ${buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds, timeoutBudget)}.`);
 
   if (isRetryResult) {
     const retryReviewed = retryFilesReviewed ?? 0;

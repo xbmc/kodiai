@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
+import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources } from "./review.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
@@ -9032,6 +9032,7 @@ describe("createReviewHandler timeout resilience", () => {
     const partial = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
     expect(partial).toBeDefined();
     expect(partial!).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
+    expect(partial!).toContain("follow-up review is pending (timeout budget: remote runtime 355s + infra overhead 180s = total 535s).");
     expect(partial!).toContain("Found two issues before timeout.");
     expect(partial!).toContain("Scheduling a reduced-scope retry.");
     expect(partial!).toContain(buildReviewOutputMarker(buildReviewOutputKey({
@@ -9046,7 +9047,9 @@ describe("createReviewHandler timeout resilience", () => {
     expect(partial!).toContain("<summary>Review Details</summary>");
     expect(partial!).toContain("- Analyzed progress before timeout: 1/3 changed files");
     expect(partial!).toContain("- Findings captured before timeout: 2 total");
-    expect(partial!).toContain("- Retry state: scheduled reduced-scope retry");
+    expect(partial!).not.toContain("29617560m");
+    expect(partial!).toContain("- Phase timings:");
+    expect(partial!).toContain("queue wait: 250ms");
     expect(partial!).not.toContain("- Files reviewed: 3");
 
     const reviewDetails = Array.from(issueComments.values()).find((body) =>
@@ -14574,7 +14577,7 @@ describe("createReviewHandler failure fallback publication", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("publishes bounded first-pass Review Details for max-turns when checkpoint evidence exists", async () => {
+  test("merges bounded first-pass Review Details into the max-turns fallback comment when checkpoint evidence exists", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
@@ -14684,17 +14687,54 @@ describe("createReviewHandler failure fallback publication", () => {
     );
 
     const boundedComment = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
-    const reviewDetails = Array.from(issueComments.values()).find((body) => body.includes("<summary>Review Details</summary>"));
+    const standaloneReviewDetails = Array.from(issueComments.values()).find((body) =>
+      body.includes("<summary>Review Details</summary>") && body !== boundedComment
+    );
 
     expect(boundedComment).toBeDefined();
     expect(boundedComment).toContain("stopped at max-turns after covering 1 of 3 files from checkpoint evidence");
-    expect(reviewDetails).toBeDefined();
-    expect(reviewDetails).toContain("- Bounded first-pass: max-turns via checkpoint evidence");
-    expect(reviewDetails).toContain("- Covered scope: 1/3 changed files");
-    expect(reviewDetails).toContain("- Remaining scope: 2/3 changed files");
-    expect(reviewDetails).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(boundedComment).toContain("<summary>Review Details</summary>");
+    expect(boundedComment).toContain("- Bounded first-pass: max-turns via checkpoint evidence");
+    expect(boundedComment).toContain("- Covered scope: 1/3 changed files");
+    expect(boundedComment).toContain("- Remaining scope: 2/3 changed files");
+    expect(boundedComment).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(standaloneReviewDetails).toBeUndefined();
 
     await workspaceFixture.cleanup();
+  });
+
+  test("formats split timeout budget wording for plain timeout error comments", () => {
+    const detail = formatTimeoutErrorDetail({
+      totalTimeoutSeconds: 535,
+      complexityInfo: "Complexity score: 0.09 (files: 3, lines: 3, lang risk: 40%). Risk level: low.",
+      hasReviewOutput: false,
+      timeoutEstimate: {
+        remoteRuntimeBudgetSeconds: 355,
+        infraOverheadBudgetSeconds: 180,
+        totalTimeoutSeconds: 535,
+      },
+    });
+
+    expect(detail).toContain("Timed out with no review output.");
+    expect(detail).toContain("Timeout budget: remote runtime 355s + infra overhead 180s = total 535s.");
+    expect(detail).toContain("PR complexity: Complexity score: 0.09");
+  });
+
+  test("formats split timeout budget wording for partial-timeout error comments", () => {
+    const detail = formatTimeoutErrorDetail({
+      totalTimeoutSeconds: 535,
+      complexityInfo: "Complexity score: 0.09 (files: 3, lines: 3, lang risk: 40%). Risk level: low.",
+      hasReviewOutput: true,
+      timeoutEstimate: {
+        remoteRuntimeBudgetSeconds: 355,
+        infraOverheadBudgetSeconds: 180,
+        totalTimeoutSeconds: 535,
+      },
+    });
+
+    expect(detail).toContain("Timed out after partial review output.");
+    expect(detail).toContain("Timeout budget: remote runtime 355s + infra overhead 180s = total 535s.");
+    expect(detail).toContain("PR complexity: Complexity score: 0.09");
   });
 
   test("posts a helpful PR error comment when review execution fails without publishing output", async () => {
