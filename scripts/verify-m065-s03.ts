@@ -12,9 +12,12 @@ const REPO_ROOT = path.resolve(import.meta.dir, "..");
 const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m065-s03.ts";
 const EXPECTED_RERUN_COMMANDS = [
   "bun run verify:m065 -- --json",
+  "bun run verify:m065:s02 -- --json",
   "bun run verify:m065:s03 -- --json",
   "bun run verify:m061:regression",
 ] as const;
+const SUPPORTED_MANUAL_RERUN_PHRASE = "explicit PR-scoped `@kodiai review`";
+const UNSUPPORTED_REVIEWER_REQUEST_PATTERN = /\breviewer request\b/i;
 
 export const M065_S03_CHECK_IDS = [
   "M065-S03-FRESH-REGRESSION-EVIDENCE",
@@ -102,6 +105,12 @@ type BuildOptions = EvaluateOptions & {
   stderr?: StdWriter;
 };
 
+type CommandReference = {
+  command: string;
+  target: string;
+  resolution: "package-script" | "typescript-file" | "unresolved";
+};
+
 export function parseVerifyM065S03Args(args: readonly string[]): { help: boolean; json: boolean } {
   for (const arg of args) {
     if (arg === "--json" || arg === "--help" || arg === "-h") {
@@ -143,7 +152,7 @@ export async function evaluateM065S03(options: EvaluateOptions = {}): Promise<M0
   const checks: M065S03Check[] = [
     buildFreshRegressionCheck(regressionGate),
     buildRunbookPresenceCheck(await fileExists(RUNBOOK_PATH)),
-    buildRerunCommandResolutionCheck(runbookText, packageJsonText),
+    await buildRerunCommandResolutionCheck(runbookText, packageJsonText, fileExists),
     buildPackageWiringCheck(packageJsonText),
   ];
 
@@ -154,9 +163,9 @@ export async function evaluateM065S03(options: EvaluateOptions = {}): Promise<M0
     : firstFailed
       ? "m065_s03_verifier_failed"
       : "m065_s03_ok";
-  const success = !firstFailed;
+  const success = firstFailed == null;
   const failing_check_id = firstFailed?.id ?? null;
-  const issues = firstFailed ? [firstFailed.detail ?? `${firstFailed.id} failed.`] : [];
+  const issues = checks.filter((check) => !check.passed && !check.skipped).map((check) => check.detail ?? `${check.id} failed.`);
 
   return {
     command: COMMAND_NAME,
@@ -176,21 +185,7 @@ export async function evaluateM065S03(options: EvaluateOptions = {}): Promise<M0
       report_key: "nested_reports.regression_gate",
       rollout_obligation_key: "rollout_obligation",
     },
-    rollout_obligation: regressionGate?.overallPassed
-      ? {
-          state: "satisfied",
-          source: "nested_reports.regression_gate",
-          detail: "Fresh non-large regression proof is satisfied by authoritative verify:m061:regression evidence.",
-          drill_down_command: "bun run verify:m061:regression",
-        }
-      : {
-          state: "failed",
-          source: regressionGate ? "nested_reports.regression_gate" : null,
-          detail: regressionGate == null
-            ? "Fresh non-large regression proof is malformed and cannot be trusted."
-            : "Fresh non-large regression proof is failing and requires rerun packaging.",
-          drill_down_command: "bun run verify:m065:s03 -- --json",
-        },
+    rollout_obligation: buildRolloutObligation(regressionGate),
     failing_check_id,
     issues,
   };
@@ -292,12 +287,13 @@ function buildFreshRegressionCheck(report: RegressionGateReport | null): M065S03
   }
 
   if (!report.overallPassed) {
+    const failedIds = report.checks.filter((check) => !check.passed).map((check) => check.id);
     return {
       id: "M065-S03-FRESH-REGRESSION-EVIDENCE",
       passed: false,
       skipped: false,
       status_code: "fresh_regression_failed",
-      detail: "verify:m061:regression reported one or more failing regression suites.",
+      detail: `verify:m061:regression reported one or more failing regression suites: ${failedIds.join(", ")}.`,
       drill_down: {
         command: "bun run verify:m061:regression",
         report_key: "nested_reports.regression_gate",
@@ -346,15 +342,31 @@ function buildRunbookPresenceCheck(exists: boolean): M065S03Check {
       };
 }
 
-function buildRerunCommandResolutionCheck(runbookText: string, packageJsonText: string): M065S03Check {
+async function buildRerunCommandResolutionCheck(
+  runbookText: string,
+  packageJsonText: string,
+  fileExists: (filePath: string) => Promise<boolean>,
+): Promise<M065S03Check> {
   const packageJson = parsePackageJson(packageJsonText);
   const scripts = packageJson?.scripts ?? {};
-  const unresolved = EXPECTED_RERUN_COMMANDS.filter((command) => !runbookText.includes(command))
-    .concat(
-      extractCommands(runbookText)
-        .filter((command) => command.startsWith("bun run "))
-        .filter((command) => !isResolvableCommand(command, scripts)),
-    );
+  const unresolved: string[] = [];
+
+  for (const expectedCommand of EXPECTED_RERUN_COMMANDS) {
+    if (!runbookText.includes(expectedCommand)) {
+      unresolved.push(expectedCommand);
+    }
+  }
+
+  if (!runbookText.includes(SUPPORTED_MANUAL_RERUN_PHRASE) || UNSUPPORTED_REVIEWER_REQUEST_PATTERN.test(runbookText)) {
+    unresolved.push("unsupported reviewer-request wording");
+  }
+
+  const references = await collectCommandReferences(runbookText, scripts, fileExists);
+  for (const reference of references) {
+    if (reference.resolution === "unresolved") {
+      unresolved.push(reference.command);
+    }
+  }
 
   if (unresolved.length > 0) {
     const uniqueUnresolved = [...new Set(unresolved)];
@@ -442,6 +454,33 @@ function buildPackageWiringCheck(packageJsonText: string): M065S03Check {
   };
 }
 
+function buildRolloutObligation(report: RegressionGateReport | null): M065S03Report["rollout_obligation"] {
+  if (report?.overallPassed) {
+    return {
+      state: "satisfied",
+      source: "nested_reports.regression_gate",
+      detail: "Fresh non-large regression proof is satisfied by authoritative verify:m061:regression evidence.",
+      drill_down_command: "bun run verify:m061:regression",
+    };
+  }
+
+  if (report == null) {
+    return {
+      state: "failed",
+      source: null,
+      detail: "Fresh non-large regression proof is malformed and cannot be trusted.",
+      drill_down_command: "bun run verify:m065:s03 -- --json",
+    };
+  }
+
+  return {
+    state: "failed",
+    source: "nested_reports.regression_gate",
+    detail: "Fresh non-large regression proof is failing and requires rerun packaging.",
+    drill_down_command: "bun run verify:m065:s03 -- --json",
+  };
+}
+
 function parsePackageJson(packageJsonText: string): { scripts?: Record<string, string> } | null {
   if (packageJsonText.trim().length === 0) {
     return null;
@@ -454,30 +493,107 @@ function parsePackageJson(packageJsonText: string): { scripts?: Record<string, s
   }
 }
 
+async function collectCommandReferences(
+  markdown: string,
+  scripts: Record<string, string>,
+  fileExists: (filePath: string) => Promise<boolean>,
+): Promise<CommandReference[]> {
+  const references: CommandReference[] = [];
+  const seen = new Set<string>();
+
+  for (const command of extractCommands(markdown)) {
+    const target = extractResolvableTarget(command);
+    if (target == null) {
+      continue;
+    }
+
+    if (seen.has(command)) {
+      continue;
+    }
+    seen.add(command);
+
+    references.push({
+      command,
+      target,
+      resolution: await resolveCommandTarget(target, scripts, fileExists),
+    });
+  }
+
+  return references;
+}
+
 function extractCommands(markdown: string): string[] {
+  const matches = [
+    ...markdown.matchAll(/```(?:bash|sh)?\n([\s\S]*?)```/g),
+    ...markdown.matchAll(/`([^`\n]+)`/g),
+  ];
+
   const commands = new Set<string>();
-  for (const match of markdown.matchAll(/`([^`\n]+)`/g)) {
-    const candidate = match[1]?.trim();
-    if (candidate && candidate.startsWith("bun ")) {
-      commands.add(candidate);
+  for (const match of matches) {
+    const body = match[1]?.trim();
+    if (!body) continue;
+
+    for (const line of body.split("\n").map((entry) => entry.trim()).filter(Boolean)) {
+      if (line.startsWith("bun ")) {
+        commands.add(line);
+      }
     }
   }
+
   return [...commands];
 }
 
-function isResolvableCommand(command: string, scripts: Record<string, string>): boolean {
-  const scriptMatch = command.match(/^bun\s+run\s+([a-z0-9:-]+)(?:\s|$)/i);
-  if (scriptMatch?.[1]) {
-    return scripts[scriptMatch[1]] != null;
+function extractResolvableTarget(command: string): string | null {
+  let match = command.match(/^bun\s+run\s+([a-z0-9:-]+)(?:\s|$)/i);
+  if (match?.[1] && !match[1].includes("/") && !match[1].includes(".")) {
+    return match[1];
   }
-  return false;
+
+  match = command.match(/^bun\s+run\s+((?:src|scripts)\/[^\s]+\.ts)(?:\s|$)/i);
+  if (match?.[1]) {
+    return match[1];
+  }
+
+  match = command.match(/^bun\s+((?:src|scripts)\/[^\s]+\.ts)(?:\s|$)/i);
+  if (match?.[1]) {
+    return match[1];
+  }
+
+  return null;
+}
+
+async function resolveCommandTarget(
+  target: string,
+  scripts: Record<string, string>,
+  fileExists: (filePath: string) => Promise<boolean>,
+): Promise<CommandReference["resolution"]> {
+  if (!target.includes("/") && scripts[target] != null) {
+    return "package-script";
+  }
+
+  if (target.endsWith(".ts")) {
+    const absolutePath = path.resolve(REPO_ROOT, target);
+    if (await fileExists(absolutePath)) {
+      return "typescript-file";
+    }
+  }
+
+  return "unresolved";
 }
 
 function isRegressionGateReport(value: unknown): value is RegressionGateReport {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return typeof record.overallPassed === "boolean"
-    && Array.isArray(record.checks);
+    && Array.isArray(record.checks)
+    && record.checks.every((check) => {
+      if (!check || typeof check !== "object") return false;
+      const item = check as Record<string, unknown>;
+      return typeof item.id === "string"
+        && typeof item.title === "string"
+        && typeof item.passed === "boolean"
+        && typeof item.details === "string";
+    });
 }
 
 function normalizeRepoRelativePath(filePath: string): string {

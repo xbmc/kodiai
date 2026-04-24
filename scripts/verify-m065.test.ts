@@ -58,6 +58,24 @@ type TopLevelCheck = {
   };
 };
 
+type S03Report = {
+  command: "verify:m065:s03";
+  generated_at: string;
+  success: boolean;
+  status_code: string;
+  check_ids: string[];
+  checks: NestedCheck[];
+  failing_check_id: string | null;
+  issues: string[];
+  rollout_obligation: {
+    state: "failed" | "satisfied";
+    source: string | null;
+    detail: string;
+    drill_down_command: string;
+  };
+  [key: string]: unknown;
+};
+
 type JsonReport = {
   command: "verify:m065";
   generated_at: string;
@@ -70,6 +88,7 @@ type JsonReport = {
     m063: PrerequisiteReport | null;
     m064: PrerequisiteReport | null;
     s02: S02Report | null;
+    s03: S03Report | null;
   };
   rollout_obligations: {
     liveLargePrProof: {
@@ -184,21 +203,54 @@ function buildS02Report(overrides: Partial<S02Report> = {}): S02Report {
   };
 }
 
+function buildS03Report(overrides: Partial<S03Report> = {}): S03Report {
+  return {
+    command: "verify:m065:s03",
+    generated_at: FIXED_TIME,
+    success: true,
+    status_code: "m065_s03_ok",
+    check_ids: [
+      "M065-S03-FRESH-REGRESSION-EVIDENCE",
+      "M065-S03-RUNBOOK-PRESENCE",
+      "M065-S03-RERUN-COMMAND-RESOLUTION",
+      "M065-S03-PACKAGE-WIRING",
+    ],
+    checks: [
+      buildNestedCheck({ id: "M065-S03-FRESH-REGRESSION-EVIDENCE", status_code: "fresh_regression_ok" }),
+      buildNestedCheck({ id: "M065-S03-RUNBOOK-PRESENCE", status_code: "runbook_present" }),
+      buildNestedCheck({ id: "M065-S03-RERUN-COMMAND-RESOLUTION", status_code: "rerun_commands_resolved" }),
+      buildNestedCheck({ id: "M065-S03-PACKAGE-WIRING", status_code: "package_wiring_ok" }),
+    ],
+    failing_check_id: null,
+    issues: [],
+    rollout_obligation: {
+      state: "satisfied",
+      source: "nested_reports.regression_gate",
+      detail: "Fresh non-large regression proof is satisfied by authoritative verify:m061:regression evidence.",
+      drill_down_command: "bun run verify:m061:regression",
+    },
+    ...overrides,
+  };
+}
+
 async function loadModuleWithNestedReports(params?: {
   m062?: PrerequisiteReport | unknown;
   m063?: PrerequisiteReport | unknown;
   m064?: PrerequisiteReport | unknown;
   s02?: S02Report | unknown;
+  s03?: S03Report | unknown;
 }) {
   const evaluateM062S03 = mock(async () => params?.m062 ?? buildM062Report());
   const evaluateM063S03 = mock(() => params?.m063 ?? buildM063Report());
   const evaluateM064S03 = mock(async () => params?.m064 ?? buildM064Report());
   const evaluateM065S02 = mock(async () => params?.s02 ?? buildS02Report());
+  const evaluateM065S03 = mock(async () => params && "s03" in params ? params.s03 : buildS03Report());
 
   mock.module("./verify-m062-s03.ts", () => ({ evaluateM062S03 }));
   mock.module("./verify-m063-s03.ts", () => ({ evaluateM063S03 }));
   mock.module("./verify-m064-s03.ts", () => ({ evaluateM064S03 }));
   mock.module("./verify-m065-s02.ts", () => ({ evaluateM065S02 }));
+  mock.module("./verify-m065-s03.ts", () => ({ evaluateM065S03 }));
 
   const module = await import(`./verify-m065.ts?case=${Math.random()}`);
   return {
@@ -208,6 +260,7 @@ async function loadModuleWithNestedReports(params?: {
       evaluateM063S03,
       evaluateM064S03,
       evaluateM065S02,
+      evaluateM065S03,
     },
   };
 }
@@ -250,7 +303,7 @@ describe("verify-m065", () => {
     });
     const s02 = buildS02Report();
 
-    const { evaluateM065, nestedMocks } = await loadModuleWithNestedReports({ m062, m063, m064, s02 });
+    const { evaluateM065, nestedMocks } = await loadModuleWithNestedReports({ m062, m063, m064, s02, s03: null });
 
     const report = await evaluateM065({ generatedAt: FIXED_TIME });
 
@@ -258,6 +311,7 @@ describe("verify-m065", () => {
     expect(nestedMocks.evaluateM063S03).toHaveBeenCalledTimes(1);
     expect(nestedMocks.evaluateM064S03).toHaveBeenCalledTimes(1);
     expect(nestedMocks.evaluateM065S02).toHaveBeenCalledTimes(1);
+    expect(nestedMocks.evaluateM065S03).toHaveBeenCalledTimes(1);
 
     expect(report).toMatchObject({
       command: "verify:m065",
@@ -278,6 +332,7 @@ describe("verify-m065", () => {
     expect(report.nested_reports.m063).toBe(m063);
     expect(report.nested_reports.m064).toBe(m064);
     expect(report.nested_reports.s02).toBe(s02);
+    expect(report.nested_reports.s03).toBeNull();
 
     expect(report.checks).toEqual([
       {
@@ -354,6 +409,36 @@ describe("verify-m065", () => {
         detail: "Reserved for fresh non-large regression proof from S03.",
         drill_down_command: "bun run verify:m065 -- --json",
       },
+    });
+  });
+
+  test("evaluate satisfies fresh regression proof once nested S03 evidence is present", async () => {
+    const s03 = buildS03Report();
+    const { evaluateM065 } = await loadModuleWithNestedReports({ s03 });
+
+    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+
+    expect(report.success).toBe(true);
+    expect(report.status_code).toBe("m065_ok");
+    expect(report.failing_check_id).toBeNull();
+    expect(report.nested_reports.s03).toBe(s03);
+    expect(report.checks.find((check: TopLevelCheck) => check.id === "M065-FRESH-REGRESSION-PROOF")).toEqual({
+      id: "M065-FRESH-REGRESSION-PROOF",
+      passed: true,
+      skipped: false,
+      status_code: "rollout_obligation_satisfied",
+      detail: "Fresh non-large regression proof is satisfied by authoritative verify:m065:s03 evidence.",
+      drill_down: {
+        command: "bun run verify:m065:s03 -- --json",
+        report_key: "nested_reports.s03",
+        nested_status_code: "m065_s03_ok",
+      },
+    });
+    expect(report.rollout_obligations.freshRegressionProof).toEqual({
+      state: "satisfied",
+      source: "nested_reports.s03",
+      detail: "Fresh non-large regression proof is satisfied by authoritative verify:m061:regression evidence.",
+      drill_down_command: "bun run verify:m065:s03 -- --json",
     });
   });
 
@@ -466,7 +551,7 @@ describe("verify-m065", () => {
     const m064 = buildM064Report({ records: [{ recordId: "canonical-authority", statusCode: "canonical" }] });
     const s02 = buildS02Report();
 
-    const { main } = await loadModuleWithNestedReports({ m062, m063, m064, s02 });
+    const { main } = await loadModuleWithNestedReports({ m062, m063, m064, s02, s03: null });
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
 
@@ -483,9 +568,58 @@ describe("verify-m065", () => {
     expect(report.nested_reports.m063).toEqual(m063);
     expect(report.nested_reports.m064).toEqual(m064);
     expect(report.nested_reports.s02).toEqual(s02);
+    expect(report.nested_reports.s03).toBeNull();
     expect(report.rollout_obligations.liveLargePrProof.state).toBe("satisfied");
     expect(report.rollout_obligations.freshRegressionProof.state).toBe("pending");
     expect(report.failing_check_id).toBe("M065-FRESH-REGRESSION-PROOF");
+  });
+
+  test("main fails once fresh regression proof is red and localizes the blocker to nested_reports.s03", async () => {
+    const s03 = buildS03Report({
+      success: false,
+      status_code: "m065_s03_verifier_failed",
+      failing_check_id: "M065-S03-FRESH-REGRESSION-EVIDENCE",
+      issues: ["M065-S03-FRESH-REGRESSION-EVIDENCE: verify:m061:regression reported one or more failing regression suites: M061-REG-MENTION-01."],
+      rollout_obligation: {
+        state: "failed",
+        source: "nested_reports.regression_gate",
+        detail: "Fresh non-large regression proof is failing and requires rerun packaging.",
+        drill_down_command: "bun run verify:m065:s03 -- --json",
+      },
+    });
+
+    const { main } = await loadModuleWithNestedReports({ s03 });
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+
+    const exitCode = await main(["--json"], {
+      stdout: { write: (chunk: string) => void stdoutChunks.push(chunk) },
+      stderr: { write: (chunk: string) => void stderrChunks.push(chunk) },
+    });
+
+    const report = JSON.parse(stdoutChunks.join("")) as JsonReport;
+    expect(exitCode).toBe(1);
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_nested_verifier_failed");
+    expect(report.failing_check_id).toBe("M065-FRESH-REGRESSION-PROOF");
+    expect(report.nested_reports.s03).toEqual(s03);
+    expect(report.checks.find((check: TopLevelCheck) => check.id === "M065-FRESH-REGRESSION-PROOF")).toMatchObject({
+      passed: false,
+      skipped: false,
+      status_code: "nested_report_failed",
+      drill_down: {
+        command: "bun run verify:m065:s03 -- --json",
+        report_key: "nested_reports.s03",
+        nested_status_code: "m065_s03_verifier_failed",
+      },
+    });
+    expect(report.rollout_obligations.freshRegressionProof).toEqual({
+      state: "failed",
+      source: "nested_reports.regression_gate",
+      detail: "Fresh non-large regression proof is failing and requires rerun packaging.",
+      drill_down_command: "bun run verify:m065:s03 -- --json",
+    });
+    expect(stderrChunks.join("")).toContain("verify:m065 failed: M065-FRESH-REGRESSION-PROOF:nested_report_failed");
   });
 
   test("package.json wires verify:m065 to the composed verifier script", async () => {

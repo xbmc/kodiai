@@ -42,7 +42,7 @@ Must-haves:
   - Files: `scripts/verify-m065-s03.ts`, `scripts/verify-m065-s03.test.ts`, `package.json`
   - Verify: bun test scripts/verify-m065-s03.test.ts
 
-- [ ] **T02: Implement fresh-regression wrapper logic and machine-checkable M065 rollout runbook packaging** `est:105m`
+- [x] **T02: Implement fresh-regression wrapper logic and machine-checkable M065 rollout runbook packaging** `est:105m`
   Implement the S03 verifier by reusing `evaluateRegressionGateChecks(...)` instead of parsing text output, then add one M065-specific runbook that tells operators how to start from `deliveryId` / `reviewOutputKey`, rerun `verify:m065`, and drill into failing nested contracts. To avoid prose-only closeout, make the S03 verifier check the runbook file exists and that every referenced `bun run ...` command resolves to a real package script or tracked TypeScript file.
 
 Must-haves:
