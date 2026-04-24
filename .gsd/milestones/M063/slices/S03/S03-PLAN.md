@@ -96,7 +96,7 @@
   - Files: `src/execution/review-prompt.ts`, `src/execution/review-prompt.test.ts`, `src/handlers/review.ts`, `src/lib/retry-scope-reducer.ts`
   - Verify: bun test src/execution/review-prompt.test.ts --filter "continuation" && bun run tsc --noEmit
 
-- [ ] **T02: Add an S03 verifier that proves bounded continuation without exaggeration** `est:45m`
+- [x] **T02: Add an S03 verifier that proves bounded continuation without exaggeration** `est:45m`
   Package the S03 proof into a deterministic verifier script that mirrors the S01/S02 proof style: build first-pass and continuation prompt evidence from tracked fixtures, report section-level narrowing and sufficiency checks, and wire a `verify:m063:s03` script plus verifier tests. The verifier should be strict enough to fail when continuation replays first-pass breadth or loses required boundedness truthfulness, but it must stay honest about what it proves: narrower/sufficient-than-first-pass continuation, not exhaustive eventual coverage.
 
 ## Failure Modes

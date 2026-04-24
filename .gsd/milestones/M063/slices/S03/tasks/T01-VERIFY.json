@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M063/S03/T01",
+  "timestamp": 1777011720475,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/execution/review-prompt.test.ts --filter \"continuation\"",
+      "exitCode": 0,
+      "durationMs": 139,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 9463,
+      "verdict": "pass"
+    }
+  ]
+}
