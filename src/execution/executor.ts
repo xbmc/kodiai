@@ -24,7 +24,6 @@ import {
   pollUntilComplete,
   cancelAcaJob,
   readJobResult,
-  readJobDiagnostics,
 } from "../jobs/aca-launcher.ts";
 import {
   buildAuthFetchUrl,
@@ -545,9 +544,15 @@ export function createExecutor(deps: {
           logger.warn({ executionName, timeoutSeconds, durationMs }, "ACA Job timed out, cancelling");
           let diagnosticsExcerpt: string | undefined;
           try {
-            const diagnostics = await readJobDiagnostics(workspaceDir);
-            if (typeof diagnostics === "string" && diagnostics.trim().length > 0) {
-              diagnosticsExcerpt = diagnostics.trim().split(/\r?\n/).slice(-12).join("\n");
+            const diagnosticsPath = join(workspaceDir, "agent-diagnostics.log");
+            const maxDiagnosticsBytes = 256 * 1024;
+            const diagnosticsStats = await stat(diagnosticsPath).catch(() => null);
+            if (diagnosticsStats) {
+              const startOffset = Math.max(0, diagnosticsStats.size - maxDiagnosticsBytes);
+              const diagnostics = await Bun.file(diagnosticsPath).slice(startOffset).text();
+              if (diagnostics.trim().length > 0) {
+                diagnosticsExcerpt = diagnostics.trim().split(/\r?\n/).slice(-12).join("\n");
+              }
             }
           } catch (diagnosticsErr) {
             logger.warn({ err: diagnosticsErr, executionName }, "ACA Job diagnostics read failed after timeout (non-fatal)");

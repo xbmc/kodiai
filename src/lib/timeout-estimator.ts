@@ -15,6 +15,7 @@ export type TimeoutEstimate = {
 };
 
 export const DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS = 180;
+export const MAX_TIMEOUT_BUDGET_SECONDS = 1800;
 
 /**
  * Compute a weighted-average language complexity score from a map of
@@ -87,11 +88,18 @@ export function estimateTimeoutRisk(params: {
 
   // Dynamic timeout: range [0.5x, 1.5x] of base, clamped [30, 1800]
   const rawTimeout = baseTimeoutSeconds * (0.5 + complexity);
+  const maxRemoteRuntimeBudgetSeconds = Math.max(
+    30,
+    MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
+  );
   const remoteRuntimeBudgetSeconds = Math.round(
-    Math.max(30, Math.min(rawTimeout, 1800)),
+    Math.max(30, Math.min(rawTimeout, maxRemoteRuntimeBudgetSeconds)),
   );
   const infraOverheadBudgetSeconds = DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS;
-  const totalTimeoutSeconds = remoteRuntimeBudgetSeconds + infraOverheadBudgetSeconds;
+  const totalTimeoutSeconds = Math.min(
+    remoteRuntimeBudgetSeconds + infraOverheadBudgetSeconds,
+    MAX_TIMEOUT_BUDGET_SECONDS,
+  );
 
   // Scope reduction
   const shouldReduceScope = riskLevel === "high";

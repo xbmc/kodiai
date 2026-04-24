@@ -114,6 +114,7 @@ import {
   parseSeverityCountsFromBody,
   formatReviewDetailsSummary,
   type TimeoutReviewDetailsProgress,
+  type TimeoutBudgetDetails,
   normalizeSeverity,
   normalizeCategory,
   parseInlineCommentMetadata,
@@ -467,11 +468,7 @@ export function formatTimeoutErrorDetail(params: {
   totalTimeoutSeconds: number;
   complexityInfo: string;
   hasReviewOutput: boolean;
-  timeoutEstimate?: {
-    remoteRuntimeBudgetSeconds: number;
-    infraOverheadBudgetSeconds: number;
-    totalTimeoutSeconds: number;
-  } | null;
+  timeoutEstimate?: TimeoutBudgetDetails | null;
 }): string {
   const summary = params.hasReviewOutput
     ? "Timed out after partial review output."
@@ -3315,6 +3312,9 @@ export function createReviewHandler(deps: {
           isLargePR: diffAnalysis?.isLargePR ?? false,
           baseTimeoutSeconds: config.timeoutSeconds,
         });
+        const appliedTimeoutBudget = config.timeout.dynamicScaling !== false
+          ? timeoutEstimate
+          : null;
 
         logger.info(
           {
@@ -3687,8 +3687,8 @@ export function createReviewHandler(deps: {
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
           // TMO-04: total timeout = infra overhead cushion + complexity-scaled remote runtime budget
-          dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
-            ? timeoutEstimate.totalTimeoutSeconds
+          dynamicTimeoutSeconds: appliedTimeoutBudget
+            ? appliedTimeoutBudget.totalTimeoutSeconds
             : undefined,
         });
         executorResult = result;
@@ -4246,11 +4246,7 @@ export function createReviewHandler(deps: {
         const buildReviewDetailsBody = (params?: {
           timeoutProgress?: TimeoutReviewDetailsProgress;
           reviewFirstPass?: ReviewFirstPassPayload | null;
-          timeoutBudget?: {
-            remoteRuntimeBudgetSeconds: number;
-            infraOverheadBudgetSeconds: number;
-            totalTimeoutSeconds: number;
-          } | null;
+          timeoutBudget?: TimeoutBudgetDetails | null;
         }): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
@@ -4824,7 +4820,7 @@ export function createReviewHandler(deps: {
             result.published ?? false,
           );
 
-          const timeoutDuration = timeoutEstimate?.dynamicTimeoutSeconds ?? config.timeoutSeconds;
+          const timeoutDuration = appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds;
           const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
 
           let publishedPartialReview = false;
@@ -5004,11 +5000,11 @@ export function createReviewHandler(deps: {
                 firstPass: timeoutFirstPass,
                 reviewOutputKey,
                 timedOutAfterSeconds: timeoutDuration,
-                timeoutBudget: timeoutEstimate
+                timeoutBudget: appliedTimeoutBudget
                   ? {
-                      remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
-                      infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
-                      totalTimeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
+                      remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                      infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                      totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
                     }
                   : null,
                 isRetrySkipped: isChronicTimeout,
@@ -5070,11 +5066,11 @@ export function createReviewHandler(deps: {
                     reviewDetailsBlock: buildReviewDetailsBody({
                       timeoutProgress: timeoutReviewDetails,
                       reviewFirstPass: timeoutFirstPass,
-                      timeoutBudget: timeoutEstimate
+                      timeoutBudget: appliedTimeoutBudget
                         ? {
-                            remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
-                            infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
-                            totalTimeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
+                            remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                            infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                            totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
                           }
                         : null,
                     }),
@@ -5813,7 +5809,7 @@ export function createReviewHandler(deps: {
                   totalTimeoutSeconds: timeoutDuration,
                   complexityInfo,
                   hasReviewOutput: true,
-                  timeoutEstimate,
+                  timeoutEstimate: appliedTimeoutBudget,
                 }),
               );
             } else if (category === "timeout") {
@@ -5824,7 +5820,7 @@ export function createReviewHandler(deps: {
                   totalTimeoutSeconds: timeoutDuration,
                   complexityInfo,
                   hasReviewOutput: false,
-                  timeoutEstimate,
+                  timeoutEstimate: appliedTimeoutBudget,
                 }),
               );
             } else {

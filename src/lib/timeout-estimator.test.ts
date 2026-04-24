@@ -3,6 +3,7 @@ import {
   computeLanguageComplexity,
   DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
   estimateTimeoutRisk,
+  MAX_TIMEOUT_BUDGET_SECONDS,
   type TimeoutEstimate,
 } from "./timeout-estimator.ts";
 
@@ -194,18 +195,19 @@ describe("estimateTimeoutRisk", () => {
     expect(result.reducedFileCount).toBe(45);
   });
 
-  test("timeout budgets separate remote runtime from infra overhead", () => {
+  test("timeout budgets stay within the global max after infra overhead is added", () => {
     const result = estimateTimeoutRisk({
-      fileCount: 1,
-      linesChanged: 10,
+      fileCount: 200,
+      linesChanged: 10000,
       languageComplexity: 1.0,
-      isLargePR: false,
-      baseTimeoutSeconds: baseTimeout,
+      isLargePR: true,
+      baseTimeoutSeconds: 1800,
     });
 
-    expect(result.remoteRuntimeBudgetSeconds).toBe(423);
-    expect(result.infraOverheadBudgetSeconds).toBe(DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS);
-    expect(result.totalTimeoutSeconds).toBe(603);
+    expect(result.remoteRuntimeBudgetSeconds).toBe(
+      MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
+    );
+    expect(result.totalTimeoutSeconds).toBe(MAX_TIMEOUT_BUDGET_SECONDS);
   });
 
   test("reasoning string contains key metrics", () => {

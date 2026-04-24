@@ -14737,6 +14737,19 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(detail).toContain("PR complexity: Complexity score: 0.09");
   });
 
+  test("falls back to the enforced timeout wording when no split timeout budget applied", () => {
+    const detail = formatTimeoutErrorDetail({
+      totalTimeoutSeconds: 600,
+      complexityInfo: "Complexity score: 0.09 (files: 3, lines: 3, lang risk: 40%). Risk level: low.",
+      hasReviewOutput: false,
+      timeoutEstimate: null,
+    });
+
+    expect(detail).toContain("Timed out with no review output.");
+    expect(detail).toContain("Timed out after 600s.");
+    expect(detail).not.toContain("Timeout budget: remote runtime");
+  });
+
   test("posts a helpful PR error comment when review execution fails without publishing output", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
