@@ -16,8 +16,8 @@ Milestone M061 is the active optimization track:
 - S01 is complete and established the repaired Postgres-backed reporting baseline, durable prompt-section telemetry, and slice-level verification for `review.full`, `mention.response`, and `slack.response`.
 - S02 is complete and stages heavy mention context only when request shape warrants it, preserving the rich explicit-review path while shrinking ordinary conversational mention inputs by default.
 - S03 is complete and compacts review prompt assembly into bounded named sections, preserves the unified knowledge-context preference, threads multi-section `review.user-prompt` telemetry through initial and retry review flows, and adds an operator verifier for section budgets and truncation visibility with fail-open Postgres handling.
-- S04 will add retrieval reuse and safe derived-context caching on top of the staged mention/review context policies.
-- S05 will provide the integrated token-reduction proof and regression gate across representative mention/review flows.
+- S04 is complete and removes duplicate same-query embedding work inside a retrieval run, reuses bounded mention/review derived artifacts behind truthful state fingerprints, and exposes reuse hit/miss/degraded evidence on the canonical telemetry and reporting path.
+- S05 remains and will provide the integrated token-reduction proof and regression gate across representative mention/review flows.
 
 ## Architecture / Key Patterns
 
@@ -28,7 +28,8 @@ Milestone M061 is the active optimization track:
 - **Prompt accounting:** Mention and review builders emit text-free named prompt-section metrics that are persisted in `prompt_section_events` and threaded through local plus Agent SDK execution seams.
 - **Mention context diet:** Mention handling now derives a shared admission policy from request shape and reuses it across prompt context admission, candidate code-pointer fetches, PR diff prefetch, and retrieval shaping so conversational reductions are real rather than cosmetic.
 - **Review prompt compaction:** Review prompt assembly now preserves the existing `review.user-prompt` contract while emitting budgeted named sections for change context, size/boundedness context, graph evidence, knowledge context, and instruction-heavy guidance, with section-level truncation surfaced through canonical reporting.
-- **Optimization direction:** Remaining M061 slices build on the truthful evidence seams from S01–S03 rather than adding parallel measurement systems.
+- **Retrieval and derived-context reuse:** Retrieval reuses query embeddings once per normalized query/provider/input-type within a request, while mention/review flows reuse only bounded derived artifacts when explicit fingerprints prove the admitted GitHub state is unchanged.
+- **Optimization direction:** The remaining M061 slice builds on the truthful evidence seams from S01–S04 rather than adding parallel measurement systems.
 
 ## Capability Contract
 
@@ -40,4 +41,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M053: Continuation-driven review execution — add automatic continuation and evolve one stable public review surface in place.
 - [x] M054: Continuation state, supersession, and operator evidence — make the lifecycle durable, supersession-safe, and diagnosable.
 - [x] M055: Live hardening and rollout proof — prove the redesigned lifecycle on real large PRs without regressing normal review behavior.
-- [ ] M061: Token accounting baseline and reduction proof — S01/S02/S03 complete; retrieval reuse and integrated proof remain in S04–S05.
+- [ ] M061: Token accounting baseline and reduction proof — S01/S02/S03/S04 complete; integrated proof and final regression gate remain in S05.

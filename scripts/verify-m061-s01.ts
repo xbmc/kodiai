@@ -223,6 +223,7 @@ export function evaluateM061S01BaselineProof(input: {
     deliveryBreakdown: usage.deliveryBreakdown,
     promptSections: usage.promptSections,
     rateLimits: usage.rateLimits,
+    reuseEvidence: usage.reuseEvidence ?? [],
   });
 
   return {

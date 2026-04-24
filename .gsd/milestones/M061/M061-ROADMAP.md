@@ -13,8 +13,8 @@
 - [x] **S03: S03** `risk:high` `depends:[]`
   > After this: review prompt assembly uses bounded per-section budgets and the packed unified knowledge-context representation, materially shrinking the prompt without removing truthful review guidance.
 
-- [ ] **S04: S04** `risk:medium` `depends:[]`
+- [x] **S04: S04** `risk:medium` `depends:[]`
   > After this: retrieval avoids same-query duplicate embedding work and repeated identical thread/review state can reuse bounded derived artifacts through truthful cache keys.
 
-- [ ] **S05: Integrated Token-Reduction Proof and Regression Gate** `risk:medium` `depends:[S02,S03,S04]`
+- [ ] **S05: S05** `risk:medium` `depends:[]`
   > After this: Kodiai has a repeatable proof surface showing lower token spend on representative mention/review paths while preserving grounding, publication behavior, and fail-open semantics.

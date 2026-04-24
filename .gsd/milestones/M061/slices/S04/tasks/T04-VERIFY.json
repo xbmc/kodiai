@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T04",
+  "unitId": "M061/S04/T04",
+  "timestamp": 1777000335140,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s04.test.ts",
+      "exitCode": 0,
+      "durationMs": 102,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun scripts/verify-m061-s04.ts --json",
+      "exitCode": 0,
+      "durationMs": 63,
+      "verdict": "pass"
+    }
+  ],
+  "postExecutionChecks": [
+    {
+      "category": "pattern",
+      "target": "src/handlers/review.ts",
+      "passed": true,
+      "message": "File src/handlers/review.ts mixes async/await with .then() promise chaining — consider using consistent async style",
+      "blocking": false
+    }
+  ]
+}
