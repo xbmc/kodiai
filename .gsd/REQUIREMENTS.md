@@ -87,17 +87,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: None
 - Notes: Owned by M048 S03 because trigger-shape continuity and verifier failure behavior land there.
 
-### R067 — New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
-- Class: continuity
-- Status: active
-- Description: New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
-- Why it matters: Automatic continuation is unsafe unless stale work yields to newer PR state deterministically
-- Source: inferred
-- Primary owning slice: M064/S01
-- Supporting slices: none
-- Validation: mapped
-- Notes: Supersession must be first-class in the continuation lifecycle.
-
 ### R070 — The redesigned large-PR lifecycle is proven on at least one real large PR with bounded first pass, automatic continuation, and in-place visible comment updates
 - Class: launchability
 - Status: active
@@ -108,39 +97,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
-
-### R071 — Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
-- Class: functional
-- Status: active
-- Description: Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
-- Why it matters: Runtime-only coordinator state is not enough for operator truth or restart-safe supersession semantics.
-- Source: M064
-- Primary owning slice: M064/S01
-- Supporting slices: M064/S02,M064/S03
-- Validation: Mapped during M064 planning; milestone verification must prove durable state survives restart-shaped rehydration and remains the source of truth over projections.
-- Notes: Introduced by M064 planning from research candidate requirement on durable canonical continuation-family state.
-
-### R072 — Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
-- Class: operational
-- Status: active
-- Description: Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
-- Why it matters: Operators currently infer the winning attempt from telemetry and log correlation, which is fragile under retries and supersession.
-- Source: M064
-- Primary owning slice: M064/S01
-- Supporting slices: M064/S02,M064/S03
-- Validation: Mapped during M064 planning; milestone proof must show authoritative attempt identity is queryable directly from canonical state and remains stable under supersession.
-- Notes: Introduced by M064 planning from research candidate requirement on explicit authoritative attempt identity.
-
-### R073 — Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
-- Class: operational
-- Status: active
-- Description: Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
-- Why it matters: Operators need one direct answer for why continuation stopped, and that answer is currently spread across helpers, logs, and telemetry.
-- Source: M064
-- Primary owning slice: M064/S01
-- Supporting slices: M064/S02,M064/S03
-- Validation: Mapped during M064 planning; milestone proof must show final stop reason is returned directly from canonical state across merge, quiet settlement, blocked, and superseded outcomes.
-- Notes: Introduced by M064 planning from research candidate requirement on explicit final stop reason contract.
 
 ### R074 — Projection failures for continuation lifecycle evidence are surfaced as projection status on top of canonical state instead of creating ambiguity about lifecycle truth.
 - Class: operational
@@ -739,6 +695,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths.
 - Notes: The stopping contract is explicitly non-exhaustive.
 
+### R067 — New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
+- Class: continuity
+- Status: validated
+- Description: New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
+- Why it matters: Automatic continuation is unsafe unless stale work yields to newer PR state deterministically
+- Source: inferred
+- Primary owning slice: M064/S01
+- Supporting slices: none
+- Validation: M064/S01 reran bun test src/handlers/review.test.ts (143 pass) and bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json (4 canonical scenarios pass). The canonical continuation-family store preserves newer-attempt authority and the verifier proves superseded stale attempts cannot overwrite the winning attempt.
+- Notes: Supersession must be first-class in the continuation lifecycle.
+
 ### R068 — Large-PR continuation and comment evolution are backed by durable operator evidence so maintainers can tell why continuation progressed, stopped, failed, or was superseded
 - Class: operability
 - Status: validated
@@ -760,6 +727,39 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: M061/S05 pinned and passed mention, review, retrieval, reporting, and verifier regression suites via `bun scripts/phase-m061-token-regression-gate.ts`, preserving non-large-PR behavior and publication semantics while token-reduction work evolves.
 - Notes: Regression guard across the rest of the review path.
+
+### R071 — Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
+- Class: functional
+- Status: validated
+- Description: Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
+- Why it matters: Runtime-only coordinator state is not enough for operator truth or restart-safe supersession semantics.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: M064/S01 reran bun test src/handlers/review.test.ts and bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json. Canonical continuation-family rows answer merge, quiet-settlement, blocked, and superseded scenarios directly from durable state, independent of checkpoint JSON or telemetry.
+- Notes: Introduced by M064 planning from research candidate requirement on durable canonical continuation-family state.
+
+### R072 — Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
+- Class: operational
+- Status: validated
+- Description: Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
+- Why it matters: Operators currently infer the winning attempt from telemetry and log correlation, which is fragile under retries and supersession.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: M064/S01 verifier output now returns authoritativeAttemptId and authoritativeAttemptOrdinal directly from canonical continuation-family state for merged, quiet-settled, blocked, and superseded scenarios; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json.
+- Notes: Introduced by M064 planning from research candidate requirement on explicit authoritative attempt identity.
+
+### R073 — Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
+- Class: operational
+- Status: validated
+- Description: Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
+- Why it matters: Operators need one direct answer for why continuation stopped, and that answer is currently spread across helpers, logs, and telemetry.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: M064/S01 verifier output returns controlled finalStopReason values (merged-continuation-results, settled-without-update, no-follow-up, superseded-by-newer-attempt) directly from canonical continuation-family state; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json.
+- Notes: Introduced by M064 planning from research candidate requirement on explicit final stop reason contract.
 
 ## Deferred
 
@@ -866,19 +866,19 @@ This file is the explicit capability and coverage contract for the project.
 | R064 | failure-visibility | validated | M062/S02 | M063/S02 | Validated by M062. Fresh milestone-close verification passed: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"`; timeout, max-turns, and large-PR bounded scenarios all reported `bounded-parity-ok` for bounded reason, covered scope, remaining scope, and continuation state), and `bun run tsc --noEmit` (exit 0). The visible review surfaces now truthfully report covered scope, remaining scope, and continuation status from one coherent contract. |
 | R065 | correctness | validated | M063/S02 | none | Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; the merge-revisions scenario reported `same-surface-revised` with explicit revision visibility and the no-delta scenario reported `same-surface-quiet-settlement` with no public churn), and `bun run tsc --noEmit` (exit 0). Continuation revisions are now rendered explicitly on the canonical surface instead of silently rewriting prior visible conclusions. |
 | R066 | constraint | validated | M063/S03 | M065/S02 | Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths. |
-| R067 | continuity | active | M064/S01 | none | mapped |
+| R067 | continuity | validated | M064/S01 | none | M064/S01 reran bun test src/handlers/review.test.ts (143 pass) and bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json (4 canonical scenarios pass). The canonical continuation-family store preserves newer-attempt authority and the verifier proves superseded stale attempts cannot overwrite the winning attempt. |
 | R068 | operability | validated | M064/S03 | M065/S02 | M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. M064 must extend this by proving continuation lifecycle truth resolves from canonical family state directly, with explicit projection-status reporting when supporting evidence lags or fails. |
 | R069 | quality-attribute | validated | M065/S01 | none | M061/S05 pinned and passed mention, review, retrieval, reporting, and verifier regression suites via `bun scripts/phase-m061-token-regression-gate.ts`, preserving non-large-PR behavior and publication semantics while token-reduction work evolves. |
 | R070 | launchability | active | M065/S02 | none | mapped |
-| R071 | functional | active | M064/S01 | M064/S02,M064/S03 | Mapped during M064 planning; milestone verification must prove durable state survives restart-shaped rehydration and remains the source of truth over projections. |
-| R072 | operational | active | M064/S01 | M064/S02,M064/S03 | Mapped during M064 planning; milestone proof must show authoritative attempt identity is queryable directly from canonical state and remains stable under supersession. |
-| R073 | operational | active | M064/S01 | M064/S02,M064/S03 | Mapped during M064 planning; milestone proof must show final stop reason is returned directly from canonical state across merge, quiet settlement, blocked, and superseded outcomes. |
+| R071 | functional | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 reran bun test src/handlers/review.test.ts and bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json. Canonical continuation-family rows answer merge, quiet-settlement, blocked, and superseded scenarios directly from durable state, independent of checkpoint JSON or telemetry. |
+| R072 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output now returns authoritativeAttemptId and authoritativeAttemptOrdinal directly from canonical continuation-family state for merged, quiet-settled, blocked, and superseded scenarios; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json. |
+| R073 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output returns controlled finalStopReason values (merged-continuation-results, settled-without-update, no-follow-up, superseded-by-newer-attempt) directly from canonical continuation-family state; verified by bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json. |
 | R074 | operational | active | M064/S03 | M064/S02 | Mapped during M064 planning; milestone verification must show telemetry/checkpoint/report projection failures degrade to explicit projection status while canonical lifecycle truth remains queryable. |
 | R075 | correctness | active | M064/S02 | none | Mapped during M064 planning; regression coverage must prove checkpoint tools do not report saved=true before durable persistence completes or fails. |
 
 ## Coverage Summary
 
-- Active requirements: 15
-- Mapped to slices: 15
-- Validated: 57 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R068, R069)
+- Active requirements: 11
+- Mapped to slices: 11
+- Validated: 61 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073)
 - Unmapped active requirements: 0

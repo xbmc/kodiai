@@ -1,0 +1,36 @@
+[
+  {
+    "kind": "edit",
+    "toolCallId": "call_syRfJA7gFbH8KSiJj3HNdvhE|fc_016cf52ee8af67e60169eb1b7bd7ac8191b6528d880ff97736",
+    "path": "src/execution/mcp/checkpoint-server.test.ts",
+    "timestamp": 1777015680595
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_Thp1gZLUHqQGMWQSkYgqmURR|fc_016cf52ee8af67e60169eb1b8341588191883371c3aaa943bd",
+    "path": "src/execution/mcp/checkpoint-server.test.ts",
+    "timestamp": 1777015699424
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_zJj8myroSRIHALKfl95s0U0L|fc_016cf52ee8af67e60169eb1b95d980819182db34a551765003",
+    "command": "bun test src/execution/mcp/checkpoint-server.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/execution/mcp/checkpoint-server.test.ts:\n(pass) createCheckpointServer > returns an MCP server with name [7.00ms]\n(pass) createCheckpointServer > tool handler persists checkpoint data [1.00ms]\n100 |     });\n101 | \n102 |     await Promise.resolve();\n103 |     await Promise.resolve();\n104 | \n105 |     expect(settled).toBe(false);\n                          ^\nerror: expect(received).toBe(expected)\n\nExpected: false\nReceived: true\n\n      at <anonymous> (/home/keith/src/",
+    "timestamp": 1777015702487
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_1gDmcKeDZy833nWZrDuNyuQI|fc_016cf52ee8af67e60169eb1b9a21008191a13692edce9a51aa",
+    "path": "src/execution/mcp/checkpoint-server.ts",
+    "timestamp": 1777015708048
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_bg7Bury9tQgKqZSM2rv1r3vi|fc_016cf52ee8af67e60169eb1b9f86848191b4bdf3571dc44fc6",
+    "command": "bun test src/execution/mcp/checkpoint-server.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/execution/mcp/checkpoint-server.test.ts:\n(pass) createCheckpointServer > returns an MCP server with name [7.00ms]\n(pass) createCheckpointServer > tool handler persists checkpoint data [2.00ms]\n(pass) createCheckpointServer > waits for checkpoint persistence before reporting success [1.00ms]\n(pass) createCheckpointServer > returns an error result when checkpoint persistence fails [1.00ms]\n(pass) createCheckpointServer > gracefully degrades when checkpoint storage u",
+    "timestamp": 1777015712321
+  }
+]

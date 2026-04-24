@@ -51,7 +51,7 @@ export function createCheckpointServer(
               };
             }
 
-            knowledgeStore.saveCheckpoint({
+            await knowledgeStore.saveCheckpoint({
               reviewOutputKey,
               repo,
               prNumber,

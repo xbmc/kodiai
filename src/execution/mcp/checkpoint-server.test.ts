@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { createCheckpointServer } from "./checkpoint-server.ts";
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function getToolHandler(server: ReturnType<typeof createCheckpointServer>) {
   const instance = server.instance as unknown as {
     _registeredTools?: Record<
@@ -62,6 +72,72 @@ describe("createCheckpointServer", () => {
     expect(parsed.saved).toBe(true);
     expect(parsed.filesReviewed).toBe(2);
     expect(parsed.totalFiles).toBe(12);
+  });
+
+  test("waits for checkpoint persistence before reporting success", async () => {
+    const deferred = createDeferred<void>();
+    const knowledgeStore = {
+      saveCheckpoint: () => deferred.promise,
+    };
+
+    const server = createCheckpointServer(
+      knowledgeStore as never,
+      "review-key",
+      "acme/repo",
+      42,
+      12,
+    );
+    const handler = getToolHandler(server);
+
+    let settled = false;
+    const resultPromise = handler({
+      filesReviewed: ["src/a.ts"],
+      findingCount: 1,
+      summaryDraft: "Draft summary",
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+
+    deferred.resolve();
+    const result = await resultPromise;
+    const parsed = JSON.parse(result.content[0]!.text) as { saved: boolean; filesReviewed: number; totalFiles: number };
+
+    expect(parsed.saved).toBe(true);
+    expect(parsed.filesReviewed).toBe(1);
+    expect(parsed.totalFiles).toBe(12);
+  });
+
+  test("returns an error result when checkpoint persistence fails", async () => {
+    const knowledgeStore = {
+      saveCheckpoint: async () => {
+        throw new Error("disk full");
+      },
+    };
+
+    const server = createCheckpointServer(
+      knowledgeStore as never,
+      "review-key",
+      "acme/repo",
+      42,
+      12,
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      filesReviewed: ["src/a.ts"],
+      findingCount: 1,
+      summaryDraft: "Draft summary",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("disk full");
+    expect(result.content[0]!.text).not.toContain('"saved":true');
   });
 
   test("gracefully degrades when checkpoint storage unavailable", async () => {

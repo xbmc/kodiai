@@ -489,3 +489,8 @@
 {"id":"a12e6317-a5fd-444f-a3f9-3459d873e7e8","ts":"2026-04-24T07:14:41.202Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"66b1901f-fe06-4603-b017-fbfb390c9098","ts":"2026-04-24T07:14:41.216Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
 {"id":"4f7dc9db-7645-4f27-b6a6-97dbc60fcf73","ts":"2026-04-24T07:14:41.229Z","severity":"warning","message":"[safety] file-change: src/db/migrations/039-continuation-family-state.sql — Modified but not in task plan's expected output","source":"notify","read":false}
+{"id":"94f78286-9cc2-4bde-a8f4-349de7eb29fb","ts":"2026-04-24T07:19:19.507Z","severity":"info","message":"Committed: test: Added a deterministic canonical-state verifier and tests that pro…","source":"notify","read":false}
+{"id":"b4e9f988-c7ff-4b05-82ce-fec3e4ec6263","ts":"2026-04-24T07:19:19.542Z","severity":"warning","message":"[safety] file-change: package.json — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"e7486e0e-d64b-4651-bebf-26f79ad584c4","ts":"2026-04-24T07:19:19.543Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"1902bf31-4f4d-4585-b42d-5b23d6ba8794","ts":"2026-04-24T07:19:19.684Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"31c4b45c-63f1-4c42-b05a-cb7b801bbb63","ts":"2026-04-24T07:19:19.706Z","severity":"warning","message":"[safety] file-change: package.json — Modified but not in task plan's expected output","source":"notify","read":false}

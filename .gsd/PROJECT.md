@@ -12,13 +12,13 @@ High-signal, truthful automated review on every PR. The current roadmap focus is
 
 The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-Milestone M062 is complete as the large-PR truth baseline:
-- S01 established `normalizeReviewFirstPass`, the single normalized bounded first-pass contract for constrained large-PR reviews.
-- S02 unified the visible bounded-review contract across the public partial comment and Review Details so both surfaces report the same covered scope, remaining scope, bounded reason, and continuation state.
-- S03 added `verify:m062:s03`, a deterministic milestone verifier that runs the S01 scenario matrix through the production bounded-comment and Review Details renderers and proves semantic parity plus explicit zero-evidence rejection.
-- Timeout partial publication, retry-merged updates, and bounded `max_turns` fallback now all publish through the same shared formatter contract instead of branch-local prose.
-- Requirements `R061` and `R064` are validated with fresh milestone-close evidence from verifier tests, handler/formatter tests, deterministic verifier runs, and a clean TypeScript compile gate.
-- M062 now has two deterministic proof surfaces: `verify:m062:s01` for bounded-vs-dead-end first-pass classification and `verify:m062:s03` for visible-surface truthfulness parity.
+Milestone M064 is in progress on continuation authority hardening:
+- S01 is complete and establishes `continuation_family_state` as the durable canonical continuation-family truth surface keyed by `(familyKey, baseReviewOutputKey)`.
+- Canonical rows now persist authoritative outcome, final stop reason, authoritative attempt identity/ordinal, supersession metadata, and projection status instead of forcing operators to infer truth from `review_checkpoints` JSON or resilience telemetry.
+- `src/handlers/review.ts` now projects timeout settlement, continuation scheduling, merged continuation results, quiet settlement, and stale-attempt supersession into canonical lifecycle state.
+- `scripts/verify-m064-s01.ts` is the new deterministic proof surface for merge, quiet-settlement, blocked/no-follow-up, and superseded scenarios; it answers directly from canonical durable state.
+- Requirements `R067`, `R071`, `R072`, and `R073` are validated from fresh slice-close evidence.
+- S02 and S03 remain to finish live orchestration hardening and canonical-state-first operator evidence/reporting.
 
 Milestone M063 is complete as the continuation-driven large-PR execution redesign:
 - S01 established automatic continuation planning and settlement through `src/lib/review-continuation-lifecycle.ts`, removing timeout-branch-local continuation behavior.
@@ -40,10 +40,11 @@ The prior token-accounting track (M061) remains supporting infrastructure: Postg
 - **Large-PR first-pass contract:** `normalizeReviewFirstPass` is the single structured seam for constrained review outcomes. It prefers checkpoint evidence over inferred counts, omits unsupported scope fields, and preserves an explicit `zero-evidence-failure` state when no truthful first-pass evidence exists.
 - **Continuation lifecycle seam:** automatic large-PR follow-up is driven by `planReviewContinuation(...)` and `settleReviewContinuation(...)`, which separate scheduling/settlement rules from handler orchestration and keep continuation pass keys distinct from the public lifecycle key.
 - **Canonical continuation surface:** the bounded first-pass comment is the only public lifecycle surface for continuation. It carries the base `reviewOutputKey` marker, owns the nested Review Details block, and is refreshed in place by timeout and retry merge paths.
+- **Canonical continuation-family state:** `continuation_family_state` is the durable authority layer for operator truth. One canonical row per `(familyKey, baseReviewOutputKey)` records authoritative attempt identity, authoritative outcome, final stop reason, projection status, and supersession metadata; ordinal-guarded upserts prevent stale attempts from reclaiming authority.
 - **Revision visibility contract:** continuation merges classify deltas against prior findings and render explicit revision summaries for new, still-open, and resolved findings. All-zero deltas settle quietly without public comment churn.
 - **Bounded continuation proof seam:** continuation narrowing is proved against production `buildReviewPromptDetails(...)` section metrics rather than mocked prompt snapshots; `review-change-context` must shrink, first-pass-only `review-size-context` may disappear, and reused knowledge context may remain equal.
-- **Authority-safe retry publishing:** final same-surface retry writes recheck publish rights independently for canonical summary merge and nested Review Details refresh, preventing stale continuation from overwriting newer review state.
-- **Deterministic proof:** `scripts/verify-m062-s01.ts` validates bounded-vs-dead-end classification from the production first-pass seam, `scripts/verify-m062-s03.ts` validates visible-surface semantic alignment, `scripts/verify-m063-s01.ts` validates automatic continuation scheduling/settlement/authority suppression, `scripts/verify-m063-s02.ts` validates same-surface ownership and revision/no-delta behavior, and `scripts/verify-m063-s03.ts` validates bounded continuation shaping and truthful authority-safe completion.
+- **Authority-safe retry publishing:** final same-surface retry writes recheck publish rights independently for canonical summary merge and nested Review Details refresh, preventing stale continuation from overwriting newer review state; canonical continuation-family state now persists the winning attempt and stop reason even across restart-shaped scenarios.
+- **Deterministic proof:** `scripts/verify-m062-s01.ts` validates bounded-vs-dead-end classification from the production first-pass seam, `scripts/verify-m062-s03.ts` validates visible-surface semantic alignment, `scripts/verify-m063-s01.ts` validates automatic continuation scheduling/settlement/authority suppression, `scripts/verify-m063-s02.ts` validates same-surface ownership and revision/no-delta behavior, `scripts/verify-m063-s03.ts` validates bounded continuation shaping and truthful authority-safe completion, and `scripts/verify-m064-s01.ts` validates canonical continuation-family authority and stop-reason answers directly from durable state.
 - **Telemetry baseline:** Usage and verifier scripts read live Postgres telemetry via `createDbClient()` and fail open with explicit database access states instead of consulting stale SQLite paths.
 
 ## Capability Contract
@@ -59,3 +60,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M061: Token-accounting baseline and reduction proof track (supporting observability infrastructure).
 - [x] M062: Large-PR truth baseline — bounded first-pass contract, visible review coherence, and deterministic truthfulness verifier complete.
 - [x] M063: Continuation redesign — automatic continuation lifecycle, canonical same-surface revisions, bounded continuation proof, and stale-authority safety complete.
+- [ ] M064: Continuation state, supersession, and operator evidence — S01 canonical durable authority complete; S02-S03 remain.
