@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type {
   LlmCostRecord,
+  PromptSectionRecord,
   RateLimitEventRecord,
   RetrievalQualityRecord,
   ResilienceEventRecord,
@@ -207,6 +208,53 @@ export function createTelemetryStore(opts: {
       }
     },
 
+    async recordPromptSections(entry: PromptSectionRecord): Promise<void> {
+      if (entry.sections.length === 0) {
+        return;
+      }
+
+      try {
+        for (const section of entry.sections) {
+          await sql`
+            INSERT INTO prompt_section_events (
+              delivery_id, repo, task_type, prompt_kind,
+              section_name, section_position, char_count, estimated_tokens, truncated
+            ) VALUES (
+              ${entry.deliveryId ?? null},
+              ${entry.repo},
+              ${entry.taskType},
+              ${entry.promptKind},
+              ${section.sectionName},
+              ${section.sectionPosition},
+              ${section.charCount},
+              ${section.estimatedTokens},
+              ${section.truncated ?? false}
+            )
+            ON CONFLICT (delivery_id, task_type, prompt_kind, section_position)
+            WHERE delivery_id IS NOT NULL
+            DO UPDATE SET
+              repo = EXCLUDED.repo,
+              section_name = EXCLUDED.section_name,
+              char_count = EXCLUDED.char_count,
+              estimated_tokens = EXCLUDED.estimated_tokens,
+              truncated = EXCLUDED.truncated
+          `;
+        }
+      } catch (err) {
+        logger.warn(
+          {
+            err,
+            deliveryId: entry.deliveryId,
+            repo: entry.repo,
+            taskType: entry.taskType,
+            promptKind: entry.promptKind,
+            sectionCount: entry.sections.length,
+          },
+          "Failed to record prompt-section telemetry",
+        );
+      }
+    },
+
     async purgeOlderThan(days: number): Promise<number> {
       const interval = `${days} days`;
 
@@ -222,8 +270,11 @@ export function createTelemetryStore(opts: {
       const r4 = await sql`
         DELETE FROM llm_cost_events WHERE created_at < now() - ${interval}::interval
       `;
+      const r5 = await sql`
+        DELETE FROM prompt_section_events WHERE created_at < now() - ${interval}::interval
+      `;
 
-      return r1.count + r2.count + r3.count + r4.count;
+      return r1.count + r2.count + r3.count + r4.count + r5.count;
     },
 
     checkpoint(): void {

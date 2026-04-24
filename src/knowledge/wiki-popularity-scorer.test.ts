@@ -58,7 +58,7 @@ describe("createWikiPopularityScorer", () => {
     const popularityStore = createPopularityStore();
     const fetchFn = mock(async () => {
       throw new Error("fetch should not run");
-    }) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
 
     const scorer = createWikiPopularityScorer({
       sql: createSqlReturning([]),
@@ -123,7 +123,7 @@ describe("createWikiPopularityScorer", () => {
           },
         },
       }), { status: 200, headers: { "content-type": "application/json" } });
-    }) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
 
     const logger = createMockLogger();
     const scorer = createWikiPopularityScorer({
@@ -218,7 +218,7 @@ describe("createWikiPopularityScorer", () => {
       wikiBaseUrl: "https://kodi.wiki",
       fetchFn: mock(async () => new Response(JSON.stringify({
         query: { pages: { "11": { pageid: 11, title: "Alpha", linkshere: [] } } },
-      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof globalThis.fetch,
+      }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof globalThis.fetch,
     });
 
     const firstRun = scorer.runNow();
@@ -251,7 +251,7 @@ describe("createWikiPopularityScorer", () => {
       wikiBaseUrl: "https://kodi.wiki",
       fetchFn: mock(async () => new Response(JSON.stringify({
         query: { pages: { "11": { pageid: 11, title: "Alpha", linkshere: [] } } },
-      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof globalThis.fetch,
+      }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof globalThis.fetch,
     });
 
     const result = await scorer.runNow();

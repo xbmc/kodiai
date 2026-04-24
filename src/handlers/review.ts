@@ -5,6 +5,7 @@ import type {
   PullRequestSynchronizeEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
+import { createHash } from "node:crypto";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
@@ -44,8 +45,10 @@ import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import {
   buildReviewPrompt,
+  buildReviewPromptDetails,
   matchPathInstructions,
 } from "../execution/review-prompt.ts";
+import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import {
   DEFAULT_EMPTY_INTENT,
   parsePRIntent,
@@ -68,6 +71,10 @@ import {
   type ReviewBoundednessContract,
 } from "../lib/review-boundedness.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
+import {
+  normalizeReviewFirstPass,
+  type ReviewFirstPassPayload,
+} from "../lib/review-first-pass.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
@@ -153,6 +160,7 @@ import {
   buildSearchCacheKey,
   createSearchCache,
   type SearchCache,
+  type SearchCacheOptions,
 } from "../lib/search-cache.ts";
 import { detectDependsBump, type DependsBumpInfo } from "../lib/depends-bump-detector.ts";
 import {
@@ -221,6 +229,173 @@ type AuthorTierSearchEnrichment = {
   skippedQueries: number;
   degradationPath: "none" | "search-api-rate-limit";
 };
+
+type ReviewPromptBuildContext = Parameters<typeof buildReviewPromptDetails>[0];
+
+export type ReviewPromptFingerprintResult = {
+  fingerprint: string | null;
+  missingSignals: string[];
+};
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function hashPromptString(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return sha256Hex(value);
+}
+
+function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
+  if (!values) {
+    return { values: [], missingSignals: [] };
+  }
+
+  const normalized = values
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .filter((value) => value.length > 0);
+
+  if (values.length > 0 && normalized.length !== values.length) {
+    return { values: null, missingSignals: [signal] };
+  }
+
+  return {
+    values: Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b)),
+    missingSignals: [],
+  };
+}
+
+function summarizeRetrievalContextFingerprint(
+  retrievalContext: ReviewPromptBuildContext["retrievalContext"],
+): { value: Record<string, unknown> | null; missingSignals: string[] } {
+  if (!retrievalContext) {
+    return { value: null, missingSignals: [] };
+  }
+
+  const summarizedFindings: Array<Record<string, unknown>> = [];
+  for (const finding of retrievalContext.findings) {
+    if (
+      typeof finding.findingText !== "string"
+      || typeof finding.severity !== "string"
+      || typeof finding.category !== "string"
+      || typeof finding.path !== "string"
+      || typeof finding.outcome !== "string"
+      || typeof finding.sourceRepo !== "string"
+      || !Number.isFinite(finding.distance)
+    ) {
+      return { value: null, missingSignals: ["retrieval-fingerprint-data"] };
+    }
+
+    summarizedFindings.push({
+      findingTextHash: sha256Hex(finding.findingText),
+      severity: finding.severity,
+      category: finding.category,
+      path: finding.path,
+      line: finding.line ?? null,
+      snippetHash: hashPromptString(finding.snippet),
+      outcome: finding.outcome,
+      distance: Number(finding.distance.toFixed(6)),
+      sourceRepo: finding.sourceRepo.toLowerCase(),
+    });
+  }
+
+  return {
+    value: {
+      maxChars: retrievalContext.maxChars ?? null,
+      findings: summarizedFindings,
+    },
+    missingSignals: [],
+  };
+}
+
+export function buildReviewPromptFingerprint(
+  context: ReviewPromptBuildContext,
+): ReviewPromptFingerprintResult {
+  const missingSignals: string[] = [];
+
+  const owner = context.owner.trim().toLowerCase();
+  const repo = context.repo.trim().toLowerCase();
+  const baseBranch = context.baseBranch.trim();
+  const headBranch = context.headBranch.trim();
+  const prAuthor = context.prAuthor.trim();
+  const normalizedChangedFiles = normalizePromptStringList(context.changedFiles, "changed-files");
+  const focusAreas = normalizePromptStringList(context.focusAreas, "focus-areas");
+  const ignoredAreas = normalizePromptStringList(context.ignoredAreas, "ignored-areas");
+  const prLabels = normalizePromptStringList(context.prLabels, "pr-labels");
+  const focusHints = normalizePromptStringList(context.focusHints, "focus-hints");
+  const retrievalSummary = summarizeRetrievalContextFingerprint(context.retrievalContext);
+
+  missingSignals.push(...normalizedChangedFiles.missingSignals, ...focusAreas.missingSignals, ...ignoredAreas.missingSignals, ...prLabels.missingSignals, ...focusHints.missingSignals, ...retrievalSummary.missingSignals);
+
+  if (!owner || !repo) missingSignals.push("repo-identity");
+  if (!Number.isInteger(context.prNumber) || context.prNumber <= 0) missingSignals.push("pr-number");
+  if (!baseBranch || !headBranch) missingSignals.push("pr-refs");
+  if (normalizedChangedFiles.values !== null && normalizedChangedFiles.values.length === 0) missingSignals.push("changed-files");
+  if (typeof context.prTitle !== "string") missingSignals.push("pr-title");
+  if (!prAuthor) missingSignals.push("pr-author");
+
+  if (missingSignals.length > 0) {
+    return { fingerprint: null, missingSignals: Array.from(new Set(missingSignals)) };
+  }
+
+  const fingerprintPayload = {
+    version: 1,
+    repo: `${owner}/${repo}`,
+    prNumber: context.prNumber,
+    prTitleHash: sha256Hex(context.prTitle),
+    prBodyHash: hashPromptString(context.prBody),
+    prAuthor,
+    baseBranch,
+    headBranch,
+    changedFiles: normalizedChangedFiles.values,
+    customInstructionsHash: hashPromptString(context.customInstructions),
+    checkpointEnabled: context.checkpointEnabled ?? false,
+    mode: context.mode ?? "standard",
+    severityMinLevel: context.severityMinLevel ?? "minor",
+    focusAreas: focusAreas.values,
+    ignoredAreas: ignoredAreas.values,
+    maxComments: context.maxComments ?? null,
+    suppressionsHash: hashPromptString(JSON.stringify(context.suppressions ?? [])),
+    minConfidence: context.minConfidence ?? null,
+    diffAnalysisHash: hashPromptString(JSON.stringify(context.diffAnalysis ?? null)),
+    matchedPathInstructionsHash: hashPromptString(JSON.stringify(context.matchedPathInstructions ?? [])),
+    incrementalContextHash: hashPromptString(JSON.stringify(context.incrementalContext ?? null)),
+    retrievalContext: retrievalSummary.value,
+    reviewPrecedentsHash: hashPromptString(JSON.stringify(context.reviewPrecedents ?? [])),
+    wikiKnowledgeHash: hashPromptString(JSON.stringify(context.wikiKnowledge ?? [])),
+    filesByLanguageHash: hashPromptString(JSON.stringify(context.filesByLanguage ?? null)),
+    outputLanguage: context.outputLanguage ?? null,
+    prLabels: prLabels.values,
+    focusHints: focusHints.values,
+    conventionalTypeHash: hashPromptString(JSON.stringify(context.conventionalType ?? null)),
+    deltaContextHash: hashPromptString(JSON.stringify(context.deltaContext ?? null)),
+    largePRContextHash: hashPromptString(JSON.stringify(context.largePRContext ?? null)),
+    authorTier: context.authorTier ?? null,
+    contributorExperienceContractHash: hashPromptString(JSON.stringify(context.contributorExperienceContract ?? null)),
+    authorExpertiseHash: hashPromptString(JSON.stringify(context.authorExpertise ?? [])),
+    depBumpContextHash: hashPromptString(JSON.stringify(context.depBumpContext ?? null)),
+    searchRateLimitDegradationHash: hashPromptString(JSON.stringify(context.searchRateLimitDegradation ?? null)),
+    isDraft: context.isDraft ?? false,
+    unifiedResultsHash: hashPromptString(JSON.stringify(context.unifiedResults ?? [])),
+    contextWindowHash: hashPromptString(context.contextWindow),
+    clusterPatternsHash: hashPromptString(JSON.stringify(context.clusterPatterns ?? [])),
+    linkedIssuesHash: hashPromptString(JSON.stringify(context.linkedIssues ?? null)),
+    activeRulesHash: hashPromptString(JSON.stringify(context.activeRules ?? [])),
+    graphBlastRadiusHash: hashPromptString(JSON.stringify(context.graphBlastRadius ?? null)),
+    graphContextOptionsHash: hashPromptString(JSON.stringify(context.graphContextOptions ?? null)),
+    structuralImpactHash: hashPromptString(JSON.stringify(context.structuralImpact ?? null)),
+    reviewBoundednessHash: hashPromptString(JSON.stringify(context.reviewBoundedness ?? null)),
+    publishToolNamesHash: hashPromptString(JSON.stringify(context.publishToolNames ?? [])),
+  };
+
+  return {
+    fingerprint: sha256Hex(JSON.stringify(fingerprintPayload)),
+    missingSignals: [],
+  };
+}
 
 const REVIEW_PHASE_ORDER = [
   "queue wait",
@@ -1310,6 +1485,13 @@ export function createReviewHandler(deps: {
   searchCache?: SearchCache<number>;
   /** Optional injection for deterministic tests. */
   searchCacheFactory?: () => SearchCache<number>;
+  /** Optional derived prompt cache store overrides for review prompt reuse tests/fail-open wiring. */
+  reviewPromptDerivedCacheOptions?: Pick<
+    SearchCacheOptions<PromptBuildResult>,
+    "ttlMs" | "store" | "inFlightStore"
+  >;
+  /** Optional prompt builder override for review prompt reuse tests. */
+  reviewPromptBuilder?: typeof buildReviewPromptDetails;
   /** Optional code snippet store for hunk embedding. */
   codeSnippetStore?: CodeSnippetStore;
   /** Optional contributor profile store for 4-tier expertise-based reviews. */
@@ -1352,6 +1534,8 @@ export function createReviewHandler(deps: {
     scopeCoordinator,
     searchCache: injectedSearchCache,
     searchCacheFactory,
+    reviewPromptDerivedCacheOptions,
+    reviewPromptBuilder = buildReviewPromptDetails,
     codeSnippetStore,
     contributorProfileStore,
     slackBotToken,
@@ -1380,6 +1564,22 @@ export function createReviewHandler(deps: {
     );
   }
 
+  let reviewPromptDerivedCacheErrorCount = 0;
+  const reviewPromptDerivedCache = createSearchCache<PromptBuildResult>({
+    ...reviewPromptDerivedCacheOptions,
+    onError: (error) => {
+      reviewPromptDerivedCacheErrorCount += 1;
+      logger.warn(
+        {
+          err: error,
+          gate: "review-derived-prompt-cache",
+          gateResult: "degraded",
+        },
+        "Review derived prompt cache degraded; bypassing cache for this request",
+      );
+    },
+  });
+
   let authorPrCountSearchCache: SearchCache<number> | undefined;
   if (injectedSearchCache) {
     authorPrCountSearchCache = injectedSearchCache;
@@ -1394,6 +1594,54 @@ export function createReviewHandler(deps: {
         "Search cache initialization failed (fail-open, continuing without search cache)",
       );
       authorPrCountSearchCache = undefined;
+    }
+  }
+
+  async function buildReviewPromptResultWithCache(params: {
+    cacheQuery: string;
+    context: ReviewPromptBuildContext;
+    statusTarget: { status: "hit" | "miss" | "degraded" | "bypass"; reason: string | null };
+  }): Promise<PromptBuildResult> {
+    const fingerprintResult = buildReviewPromptFingerprint(params.context);
+    if (!fingerprintResult.fingerprint) {
+      params.statusTarget.status = "bypass";
+      params.statusTarget.reason = fingerprintResult.missingSignals.join(",") || "incomplete-fingerprint";
+      return reviewPromptBuilder(params.context);
+    }
+
+    const cacheKey = buildSearchCacheKey({
+      repo: `${params.context.owner}/${params.context.repo}`,
+      searchType: "review-derived-prompt",
+      query: params.cacheQuery,
+      extra: {
+        fingerprint: fingerprintResult.fingerprint,
+      },
+    });
+
+    const cacheErrorsBeforeLookup = reviewPromptDerivedCacheErrorCount;
+    let loaderExecuted = false;
+    try {
+      const result = await reviewPromptDerivedCache.getOrLoad(cacheKey, async () => {
+        loaderExecuted = true;
+        return reviewPromptBuilder(params.context);
+      });
+      const cacheDegraded = reviewPromptDerivedCacheErrorCount > cacheErrorsBeforeLookup;
+      params.statusTarget.status = cacheDegraded ? "degraded" : loaderExecuted ? "miss" : "hit";
+      params.statusTarget.reason = cacheDegraded ? "cache-bookkeeping-error" : null;
+      return result;
+    } catch (error) {
+      params.statusTarget.status = "degraded";
+      params.statusTarget.reason = "prompt-build-failed";
+      logger.warn(
+        {
+          err: error,
+          gate: "review-derived-prompt-cache",
+          gateResult: "degraded",
+          cacheQuery: params.cacheQuery,
+        },
+        "Review prompt cache lookup failed; rebuilding directly",
+      );
+      return reviewPromptBuilder(params.context);
     }
   }
 
@@ -2732,6 +2980,32 @@ export function createReviewHandler(deps: {
               triggerType: "pr_review",
             });
 
+            if (config.telemetry.enabled) {
+              try {
+                const totalEmbeddingLookups = (result?.provenance.embeddingRequests ?? 0) + (result?.provenance.embeddingCacheHits ?? 0);
+                await telemetryStore.recordRateLimitEvent({
+                  deliveryId: event.id,
+                  executionIdentity: `${event.id}:reuse.retrieval-query-embedding.main`,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  eventType: "reuse.retrieval-query-embedding.main",
+                  cacheHitRate: totalEmbeddingLookups > 0
+                    ? (result?.provenance.embeddingCacheHits ?? 0) / totalEmbeddingLookups
+                    : 0,
+                  skippedQueries: result?.provenance.embeddingCacheHits ?? 0,
+                  retryAttempts: result?.provenance.embeddingRequests ?? 0,
+                  degradationPath: result == null
+                    ? "degraded"
+                    : (result.provenance.embeddingCacheHits > 0 ? "hit" : "miss"),
+                });
+              } catch (err) {
+                logger.warn(
+                  { ...baseLog, err },
+                  "Review retrieval reuse telemetry write failed (non-blocking)",
+                );
+              }
+            }
+
             // Capture unified cross-corpus results (KI-13/KI-17)
             if (result && result.unifiedResults && result.unifiedResults.length > 0) {
               unifiedResultsForPrompt = result.unifiedResults;
@@ -3091,7 +3365,9 @@ export function createReviewHandler(deps: {
 
         setReviewWorkPhase("prompt-build");
         // Build review prompt
-        const reviewPrompt = buildReviewPrompt({
+        let reviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
+        let reviewPromptDerivedCacheReason: string | null = null;
+        const reviewPromptBuildContext = {
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -3178,7 +3454,40 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
+        } satisfies ReviewPromptBuildContext;
+        const reviewPromptCacheState: {
+          status: "hit" | "miss" | "degraded" | "bypass";
+          reason: string | null;
+        } = {
+          status: reviewPromptDerivedCacheStatus,
+          reason: reviewPromptDerivedCacheReason,
+        };
+        const reviewPromptResult = await buildReviewPromptResultWithCache({
+          cacheQuery: `initial:${pr.number}:${pr.head.sha ?? "unknown-head-sha"}`,
+          context: reviewPromptBuildContext,
+          statusTarget: reviewPromptCacheState,
         });
+        reviewPromptDerivedCacheStatus = reviewPromptCacheState.status;
+        reviewPromptDerivedCacheReason = reviewPromptCacheState.reason;
+        const reviewPrompt = reviewPromptResult.text;
+        const reviewPromptSections = [
+          buildPromptSectionRecord({
+            deliveryId: event.id,
+            repo: `${apiOwner}/${apiRepo}`,
+            taskType: "review.full",
+            promptKind: "review.user-prompt",
+            sections: reviewPromptResult.sections,
+          }),
+        ];
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-derived-prompt-cache",
+            gateResult: reviewPromptDerivedCacheStatus,
+            ...(reviewPromptDerivedCacheReason ? { reason: reviewPromptDerivedCacheReason } : {}),
+          },
+          "Resolved review prompt derived-cache state",
+        );
         reviewPhaseTimings.set(
           "retrieval/context assembly",
           createReviewPhaseTiming({
@@ -3202,6 +3511,7 @@ export function createReviewHandler(deps: {
           taskType: "review.full",
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
+          promptSections: reviewPromptSections,
           reviewOutputKey,
           deliveryId: event.id,
           knowledgeStore,
@@ -3764,7 +4074,10 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
         const reviewCompletedAt = new Date().toISOString();
-        const buildReviewDetailsBody = (timeoutProgress?: TimeoutReviewDetailsProgress): string => {
+        const buildReviewDetailsBody = (params?: {
+          timeoutProgress?: TimeoutReviewDetailsProgress;
+          reviewFirstPass?: ReviewFirstPassPayload | null;
+        }): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
             filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
@@ -3778,6 +4091,7 @@ export function createReviewHandler(deps: {
               totalFiles: tieredFiles.totalFiles,
             } : undefined,
             reviewBoundedness,
+            reviewFirstPass: params?.reviewFirstPass,
             feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
             keywordParsing: parsedIntent,
             profileSelection,
@@ -3791,7 +4105,7 @@ export function createReviewHandler(deps: {
               publicationPhaseStartedAt,
               totalPhaseStartAt,
             }),
-            timeoutProgress,
+            timeoutProgress: params?.timeoutProgress,
           });
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
@@ -3971,6 +4285,24 @@ export function createReviewHandler(deps: {
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
           try {
+            await telemetryStore.recordRateLimitEvent({
+              deliveryId: event.id,
+              executionIdentity: `${event.id}:reuse.review-derived-prompt`,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              eventType: "reuse.review-derived-prompt",
+              cacheHitRate: reviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+              skippedQueries: reviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+              retryAttempts: reviewPromptDerivedCacheStatus === "hit" ? 0 : 1,
+              degradationPath: reviewPromptDerivedCacheReason
+                ? `${reviewPromptDerivedCacheStatus}:${reviewPromptDerivedCacheReason}`
+                : reviewPromptDerivedCacheStatus,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Review derived-prompt reuse telemetry write failed (non-blocking)");
+          }
+
+          try {
             await telemetryStore.record({
               deliveryId: event.id,
               repo: `${apiOwner}/${apiRepo}`,
@@ -3996,6 +4328,14 @@ export function createReviewHandler(deps: {
             });
           } catch (err) {
             logger.warn({ err }, "Telemetry write failed (non-blocking)");
+          }
+
+          try {
+            for (const promptSectionRecord of result.promptSections ?? reviewPromptSections) {
+              await telemetryStore.recordPromptSections(promptSectionRecord);
+            }
+          } catch (err) {
+            logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
           }
 
           // Cost warning (CONFIG-11)
@@ -4339,7 +4679,18 @@ export function createReviewHandler(deps: {
               timeoutInlineFindings.length,
             );
             const timeoutTotalFiles = checkpoint?.totalFiles ?? changedFiles.length;
-            const hasPartialResults = timeoutFindingCount > 0 || timeoutReviewedFiles.length > 0;
+            const timeoutFirstPass = normalizeReviewFirstPass({
+              boundedness: reviewBoundedness,
+              checkpoint,
+              outcome: {
+                conclusion: result.conclusion,
+                stopReason: result.stopReason,
+                failureSubtype: result.failureSubtype,
+                isTimeout: result.isTimeout,
+                published: result.published,
+              },
+            });
+            const hasPartialResults = timeoutFirstPass?.state === "bounded-first-pass";
 
             // Step 2: Check chronic timeout threshold before publishing
             const recentTimeouts = await telemetryStore.countRecentTimeouts?.(
@@ -4411,28 +4762,15 @@ export function createReviewHandler(deps: {
               retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
             }
 
-            // Step 3: Publish partial review with disclaimer.
-            // IMPORTANT: also publish a placeholder partial review when we have
-            // a full timeout (no checkpoint + no inline output) so we can
-            // (a) inform the user and (b) attach a retry result.
+            // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
             const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines
-              ? "Review timed out with findings posted inline above."
+              ? "Review stopped after GitHub-visible findings were already posted."
               : hasPartialResults
-                ? "Review timed out after partial progress was recorded."
-                : "Review timed out before producing output.");
+                ? "Review stopped after structured first-pass progress was recorded."
+                : "Review stopped before producing trustworthy structured output.");
             const summaryDraft = retrySummaryNote
               ? `${summaryDraftBase}\n\n${retrySummaryNote}`
               : summaryDraftBase;
-            const partialBody = formatPartialReviewComment({
-              summaryDraft,
-              filesReviewed: timeoutReviewedFiles.length,
-              totalFiles: timeoutTotalFiles,
-              timedOutAfterSeconds: timeoutDuration,
-              isRetrySkipped: isChronicTimeout,
-              retrySkipReason: isChronicTimeout
-                ? "Retry skipped -- this repo has timed out frequently for this author."
-                : undefined,
-            });
             const timeoutReviewDetails = {
               analyzedFiles: timeoutReviewedFiles.length,
               totalFiles: timeoutTotalFiles,
@@ -4441,8 +4779,17 @@ export function createReviewHandler(deps: {
             };
 
             const octokit = extractionOctokit;
-            if (canPublishVisibleOutput("timeout partial review")) {
+            if (timeoutFirstPass?.state === "bounded-first-pass" && canPublishVisibleOutput("bounded first-pass review")) {
               setReviewWorkPhase("publish");
+              const partialBody = formatPartialReviewComment({
+                summaryDraft,
+                firstPass: timeoutFirstPass,
+                timedOutAfterSeconds: timeoutDuration,
+                isRetrySkipped: isChronicTimeout,
+                retrySkipReason: isChronicTimeout
+                  ? "Retry skipped -- this repo has timed out frequently for this author."
+                  : undefined,
+              });
               const partialComment = await octokit.rest.issues.createComment({
                 owner: apiOwner,
                 repo: apiRepo,
@@ -4476,14 +4823,18 @@ export function createReviewHandler(deps: {
                   deliveryId: event.id,
                   prNumber: pr.number,
                   partialCommentId,
-                  filesReviewed: timeoutReviewedFiles.length,
+                  boundedReason: timeoutFirstPass.boundedReason,
+                  evidenceSource: timeoutFirstPass.evidenceSource,
+                  coveredFiles: timeoutFirstPass.coveredScope?.reviewedFiles ?? null,
+                  remainingFiles: timeoutFirstPass.remainingScope?.remainingFiles ?? null,
                   findingCount: timeoutFindingCount,
                   hasPartialResults,
                   isChronicTimeout,
                   recentTimeouts,
                   retryState,
+                  zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
                 },
-                "Published partial review on timeout",
+                "Published bounded first-pass review on timeout",
               );
 
               try {
@@ -4494,7 +4845,10 @@ export function createReviewHandler(deps: {
                     repo: apiRepo,
                     prNumber: pr.number,
                     reviewOutputKey,
-                    body: buildReviewDetailsBody(timeoutReviewDetails),
+                    body: buildReviewDetailsBody({
+                      timeoutProgress: timeoutReviewDetails,
+                      reviewFirstPass: timeoutFirstPass,
+                    }),
                     botHandles: [githubApp.getAppSlug(), "claude"],
                   });
                 }
@@ -4536,6 +4890,20 @@ export function createReviewHandler(deps: {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
                 }
               }
+            }
+
+            if (timeoutFirstPass?.state === "zero-evidence-failure") {
+              logger.warn(
+                {
+                  deliveryId: event.id,
+                  prNumber: pr.number,
+                  boundedReason: timeoutFirstPass.boundedReason,
+                  evidenceSource: timeoutFirstPass.evidenceSource,
+                  zeroEvidenceFailure: true,
+                  reviewOutputKey,
+                },
+                "Constrained timeout remained a zero-evidence hard failure",
+              );
             }
 
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
@@ -4645,7 +5013,9 @@ export function createReviewHandler(deps: {
                         : retryInstruction;
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
-                    const retryPrompt = buildReviewPrompt({
+                    let retryReviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
+                    let retryReviewPromptDerivedCacheReason: string | null = null;
+                    const retryPromptBuildContext = {
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
@@ -4674,7 +5044,6 @@ export function createReviewHandler(deps: {
                       retrievalContext: retrievalCtx,
                       reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
                       wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
-                      // Unified cross-corpus retrieval on retry path (KI-13)
                       unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
                       contextWindow: contextWindowForPrompt,
                       filesByLanguage: diffAnalysis?.filesByLanguage,
@@ -4715,7 +5084,41 @@ export function createReviewHandler(deps: {
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
+                    } satisfies ReviewPromptBuildContext;
+                    const retryPromptCacheState: {
+                      status: "hit" | "miss" | "degraded" | "bypass";
+                      reason: string | null;
+                    } = {
+                      status: retryReviewPromptDerivedCacheStatus,
+                      reason: retryReviewPromptDerivedCacheReason,
+                    };
+                    const retryPromptResult = await buildReviewPromptResultWithCache({
+                      cacheQuery: `retry:${pr.number}:${retryReviewOutputKey}`,
+                      context: retryPromptBuildContext,
+                      statusTarget: retryPromptCacheState,
                     });
+                    retryReviewPromptDerivedCacheStatus = retryPromptCacheState.status;
+                    retryReviewPromptDerivedCacheReason = retryPromptCacheState.reason;
+                    const retryPrompt = retryPromptResult.text;
+                    const retryPromptSections = [
+                      buildPromptSectionRecord({
+                        deliveryId: retryDeliveryId,
+                        repo: `${apiOwner}/${apiRepo}`,
+                        taskType: "review.full",
+                        promptKind: "review.user-prompt",
+                        sections: retryPromptResult.sections,
+                      }),
+                    ];
+                    logger.info(
+                      {
+                        ...baseLog,
+                        deliveryId: retryDeliveryId,
+                        gate: "review-derived-prompt-cache",
+                        gateResult: retryReviewPromptDerivedCacheStatus,
+                        ...(retryReviewPromptDerivedCacheReason ? { reason: retryReviewPromptDerivedCacheReason } : {}),
+                      },
+                      "Resolved retry review prompt derived-cache state",
+                    );
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({
@@ -4730,6 +5133,7 @@ export function createReviewHandler(deps: {
                       taskType: "review.full",
                       triggerBody: "",
                       prompt: retryPrompt,
+                      promptSections: retryPromptSections,
                       reviewOutputKey: retryReviewOutputKey,
                       deliveryId: retryDeliveryId,
                       dynamicTimeoutSeconds: retryTimeout,
@@ -4743,6 +5147,16 @@ export function createReviewHandler(deps: {
                       const retryHasResults =
                         (retryCheckpoint?.findingCount ?? 0) >= 1 ||
                         (retryResult.published ?? false);
+
+                      if (config.telemetry.enabled) {
+                        try {
+                          for (const promptSectionRecord of retryResult.promptSections ?? retryPromptSections) {
+                            await telemetryStore.recordPromptSections(promptSectionRecord);
+                          }
+                        } catch (err) {
+                          logger.warn({ err }, "Retry prompt-section telemetry write failed (non-blocking)");
+                        }
+                      }
 
                       if (config.telemetry.enabled) {
                         try {
@@ -4782,13 +5196,48 @@ export function createReviewHandler(deps: {
                       (retryResult.isTimeout && retryHasResults)
                     ) {
                       const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
+                      const mergedCheckpoint = checkpoint && retryCheckpoint
+                        ? {
+                            ...checkpoint,
+                            filesReviewed: Array.from(new Set([
+                              ...checkpoint.filesReviewed,
+                              ...retryCheckpoint.filesReviewed,
+                            ])),
+                            summaryDraft: retryCheckpoint.summaryDraft || checkpoint.summaryDraft,
+                            totalFiles: Math.max(checkpoint.totalFiles, retryCheckpoint.totalFiles),
+                            partialCommentId: checkpoint.partialCommentId ?? retryCheckpoint.partialCommentId,
+                          }
+                        : checkpoint ?? retryCheckpoint;
+                      const mergedFirstPass = normalizeReviewFirstPass({
+                        boundedness: reviewBoundedness,
+                        checkpoint: mergedCheckpoint,
+                        outcome: {
+                          conclusion: result.conclusion,
+                          stopReason: result.stopReason,
+                          failureSubtype: result.failureSubtype,
+                          isTimeout: result.isTimeout,
+                          published: true,
+                        },
+                      });
+
+                      if (mergedFirstPass?.state !== "bounded-first-pass") {
+                        logger.warn(
+                          {
+                            deliveryId: retryDeliveryId,
+                            prNumber: pr.number,
+                            reviewOutputKey,
+                          },
+                          "Retry merge skipped because bounded first-pass state became non-publishable",
+                        );
+                        return;
+                      }
+
                       const mergedBody = formatPartialReviewComment({
                         summaryDraft:
                           retryCheckpoint?.summaryDraft ??
                           checkpoint?.summaryDraft ??
                           "Review completed with reduced scope.",
-                        filesReviewed: timeoutReviewedFiles.length,
-                        totalFiles: timeoutTotalFiles,
+                        firstPass: mergedFirstPass,
                         timedOutAfterSeconds: timeoutDuration,
                         isRetryResult: true,
                         retryFilesReviewed,
@@ -4819,6 +5268,37 @@ export function createReviewHandler(deps: {
                           body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
                         });
 
+                        try {
+                          await upsertReviewDetailsComment({
+                            octokit: retryOctokit,
+                            owner: apiOwner,
+                            repo: apiRepo,
+                            prNumber: pr.number,
+                            reviewOutputKey,
+                            body: buildReviewDetailsBody({
+                              reviewFirstPass: mergedFirstPass,
+                            }),
+                            botHandles: [githubApp.getAppSlug(), "claude"],
+                            recheckCanPublish: () =>
+                              canPublishReviewWorkOutput(
+                                retryReviewWorkAttempt.attemptId,
+                                "retry Review Details merge",
+                                retryDeliveryId,
+                              ),
+                          });
+                        } catch (reviewDetailsErr) {
+                          logger.warn(
+                            {
+                              ...baseLog,
+                              gate: "review-details-output",
+                              gateResult: "retry-merge-failed",
+                              reviewOutputKey,
+                              err: reviewDetailsErr,
+                            },
+                            "Failed to refresh Review Details after retry merge",
+                          );
+                        }
+
                         logger.info(
                           {
                             deliveryId: retryDeliveryId,
@@ -4846,6 +5326,24 @@ export function createReviewHandler(deps: {
                     }
 
                     if (config.telemetry.enabled) {
+                      try {
+                        await telemetryStore.recordRateLimitEvent({
+                          deliveryId: retryDeliveryId,
+                          executionIdentity: `${retryDeliveryId}:reuse.review-derived-prompt`,
+                          repo: `${apiOwner}/${apiRepo}`,
+                          prNumber: pr.number,
+                          eventType: "reuse.review-derived-prompt",
+                          cacheHitRate: retryReviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+                          skippedQueries: retryReviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
+                          retryAttempts: retryReviewPromptDerivedCacheStatus === "hit" ? 0 : 1,
+                          degradationPath: retryReviewPromptDerivedCacheReason
+                            ? `${retryReviewPromptDerivedCacheStatus}:${retryReviewPromptDerivedCacheReason}`
+                            : retryReviewPromptDerivedCacheStatus,
+                        });
+                      } catch (err) {
+                        logger.warn({ err }, "Retry derived-prompt reuse telemetry write failed (non-blocking)");
+                      }
+
                       try {
                         await telemetryStore.record({
                           deliveryId: retryDeliveryId,
@@ -4954,7 +5452,30 @@ export function createReviewHandler(deps: {
           const exhaustedTurnBudget =
             result.stopReason === "max_turns" ||
             result.failureSubtype === "error_max_turns";
-          const failureBody = exhaustedTurnBudget
+          const failureCheckpoint = exhaustedTurnBudget
+            ? (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null
+            : null;
+          const failureFirstPass = exhaustedTurnBudget
+            ? normalizeReviewFirstPass({
+                boundedness: reviewBoundedness,
+                checkpoint: failureCheckpoint,
+                outcome: {
+                  conclusion: result.conclusion,
+                  stopReason: result.stopReason,
+                  failureSubtype: result.failureSubtype,
+                  isTimeout: result.isTimeout,
+                  published: result.published,
+                },
+              })
+            : null;
+          const failureBody = exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass"
+            ? formatPartialReviewComment({
+                summaryDraft:
+                  failureCheckpoint?.summaryDraft ??
+                  "Review stopped before finishing, but trustworthy bounded first-pass evidence was preserved.",
+                firstPass: failureFirstPass,
+              })
+            : exhaustedTurnBudget
             ? [
                 "> **Kodiai ran out of steps while reviewing this PR**",
                 "",
@@ -4975,6 +5496,23 @@ export function createReviewHandler(deps: {
                 "Try requesting another review if you want a fresh attempt.",
               ].join("\n");
 
+          if (exhaustedTurnBudget) {
+            logger.info(
+              {
+                deliveryId: event.id,
+                prNumber: pr.number,
+                reviewOutputKey,
+                boundedReason: failureFirstPass?.boundedReason ?? null,
+                evidenceSource: failureFirstPass?.evidenceSource ?? "none",
+                zeroEvidenceFailure: failureFirstPass?.state !== "bounded-first-pass",
+                publicationEligible: failureFirstPass?.publication.eligible ?? false,
+              },
+              failureFirstPass?.state === "bounded-first-pass"
+                ? "Publishing bounded first-pass output after max-turns"
+                : "Max-turns ended as a zero-evidence hard failure",
+            );
+          }
+
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {
             setReviewWorkPhase("publish");
@@ -4988,6 +5526,34 @@ export function createReviewHandler(deps: {
               sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
               logger,
             );
+
+            if (exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass") {
+              try {
+                await upsertReviewDetailsComment({
+                  octokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  body: buildReviewDetailsBody({
+                    reviewFirstPass: failureFirstPass,
+                  }),
+                  botHandles: [githubApp.getAppSlug(), "claude"],
+                  recheckCanPublish: () => canPublishVisibleOutput("max-turns Review Details comment"),
+                });
+              } catch (reviewDetailsErr) {
+                logger.warn(
+                  {
+                    ...baseLog,
+                    gate: "review-details-output",
+                    gateResult: "failure-fallback-failed",
+                    reviewOutputKey,
+                    err: reviewDetailsErr,
+                  },
+                  "Failed to publish Review Details for max-turns bounded fallback",
+                );
+              }
+            }
           }
         }
 

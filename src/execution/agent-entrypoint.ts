@@ -21,6 +21,7 @@ import { buildSecurityClaudeMd } from "./executor.ts";
 import { resolveRepoTransport } from "./repo-transport.ts";
 import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
+import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
 // Agent config shape (read from WORKSPACE_DIR/agent-config.json)
@@ -36,6 +37,7 @@ interface AgentConfig {
   repoTransport?: RepoTransport;
   repoBundlePath?: string;
   repoOriginUrl?: string;
+  promptSections?: PromptSectionRecord[];
   mcpServerNames?: string[]; // server names actually registered in orchestrator
 }
 
@@ -368,6 +370,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
         : {}),
       resultText:
         resultMessage.subtype === "success" ? resultMessage.result : undefined,
+      ...(agentConfig.promptSections ? { promptSections: agentConfig.promptSections } : {}),
       ...(toolUseNames.length > 0
         ? {
             toolUseNames,

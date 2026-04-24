@@ -149,11 +149,20 @@ const DEFAULT_TIMEOUT_SURFACE_FIXTURES: TimeoutSurfaceFixtureDefinition[] = [
     name: "timeout-scheduled-retry",
     partialReviewParams: {
       summaryDraft: "Review timed out after partial progress was recorded.",
-      filesReviewed: 2,
-      totalFiles: 5,
+      firstPass: {
+        state: "bounded-first-pass",
+        boundedReason: "timeout",
+        evidenceSource: "checkpoint",
+        coveredScope: { reviewedFiles: 2, totalFiles: 5 },
+        remainingScope: { remainingFiles: 3, totalFiles: 5 },
+        publication: { eligible: true, hasPublishedOutput: false },
+        continuationPending: true,
+        zeroEvidenceFailure: false,
+      },
       timedOutAfterSeconds: 600,
     },
-    expectedPartialReviewLine: "> **Partial review** -- timed out after analyzing 2 of 5 files (600s).",
+    expectedPartialReviewLine:
+      "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 5 files from checkpoint (3 remaining; 600s).",
     reviewDetailsParams: {
       ...REVIEW_DETAILS_TIMEOUT_BASE,
       timeoutProgress: {
@@ -171,13 +180,22 @@ const DEFAULT_TIMEOUT_SURFACE_FIXTURES: TimeoutSurfaceFixtureDefinition[] = [
     name: "timeout-retry-skipped",
     partialReviewParams: {
       summaryDraft: "Review timed out after partial progress was recorded.",
-      filesReviewed: 2,
-      totalFiles: 5,
+      firstPass: {
+        state: "bounded-first-pass",
+        boundedReason: "timeout",
+        evidenceSource: "checkpoint",
+        coveredScope: { reviewedFiles: 2, totalFiles: 5 },
+        remainingScope: { remainingFiles: 3, totalFiles: 5 },
+        publication: { eligible: true, hasPublishedOutput: false },
+        continuationPending: true,
+        zeroEvidenceFailure: false,
+      },
       timedOutAfterSeconds: 600,
       isRetrySkipped: true,
       retrySkipReason: "Retry skipped -- this repo has timed out frequently for this author.",
     },
-    expectedPartialReviewLine: "> **Partial review** -- timed out after analyzing 2 of 5 files (600s).",
+    expectedPartialReviewLine:
+      "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 5 files from checkpoint (3 remaining; 600s).",
     expectedPartialReviewRetryLine: "> Retry skipped -- this repo has timed out frequently for this author.",
     reviewDetailsParams: {
       ...REVIEW_DETAILS_TIMEOUT_BASE,

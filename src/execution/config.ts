@@ -204,6 +204,39 @@ const conversationSchema = z
   })
   .default({ maxTurnsPerPr: 10, contextBudgetChars: 8000 });
 
+const mentionAdmissionRuleSchema = z
+  .object({
+    includeConversationHistory: z.boolean().default(false),
+    includePrMetadata: z.boolean().default(false),
+    includeReviewThread: z.boolean().default(false),
+  });
+
+const mentionAdmissionSchema = z
+  .object({
+    conversational: mentionAdmissionRuleSchema.default({
+      includeConversationHistory: false,
+      includePrMetadata: false,
+      includeReviewThread: false,
+    }),
+    explicitReview: mentionAdmissionRuleSchema.default({
+      includeConversationHistory: true,
+      includePrMetadata: true,
+      includeReviewThread: true,
+    }),
+  })
+  .default({
+    conversational: {
+      includeConversationHistory: false,
+      includePrMetadata: false,
+      includeReviewThread: false,
+    },
+    explicitReview: {
+      includeConversationHistory: true,
+      includePrMetadata: true,
+      includeReviewThread: true,
+    },
+  });
+
 const mentionSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -212,12 +245,25 @@ const mentionSchema = z
     allowedUsers: z.array(z.string()).default([]),
     prompt: z.string().optional(),
     conversation: conversationSchema,
+    admission: mentionAdmissionSchema,
   })
   .default({
     enabled: true,
     acceptClaudeAlias: true,
     allowedUsers: [],
     conversation: { maxTurnsPerPr: 10, contextBudgetChars: 8000 },
+    admission: {
+      conversational: {
+        includeConversationHistory: false,
+        includePrMetadata: false,
+        includeReviewThread: false,
+      },
+      explicitReview: {
+        includeConversationHistory: true,
+        includePrMetadata: true,
+        includeReviewThread: true,
+      },
+    },
   });
 
 const telemetrySchema = z

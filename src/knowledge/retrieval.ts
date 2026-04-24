@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import type { EmbeddingProvider, LearningMemoryStore, RetrievalResult, RerankProvider } from "./types.ts";
+import type { EmbeddingProvider, EmbeddingResult, LearningMemoryStore, RetrievalResult, RerankProvider } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
 import type { MergedRetrievalResult, MultiQueryVariantType } from "./multi-query-retrieval.ts";
 import type { SnippetAnchor } from "./retrieval-snippets.ts";
@@ -78,6 +78,8 @@ export type RetrieveResult = {
     issueCount: number;
     canonicalCodeCount: number;
     unifiedResultCount: number;
+    embeddingRequests: number;
+    embeddingCacheHits: number;
     rerankApplied: boolean;
     hybridSearchUsed: boolean;
     rrfK: number;
@@ -97,6 +99,11 @@ export type RetrieverConfig = {
   sharing: {
     enabled: boolean;
   };
+};
+
+type RequestScopedEmbeddingStats = {
+  requests: number;
+  cacheHits: number;
 };
 
 const VARIANT_TYPE_SEQUENCE: MultiQueryVariantType[] = ["intent", "file-path", "code-shape"];
@@ -375,6 +382,91 @@ function assembleContextWindow(
   return result;
 }
 
+function normalizeEmbeddingCacheText(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function isUsableEmbeddingResult(result: EmbeddingResult): result is NonNullable<EmbeddingResult> {
+  return result !== null && result.embedding instanceof Float32Array && result.embedding.length > 0;
+}
+
+function buildEmbeddingCacheKey(provider: EmbeddingProvider, text: string, inputType: "document" | "query"): string {
+  const providerIdentity = [provider.model ?? "unknown-model", provider.dimensions ?? "unknown-dim"].join(":");
+  return [providerIdentity, inputType, normalizeEmbeddingCacheText(text)].join("|");
+}
+
+function createRequestScopedEmbeddingProvider(
+  provider: EmbeddingProvider,
+  stats: RequestScopedEmbeddingStats,
+): EmbeddingProvider {
+  const cache = new Map<string, NonNullable<EmbeddingResult>>();
+  const inFlight = new Map<string, Promise<EmbeddingResult>>();
+
+  return {
+    async generate(text: string, inputType: "document" | "query"): Promise<EmbeddingResult> {
+      const cacheKey = buildEmbeddingCacheKey(provider, text, inputType);
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        stats.cacheHits += 1;
+        return cached;
+      }
+
+      const pending = inFlight.get(cacheKey);
+      if (pending) {
+        stats.cacheHits += 1;
+        return pending;
+      }
+
+      stats.requests += 1;
+      const request = provider.generate(text, inputType)
+        .then((result) => {
+          if (isUsableEmbeddingResult(result)) {
+            cache.set(cacheKey, result);
+            return result;
+          }
+          return null;
+        })
+        .finally(() => {
+          inFlight.delete(cacheKey);
+        });
+      inFlight.set(cacheKey, request);
+      return request;
+    },
+    get model() { return provider.model; },
+    get dimensions() { return provider.dimensions; },
+  };
+}
+
+function dedupeVariantsByNormalizedQuery(variants: Array<{
+  type: MultiQueryVariantType;
+  query: string;
+  priority: number;
+}>): Array<{
+  variant: {
+    type: MultiQueryVariantType;
+    query: string;
+    priority: number;
+  };
+  duplicateIndices: number[];
+}> {
+  const groups = new Map<string, { variant: { type: MultiQueryVariantType; query: string; priority: number }; duplicateIndices: number[] }>();
+
+  for (const [index, variant] of variants.entries()) {
+    const key = normalizeEmbeddingCacheText(variant.query);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.duplicateIndices.push(index);
+      continue;
+    }
+    groups.set(key, {
+      variant,
+      duplicateIndices: [index],
+    });
+  }
+
+  return Array.from(groups.values());
+}
+
 /**
  * Create a retriever with injected dependencies. Returns a retrieve() function
  * that encapsulates the entire retrieval pipeline: embedding, isolation, merging,
@@ -395,7 +487,6 @@ export function createRetriever(deps: {
   rerankProvider?: RerankProvider;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
-  const wikiProvider = deps.wikiEmbeddingProvider ?? deps.embeddingProvider;
 
   async function retrieve(opts: RetrieveOptions): Promise<RetrieveResult | null> {
     if (!config.retrieval.enabled) {
@@ -407,6 +498,18 @@ export function createRetriever(deps: {
     }
 
     const logger = opts.logger;
+    const requestScopedEmbeddingStats: RequestScopedEmbeddingStats = {
+      requests: 0,
+      cacheHits: 0,
+    };
+    const requestScopedEmbeddingProvider = createRequestScopedEmbeddingProvider(
+      embeddingProvider,
+      requestScopedEmbeddingStats,
+    );
+    const wikiProvider = createRequestScopedEmbeddingProvider(
+      deps.wikiEmbeddingProvider ?? deps.embeddingProvider,
+      requestScopedEmbeddingStats,
+    );
     const topK = opts.topK ?? config.retrieval.topK;
     const distanceThreshold = opts.distanceThreshold ?? config.retrieval.distanceThreshold;
     const adaptive = opts.adaptive ?? config.retrieval.adaptive;
@@ -423,6 +526,8 @@ export function createRetriever(deps: {
         query,
         priority: Math.min(index, 2),
       }));
+      const dedupedVariantGroups = dedupeVariantsByNormalizedQuery(variants);
+      const uniqueVariants = dedupedVariantGroups.map((group) => group.variant);
 
       // Step 2: Execute retrieval variants for learning memories (vector search)
       const maxVariantConcurrency = 2;
@@ -443,10 +548,10 @@ export function createRetriever(deps: {
       ] = await Promise.allSettled([
         // (a) Learning memory vector search (multi-variant)
         executeRetrievalVariants({
-          variants,
+          variants: uniqueVariants,
           maxConcurrency: maxVariantConcurrency,
           execute: async (variant) => {
-            const embedResult = await embeddingProvider.generate(variant.query, "query");
+            const embedResult = await requestScopedEmbeddingProvider.generate(variant.query, "query");
             if (!embedResult) {
               throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
             }
@@ -467,7 +572,7 @@ export function createRetriever(deps: {
         deps.reviewCommentStore
           ? searchReviewComments({
               store: deps.reviewCommentStore,
-              embeddingProvider: deps.embeddingProvider,
+              embeddingProvider: requestScopedEmbeddingProvider,
               query: intentQuery,
               repo: opts.repo,
               topK: 5,
@@ -511,7 +616,7 @@ export function createRetriever(deps: {
         deps.codeSnippetStore
           ? searchCodeSnippets({
               store: deps.codeSnippetStore,
-              embeddingProvider: deps.embeddingProvider,
+              embeddingProvider: requestScopedEmbeddingProvider,
               query: intentQuery,
               repo: opts.repo,
               topK: 5,
@@ -522,7 +627,7 @@ export function createRetriever(deps: {
         deps.canonicalCodeStore
           ? searchCanonicalCode({
               store: deps.canonicalCodeStore,
-              embeddingProvider: deps.embeddingProvider,
+              embeddingProvider: requestScopedEmbeddingProvider,
               query: intentQuery,
               repo: opts.repo,
               canonicalRef,
@@ -534,7 +639,7 @@ export function createRetriever(deps: {
         deps.issueStore
           ? searchIssues({
               store: deps.issueStore,
-              embeddingProvider: deps.embeddingProvider,
+              embeddingProvider: requestScopedEmbeddingProvider,
               query: intentQuery,
               repo: opts.repo,
               topK: 5,
@@ -553,7 +658,19 @@ export function createRetriever(deps: {
 
       // Extract settled results (fail-open)
       const resultsByVariant =
-        variantResults.status === "fulfilled" ? variantResults.value : [];
+        variantResults.status === "fulfilled"
+          ? dedupedVariantGroups.flatMap((group, groupIndex) => {
+              const result = variantResults.value[groupIndex];
+              if (!result?.error && group.duplicateIndices.length > 1) {
+                requestScopedEmbeddingStats.cacheHits += group.duplicateIndices.length - 1;
+              }
+              return group.duplicateIndices.map((variantIndex) => ({
+                variant: variants[variantIndex]!,
+                results: result?.results,
+                error: result?.error,
+              }));
+            })
+          : [];
       const reviewPrecedents =
         reviewVectorResult.status === "fulfilled" ? reviewVectorResult.value : [];
       const wikiKnowledge =
@@ -952,6 +1069,8 @@ export function createRetriever(deps: {
           issueCount: issueResults.length,
           canonicalCodeCount: canonicalCodeResults.length,
           unifiedResultCount: unifiedResults.length,
+          embeddingRequests: requestScopedEmbeddingStats.requests,
+          embeddingCacheHits: requestScopedEmbeddingStats.cacheHits,
           rerankApplied,
           hybridSearchUsed: true,
           rrfK: RRF_K,

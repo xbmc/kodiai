@@ -30,6 +30,7 @@ import {
   buildAuthFetchUrl,
   createAzureFilesWorkspaceDir,
 } from "../jobs/workspace.ts";
+import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 export function buildSecurityClaudeMd(): string {
   return `# Security Policy
@@ -253,6 +254,7 @@ export async function prepareAgentWorkspace(params: {
   allowedTools: string[];
   taskType: string;
   mcpServerNames: string[];
+  promptSections?: PromptSectionRecord[];
   token?: string;
 }): Promise<{ repoCwd?: string; repoBundlePath?: string; repoTransport?: RepoTransport }> {
   let repoCwd: string | undefined;
@@ -294,6 +296,7 @@ export async function prepareAgentWorkspace(params: {
       taskType: params.taskType,
       ...(repoCwd ? { repoCwd } : {}),
       ...(repoTransport ? { repoTransport } : {}),
+      ...(params.promptSections ? { promptSections: params.promptSections } : {}),
       mcpServerNames: params.mcpServerNames,
     }),
   );
@@ -493,6 +496,7 @@ export function createExecutor(deps: {
           allowedTools,
           taskType,
           mcpServerNames,
+          promptSections: context.promptSections,
           token: context.workspace.token,
         });
 
