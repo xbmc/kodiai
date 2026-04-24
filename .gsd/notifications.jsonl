@@ -473,3 +473,6 @@
 {"id":"bc82b6b0-e285-4eda-b528-e83addbca133","ts":"2026-04-24T06:37:53.319Z","severity":"info","message":"Verification gate: 3/3 checks passed","source":"notify","read":false}
 {"id":"d340a83b-f604-4569-9e8a-4314cb9bb9f7","ts":"2026-04-24T06:45:00.519Z","severity":"warning","message":"[dispatch] Implementation artifact check inconclusive for M063 — proceeding (git context unavailable)","source":"workflow-logger","read":false}
 {"id":"629ef168-4756-4a33-b8d0-24d4d36900d3","ts":"2026-04-24T06:45:55.025Z","severity":"warning","message":"[recovery] verify-fail complete-milestone M063: existsSync false for /home/keith/src/kodiai/.gsd/milestones/M063/M063-SUMMARY.md","source":"workflow-logger","read":false}
+{"id":"7cfcb91d-e9d5-4237-8b03-b089c7a69bd8","ts":"2026-04-24T06:45:55.339Z","severity":"info","message":"Committed: chore: auto-commit after complete-milestone","source":"notify","read":false}
+{"id":"1f40df5f-bc68-4bb4-8b79-95f400b7307a","ts":"2026-04-24T06:45:55.361Z","severity":"warning","message":"Artifact missing for complete-milestone M063 — retrying (attempt 1)","source":"notify","read":false}
+{"id":"a918bc65-6829-4a81-ada7-73beb1f632de","ts":"2026-04-24T06:45:55.864Z","severity":"warning","message":"[dispatch] Implementation artifact check inconclusive for M063 — proceeding (git context unavailable)","source":"workflow-logger","read":false}

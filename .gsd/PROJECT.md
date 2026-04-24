@@ -20,7 +20,7 @@ Milestone M062 is complete as the large-PR truth baseline:
 - Requirements `R061` and `R064` are validated with fresh milestone-close evidence from verifier tests, handler/formatter tests, deterministic verifier runs, and a clean TypeScript compile gate.
 - M062 now has two deterministic proof surfaces: `verify:m062:s01` for bounded-vs-dead-end first-pass classification and `verify:m062:s03` for visible-surface truthfulness parity.
 
-Milestone M063 is now functionally complete at the slice level:
+Milestone M063 is complete as the continuation-driven large-PR execution redesign:
 - S01 established automatic continuation planning and settlement through `src/lib/review-continuation-lifecycle.ts`, removing timeout-branch-local continuation behavior.
 - S02 collapsed continuation onto one canonical visible review surface anchored to the base `reviewOutputKey`, refreshed nested Review Details in place, rendered explicit revision summaries, and kept no-delta settlement publicly quiet.
 - S03 added deterministic proof that continuation stays materially narrower than the first pass and remains authority-safe on shipped same-surface retry paths.
@@ -28,7 +28,7 @@ Milestone M063 is now functionally complete at the slice level:
 - `scripts/verify-m063-s02.ts` proves same-surface ownership, explicit revision visibility, and quiet no-delta settlement.
 - `scripts/verify-m063-s03.ts` proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required prompt sections, and stays truthful about sufficient-but-bounded coverage rather than claiming exhaustive review.
 - `src/handlers/review.test.ts` now proves stale/superseded retry attempts cannot overwrite the canonical summary, cannot refresh nested Review Details after losing publish rights, and keep no-delta settlement as a public no-op.
-- Requirement `R066` is validated with fresh slice-close evidence; M063 now has deterministic proof for lifecycle scheduling, same-surface revision behavior, bounded continuation shaping, and last-mile authority safety.
+- Requirements `R062`, `R063`, `R065`, and `R066` are validated, and milestone-close verification re-ran `scripts/verify-m063-s01.ts --json`, `bun run verify:m063:s02 -- --json`, `bun run verify:m063:s03 -- --json`, and `bun run tsc --noEmit` successfully.
 
 The prior token-accounting track (M061) remains supporting infrastructure: Postgres-backed telemetry, prompt-section accounting, mention-context reduction, and reuse evidence continue to provide observability and verification surfaces for later review-work milestones.
 
@@ -58,4 +58,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M055: Live hardening and rollout proof.
 - [x] M061: Token-accounting baseline and reduction proof track (supporting observability infrastructure).
 - [x] M062: Large-PR truth baseline — bounded first-pass contract, visible review coherence, and deterministic truthfulness verifier complete.
-- [ ] M063: Continuation redesign — all three slices are complete; pending milestone-level validation and closure artifacts.
+- [x] M063: Continuation redesign — automatic continuation lifecycle, canonical same-surface revisions, bounded continuation proof, and stale-authority safety complete.
