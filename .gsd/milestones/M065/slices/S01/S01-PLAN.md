@@ -54,7 +54,7 @@ Done when:
   - Files: `scripts/verify-m065.test.ts`, `scripts/verify-m065.ts`, `package.json`
   - Verify: bun test scripts/verify-m065.test.ts
 
-- [ ] **T02: Implement `verify:m065` composition, CLI, and drill-down metadata** `est:1h`
+- [x] **T02: Implement `verify:m065` composition, CLI, and drill-down metadata** `est:1h`
   Expected executor skills: `test-driven-development`, `systematic-debugging`, `verify-before-complete`.
 
 Implement the composed verifier against the contract from T01. Steps:
