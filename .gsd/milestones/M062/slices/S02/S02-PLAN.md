@@ -56,7 +56,7 @@ Shared visible-state formatter contract wired through `src/lib/review-utils.ts`,
   - Files: `src/lib/review-utils.ts`, `src/lib/review-utils.test.ts`, `src/lib/partial-review-formatter.ts`, `src/lib/partial-review-formatter.test.ts`
   - Verify: bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts
 
-- [ ] **T02: Make Review Details and bounded comments render the same coverage and continuation story** `est:45m`
+- [x] **T02: Make Review Details and bounded comments render the same coverage and continuation story** `est:45m`
   Wire the shared wording contract into both visible surfaces. Reconcile the current `timeoutProgress` precedence in `formatReviewDetailsSummary()` with the normalized first-pass payload so timeout details can add retry metadata without bypassing the shared coverage/remaining/continuation wording, and keep surface-specific framing limited to blockquote versus bullet formatting.
   - Files: `src/lib/review-utils.ts`, `src/lib/review-utils.test.ts`, `src/lib/partial-review-formatter.ts`, `src/lib/partial-review-formatter.test.ts`
   - Verify: bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts

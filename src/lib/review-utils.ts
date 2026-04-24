@@ -571,22 +571,29 @@ export function formatReviewDetailsSummary(params: {
       : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
   const hasBoundedProfileDetails = Boolean(reviewBoundedness && reviewBoundedness.reasonCodes.length > 0);
 
+  const primaryReviewDetailLines = reviewFirstPass
+    ? describeReviewFirstPass(reviewFirstPass).detailLines
+    : timeoutProgress
+      ? []
+      : [
+          `- Files reviewed: ${filesReviewed}`,
+          `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
+        ];
+
+  const timeoutProgressLines = timeoutProgress
+    ? [
+        `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
+        `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
+        `- Retry state: ${timeoutProgress.retryState}`,
+      ]
+    : [];
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
-    ...(timeoutProgress
-      ? [
-          `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
-          `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
-          `- Retry state: ${timeoutProgress.retryState}`,
-        ]
-      : reviewFirstPass
-        ? describeReviewFirstPass(reviewFirstPass).detailLines
-        : [
-            `- Files reviewed: ${filesReviewed}`,
-            `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
-          ]),
+    ...primaryReviewDetailLines,
+    ...timeoutProgressLines,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     ...(hasBoundedProfileDetails && reviewBoundedness
       ? [

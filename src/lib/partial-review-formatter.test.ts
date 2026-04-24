@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { formatPartialReviewComment } from "./partial-review-formatter.ts";
+import { formatReviewDetailsSummary } from "./review-utils.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
+import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 
 const TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
   state: "bounded-first-pass",
@@ -12,6 +14,24 @@ const TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
   publication: { eligible: true, hasPublishedOutput: false },
   continuationPending: true,
   zeroEvidenceFailure: false,
+};
+
+const REVIEW_DETAILS_BASE_PARAMS = {
+  reviewOutputKey: "test-key-001",
+  filesReviewed: 3,
+  linesAdded: 50,
+  linesRemoved: 10,
+  findingCounts: { critical: 0, major: 1, medium: 2, minor: 0 },
+  profileSelection: {
+    selectedProfile: "balanced" as const,
+    source: "auto" as const,
+    linesChanged: 60,
+    autoBand: null,
+  },
+  contributorExperience: projectContributorExperienceContract({
+    source: "author-cache",
+    tier: "regular",
+  }).reviewDetails,
 };
 
 describe("formatPartialReviewComment", () => {
@@ -135,22 +155,64 @@ describe("formatPartialReviewComment", () => {
     );
   });
 
-  test("stopped continuation states no follow-up review is pending", () => {
-    const out = formatPartialReviewComment({
+  test("Review Details and bounded comment tell the same timeout coverage and continuation story", () => {
+    const comment = formatPartialReviewComment({
       summaryDraft: "Body",
-      firstPass: {
-        ...TIMEOUT_FIRST_PASS,
-        continuationPending: false,
-      },
+      firstPass: TIMEOUT_FIRST_PASS,
       timedOutAfterSeconds: 90,
+      isRetrySkipped: true,
+      retrySkipReason: "Retry skipped -- this repo has timed out frequently",
+    });
+    const details = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      reviewFirstPass: TIMEOUT_FIRST_PASS,
+      timeoutProgress: {
+        analyzedFiles: 4,
+        totalFiles: 12,
+        findingCount: 2,
+        retryState: "Retry skipped -- this repo has timed out frequently",
+      },
     });
 
-    expect(out).toBe(
-      [
-        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; no follow-up review is pending (90s timeout).",
-        "",
-        "Body",
-      ].join("\n"),
+    expect(comment).toContain(
+      "stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; follow-up review is pending (90s timeout).",
     );
+    expect(details).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(details).toContain("- Covered scope: 4/12 changed files");
+    expect(details).toContain("- Remaining scope: 8/12 changed files");
+    expect(details).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(details).toContain("- Retry state: Retry skipped -- this repo has timed out frequently");
+  });
+
+  test("Review Details and bounded comment both degrade truthfully when timeout scope is malformed", () => {
+    const malformedFirstPass: ReviewFirstPassPayload = {
+      ...TIMEOUT_FIRST_PASS,
+      coveredScope: undefined,
+      remainingScope: undefined,
+      continuationPending: true,
+    };
+    const comment = formatPartialReviewComment({
+      summaryDraft: "Body",
+      firstPass: malformedFirstPass,
+      timedOutAfterSeconds: 90,
+    });
+    const details = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      reviewFirstPass: malformedFirstPass,
+      timeoutProgress: {
+        analyzedFiles: 4,
+        totalFiles: 12,
+        findingCount: 2,
+        retryState: "scheduled reduced-scope retry",
+      },
+    });
+
+    expect(comment).toContain(
+      "stopped at timeout using checkpoint evidence; remaining scope is not confirmed from structured evidence; follow-up review is pending (90s timeout).",
+    );
+    expect(details).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(details).toContain("- Remaining scope: not confirmed from structured evidence");
+    expect(details).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
+    expect(details).not.toContain("- Covered scope:");
   });
 });

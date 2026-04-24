@@ -1,0 +1,100 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_K7IRbA2nWS19IktUHQgnYmYC|fc_0ef178687cc21db50169eaf1cf08fc819184378ad81def7c7d",
+    "command": "rg -n \"timeoutProgress|formatPartialReviewComment\\(|formatReviewDetailsSummary\\(\" src/lib src/handlers",
+    "exitCode": 0,
+    "outputSnippet": "src/lib/partial-review-formatter.test.ts:19:    const out = formatPartialReviewComment({\nsrc/lib/partial-review-formatter.test.ts:35:    const out = formatPartialReviewComment({\nsrc/lib/partial-review-formatter.test.ts:54:    const out = formatPartialReviewComment({\nsrc/lib/partial-review-formatter.test.ts:74:    const out = formatPartialReviewComment({\nsrc/lib/partial-review-formatter.test.ts:99:    const out = formatPartialReviewComment({\nsrc/lib/partial-review-formatter.test.ts:119:    const ",
+    "timestamp": 1777005007846
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_ZMswPdhTogT1OMyBlcVAamcx|fc_0ef178687cc21db50169eaf1d4b7788191a00f20f18073b7d2",
+    "path": "src/lib/review-utils.test.ts",
+    "timestamp": 1777005026882
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_yFen1IIye8CUMlhHi9G5IGHb|fc_0ef178687cc21db50169eaf1e5552c819199288d534df45875",
+    "path": "src/lib/partial-review-formatter.test.ts",
+    "timestamp": 1777005033136
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_TpL9ANNmvuk1PLJI7CsuICjs|fc_0ef178687cc21db50169eaf1ec5e848191bc058ef3458d86bf",
+    "path": "src/lib/partial-review-formatter.test.ts",
+    "timestamp": 1777005042263
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_gzeI5Gs4ssGvZinfnku9Q5Mo|fc_0ef178687cc21db50169eaf1f400d88191b3e79c3649c96e57",
+    "path": "src/lib/partial-review-formatter.test.ts",
+    "timestamp": 1777005059689
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_iSMCT6IqNoFZOrXzOJLNolvp|fc_0ef178687cc21db50169eaf20637ec8191a223877787f22656",
+    "command": "bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/lib/review-utils.test.ts:\n(pass) formatReviewDetailsSummary > renders bounded first-pass diagnostics from the normalized contract\n(pass) formatReviewDetailsSummary > renders zero-evidence hard failure explicitly instead of bounded success [1.00ms]\n(pass) formatReviewDetailsSummary > degrades truthfully when remaining scope is missing instead of implying exhaustive coverage\n(pass) formatReviewDetailsSummary > degrades truthfully when covered scope is missing instea",
+    "timestamp": 1777005063009
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_bzNOqIGhkjxxZlV4So2tpjnC|fc_0ef178687cc21db50169eaf21211048191bc36cd873c724ec9",
+    "path": "src/lib/partial-review-formatter.test.ts",
+    "timestamp": 1777005077867
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_e2paXkPEEweJQu8b2c4Lwy1b|fc_0ef178687cc21db50169eaf21a49b0819191c7dc2bb604c055",
+    "command": "bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/lib/review-utils.test.ts:\n(pass) formatReviewDetailsSummary > renders bounded first-pass diagnostics from the normalized contract [1.00ms]\n(pass) formatReviewDetailsSummary > renders zero-evidence hard failure explicitly instead of bounded success\n(pass) formatReviewDetailsSummary > degrades truthfully when remaining scope is missing instead of implying exhaustive coverage\n(pass) formatReviewDetailsSummary > degrades truthfully when covered scope is missing instea",
+    "timestamp": 1777005083438
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_Kvjdl2E10wdO9ytAjM7yfd8G|fc_0ef178687cc21db50169eaf22734488191acd785cd3b02b284",
+    "path": "src/lib/review-utils.ts",
+    "timestamp": 1777005103256
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_ncXlSUVJjh8VZBendrleOgor|fc_0ef178687cc21db50169eaf234283c8191a8194a6a7b21ce09",
+    "command": "bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/lib/review-utils.test.ts:\n(pass) formatReviewDetailsSummary > renders bounded first-pass diagnostics from the normalized contract\n(pass) formatReviewDetailsSummary > renders zero-evidence hard failure explicitly instead of bounded success\n(pass) formatReviewDetailsSummary > degrades truthfully when remaining scope is missing instead of implying exhaustive coverage\n(pass) formatReviewDetailsSummary > degrades truthfully when covered scope is missing instead of inve",
+    "timestamp": 1777005108638
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_dhpcu7j3nVza8RJfSEEAfCLT|fc_0ef178687cc21db50169eaf23aa5088191b1c16de0c45500c0",
+    "path": "src/lib/review-utils.ts",
+    "timestamp": 1777005117725
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_MsTiV263TE3gjtB50tLbGTOM|fc_0ef178687cc21db50169eaf24035c48191b4d13903e7dcafd7",
+    "command": "bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/lib/review-utils.test.ts:\n(pass) formatReviewDetailsSummary > renders bounded first-pass diagnostics from the normalized contract [1.00ms]\n(pass) formatReviewDetailsSummary > renders zero-evidence hard failure explicitly instead of bounded success\n(pass) formatReviewDetailsSummary > degrades truthfully when remaining scope is missing instead of implying exhaustive coverage\n(pass) formatReviewDetailsSummary > degrades truthfully when covered scope is missing instea",
+    "timestamp": 1777005120984
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_1ExK99OzBwiksoP9guTOZMLN|fc_0ef178687cc21db50169eaf24e15808191a32ffd86c6253bb1",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = ['bun','test','./src/lib/review-utils.test.ts','./src/lib/partial-review-formatter.test.ts']\nstart = time.time()\nproc = subprocess.run(cmd, text=True, capture_output=True)\nend = time.time()\nprint(proc.stdout, end='')\nif proc.stderr:\n    print(proc.stderr, end='')\nprint(f'__EXIT_CODE__={proc.returncode}')\nprint(f'__DURATION_MS__={int((end-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/lib/review-utils.test.ts:\n(pass) formatReviewDetailsSummary > renders bounded first-pass diagnostics from the normalized contract [1.00ms]\n(pass) formatReviewDetailsSummary > renders zero-evidence hard failure explicitly instead of bounded success\n(pass) formatReviewDetailsSummary > degrades truthfully when remaining scope is missing instead of implying exhaustive coverage\n(pass) formatReviewDetailsSummary > degrades truthfully when covered scope is missing instea",
+    "timestamp": 1777005134906
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_Xf16pAWhrC9KGpTWz3dAMzPI|fc_0ef178687cc21db50169eaf24e158c8191baa6b90c981569e0",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = \"rg -n \\\"Retry state: .*|Bounded first-pass: timeout via checkpoint evidence|Continuation state: follow-up review pending for remaining scope\\\" src/lib/review-utils.test.ts src/lib/partial-review-formatter.test.ts\"\nstart = time.time()\nproc = subprocess.run(cmd, shell=True, text=True, capture_output=True)\nend = time.time()\nprint(proc.stdout, end='')\nif proc.stderr:\n    print(proc.stderr, end='')\nprint(f'__EXIT_CODE__={proc.returncode}')\nprint(f'__DURATION_MS__={int((end-start)*1000)}')\nPY",
+    "exitCode": 0,
+    "outputSnippet": "src/lib/review-utils.test.ts:43:    expect(result).toContain(\"- Bounded first-pass: timeout via checkpoint evidence\");\nsrc/lib/review-utils.test.ts:48:    expect(result).toContain(\"- Continuation state: follow-up review pending for remaining scope\");\nsrc/lib/review-utils.test.ts:225:    expect(result).toContain(\"- Retry state: scheduled reduced-scope retry\");\nsrc/lib/review-utils.test.ts:242:    expect(result).toContain(\"- Bounded first-pass: timeout via checkpoint evidence\");\nsrc/lib/review-uti",
+    "timestamp": 1777005134906
+  }
+]

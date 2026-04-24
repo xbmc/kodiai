@@ -227,6 +227,49 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("- Findings: 0 critical, 1 major, 2 medium, 0 minor");
   });
 
+  it("keeps shared bounded first-pass wording visible when timeout retry metadata is present", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: BOUNDED_TIMEOUT_FIRST_PASS,
+      timeoutProgress: {
+        analyzedFiles: 1,
+        totalFiles: 3,
+        findingCount: 2,
+        retryState: "scheduled reduced-scope retry",
+      },
+    });
+
+    expect(result).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(result).toContain("- Covered scope: 1/3 changed files");
+    expect(result).toContain("- Remaining scope: 2/3 changed files");
+    expect(result).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(result).toContain("- Retry state: scheduled reduced-scope retry");
+  });
+
+  it("degrades truthfully on timeout metadata when bounded scope fields are missing", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        ...BOUNDED_TIMEOUT_FIRST_PASS,
+        coveredScope: undefined,
+        remainingScope: undefined,
+        continuationPending: true,
+      },
+      timeoutProgress: {
+        analyzedFiles: 1,
+        totalFiles: 3,
+        findingCount: 2,
+        retryState: "retry skipped after timeout",
+      },
+    });
+
+    expect(result).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(result).toContain("- Remaining scope: not confirmed from structured evidence");
+    expect(result).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
+    expect(result).not.toContain("- Covered scope:");
+    expect(result).toContain("- Retry state: retry skipped after timeout");
+  });
+
   it("renders total wall-clock time and the six required phases in stable order", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
