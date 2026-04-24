@@ -109,17 +109,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: One stable public review identity across first pass and continuation.
 
-### R064 — The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
-- Class: failure-visibility
-- Status: active
-- Description: The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
-- Why it matters: Bounded review is only trustworthy if the visible output tells maintainers what Kodiai actually covered and what remains
-- Source: user
-- Primary owning slice: M062/S02
-- Supporting slices: M063/S02
-- Validation: mapped
-- Notes: Coverage/accounting surface for the large-PR redesign.
-
 ### R065 — Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
 - Class: correctness
 - Status: active
@@ -684,6 +673,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M062/S01 now publishes a truthful bounded first-pass contract for constrained large-PR reviews. Fresh verification passed: `bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-first-pass.test.ts`, `bun test ./src/lib/partial-review-formatter.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`, `bun test ./scripts/verify-m062-s01.test.ts && bun run verify:m062:s01 -- --json && bun run tsc --noEmit`.
 - Notes: First-pass contract for the redesign track. This is about useful bounded output, not yet automatic continuation.
 
+### R064 — The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
+- Class: failure-visibility
+- Status: validated
+- Description: The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
+- Why it matters: Bounded review is only trustworthy if the visible output tells maintainers what Kodiai actually covered and what remains
+- Source: user
+- Primary owning slice: M062/S02
+- Supporting slices: M063/S02
+- Validation: Validated in M062/S02 by fresh passing verification: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts` (24/24), `bun test ./src/handlers/review.test.ts` (135/135), and `bun run tsc --noEmit` (exit 0). These tests prove bounded timeout publication, retry-merged updates, exhausted max-turns fallback, and Review Details wording parity all report covered scope, remaining scope, and continuation state truthfully from one coherent visible contract.
+- Notes: S02 completed the visible bounded-review rendering contract; S03 remains responsible for a milestone-level deterministic proof harness that guards this contract against regression.
+
 ### R068 — Large-PR continuation and comment evolution are backed by durable operator evidence so maintainers can tell why continuation progressed, stopped, failed, or was superseded
 - Class: operability
 - Status: validated
@@ -808,7 +808,7 @@ This file is the explicit capability and coverage contract for the project.
 | R061 | core-capability | validated | M062/S01 | none | M062/S01 now publishes a truthful bounded first-pass contract for constrained large-PR reviews. Fresh verification passed: `bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-first-pass.test.ts`, `bun test ./src/lib/partial-review-formatter.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`, `bun test ./scripts/verify-m062-s01.test.ts && bun run verify:m062:s01 -- --json && bun run tsc --noEmit`. |
 | R062 | continuity | active | M063/S01 | none | mapped |
 | R063 | continuity | active | M063/S02 | none | mapped |
-| R064 | failure-visibility | active | M062/S02 | M063/S02 | mapped |
+| R064 | failure-visibility | validated | M062/S02 | M063/S02 | Validated in M062/S02 by fresh passing verification: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts` (24/24), `bun test ./src/handlers/review.test.ts` (135/135), and `bun run tsc --noEmit` (exit 0). These tests prove bounded timeout publication, retry-merged updates, exhausted max-turns fallback, and Review Details wording parity all report covered scope, remaining scope, and continuation state truthfully from one coherent visible contract. |
 | R065 | correctness | active | M063/S02 | none | mapped |
 | R066 | constraint | active | M063/S03 | M065/S02 | mapped |
 | R067 | continuity | active | M064/S01 | none | mapped |
@@ -818,7 +818,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 15
-- Mapped to slices: 15
-- Validated: 52 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R068, R069)
+- Active requirements: 14
+- Mapped to slices: 14
+- Validated: 53 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R064, R068, R069)
 - Unmapped active requirements: 0

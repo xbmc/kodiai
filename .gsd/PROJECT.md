@@ -14,11 +14,11 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestone M062 is the active baseline track for large-PR truthfulness:
 - S01 is complete and establishes a normalized bounded first-pass contract for constrained large-PR reviews.
-- Constrained timeout, `max_turns`, and large-PR outcomes now normalize through one structured payload that records bounded reason, evidence source, covered scope, remaining scope, publication eligibility, and continuation state.
-- `src/handlers/review.ts`, partial-review formatting, and Review Details now consume the same first-pass state, so visible coverage and bounded-reason wording stay aligned.
-- `verify:m062:s01` is now the deterministic proof surface for distinguishing publishable bounded first-pass output from zero-evidence dead-end failure.
-- S02 remains focused on refining coherent visible coverage/state rendering on top of this shared contract.
-- S03 remains focused on the larger milestone proof harness that composes the S01/S02 contracts into a stable operator baseline.
+- S02 is complete and unifies the visible bounded-review contract across the public partial comment and Review Details so both surfaces report the same covered scope, remaining scope, bounded reason, and continuation state.
+- Timeout partial publication, retry-merged updates, and bounded `max_turns` fallback now all publish through the same shared formatter contract instead of branch-local prose.
+- Requirement `R064` is validated by formatter tests, handler integration tests, and a clean TypeScript compile gate.
+- `verify:m062:s01` remains the deterministic proof surface for the bounded first-pass classification seam.
+- S03 remains focused on the milestone-level deterministic proof harness that locks the visible bounded-review contract against regression.
 
 The prior token-accounting track (M061) established Postgres-backed telemetry, prompt-section accounting, mention-context reduction, and reuse evidence that now remain as supporting infrastructure rather than the active planning focus.
 
@@ -28,7 +28,7 @@ The prior token-accounting track (M061) established Postgres-backed telemetry, p
 - **Execution:** Azure Container App Jobs dispatch per review; the agent writes `result.json` to a shared Azure Files mount.
 - **Review identity:** `reviewOutputKey` plus HTML markers create a stable visible review identity across GitHub surfaces.
 - **Large-PR first-pass contract:** `normalizeReviewFirstPass` is the single structured seam for constrained review outcomes. It prefers checkpoint evidence over inferred counts, omits unsupported scope fields, and preserves an explicit `zero-evidence-failure` state when no truthful first-pass evidence exists.
-- **Visible review coherence:** Partial-review output and Review Details both derive bounded reason, evidence source, and covered/remaining scope from the same normalized first-pass payload.
+- **Visible review coherence:** Partial-review output and Review Details both derive bounded reason, evidence source, covered scope, remaining scope, and continuation state from the same normalized first-pass payload; timeout/retry data is additive metadata rather than an alternate wording path.
 - **Deterministic proof:** `scripts/verify-m062-s01.ts` reuses the production first-pass normalization seam and validates bounded-vs-dead-end classification with stable scenario fixtures and `reviewOutputKey`-anchored outputs.
 - **Telemetry baseline:** Usage and verifier scripts read live Postgres telemetry via `createDbClient()` and fail open with explicit database access states instead of consulting stale SQLite paths.
 
@@ -43,4 +43,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M054: Continuation state, supersession, and operator evidence.
 - [x] M055: Live hardening and rollout proof.
 - [x] M061: Token-accounting baseline and reduction proof track (supporting observability infrastructure).
-- [ ] M062: Large-PR truth baseline — S01 complete; S02 and S03 remain.
+- [ ] M062: Large-PR truth baseline — S01 and S02 complete; S03 remains.
