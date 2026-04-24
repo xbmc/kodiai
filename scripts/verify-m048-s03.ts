@@ -162,7 +162,7 @@ const DEFAULT_TIMEOUT_SURFACE_FIXTURES: TimeoutSurfaceFixtureDefinition[] = [
       timedOutAfterSeconds: 600,
     },
     expectedPartialReviewLine:
-      "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 5 files from checkpoint (3 remaining; 600s).",
+      "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 5 files from checkpoint evidence; 3 of 5 files remain unreviewed; follow-up review is pending (600s timeout).",
     reviewDetailsParams: {
       ...REVIEW_DETAILS_TIMEOUT_BASE,
       timeoutProgress: {
@@ -195,7 +195,7 @@ const DEFAULT_TIMEOUT_SURFACE_FIXTURES: TimeoutSurfaceFixtureDefinition[] = [
       retrySkipReason: "Retry skipped -- this repo has timed out frequently for this author.",
     },
     expectedPartialReviewLine:
-      "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 5 files from checkpoint (3 remaining; 600s).",
+      "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 5 files from checkpoint evidence; 3 of 5 files remain unreviewed; follow-up review is pending (600s timeout).",
     expectedPartialReviewRetryLine: "> Retry skipped -- this repo has timed out frequently for this author.",
     reviewDetailsParams: {
       ...REVIEW_DETAILS_TIMEOUT_BASE,
