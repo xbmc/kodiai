@@ -70,10 +70,14 @@ describe("formatPartialReviewComment", () => {
     );
   });
 
-  test("retry result disclaimer keeps normalized coverage and merged retry count", () => {
+  test("retry result disclaimer treats shared first-pass coverage as the canonical post-merge total", () => {
     const out = formatPartialReviewComment({
       summaryDraft: "Body",
-      firstPass: TIMEOUT_FIRST_PASS,
+      firstPass: {
+        ...TIMEOUT_FIRST_PASS,
+        coveredScope: { reviewedFiles: 7, totalFiles: 12 },
+        remainingScope: { remainingFiles: 5, totalFiles: 12 },
+      },
       timedOutAfterSeconds: 90,
       isRetryResult: true,
       retryFilesReviewed: 3,
@@ -81,7 +85,7 @@ describe("formatPartialReviewComment", () => {
 
     expect(out).toBe(
       [
-        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; follow-up review is pending (90s timeout).",
+        "> **Bounded first-pass review** -- stopped at timeout after covering 7 of 12 files from checkpoint evidence; 5 of 12 files remain unreviewed; follow-up review is pending (90s timeout).",
         ">",
         "> Retry complete -- analyzed 7 of 12 files total after a reduced-scope follow-up.",
         "",

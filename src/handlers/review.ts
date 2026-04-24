@@ -5196,9 +5196,21 @@ export function createReviewHandler(deps: {
                       (retryResult.isTimeout && retryHasResults)
                     ) {
                       const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
+                      const mergedCheckpoint = checkpoint && retryCheckpoint
+                        ? {
+                            ...checkpoint,
+                            filesReviewed: Array.from(new Set([
+                              ...checkpoint.filesReviewed,
+                              ...retryCheckpoint.filesReviewed,
+                            ])),
+                            summaryDraft: retryCheckpoint.summaryDraft || checkpoint.summaryDraft,
+                            totalFiles: Math.max(checkpoint.totalFiles, retryCheckpoint.totalFiles),
+                            partialCommentId: checkpoint.partialCommentId ?? retryCheckpoint.partialCommentId,
+                          }
+                        : checkpoint ?? retryCheckpoint;
                       const mergedFirstPass = normalizeReviewFirstPass({
                         boundedness: reviewBoundedness,
-                        checkpoint: checkpoint ?? retryCheckpoint,
+                        checkpoint: mergedCheckpoint,
                         outcome: {
                           conclusion: result.conclusion,
                           stopReason: result.stopReason,
@@ -5255,6 +5267,37 @@ export function createReviewHandler(deps: {
                           comment_id: commentIdToUpdate,
                           body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
                         });
+
+                        try {
+                          await upsertReviewDetailsComment({
+                            octokit: retryOctokit,
+                            owner: apiOwner,
+                            repo: apiRepo,
+                            prNumber: pr.number,
+                            reviewOutputKey,
+                            body: buildReviewDetailsBody({
+                              reviewFirstPass: mergedFirstPass,
+                            }),
+                            botHandles: [githubApp.getAppSlug(), "claude"],
+                            recheckCanPublish: () =>
+                              canPublishReviewWorkOutput(
+                                retryReviewWorkAttempt.attemptId,
+                                "retry Review Details merge",
+                                retryDeliveryId,
+                              ),
+                          });
+                        } catch (reviewDetailsErr) {
+                          logger.warn(
+                            {
+                              ...baseLog,
+                              gate: "review-details-output",
+                              gateResult: "retry-merge-failed",
+                              reviewOutputKey,
+                              err: reviewDetailsErr,
+                            },
+                            "Failed to refresh Review Details after retry merge",
+                          );
+                        }
 
                         logger.info(
                           {
@@ -5483,6 +5526,34 @@ export function createReviewHandler(deps: {
               sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
               logger,
             );
+
+            if (exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass") {
+              try {
+                await upsertReviewDetailsComment({
+                  octokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  body: buildReviewDetailsBody({
+                    reviewFirstPass: failureFirstPass,
+                  }),
+                  botHandles: [githubApp.getAppSlug(), "claude"],
+                  recheckCanPublish: () => canPublishVisibleOutput("max-turns Review Details comment"),
+                });
+              } catch (reviewDetailsErr) {
+                logger.warn(
+                  {
+                    ...baseLog,
+                    gate: "review-details-output",
+                    gateResult: "failure-fallback-failed",
+                    reviewOutputKey,
+                    err: reviewDetailsErr,
+                  },
+                  "Failed to publish Review Details for max-turns bounded fallback",
+                );
+              }
+            }
           }
         }
 

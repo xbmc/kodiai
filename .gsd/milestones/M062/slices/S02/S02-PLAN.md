@@ -61,7 +61,7 @@ Shared visible-state formatter contract wired through `src/lib/review-utils.ts`,
   - Files: `src/lib/review-utils.ts`, `src/lib/review-utils.test.ts`, `src/lib/partial-review-formatter.ts`, `src/lib/partial-review-formatter.test.ts`
   - Verify: bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts
 
-- [ ] **T03: Propagate the unified contract through timeout, retry-merge, and max-turns publication paths** `est:55m`
+- [x] **T03: Propagate the unified contract through timeout, retry-merge, and max-turns publication paths** `est:55m`
   Update `src/handlers/review.ts` and its integration coverage so every constrained publication branch uses the unified visible-state contract. Prove timeout partial publication, retry-merged partial comment updates, and exhausted-`max_turns` bounded fallback all render the same truthful coverage and continuation state without bespoke handler prose.
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/lib/review-utils.ts`, `src/lib/partial-review-formatter.ts`
   - Verify: bun test ./src/handlers/review.test.ts && bun run tsc --noEmit

@@ -32,8 +32,8 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
 
   if (isRetryResult) {
     const retryReviewed = retryFilesReviewed ?? 0;
-    const totalReviewed = (firstPass.coveredScope?.reviewedFiles ?? 0) + retryReviewed;
-    const totalFiles = firstPass.coveredScope?.totalFiles ?? firstPass.remainingScope?.totalFiles ?? totalReviewed;
+    const totalFiles = firstPass.coveredScope?.totalFiles ?? firstPass.remainingScope?.totalFiles ?? retryReviewed;
+    const totalReviewed = firstPass.coveredScope?.reviewedFiles ?? retryReviewed;
     lines.push(">");
     lines.push(`> Retry complete -- analyzed ${totalReviewed} of ${totalFiles} files total after a reduced-scope follow-up.`);
   }
