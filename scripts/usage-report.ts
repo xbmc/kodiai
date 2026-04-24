@@ -1,347 +1,544 @@
-/**
- * Kodiai Usage Report CLI
- *
- * Self-contained CLI script that opens the telemetry SQLite database in
- * read-only mode and surfaces usage, cost, and duration metrics with
- * filtering and multiple output formats.
- *
- * Usage: bun scripts/usage-report.ts [options]
- *
- * Does NOT import from src/ -- opens the database directly with bun:sqlite.
- */
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { parseArgs } from "util";
+import { parseArgs } from "node:util";
+import pino from "pino";
+import { createDbClient, type Sql } from "../src/db/client.ts";
 
-const DEFAULT_DB_PATH = "./data/kodiai-telemetry.db";
+type AccessState = "available" | "missing" | "unavailable";
 
-// ---------------------------------------------------------------------------
-// CLI argument parsing
-// ---------------------------------------------------------------------------
-
-const { values } = parseArgs({
-  args: process.argv.slice(2),
-  options: {
-    since: { type: "string" },
-    repo: { type: "string" },
-    json: { type: "boolean", default: false },
-    csv: { type: "boolean", default: false },
-    db: { type: "string", default: DEFAULT_DB_PATH },
-    help: { type: "boolean", default: false, short: "h" },
-  },
-  strict: true,
-});
-
-if (values.help) {
-  printUsage();
-  process.exit(0);
-}
-
-// ---------------------------------------------------------------------------
-// Database opening
-// ---------------------------------------------------------------------------
-
-const dbPath = resolve(values.db!);
-
-if (!existsSync(dbPath)) {
-  console.error(
-    `Database not found at ${dbPath}. Has the Kodiai server been started? Use --db to specify a custom path.`,
-  );
-  process.exit(1);
-}
-
-const db = new Database(dbPath, { readonly: true });
-db.run("PRAGMA busy_timeout = 5000");
-
-// ---------------------------------------------------------------------------
-// parseSince — converts --since value to YYYY-MM-DD HH:MM:SS format
-// ---------------------------------------------------------------------------
-
-function parseSince(value: string): string {
-  // Relative: Nd (days)
-  const relMatch = value.match(/^(\d+)d$/);
-  if (relMatch) {
-    const days = parseInt(relMatch[1]!);
-    const d = new Date();
-    d.setDate(d.getDate() - days);
-    return d.toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
-  }
-
-  // Absolute: YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value + " 00:00:00";
-  }
-
-  // Full ISO datetime
-  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value)) {
-    return value.replace("T", " ");
-  }
-
-  console.error(
-    `Invalid --since format: "${value}". Use Nd (e.g., 7d) or YYYY-MM-DD`,
-  );
-  process.exit(1);
-}
-
-// ---------------------------------------------------------------------------
-// Dynamic WHERE clause construction
-// ---------------------------------------------------------------------------
-
-const conditions: string[] = [];
-const params: Record<string, string | number> = {};
-
-if (values.since) {
-  const cutoff = parseSince(values.since);
-  conditions.push("created_at >= $since");
-  params.$since = cutoff;
-}
-
-if (values.repo) {
-  conditions.push("repo = $repo");
-  params.$repo = values.repo;
-}
-
-const whereClause =
-  conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
-
-// ---------------------------------------------------------------------------
-// SQL queries
-// ---------------------------------------------------------------------------
-
-type SummaryRow = {
-  total_executions: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_tokens: number;
-  total_cost: number;
+type CliOptions = {
+  since: string | null;
+  repo: string | null;
+  json: boolean;
+  csv: boolean;
+  help: boolean;
 };
 
-type RepoRow = {
+export type UsageReportSummary = {
+  totalExecutions: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheWriteTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  distinctDeliveries: number;
+};
+
+export type UsageTaskTypeRow = {
+  taskType: string;
+  executions: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cacheEffectiveness: number;
+};
+
+export type UsageDeliveryRow = {
+  deliveryId: string;
   repo: string;
-  executions: number;
-  total_tokens: number;
-  total_cost: number;
-  avg_duration_ms: number;
+  taskType: string;
+  promptKinds: string[];
+  sectionCount: number;
+  promptEstimatedTokens: number;
+  llmInputTokens: number;
+  llmOutputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  estimatedCostUsd: number;
 };
 
-type CategoryRow = {
-  category: string;
+export type UsagePromptSectionRow = {
+  taskType: string;
+  promptKind: string;
+  sectionName: string;
   executions: number;
-  avg_duration_ms: number;
-  total_cost: number;
+  totalEstimatedTokens: number;
+  totalCharCount: number;
+  truncatedExecutions: number;
 };
 
-const summaryQuery = db.query<SummaryRow, Record<string, string | number>>(
-  `SELECT
-    COUNT(*) as total_executions,
-    COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-    COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-    COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
-    COALESCE(SUM(cost_usd), 0) as total_cost
-  FROM executions
-  ${whereClause}`,
-);
+export type UsageRateLimitRow = {
+  taskType: string;
+  executions: number;
+  avgCacheHitRate: number;
+  totalSkippedQueries: number;
+  degradationCount: number;
+};
 
-const reposQuery = db.query<RepoRow, Record<string, string | number>>(
-  `SELECT
-    repo,
-    COUNT(*) as executions,
-    SUM(input_tokens + output_tokens) as total_tokens,
-    SUM(cost_usd) as total_cost,
-    ROUND(AVG(duration_ms)) as avg_duration_ms
-  FROM executions
-  ${whereClause}
-  GROUP BY repo
-  ORDER BY total_cost DESC`,
-);
+export type UsageReportQueryResult = {
+  summary: UsageReportSummary;
+  taskTypes: UsageTaskTypeRow[];
+  deliveryBreakdown: UsageDeliveryRow[];
+  promptSections: UsagePromptSectionRow[];
+  rateLimits: UsageRateLimitRow[];
+};
 
-const categoryQuery = db.query<CategoryRow, Record<string, string | number>>(
-  `SELECT
-    CASE
-      WHEN event_type LIKE 'pull_request.%' THEN 'review'
-      ELSE 'mention'
-    END as category,
-    COUNT(*) as executions,
-    ROUND(AVG(duration_ms)) as avg_duration_ms,
-    SUM(cost_usd) as total_cost
-  FROM executions
-  ${whereClause}
-  GROUP BY category
-  ORDER BY avg_duration_ms DESC`,
-);
+export type UsageReport = {
+  command: "report";
+  generatedAt: string;
+  filters: {
+    since: string | null;
+    repo: string | null;
+  };
+  preflight: {
+    databaseAccess: AccessState;
+    detail: string;
+  };
+  summary: UsageReportSummary & {
+    cacheEffectiveness: number;
+  };
+  taskTypes: UsageTaskTypeRow[];
+  deliveryBreakdown: UsageDeliveryRow[];
+  promptSections: UsagePromptSectionRow[];
+  rateLimits: UsageRateLimitRow[];
+};
 
-const summary = summaryQuery.get(params)!;
-const repos = reposQuery.all(params);
-const categories = categoryQuery.all(params);
-
-// ---------------------------------------------------------------------------
-// Output formatting
-// ---------------------------------------------------------------------------
-
-function padRight(str: string, len: number): string {
-  return str.slice(0, len).padEnd(len);
+function emptySummary(): UsageReportSummary {
+  return {
+    totalExecutions: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheWriteTokens: 0,
+    totalTokens: 0,
+    totalCostUsd: 0,
+    distinctDeliveries: 0,
+  };
 }
 
-function padLeft(str: string, len: number): string {
-  return str.slice(0, len).padStart(len);
+function computeCacheEffectiveness(summary: UsageReportSummary): number {
+  if (summary.totalTokens <= 0) {
+    return 0;
+  }
+  return Number((summary.totalCacheReadTokens / summary.totalTokens).toFixed(4));
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+function roundCurrency(value: number): number {
+  return Number(value.toFixed(8));
 }
 
-if (values.json) {
-  // --json output (REPORT-06)
-  const output = {
-    generated: new Date().toISOString(),
-    filters: {
-      since: values.since ?? null,
-      repo: values.repo ?? null,
+function roundRatio(value: number): number {
+  return Number(value.toFixed(4));
+}
+
+export function buildUsageReport(input: {
+  generatedAt: string;
+  filters: { since: string | null; repo: string | null };
+  accessState: AccessState;
+  accessDetail: string;
+  result: UsageReportQueryResult | null;
+}): UsageReport {
+  const result = input.result ?? {
+    summary: emptySummary(),
+    taskTypes: [],
+    deliveryBreakdown: [],
+    promptSections: [],
+    rateLimits: [],
+  };
+
+  return {
+    command: "report",
+    generatedAt: input.generatedAt,
+    filters: input.filters,
+    preflight: {
+      databaseAccess: input.accessState,
+      detail: input.accessDetail,
     },
     summary: {
-      totalExecutions: summary.total_executions,
-      totalInputTokens: summary.total_input_tokens,
-      totalOutputTokens: summary.total_output_tokens,
-      totalTokens: summary.total_tokens,
-      totalCost: summary.total_cost,
+      ...result.summary,
+      cacheEffectiveness: computeCacheEffectiveness(result.summary),
     },
-    topRepos: repos,
-    durationByCategory: categories,
+    taskTypes: result.taskTypes,
+    deliveryBreakdown: result.deliveryBreakdown,
+    promptSections: result.promptSections,
+    rateLimits: result.rateLimits,
   };
-  console.log(JSON.stringify(output, null, 2));
-} else if (values.csv) {
-  // --csv output (REPORT-07)
-  // Summary section
-  console.log("section,metric,value");
-  console.log(`summary,total_executions,${summary.total_executions}`);
-  console.log(`summary,total_input_tokens,${summary.total_input_tokens}`);
-  console.log(`summary,total_output_tokens,${summary.total_output_tokens}`);
-  console.log(`summary,total_tokens,${summary.total_tokens}`);
-  console.log(`summary,total_cost,${summary.total_cost}`);
-  console.log("");
+}
 
-  // Repos section
-  console.log("repo,executions,total_tokens,total_cost,avg_duration_ms");
-  for (const row of repos) {
-    console.log(
-      `"${row.repo}",${row.executions},${row.total_tokens},${row.total_cost},${row.avg_duration_ms}`,
+function formatNumber(value: number): string {
+  return value.toLocaleString();
+}
+
+function formatCurrency(value: number): string {
+  return `$${value.toFixed(4)}`;
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+export function renderUsageReportText(report: UsageReport): string {
+  const lines = [
+    "Kodiai Telemetry Usage Report",
+    "",
+    `Database access: ${report.preflight.databaseAccess}`,
+    `Preflight detail: ${report.preflight.detail}`,
+    `Generated at: ${report.generatedAt}`,
+  ];
+
+  if (report.filters.since || report.filters.repo) {
+    lines.push(
+      `Filters: since=${report.filters.since ?? "none"} repo=${report.filters.repo ?? "none"}`,
     );
   }
-  console.log("");
 
-  // Category section
-  console.log("category,executions,avg_duration_ms,total_cost");
-  for (const row of categories) {
-    console.log(
-      `${row.category},${row.executions},${row.avg_duration_ms},${row.total_cost}`,
-    );
-  }
-} else {
-  // Human-readable output (default)
-  console.log("Kodiai Usage Report");
-  console.log("=".repeat(65));
-
-  // Active filters
-  if (values.since || values.repo) {
-    console.log("");
-    console.log("Filters:");
-    if (values.since) console.log(`  Since: ${values.since}`);
-    if (values.repo) console.log(`  Repo:  ${values.repo}`);
+  if (report.preflight.databaseAccess !== "available") {
+    lines.push("", "No live telemetry data available. The report failed open so operators can see the access state without relying on stale SQLite data.");
+    return lines.join("\n");
   }
 
-  if (summary.total_executions === 0) {
-    console.log("");
-    console.log("No executions found.");
-    if (values.since || values.repo) {
-      console.log("Try adjusting the filters above.");
-    }
-    db.close();
-    process.exit(0);
-  }
+  lines.push(
+    "",
+    "Summary",
+    `- Executions: ${formatNumber(report.summary.totalExecutions)}`,
+    `- Distinct deliveries: ${formatNumber(report.summary.distinctDeliveries)}`,
+    `- Input tokens: ${formatNumber(report.summary.totalInputTokens)}`,
+    `- Output tokens: ${formatNumber(report.summary.totalOutputTokens)}`,
+    `- Cache read tokens: ${formatNumber(report.summary.totalCacheReadTokens)}`,
+    `- Cache write tokens: ${formatNumber(report.summary.totalCacheWriteTokens)}`,
+    `- Total tokens: ${formatNumber(report.summary.totalTokens)}`,
+    `- Total cost: ${formatCurrency(report.summary.totalCostUsd)}`,
+    `- Cache effectiveness: ${formatPercent(report.summary.cacheEffectiveness)}`,
+    "",
+    "Task-path attribution",
+  );
 
-  // Summary section
-  console.log("");
-  console.log("Summary");
-  console.log("-".repeat(35));
-  console.log(`  Total Executions:  ${summary.total_executions}`);
-  console.log(
-    `  Input Tokens:      ${summary.total_input_tokens.toLocaleString()}`,
-  );
-  console.log(
-    `  Output Tokens:     ${summary.total_output_tokens.toLocaleString()}`,
-  );
-  console.log(
-    `  Total Tokens:      ${summary.total_tokens.toLocaleString()}`,
-  );
-  console.log(`  Total Cost:        $${summary.total_cost.toFixed(4)}`);
-
-  // Top Repos by Cost
-  if (repos.length > 0) {
-    console.log("");
-    console.log("Top Repos by Cost");
-    const header =
-      padRight("Repo", 35) +
-      padLeft("Execs", 8) +
-      padLeft("Tokens", 12) +
-      padLeft("Cost", 10) +
-      padLeft("Avg Duration", 14);
-    console.log(header);
-    console.log("-".repeat(header.length));
-    for (const row of repos) {
-      console.log(
-        padRight(row.repo, 35) +
-          padLeft(String(row.executions), 8) +
-          padLeft(row.total_tokens.toLocaleString(), 12) +
-          padLeft("$" + row.total_cost.toFixed(4), 10) +
-          padLeft(formatDuration(row.avg_duration_ms), 14),
+  if (report.taskTypes.length === 0) {
+    lines.push("- No llm_cost_events rows matched the requested filters.");
+  } else {
+    for (const row of report.taskTypes) {
+      lines.push(
+        `- ${row.taskType}: executions=${row.executions} tokens=${formatNumber(row.totalTokens)} cost=${formatCurrency(row.totalCostUsd)} cache_read=${formatNumber(row.cacheReadTokens)} cache_write=${formatNumber(row.cacheWriteTokens)} cache_effectiveness=${formatPercent(row.cacheEffectiveness)}`,
       );
     }
   }
 
-  // Duration by Event Type
-  if (categories.length > 0) {
-    console.log("");
-    console.log("Duration by Event Type");
-    const catHeader =
-      padRight("Category", 12) +
-      padLeft("Execs", 8) +
-      padLeft("Avg Duration", 14) +
-      padLeft("Cost", 10);
-    console.log(catHeader);
-    console.log("-".repeat(catHeader.length));
-    for (const row of categories) {
-      console.log(
-        padRight(row.category, 12) +
-          padLeft(String(row.executions), 8) +
-          padLeft(formatDuration(row.avg_duration_ms), 14) +
-          padLeft("$" + row.total_cost.toFixed(4), 10),
+  lines.push("", "Delivery breakdown");
+  if (report.deliveryBreakdown.length === 0) {
+    lines.push("- No delivery-level attribution rows matched the requested filters.");
+  } else {
+    for (const row of report.deliveryBreakdown) {
+      lines.push(
+        `- ${row.deliveryId} ${row.taskType} repo=${row.repo} prompt_kinds=${row.promptKinds.join(", ")} sections=${row.sectionCount} prompt_tokens=${row.promptEstimatedTokens} input=${row.llmInputTokens} output=${row.llmOutputTokens} cache_read=${row.cacheReadTokens} cache_write=${row.cacheWriteTokens} cost=${formatCurrency(row.estimatedCostUsd)}`,
       );
     }
+  }
+
+  lines.push("", "Prompt-section summaries");
+  if (report.promptSections.length === 0) {
+    lines.push("- No prompt_section_events rows matched the requested filters.");
+  } else {
+    for (const row of report.promptSections) {
+      lines.push(
+        `- ${row.taskType} / ${row.promptKind} / ${row.sectionName}: executions=${row.executions} estimated_tokens=${row.totalEstimatedTokens} chars=${row.totalCharCount} truncated=${row.truncatedExecutions}`,
+      );
+    }
+  }
+
+  lines.push("", "Cache effectiveness");
+  if (report.rateLimits.length === 0) {
+    lines.push("- No rate_limit_events rows matched the requested filters.");
+  } else {
+    for (const row of report.rateLimits) {
+      lines.push(
+        `- ${row.taskType}: executions=${row.executions} avg_cache_hit_rate=${formatPercent(row.avgCacheHitRate)} skipped_queries=${row.totalSkippedQueries} degraded=${row.degradationCount}`,
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export function renderUsageReportCsv(report: UsageReport): string {
+  const lines = [
+    "section,key,value",
+    `preflight,database_access,${report.preflight.databaseAccess}`,
+    `preflight,detail,${JSON.stringify(report.preflight.detail)}`,
+    `summary,total_executions,${report.summary.totalExecutions}`,
+    `summary,distinct_deliveries,${report.summary.distinctDeliveries}`,
+    `summary,total_input_tokens,${report.summary.totalInputTokens}`,
+    `summary,total_output_tokens,${report.summary.totalOutputTokens}`,
+    `summary,total_cache_read_tokens,${report.summary.totalCacheReadTokens}`,
+    `summary,total_cache_write_tokens,${report.summary.totalCacheWriteTokens}`,
+    `summary,total_tokens,${report.summary.totalTokens}`,
+    `summary,total_cost_usd,${report.summary.totalCostUsd}`,
+    `summary,cache_effectiveness,${report.summary.cacheEffectiveness}`,
+  ];
+
+  for (const row of report.taskTypes) {
+    lines.push(`task_type,${JSON.stringify(row.taskType)},${JSON.stringify(row)}`);
+  }
+  for (const row of report.deliveryBreakdown) {
+    lines.push(`delivery,${JSON.stringify(row.deliveryId)},${JSON.stringify(row)}`);
+  }
+  for (const row of report.promptSections) {
+    lines.push(`prompt_section,${JSON.stringify(`${row.taskType}/${row.promptKind}/${row.sectionName}`)},${JSON.stringify(row)}`);
+  }
+  for (const row of report.rateLimits) {
+    lines.push(`rate_limit,${JSON.stringify(row.taskType)},${JSON.stringify(row)}`);
+  }
+
+  return lines.join("\n");
+}
+
+async function fetchSummary(sql: Sql, repo: string | null, since: string | null): Promise<UsageReportSummary> {
+  const rows = await sql<UsageReportSummary[]>`
+    SELECT
+      COUNT(*)::int AS "totalExecutions",
+      COALESCE(SUM(input_tokens), 0)::int AS "totalInputTokens",
+      COALESCE(SUM(output_tokens), 0)::int AS "totalOutputTokens",
+      COALESCE(SUM(cache_read_tokens), 0)::int AS "totalCacheReadTokens",
+      COALESCE(SUM(cache_write_tokens), 0)::int AS "totalCacheWriteTokens",
+      COALESCE(SUM(input_tokens + output_tokens), 0)::int AS "totalTokens",
+      COALESCE(SUM(estimated_cost_usd), 0)::float8 AS "totalCostUsd",
+      COUNT(DISTINCT COALESCE(delivery_id, task_type || ':' || created_at::text))::int AS "distinctDeliveries"
+    FROM llm_cost_events
+    WHERE (${repo}::text IS NULL OR repo = ${repo})
+      AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+  `;
+  return rows[0] ?? emptySummary();
+}
+
+async function fetchTaskTypes(sql: Sql, repo: string | null, since: string | null): Promise<UsageTaskTypeRow[]> {
+  const rows = await sql<UsageTaskTypeRow[]>`
+    SELECT
+      task_type AS "taskType",
+      COUNT(*)::int AS "executions",
+      COALESCE(SUM(input_tokens + output_tokens), 0)::int AS "totalTokens",
+      COALESCE(SUM(estimated_cost_usd), 0)::float8 AS "totalCostUsd",
+      COALESCE(SUM(cache_read_tokens), 0)::int AS "cacheReadTokens",
+      COALESCE(SUM(cache_write_tokens), 0)::int AS "cacheWriteTokens",
+      COALESCE(
+        SUM(cache_read_tokens)::float8 / NULLIF(SUM(input_tokens + output_tokens), 0)::float8,
+        0
+      )::float8 AS "cacheEffectiveness"
+    FROM llm_cost_events
+    WHERE (${repo}::text IS NULL OR repo = ${repo})
+      AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+    GROUP BY task_type
+    ORDER BY "totalCostUsd" DESC, task_type ASC
+  `;
+
+  return rows.map((row) => ({
+    ...row,
+    totalCostUsd: roundCurrency(row.totalCostUsd),
+    cacheEffectiveness: roundRatio(row.cacheEffectiveness),
+  }));
+}
+
+async function fetchDeliveryBreakdown(sql: Sql, repo: string | null, since: string | null): Promise<UsageDeliveryRow[]> {
+  const rows = await sql<UsageDeliveryRow[]>`
+    SELECT
+      l.delivery_id AS "deliveryId",
+      l.repo AS repo,
+      l.task_type AS "taskType",
+      COALESCE(array_remove(array_agg(DISTINCT p.prompt_kind), NULL), ARRAY[]::text[]) AS "promptKinds",
+      COALESCE(COUNT(p.id), 0)::int AS "sectionCount",
+      COALESCE(SUM(p.estimated_tokens), 0)::int AS "promptEstimatedTokens",
+      COALESCE(SUM(l.input_tokens), 0)::int AS "llmInputTokens",
+      COALESCE(SUM(l.output_tokens), 0)::int AS "llmOutputTokens",
+      COALESCE(SUM(l.cache_read_tokens), 0)::int AS "cacheReadTokens",
+      COALESCE(SUM(l.cache_write_tokens), 0)::int AS "cacheWriteTokens",
+      COALESCE(SUM(l.estimated_cost_usd), 0)::float8 AS "estimatedCostUsd"
+    FROM llm_cost_events l
+    LEFT JOIN prompt_section_events p
+      ON p.delivery_id = l.delivery_id
+     AND p.task_type = l.task_type
+     AND (${since}::timestamptz IS NULL OR p.created_at >= ${since}::timestamptz)
+    WHERE l.delivery_id IS NOT NULL
+      AND (${repo}::text IS NULL OR l.repo = ${repo})
+      AND (${since}::timestamptz IS NULL OR l.created_at >= ${since}::timestamptz)
+    GROUP BY l.delivery_id, l.repo, l.task_type
+    ORDER BY "estimatedCostUsd" DESC, l.delivery_id ASC
+    LIMIT 20
+  `;
+
+  return rows.map((row) => ({
+    ...row,
+    promptKinds: [...row.promptKinds].sort(),
+    estimatedCostUsd: roundCurrency(row.estimatedCostUsd),
+  }));
+}
+
+async function fetchPromptSections(sql: Sql, repo: string | null, since: string | null): Promise<UsagePromptSectionRow[]> {
+  const rows = await sql<UsagePromptSectionRow[]>`
+    SELECT
+      task_type AS "taskType",
+      prompt_kind AS "promptKind",
+      section_name AS "sectionName",
+      COUNT(DISTINCT COALESCE(delivery_id, task_type || ':' || created_at::text))::int AS executions,
+      COALESCE(SUM(estimated_tokens), 0)::int AS "totalEstimatedTokens",
+      COALESCE(SUM(char_count), 0)::int AS "totalCharCount",
+      COALESCE(SUM(CASE WHEN truncated THEN 1 ELSE 0 END), 0)::int AS "truncatedExecutions"
+    FROM prompt_section_events
+    WHERE (${repo}::text IS NULL OR repo = ${repo})
+      AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+    GROUP BY task_type, prompt_kind, section_name
+    ORDER BY "totalEstimatedTokens" DESC, task_type ASC, prompt_kind ASC, section_name ASC
+    LIMIT 30
+  `;
+  return rows;
+}
+
+async function fetchRateLimits(sql: Sql, repo: string | null, since: string | null): Promise<UsageRateLimitRow[]> {
+  const rows = await sql<UsageRateLimitRow[]>`
+    SELECT
+      COALESCE(l.task_type, r.event_type) AS "taskType",
+      COUNT(*)::int AS executions,
+      COALESCE(AVG(r.cache_hit_rate), 0)::float8 AS "avgCacheHitRate",
+      COALESCE(SUM(r.skipped_queries), 0)::int AS "totalSkippedQueries",
+      COALESCE(SUM(CASE WHEN LOWER(COALESCE(r.degradation_path, 'none')) <> 'none' THEN 1 ELSE 0 END), 0)::int AS "degradationCount"
+    FROM rate_limit_events r
+    LEFT JOIN llm_cost_events l
+      ON l.delivery_id = r.delivery_id
+     AND (${since}::timestamptz IS NULL OR l.created_at >= ${since}::timestamptz)
+    WHERE (${repo}::text IS NULL OR r.repo = ${repo})
+      AND (${since}::timestamptz IS NULL OR r.created_at >= ${since}::timestamptz)
+    GROUP BY COALESCE(l.task_type, r.event_type)
+    ORDER BY executions DESC, "taskType" ASC
+  `;
+
+  return rows.map((row) => ({
+    ...row,
+    avgCacheHitRate: roundRatio(row.avgCacheHitRate),
+  }));
+}
+
+export async function queryUsageReport(sql: Sql, filters: { repo: string | null; since: string | null }): Promise<UsageReportQueryResult> {
+  const [summary, taskTypes, deliveryBreakdown, promptSections, rateLimits] = await Promise.all([
+    fetchSummary(sql, filters.repo, filters.since),
+    fetchTaskTypes(sql, filters.repo, filters.since),
+    fetchDeliveryBreakdown(sql, filters.repo, filters.since),
+    fetchPromptSections(sql, filters.repo, filters.since),
+    fetchRateLimits(sql, filters.repo, filters.since),
+  ]);
+
+  return {
+    summary,
+    taskTypes,
+    deliveryBreakdown,
+    promptSections,
+    rateLimits,
+  };
+}
+
+function normalizeSince(value: string): string {
+  const relativeMatch = value.match(/^(\d+)d$/);
+  if (relativeMatch) {
+    const days = Number.parseInt(relativeMatch[1] ?? "0", 10);
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - days);
+    return date.toISOString();
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return `${value}T00:00:00.000Z`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid --since format: '${value}'. Use Nd, YYYY-MM-DD, or ISO-8601.`);
+  }
+
+  return parsed.toISOString();
+}
+
+export function parseUsageReportArgs(args: string[]): CliOptions {
+  const parsed = parseArgs({
+    args,
+    options: {
+      since: { type: "string" },
+      repo: { type: "string" },
+      json: { type: "boolean", default: false },
+      csv: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
+    },
+    strict: true,
+    allowPositionals: false,
+  });
+
+  return {
+    since: parsed.values.since ? normalizeSince(parsed.values.since) : null,
+    repo: parsed.values.repo ?? null,
+    json: parsed.values.json ?? false,
+    csv: parsed.values.csv ?? false,
+    help: parsed.values.help ?? false,
+  };
+}
+
+function printUsage(): void {
+  console.log(`Kodiai telemetry usage report\n\nUsage:\n  bun scripts/usage-report.ts [--repo <owner/repo>] [--since <Nd|YYYY-MM-DD|ISO>] [--json|--csv]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable\n  - Surfaces token totals, cost totals, cache effectiveness, task-path attribution, and prompt-section summaries`);
+}
+
+export async function runUsageReportCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<{ report: UsageReport; exitCode: number }> {
+  const options = parseUsageReportArgs(args);
+  if (options.help) {
+    printUsage();
+    return {
+      report: buildUsageReport({
+        generatedAt: new Date().toISOString(),
+        filters: { repo: options.repo, since: options.since },
+        accessState: "missing",
+        accessDetail: "Help requested.",
+        result: null,
+      }),
+      exitCode: 0,
+    };
+  }
+
+  const connectionString = env.TEST_DATABASE_URL ?? env.DATABASE_URL ?? null;
+  if (!connectionString) {
+    const report = buildUsageReport({
+      generatedAt: new Date().toISOString(),
+      filters: { repo: options.repo, since: options.since },
+      accessState: "missing",
+      accessDetail: "Neither TEST_DATABASE_URL nor DATABASE_URL is set.",
+      result: null,
+    });
+    return { report, exitCode: 0 };
+  }
+
+  const logger = pino({ level: "silent" });
+  let client: ReturnType<typeof createDbClient> | null = null;
+  try {
+    client = createDbClient({ connectionString, logger });
+    const result = await queryUsageReport(client.sql, {
+      repo: options.repo,
+      since: options.since,
+    });
+
+    const report = buildUsageReport({
+      generatedAt: new Date().toISOString(),
+      filters: { repo: options.repo, since: options.since },
+      accessState: "available",
+      accessDetail: "Connected to telemetry Postgres.",
+      result,
+    });
+    return { report, exitCode: 0 };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const report = buildUsageReport({
+      generatedAt: new Date().toISOString(),
+      filters: { repo: options.repo, since: options.since },
+      accessState: "unavailable",
+      accessDetail: message,
+      result: null,
+    });
+    return { report, exitCode: 0 };
+  } finally {
+    await client?.close();
   }
 }
 
-db.close();
-
-// ---------------------------------------------------------------------------
-// Help output
-// ---------------------------------------------------------------------------
-
-function printUsage(): void {
-  console.log(`Usage: bun scripts/usage-report.ts [options]
-
-Options:
-  --since <value>   Filter by time (e.g., 7d, 30d, 2026-01-01)
-  --repo <value>    Filter by repository (e.g., owner/name)
-  --json            Output as JSON
-  --csv             Output as CSV
-  --db <path>       Database path (default: ./data/kodiai-telemetry.db)
-  -h, --help        Show this help
-
-Examples:
-  bun scripts/usage-report.ts
-  bun scripts/usage-report.ts --since 7d
-  bun scripts/usage-report.ts --repo kodiai/xbmc --json
-  bun scripts/usage-report.ts --since 30d --csv > report.csv`);
+if (import.meta.main) {
+  const { report, exitCode } = await runUsageReportCli(process.argv.slice(2));
+  const options = parseUsageReportArgs(process.argv.slice(2));
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+  } else if (options.csv) {
+    console.log(renderUsageReportCsv(report));
+  } else {
+    console.log(renderUsageReportText(report));
+  }
+  process.exit(exitCode);
 }

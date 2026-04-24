@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-24T00:27:51Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-24T00:27:51Z","fingerprint":"8b64d8ee987af278161c819851f42b92c1706014","fileCount":500,"truncated":true} -->
+Generated: 2026-04-24T00:39:54Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-04-24T00:39:54Z","fingerprint":"462f51ff59b95e9a9d5d3cea0c30bf69953f0528","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -104,7 +104,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/enforcement/types.ts`
 
 ### src/execution/
-- *(23 files: 23 .ts)*
+- *(24 files: 24 .ts)*
 
 ### src/execution/mcp/
 - `src/execution/mcp/checkpoint-server.test.ts`
@@ -156,4 +156,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(70 files: 70 .ts)*
+- *(69 files: 69 .ts)*

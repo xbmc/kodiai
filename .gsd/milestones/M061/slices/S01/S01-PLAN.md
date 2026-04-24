@@ -63,7 +63,7 @@ Note for executors: cover both conversational mention context and the large revi
   - Files: `src/execution/mention-context.ts`, `src/execution/mention-prompt.ts`, `src/execution/review-prompt.ts`, `src/execution/mention-context.test.ts`, `src/execution/mention-prompt.test.ts`, `src/execution/review-prompt.test.ts`, `src/execution/agent-entrypoint.ts`, `src/handlers/mention.ts`, `src/handlers/review.ts`
   - Verify: bun test src/execution/mention-context.test.ts src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts
 
-- [ ] **T03: Replace stale SQLite reporting with Postgres-backed operator surfaces** `est:2h`
+- [x] **T03: Replace stale SQLite reporting with Postgres-backed operator surfaces** `est:2h`
   Rebuild the operator-facing usage and smoke reporting path on top of `createDbClient()` and the live Postgres telemetry tables. This task must remove the stale `executions`/SQLite assumptions from the main CLI and update the deterministic verifier fixtures/tests to the current schema while preserving fail-open preflight messaging.
 
 Keep the reporting surface focused on truthful attribution: token totals, cost totals, cache effectiveness, task-path separation, and prompt-section summaries by delivery/task type.
