@@ -22,8 +22,6 @@
 
 ## Boundary Map
 
-## Boundary map
-
 - **Canonical authority layer**: new durable continuation-family lifecycle model/store keyed by stable review family identity and base `reviewOutputKey`; owns authoritative outcome, stop reason, attempt authority, and projection-status truth.
 - **Runtime coordination layer**: `ReviewWorkCoordinator` remains the in-process publish gate but projects authority transitions into canonical state instead of being the only place authority exists.
 - **Scratch progress layer**: `review_checkpoints` continues to represent partial work and merge inputs only; it is no longer the place operators infer family truth.

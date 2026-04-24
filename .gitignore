@@ -52,6 +52,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .gsd/activity/
 .gsd/runtime/
 .gsd/worktrees/
+.gsd/exec/
 .gsd/auto.lock
 .gsd/metrics.json
 .gsd/STATE.md

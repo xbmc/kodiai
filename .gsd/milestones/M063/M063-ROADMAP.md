@@ -12,13 +12,13 @@
 
 ## Slices
 
-- [x] **S01: S01** `risk:High — `src/handlers/review.ts` already contains the prototype, but it is timeout-specialized and overloaded; if we add lifecycle behavior without extracting the seam first, we risk regressions, duplicate publication paths, and an untestable continuation state model.` `depends:[]`
+- [x] **S01: S01** risk: High — `src/handlers/review.ts` already contains the prototype, but it is timeout-specialized and overloaded; if we add lifecycle behavior without extracting the seam first, we risk regressions, duplicate publication paths, and an untestable continuation state model. depends: []
   > After this: A large-PR bounded first pass automatically schedules and executes continuation through the real review handler path, using an explicit continuation planner/settlement seam rather than branch-local timeout plumbing, with no manual follow-up command required.
 
-- [x] **S02: S02** `risk:High — the current code already spans bounded partial comment plus Review Details, so continuation can easily regress into comment churn, silent rewrites, or unresolved pending state if public-surface ownership is not defined carefully.` `depends:[]`
+- [x] **S02: S02** risk: High — the current code already spans bounded partial comment plus Review Details, so continuation can easily regress into comment churn, silent rewrites, or unresolved pending state if public-surface ownership is not defined carefully. depends: []
   > After this: Continuation deepens the same visible review surface in place: no extra lifecycle comment appears, revised findings are explicitly marked on that surface, and no-meaningful-delta continuation settles the lifecycle without noisy public churn.
 
-- [x] **S03: S03** `risk:Medium-high — continuation only works as a product if it stays narrower than the first pass and if every final write path still respects authoritative publish rights; otherwise the feature becomes expensive replay or stale-state corruption.` `depends:[]`
+- [x] **S03: S03** risk: Medium-high — continuation only works as a product if it stays narrower than the first pass and if every final write path still respects authoritative publish rights; otherwise the feature becomes expensive replay or stale-state corruption. depends: []
   > After this: Deterministic proof shows continuation prompt/context is materially narrower than the first pass, final write paths keep last-mile publish-rights guards, and stale/superseded continuation cannot overwrite newer authoritative review state on the shipped continuation paths.
 
 ## Boundary Map
