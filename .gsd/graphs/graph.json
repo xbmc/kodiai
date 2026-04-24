@@ -1,10 +1,10 @@
 {
   "nodes": [
     {
-      "id": "milestone:M061",
-      "label": "M061: Token Efficiency & Context Budgeting",
+      "id": "milestone:M062",
+      "label": "M062: Large-PR truth baseline",
       "type": "milestone",
-      "description": "Active milestone: M061",
+      "description": "Active milestone: M062",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
@@ -2728,18 +2728,6 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "slice:M021:S04",
-      "label": "M021/S04",
-      "type": "slice",
-      "confidence": "EXTRACTED"
-    },
-    {
-      "id": "slice:M021:S05",
-      "label": "M021/S05",
-      "type": "slice",
-      "confidence": "EXTRACTED"
-    },
-    {
       "id": "milestone:M022",
       "label": "M022: Issue Intelligence",
       "type": "milestone",
@@ -4418,22 +4406,11 @@
       "sourceFile": "milestones/M052/M052-ROADMAP.md"
     },
     {
-      "id": "slice:M052:S01",
-      "label": "M052/S01",
-      "type": "slice",
-      "confidence": "EXTRACTED"
-    },
-    {
-      "id": "slice:M052:S02",
-      "label": "M052/S02",
-      "type": "slice",
-      "confidence": "EXTRACTED"
-    },
-    {
-      "id": "slice:M052:S03",
-      "label": "M052/S03",
-      "type": "slice",
-      "confidence": "EXTRACTED"
+      "id": "milestone:M061",
+      "label": "M061: M061",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M061/M061-ROADMAP.md"
     },
     {
       "id": "slice:M061:S01",
@@ -4548,11 +4525,54 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M062",
-      "label": "M062: Large-PR truth baseline",
-      "type": "milestone",
+      "id": "slice:M061:S05",
+      "label": "S05: Integrated Token-Reduction Proof and Regression Gate",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M062/M062-ROADMAP.md"
+      "sourceFile": "milestones/M061/slices/S05/S05-PLAN.md"
+    },
+    {
+      "id": "task:M061:S05:T01",
+      "label": "T01: Build the integrated M061 token-reduction verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M061:S05:T02",
+      "label": "T02: Pin the M061 regression gate for mention, review, retrieval, and reporting behavior",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M061:S05:T03",
+      "label": "T03: Expose the complete M061 operator proof surface and prove it end-to-end",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M062:S01",
+      "label": "S01: Bounded first-pass contract",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M062/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M062:S01:T01",
+      "label": "T01: Define the normalized bounded first-pass state and pure contract tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M062:S01:T02",
+      "label": "T02: Route constrained review publication through the bounded first-pass contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M062:S01:T03",
+      "label": "T03: Ship a deterministic verifier for bounded first-pass versus dead-end failure",
+      "type": "task",
+      "confidence": "EXTRACTED"
     },
     {
       "id": "milestone:M063",
@@ -7026,18 +7046,6 @@
       "confidence": "EXTRACTED"
     },
     {
-      "from": "milestone:M021",
-      "to": "slice:M021:S04",
-      "type": "contains",
-      "confidence": "EXTRACTED"
-    },
-    {
-      "from": "milestone:M021",
-      "to": "slice:M021:S05",
-      "type": "contains",
-      "confidence": "EXTRACTED"
-    },
-    {
       "from": "milestone:M022",
       "to": "slice:M022:S01",
       "type": "contains",
@@ -8502,24 +8510,6 @@
       "confidence": "EXTRACTED"
     },
     {
-      "from": "milestone:M052",
-      "to": "slice:M052:S01",
-      "type": "contains",
-      "confidence": "EXTRACTED"
-    },
-    {
-      "from": "milestone:M052",
-      "to": "slice:M052:S02",
-      "type": "contains",
-      "confidence": "EXTRACTED"
-    },
-    {
-      "from": "milestone:M052",
-      "to": "slice:M052:S03",
-      "type": "contains",
-      "confidence": "EXTRACTED"
-    },
-    {
       "from": "milestone:M061",
       "to": "slice:M061:S01",
       "type": "contains",
@@ -8626,7 +8616,55 @@
       "to": "task:M061:S04:T04",
       "type": "contains",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M061",
+      "to": "slice:M061:S05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M061:S05",
+      "to": "task:M061:S05:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M061:S05",
+      "to": "task:M061:S05:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M061:S05",
+      "to": "task:M061:S05:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M062",
+      "to": "slice:M062:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M062:S01",
+      "to": "task:M062:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M062:S01",
+      "to": "task:M062:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M062:S01",
+      "to": "task:M062:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-04-24T03:14:26.435Z"
+  "builtAt": "2026-04-24T04:19:44.307Z"
 }

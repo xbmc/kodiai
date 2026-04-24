@@ -19,6 +19,7 @@ function makeOctokit(params: {
   pr?: {
     title: string;
     body?: string | null;
+    updated_at?: string;
     user?: { login?: string | null } | null;
     head: { ref: string };
     base: { ref: string };

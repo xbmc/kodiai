@@ -37,7 +37,7 @@ describe("fetchAllLinkshereCounts", () => {
   });
 
   it("returns an empty map without fetching when no page IDs are provided", async () => {
-    const fetchFn = mock(async () => makeJsonResponse({})) as typeof globalThis.fetch;
+    const fetchFn = mock(async () => makeJsonResponse({})) as unknown as typeof globalThis.fetch;
 
     const counts = await fetchAllLinkshereCounts({
       baseUrl: "https://kodi.wiki",
@@ -125,7 +125,7 @@ describe("fetchAllLinkshereCounts", () => {
       }
 
       throw new Error(`Unexpected fetch URL: ${url.toString()}`);
-    }) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
 
     const promise = fetchAllLinkshereCounts({
       baseUrl: "https://kodi.wiki",
@@ -183,7 +183,7 @@ describe("fetchAllLinkshereCounts", () => {
           },
         },
       });
-    }) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
 
     const logger = createMockLogger();
     const promise = fetchAllLinkshereCounts({
@@ -226,7 +226,7 @@ describe("fetchAllLinkshereCounts", () => {
           },
         },
       });
-    }) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
 
     const promise = fetchAllLinkshereCounts({
       baseUrl: "https://kodi.wiki",

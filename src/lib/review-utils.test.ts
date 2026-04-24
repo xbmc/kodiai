@@ -45,6 +45,7 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("- Remaining scope: 2/3 changed files");
     expect(result).toContain("- First-pass findings captured: 2");
     expect(result).toContain("- Publication eligibility: eligible");
+    expect(result).toContain("- Continuation state: follow-up review pending for remaining scope");
   });
 
   it("renders zero-evidence hard failure explicitly instead of bounded success", () => {
@@ -62,8 +63,40 @@ describe("formatReviewDetailsSummary", () => {
 
     expect(result).toContain("- Constrained outcome: zero-evidence hard failure after max-turns");
     expect(result).toContain("- Publication eligibility: ineligible");
+    expect(result).toContain("- Continuation state: stopped after first pass; no follow-up review is pending");
     expect(result).not.toContain("- Bounded first-pass:");
     expect(result).not.toContain("- Covered scope:");
+  });
+
+  it("degrades truthfully when remaining scope is missing instead of implying exhaustive coverage", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        ...BOUNDED_TIMEOUT_FIRST_PASS,
+        remainingScope: undefined,
+        continuationPending: true,
+      },
+    });
+
+    expect(result).toContain("- Covered scope: 1/3 changed files");
+    expect(result).toContain("- Remaining scope: not confirmed from structured evidence");
+    expect(result).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
+  });
+
+  it("degrades truthfully when covered scope is missing instead of inventing reviewed coverage", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        ...BOUNDED_TIMEOUT_FIRST_PASS,
+        coveredScope: undefined,
+        remainingScope: { remainingFiles: 2, totalFiles: 3 },
+        continuationPending: false,
+      },
+    });
+
+    expect(result).not.toContain("- Covered scope:");
+    expect(result).toContain("- Remaining scope: 2/3 changed files");
+    expect(result).toContain("- Continuation state: stopped after first pass; 2/3 files remain unreviewed");
   });
 
   it("renders contributor-experience contract wording without raw tier leakage", () => {

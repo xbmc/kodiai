@@ -157,7 +157,7 @@ function runSuiteCommand(command: string[]): SuiteCommandResult {
   }
 
   const [executable, ...args] = command;
-  const result = spawnSync(executable, args, {
+  const result = spawnSync(executable!, args, {
     encoding: "utf8",
   });
 

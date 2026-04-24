@@ -145,6 +145,7 @@ describe("verify m061 s01 baseline proof", () => {
             degradationCount: 0,
           },
         ],
+        reuseEvidence: [],
       },
     });
 
@@ -186,6 +187,7 @@ describe("verify m061 s01 baseline proof", () => {
         deliveryBreakdown: [],
         promptSections: [],
         rateLimits: [],
+        reuseEvidence: [],
       },
     });
 

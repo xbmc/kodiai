@@ -111,6 +111,77 @@ function formatEvidenceSource(source: ReviewFirstPassPayload["evidenceSource"]):
   return "no trustworthy evidence";
 }
 
+function formatTimeoutSuffix(timedOutAfterSeconds?: number): string {
+  return typeof timedOutAfterSeconds === "number" ? ` (${timedOutAfterSeconds}s timeout)` : "";
+}
+
+function formatCoverageClause(firstPass: ReviewFirstPassPayload, evidenceLabel: string): string {
+  if (firstPass.coveredScope) {
+    return `after covering ${firstPass.coveredScope.reviewedFiles} of ${firstPass.coveredScope.totalFiles} files from ${evidenceLabel}`;
+  }
+
+  return `using ${evidenceLabel}`;
+}
+
+function formatRemainingScopeSummary(firstPass: ReviewFirstPassPayload): string {
+  if (firstPass.remainingScope) {
+    return `${firstPass.remainingScope.remainingFiles} of ${firstPass.remainingScope.totalFiles} files remain unreviewed`;
+  }
+
+  if (firstPass.continuationPending) {
+    return "remaining scope is not confirmed from structured evidence";
+  }
+
+  return "remaining scope is not confirmed from structured evidence";
+}
+
+function formatContinuationSummary(firstPass: ReviewFirstPassPayload): string {
+  if (firstPass.continuationPending) {
+    return "follow-up review is pending";
+  }
+
+  return "no follow-up review is pending";
+}
+
+function formatContinuationDetail(firstPass: ReviewFirstPassPayload): string {
+  if (firstPass.state === "zero-evidence-failure") {
+    return "- Continuation state: stopped after first pass; no follow-up review is pending";
+  }
+
+  if (firstPass.continuationPending) {
+    if (firstPass.remainingScope) {
+      return "- Continuation state: follow-up review pending for remaining scope";
+    }
+
+    return "- Continuation state: follow-up review pending; remaining scope still unconfirmed";
+  }
+
+  if (firstPass.remainingScope) {
+    return `- Continuation state: stopped after first pass; ${firstPass.remainingScope.remainingFiles}/${firstPass.remainingScope.totalFiles} files remain unreviewed`;
+  }
+
+  return "- Continuation state: stopped after first pass; no follow-up review is pending";
+}
+
+export function buildReviewFirstPassPublicSummary(firstPass: ReviewFirstPassPayload, timedOutAfterSeconds?: number): string {
+  const reasonLabel = formatBoundedReason(firstPass.boundedReason);
+  const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
+
+  if (firstPass.state === "zero-evidence-failure") {
+    return `hit ${reasonLabel} with no trustworthy structured evidence${formatTimeoutSuffix(
+      firstPass.boundedReason === "timeout" ? timedOutAfterSeconds : undefined,
+    )}`;
+  }
+
+  return [
+    `stopped at ${reasonLabel} ${formatCoverageClause(firstPass, evidenceLabel)}`,
+    formatRemainingScopeSummary(firstPass),
+    `${formatContinuationSummary(firstPass)}${formatTimeoutSuffix(
+      firstPass.boundedReason === "timeout" ? timedOutAfterSeconds : undefined,
+    )}`,
+  ].join("; ");
+}
+
 export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
   reasonLabel: string;
   evidenceLabel: string;
@@ -121,28 +192,7 @@ export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
   const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
 
   const summaryClause = (timedOutAfterSeconds?: number): string => {
-    if (firstPass.state === "zero-evidence-failure") {
-      const timeoutSuffix = firstPass.boundedReason === "timeout" && typeof timedOutAfterSeconds === "number"
-        ? ` (${timedOutAfterSeconds}s)`
-        : "";
-      return `hit ${reasonLabel}${timeoutSuffix} with no trustworthy structured evidence`;
-    }
-
-    const coveredScope = firstPass.coveredScope;
-    const remainingScope = firstPass.remainingScope;
-    const timeoutSuffix = firstPass.boundedReason === "timeout" && typeof timedOutAfterSeconds === "number"
-      ? `; ${timedOutAfterSeconds}s`
-      : "";
-
-    if (coveredScope && remainingScope) {
-      return `stopped at ${reasonLabel} after covering ${coveredScope.reviewedFiles} of ${coveredScope.totalFiles} files from ${evidenceLabel} (${remainingScope.remainingFiles} remaining${timeoutSuffix})`;
-    }
-
-    if (coveredScope) {
-      return `stopped at ${reasonLabel} after covering ${coveredScope.reviewedFiles} of ${coveredScope.totalFiles} files from ${evidenceLabel}${timeoutSuffix ? ` (${timeoutSuffix.slice(2)})` : ""}`;
-    }
-
-    return `stopped at ${reasonLabel} using ${evidenceLabel}${timeoutSuffix ? ` (${timeoutSuffix.slice(2)})` : ""}`;
+    return buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds);
   };
 
   if (firstPass.state === "zero-evidence-failure") {
@@ -153,6 +203,7 @@ export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
       detailLines: [
         `- Constrained outcome: zero-evidence hard failure after ${reasonLabel}`,
         "- Publication eligibility: ineligible",
+        formatContinuationDetail(firstPass),
       ],
     };
   }
@@ -164,13 +215,13 @@ export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
       : []),
     ...(firstPass.remainingScope
       ? [`- Remaining scope: ${firstPass.remainingScope.remainingFiles}/${firstPass.remainingScope.totalFiles} changed files`]
-      : []),
+      : ["- Remaining scope: not confirmed from structured evidence"]),
     ...(typeof firstPass.findingCount === "number"
       ? [`- First-pass findings captured: ${firstPass.findingCount}`]
       : []),
     `- Publication eligibility: ${firstPass.publication.eligible ? "eligible" : "ineligible"}`,
     ...(firstPass.publication.hasPublishedOutput ? ["- Public review output already exists for this first pass"] : []),
-    ...(firstPass.continuationPending ? ["- Continuation state: pending follow-up review"] : []),
+    formatContinuationDetail(firstPass),
   ];
 
   return {

@@ -10,10 +10,10 @@
 
 ## Slices
 
-- [ ] **S01: S01** `risk:high` `depends:[]`
+- [x] **S01: S01** `risk:high` `depends:[]`
   > After this: After this: a large PR that would previously die at `max_turns` produces a truthful bounded first-pass result instead of an empty or dead-end failure outcome.
 
-- [ ] **S02: Coverage and visible-state rendering** `risk:medium` `depends:[S01]`
+- [ ] **S02: S02** `risk:medium` `depends:[]`
   > After this: After this: the visible review surface states what was covered, what remains, and whether continuation is still in progress, using one coherent comment contract.
 
 - [ ] **S03: Large-PR baseline proof harness** `risk:medium` `depends:[S01,S02]`

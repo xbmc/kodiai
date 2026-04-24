@@ -274,10 +274,10 @@ function buildRegistryUsageTruthCheck(
     return failCheck("M059-S01-REGISTRY-USAGE-TRUTH", "package_json_invalid", scripts.error);
   }
 
-  const workflowMap = new Map(
+  const workflowMap = new Map<string, string>(
     workflowContents
       .filter((workflow): workflow is { relativePath: (typeof WORKFLOW_PATHS)[number]; result: { ok: true; content: string } } => workflow.result.ok)
-      .map((workflow) => [workflow.relativePath, workflow.result.content]),
+      .map((workflow) => [workflow.relativePath, workflow.result.content] as const),
   );
 
   const problems: string[] = [];

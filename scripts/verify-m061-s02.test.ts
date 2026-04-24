@@ -86,6 +86,7 @@ describe("verify m061 s02 mention context diet proof", () => {
           },
         ],
         rateLimits: [],
+        reuseEvidence: [],
       },
     });
 
@@ -139,6 +140,7 @@ describe("verify m061 s02 mention context diet proof", () => {
           },
         ],
         rateLimits: [],
+        reuseEvidence: [],
       },
     });
 

@@ -3455,7 +3455,10 @@ export function createReviewHandler(deps: {
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
         } satisfies ReviewPromptBuildContext;
-        const reviewPromptCacheState = {
+        const reviewPromptCacheState: {
+          status: "hit" | "miss" | "degraded" | "bypass";
+          reason: string | null;
+        } = {
           status: reviewPromptDerivedCacheStatus,
           reason: reviewPromptDerivedCacheReason,
         };
@@ -5082,7 +5085,10 @@ export function createReviewHandler(deps: {
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
                     } satisfies ReviewPromptBuildContext;
-                    const retryPromptCacheState = {
+                    const retryPromptCacheState: {
+                      status: "hit" | "miss" | "degraded" | "bypass";
+                      reason: string | null;
+                    } = {
                       status: retryReviewPromptDerivedCacheStatus,
                       reason: retryReviewPromptDerivedCacheReason,
                     };

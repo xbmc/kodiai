@@ -128,6 +128,7 @@ describe("verify m061 s03 review section budget proof", () => {
           },
         ],
         rateLimits: [],
+        reuseEvidence: [],
       },
     });
 
@@ -203,6 +204,7 @@ describe("verify m061 s03 review section budget proof", () => {
           },
         ],
         rateLimits: [],
+        reuseEvidence: [],
       },
     });
 

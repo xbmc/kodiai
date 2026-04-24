@@ -61,7 +61,7 @@ function makeIssueResult(overrides: Partial<{
       owner: "owner",
       issueNumber: overrides.issueNumber ?? 42,
       title: overrides.title ?? "Fix crash",
-      body,
+      body: body ?? null,
       state: overrides.state ?? "open",
       authorLogin: overrides.authorLogin ?? "alice",
       authorAssociation: "MEMBER",

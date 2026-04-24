@@ -42,11 +42,13 @@ const noopTelemetryStore = {
   recordRetrievalQuality: async () => {},
   recordRateLimitEvent: async () => {},
   recordResilienceEvent: async () => {},
+  recordLlmCost: async () => {},
+  recordPromptSections: async () => {},
   countRecentTimeouts: async () => 0,
   purgeOlderThan: async () => 0,
   checkpoint: () => {},
   close: () => {},
-} as never;
+};
 
 function createCaptureLogger() {
   const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
@@ -5151,6 +5153,7 @@ describe("createReviewHandler finding extraction", () => {
 
     let updatedSummaryBody: string | undefined;
     let createCommentCalls = 0;
+    let updateCommentCalls = 0;
     let issueCommentListCalls = 0;
     const completedAttemptIds: string[] = [];
 
@@ -9799,7 +9802,7 @@ describe("createReviewHandler review prompt section telemetry", () => {
       } as never,
       telemetryStore: {
         ...noopTelemetryStore,
-        recordPromptSections: async (entry) => {
+        recordPromptSections: async (entry: (typeof promptSectionEntries)[number]) => {
           promptSectionEntries.push(entry);
         },
       } as never,
@@ -9946,7 +9949,7 @@ describe("createReviewHandler review prompt section telemetry", () => {
       } as never,
       telemetryStore: {
         ...noopTelemetryStore,
-        recordPromptSections: async (entry) => {
+        recordPromptSections: async (entry: (typeof promptSectionEntries)[number]) => {
           promptSectionEntries.push(entry);
         },
       } as never,

@@ -320,7 +320,16 @@ describe("createMentionHandler enqueue routing", () => {
   });
 });
 
-const noopTelemetryStore = { record: async () => {}, purgeOlderThan: async () => 0, checkpoint: () => {}, close: () => {} } as never;
+const noopTelemetryStore = {
+  record: async () => {},
+  recordRetrievalQuality: async () => {},
+  recordRateLimitEvent: async () => {},
+  recordLlmCost: async () => {},
+  recordPromptSections: async () => {},
+  purgeOlderThan: async () => 0,
+  checkpoint: () => {},
+  close: () => {},
+};
 
 async function createWorkspaceFixture(configYml = "mention:\n  enabled: true\n") {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-mention-handler-"));
@@ -12333,7 +12342,7 @@ describe("createMentionHandler mention derived-context cache", () => {
     await handler!(event);
     await handler!(event);
     issueComments[0] = {
-      ...issueComments[0],
+      ...issueComments[0]!,
       updated_at: "2025-01-15T11:02:00Z",
     };
     await handler!(event);

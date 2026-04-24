@@ -1,5 +1,5 @@
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
-import { describeReviewFirstPass } from "./review-utils.ts";
+import { buildReviewFirstPassPublicSummary } from "./review-utils.ts";
 
 export type PartialReviewParams = {
   summaryDraft: string;
@@ -26,10 +26,9 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
     throw new Error("formatPartialReviewComment requires a publishable bounded-first-pass payload");
   }
 
-  const described = describeReviewFirstPass(firstPass);
   const lines: string[] = [];
 
-  lines.push(`> **Bounded first-pass review** -- ${described.summaryClause(timedOutAfterSeconds)}.`);
+  lines.push(`> **Bounded first-pass review** -- ${buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds)}.`);
 
   if (isRetryResult) {
     const retryReviewed = retryFilesReviewed ?? 0;

@@ -353,6 +353,8 @@ async function runIssueClean(octokit?: unknown): Promise<M029S04Check> {
 export async function evaluateM029S04(opts?: {
   sql?: unknown;
   octokit?: unknown;
+  stdout?: unknown;
+  stderr?: unknown;
   _contentFilterFn?: (text: string) => boolean;
   _promptBuilderFn?: (opts: {
     styleDescription: PageStyleDescription;

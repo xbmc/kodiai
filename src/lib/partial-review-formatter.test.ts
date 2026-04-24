@@ -15,7 +15,7 @@ const TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
 };
 
 describe("formatPartialReviewComment", () => {
-  test("bounded timeout disclaimer shows normalized reason, evidence, and coverage", () => {
+  test("bounded timeout disclaimer shows normalized reason, evidence, coverage, and continuation state", () => {
     const out = formatPartialReviewComment({
       summaryDraft: "Body",
       firstPass: TIMEOUT_FIRST_PASS,
@@ -24,14 +24,14 @@ describe("formatPartialReviewComment", () => {
 
     expect(out).toBe(
       [
-        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence (8 remaining; 90s).",
+        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; follow-up review is pending (90s timeout).",
         "",
         "Body",
       ].join("\n"),
     );
   });
 
-  test("max-turns disclaimer uses the same bounded-first-pass contract", () => {
+  test("max-turns disclaimer uses the same bounded-first-pass continuation contract", () => {
     const out = formatPartialReviewComment({
       summaryDraft: "Body",
       firstPass: {
@@ -43,7 +43,7 @@ describe("formatPartialReviewComment", () => {
 
     expect(out).toBe(
       [
-        "> **Bounded first-pass review** -- stopped at max-turns after covering 4 of 12 files from boundedness evidence (8 remaining).",
+        "> **Bounded first-pass review** -- stopped at max-turns after covering 4 of 12 files from boundedness evidence; 8 of 12 files remain unreviewed; follow-up review is pending.",
         "",
         "Body",
       ].join("\n"),
@@ -61,7 +61,7 @@ describe("formatPartialReviewComment", () => {
 
     expect(out).toBe(
       [
-        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence (8 remaining; 90s).",
+        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; follow-up review is pending (90s timeout).",
         ">",
         "> Retry complete -- analyzed 7 of 12 files total after a reduced-scope follow-up.",
         "",
@@ -85,7 +85,7 @@ describe("formatPartialReviewComment", () => {
 
     expect(out).toBe(
       [
-        "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 10 files from checkpoint evidence (8 remaining; 60s).",
+        "> **Bounded first-pass review** -- stopped at timeout after covering 2 of 10 files from checkpoint evidence; 8 of 10 files remain unreviewed; follow-up review is pending (60s timeout).",
         ">",
         "> Retry skipped -- this repo has timed out frequently",
         "> Consider splitting large PRs to stay within the review timeout budget.",
@@ -108,9 +108,48 @@ describe("formatPartialReviewComment", () => {
 
     expect(out).toBe(
       [
-        "> **Bounded first-pass review** -- stopped at timeout after covering 0 of 1 files from checkpoint evidence (1 remaining; 30s).",
+        "> **Bounded first-pass review** -- stopped at timeout after covering 0 of 1 files from checkpoint evidence; 1 of 1 files remain unreviewed; follow-up review is pending (30s timeout).",
         "",
         "",
+      ].join("\n"),
+    );
+  });
+
+  test("missing remaining scope states that continuation is still pending without implying exhaustive review", () => {
+    const out = formatPartialReviewComment({
+      summaryDraft: "Body",
+      firstPass: {
+        ...TIMEOUT_FIRST_PASS,
+        remainingScope: undefined,
+        continuationPending: true,
+      },
+      timedOutAfterSeconds: 90,
+    });
+
+    expect(out).toBe(
+      [
+        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; remaining scope is not confirmed from structured evidence; follow-up review is pending (90s timeout).",
+        "",
+        "Body",
+      ].join("\n"),
+    );
+  });
+
+  test("stopped continuation states no follow-up review is pending", () => {
+    const out = formatPartialReviewComment({
+      summaryDraft: "Body",
+      firstPass: {
+        ...TIMEOUT_FIRST_PASS,
+        continuationPending: false,
+      },
+      timedOutAfterSeconds: 90,
+    });
+
+    expect(out).toBe(
+      [
+        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; no follow-up review is pending (90s timeout).",
+        "",
+        "Body",
       ].join("\n"),
     );
   });

@@ -66,22 +66,22 @@ function createReadTextFile(overrides: Record<string, string | Error> = {}) {
   return async (filePath: string): Promise<string> => {
     const normalized = filePath.replace(/\\/g, "/");
     if (normalized.endsWith("/package.json")) {
-      const value = map.package;
+      const value = map.package!;
       if (value instanceof Error) throw value;
       return value;
     }
     if (normalized.endsWith("/scripts/REGISTRY.md")) {
-      const value = map.registry;
+      const value = map.registry!;
       if (value instanceof Error) throw value;
       return value;
     }
     if (normalized.endsWith("/.gsd/DECISIONS.md")) {
-      const value = map.decisions;
+      const value = map.decisions!;
       if (value instanceof Error) throw value;
       return value;
     }
     if (normalized.endsWith("/.gsd/milestones/M027/M027-SUMMARY.md")) {
-      const value = map.summary;
+      const value = map.summary!;
       if (value instanceof Error) throw value;
       return value;
     }
