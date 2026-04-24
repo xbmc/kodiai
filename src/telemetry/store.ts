@@ -214,32 +214,40 @@ export function createTelemetryStore(opts: {
       }
 
       try {
-        for (const section of entry.sections) {
-          await sql`
-            INSERT INTO prompt_section_events (
-              delivery_id, repo, task_type, prompt_kind,
-              section_name, section_position, char_count, estimated_tokens, truncated
-            ) VALUES (
-              ${entry.deliveryId ?? null},
-              ${entry.repo},
-              ${entry.taskType},
-              ${entry.promptKind},
-              ${section.sectionName},
-              ${section.sectionPosition},
-              ${section.charCount},
-              ${section.estimatedTokens},
-              ${section.truncated ?? false}
-            )
-            ON CONFLICT (delivery_id, task_type, prompt_kind, section_position)
-            WHERE delivery_id IS NOT NULL
-            DO UPDATE SET
-              repo = EXCLUDED.repo,
-              section_name = EXCLUDED.section_name,
-              char_count = EXCLUDED.char_count,
-              estimated_tokens = EXCLUDED.estimated_tokens,
-              truncated = EXCLUDED.truncated
-          `;
-        }
+        const values = entry.sections.map((section) => ({
+          delivery_id: entry.deliveryId ?? null,
+          repo: entry.repo,
+          task_type: entry.taskType,
+          prompt_kind: entry.promptKind,
+          section_name: section.sectionName,
+          section_position: section.sectionPosition,
+          char_count: section.charCount,
+          estimated_tokens: section.estimatedTokens,
+          truncated: section.truncated ?? false,
+        }));
+
+        await sql`
+          INSERT INTO prompt_section_events ${sql(
+            values,
+            "delivery_id",
+            "repo",
+            "task_type",
+            "prompt_kind",
+            "section_name",
+            "section_position",
+            "char_count",
+            "estimated_tokens",
+            "truncated",
+          )}
+          ON CONFLICT (delivery_id, task_type, prompt_kind, section_position)
+          WHERE delivery_id IS NOT NULL
+          DO UPDATE SET
+            repo = EXCLUDED.repo,
+            section_name = EXCLUDED.section_name,
+            char_count = EXCLUDED.char_count,
+            estimated_tokens = EXCLUDED.estimated_tokens,
+            truncated = EXCLUDED.truncated
+        `;
       } catch (err) {
         logger.warn(
           {
