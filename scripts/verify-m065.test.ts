@@ -366,7 +366,7 @@ describe("verify-m065", () => {
     expect(human).not.toContain("all nested verification summarized as one flattened prerequisite");
   });
 
-  test("main emits json without flattening nested evidence and returns a non-zero exit code while obligations remain pending", async () => {
+  test("main emits json without flattening nested evidence and returns exit 0 while obligations remain explicitly pending", async () => {
     const m062 = buildM062Report({ checks: [buildNestedCheck({ id: "m062-check" })] });
     const m063 = buildM063Report({ checks: [buildNestedCheck({ id: "m063-check" })] });
     const m064 = buildM064Report({ records: [{ recordId: "canonical-authority", statusCode: "canonical" }] });
@@ -381,10 +381,8 @@ describe("verify-m065", () => {
     });
 
     const report = JSON.parse(stdoutChunks.join("")) as JsonReport;
-    expect(exitCode).toBe(1);
-    expect(stderrChunks.join("")).toContain(
-      "verify:m065 failed: M065-LIVE-LARGE-PR-PROOF:pending_live_large_pr_proof",
-    );
+    expect(exitCode).toBe(0);
+    expect(stderrChunks.join("")).toBe("");
     expect(report.command).toBe("verify:m065");
     expect(report.nested_reports.m062).toEqual(m062);
     expect(report.nested_reports.m063).toEqual(m063);

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M065/S01/T02",
+  "timestamp": 1777019591589,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test scripts/verify-m065.test.ts",
+      "exitCode": 0,
+      "durationMs": 90,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m065 -- --json",
+      "exitCode": 1,
+      "durationMs": 53,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

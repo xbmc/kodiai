@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M064",
-      "label": "M064: Continuation state, supersession, and operator evidence",
+      "id": "milestone:M065",
+      "label": "M065: Live hardening and rollout proof",
       "type": "milestone",
-      "description": "Active milestone: M064",
+      "description": "Active milestone: M065",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:planning",
+      "label": "Phase: planning",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4714,6 +4714,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M064",
+      "label": "M064: Continuation state, supersession, and operator evidence",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-ROADMAP.md"
+    },
+    {
       "id": "slice:M064:S01",
       "label": "S01: Canonical continuation-family state and durable authority contract",
       "type": "slice",
@@ -4789,11 +4796,23 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M065",
-      "label": "M065: M065",
-      "type": "milestone",
+      "id": "slice:M065:S01",
+      "label": "S01: Composed rollout verifier",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M065/M065-ROADMAP.md"
+      "sourceFile": "milestones/M065/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M065:S01:T01",
+      "label": "T01: Define the M065 composed report contract and failing composition tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M065:S01:T02",
+      "label": "T02: Implement `verify:m065` composition, CLI, and drill-down metadata",
+      "type": "task",
+      "confidence": "EXTRACTED"
     },
     {
       "id": "decision:M062:1",
@@ -5194,6 +5213,214 @@
       "description": "Source: M063-SUMMARY.md/Definition of Done Results",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M063/M063-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:1",
+      "label": "Chose a dedicated canonical continuation-family lifecycle store keyed by `(familyKey, baseReviewOutputKey)` instead of overloading checkpoint JSON or telemetry rows, so authoritative outcome, stop reason, attempt identity, and projection status live in one durable row.",
+      "type": "decision",
+      "description": "Source: M064-ROADMAP.md/Slices",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:2",
+      "label": "Kept `ReviewWorkCoordinator` as the runtime publish gate while requiring authority transitions to be projected into canonical continuation-family state, preserving correct in-process gating without losing restart-safe truth.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:3",
+      "label": "Prioritized operator evidence around canonical-state-first answers — authoritative outcome, final stop reason, then authoritative attempt identity — and treated checkpoint, telemetry, and report outputs as projections that can degrade without redefining truth.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:4",
+      "label": "Checkpoint acknowledgements were not trustworthy until persistence was awaited; the fix was to await `knowledgeStore.saveCheckpoint(...)` before returning `saved: true` so rejected writes stay on the error path.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:5",
+      "label": "Operator reporting only becomes dependable when it resolves from canonical continuation-family state directly; deriving reports from checkpoint JSON, telemetry, or logs would recreate the same rival-truth problem M064 was meant to remove.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:6",
+      "label": "Canonical lifecycle verification benefits from scenario-driven verifiers that read the durable row directly, because they prove authoritative attempt identity, controlled stop reasons, supersession shielding, and projection degradation without requiring live log correlation.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:7",
+      "label": "Use ordinal-guarded upserts on the canonical continuation-family row so newer attempts can supersede authority while stale or late-finishing attempts cannot reclaim it.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:8",
+      "label": "Treat checkpoints, telemetry, and operator reports as projections of canonical continuation-family state and expose explicit `projectionStatus` degradation rather than letting projection failure redefine lifecycle truth.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:9",
+      "label": "Build operator evidence as a shared canonical report object resolved from `reviewOutputKey` identity first, then render human and JSON outputs from that shared object so presentation changes do not create rival truth seams.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:10",
+      "label": "`capture_thought` failed repeatedly during slice closure, so reusable decisions and patterns were not persisted during S02/S03 execution even though code and verifier work completed successfully.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M064:11",
+      "label": "The standard `git diff --stat HEAD $(git merge-base HEAD main) -- ':!.gsd/'` check is empty on the already-integrated `main` branch, so milestone-close code-change verification had to use an equivalent pre-M064 commit base to confirm the milestone shipped non-`.gsd/` code.",
+      "type": "decision",
+      "description": "Source: M064-SUMMARY.md/Definition of Done Results",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:1",
+      "label": "Checkpoint acknowledgements were not trustworthy until persistence was awaited; the fix was to await `knowledgeStore.saveCheckpoint(...)` before returning `saved: true` so rejected writes stay on the error path.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:2",
+      "label": "Operator reporting only becomes dependable when it resolves from canonical continuation-family state directly; deriving reports from checkpoint JSON, telemetry, or logs would recreate the same rival-truth problem M064 was meant to remove.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:3",
+      "label": "Canonical lifecycle verification benefits from scenario-driven verifiers that read the durable row directly, because they prove authoritative attempt identity, controlled stop reasons, supersession shielding, and projection degradation without requiring live log correlation.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:4",
+      "label": "Use ordinal-guarded upserts on the canonical continuation-family row so newer attempts can supersede authority while stale or late-finishing attempts cannot reclaim it.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:5",
+      "label": "Treat checkpoints, telemetry, and operator reports as projections of canonical continuation-family state and expose explicit `projectionStatus` degradation rather than letting projection failure redefine lifecycle truth.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:6",
+      "label": "Build operator evidence as a shared canonical report object resolved from `reviewOutputKey` identity first, then render human and JSON outputs from that shared object so presentation changes do not create rival truth seams.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:7",
+      "label": "`capture_thought` failed repeatedly during slice closure, so reusable decisions and patterns were not persisted during S02/S03 execution even though code and verifier work completed successfully.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M064:8",
+      "label": "The standard `git diff --stat HEAD $(git merge-base HEAD main) -- ':!.gsd/'` check is empty on the already-integrated `main` branch, so milestone-close code-change verification had to use an equivalent pre-M064 commit base to confirm the milestone shipped non-`.gsd/` code.",
+      "type": "lesson",
+      "description": "Source: M064-SUMMARY.md/Definition of Done Results",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M064:1",
+      "label": "Use ordinal-guarded upserts on the canonical continuation-family row so newer attempts can supersede authority while stale or late-finishing attempts cannot reclaim it.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M064:2",
+      "label": "Treat checkpoints, telemetry, and operator reports as projections of canonical continuation-family state and expose explicit `projectionStatus` degradation rather than letting projection failure redefine lifecycle truth.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M064:3",
+      "label": "Build operator evidence as a shared canonical report object resolved from `reviewOutputKey` identity first, then render human and JSON outputs from that shared object so presentation changes do not create rival truth seams.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M064:4",
+      "label": "`capture_thought` failed repeatedly during slice closure, so reusable decisions and patterns were not persisted during S02/S03 execution even though code and verifier work completed successfully.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M064:5",
+      "label": "The standard `git diff --stat HEAD $(git merge-base HEAD main) -- ':!.gsd/'` check is empty on the already-integrated `main` branch, so milestone-close code-change verification had to use an equivalent pre-M064 commit base to confirm the milestone shipped non-`.gsd/` code.",
+      "type": "pattern",
+      "description": "Source: M064-SUMMARY.md/Definition of Done Results",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M064:1",
+      "label": "`capture_thought` failed repeatedly during slice closure, so reusable decisions and patterns were not persisted during S02/S03 execution even though code and verifier work completed successfully.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M064:2",
+      "label": "The standard `git diff --stat HEAD $(git merge-base HEAD main) -- ':!.gsd/'` check is empty on the already-integrated `main` branch, so milestone-close code-change verification had to use an equivalent pre-M064 commit base to confirm the milestone shipped non-`.gsd/` code.",
+      "type": "lesson",
+      "description": "Source: M064-SUMMARY.md/Definition of Done Results",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M064/M064-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -9458,6 +9685,24 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M065",
+      "to": "slice:M065:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M065:S01",
+      "to": "task:M065:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M065:S01",
+      "to": "task:M065:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M062",
       "to": "decision:M062:1",
       "type": "relates_to",
@@ -9756,7 +10001,163 @@
       "to": "surprise:M063:2",
       "type": "relates_to",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "decision:M064:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "lesson:M064:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "pattern:M064:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "pattern:M064:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "pattern:M064:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "pattern:M064:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "pattern:M064:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "surprise:M064:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M064",
+      "to": "surprise:M064:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-04-24T08:11:44.848Z"
+  "builtAt": "2026-04-24T08:36:33.396Z"
 }

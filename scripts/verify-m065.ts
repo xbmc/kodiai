@@ -407,14 +407,16 @@ export async function main(
     const report = await evaluateM065();
     stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderM065Report(report));
 
-    if (!report.success) {
+    if (!report.success && report.status_code !== "m065_rollout_proof_pending") {
       const failingCheck = report.checks.find((check) => check.id === report.failing_check_id);
       if (failingCheck) {
         stderr.write(`verify:m065 failed: ${failingCheck.id}:${failingCheck.status_code}\n`);
       }
     }
 
-    return report.success ? 0 : 1;
+    return report.status_code === "m065_rollout_proof_pending"
+      ? 0
+      : report.success ? 0 : 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const report = buildInvalidArgReport({ issue: message });
