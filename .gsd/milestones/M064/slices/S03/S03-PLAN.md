@@ -37,7 +37,7 @@
   - Files: `src/knowledge/types.ts`, `src/knowledge/store.ts`, `src/handlers/review-idempotency.ts`, `src/jobs/review-work-coordinator.ts`, `src/knowledge/continuation-operator-evidence.ts`, `src/knowledge/continuation-operator-evidence.test.ts`
   - Verify: bun test src/knowledge/continuation-operator-evidence.test.ts
 
-- [ ] **T02: Ship the S03 verifier/report command and lock its operator contract** `est:2h`
+- [x] **T02: Ship the S03 verifier/report command and lock its operator contract** `est:2h`
   Add the top-level `verify:m064:s03` script that uses the shared resolver/report builder to expose both human and JSON output. Follow the existing verifier/report style: deterministic fixture-driven default execution for CI, explicit invalid-arg handling, and optional operator-lookup mode driven by review output key input. Ensure the rendered report leads with authoritative outcome, final stop reason, authoritative attempt identity, projection status, and supersession metadata. Add script tests that keep expectations independent from the helper under test, prove degraded and pending projection statuses render explicitly, and verify package.json wiring for `verify:m064:s03`.
   - Files: `scripts/verify-m064-s03.ts`, `scripts/verify-m064-s03.test.ts`, `package.json`, `src/knowledge/continuation-operator-evidence.ts`, `scripts/usage-report.ts`
   - Verify: bun test scripts/verify-m064-s03.test.ts

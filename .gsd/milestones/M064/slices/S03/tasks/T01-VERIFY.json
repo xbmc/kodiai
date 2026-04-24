@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M064/S03/T01",
+  "timestamp": 1777017754512,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/knowledge/continuation-operator-evidence.test.ts",
+      "exitCode": 0,
+      "durationMs": 94,
+      "verdict": "pass"
+    }
+  ]
+}
