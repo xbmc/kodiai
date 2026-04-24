@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   computeLanguageComplexity,
+  DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
   estimateTimeoutRisk,
   type TimeoutEstimate,
 } from "./timeout-estimator.ts";
@@ -56,7 +57,7 @@ describe("computeLanguageComplexity", () => {
 describe("estimateTimeoutRisk", () => {
   const baseTimeout = 600;
 
-  test("small PR (3 files, 50 lines, TypeScript) => low risk, timeout < base", () => {
+  test("small PR (3 files, 50 lines, TypeScript) => low risk, remote budget < base", () => {
     const result = estimateTimeoutRisk({
       fileCount: 3,
       linesChanged: 50,
@@ -67,6 +68,11 @@ describe("estimateTimeoutRisk", () => {
 
     expect(result.riskLevel).toBe("low");
     expect(result.dynamicTimeoutSeconds).toBeLessThan(baseTimeout);
+    expect(result.remoteRuntimeBudgetSeconds).toBe(result.dynamicTimeoutSeconds);
+    expect(result.infraOverheadBudgetSeconds).toBe(DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS);
+    expect(result.totalTimeoutSeconds).toBe(
+      result.remoteRuntimeBudgetSeconds + result.infraOverheadBudgetSeconds,
+    );
     expect(result.shouldReduceScope).toBe(false);
     expect(result.reducedFileCount).toBeNull();
   });
@@ -188,6 +194,20 @@ describe("estimateTimeoutRisk", () => {
     expect(result.reducedFileCount).toBe(45);
   });
 
+  test("timeout budgets separate remote runtime from infra overhead", () => {
+    const result = estimateTimeoutRisk({
+      fileCount: 1,
+      linesChanged: 10,
+      languageComplexity: 1.0,
+      isLargePR: false,
+      baseTimeoutSeconds: baseTimeout,
+    });
+
+    expect(result.remoteRuntimeBudgetSeconds).toBe(423);
+    expect(result.infraOverheadBudgetSeconds).toBe(DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS);
+    expect(result.totalTimeoutSeconds).toBe(603);
+  });
+
   test("reasoning string contains key metrics", () => {
     const result = estimateTimeoutRisk({
       fileCount: 10,
@@ -202,8 +222,10 @@ describe("estimateTimeoutRisk", () => {
     expect(result.reasoning).toContain("lang risk: 50%");
     expect(result.reasoning).toContain(result.riskLevel);
     expect(result.reasoning).toContain(
-      `${result.dynamicTimeoutSeconds}s`,
+      `${result.remoteRuntimeBudgetSeconds}s`,
     );
+    expect(result.reasoning).toContain(`${result.infraOverheadBudgetSeconds}s`);
+    expect(result.reasoning).toContain(`${result.totalTimeoutSeconds}s`);
   });
 
   test("timeout is always an integer", () => {

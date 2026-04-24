@@ -543,6 +543,15 @@ export function createExecutor(deps: {
         // Handle timeout
         if (status === "timed-out") {
           logger.warn({ executionName, timeoutSeconds, durationMs }, "ACA Job timed out, cancelling");
+          let diagnosticsExcerpt: string | undefined;
+          try {
+            const diagnostics = await readJobDiagnostics(workspaceDir);
+            if (typeof diagnostics === "string" && diagnostics.trim().length > 0) {
+              diagnosticsExcerpt = diagnostics.trim().split(/\r?\n/).slice(-12).join("\n");
+            }
+          } catch (diagnosticsErr) {
+            logger.warn({ err: diagnosticsErr, executionName }, "ACA Job diagnostics read failed after timeout (non-fatal)");
+          }
           try {
             await cancelAcaJob({
               resourceGroup: config.acaResourceGroup,
@@ -568,7 +577,9 @@ export function createExecutor(deps: {
             durationMs,
             sessionId: undefined,
             published,
-            errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
+            errorMessage: diagnosticsExcerpt
+              ? `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.\n\nLast remote diagnostics:\n${diagnosticsExcerpt}`
+              : `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
             model: undefined,
             inputTokens: undefined,

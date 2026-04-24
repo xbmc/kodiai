@@ -51,6 +51,27 @@ describe("formatPartialReviewComment", () => {
     );
   });
 
+  test("bounded timeout disclaimer prefers split timeout budget wording when available", () => {
+    const out = formatPartialReviewComment({
+      summaryDraft: "Body",
+      firstPass: TIMEOUT_FIRST_PASS,
+      timedOutAfterSeconds: 90,
+      timeoutBudget: {
+        remoteRuntimeBudgetSeconds: 90,
+        infraOverheadBudgetSeconds: 180,
+        totalTimeoutSeconds: 270,
+      },
+    });
+
+    expect(out).toBe(
+      [
+        "> **Bounded first-pass review** -- stopped at timeout after covering 4 of 12 files from checkpoint evidence; 8 of 12 files remain unreviewed; follow-up review is pending (timeout budget: remote runtime 90s + infra overhead 180s = total 270s).",
+        "",
+        "Body",
+      ].join("\n"),
+    );
+  });
+
   test("max-turns disclaimer uses the same bounded-first-pass continuation contract", () => {
     const out = formatPartialReviewComment({
       summaryDraft: "Body",

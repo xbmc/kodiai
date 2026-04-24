@@ -328,6 +328,7 @@ function createTestableExecutor(deps: {
   pollFn?: (opts: unknown) => Promise<{ status: "succeeded" | "failed" | "timed-out"; durationMs: number }>;
   cancelFn?: (opts: unknown) => Promise<void>;
   readResultFn?: (workspaceDir: string) => Promise<unknown>;
+  readDiagnosticsFn?: (workspaceDir: string) => Promise<string | undefined>;
   createWorkspaceDirFn?: (opts: unknown) => Promise<string>;
 }) {
   const {
@@ -339,6 +340,7 @@ function createTestableExecutor(deps: {
     pollFn = async () => ({ status: "succeeded" as const, durationMs: 5000 }),
     cancelFn = async () => {},
     readResultFn = async () => makeJobResult(),
+    readDiagnosticsFn = async () => undefined,
     createWorkspaceDirFn = async () => "/mnt/kodiai-workspaces/test-job",
   } = deps;
 
@@ -556,6 +558,13 @@ function createTestableExecutor(deps: {
         remoteRuntimeDurationMs = durationMs;
 
         if (status === "timed-out") {
+          let diagnosticsExcerpt: string | undefined;
+          try {
+            const diagnostics = await readDiagnosticsFn(workspaceDir);
+            if (typeof diagnostics === "string" && diagnostics.trim().length > 0) {
+              diagnosticsExcerpt = diagnostics.trim().split(/\r?\n/).slice(-12).join("\n");
+            }
+          } catch {}
           try {
             await cancelFn({
               resourceGroup: config.acaResourceGroup,
@@ -572,7 +581,9 @@ function createTestableExecutor(deps: {
             durationMs,
             sessionId: undefined,
             published,
-            errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
+            errorMessage: diagnosticsExcerpt
+              ? `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.\n\nLast remote diagnostics:\n${diagnosticsExcerpt}`
+              : `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
             model: undefined,
             inputTokens: undefined,
@@ -763,6 +774,39 @@ test("ACA dispatch: timeout path — cancelAcaJob called, isTimeout result retur
   expect(cancelCalls.length).toBe(1);
   // Registry should be unregistered after timeout
   expect(result.sessionId).toBeUndefined();
+});
+
+test("ACA dispatch: timeout path includes trailing remote diagnostics when available", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const githubApp = makeGithubApp();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp,
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-timeout-diagnostics" }),
+    pollFn: async () => ({ status: "timed-out", durationMs: 423000 }),
+    cancelFn: async () => {},
+    readDiagnosticsFn: async () => [
+      "2026-04-24T15:52:54.000Z startup taskType=review.full model=claude-opus maxTurns=25",
+      "2026-04-24T15:52:55.000Z sdk init tools=Read,Grep,Glob,Bash mcpServers=comment:connected",
+      "2026-04-24T15:59:55.000Z [sdk-stderr] still running...",
+      "2026-04-24T15:59:56.000Z fatal provider timeout while waiting for result",
+    ].join("\n"),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!));
+
+  expect(result.conclusion).toBe("error");
+  expect(result.isTimeout).toBe(true);
+  expect(result.errorMessage).toContain("Last remote diagnostics:");
+  expect(result.errorMessage).toContain("startup taskType=review.full");
+  expect(result.errorMessage).toContain("fatal provider timeout while waiting for result");
 });
 
 test("ACA dispatch: failed path — no cancel, failure result returned", async () => {
