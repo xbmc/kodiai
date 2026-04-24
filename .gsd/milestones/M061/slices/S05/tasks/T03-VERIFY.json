@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M061/S05/T03",
+  "timestamp": 1777001644522,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test scripts/usage-report.test.ts scripts/verify-m061-s01.test.ts scripts/verify-m061-s02.test.ts scripts/verify-m061-s03.test.ts scripts/verify-m061-s04.test.ts scripts/verify-m061-s05.test.ts scripts/phase-m061-token-regression-gate.test.ts",
+      "exitCode": 0,
+      "durationMs": 155,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test src/execution/mention-context.test.ts src/execution/mention-prompt.test.ts src/handlers/mention.test.ts src/execution/review-prompt.test.ts src/handlers/review.test.ts src/knowledge/retrieval.test.ts src/knowledge/retrieval.e2e.test.ts src/knowledge/multi-query-retrieval.test.ts",
+      "exitCode": 0,
+      "durationMs": 13852,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun scripts/verify-m061-s05.ts --json",
+      "exitCode": 0,
+      "durationMs": 68,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun scripts/phase-m061-token-regression-gate.ts",
+      "exitCode": 0,
+      "durationMs": 11273,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run lint",
+      "exitCode": 0,
+      "durationMs": 6443,
+      "verdict": "pass"
+    }
+  ]
+}

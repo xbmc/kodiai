@@ -155,6 +155,77 @@ describe("resolveReviewBoundedness", () => {
 
     expect(contract).toBeNull();
   });
+
+  test("keeps boundedness truth machine-checkable for large-pr-only coverage", async () => {
+    const mod = await loadReviewBoundednessModule();
+
+    expect(mod).not.toBeNull();
+
+    const contract = mod!.resolveReviewBoundedness({
+      requestedProfile: {
+        selectedProfile: "strict",
+        source: "keyword",
+        autoBand: null,
+        linesChanged: 400,
+      },
+      effectiveProfile: {
+        selectedProfile: "strict",
+        source: "keyword",
+        autoBand: null,
+        linesChanged: 400,
+      },
+      largePRTriage: {
+        fullCount: 4,
+        abbreviatedCount: 3,
+        totalFiles: 10,
+      },
+      timeout: null,
+    });
+
+    expect(contract).not.toBeNull();
+    expect(contract?.reasonCodes).toEqual(["large-pr-triage"]);
+    expect(contract?.largePR).toEqual({
+      fullCount: 4,
+      abbreviatedCount: 3,
+      reviewedCount: 7,
+      totalFiles: 10,
+      notReviewedCount: 3,
+    });
+    expect(contract?.timeout).toBeNull();
+  });
+
+  test("rejects malformed large-pr totals instead of synthesizing impossible coverage", async () => {
+    const mod = await loadReviewBoundednessModule();
+
+    expect(mod).not.toBeNull();
+
+    const contract = mod!.resolveReviewBoundedness({
+      requestedProfile: {
+        selectedProfile: "strict",
+        source: "keyword",
+        autoBand: null,
+        linesChanged: 400,
+      },
+      effectiveProfile: {
+        selectedProfile: "strict",
+        source: "keyword",
+        autoBand: null,
+        linesChanged: 400,
+      },
+      largePRTriage: {
+        fullCount: 8,
+        abbreviatedCount: 5,
+        totalFiles: 10,
+      },
+      timeout: null,
+    });
+
+    expect(contract).not.toBeNull();
+    expect(contract?.reasonCodes).toEqual([]);
+    expect(contract?.largePR).toBeNull();
+    expect(contract?.disclosureRequired).toBe(false);
+    expect(contract?.disclosureSentence).toBeNull();
+  });
 });
 
 describe("ensureReviewBoundednessDisclosureInSummary", () => {

@@ -10,7 +10,7 @@
 
 ## Slices
 
-- [ ] **S01: Bounded first-pass contract** `risk:high` `depends:[]`
+- [ ] **S01: S01** `risk:high` `depends:[]`
   > After this: After this: a large PR that would previously die at `max_turns` produces a truthful bounded first-pass result instead of an empty or dead-end failure outcome.
 
 - [ ] **S02: Coverage and visible-state rendering** `risk:medium` `depends:[S01]`
