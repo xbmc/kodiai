@@ -364,7 +364,7 @@ function evaluateAuthority(params: {
 export function evaluateScenario(params: EvaluateScenarioInput): M063S01ScenarioRecord {
   const issues: string[] = [];
 
-  let plan = planReviewContinuation({
+  let plan: ReviewContinuationPlanDecision | null = planReviewContinuation({
     reviewOutputKey: params.reviewOutputKey,
     firstPass: params.firstPass,
     checkpoint: params.checkpoint,

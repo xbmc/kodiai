@@ -457,3 +457,6 @@
 {"id":"1963c700-d73d-49d3-a99b-b62bb3e09902","ts":"2026-04-24T05:51:23.821Z","severity":"info","message":"Committed: feat: Anchored timeout and retry continuation updates to the canonical…","source":"notify","read":false}
 {"id":"635a8dc5-0137-4085-b62d-4f47f2142aaa","ts":"2026-04-24T05:51:33.896Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
 {"id":"8d813192-5caf-4f2e-9373-1db4db1fd071","ts":"2026-04-24T05:51:33.909Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"b9725a10-8e22-4631-a08c-7d66909794e8","ts":"2026-04-24T06:01:47.387Z","severity":"info","message":"Committed: feat: Rendered explicit continuation revision counts on the canonical b…","source":"notify","read":false}
+{"id":"794ec3c0-db35-401d-827a-e32ac5b0eba5","ts":"2026-04-24T06:01:52.574Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"dd806c74-ccc2-43c9-ba55-0daeaf8eb8fa","ts":"2026-04-24T06:01:52.587Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}

@@ -58,7 +58,7 @@ Steps:
   - Files: `src/handlers/review.ts`, `src/lib/partial-review-formatter.ts`, `src/lib/review-utils.ts`, `src/lib/delta-classifier.ts`, `src/lib/partial-review-formatter.test.ts`, `src/handlers/review.test.ts`
   - Verify: bun test ./src/lib/partial-review-formatter.test.ts && bun test ./src/handlers/review.test.ts --filter "continuation"
 
-- [ ] **T03: Add deterministic proof for same-surface continuation revisions** `est:1h`
+- [x] **T03: Add deterministic proof for same-surface continuation revisions** `est:1h`
   Lock the shipped S02 contract with a deterministic verifier and package wiring so future slices can detect regressions in public-surface ownership, explicit revisions, and quiet no-delta settlement.
 
 Steps:
