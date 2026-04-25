@@ -8,6 +8,18 @@ Thanks for your interest in contributing. This guide covers everything you need 
 - **Git**
 - **PostgreSQL** (optional) — required only for database-backed tests and local runs with persistence
 
+## Bun Version Contract
+
+KodiAI pins Bun in three places and they must stay aligned:
+
+- `package.json` sets `packageManager` to `bun@1.3.8`
+- `package.json` sets `engines.bun` to `1.3.8`
+- GitHub Actions pins `bun-version: 1.3.8`
+
+Contributor-facing checks for this contract live in `bun run verify:m058:s02`.
+
+Keep `@types/bun` installed alongside the Bun runtime pin so editor/typecheck behavior matches CI.
+
 ## Development Setup
 
 ```bash
