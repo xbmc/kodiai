@@ -201,13 +201,13 @@ function buildContinuationScenarioPromptDetails() {
       ...baseDiffAnalysis({
         filesByCategory: {
           source: firstPassFiles,
-          test: ["src/auth.test.ts"],
+          test: [],
           config: [],
           docs: [],
           infra: [],
         },
         filesByLanguage: {
-          TypeScript: [...firstPassFiles, "src/auth.test.ts"],
+          TypeScript: [...firstPassFiles],
         },
         metrics: {
           totalFiles: firstPassFiles.length,
