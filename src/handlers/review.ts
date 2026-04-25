@@ -2028,7 +2028,7 @@ export function createReviewHandler(deps: {
           {
             deliveryId: params.deliveryId,
             prNumber: pr.number,
-            reviewOutputKey,
+            reviewOutputKey: params.reviewOutputKey,
             reason: params.reason,
           },
           params.logMessage,
