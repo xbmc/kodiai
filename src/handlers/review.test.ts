@@ -10287,7 +10287,7 @@ describe("createReviewHandler timeout resilience", () => {
     expect(updatedCommentBody).toBeUndefined();
     expect(completedAttemptIds).toEqual(["review-work-1", "review-work-3", "review-work-2"]);
     expect(
-      entries.some((entry) => entry.message === "Retry settlement skipped because no partial comment ID was available"),
+      entries.some((entry) => entry.message === "Retry settlement skipped because the base checkpoint was missing"),
     ).toBeTrue();
     expect(canonicalWrites.at(-1)).toMatchObject({
       authoritativeAttemptId: "review-work-2",
