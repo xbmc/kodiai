@@ -549,17 +549,45 @@ function usage(): string {
   ].join("\n");
 }
 
-export async function evaluateM065(params?: { generatedAt?: string }): Promise<M065Report> {
+type EvaluateM065Fns = {
+  evaluateM062S03Fn: typeof evaluateM062S03;
+  evaluateM063S03Fn: typeof evaluateM063S03;
+  evaluateM064S03Fn: typeof evaluateM064S03;
+  evaluateM065S02Fn: typeof evaluateM065S02;
+  evaluateM065S03Fn: typeof evaluateM065S03;
+};
+
+function resolveEvaluateFns(overrides?: Partial<EvaluateM065Fns>): EvaluateM065Fns {
+  return {
+    evaluateM062S03Fn: overrides?.evaluateM062S03Fn ?? evaluateM062S03,
+    evaluateM063S03Fn: overrides?.evaluateM063S03Fn ?? evaluateM063S03,
+    evaluateM064S03Fn: overrides?.evaluateM064S03Fn ?? evaluateM064S03,
+    evaluateM065S02Fn: overrides?.evaluateM065S02Fn ?? evaluateM065S02,
+    evaluateM065S03Fn: overrides?.evaluateM065S03Fn ?? evaluateM065S03,
+  };
+}
+
+export async function evaluateM065(
+  params?: { generatedAt?: string },
+  fns?: Partial<EvaluateM065Fns>,
+): Promise<M065Report> {
   const generatedAt = params?.generatedAt ?? new Date().toISOString();
+  const {
+    evaluateM062S03Fn,
+    evaluateM063S03Fn,
+    evaluateM064S03Fn,
+    evaluateM065S02Fn,
+    evaluateM065S03Fn,
+  } = resolveEvaluateFns(fns);
   const [m062, m063, m064, s02, s03] = await Promise.all([
-    evaluateM062S03({ generatedAt }),
-    Promise.resolve(evaluateM063S03({ generatedAt })),
-    evaluateM064S03({ generatedAt }),
-    evaluateM065S02({
+    evaluateM062S03Fn({ generatedAt }),
+    Promise.resolve(evaluateM063S03Fn({ generatedAt })),
+    evaluateM064S03Fn({ generatedAt }),
+    evaluateM065S02Fn({
       generatedAt,
       reviewOutputKey: REPRESENTATIVE_REVIEW_OUTPUT_KEY,
     }),
-    evaluateM065S03({ generatedAt }),
+    evaluateM065S03Fn({ generatedAt }),
   ]);
 
   const nested_reports = {
@@ -661,10 +689,12 @@ export async function main(
   deps?: {
     stdout?: { write: (chunk: string) => void };
     stderr?: { write: (chunk: string) => void };
+    evaluateFn?: typeof evaluateM065;
   },
 ): Promise<number> {
   const stdout = deps?.stdout ?? process.stdout;
   const stderr = deps?.stderr ?? process.stderr;
+  const evaluateFn = deps?.evaluateFn ?? evaluateM065;
 
   try {
     const options = parseVerifyM065Args(args);
@@ -674,7 +704,7 @@ export async function main(
       return 0;
     }
 
-    const report = await evaluateM065();
+    const report = await evaluateFn();
     stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderM065Report(report));
 
     if (!report.success && report.status_code !== "m065_rollout_proof_pending") {

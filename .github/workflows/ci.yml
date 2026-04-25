@@ -37,13 +37,6 @@ jobs:
       # Bun has been unstable on GitHub runners with one monolithic test process.
       # Keep DB-backed tests on a low concurrency cap and split the suite into
       # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      # The first run covers scripts plus non-knowledge src tests; src/knowledge stays isolated.
-      - run: |
-          mapfile -t non_knowledge_tests < <(
-            {
-              find src -maxdepth 1 -type f -name '*.test.ts'
-              find src -maxdepth 1 -mindepth 1 -type d ! -name knowledge
-            } | sort
-          )
-          bun test --max-concurrency=2 scripts "${non_knowledge_tests[@]}"
+      # The first run covers scripts plus the full src tree; src/knowledge stays isolated.
+      - run: bun test --max-concurrency=2 scripts src
       - run: bun test --max-concurrency=2 src/knowledge

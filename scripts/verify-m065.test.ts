@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
 type NestedCheck = {
   id: string;
@@ -240,34 +240,32 @@ async function loadModuleWithNestedReports(params?: {
   s02?: S02Report | unknown;
   s03?: S03Report | unknown;
 }) {
-  const evaluateM062S03 = mock(async () => params?.m062 ?? buildM062Report());
-  const evaluateM063S03 = mock(() => params?.m063 ?? buildM063Report());
-  const evaluateM064S03 = mock(async () => params?.m064 ?? buildM064Report());
-  const evaluateM065S02 = mock(async () => params?.s02 ?? buildS02Report());
-  const evaluateM065S03 = mock(async () => params && "s03" in params ? params.s03 : buildS03Report());
-
-  mock.module("./verify-m062-s03.ts", () => ({ evaluateM062S03 }));
-  mock.module("./verify-m063-s03.ts", () => ({ evaluateM063S03 }));
-  mock.module("./verify-m064-s03.ts", () => ({ evaluateM064S03 }));
-  mock.module("./verify-m065-s02.ts", () => ({ evaluateM065S02 }));
-  mock.module("./verify-m065-s03.ts", () => ({ evaluateM065S03 }));
+  const evaluateM062S03Fn = mock(async () => params?.m062 ?? buildM062Report());
+  const evaluateM063S03Fn = mock(() => params?.m063 ?? buildM063Report());
+  const evaluateM064S03Fn = mock(async () => params?.m064 ?? buildM064Report());
+  const evaluateM065S02Fn = mock(async () => params?.s02 ?? buildS02Report());
+  const evaluateM065S03Fn = mock(async () => params && "s03" in params ? params.s03 : buildS03Report());
 
   const module = await import(`./verify-m065.ts?case=${Math.random()}`);
   return {
     ...module,
+    evaluateM065WithMocks: (args?: { generatedAt?: string }) =>
+      module.evaluateM065(args, {
+        evaluateM062S03Fn,
+        evaluateM063S03Fn,
+        evaluateM064S03Fn,
+        evaluateM065S02Fn,
+        evaluateM065S03Fn,
+      }),
     nestedMocks: {
-      evaluateM062S03,
-      evaluateM063S03,
-      evaluateM064S03,
-      evaluateM065S02,
-      evaluateM065S03,
+      evaluateM062S03Fn,
+      evaluateM063S03Fn,
+      evaluateM064S03Fn,
+      evaluateM065S02Fn,
+      evaluateM065S03Fn,
     },
   };
 }
-
-afterEach(() => {
-  mock.restore();
-});
 
 describe("verify-m065", () => {
   test("parse args accepts --json and rejects unknown flags", async () => {
@@ -303,15 +301,15 @@ describe("verify-m065", () => {
     });
     const s02 = buildS02Report();
 
-    const { evaluateM065, nestedMocks } = await loadModuleWithNestedReports({ m062, m063, m064, s02, s03: null });
+    const { evaluateM065WithMocks, nestedMocks } = await loadModuleWithNestedReports({ m062, m063, m064, s02, s03: null });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
 
-    expect(nestedMocks.evaluateM062S03).toHaveBeenCalledTimes(1);
-    expect(nestedMocks.evaluateM063S03).toHaveBeenCalledTimes(1);
-    expect(nestedMocks.evaluateM064S03).toHaveBeenCalledTimes(1);
-    expect(nestedMocks.evaluateM065S02).toHaveBeenCalledTimes(1);
-    expect(nestedMocks.evaluateM065S03).toHaveBeenCalledTimes(1);
+    expect(nestedMocks.evaluateM062S03Fn).toHaveBeenCalledTimes(1);
+    expect(nestedMocks.evaluateM063S03Fn).toHaveBeenCalledTimes(1);
+    expect(nestedMocks.evaluateM064S03Fn).toHaveBeenCalledTimes(1);
+    expect(nestedMocks.evaluateM065S02Fn).toHaveBeenCalledTimes(1);
+    expect(nestedMocks.evaluateM065S03Fn).toHaveBeenCalledTimes(1);
 
     expect(report).toMatchObject({
       command: "verify:m065",
@@ -414,9 +412,9 @@ describe("verify-m065", () => {
 
   test("evaluate satisfies fresh regression proof once nested S03 evidence is present", async () => {
     const s03 = buildS03Report();
-    const { evaluateM065 } = await loadModuleWithNestedReports({ s03 });
+    const { evaluateM065WithMocks } = await loadModuleWithNestedReports({ s03 });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
 
     expect(report.success).toBe(true);
     expect(report.status_code).toBe("m065_ok");
@@ -450,9 +448,9 @@ describe("verify-m065", () => {
       status_code: "m065_s03_ok",
       issues: [],
     };
-    const { evaluateM065 } = await loadModuleWithNestedReports({ s03: malformedS03 });
+    const { evaluateM065WithMocks } = await loadModuleWithNestedReports({ s03: malformedS03 });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
     const failingCheck = report.checks.find(
       (check: TopLevelCheck) => check.id === "M065-FRESH-REGRESSION-PROOF",
     );
@@ -500,9 +498,9 @@ describe("verify-m065", () => {
         drill_down_command: "bun run verify:m065:s03 -- --json",
       },
     });
-    const { evaluateM065 } = await loadModuleWithNestedReports({ s02, s03 });
+    const { evaluateM065WithMocks } = await loadModuleWithNestedReports({ s02, s03 });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
 
     expect(report.success).toBe(false);
     expect(report.status_code).toBe("m065_nested_verifier_failed");
@@ -520,7 +518,7 @@ describe("verify-m065", () => {
   });
 
   test("evaluate fails loudly when the S02 report is malformed instead of inventing authority", async () => {
-    const { evaluateM065 } = await loadModuleWithNestedReports({
+    const { evaluateM065WithMocks } = await loadModuleWithNestedReports({
       s02: {
         command: "verify:m065:s02",
         generated_at: FIXED_TIME,
@@ -529,7 +527,7 @@ describe("verify-m065", () => {
       },
     });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
     const failingCheck = report.checks.find(
       (check: TopLevelCheck) => check.id === "M065-LIVE-LARGE-PR-PROOF",
     );
@@ -558,9 +556,9 @@ describe("verify-m065", () => {
       issues: ["M065-S02-VISIBLE-REVIEW-PROOF: verify:m049:s02 returned m049_s02_review_missing"],
     });
 
-    const { evaluateM065 } = await loadModuleWithNestedReports({ s02 });
+    const { evaluateM065WithMocks } = await loadModuleWithNestedReports({ s02 });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
     const failingCheck = report.checks.find(
       (check: TopLevelCheck) => check.id === "M065-LIVE-LARGE-PR-PROOF",
     );
@@ -589,9 +587,9 @@ describe("verify-m065", () => {
       issues: ["large-pr-continuation: Continuation lost required section(s): review-knowledge-context."],
     });
 
-    const { evaluateM065 } = await loadModuleWithNestedReports({ m063, s02: buildS02Report() });
+    const { evaluateM065WithMocks } = await loadModuleWithNestedReports({ m063, s02: buildS02Report() });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
 
     expect(report.status_code).toBe("m065_nested_verifier_failed");
     expect(report.failing_check_id).toBe("M065-M063-PREREQUISITE");
@@ -603,7 +601,7 @@ describe("verify-m065", () => {
   });
 
   test("render report names the S02 live proof and points operators to the drill-down command", async () => {
-    const { evaluateM065, renderM065Report } = await loadModuleWithNestedReports({
+    const { evaluateM065WithMocks, renderM065Report } = await loadModuleWithNestedReports({
       s02: buildS02Report({
         success: false,
         status_code: "m065_s02_nested_verifier_failed",
@@ -611,7 +609,7 @@ describe("verify-m065", () => {
       }),
     });
 
-    const report = await evaluateM065({ generatedAt: FIXED_TIME });
+    const report = await evaluateM065WithMocks({ generatedAt: FIXED_TIME });
     const human = renderM065Report(report);
 
     expect(human).toContain("# M065 — Composed Rollout Verifier");
@@ -628,13 +626,14 @@ describe("verify-m065", () => {
     const m064 = buildM064Report({ records: [{ recordId: "canonical-authority", statusCode: "canonical" }] });
     const s02 = buildS02Report();
 
-    const { main } = await loadModuleWithNestedReports({ m062, m063, m064, s02, s03: null });
+    const { main, evaluateM065WithMocks } = await loadModuleWithNestedReports({ m062, m063, m064, s02, s03: null });
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
 
     const exitCode = await main(["--json"], {
       stdout: { write: (chunk: string) => void stdoutChunks.push(chunk) },
       stderr: { write: (chunk: string) => void stderrChunks.push(chunk) },
+      evaluateFn: evaluateM065WithMocks,
     });
 
     const report = JSON.parse(stdoutChunks.join("")) as JsonReport;
@@ -665,13 +664,14 @@ describe("verify-m065", () => {
       },
     });
 
-    const { main } = await loadModuleWithNestedReports({ s03 });
+    const { main, evaluateM065WithMocks } = await loadModuleWithNestedReports({ s03 });
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
 
     const exitCode = await main(["--json"], {
       stdout: { write: (chunk: string) => void stdoutChunks.push(chunk) },
       stderr: { write: (chunk: string) => void stderrChunks.push(chunk) },
+      evaluateFn: evaluateM065WithMocks,
     });
 
     const report = JSON.parse(stdoutChunks.join("")) as JsonReport;
