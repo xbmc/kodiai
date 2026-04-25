@@ -17,9 +17,11 @@ export function estimatePromptTokens(charCount: number): number {
 
 export function buildPromptSectionMetrics(
   sections: PromptSectionInput[],
+  separator = "\n",
 ): PromptSectionMetric[] {
   return sections.map((section, index) => {
-    const charCount = section.text.length;
+    const separatorChars = index < sections.length - 1 ? separator.length : 0;
+    const charCount = section.text.length + separatorChars;
     return {
       sectionName: section.sectionName,
       sectionPosition: index,
@@ -36,7 +38,7 @@ export function buildPromptBuildResult(
 ): PromptBuildResult {
   return {
     text: sections.map((section) => section.text).join(separator),
-    sections: buildPromptSectionMetrics(sections),
+    sections: buildPromptSectionMetrics(sections, separator),
   };
 }
 

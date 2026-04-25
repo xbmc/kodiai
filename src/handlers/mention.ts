@@ -1085,7 +1085,7 @@ export function createMentionHandler(deps: {
       includeConversationHistory: source.includeConversationHistory,
       includePrMetadata: source.includePrMetadata,
       includeReviewThread: params.explicitReviewRequest ? source.includeReviewThread : false,
-      includeInlineReviewContext: params.explicitReviewRequest,
+      includeInlineReviewContext: source.includeInlineReviewContext,
     };
   }
 

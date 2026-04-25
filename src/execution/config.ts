@@ -209,6 +209,7 @@ const mentionAdmissionRuleSchema = z
     includeConversationHistory: z.boolean().default(false),
     includePrMetadata: z.boolean().default(false),
     includeReviewThread: z.boolean().default(false),
+    includeInlineReviewContext: z.boolean().default(false),
   });
 
 const mentionAdmissionSchema = z
@@ -217,11 +218,13 @@ const mentionAdmissionSchema = z
       includeConversationHistory: false,
       includePrMetadata: false,
       includeReviewThread: false,
+      includeInlineReviewContext: false,
     }),
     explicitReview: mentionAdmissionRuleSchema.default({
       includeConversationHistory: true,
       includePrMetadata: true,
       includeReviewThread: true,
+      includeInlineReviewContext: true,
     }),
   })
   .default({
@@ -229,11 +232,13 @@ const mentionAdmissionSchema = z
       includeConversationHistory: false,
       includePrMetadata: false,
       includeReviewThread: false,
+      includeInlineReviewContext: false,
     },
     explicitReview: {
       includeConversationHistory: true,
       includePrMetadata: true,
       includeReviewThread: true,
+      includeInlineReviewContext: true,
     },
   });
 
@@ -257,11 +262,13 @@ const mentionSchema = z
         includeConversationHistory: false,
         includePrMetadata: false,
         includeReviewThread: false,
+        includeInlineReviewContext: false,
       },
       explicitReview: {
         includeConversationHistory: true,
         includePrMetadata: true,
         includeReviewThread: true,
+        includeInlineReviewContext: true,
       },
     },
   });

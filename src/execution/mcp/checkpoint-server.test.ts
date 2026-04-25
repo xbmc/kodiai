@@ -136,8 +136,9 @@ describe("createCheckpointServer", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain("disk full");
-    expect(result.content[0]!.text).not.toContain('"saved":true');
+    const parsed = JSON.parse(result.content[0]!.text) as { saved: boolean; reason: string };
+    expect(parsed.saved).toBe(false);
+    expect(parsed.reason).toContain("disk full");
   });
 
   test("gracefully degrades when checkpoint storage unavailable", async () => {

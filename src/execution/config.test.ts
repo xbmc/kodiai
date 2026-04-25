@@ -599,11 +599,13 @@ test("defaults mention admission policy to a light conversational path", async (
         includeConversationHistory: false,
         includePrMetadata: false,
         includeReviewThread: false,
+        includeInlineReviewContext: false,
       },
       explicitReview: {
         includeConversationHistory: true,
         includePrMetadata: true,
         includeReviewThread: true,
+        includeInlineReviewContext: true,
       },
     });
     expect(warnings).toEqual([]);
@@ -624,10 +626,12 @@ test("parses mention admission policy from YAML", async () => {
         "      includeConversationHistory: true",
         "      includePrMetadata: true",
         "      includeReviewThread: false",
+        "      includeInlineReviewContext: false",
         "    explicitReview:",
         "      includeConversationHistory: true",
         "      includePrMetadata: true",
         "      includeReviewThread: true",
+        "      includeInlineReviewContext: true",
         "",
       ].join("\n"),
     );
@@ -635,7 +639,9 @@ test("parses mention admission policy from YAML", async () => {
     expect(config.mention.admission.conversational.includeConversationHistory).toBe(true);
     expect(config.mention.admission.conversational.includePrMetadata).toBe(true);
     expect(config.mention.admission.conversational.includeReviewThread).toBe(false);
+    expect(config.mention.admission.conversational.includeInlineReviewContext).toBe(false);
     expect(config.mention.admission.explicitReview.includeReviewThread).toBe(true);
+    expect(config.mention.admission.explicitReview.includeInlineReviewContext).toBe(true);
     expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });
