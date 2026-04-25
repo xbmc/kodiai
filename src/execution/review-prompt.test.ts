@@ -135,6 +135,163 @@ function baseDiffAnalysis(overrides: Partial<DiffAnalysis> = {}): DiffAnalysis {
   };
 }
 
+function findPromptSectionMetric(result: ReturnType<typeof buildReviewPromptDetails>, sectionName: string) {
+  const section = result.sections.find((entry) => entry.sectionName === sectionName);
+  expect(section).toBeDefined();
+  return section!;
+}
+
+function assertContinuationPromptContract(params: {
+  firstPass: ReturnType<typeof buildReviewPromptDetails>;
+  continuation: ReturnType<typeof buildReviewPromptDetails>;
+  firstPassFiles: string[];
+  continuationFiles: string[];
+  disclosureSentence: string;
+}) {
+  const { firstPass, continuation, firstPassFiles, continuationFiles, disclosureSentence } = params;
+  const firstPassChange = findPromptSectionMetric(firstPass, "review-change-context");
+  const continuationChange = findPromptSectionMetric(continuation, "review-change-context");
+  const firstPassSize = findPromptSectionMetric(firstPass, "review-size-context");
+  const firstPassKnowledge = findPromptSectionMetric(firstPass, "review-knowledge-context");
+  const continuationKnowledge = findPromptSectionMetric(continuation, "review-knowledge-context");
+
+  expect(continuationChange.charCount).toBeLessThan(firstPassChange.charCount);
+  expect(firstPassSize.charCount).toBeGreaterThan(0);
+  expect(continuationKnowledge.charCount).toBe(firstPassKnowledge.charCount);
+
+  for (const file of continuationFiles) {
+    expect(continuation.text).toContain(`- ${file}`);
+  }
+  for (const file of firstPassFiles.slice(continuationFiles.length)) {
+    expect(continuation.text).not.toContain(`- ${file}`);
+  }
+
+  expect(firstPass.text).toContain("## Large PR Triage");
+  expect(firstPass.text).toContain("## Bounded Review Disclosure");
+  expect(firstPass.text).toContain(`\"${disclosureSentence}\"`);
+  expect(continuation.text).not.toContain("## Large PR Triage");
+  expect(continuation.text).not.toContain("## Bounded Review Disclosure");
+  expect(continuation.text).toContain("## Similar Prior Findings (Learning Context)");
+  expect(continuation.text).toContain("This is a retry of a timed-out review with reduced scope.");
+  expect(continuation.text).toContain("Focus ONLY on the changed files listed above.");
+  expect(continuation.text).toContain("Do NOT post a top-level summary comment; only publish inline comments.");
+}
+
+function buildContinuationScenarioPromptDetails() {
+  const firstPassFiles = [
+    "src/auth.ts",
+    "src/session.ts",
+    "src/routes.ts",
+    "src/db.ts",
+    "src/cache.ts",
+    "src/logger.ts",
+  ];
+  const continuationFiles = ["src/auth.ts", "src/session.ts"];
+  const disclosureSentence = "Requested strict review; effective review remained strict and covered 6/6 changed files via large-PR triage (4 full, 2 abbreviated; 0 not reviewed).";
+  const sharedContext = {
+    owner: "acme",
+    repo: "app",
+    prNumber: 42,
+    prTitle: "Tighten auth continuation behavior",
+    prBody: "Focus review on auth hot paths after timeout.",
+    prAuthor: "alice",
+    baseBranch: "main",
+    headBranch: "fix/auth-retry",
+    diffAnalysis: {
+      ...baseDiffAnalysis({
+        filesByCategory: {
+          source: firstPassFiles,
+          test: [],
+          config: [],
+          docs: [],
+          infra: [],
+        },
+        filesByLanguage: {
+          TypeScript: [...firstPassFiles],
+        },
+        metrics: {
+          totalFiles: firstPassFiles.length,
+          totalLinesAdded: 240,
+          totalLinesRemoved: 80,
+          hunksCount: 12,
+        },
+        isLargePR: true,
+      }),
+    },
+    retrievalContext: {
+      maxChars: 500,
+      findings: [
+        {
+          findingText: "Prior auth regression in retry path",
+          severity: "major",
+          category: "correctness",
+          path: "src/auth.ts",
+          line: 18,
+          snippet: "if (!token) throw new Error('missing token');",
+          outcome: "accepted",
+          distance: 0.1,
+          sourceRepo: "acme/app",
+        },
+      ],
+    },
+  };
+
+  const firstPass = buildReviewPromptDetails({
+    ...sharedContext,
+    changedFiles: firstPassFiles,
+    largePRContext: {
+      fullReviewFiles: firstPassFiles.slice(0, 4),
+      abbreviatedFiles: firstPassFiles.slice(4),
+      mentionOnlyCount: 0,
+      totalFiles: firstPassFiles.length,
+    },
+    reviewBoundedness: {
+      requestedProfile: {
+        selectedProfile: "strict",
+        source: "keyword",
+        autoBand: null,
+        linesChanged: 320,
+      },
+      effectiveProfile: {
+        selectedProfile: "strict",
+        source: "keyword",
+        autoBand: null,
+        linesChanged: 320,
+      },
+      reasonCodes: ["large-pr-triage"],
+      disclosureRequired: true,
+      disclosureSentence,
+      largePR: {
+        fullCount: 4,
+        abbreviatedCount: 2,
+        reviewedCount: 6,
+        totalFiles: 6,
+        notReviewedCount: 0,
+      },
+      timeout: {
+        riskLevel: "medium",
+        dynamicTimeoutSeconds: 450,
+        shouldReduceScope: false,
+        reductionApplied: false,
+        reductionSkippedReason: null,
+      },
+    },
+  });
+
+  const continuation = buildReviewPromptDetails({
+    ...sharedContext,
+    changedFiles: continuationFiles,
+    customInstructions: [
+      "This is a retry of a timed-out review with reduced scope.",
+      "Focus ONLY on the changed files listed above.",
+      "Do NOT post a top-level summary comment; only publish inline comments.",
+    ].join("\n"),
+    largePRContext: null,
+  });
+
+  return { firstPass, continuation, firstPassFiles, continuationFiles, disclosureSentence };
+}
+
 test("buildReviewPromptDetails returns budgeted named prompt-section metrics", () => {
   const result = buildReviewPromptDetails(baseContext({
     changedFiles: Array.from({ length: 260 }, (_, index) => `src/file-${index}.ts`),
@@ -2700,5 +2857,48 @@ describe("buildReviewPrompt graph context integration", () => {
       }),
     );
     expect(enhancedPrompt).not.toContain("## Bounded Review Disclosure");
+  });
+
+  test("continuation narrows production change and size sections while preserving required sections", () => {
+    const { firstPass, continuation, firstPassFiles, continuationFiles, disclosureSentence } =
+      buildContinuationScenarioPromptDetails();
+
+    expect(firstPass.sections.map((section) => section.sectionName)).toEqual([
+      "review-pr-context",
+      "review-change-context",
+      "review-size-context",
+      "review-knowledge-context",
+      "review-instructions",
+    ]);
+    expect(continuation.sections.map((section) => section.sectionName)).toEqual([
+      "review-pr-context",
+      "review-change-context",
+      "review-knowledge-context",
+      "review-instructions",
+    ]);
+
+    assertContinuationPromptContract({
+      firstPass,
+      continuation,
+      firstPassFiles,
+      continuationFiles,
+      disclosureSentence,
+    });
+  });
+
+  test("continuation keeps reused knowledge context while switching to bounded retry instructions", () => {
+    const scenario = buildContinuationScenarioPromptDetails();
+    assertContinuationPromptContract(scenario);
+  });
+
+  test("contract test fails explicitly when a retry prompt does not narrow the first pass", () => {
+    const scenario = buildContinuationScenarioPromptDetails();
+
+    expect(() =>
+      assertContinuationPromptContract({
+        ...scenario,
+        continuation: scenario.firstPass,
+      })
+    ).toThrow();
   });
 });

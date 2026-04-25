@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatPartialReviewComment } from "./partial-review-formatter.ts";
+import { formatContinuationRevisionSummary, formatPartialReviewComment } from "./partial-review-formatter.ts";
 import { formatReviewDetailsSummary } from "./review-utils.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
@@ -218,5 +218,33 @@ describe("formatPartialReviewComment", () => {
     expect(details).toContain("- Remaining scope: not confirmed from structured evidence");
     expect(details).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
     expect(details).not.toContain("- Covered scope:");
+  });
+});
+
+describe("formatContinuationRevisionSummary", () => {
+  test("renders explicit new still-open and resolved continuation revision wording", () => {
+    const summary = formatContinuationRevisionSummary({
+      counts: {
+        new: 2,
+        stillOpen: 1,
+        resolved: 3,
+      },
+    });
+
+    expect(summary).toBe(
+      "Continuation revisions: 2 new findings, 1 still-open finding, and 3 resolved or revised findings.",
+    );
+  });
+
+  test("returns null when continuation produced no meaningful delta", () => {
+    const summary = formatContinuationRevisionSummary({
+      counts: {
+        new: 0,
+        stillOpen: 0,
+        resolved: 0,
+      },
+    });
+
+    expect(summary).toBeNull();
   });
 });

@@ -24,6 +24,7 @@ let store: KnowledgeStore;
 /** Truncate all knowledge-related tables for test isolation. */
 async function truncateAll(): Promise<void> {
   await sql`TRUNCATE
+    continuation_family_state,
     review_checkpoints,
     feedback_reactions,
     suppression_log,
@@ -746,6 +747,230 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
       expect(second.shouldProcess).toBe(false);
       expect(second.reason).toBe("duplicate");
       expect(second.runKey).toBe(first.runKey);
+    });
+  });
+
+  describe("continuation family state", () => {
+    test("upsertContinuationFamilyState inserts and reads canonical family state", async () => {
+      await store.upsertContinuationFamilyState?.({
+        familyKey: "acme/repo#42",
+        baseReviewOutputKey: "kodiai-review-output:v1:inst-1:acme/repo:pr-42:action-opened:delivery-123:head-abc",
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "merged",
+        finalStopReason: "merged-continuation-results",
+        projectionStatus: "pending",
+        supersededByAttemptId: null,
+      });
+
+      const state = await store.getContinuationFamilyState?.({
+        familyKey: "acme/repo#42",
+        baseReviewOutputKey: "kodiai-review-output:v1:inst-1:acme/repo:pr-42:action-opened:delivery-123:head-abc",
+      });
+
+      expect(state).toEqual({
+        familyKey: "acme/repo#42",
+        baseReviewOutputKey: "kodiai-review-output:v1:inst-1:acme/repo:pr-42:action-opened:delivery-123:head-abc",
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "merged",
+        finalStopReason: "merged-continuation-results",
+        projectionStatus: "pending",
+        supersededByAttemptId: null,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      });
+    });
+
+    test("continuation family state survives store recreation", async () => {
+      const familyKey = "acme/repo#43";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-43:action-opened:delivery-124:head-def";
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-1",
+        authoritativeAttemptOrdinal: 1,
+        authoritativeOutcome: "blocked",
+        finalStopReason: "no-follow-up",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      const restartedStore = createKnowledgeStore({ sql, logger: mockLogger });
+      const state = await restartedStore.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+
+      expect(state?.authoritativeAttemptId).toBe("review-work-1");
+      expect(state?.authoritativeAttemptOrdinal).toBe(1);
+      expect(state?.authoritativeOutcome).toBe("blocked");
+      expect(state?.finalStopReason).toBe("no-follow-up");
+      expect(state?.projectionStatus).toBe("canonical");
+    });
+
+    test("older continuation attempts cannot overwrite newer authoritative state", async () => {
+      const familyKey = "acme/repo#44";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-44:action-opened:delivery-125:head-ghi";
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "superseded",
+        finalStopReason: "superseded-by-newer-attempt",
+        projectionStatus: "degraded",
+        supersededByAttemptId: "review-work-3",
+      });
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-1",
+        authoritativeAttemptOrdinal: 1,
+        authoritativeOutcome: "merged",
+        finalStopReason: "merged-continuation-results",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      const state = await store.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+      expect(state?.authoritativeAttemptId).toBe("review-work-2");
+      expect(state?.authoritativeAttemptOrdinal).toBe(2);
+      expect(state?.authoritativeOutcome).toBe("superseded");
+      expect(state?.finalStopReason).toBe("superseded-by-newer-attempt");
+      expect(state?.projectionStatus).toBe("degraded");
+      expect(state?.supersededByAttemptId).toBe("review-work-3");
+    });
+
+    test("older continuation attempts emit a debug log when the ordinal guard rejects them", async () => {
+      const familyKey = "acme/repo#44-log";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-44:action-opened:delivery-125:head-ghi-log";
+      const debugCalls: Array<{ bindings: Record<string, unknown>; message: string }> = [];
+      const logger = {
+        ...mockLogger,
+        debug: (bindings: Record<string, unknown>, message: string) => {
+          debugCalls.push({ bindings, message });
+        },
+      } as unknown as import("pino").Logger;
+      const loggingStore = createKnowledgeStore({ sql, logger });
+
+      await loggingStore.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "superseded",
+        finalStopReason: "superseded-by-newer-attempt",
+        projectionStatus: "degraded",
+        supersededByAttemptId: "review-work-3",
+      });
+
+      await loggingStore.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-1",
+        authoritativeAttemptOrdinal: 1,
+        authoritativeOutcome: "merged",
+        finalStopReason: "merged-continuation-results",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      expect(debugCalls).toEqual([
+        {
+          bindings: expect.objectContaining({
+            familyKey,
+            baseReviewOutputKey,
+            authoritativeAttemptId: "review-work-1",
+            attemptOrdinal: 1,
+          }),
+          message: "Continuation family state update skipped due to ordinal conflict",
+        },
+      ]);
+    });
+
+    test("equal ordinals only permit idempotent replays for the same attempt id", async () => {
+      const familyKey = "acme/repo#44-equal";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-44:action-opened:delivery-125:head-ghi-equal";
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "superseded",
+        finalStopReason: "superseded-by-newer-attempt",
+        projectionStatus: "degraded",
+        supersededByAttemptId: "review-work-3",
+      });
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "quiet-settled",
+        finalStopReason: "settled-without-update",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      let state = await store.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+      expect(state?.authoritativeAttemptId).toBe("review-work-2");
+      expect(state?.authoritativeOutcome).toBe("quiet-settled");
+      expect(state?.finalStopReason).toBe("settled-without-update");
+      expect(state?.projectionStatus).toBe("canonical");
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-99",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "blocked",
+        finalStopReason: "no-follow-up",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      state = await store.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+      expect(state?.authoritativeAttemptId).toBe("review-work-2");
+      expect(state?.authoritativeOutcome).toBe("quiet-settled");
+      expect(state?.finalStopReason).toBe("settled-without-update");
+      expect(state?.projectionStatus).toBe("canonical");
+    });
+
+    test("newer continuation attempts replace older canonical rows", async () => {
+      const familyKey = "acme/repo#45";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-45:action-opened:delivery-126:head-jkl";
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-1",
+        authoritativeAttemptOrdinal: 1,
+        authoritativeOutcome: "blocked",
+        finalStopReason: "no-follow-up",
+        projectionStatus: "pending",
+        supersededByAttemptId: null,
+      });
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "quiet-settled",
+        finalStopReason: "settled-without-update",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      const state = await store.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+      expect(state?.authoritativeAttemptId).toBe("review-work-2");
+      expect(state?.authoritativeAttemptOrdinal).toBe(2);
+      expect(state?.authoritativeOutcome).toBe("quiet-settled");
+      expect(state?.finalStopReason).toBe("settled-without-update");
+      expect(state?.projectionStatus).toBe("canonical");
     });
   });
 

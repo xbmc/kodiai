@@ -17,7 +17,13 @@ import type {
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
-import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
+import type {
+  KnowledgeStore,
+  PriorFinding,
+  ContinuationFamilyAuthoritativeOutcome,
+  ContinuationFamilyFinalStopReason,
+  ContinuationFamilyProjectionStatus,
+} from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
@@ -75,6 +81,10 @@ import {
   normalizeReviewFirstPass,
   type ReviewFirstPassPayload,
 } from "../lib/review-first-pass.ts";
+import {
+  planReviewContinuation,
+  settleReviewContinuation,
+} from "../lib/review-continuation-lifecycle.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
@@ -694,6 +704,51 @@ async function upsertReviewDetailsComment(params: {
   return response.data.id;
 }
 
+function mergeReviewDetailsIntoSummaryBody(params: {
+  summaryBody: string;
+  reviewDetailsBlock: string;
+  requireDegradationDisclosure: boolean;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+}): string {
+  let updatedReviewDetails = params.reviewDetailsBlock;
+  let summaryBody = ensureReviewBoundednessDisclosureInSummary(
+    params.summaryBody,
+    params.reviewBoundedness,
+  );
+  if (params.requireDegradationDisclosure) {
+    summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
+  }
+
+  const bodyCounts = parseSeverityCountsFromBody(summaryBody);
+  const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
+  if (bodyTotal > 0) {
+    updatedReviewDetails = updatedReviewDetails.replace(
+      /- Findings: (\d+) critical, (\d+) major, (\d+) medium, (\d+) minor/,
+      (_match, c, ma, me, mi) => {
+        const total = {
+          critical: parseInt(c) + bodyCounts.critical,
+          major: parseInt(ma) + bodyCounts.major,
+          medium: parseInt(me) + bodyCounts.medium,
+          minor: parseInt(mi) + bodyCounts.minor,
+        };
+        return `- Findings: ${total.critical} critical, ${total.major} major, ${total.medium} medium, ${total.minor} minor (includes ${bodyTotal} from summary observations)`;
+      }
+    );
+  }
+
+  const closingTag = '</details>';
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
+  if (lastCloseIdx === -1) {
+    return `${summaryBody}\n\n${updatedReviewDetails}`;
+  }
+
+  const before = summaryBody.slice(0, lastCloseIdx);
+  const after = summaryBody.slice(lastCloseIdx);
+  const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
+  const beforeWithoutExistingDetails = before.replace(existingReviewDetailsPattern, "\n").trimEnd();
+  return `${beforeWithoutExistingDetails}\n\n${updatedReviewDetails}\n${after}`;
+}
+
 async function appendReviewDetailsToSummary(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   owner: string;
@@ -728,49 +783,12 @@ async function appendReviewDetailsToSummary(params: {
   }
 
   let summaryBody = summaryComment.body!;
-  summaryBody = ensureReviewBoundednessDisclosureInSummary(
+  const updatedBody = mergeReviewDetailsIntoSummaryBody({
     summaryBody,
-    params.reviewBoundedness,
-  );
-  if (params.requireDegradationDisclosure) {
-    summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
-  }
-
-  // Merge severity counts from summary body observations into the findings line
-  const bodyCounts = parseSeverityCountsFromBody(summaryBody);
-  const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
-  if (bodyTotal > 0) {
-    updatedReviewDetails = updatedReviewDetails.replace(
-      /- Findings: (\d+) critical, (\d+) major, (\d+) medium, (\d+) minor/,
-      (_match, c, ma, me, mi) => {
-        const total = {
-          critical: parseInt(c) + bodyCounts.critical,
-          major: parseInt(ma) + bodyCounts.major,
-          medium: parseInt(me) + bodyCounts.medium,
-          minor: parseInt(mi) + bodyCounts.minor,
-        };
-        return `- Findings: ${total.critical} critical, ${total.major} major, ${total.medium} medium, ${total.minor} minor (includes ${bodyTotal} from summary observations)`;
-      }
-    );
-  }
-
-  // Insert review details block INSIDE the summary's <details> block (before
-  // the last </details> tag) so it renders as a nested collapsible. If a
-  // Review Details block already exists, replace it so the helper remains safe
-  // to call again after final publication timing is known.
-  const closingTag = '</details>';
-  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
-  let updatedBody: string;
-  if (lastCloseIdx === -1) {
-    // Fallback: append as before if structure is unexpected
-    updatedBody = `${summaryBody}\n\n${updatedReviewDetails}`;
-  } else {
-    const before = summaryBody.slice(0, lastCloseIdx);
-    const after = summaryBody.slice(lastCloseIdx);
-    const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
-    const beforeWithoutExistingDetails = before.replace(existingReviewDetailsPattern, "\n").trimEnd();
-    updatedBody = `${beforeWithoutExistingDetails}\n\n${updatedReviewDetails}\n${after}`;
-  }
+    reviewDetailsBlock: updatedReviewDetails,
+    requireDegradationDisclosure: params.requireDegradationDisclosure,
+    reviewBoundedness: params.reviewBoundedness,
+  });
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
     return undefined;
@@ -1896,6 +1914,141 @@ export function createReviewHandler(deps: {
         setReviewWorkPhaseForAttempt(reviewWorkAttempt.attemptId, phase);
       }
 
+      function getBaseReviewOutputKey(currentReviewOutputKey: string): string {
+        return currentReviewOutputKey.replace(/-retry-\d+$/, "");
+      }
+
+      function getAttemptOrdinal(attemptId: string): number {
+        const match = /(?:^|[^\d])(\d+)$/.exec(attemptId);
+        return match ? Number.parseInt(match[1] ?? "0", 10) : 0;
+      }
+
+      async function persistContinuationFamilyState(params: {
+        authoritativeAttemptId: string;
+        authoritativeAttemptOrdinal?: number;
+        authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
+        finalStopReason: ContinuationFamilyFinalStopReason;
+        projectionStatus: ContinuationFamilyProjectionStatus;
+        supersededByAttemptId?: string | null;
+        reviewOutputKey?: string;
+      }): Promise<void> {
+        if (!knowledgeStore?.upsertContinuationFamilyState) {
+          return;
+        }
+
+        const authoritativeAttemptOrdinal = params.authoritativeAttemptOrdinal
+          ?? getAttemptOrdinal(params.authoritativeAttemptId);
+        if (!Number.isFinite(authoritativeAttemptOrdinal) || authoritativeAttemptOrdinal < 1) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "continuation-family-state",
+              gateResult: "skipped",
+              reason: "invalid-attempt-ordinal",
+              authoritativeAttemptId: params.authoritativeAttemptId,
+            },
+            "Skipping canonical continuation-family state write because the attempt ordinal was invalid",
+          );
+          return;
+        }
+
+        try {
+          await knowledgeStore.upsertContinuationFamilyState({
+            familyKey: reviewFamilyKey,
+            baseReviewOutputKey: getBaseReviewOutputKey(params.reviewOutputKey ?? reviewOutputKey),
+            authoritativeAttemptId: params.authoritativeAttemptId,
+            authoritativeAttemptOrdinal,
+            authoritativeOutcome: params.authoritativeOutcome,
+            finalStopReason: params.finalStopReason,
+            projectionStatus: params.projectionStatus,
+            supersededByAttemptId: params.supersededByAttemptId ?? null,
+          });
+        } catch (err) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "continuation-family-state",
+              gateResult: "degraded",
+              authoritativeAttemptId: params.authoritativeAttemptId,
+              authoritativeOutcome: params.authoritativeOutcome,
+              finalStopReason: params.finalStopReason,
+              err,
+            },
+            "Failed to persist canonical continuation-family state",
+          );
+        }
+      }
+
+      async function persistDegradedContinuationFamilyState(params: {
+        authoritativeAttemptId: string;
+        authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
+        finalStopReason: ContinuationFamilyFinalStopReason;
+        supersededByAttemptId?: string | null;
+        reviewOutputKey?: string;
+      }): Promise<void> {
+        await persistContinuationFamilyState({
+          ...params,
+          projectionStatus: "degraded",
+        });
+      }
+
+      async function settleRetryWithoutCanonicalUpdate(params: {
+        attemptId: string;
+        reviewOutputKey?: string;
+        deliveryId: string;
+        reason: string;
+        logMessage: string;
+      }): Promise<void> {
+        logger.warn(
+          {
+            deliveryId: params.deliveryId,
+            prNumber: pr.number,
+            reviewOutputKey,
+            reason: params.reason,
+          },
+          params.logMessage,
+        );
+        await persistContinuationFamilyState({
+          authoritativeAttemptId: params.attemptId,
+          authoritativeOutcome: "quiet-settled",
+          finalStopReason: "settled-without-update",
+          projectionStatus: "canonical",
+          reviewOutputKey: params.reviewOutputKey,
+        });
+      }
+
+      async function finalizeContinuationAttempt(params: {
+        attemptId: string;
+        fallbackOutcome: ContinuationFamilyAuthoritativeOutcome;
+        fallbackStopReason: ContinuationFamilyFinalStopReason;
+        reviewOutputKey?: string;
+      }): Promise<void> {
+        const currentAttempt = reviewWorkCoordinator
+          .getSnapshot(reviewFamilyKey)
+          ?.attempts.find((attempt) => attempt.attemptId === params.attemptId);
+        const supersededByAttemptId = currentAttempt?.supersededByAttemptId ?? null;
+
+        if (supersededByAttemptId) {
+          await persistContinuationFamilyState({
+            authoritativeAttemptId: supersededByAttemptId,
+            authoritativeOutcome: "superseded",
+            finalStopReason: "superseded-by-newer-attempt",
+            projectionStatus: "canonical",
+            supersededByAttemptId,
+            reviewOutputKey: params.reviewOutputKey,
+          });
+          return;
+        }
+
+        await persistContinuationFamilyState({
+          authoritativeAttemptId: params.attemptId,
+          authoritativeOutcome: params.fallbackOutcome,
+          finalStopReason: params.fallbackStopReason,
+          projectionStatus: "canonical",
+          reviewOutputKey: params.reviewOutputKey,
+        });
+      }
+
       function canPublishReviewWorkOutput(
         attemptId: string,
         outputLabel: string,
@@ -1908,6 +2061,16 @@ export function createReviewHandler(deps: {
         const currentAttempt = reviewWorkCoordinator
           .getSnapshot(reviewFamilyKey)
           ?.attempts.find((attempt) => attempt.attemptId === attemptId);
+        const supersededByAttemptId = currentAttempt?.supersededByAttemptId ?? null;
+        if (supersededByAttemptId) {
+          void persistContinuationFamilyState({
+            authoritativeAttemptId: supersededByAttemptId,
+            authoritativeOutcome: "superseded",
+            finalStopReason: "superseded-by-newer-attempt",
+            projectionStatus: "canonical",
+            supersededByAttemptId,
+          });
+        }
         logger.info(
           {
             ...baseLog,
@@ -1917,7 +2080,7 @@ export function createReviewHandler(deps: {
             skipReason: "publish-rights-lost",
             reviewFamilyKey,
             reviewWorkAttemptId: attemptId,
-            supersededByAttemptId: currentAttempt?.supersededByAttemptId ?? null,
+            supersededByAttemptId,
           },
           `Skipping ${outputLabel} because publish rights were superseded`,
         );
@@ -4709,57 +4872,100 @@ export function createReviewHandler(deps: {
                 ? "not scheduled (GitHub-visible findings already posted)"
                 : "not scheduled";
             let retrySummaryNote: string | undefined;
-            let retryPlan: {
-              reviewOutputKey: string;
-              timeoutSeconds: number;
-              scopeRatio: number;
-              files: string[];
-              timeoutEstimate: ReturnType<typeof estimateTimeoutRisk>;
-              checkpointEnabled: boolean;
-            } | null = null;
+            let retryPlan: ReturnType<typeof planReviewContinuation> | null = null;
+            let continuationProjectionDegraded = false;
 
-            if (!isChronicTimeout && !hasPublishedInlines) {
-              const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
-              const retryScope = computeRetryScope({
-                allFiles: riskScores,
-                filesAlreadyReviewed: timeoutReviewedFiles,
-                totalFiles: timeoutTotalFiles,
+            if (timeoutFirstPass) {
+              retryPlan = planReviewContinuation({
+                reviewOutputKey,
+                firstPass: timeoutFirstPass,
+                checkpoint,
+                riskScores,
+                timeoutSeconds: timeoutDuration,
+                hasPublishedInlineFindings: hasPublishedInlines,
+                isChronicTimeout,
+                estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
+                  const retryLinesChanged = files.reduce((sum, filePath) => {
+                    const stats = perFileStats.get(filePath);
+                    if (!stats) return sum;
+                    return sum + stats.added + stats.removed;
+                  }, 0);
+                  return estimateTimeoutRisk({
+                    fileCount: files.length,
+                    linesChanged: retryLinesChanged,
+                    languageComplexity,
+                    isLargePR: false,
+                    baseTimeoutSeconds: timeoutSeconds,
+                  });
+                },
               });
 
-              if (retryScope.filesToReview.length > 0) {
-                const retryFiles = retryScope.filesToReview.map((f) => f.filePath);
-                const retryLinesChanged = retryFiles.reduce((sum, filePath) => {
-                  const stats = perFileStats.get(filePath);
-                  if (!stats) return sum;
-                  return sum + stats.added + stats.removed;
-                }, 0);
-                const retryTimeoutEstimate = estimateTimeoutRisk({
-                  fileCount: retryFiles.length,
-                  linesChanged: retryLinesChanged,
-                  languageComplexity,
-                  isLargePR: false,
-                  baseTimeoutSeconds: retryTimeout,
-                });
-                const retryCheckpointEnabled =
-                  retryTimeoutEstimate.riskLevel === "medium" ||
-                  retryTimeoutEstimate.riskLevel === "high";
+              switch (retryPlan.decision) {
+                case "schedule-continuation":
+                  retryState = "scheduled reduced-scope retry";
+                  retrySummaryNote = "Scheduling a reduced-scope retry.";
+                  break;
+                case "skip-continuation":
+                  switch (retryPlan.reason) {
+                    case "chronic-timeout":
+                      retryState = "skipped (frequent timeouts for this repo/author)";
+                      break;
+                    case "inline-output-already-published":
+                      retryState = "not scheduled (GitHub-visible findings already posted)";
+                      retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
+                      break;
+                    case "no-remaining-scope":
+                      retryState = "not scheduled (no remaining files outside analyzed progress)";
+                      retrySummaryNote = "Retry not scheduled because no remaining files were outside the analyzed progress.";
+                      break;
+                    case "invalid-checkpoint-scope":
+                      retryState = "not scheduled (invalid checkpoint scope)";
+                      retrySummaryNote = "Retry not scheduled because checkpoint scope was malformed.";
+                      break;
+                    case "zero-evidence-failure": {
+                      retryState = "not scheduled (zero-evidence timeout)";
+                      const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
+                      const retryScope = computeRetryScope({
+                        allFiles: riskScores,
+                        filesAlreadyReviewed: timeoutReviewedFiles,
+                        totalFiles: timeoutTotalFiles,
+                      });
 
-                retryPlan = {
-                  reviewOutputKey: `${reviewOutputKey}-retry-1`,
-                  timeoutSeconds: retryTimeout,
-                  scopeRatio: retryScope.scopeRatio,
-                  files: retryFiles,
-                  timeoutEstimate: retryTimeoutEstimate,
-                  checkpointEnabled: retryCheckpointEnabled,
-                };
-                retryState = "scheduled reduced-scope retry";
-                retrySummaryNote = "Scheduling a reduced-scope retry.";
-              } else {
-                retryState = "not scheduled (no remaining files outside analyzed progress)";
-                retrySummaryNote = "Retry not scheduled because no remaining files were outside the analyzed progress.";
+                      if (retryScope.filesToReview.length > 0) {
+                        const continuationFiles = retryScope.filesToReview.map((file) => file.filePath);
+                        const timeoutEstimate = estimateTimeoutRisk({
+                          fileCount: continuationFiles.length,
+                          linesChanged: continuationFiles.reduce((sum, filePath) => {
+                            const stats = perFileStats.get(filePath);
+                            if (!stats) return sum;
+                            return sum + stats.added + stats.removed;
+                          }, 0),
+                          languageComplexity,
+                          isLargePR: false,
+                          baseTimeoutSeconds: retryTimeout,
+                        });
+                        retryPlan = {
+                          decision: "schedule-continuation",
+                          reason: "remaining-scope-available",
+                          reviewOutputKey,
+                          continuationReviewOutputKey: `${reviewOutputKey}-retry-1`,
+                          continuationNumber: 1,
+                          continuationFiles,
+                          scopeRatio: retryScope.scopeRatio,
+                          timeoutSeconds: retryTimeout,
+                          checkpointEnabled: timeoutEstimate.riskLevel === "medium" || timeoutEstimate.riskLevel === "high",
+                          timeoutEstimate,
+                          firstPass: timeoutFirstPass,
+                          checkpoint,
+                        };
+                        retryState = "scheduled reduced-scope retry";
+                        retrySummaryNote = "Scheduling a reduced-scope retry.";
+                      }
+                      break;
+                    }
+                  }
+                  break;
               }
-            } else if (hasPublishedInlines) {
-              retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
             }
 
             // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
@@ -4784,6 +4990,7 @@ export function createReviewHandler(deps: {
               const partialBody = formatPartialReviewComment({
                 summaryDraft,
                 firstPass: timeoutFirstPass,
+                reviewOutputKey,
                 timedOutAfterSeconds: timeoutDuration,
                 isRetrySkipped: isChronicTimeout,
                 retrySkipReason: isChronicTimeout
@@ -4839,18 +5046,24 @@ export function createReviewHandler(deps: {
 
               try {
                 if (canPublishVisibleOutput("timeout Review Details comment")) {
-                  await upsertReviewDetailsComment({
-                    octokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    body: buildReviewDetailsBody({
+                  const mergedPartialBody = mergeReviewDetailsIntoSummaryBody({
+                    summaryBody: partialBody,
+                    reviewDetailsBlock: buildReviewDetailsBody({
                       timeoutProgress: timeoutReviewDetails,
                       reviewFirstPass: timeoutFirstPass,
                     }),
-                    botHandles: [githubApp.getAppSlug(), "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
                   });
+
+                  if (canPublishVisibleOutput("timeout Review Details comment")) {
+                    await octokit.rest.issues.updateComment({
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      comment_id: partialCommentId,
+                      body: sanitizeOutgoingMentions(mergedPartialBody, [githubApp.getAppSlug(), "claude"]),
+                    });
+                  }
                 }
               } catch (reviewDetailsErr) {
                 logger.warn(
@@ -4888,6 +5101,7 @@ export function createReviewHandler(deps: {
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  continuationProjectionDegraded = true;
                 }
               }
             }
@@ -4906,14 +5120,23 @@ export function createReviewHandler(deps: {
               );
             }
 
+            if (retryPlan?.decision !== "schedule-continuation") {
+              await persistContinuationFamilyState({
+                authoritativeAttemptId: reviewWorkAttempt.attemptId,
+                authoritativeOutcome: "blocked",
+                finalStopReason: "no-follow-up",
+                projectionStatus: continuationProjectionDegraded ? "degraded" : "canonical",
+              });
+            }
+
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
             // Retry is only useful when no GitHub-visible output was published.
             // If inline comments were already posted, avoid a retry that could
             // create additional noise or duplicates.
-            if (retryPlan) {
-              const retryReviewOutputKey = retryPlan.reviewOutputKey;
+            if (retryPlan?.decision === "schedule-continuation") {
+              const retryReviewOutputKey = retryPlan.continuationReviewOutputKey;
               const retryTimeout = retryPlan.timeoutSeconds;
-              const retryFiles = retryPlan.files;
+              const retryFiles = retryPlan.continuationFiles;
               const retryTimeoutEstimate = retryPlan.timeoutEstimate;
               const retryCheckpointEnabled = retryPlan.checkpointEnabled;
               const retryScopeRatio = retryPlan.scopeRatio;
@@ -4946,6 +5169,13 @@ export function createReviewHandler(deps: {
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  continuationProjectionDegraded = true;
+                  await persistDegradedContinuationFamilyState({
+                    authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                    authoritativeOutcome: "continuation-pending",
+                    finalStopReason: "awaiting-continuation",
+                    reviewOutputKey: retryReviewOutputKey,
+                  });
                 }
               }
 
@@ -4968,6 +5198,14 @@ export function createReviewHandler(deps: {
                 lane: "review",
                 deliveryId: retryDeliveryId,
                 phase: "claimed",
+              });
+
+              await persistContinuationFamilyState({
+                authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                authoritativeOutcome: "continuation-pending",
+                finalStopReason: "awaiting-continuation",
+                projectionStatus: "pending",
+                reviewOutputKey: retryReviewOutputKey,
               });
 
               // Fire-and-forget enqueue -- do not await the retry result.
@@ -5195,124 +5433,242 @@ export function createReviewHandler(deps: {
                       retryResult.conclusion === "success" ||
                       (retryResult.isTimeout && retryHasResults)
                     ) {
-                      const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
-                      const mergedCheckpoint = checkpoint && retryCheckpoint
-                        ? {
-                            ...checkpoint,
-                            filesReviewed: Array.from(new Set([
-                              ...checkpoint.filesReviewed,
-                              ...retryCheckpoint.filesReviewed,
-                            ])),
-                            summaryDraft: retryCheckpoint.summaryDraft || checkpoint.summaryDraft,
-                            totalFiles: Math.max(checkpoint.totalFiles, retryCheckpoint.totalFiles),
-                            partialCommentId: checkpoint.partialCommentId ?? retryCheckpoint.partialCommentId,
+                      if (!checkpoint) {
+                        await settleRetryWithoutCanonicalUpdate({
+                          attemptId: retryReviewWorkAttempt.attemptId,
+                          reviewOutputKey: retryReviewOutputKey,
+                          deliveryId: retryDeliveryId,
+                          reason: "missing-base-checkpoint",
+                          logMessage: "Retry settlement skipped because the base checkpoint was missing",
+                        });
+                        return;
+                      }
+
+                      const settlementDecision = settleReviewContinuation({
+                        reviewOutputKey,
+                        continuationReviewOutputKey: retryReviewOutputKey,
+                        baseCheckpoint: checkpoint,
+                        continuationCheckpoint: retryCheckpoint,
+                        continuationPublished: retryResult.published ?? false,
+                      });
+
+                      if (settlementDecision.decision === "merge-continuation") {
+                        let continuationRevisionCounts: DeltaClassification["counts"] | null = null;
+                        if (knowledgeStore?.getPriorReviewFindings) {
+                          try {
+                            const priorFindings = await knowledgeStore.getPriorReviewFindings({
+                              repo: `${apiOwner}/${apiRepo}`,
+                              prNumber: pr.number,
+                            });
+                            if (priorFindings.length > 0) {
+                              const currentFindings = await extractFindingsFromReviewComments({
+                                octokit: await githubApp.getInstallationOctokit(event.installationId),
+                                owner: apiOwner,
+                                repo: apiRepo,
+                                prNumber: pr.number,
+                                reviewOutputKey,
+                                logger,
+                                baseLog,
+                              });
+                              continuationRevisionCounts = classifyFindingDeltas({
+                                currentFindings: currentFindings.map((finding) => ({
+                                  filePath: finding.filePath,
+                                  title: finding.title,
+                                  severity: finding.severity,
+                                  category: finding.category,
+                                  commentId: finding.commentId,
+                                  suppressed: false,
+                                  confidence: 100,
+                                })),
+                                priorFindings,
+                                fingerprintFn: fingerprintFindingTitle,
+                              }).counts;
+                            }
+                          } catch (err) {
+                            logger.warn(
+                              {
+                                ...baseLog,
+                                gate: "continuation-delta",
+                                gateResult: "failed",
+                                reviewOutputKey,
+                                err,
+                              },
+                              "Continuation delta classification failed (fail-open, merging without revision labels)",
+                            );
                           }
-                        : checkpoint ?? retryCheckpoint;
-                      const mergedFirstPass = normalizeReviewFirstPass({
-                        boundedness: reviewBoundedness,
-                        checkpoint: mergedCheckpoint,
-                        outcome: {
-                          conclusion: result.conclusion,
-                          stopReason: result.stopReason,
-                          failureSubtype: result.failureSubtype,
-                          isTimeout: result.isTimeout,
-                          published: true,
-                        },
-                      });
+                        }
 
-                      if (mergedFirstPass?.state !== "bounded-first-pass") {
-                        logger.warn(
-                          {
-                            deliveryId: retryDeliveryId,
-                            prNumber: pr.number,
-                            reviewOutputKey,
+                        if (
+                          continuationRevisionCounts
+                          && continuationRevisionCounts.new === 0
+                          && continuationRevisionCounts.stillOpen === 0
+                          && continuationRevisionCounts.resolved === 0
+                        ) {
+                          logger.info(
+                            {
+                              deliveryId: retryDeliveryId,
+                              prNumber: pr.number,
+                              retryConclusion: retryResult.conclusion,
+                              settlementReason: "no-meaningful-delta",
+                            },
+                            "Retry produced no additional results -- keeping original partial review",
+                          );
+                          await persistContinuationFamilyState({
+                            authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                            authoritativeOutcome: "quiet-settled",
+                            finalStopReason: "settled-without-update",
+                            projectionStatus: "canonical",
+                            reviewOutputKey: retryReviewOutputKey,
+                          });
+                          knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                          knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                          return;
+                        }
+
+                        const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
+                        const mergedFirstPass = normalizeReviewFirstPass({
+                          boundedness: reviewBoundedness,
+                          checkpoint: settlementDecision.mergedCheckpoint,
+                          outcome: {
+                            conclusion: result.conclusion,
+                            stopReason: result.stopReason,
+                            failureSubtype: result.failureSubtype,
+                            isTimeout: result.isTimeout,
+                            published: true,
                           },
-                          "Retry merge skipped because bounded first-pass state became non-publishable",
-                        );
-                        return;
-                      }
-
-                      const mergedBody = formatPartialReviewComment({
-                        summaryDraft:
-                          retryCheckpoint?.summaryDraft ??
-                          checkpoint?.summaryDraft ??
-                          "Review completed with reduced scope.",
-                        firstPass: mergedFirstPass,
-                        timedOutAfterSeconds: timeoutDuration,
-                        isRetryResult: true,
-                        retryFilesReviewed,
-                      });
-
-                      const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
-                      const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
-                      const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
-
-                      if (!commentIdToUpdate) {
-                        logger.warn(
-                          { deliveryId: retryDeliveryId, prNumber: pr.number },
-                          "No partial comment ID available for retry update",
-                        );
-                        return;
-                      }
-
-                      if (canPublishReviewWorkOutput(
-                        retryReviewWorkAttempt.attemptId,
-                        "retry partial review merge",
-                        retryDeliveryId,
-                      )) {
-                        setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
-                        await retryOctokit.rest.issues.updateComment({
-                          owner: apiOwner,
-                          repo: apiRepo,
-                          comment_id: commentIdToUpdate,
-                          body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
                         });
 
-                        try {
-                          await upsertReviewDetailsComment({
-                            octokit: retryOctokit,
+                        if (mergedFirstPass?.state !== "bounded-first-pass") {
+                          await settleRetryWithoutCanonicalUpdate({
+                            attemptId: retryReviewWorkAttempt.attemptId,
+                            reviewOutputKey: retryReviewOutputKey,
+                            deliveryId: retryDeliveryId,
+                            reason: "non-publishable-merged-first-pass",
+                            logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
+                          });
+                          return;
+                        }
+
+                        const mergedBody = formatPartialReviewComment({
+                          summaryDraft:
+                            settlementDecision.mergedCheckpoint.summaryDraft ||
+                            retryCheckpoint?.summaryDraft ||
+                            checkpoint?.summaryDraft ||
+                            "Review completed with reduced scope.",
+                          firstPass: mergedFirstPass,
+                          reviewOutputKey,
+                          timedOutAfterSeconds: timeoutDuration,
+                          isRetryResult: true,
+                          retryFilesReviewed,
+                          continuationRevisionCounts,
+                        });
+
+                        const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
+                        const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
+                        const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
+
+                        if (!commentIdToUpdate) {
+                          await settleRetryWithoutCanonicalUpdate({
+                            attemptId: retryReviewWorkAttempt.attemptId,
+                            reviewOutputKey: retryReviewOutputKey,
+                            deliveryId: retryDeliveryId,
+                            reason: "missing-partial-comment-id",
+                            logMessage: "Retry settlement skipped because no partial comment ID was available",
+                          });
+                          return;
+                        }
+
+                        if (canPublishReviewWorkOutput(
+                          retryReviewWorkAttempt.attemptId,
+                          "retry partial review merge",
+                          retryDeliveryId,
+                        )) {
+                          setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
+                          await retryOctokit.rest.issues.updateComment({
                             owner: apiOwner,
                             repo: apiRepo,
-                            prNumber: pr.number,
-                            reviewOutputKey,
-                            body: buildReviewDetailsBody({
-                              reviewFirstPass: mergedFirstPass,
-                            }),
-                            botHandles: [githubApp.getAppSlug(), "claude"],
-                            recheckCanPublish: () =>
+                            comment_id: commentIdToUpdate,
+                            body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
+                          });
+
+                          try {
+                            const mergedBodyWithDetails = mergeReviewDetailsIntoSummaryBody({
+                              summaryBody: mergedBody,
+                              reviewDetailsBlock: buildReviewDetailsBody({
+                                reviewFirstPass: mergedFirstPass,
+                              }),
+                              requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                              reviewBoundedness,
+                            });
+
+                            if (
                               canPublishReviewWorkOutput(
                                 retryReviewWorkAttempt.attemptId,
                                 "retry Review Details merge",
                                 retryDeliveryId,
-                              ),
-                          });
-                        } catch (reviewDetailsErr) {
-                          logger.warn(
-                            {
-                              ...baseLog,
-                              gate: "review-details-output",
-                              gateResult: "retry-merge-failed",
-                              reviewOutputKey,
-                              err: reviewDetailsErr,
-                            },
-                            "Failed to refresh Review Details after retry merge",
-                          );
-                        }
+                              )
+                            ) {
+                              await retryOctokit.rest.issues.updateComment({
+                                owner: apiOwner,
+                                repo: apiRepo,
+                                comment_id: commentIdToUpdate,
+                                body: sanitizeOutgoingMentions(mergedBodyWithDetails, [githubApp.getAppSlug(), "claude"]),
+                              });
+                            }
+                          } catch (reviewDetailsErr) {
+                            logger.warn(
+                              {
+                                ...baseLog,
+                                gate: "review-details-output",
+                                gateResult: "retry-merge-failed",
+                                reviewOutputKey,
+                                err: reviewDetailsErr,
+                              },
+                              "Failed to refresh Review Details after retry merge",
+                            );
+                          }
 
+                          logger.info(
+                            {
+                              deliveryId: retryDeliveryId,
+                              prNumber: pr.number,
+                              retryConclusion: retryResult.conclusion,
+                              retryFilesReviewed,
+                              partialCommentId,
+                              settlementReason: settlementDecision.reason,
+                            },
+                            "Retry complete -- updated partial review comment with merged results",
+                          );
+
+                          await persistContinuationFamilyState({
+                            authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                            authoritativeOutcome: "merged",
+                            finalStopReason: "merged-continuation-results",
+                            projectionStatus: "canonical",
+                            reviewOutputKey: retryReviewOutputKey,
+                          });
+
+                          // Cleanup checkpoint data after successful merge
+                          knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                          knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                        }
+                      } else {
                         logger.info(
                           {
                             deliveryId: retryDeliveryId,
                             prNumber: pr.number,
                             retryConclusion: retryResult.conclusion,
-                            retryFilesReviewed,
-                            partialCommentId,
+                            settlementReason: settlementDecision.reason,
                           },
-                          "Retry complete -- updated partial review comment with merged results",
+                          "Retry produced no additional results -- keeping original partial review",
                         );
-
-                        // Cleanup checkpoint data after successful merge
-                        knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
-                        knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                        await persistContinuationFamilyState({
+                          authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
+                          authoritativeOutcome: "quiet-settled",
+                          finalStopReason: "settled-without-update",
+                          projectionStatus: "canonical",
+                          reviewOutputKey: retryReviewOutputKey,
+                        });
                       }
                     } else {
                       logger.info(
@@ -5380,6 +5736,12 @@ export function createReviewHandler(deps: {
                       },
                       "Retry failed with error",
                     );
+                    await finalizeContinuationAttempt({
+                      attemptId: retryReviewWorkAttempt.attemptId,
+                      fallbackOutcome: "blocked",
+                      fallbackStopReason: "no-follow-up",
+                      reviewOutputKey: retryReviewOutputKey,
+                    });
                   } finally {
                     if (retryWorkspace) {
                       await retryWorkspace.cleanup();
@@ -5403,7 +5765,13 @@ export function createReviewHandler(deps: {
                   key: reviewFamilyKey,
                   jobType: "pull-request-review-retry",
                   prNumber: pr.number,
-                }).catch((err) => {
+                }).catch(async (err) => {
+                  await finalizeContinuationAttempt({
+                    attemptId: retryReviewWorkAttempt.attemptId,
+                    fallbackOutcome: "blocked",
+                    fallbackStopReason: "no-follow-up",
+                    reviewOutputKey: retryReviewOutputKey,
+                  });
                   reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId);
                   logger.error(
                     { err, deliveryId: event.id, prNumber: pr.number },

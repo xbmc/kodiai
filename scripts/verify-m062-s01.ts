@@ -223,7 +223,7 @@ function validateScenarioIdentity(reviewOutputKey: string | null): string[] {
     return ["Missing review output identity."];
   }
 
-  return parseReviewOutputKey(reviewOutputKey) ? [] : ["Missing review output identity."];
+  return parseReviewOutputKey(reviewOutputKey) ? [] : ["Malformed review output identity."];
 }
 
 function validateCoverage(payload: ReviewFirstPassPayload): string[] {

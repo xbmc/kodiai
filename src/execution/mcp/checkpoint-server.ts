@@ -51,7 +51,7 @@ export function createCheckpointServer(
               };
             }
 
-            knowledgeStore.saveCheckpoint({
+            await knowledgeStore.saveCheckpoint({
               reviewOutputKey,
               repo,
               prNumber,
@@ -88,7 +88,15 @@ export function createCheckpointServer(
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             return {
-              content: [{ type: "text" as const, text: `Error: ${message}` }],
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    saved: false,
+                    reason: message,
+                  }),
+                },
+              ],
               isError: true,
             };
           }
