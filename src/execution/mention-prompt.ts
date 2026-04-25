@@ -2,6 +2,7 @@ import type { MentionEvent } from "../handlers/mention-types.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { sanitizeContent } from "../lib/sanitizer.ts";
 import { buildEpistemicBoundarySection, buildSecurityPolicySection, formatUnifiedContext } from "./review-prompt.ts";
+import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 
 /**
  * Build the prompt for a mention-triggered execution.
@@ -9,7 +10,7 @@ import { buildEpistemicBoundarySection, buildSecurityPolicySection, formatUnifie
  * Includes conversation context, the user's question (with @mention stripped),
  * response instructions, and optional custom instructions from .kodiai.yml.
  */
-export function buildMentionPrompt(params: {
+export function buildMentionPromptDetails(params: {
   mention: MentionEvent;
   mentionContext: string;
   retrievalContext?: {
@@ -54,7 +55,7 @@ export function buildMentionPrompt(params: {
     truncated: boolean;
     fileCount: number;
   };
-}): string {
+}): PromptBuildResult {
   const {
     mention,
     mentionContext,
@@ -378,5 +379,52 @@ export function buildMentionPrompt(params: {
     );
   }
 
-  return lines.join("\n");
+  const sectionText = lines.join("\n");
+  return buildPromptBuildResult([
+    {
+      sectionName: "mention-user-prompt",
+      text: sectionText,
+    },
+  ]);
+}
+
+export function buildMentionPrompt(params: {
+  mention: MentionEvent;
+  mentionContext: string;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      path: string;
+      line?: number;
+      snippet?: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+    maxChars?: number;
+    maxItems?: number;
+  };
+  userQuestion: string;
+  findingContext?: {
+    severity: string;
+    category: string;
+    filePath: string;
+    startLine: number | null;
+    title: string;
+  };
+  customInstructions?: string;
+  outputLanguage?: string;
+  unifiedResults?: UnifiedRetrievalChunk[];
+  contextWindow?: string;
+  triageContext?: string;
+  prDiffContext?: {
+    stat: string;
+    diff: string;
+    truncated: boolean;
+    fileCount: number;
+  };
+}): string {
+  return buildMentionPromptDetails(params).text;
 }

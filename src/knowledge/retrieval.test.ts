@@ -264,6 +264,91 @@ describe("createRetriever", () => {
     expect(typeof result!.provenance.sharedPoolUsed).toBe("boolean");
     expect(typeof result!.provenance.thresholdMethod).toBe("string");
     expect(typeof result!.provenance.thresholdValue).toBe("number");
+    expect(typeof result!.provenance.embeddingRequests).toBe("number");
+    expect(typeof result!.provenance.embeddingCacheHits).toBe("number");
+  });
+
+  test("reuses embeddings across duplicate normalized queries within one retrieval run", async () => {
+    let generateCalls = 0;
+    const embeddingProvider: EmbeddingProvider = {
+      async generate(_text: string, _inputType: "document" | "query"): Promise<EmbeddingResult> {
+        generateCalls += 1;
+        return {
+          embedding: new Float32Array(1024).fill(0.1),
+          model: "test-model",
+          dimensions: 1024,
+        };
+      },
+      get model() { return "test-model"; },
+      get dimensions() { return 1024; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider,
+      isolationLayer: makeMockIsolationLayer([makeRetrievalResult(1, 0.2)]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({
+      queries: ["Fix auth token", "  fix   auth   token  ", "FIX AUTH TOKEN"],
+    }));
+
+    expect(result).not.toBeNull();
+    expect(generateCalls).toBe(1);
+    expect(result!.provenance.embeddingRequests).toBe(1);
+    expect(result!.provenance.embeddingCacheHits).toBeGreaterThan(0);
+  });
+
+  test("does not reuse embeddings across separate retrieve calls", async () => {
+    let generateCalls = 0;
+    const embeddingProvider: EmbeddingProvider = {
+      async generate(_text: string, _inputType: "document" | "query"): Promise<EmbeddingResult> {
+        generateCalls += 1;
+        return {
+          embedding: new Float32Array(1024).fill(0.1),
+          model: "test-model",
+          dimensions: 1024,
+        };
+      },
+      get model() { return "test-model"; },
+      get dimensions() { return 1024; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider,
+      isolationLayer: makeMockIsolationLayer([makeRetrievalResult(1, 0.2)]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    await retriever.retrieve(makeBaseOpts({ queries: ["same query"] }));
+    await retriever.retrieve(makeBaseOpts({ queries: ["same query"] }));
+
+    expect(generateCalls).toBe(2);
+  });
+
+  test("fail-open: null embeddings are not cached as reusable hits", async () => {
+    let generateCalls = 0;
+    const retriever = createRetriever({
+      embeddingProvider: {
+        async generate(_text: string, _inputType: "document" | "query"): Promise<EmbeddingResult> {
+          generateCalls += 1;
+          return null;
+        },
+        get model() { return "test-model"; },
+        get dimensions() { return 1024; },
+      },
+      isolationLayer: makeMockIsolationLayer([makeRetrievalResult(1, 0.2)]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({
+      queries: ["same query", "same query"],
+    }));
+
+    expect(result).not.toBeNull();
+    expect(result!.findings).toHaveLength(0);
+    expect(generateCalls).toBe(1);
+    expect(result!.provenance.embeddingCacheHits).toBe(0);
   });
 
   test("reviewPrecedents populated when reviewCommentStore provided", async () => {

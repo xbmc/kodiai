@@ -287,6 +287,8 @@ export type RetrievalWithProvenance = {
       repo: string;
       topK: number;
       threshold: number;
+      adaptive?: boolean;
+      internalTopK?: number;
     };
   };
 };

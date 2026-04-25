@@ -1,8 +1,10 @@
+import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
+import { buildReviewFirstPassPublicSummary } from "./review-utils.ts";
+
 export type PartialReviewParams = {
   summaryDraft: string;
-  filesReviewed: number;
-  totalFiles: number;
-  timedOutAfterSeconds: number;
+  firstPass: ReviewFirstPassPayload;
+  timedOutAfterSeconds?: number;
   isRetrySkipped?: boolean;
   retrySkipReason?: string;
   isRetryResult?: boolean;
@@ -12,8 +14,7 @@ export type PartialReviewParams = {
 export function formatPartialReviewComment(params: PartialReviewParams): string {
   const {
     summaryDraft,
-    filesReviewed,
-    totalFiles,
+    firstPass,
     timedOutAfterSeconds,
     isRetrySkipped,
     retrySkipReason,
@@ -21,26 +22,26 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
     retryFilesReviewed,
   } = params;
 
+  if (firstPass.state !== "bounded-first-pass") {
+    throw new Error("formatPartialReviewComment requires a publishable bounded-first-pass payload");
+  }
+
   const lines: string[] = [];
+
+  lines.push(`> **Bounded first-pass review** -- ${buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds)}.`);
 
   if (isRetryResult) {
     const retryReviewed = retryFilesReviewed ?? 0;
-    const totalReviewed = filesReviewed + retryReviewed;
-    lines.push(
-      `> **Partial review** -- Analyzed ${totalReviewed} of ${totalFiles} files. Reviewed top ${retryReviewed} files by risk in retry.`,
-    );
-  } else {
-    lines.push(
-      `> **Partial review** -- timed out after analyzing ${filesReviewed} of ${totalFiles} files (${timedOutAfterSeconds}s).`,
-    );
+    const totalFiles = firstPass.coveredScope?.totalFiles ?? firstPass.remainingScope?.totalFiles ?? retryReviewed;
+    const totalReviewed = firstPass.coveredScope?.reviewedFiles ?? retryReviewed;
+    lines.push(">");
+    lines.push(`> Retry complete -- analyzed ${totalReviewed} of ${totalFiles} files total after a reduced-scope follow-up.`);
   }
 
   if (isRetrySkipped && retrySkipReason) {
     lines.push(">");
     lines.push(`> ${retrySkipReason}`);
-    lines.push(
-      "> Consider splitting large PRs to stay within the review timeout budget.",
-    );
+    lines.push("> Consider splitting large PRs to stay within the review timeout budget.");
   }
 
   lines.push("");

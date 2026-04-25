@@ -136,6 +136,34 @@ export type LlmCostRecord = {
 };
 
 /**
+ * Named prompt-section accounting for one prompt build.
+ *
+ * Deliberately stores only section metadata (name/order/size estimates) and
+ * never the raw prompt text itself.
+ */
+export type PromptSectionMetric = {
+  sectionName: string;
+  sectionPosition: number;
+  charCount: number;
+  estimatedTokens: number;
+  truncated?: boolean;
+};
+
+/**
+ * Grouped prompt-section telemetry for a single invocation path.
+ *
+ * Each group represents one prompt surface (for example a system prompt or the
+ * main user prompt) and contains only text-free accounting metadata.
+ */
+export type PromptSectionRecord = {
+  deliveryId?: string;
+  repo: string;
+  taskType: string;
+  promptKind: string;
+  sections: PromptSectionMetric[];
+};
+
+/**
  * TelemetryStore interface for PostgreSQL-backed execution telemetry.
  *
  * Created via `createTelemetryStore({ sql, logger })` factory function.
@@ -154,6 +182,8 @@ export type TelemetryStore = {
   recordResilienceEvent?(entry: ResilienceEventRecord): Promise<void>;
   /** Insert an LLM cost tracking record into the llm_cost_events table. */
   recordLlmCost(entry: LlmCostRecord): Promise<void>;
+  /** Insert prompt-section accounting rows without storing raw prompt text. */
+  recordPromptSections(entry: PromptSectionRecord): Promise<void>;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */
   purgeOlderThan(days: number): Promise<number>;
   /** No-op: PostgreSQL has no WAL checkpoint equivalent needed. */

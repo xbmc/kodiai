@@ -2,8 +2,7 @@ import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:tes
 import postgres from "postgres";
 import { createTelemetryStore } from "./store.ts";
 import type { TelemetryStore } from "./types.ts";
-import type { ResilienceEventRecord } from "./types.ts";
-import type { RateLimitEventRecord } from "./types.ts";
+import type { PromptSectionRecord, ResilienceEventRecord, RateLimitEventRecord } from "./types.ts";
 import type { Sql } from "../db/client.ts";
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
@@ -80,12 +79,39 @@ function makeRateLimitEventRecord(overrides: Partial<RateLimitEventRecord> = {})
   };
 }
 
+function makePromptSectionRecord(overrides: Partial<PromptSectionRecord> = {}): PromptSectionRecord {
+  return {
+    deliveryId: "prompt-001",
+    repo: "owner/repo",
+    taskType: "review.full",
+    promptKind: "user",
+    sections: [
+      {
+        sectionName: "system-policy",
+        sectionPosition: 0,
+        charCount: 240,
+        estimatedTokens: 60,
+      },
+      {
+        sectionName: "diff-context",
+        sectionPosition: 1,
+        charCount: 800,
+        estimatedTokens: 200,
+        truncated: true,
+      },
+    ],
+    ...overrides,
+  };
+}
+
 let sql: Sql;
 let store: TelemetryStore;
 
 /** Truncate all telemetry-related tables for test isolation. */
 async function truncateAll(): Promise<void> {
   await sql`TRUNCATE
+    prompt_section_events,
+    llm_cost_events,
     rate_limit_events,
     resilience_events,
     retrieval_quality_events,
@@ -165,6 +191,127 @@ describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
     expect(row!.session_id).toBeNull();
     expect(row!.num_turns).toBeNull();
     expect(row!.stop_reason).toBeNull();
+  });
+
+  test("recordPromptSections() inserts ordered prompt-section rows without raw prompt text", async () => {
+    await store.recordPromptSections(
+      makePromptSectionRecord({
+        deliveryId: "prompt-ordered-001",
+        taskType: "mention.response",
+        promptKind: "user",
+      }),
+    );
+
+    const rows = await sql`
+      SELECT delivery_id, repo, task_type, prompt_kind, section_name, section_position,
+             char_count, estimated_tokens, truncated, created_at
+      FROM prompt_section_events
+      WHERE delivery_id = 'prompt-ordered-001'
+      ORDER BY section_position ASC
+    `;
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.task_type).toBe("mention.response");
+    expect(rows[0]?.prompt_kind).toBe("user");
+    expect(rows[0]?.section_name).toBe("system-policy");
+    expect(rows[0]?.section_position).toBe(0);
+    expect(rows[0]?.char_count).toBe(240);
+    expect(rows[0]?.estimated_tokens).toBe(60);
+    expect(rows[0]?.truncated).toBe(false);
+    expect(rows[0]?.created_at).toBeTruthy();
+    expect(rows[1]?.section_name).toBe("diff-context");
+    expect(rows[1]?.truncated).toBe(true);
+  });
+
+  test("recordPromptSections() upserts by delivery/task/prompt path and keeps text-free metrics only", async () => {
+    await store.recordPromptSections(
+      makePromptSectionRecord({
+        deliveryId: "prompt-upsert-001",
+        sections: [
+          {
+            sectionName: "instruction-block",
+            sectionPosition: 0,
+            charCount: 120,
+            estimatedTokens: 30,
+          },
+        ],
+      }),
+    );
+
+    await store.recordPromptSections(
+      makePromptSectionRecord({
+        deliveryId: "prompt-upsert-001",
+        sections: [
+          {
+            sectionName: "instruction-block",
+            sectionPosition: 0,
+            charCount: 144,
+            estimatedTokens: 36,
+            truncated: true,
+          },
+        ],
+      }),
+    );
+
+    const rows = await sql`
+      SELECT section_name, char_count, estimated_tokens, truncated
+      FROM prompt_section_events
+      WHERE delivery_id = 'prompt-upsert-001'
+    `;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.section_name).toBe("instruction-block");
+    expect(rows[0]?.char_count).toBe(144);
+    expect(rows[0]?.estimated_tokens).toBe(36);
+    expect(rows[0]?.truncated).toBe(true);
+
+    const columns = await sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'prompt_section_events'
+      ORDER BY column_name ASC
+    `;
+    const columnNames = columns.map((row) => String(row.column_name));
+    expect(columnNames).not.toContain("prompt_text");
+    expect(columnNames).not.toContain("raw_prompt");
+    expect(columnNames).not.toContain("section_text");
+  });
+
+  test("recordLlmCost() inserts task-path attribution rows", async () => {
+    await store.recordLlmCost({
+      deliveryId: "llm-cost-001",
+      repo: "octocat/hello-world",
+      taskType: "slack.response",
+      model: "claude-sonnet-4-5-20250929",
+      provider: "anthropic",
+      sdk: "agent",
+      inputTokens: 321,
+      outputTokens: 123,
+      cacheReadTokens: 44,
+      cacheWriteTokens: 11,
+      estimatedCostUsd: 0.01234567,
+      durationMs: 2200,
+      usedFallback: false,
+    });
+
+    const [row] = await sql`
+      SELECT delivery_id, repo, task_type, model, provider, sdk,
+             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+             estimated_cost_usd, duration_ms, used_fallback
+      FROM llm_cost_events
+      WHERE delivery_id = 'llm-cost-001'
+    `;
+
+    expect(row).toBeTruthy();
+    expect(row?.repo).toBe("octocat/hello-world");
+    expect(row?.task_type).toBe("slack.response");
+    expect(row?.input_tokens).toBe(321);
+    expect(row?.output_tokens).toBe(123);
+    expect(row?.cache_read_tokens).toBe(44);
+    expect(row?.cache_write_tokens).toBe(11);
+    expect(Number(row?.estimated_cost_usd)).toBeCloseTo(0.01234567, 8);
+    expect(row?.duration_ms).toBe(2200);
+    expect(row?.used_fallback).toBe(false);
   });
 
   test("purgeOlderThan(0) deletes all rows and returns count", async () => {

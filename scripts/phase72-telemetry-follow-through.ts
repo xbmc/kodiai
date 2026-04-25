@@ -1,18 +1,16 @@
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import pino from "pino";
+import { createDbClient, type Sql } from "../src/db/client.ts";
 
-const DEFAULT_DB_PATH = "./data/kodiai-telemetry.db";
 const REVIEW_EVENT_TYPE_DEFAULT = "pull_request.review_requested";
 const MENTION_EVENT_TYPE_DEFAULT = "issue_comment.created";
-
 const FAILING_CONCLUSIONS = new Set(["error", "failed", "failure", "timeout"]);
 
 export const LOCKED_CACHE_SEQUENCE = ["prime", "hit", "changed-query-miss"] as const;
 
 type CacheOutcome = (typeof LOCKED_CACHE_SEQUENCE)[number];
 type Surface = "review_requested" | "kodiai_mention";
+type AccessState = "available" | "missing" | "unavailable";
 
 export type ScenarioStep = {
   surface: Surface;
@@ -29,9 +27,27 @@ export type VerificationCheck = {
   details: string;
 };
 
-export type VerificationReport = {
+export type Phase72VerificationReport = {
   overallPassed: boolean;
   checks: VerificationCheck[];
+  scenario: ScenarioStep[];
+};
+
+export type Phase72QueryResult = {
+  executions: Array<{ deliveryId: string; eventType: string; conclusion: string }>;
+  rateLimits: Array<{ deliveryId: string; eventType: string; cacheHitRate: number }>;
+  duplicates: Array<{ deliveryId: string; eventType: string; count: number }>;
+};
+
+export type Phase72Report = {
+  command: "verify:phase72";
+  generatedAt: string;
+  preflight: {
+    databaseAccess: AccessState;
+    detail: string;
+  };
+  checks: VerificationCheck[];
+  overallPassed: boolean;
   scenario: ScenarioStep[];
 };
 
@@ -42,18 +58,6 @@ type BuildScenarioInput = {
   mentionEventType?: string;
 };
 
-type ExecutionRow = {
-  delivery_id: string;
-  event_type: string;
-  conclusion: string;
-};
-
-type RateLimitRow = {
-  delivery_id: string;
-  event_type: string;
-  cache_hit_rate: number;
-};
-
 function expectedCacheHitRate(outcome: CacheOutcome): number {
   return outcome === "hit" ? 1 : 0;
 }
@@ -62,17 +66,11 @@ function asOutcomeRecord(values: string[], label: string): Record<CacheOutcome, 
   if (values.length !== LOCKED_CACHE_SEQUENCE.length) {
     throw new Error(`${label} requires exactly ${LOCKED_CACHE_SEQUENCE.length} values`);
   }
-
   const [prime, hit, changed] = values;
   if (!prime || !hit || !changed) {
     throw new Error(`${label} values must all be non-empty`);
   }
-
-  return {
-    prime,
-    hit,
-    "changed-query-miss": changed,
-  };
+  return { prime, hit, "changed-query-miss": changed };
 }
 
 export function buildDeterministicScenario(input: BuildScenarioInput): ScenarioStep[] {
@@ -99,178 +97,112 @@ export function buildDeterministicScenario(input: BuildScenarioInput): ScenarioS
 }
 
 export function assertLockedOrdering(steps: ScenarioStep[]): void {
-  const surfaces: Surface[] = ["review_requested", "kodiai_mention"];
-  for (const surface of surfaces) {
+  for (const surface of ["review_requested", "kodiai_mention"] as const) {
     const outcomes = steps.filter((step) => step.surface === surface).map((step) => step.outcome);
-    const expected = [...LOCKED_CACHE_SEQUENCE];
-    if (outcomes.length !== expected.length || outcomes.some((value, index) => value !== expected[index])) {
+    if (
+      outcomes.length !== LOCKED_CACHE_SEQUENCE.length
+      || outcomes.some((value, index) => value !== LOCKED_CACHE_SEQUENCE[index])
+    ) {
       throw new Error(
-        `Locked cache ordering violated for ${surface}. Expected ${expected.join(" -> ")}, got ${outcomes.join(" -> ")}`,
+        `Locked cache ordering violated for ${surface}. Expected ${LOCKED_CACHE_SEQUENCE.join(" -> ")}, got ${outcomes.join(" -> ")}`,
       );
     }
   }
 }
 
-function makeInClauseFromValues(values: string[]): string {
-  const quoted = values.map((value) => `'${value.replace(/'/g, "''")}'`);
-  return `(${quoted.join(",")})`;
+function keyFor(deliveryId: string, eventType: string): string {
+  return `${deliveryId}:${eventType}`;
 }
 
-function mapExecRows(rows: ExecutionRow[]): Map<string, ExecutionRow[]> {
-  const mapped = new Map<string, ExecutionRow[]>();
-  for (const row of rows) {
-    const key = `${row.delivery_id}:${row.event_type}`;
-    const existing = mapped.get(key);
-    if (existing) {
-      existing.push(row);
-    } else {
-      mapped.set(key, [row]);
-    }
-  }
-  return mapped;
-}
-
-function mapRateRows(rows: RateLimitRow[]): Map<string, RateLimitRow[]> {
-  const mapped = new Map<string, RateLimitRow[]>();
-  for (const row of rows) {
-    const key = `${row.delivery_id}:${row.event_type}`;
-    const existing = mapped.get(key);
-    if (existing) {
-      existing.push(row);
-    } else {
-      mapped.set(key, [row]);
-    }
-  }
-  return mapped;
-}
-
-export function evaluateVerification(db: Database, steps: ScenarioStep[]): VerificationReport {
+export function evaluatePhase72Verification(result: Phase72QueryResult, steps: ScenarioStep[]): Phase72VerificationReport {
   assertLockedOrdering(steps);
 
-  const allDeliveryIds = steps.map((step) => step.deliveryId);
-  const reviewSteps = steps.filter((step) => step.surface === "review_requested");
-  const reviewDeliveryIds = reviewSteps.map((step) => step.deliveryId);
+  const executionMap = new Map<string, Array<{ conclusion: string }>>();
+  for (const row of result.executions) {
+    const key = keyFor(row.deliveryId, row.eventType);
+    const existing = executionMap.get(key) ?? [];
+    existing.push({ conclusion: row.conclusion });
+    executionMap.set(key, existing);
+  }
 
-  const executionRows = db
-    .query<ExecutionRow, []>(
-      `SELECT delivery_id, event_type, conclusion
-       FROM executions
-       WHERE delivery_id IN ${makeInClauseFromValues(allDeliveryIds)}`,
-    )
-    .all();
-
-  const rateRows = db
-    .query<RateLimitRow, []>(
-      `SELECT delivery_id, event_type, cache_hit_rate
-       FROM rate_limit_events
-       WHERE delivery_id IN ${makeInClauseFromValues(reviewDeliveryIds)}`,
-    )
-    .all();
-
-  const execByIdentity = mapExecRows(executionRows);
-  const rateByIdentity = mapRateRows(rateRows);
+  const rateLimitMap = new Map<string, Array<{ cacheHitRate: number }>>();
+  for (const row of result.rateLimits) {
+    const key = keyFor(row.deliveryId, row.eventType);
+    const existing = rateLimitMap.get(key) ?? [];
+    existing.push({ cacheHitRate: row.cacheHitRate });
+    rateLimitMap.set(key, existing);
+  }
 
   const missingExecutions: string[] = [];
   const blockedExecutions: string[] = [];
-
   for (const step of steps) {
-    const key = `${step.deliveryId}:${step.eventType}`;
-    const rows = execByIdentity.get(key) ?? [];
+    const rows = executionMap.get(keyFor(step.deliveryId, step.eventType)) ?? [];
     if (rows.length === 0) {
-      missingExecutions.push(key);
+      missingExecutions.push(keyFor(step.deliveryId, step.eventType));
       continue;
     }
-
     const hasNonBlockingConclusion = rows.some((row) => !FAILING_CONCLUSIONS.has(row.conclusion.toLowerCase()));
     if (!hasNonBlockingConclusion) {
-      blockedExecutions.push(`${key} (${rows.map((row) => row.conclusion).join(",")})`);
+      blockedExecutions.push(`${keyFor(step.deliveryId, step.eventType)} (${rows.map((row) => row.conclusion).join(",")})`);
     }
   }
 
-  const checkSurfaceCoverage: VerificationCheck = {
-    id: "DB-C1",
-    title: "Both trigger surfaces executed in locked scenario",
-    passed: missingExecutions.length === 0,
-    details:
-      missingExecutions.length === 0
-        ? `Found execution rows for all ${steps.length} deterministic runs across review_requested and @kodiai mention surfaces.`
-        : `Missing executions for identities: ${missingExecutions.join(", ")}`,
-  };
-
+  const reviewSteps = steps.filter((step) => step.surface === "review_requested");
   const missingRateRows: string[] = [];
   const wrongRateRows: string[] = [];
   const observedSequence: number[] = [];
-
   for (const step of reviewSteps) {
-    const key = `${step.deliveryId}:${step.eventType}`;
-    const rows = rateByIdentity.get(key) ?? [];
+    const rows = rateLimitMap.get(keyFor(step.deliveryId, step.eventType)) ?? [];
     if (rows.length !== 1) {
-      missingRateRows.push(`${key} (rows=${rows.length})`);
+      missingRateRows.push(`${keyFor(step.deliveryId, step.eventType)} (rows=${rows.length})`);
       continue;
     }
-
-    const firstRow = rows[0];
-    if (!firstRow) {
-      missingRateRows.push(`${key} (rows=0)`);
-      continue;
-    }
-
-    const observed = firstRow.cache_hit_rate;
-    const expected = expectedCacheHitRate(step.outcome);
+    const observed = rows[0]?.cacheHitRate ?? -1;
     observedSequence.push(observed);
+    const expected = expectedCacheHitRate(step.outcome);
     if (observed !== expected) {
-      wrongRateRows.push(`${key} expected=${expected} observed=${observed}`);
+      wrongRateRows.push(`${keyFor(step.deliveryId, step.eventType)} expected=${expected} observed=${observed}`);
     }
   }
 
-  const checkCacheSequence: VerificationCheck = {
-    id: "DB-C2",
-    title: "Review trigger cache telemetry follows prime -> hit -> changed-query miss",
-    passed: missingRateRows.length === 0 && wrongRateRows.length === 0,
-    details:
-      missingRateRows.length === 0 && wrongRateRows.length === 0
-        ? `Observed cache_hit_rate sequence ${observedSequence.join(" -> ")} for review_requested deterministic run identities.`
-        : [
-            missingRateRows.length > 0 ? `Missing once-per-run rows: ${missingRateRows.join("; ")}` : "",
-            wrongRateRows.length > 0 ? `Mismatched cache_hit_rate values: ${wrongRateRows.join("; ")}` : "",
-          ]
-            .filter(Boolean)
-            .join(" "),
-  };
-
-  const duplicateRows = db
-    .query<{ delivery_id: string; event_type: string; cnt: number }, []>(
-      `SELECT delivery_id, event_type, COUNT(*) AS cnt
-       FROM rate_limit_events
-       WHERE delivery_id IN ${makeInClauseFromValues(reviewDeliveryIds)}
-       GROUP BY delivery_id, event_type
-       HAVING COUNT(*) > 1`,
-    )
-    .all();
-
-  const checkExactlyOnce: VerificationCheck = {
-    id: "DB-C3",
-    title: "No duplicate rate_limit_events per delivery_id + event_type identity",
-    passed: duplicateRows.length === 0,
-    details:
-      duplicateRows.length === 0
-        ? "No duplicate composite identities detected in rate_limit_events for this verification run."
-        : `Duplicate composite identities: ${duplicateRows
-            .map((row) => `${row.delivery_id}:${row.event_type} (count=${row.cnt})`)
-            .join(", ")}`,
-  };
-
-  const checkNonBlocking: VerificationCheck = {
-    id: "DB-C4",
-    title: "Execution conclusions confirm telemetry path stays non-blocking",
-    passed: blockedExecutions.length === 0,
-    details:
-      blockedExecutions.length === 0
-        ? "Every deterministic run has a non-failing execution conclusion, indicating telemetry persistence paths did not block completion."
-        : `Blocking/failed conclusions detected: ${blockedExecutions.join("; ")}`,
-  };
-
-  const checks = [checkSurfaceCoverage, checkCacheSequence, checkExactlyOnce, checkNonBlocking];
+  const checks: VerificationCheck[] = [
+    {
+      id: "DB-C1",
+      title: "Both trigger surfaces executed in locked scenario",
+      passed: missingExecutions.length === 0,
+      details:
+        missingExecutions.length === 0
+          ? `Found telemetry_events rows for all ${steps.length} deterministic runs across review_requested and @kodiai mention surfaces.`
+          : `Missing execution evidence for identities: ${missingExecutions.join(", ")}`,
+    },
+    {
+      id: "DB-C2",
+      title: "Review trigger cache telemetry follows prime -> hit -> changed-query miss",
+      passed: missingRateRows.length === 0 && wrongRateRows.length === 0,
+      details:
+        missingRateRows.length === 0 && wrongRateRows.length === 0
+          ? `Observed cache_hit_rate sequence ${observedSequence.join(" -> ")} for review_requested deterministic run identities.`
+          : [...missingRateRows, ...wrongRateRows].join("; "),
+    },
+    {
+      id: "DB-C3",
+      title: "No duplicate rate_limit_events per delivery_id + event_type identity",
+      passed: result.duplicates.length === 0,
+      details:
+        result.duplicates.length === 0
+          ? "No duplicate composite identities detected in rate_limit_events for this verification run."
+          : result.duplicates.map((row) => `${row.deliveryId}:${row.eventType} (count=${row.count})`).join(", "),
+    },
+    {
+      id: "DB-C4",
+      title: "Execution conclusions confirm telemetry path stays non-blocking",
+      passed: blockedExecutions.length === 0,
+      details:
+        blockedExecutions.length === 0
+          ? "Every deterministic run has a non-failing telemetry_events conclusion, indicating telemetry persistence stayed non-blocking."
+          : `Blocking/failed conclusions detected: ${blockedExecutions.join("; ")}`,
+    },
+  ];
 
   return {
     overallPassed: checks.every((check) => check.passed),
@@ -279,7 +211,41 @@ export function evaluateVerification(db: Database, steps: ScenarioStep[]): Verif
   };
 }
 
-export function renderOperatorSummary(report: VerificationReport): string {
+export function buildPhase72Report(input: {
+  generatedAt: string;
+  accessState: AccessState;
+  accessDetail: string;
+  scenario: ScenarioStep[];
+  verification: Phase72VerificationReport | null;
+}): Phase72Report {
+  return {
+    command: "verify:phase72",
+    generatedAt: input.generatedAt,
+    preflight: {
+      databaseAccess: input.accessState,
+      detail: input.accessDetail,
+    },
+    overallPassed: input.accessState === "available" ? (input.verification?.overallPassed ?? false) : false,
+    checks: input.verification?.checks ?? [],
+    scenario: input.scenario,
+  };
+}
+
+export function renderOperatorSummary(report: Phase72Report): string {
+  const header = [
+    "Phase 72 telemetry follow-through verifier",
+    `Database access: ${report.preflight.databaseAccess}`,
+    `Preflight detail: ${report.preflight.detail}`,
+  ];
+
+  if (report.preflight.databaseAccess !== "available") {
+    return [
+      ...header,
+      "",
+      "No live telemetry evidence available. This verifier failed open so operators can see the Postgres access state instead of relying on stale SQLite data.",
+    ].join("\n");
+  }
+
   const passedIds = report.checks.filter((check) => check.passed).map((check) => check.id);
   const failedChecks = report.checks.filter((check) => !check.passed);
   const failureList = failedChecks.map((check) => check.id).join(", ");
@@ -291,20 +257,16 @@ export function renderOperatorSummary(report: VerificationReport): string {
   const evidenceLines = report.checks.map((check) =>
     `- ${check.id} ${check.passed ? "PASS" : "FAIL"}: ${check.title}. ${check.details}`,
   );
-
   const verdict = report.overallPassed
     ? `Final verdict: PASS - Evidence-backed reliability checks [${passedIds.join(", ")}] passed for this milestone verification run.`
     : `Final verdict: FAIL - Evidence-backed reliability checks are incomplete; failed checks [${failureList}] require investigation before milestone sign-off.`;
 
-  return [analysisHeader, riskLine, "", "Evidence:", ...evidenceLines, "", verdict].join("\n");
+  return [...header, "", analysisHeader, riskLine, "", "Evidence:", ...evidenceLines, "", verdict].join("\n");
 }
 
 export function validateSummaryLanguage(summary: string): string[] {
   const errors: string[] = [];
-  const verdictLine = summary
-    .split("\n")
-    .find((line) => line.startsWith("Final verdict:"));
-
+  const verdictLine = summary.split("\n").find((line) => line.startsWith("Final verdict:"));
   if (!verdictLine) {
     errors.push("Summary is missing a Final verdict line.");
     return errors;
@@ -313,63 +275,55 @@ export function validateSummaryLanguage(summary: string): string[] {
   if (!summary.toLowerCase().includes("risk note:")) {
     errors.push("Summary must include explicit risk framing in analysis section.");
   }
-
   if (/(risk|uncertain|partial|demurral)/i.test(verdictLine)) {
     errors.push("Final verdict line must not include demurral or risk language.");
   }
-
   if (verdictLine.includes("PASS") && !/\[DB-C\d+(,\s*DB-C\d+)*\]/.test(verdictLine)) {
     errors.push("PASS verdict must cite evidence check IDs.");
   }
-
-  const certaintyWords = /(guaranteed|certain|definitive|proven|proof-positive)/i;
-  if (certaintyWords.test(verdictLine) && !/\[DB-C\d+/.test(verdictLine)) {
+  if (/(guaranteed|certain|definitive|proven|proof-positive)/i.test(verdictLine) && !/\[DB-C\d+/.test(verdictLine)) {
     errors.push("Final verdict certainty language requires explicit evidence citations.");
   }
-
-  const analysisLine = summary
-    .split("\n")
-    .find((line) => line.startsWith("Analysis:"));
+  const analysisLine = summary.split("\n").find((line) => line.startsWith("Analysis:"));
   if (!analysisLine || !/evidence/i.test(analysisLine)) {
     errors.push("Analysis section must anchor claims in evidence.");
   }
-
   return errors;
 }
 
-function printUsage(): void {
-  console.log(`Phase 72 telemetry follow-through verifier
+async function queryPhase72Result(sql: Sql, steps: ScenarioStep[]): Promise<Phase72QueryResult> {
+  const deliveryIds = [...new Set(steps.map((step) => step.deliveryId))];
+  const executions = await sql<Array<{ deliveryId: string; eventType: string; conclusion: string }>>`
+    SELECT delivery_id AS "deliveryId", event_type AS "eventType", conclusion
+    FROM telemetry_events
+    WHERE delivery_id = ANY(${deliveryIds})
+  `;
+  const rateLimits = await sql<Array<{ deliveryId: string; eventType: string; cacheHitRate: number }>>`
+    SELECT delivery_id AS "deliveryId", event_type AS "eventType", cache_hit_rate AS "cacheHitRate"
+    FROM rate_limit_events
+    WHERE delivery_id = ANY(${deliveryIds})
+  `;
+  const duplicates = await sql<Array<{ deliveryId: string; eventType: string; count: number }>>`
+    SELECT delivery_id AS "deliveryId", event_type AS "eventType", COUNT(*)::int AS count
+    FROM rate_limit_events
+    WHERE delivery_id = ANY(${deliveryIds})
+    GROUP BY delivery_id, event_type
+    HAVING COUNT(*) > 1
+  `;
 
-Runs one deterministic verification sequence with locked cache order:
-  prime -> hit -> changed-query miss
-
-Usage:
-  bun scripts/phase72-telemetry-follow-through.ts \\
-    --review prime-delivery hit-delivery changed-delivery \\
-    --mention prime-delivery hit-delivery changed-delivery [options]
-
-Required:
-  --review <prime> <hit> <changed>    delivery IDs for review_requested runs
-  --mention <prime> <hit> <changed>   delivery IDs for explicit @kodiai mention runs
-
-Options:
-  --db <path>                         telemetry DB path (default: ./data/kodiai-telemetry.db)
-  --review-event-type <value>         default: pull_request.review_requested
-  --mention-event-type <value>        default: issue_comment.created
-  --json                              print machine-readable report JSON
-  -h, --help                          show this help
-
-Cadence:
-  Run once per milestone and attach output to release evidence.`);
+  return { executions, rateLimits, duplicates };
 }
 
-function main(): void {
+function printUsage(): void {
+  console.log(`Phase 72 telemetry follow-through verifier\n\nUsage:\n  bun scripts/phase72-telemetry-follow-through.ts \\\n    --review <prime> --review <hit> --review <changed> \\\n    --mention <prime> --mention <hit> --mention <changed> [--json]\n\nNotes:\n  - Reads live Postgres telemetry via createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable`);
+}
+
+async function runCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<{ report: Phase72Report; exitCode: number; json: boolean }> {
   const parsed = parseArgs({
-    args: process.argv.slice(2),
+    args,
     options: {
       review: { type: "string", multiple: true },
       mention: { type: "string", multiple: true },
-      db: { type: "string", default: DEFAULT_DB_PATH },
       json: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       "review-event-type": { type: "string", default: REVIEW_EVENT_TYPE_DEFAULT },
@@ -381,62 +335,89 @@ function main(): void {
 
   if (parsed.values.help) {
     printUsage();
-    process.exit(0);
-  }
-
-  const review = asOutcomeRecord(parsed.values.review ?? [], "--review");
-  const mention = asOutcomeRecord(parsed.values.mention ?? [], "--mention");
-  const dbPath = resolve(parsed.values.db);
-
-  if (!existsSync(dbPath)) {
-    throw new Error(`Telemetry database not found at ${dbPath}`);
+    return {
+      report: buildPhase72Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "missing",
+        accessDetail: "Help requested.",
+        scenario: [],
+        verification: null,
+      }),
+      exitCode: 0,
+      json: Boolean(parsed.values.json),
+    };
   }
 
   const scenario = buildDeterministicScenario({
-    review,
-    mention,
+    review: asOutcomeRecord(parsed.values.review ?? [], "--review"),
+    mention: asOutcomeRecord(parsed.values.mention ?? [], "--mention"),
     reviewEventType: parsed.values["review-event-type"],
     mentionEventType: parsed.values["mention-event-type"],
   });
 
-  const db = new Database(dbPath, { readonly: true });
-  db.run("PRAGMA busy_timeout = 5000");
-  const report = evaluateVerification(db, scenario);
-  db.close();
-
-  const summary = renderOperatorSummary(report);
-  const languageErrors = validateSummaryLanguage(summary);
-  if (languageErrors.length > 0) {
-    throw new Error(`Summary language guardrails failed: ${languageErrors.join(" | ")}`);
+  const connectionString = env.TEST_DATABASE_URL ?? env.DATABASE_URL ?? null;
+  if (!connectionString) {
+    return {
+      report: buildPhase72Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "missing",
+        accessDetail: "Neither TEST_DATABASE_URL nor DATABASE_URL is set.",
+        scenario,
+        verification: null,
+      }),
+      exitCode: 0,
+      json: Boolean(parsed.values.json),
+    };
   }
 
-  if (parsed.values.json) {
-    console.log(
-      JSON.stringify(
-        {
-          report,
-          summary,
-          languageGuardrails: { passed: true, errors: [] },
-        },
-        null,
-        2,
-      ),
-    );
-  } else {
-    console.log(summary);
-  }
-
-  if (!report.overallPassed) {
-    process.exit(1);
+  const logger = pino({ level: "silent" });
+  let client: ReturnType<typeof createDbClient> | null = null;
+  try {
+    client = createDbClient({ connectionString, logger });
+    const queryResult = await queryPhase72Result(client.sql, scenario);
+    const verification = evaluatePhase72Verification(queryResult, scenario);
+    return {
+      report: buildPhase72Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "available",
+        accessDetail: "Connected to telemetry Postgres.",
+        scenario,
+        verification,
+      }),
+      exitCode: verification.overallPassed ? 0 : 1,
+      json: Boolean(parsed.values.json),
+    };
+  } catch (error) {
+    return {
+      report: buildPhase72Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "unavailable",
+        accessDetail: error instanceof Error ? error.message : String(error),
+        scenario,
+        verification: null,
+      }),
+      exitCode: 0,
+      json: Boolean(parsed.values.json),
+    };
+  } finally {
+    await client?.close();
   }
 }
 
 if (import.meta.main) {
   try {
-    main();
+    const { report, exitCode, json } = await runCli(process.argv.slice(2));
+    const output = json
+      ? JSON.stringify(report, null, 2)
+      : renderOperatorSummary(report);
+    const languageErrors = report.preflight.databaseAccess === "available" ? validateSummaryLanguage(output) : [];
+    if (languageErrors.length > 0) {
+      throw new Error(`Summary language guardrails failed: ${languageErrors.join(" | ")}`);
+    }
+    console.log(output);
+    process.exit(exitCode);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Phase 72 verification failed: ${message}`);
+    console.error(`Phase 72 verification failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

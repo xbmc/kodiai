@@ -23,6 +23,7 @@ import {
   type ContributorExperienceContract,
 } from "../contributor/experience-contract.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1609,7 +1610,7 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
  * blocks for issues, and do nothing if the PR is clean (silent approval is
  * handled by the calling handler).
  */
-export function buildReviewPrompt(context: {
+export function buildReviewPromptDetails(context: {
   owner: string;
   repo: string;
   prNumber: number;
@@ -1680,24 +1681,44 @@ export function buildReviewPrompt(context: {
     degradationPath: string;
   } | null;
   isDraft?: boolean;
-  // Unified cross-corpus retrieval (KI-13/KI-17)
   unifiedResults?: UnifiedRetrievalChunk[];
   contextWindow?: string;
-  // Review pattern clustering (CLST-03)
   clusterPatterns?: ClusterPatternMatch[];
-  // PR-issue linking (PRLINK-03)
   linkedIssues?: LinkResult;
-  // Generated active rules (M036/S02)
   activeRules?: SanitizedActiveRule[];
-  // Graph-derived review context (M040/S03): blast-radius result + packing options
   graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
-}): string {
-  const lines: string[] = [];
+}): PromptBuildResult {
+  const sectionBlocks: Array<{ sectionName: string; text: string; truncated?: boolean }> = [];
   const scaleNotes: string[] = [];
+  const mode = context.mode ?? "standard";
+  const REVIEW_SECTION_BUDGETS = {
+    changeContext: 4_000,
+    sizeContext: 3_200,
+    graphContext: 4_000,
+    knowledgeContext: 3_600,
+    instructions: 16_000,
+  } as const;
+
+  const pushSection = (sectionName: string, lines: string[]) => {
+    const text = lines.join("\n").trim();
+    if (!text) return;
+    sectionBlocks.push({ sectionName, text });
+  };
+
+  const pushBudgetedSection = (sectionName: string, lines: string[], maxChars: number) => {
+    const text = lines.join("\n").trim();
+    if (!text) return;
+    const truncated = truncateDeterministic(text, maxChars);
+    sectionBlocks.push({
+      sectionName,
+      text: truncated.text,
+      ...(truncated.truncated ? { truncated: true } : {}),
+    });
+  };
 
   const titleSanitized = sanitizeContent(context.prTitle);
   const titleTruncated = truncateDeterministic(titleSanitized, DEFAULT_MAX_TITLE_CHARS);
@@ -1719,21 +1740,20 @@ export function buildReviewPrompt(context: {
     );
   }
 
-  // --- Context header ---
-  lines.push(
+  const prContextLines = [
     `You are reviewing pull request #${context.prNumber} in ${context.owner}/${context.repo}.`,
     "",
     `Title: ${titleTruncated.text}`,
     `Author: ${context.prAuthor}`,
     `Branches: ${context.headBranch} -> ${context.baseBranch}`,
-  );
+  ];
 
   if (context.prLabels && context.prLabels.length > 0) {
-    lines.push(`Labels: ${context.prLabels.join(", ")}`);
+    prContextLines.push(`Labels: ${context.prLabels.join(", ")}`);
   }
 
   if (scaleNotes.length > 0) {
-    lines.push(
+    prContextLines.push(
       "",
       "## Scale Notes",
       "Some context was omitted due to scale guardrails:",
@@ -1741,127 +1761,137 @@ export function buildReviewPrompt(context: {
     );
   }
 
-  // --- PR body ---
   if (prBodySanitized.length > 0) {
-    lines.push("", "PR description:", "---", prBodyTruncated.text, "---");
+    prContextLines.push("", "PR description:", "---", prBodyTruncated.text, "---");
   }
+  pushSection("review-pr-context", prContextLines);
 
-  // --- Changed files ---
-  lines.push("", "Changed files:");
+  const changeContextLines = ["Changed files:"];
   for (const file of changedFilesCapped) {
-    lines.push(`- ${file}`);
+    changeContextLines.push(`- ${file}`);
   }
-
   const diffAnalysisSection = context.diffAnalysis
     ? buildDiffAnalysisSection(context.diffAnalysis, {
         suppressLargePRMessage: Boolean(context.largePRContext),
       })
     : "";
   if (diffAnalysisSection) {
-    lines.push("", diffAnalysisSection);
+    changeContextLines.push("", diffAnalysisSection);
   }
+  pushBudgetedSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);
 
-  // --- Large PR triage section ---
+  const sizeContextLines: string[] = [];
   if (context.largePRContext) {
-    lines.push("", buildLargePRTriageSection(context.largePRContext));
+    sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
   }
-
-  // --- Incremental review context ---
   if (context.incrementalContext) {
-    lines.push("", buildIncrementalReviewSection(context.incrementalContext));
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(buildIncrementalReviewSection(context.incrementalContext));
   }
+  if (
+    mode !== "enhanced" &&
+    context.reviewBoundedness?.disclosureRequired &&
+    context.reviewBoundedness.disclosureSentence
+  ) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(
+      "## Bounded Review Disclosure",
+      "",
+      "Because this review was bounded, include this exact sentence once in `## What Changed`:",
+      `\"${context.reviewBoundedness.disclosureSentence}\"`,
+      "Do not paraphrase it.",
+      "Do not repeat it elsewhere in the summary.",
+    );
+  }
+  pushBudgetedSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);
 
-  // --- Graph-derived review context (M040/S03) ---
+  const graphContextLines: string[] = [];
   if (context.graphBlastRadius) {
     const graphSection = buildGraphContextSection(
       context.graphBlastRadius,
       context.graphContextOptions,
     );
     if (graphSection.text) {
-      lines.push("", graphSection.text);
+      graphContextLines.push(graphSection.text);
     }
   }
-
-  // --- Structural impact evidence (M038/S02) ---
   if (context.structuralImpact) {
     const structuralSection = buildStructuralImpactPromptSection(context.structuralImpact);
     if (structuralSection) {
-      lines.push("", structuralSection);
+      if (graphContextLines.length > 0) graphContextLines.push("");
+      graphContextLines.push(structuralSection);
     }
   }
+  pushBudgetedSection("review-graph-context", graphContextLines, REVIEW_SECTION_BUDGETS.graphContext);
 
-  // --- Knowledge context (unified cross-corpus or legacy) ---
+  const knowledgeContextLines: string[] = [];
   if (context.unifiedResults && context.unifiedResults.length > 0) {
-    // Unified cross-corpus retrieval (KI-13/KI-17): single section replaces
-    // separate retrieval, precedent, and wiki sections
     const unifiedSection = formatUnifiedContext({
       unifiedResults: context.unifiedResults,
       contextWindow: context.contextWindow,
     });
     if (unifiedSection) {
-      lines.push("", unifiedSection);
+      knowledgeContextLines.push(unifiedSection);
     }
   } else {
-    // Legacy path: separate sections for backward compatibility
     if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
       const retrievalSection = buildRetrievalContextSection({
         findings: context.retrievalContext.findings,
         maxChars: context.retrievalContext.maxChars,
       });
       if (retrievalSection) {
-        lines.push("", retrievalSection);
+        knowledgeContextLines.push(retrievalSection);
       }
     }
 
     if (context.reviewPrecedents && context.reviewPrecedents.length > 0) {
       const precedentsSection = formatReviewPrecedents(context.reviewPrecedents);
       if (precedentsSection) {
-        lines.push("", precedentsSection);
+        if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
+        knowledgeContextLines.push(precedentsSection);
       }
     }
 
     if (context.wikiKnowledge && context.wikiKnowledge.length > 0) {
       const wikiSection = formatWikiKnowledge(context.wikiKnowledge);
       if (wikiSection) {
-        lines.push("", wikiSection);
+        if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
+        knowledgeContextLines.push(wikiSection);
       }
     }
 
-    // Review pattern clustering (CLST-03)
     if (context.clusterPatterns && context.clusterPatterns.length > 0) {
       const clusterPatternsSection = formatClusterPatterns(context.clusterPatterns);
       if (clusterPatternsSection) {
-        lines.push("", clusterPatternsSection);
+        if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
+        knowledgeContextLines.push(clusterPatternsSection);
       }
     }
   }
 
-  // --- Linked issue context (PRLINK-03) ---
   if (context.linkedIssues) {
     const linkedSection = buildLinkedIssuesSection(context.linkedIssues);
     if (linkedSection) {
-      lines.push("", linkedSection);
+      if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
+      knowledgeContextLines.push(linkedSection);
     }
   }
 
-  // --- Language-specific guidance ---
   if (context.filesByLanguage) {
     const langSection = buildLanguageGuidanceSection(context.filesByLanguage);
-    if (langSection) lines.push("", langSection);
+    if (langSection) {
+      if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
+      knowledgeContextLines.push(langSection);
+    }
   }
+  pushBudgetedSection("review-knowledge-context", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);
 
-  // --- How to read the diff ---
-  lines.push(
-    "",
+  const instructionLines: string[] = [
     "## Reading the code",
     "",
     `To see the full diff: Bash(git diff origin/${context.baseBranch}...HEAD)`,
     `To see changed files with stats: Bash(git log origin/${context.baseBranch}..HEAD --stat)`,
     "Read the diff carefully before posting any comments.",
-  );
-
-  // --- Review instructions ---
-  lines.push(
     "",
     "## What to look for",
     "",
@@ -1873,10 +1903,6 @@ export function buildReviewPrompt(context: {
     "- Resource management issues (unclosed handles, missing cleanup)",
     "- Thread safety and concurrency issues",
     "- Incorrect or missing error handling",
-  );
-
-  // --- How to report ---
-  lines.push(
     "",
     "## How to report issues",
     "",
@@ -1891,15 +1917,15 @@ export function buildReviewPrompt(context: {
     "````",
     "",
     "The suggestion block replaces the entire line range (from startLine to line). Make sure the replacement is syntactically complete.",
-  );
+  ];
 
   const toolAvailabilityContract = buildToolAvailabilityContract(context.publishToolNames ?? []);
   if (toolAvailabilityContract) {
-    lines.push("", toolAvailabilityContract);
+    instructionLines.push("", toolAvailabilityContract);
   }
 
   if (context.checkpointEnabled === true) {
-    lines.push(
+    instructionLines.push(
       "",
       "IMPORTANT: This review may time out. Call the save_review_checkpoint tool after reviewing every 3-5 files. Include:",
       "- filesReviewed: list of file paths you have fully analyzed",
@@ -1910,8 +1936,7 @@ export function buildReviewPrompt(context: {
     );
   }
 
-  // --- Rules ---
-  lines.push(
+  instructionLines.push(
     "",
     "## Rules",
     "",
@@ -1922,19 +1947,12 @@ export function buildReviewPrompt(context: {
     "- Use inline comments for ALL code-specific issues",
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
     "- Focus on correctness and safety, not style preferences",
-  );
-
-  // --- Severity classification ---
-  lines.push("", buildSeverityClassificationGuidelines());
-
-  // --- Review mode format ---
-  lines.push("", buildModeInstructions(context.mode ?? "standard"));
-
-  // --- Noise suppression ---
-  lines.push("", buildNoiseSuppressionRules());
-
-  // --- PR intent scoping ---
-  lines.push(
+    "",
+    buildSeverityClassificationGuidelines(),
+    "",
+    buildModeInstructions(mode),
+    "",
+    buildNoiseSuppressionRules(),
     "",
     buildPrIntentScopingSection(
       titleTruncated.text,
@@ -1943,7 +1961,6 @@ export function buildReviewPrompt(context: {
     ),
   );
 
-  // --- Focus hints (INTENT-01) ---
   if (context.focusHints && context.focusHints.length > 0) {
     const rendered: string[] = [];
     const seen = new Set<string>();
@@ -1955,7 +1972,7 @@ export function buildReviewPrompt(context: {
     }
 
     if (rendered.length > 0) {
-      lines.push(
+      instructionLines.push(
         "",
         "## Focus Hints",
         "",
@@ -1967,10 +1984,14 @@ export function buildReviewPrompt(context: {
     }
   }
 
-  // --- Epistemic boundaries (PROMPT-01) ---
-  lines.push("", buildEpistemicBoundarySection());
-  lines.push("", buildSecurityPolicySection());
-  lines.push("", buildTruthfulnessDriftChecksSection());
+  instructionLines.push(
+    "",
+    buildEpistemicBoundarySection(),
+    "",
+    buildSecurityPolicySection(),
+    "",
+    buildTruthfulnessDriftChecksSection(),
+  );
 
   if (context.conventionalType) {
     const typeGuidance: Record<string, string> = {
@@ -1985,18 +2006,17 @@ export function buildReviewPrompt(context: {
     };
     const guidance = typeGuidance[context.conventionalType.type];
     if (guidance) {
-      lines.push("", "## Conventional Commit Context", "", guidance);
+      instructionLines.push("", "## Conventional Commit Context", "", guidance);
     }
     if (context.conventionalType.isBreaking) {
-      lines.push(
+      instructionLines.push(
         "",
         "**BREAKING CHANGE indicated.** Review the diff for: removed or renamed exports, changed function signatures, modified default behavior, and migration guidance in the PR description.",
       );
     }
   }
 
-  // --- Tone and language guidelines ---
-  lines.push("", buildToneGuidelinesSection());
+  instructionLines.push("", buildToneGuidelinesSection());
 
   const authorExpSection = context.contributorExperienceContract
     ? buildContributorExperiencePromptSection({
@@ -2011,17 +2031,16 @@ export function buildReviewPrompt(context: {
         areaExpertise: context.authorExpertise,
       })
     : "";
-  if (authorExpSection) lines.push("", authorExpSection);
+  if (authorExpSection) instructionLines.push("", authorExpSection);
 
-  // --- Dependency bump context (DEP-01/02/03) ---
   if (context.depBumpContext) {
-    lines.push("", buildDepBumpSection(context.depBumpContext));
+    instructionLines.push("", buildDepBumpSection(context.depBumpContext));
   }
 
-  lines.push("", buildBreakingChangeEvidenceInstructions(context.structuralImpact));
+  instructionLines.push("", buildBreakingChangeEvidenceInstructions(context.structuralImpact));
 
   if (context.searchRateLimitDegradation?.degraded) {
-    lines.push(
+    instructionLines.push(
       "",
       buildSearchRateLimitDegradationSection({
         retryAttempts: context.searchRateLimitDegradation.retryAttempts,
@@ -2031,58 +2050,35 @@ export function buildReviewPrompt(context: {
     );
   }
 
-  // --- Path instructions ---
   const pathInstructionsSection = buildPathInstructionsSection(
     context.matchedPathInstructions ?? [],
   );
-  if (pathInstructionsSection) lines.push("", pathInstructionsSection);
+  if (pathInstructionsSection) instructionLines.push("", pathInstructionsSection);
 
-  // --- Comment cap ---
-  lines.push("", buildCommentCapInstructions(context.maxComments ?? 7));
+  instructionLines.push("", buildCommentCapInstructions(context.maxComments ?? 7));
 
-  // --- Severity filter ---
   const severityFilter = buildSeverityFilterInstructions(
     context.severityMinLevel ?? "minor",
   );
-  if (severityFilter) lines.push("", severityFilter);
+  if (severityFilter) instructionLines.push("", severityFilter);
 
-  // --- Focus areas ---
   const focusInstructions = buildFocusAreaInstructions(
     context.focusAreas ?? [],
     context.ignoredAreas ?? [],
   );
-  if (focusInstructions) lines.push("", focusInstructions);
-
-  const mode = context.mode ?? "standard";
+  if (focusInstructions) instructionLines.push("", focusInstructions);
 
   const suppressionRulesSection = buildSuppressionRulesSection(
     context.suppressions ?? [],
   );
   if (suppressionRulesSection) {
-    lines.push("", suppressionRulesSection);
+    instructionLines.push("", suppressionRulesSection);
   }
 
-  lines.push("", buildConfidenceInstructions(context.minConfidence ?? 0));
+  instructionLines.push("", buildConfidenceInstructions(context.minConfidence ?? 0));
 
-  if (
-    mode !== "enhanced" &&
-    context.reviewBoundedness?.disclosureRequired &&
-    context.reviewBoundedness.disclosureSentence
-  ) {
-    lines.push(
-      "",
-      "## Bounded Review Disclosure",
-      "",
-      "Because this review was bounded, include this exact sentence once in `## What Changed`:",
-      `\"${context.reviewBoundedness.disclosureSentence}\"`,
-      "Do not paraphrase it.",
-      "Do not repeat it elsewhere in the summary.",
-    );
-  }
-
-  // --- Summary comment ---
   if (mode === "enhanced") {
-    lines.push(
+    instructionLines.push(
       "",
       "## Summary comment",
       "",
@@ -2090,13 +2086,11 @@ export function buildReviewPrompt(context: {
       "If NO issues found: do nothing.",
     );
   } else if (context.deltaContext) {
-    // --- Delta re-review template (FORMAT-14/15/16) ---
     const deltaSha7 = context.deltaContext.lastReviewedHeadSha.slice(0, 7);
 
-    // Push delta review context section BEFORE the summary comment template
-    lines.push("", buildDeltaReviewContext(context.deltaContext));
+    instructionLines.push("", buildDeltaReviewContext(context.deltaContext));
 
-    lines.push(
+    instructionLines.push(
       "",
       "## Summary comment",
       "",
@@ -2166,10 +2160,12 @@ export function buildReviewPrompt(context: {
       context.diffAnalysis?.filesByCategory ?? {},
     );
     const reviewedLineInstruction = reviewedLine
-      ? `\nInclude this line after the summary: "${reviewedLine}"\n`
+      ? `
+Include this line after the summary: "${reviewedLine}"
+`
       : "";
 
-    lines.push(
+    instructionLines.push(
       "",
       "## Summary comment",
       "",
@@ -2179,11 +2175,11 @@ export function buildReviewPrompt(context: {
       "",
       "<details>",
       context.isDraft
-        ? "<summary>\ud83d\udcdd Kodiai Draft Review Summary</summary>"
+        ? "<summary>📝 Kodiai Draft Review Summary</summary>"
         : "<summary>Kodiai Review Summary</summary>",
       "",
       ...(context.isDraft
-        ? ["> **Draft** \u2014 This PR is still in draft. Feedback is exploratory; findings use softer language.", ""]
+        ? ["> **Draft** — This PR is still in draft. Feedback is exploratory; findings use softer language.", ""]
         : []),
       "## What Changed",
       "<1-2 sentence summary of PR intent from title and description>",
@@ -2247,9 +2243,8 @@ export function buildReviewPrompt(context: {
     );
   }
 
-  // --- After review ---
   if (mode === "enhanced") {
-    lines.push(
+    instructionLines.push(
       "",
       "## After review",
       "",
@@ -2257,8 +2252,7 @@ export function buildReviewPrompt(context: {
       "If NO issues found: do nothing.",
     );
   } else if (!context.deltaContext) {
-    // Standard mode after-review (delta mode includes its own after-review instructions above)
-    lines.push(
+    instructionLines.push(
       "",
       "## After review",
       "",
@@ -2267,20 +2261,103 @@ export function buildReviewPrompt(context: {
     );
   }
 
-  // --- Generated active rules (M036/S02) ---
   if (context.activeRules && context.activeRules.length > 0) {
     const activeRulesSection = formatActiveRulesSection(context.activeRules);
-    if (activeRulesSection) lines.push("", activeRulesSection);
+    if (activeRulesSection) instructionLines.push("", activeRulesSection);
   }
 
-  // --- Custom instructions ---
   if (context.customInstructions) {
-    lines.push("", "## Custom instructions", "", context.customInstructions);
+    instructionLines.push("", "## Custom instructions", "", context.customInstructions);
   }
 
-  // --- Output language localization (placed last for recency bias compliance) ---
   const outputLangSection = buildOutputLanguageSection(context.outputLanguage ?? "en");
-  if (outputLangSection) lines.push("", outputLangSection);
+  if (outputLangSection) instructionLines.push("", outputLangSection);
 
-  return lines.join("\n");
+  pushBudgetedSection("review-instructions", instructionLines, REVIEW_SECTION_BUDGETS.instructions);
+
+  return buildPromptBuildResult(sectionBlocks, "\n\n");
+}
+
+export function buildReviewPrompt(context: {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  prTitle: string;
+  prBody: string;
+  prAuthor: string;
+  baseBranch: string;
+  headBranch: string;
+  changedFiles: string[];
+  customInstructions?: string;
+  checkpointEnabled?: boolean;
+  mode?: "standard" | "enhanced";
+  severityMinLevel?: "critical" | "major" | "medium" | "minor";
+  focusAreas?: string[];
+  ignoredAreas?: string[];
+  maxComments?: number;
+  suppressions?: Array<string | SuppressionPattern>;
+  minConfidence?: number;
+  diffAnalysis?: DiffAnalysis;
+  matchedPathInstructions?: MatchedInstruction[];
+  incrementalContext?: {
+    lastReviewedHeadSha: string;
+    changedFilesSinceLastReview: string[];
+    unresolvedPriorFindings: PriorFinding[];
+  } | null;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      path: string;
+      line?: number;
+      snippet?: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+    maxChars?: number;
+  } | null;
+  reviewPrecedents?: ReviewCommentMatch[];
+  wikiKnowledge?: WikiKnowledgeMatch[];
+  filesByLanguage?: Record<string, string[]>;
+  outputLanguage?: string;
+  prLabels?: string[];
+  focusHints?: string[];
+  conventionalType?: ConventionalCommitType | null;
+  deltaContext?: DeltaReviewContext | null;
+  largePRContext?: {
+    fullReviewFiles: string[];
+    abbreviatedFiles: string[];
+    mentionOnlyCount: number;
+    totalFiles: number;
+  } | null;
+  authorTier?: AuthorTier;
+  contributorExperienceContract?: Partial<
+    Pick<
+      ContributorExperienceContract,
+      "state" | "promptPolicy" | "promptTier" | "degradationPath"
+    >
+  > | null;
+  authorExpertise?: { dimension: string; topic: string; score: number }[];
+  depBumpContext?: DepBumpContext | null;
+  searchRateLimitDegradation?: {
+    degraded: boolean;
+    retryAttempts: number;
+    skippedQueries: number;
+    degradationPath: string;
+  } | null;
+  isDraft?: boolean;
+  unifiedResults?: UnifiedRetrievalChunk[];
+  contextWindow?: string;
+  clusterPatterns?: ClusterPatternMatch[];
+  linkedIssues?: LinkResult;
+  activeRules?: SanitizedActiveRule[];
+  graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
+  graphContextOptions?: GraphContextOptions;
+  structuralImpact?: StructuralImpactPayload | null;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+  publishToolNames?: string[];
+}): string {
+  return buildReviewPromptDetails(context).text;
 }

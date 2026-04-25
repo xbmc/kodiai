@@ -20,6 +20,7 @@ import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import type { ReviewBoundednessContract } from "./review-boundedness.ts";
+import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +90,147 @@ export type TimeoutReviewDetailsProgress = {
   findingCount: number;
   retryState: string;
 };
+
+function formatBoundedReason(reason: ReviewFirstPassPayload["boundedReason"]): string {
+  if (reason === "max-turns") {
+    return "max-turns";
+  }
+  if (reason === "large-pr") {
+    return "large-PR triage";
+  }
+  return "timeout";
+}
+
+function formatEvidenceSource(source: ReviewFirstPassPayload["evidenceSource"]): string {
+  if (source === "checkpoint") {
+    return "checkpoint evidence";
+  }
+  if (source === "boundedness") {
+    return "boundedness evidence";
+  }
+  return "no trustworthy evidence";
+}
+
+function formatTimeoutSuffix(timedOutAfterSeconds?: number): string {
+  return typeof timedOutAfterSeconds === "number" ? ` (${timedOutAfterSeconds}s timeout)` : "";
+}
+
+function formatCoverageClause(firstPass: ReviewFirstPassPayload, evidenceLabel: string): string {
+  if (firstPass.coveredScope) {
+    return `after covering ${firstPass.coveredScope.reviewedFiles} of ${firstPass.coveredScope.totalFiles} files from ${evidenceLabel}`;
+  }
+
+  return `using ${evidenceLabel}`;
+}
+
+function formatRemainingScopeSummary(firstPass: ReviewFirstPassPayload): string {
+  if (firstPass.remainingScope) {
+    return `${firstPass.remainingScope.remainingFiles} of ${firstPass.remainingScope.totalFiles} files remain unreviewed`;
+  }
+
+  if (firstPass.continuationPending) {
+    return "remaining scope is not confirmed from structured evidence";
+  }
+
+  return "remaining scope is not confirmed from structured evidence";
+}
+
+function formatContinuationSummary(firstPass: ReviewFirstPassPayload): string {
+  if (firstPass.continuationPending) {
+    return "follow-up review is pending";
+  }
+
+  return "no follow-up review is pending";
+}
+
+function formatContinuationDetail(firstPass: ReviewFirstPassPayload): string {
+  if (firstPass.state === "zero-evidence-failure") {
+    return "- Continuation state: stopped after first pass; no follow-up review is pending";
+  }
+
+  if (firstPass.continuationPending) {
+    if (firstPass.remainingScope) {
+      return "- Continuation state: follow-up review pending for remaining scope";
+    }
+
+    return "- Continuation state: follow-up review pending; remaining scope still unconfirmed";
+  }
+
+  if (firstPass.remainingScope) {
+    return `- Continuation state: stopped after first pass; ${firstPass.remainingScope.remainingFiles}/${firstPass.remainingScope.totalFiles} files remain unreviewed`;
+  }
+
+  return "- Continuation state: stopped after first pass; no follow-up review is pending";
+}
+
+export function buildReviewFirstPassPublicSummary(firstPass: ReviewFirstPassPayload, timedOutAfterSeconds?: number): string {
+  const reasonLabel = formatBoundedReason(firstPass.boundedReason);
+  const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
+
+  if (firstPass.state === "zero-evidence-failure") {
+    return `hit ${reasonLabel} with no trustworthy structured evidence${formatTimeoutSuffix(
+      firstPass.boundedReason === "timeout" ? timedOutAfterSeconds : undefined,
+    )}`;
+  }
+
+  return [
+    `stopped at ${reasonLabel} ${formatCoverageClause(firstPass, evidenceLabel)}`,
+    formatRemainingScopeSummary(firstPass),
+    `${formatContinuationSummary(firstPass)}${formatTimeoutSuffix(
+      firstPass.boundedReason === "timeout" ? timedOutAfterSeconds : undefined,
+    )}`,
+  ].join("; ");
+}
+
+export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
+  reasonLabel: string;
+  evidenceLabel: string;
+  summaryClause: (timedOutAfterSeconds?: number) => string;
+  detailLines: string[];
+} {
+  const reasonLabel = formatBoundedReason(firstPass.boundedReason);
+  const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
+
+  const summaryClause = (timedOutAfterSeconds?: number): string => {
+    return buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds);
+  };
+
+  if (firstPass.state === "zero-evidence-failure") {
+    return {
+      reasonLabel,
+      evidenceLabel,
+      summaryClause,
+      detailLines: [
+        `- Constrained outcome: zero-evidence hard failure after ${reasonLabel}`,
+        "- Publication eligibility: ineligible",
+        formatContinuationDetail(firstPass),
+      ],
+    };
+  }
+
+  const detailLines = [
+    `- Bounded first-pass: ${reasonLabel} via ${evidenceLabel}`,
+    ...(firstPass.coveredScope
+      ? [`- Covered scope: ${firstPass.coveredScope.reviewedFiles}/${firstPass.coveredScope.totalFiles} changed files`]
+      : []),
+    ...(firstPass.remainingScope
+      ? [`- Remaining scope: ${firstPass.remainingScope.remainingFiles}/${firstPass.remainingScope.totalFiles} changed files`]
+      : ["- Remaining scope: not confirmed from structured evidence"]),
+    ...(typeof firstPass.findingCount === "number"
+      ? [`- First-pass findings captured: ${firstPass.findingCount}`]
+      : []),
+    `- Publication eligibility: ${firstPass.publication.eligible ? "eligible" : "ineligible"}`,
+    ...(firstPass.publication.hasPublishedOutput ? ["- Public review output already exists for this first pass"] : []),
+    formatContinuationDetail(firstPass),
+  ];
+
+  return {
+    reasonLabel,
+    evidenceLabel,
+    summaryClause,
+    detailLines,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -364,6 +506,7 @@ export function formatReviewDetailsSummary(params: {
     totalFiles: number;
   };
   reviewBoundedness?: ReviewBoundednessContract | null;
+  reviewFirstPass?: ReviewFirstPassPayload | null;
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
@@ -396,6 +539,7 @@ export function formatReviewDetailsSummary(params: {
     findingCounts,
     largePRTriage,
     reviewBoundedness,
+    reviewFirstPass,
     feedbackSuppressionCount,
     keywordParsing,
     profileSelection,
@@ -427,20 +571,29 @@ export function formatReviewDetailsSummary(params: {
       : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
   const hasBoundedProfileDetails = Boolean(reviewBoundedness && reviewBoundedness.reasonCodes.length > 0);
 
+  const primaryReviewDetailLines = reviewFirstPass
+    ? describeReviewFirstPass(reviewFirstPass).detailLines
+    : timeoutProgress
+      ? []
+      : [
+          `- Files reviewed: ${filesReviewed}`,
+          `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
+        ];
+
+  const timeoutProgressLines = timeoutProgress
+    ? [
+        `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
+        `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
+        `- Retry state: ${timeoutProgress.retryState}`,
+      ]
+    : [];
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
-    ...(timeoutProgress
-      ? [
-          `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
-          `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
-          `- Retry state: ${timeoutProgress.retryState}`,
-        ]
-      : [
-          `- Files reviewed: ${filesReviewed}`,
-          `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
-        ]),
+    ...primaryReviewDetailLines,
+    ...timeoutProgressLines,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     ...(hasBoundedProfileDetails && reviewBoundedness
       ? [

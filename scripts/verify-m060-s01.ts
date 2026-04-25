@@ -265,7 +265,7 @@ function buildRuntimeTargetManifestCheck(
   }
 
   const unexpectedTargets = manifestState.runtimeTargets.filter(
-    (target) => !REQUIRED_RUNTIME_TARGETS.includes(target),
+    (target) => !(REQUIRED_RUNTIME_TARGETS as readonly string[]).includes(target),
   );
   if (unexpectedTargets.length > 0) {
     return failCheck(
@@ -364,7 +364,7 @@ async function buildTypeOnlyExemptionsCheck({
   }
 
   const unexpectedExemptions = manifestState.typeOnlyExemptions.filter(
-    (exemption) => !REQUIRED_TYPE_ONLY_EXEMPTIONS.includes(exemption),
+    (exemption) => !(REQUIRED_TYPE_ONLY_EXEMPTIONS as readonly string[]).includes(exemption),
   );
   if (unexpectedExemptions.length > 0) {
     return failCheck(

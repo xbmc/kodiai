@@ -1,6 +1,19 @@
 import { describe, it, expect } from "bun:test";
 import { formatReviewDetailsSummary } from "./review-utils.ts";
+import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
+
+const BOUNDED_TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
+  state: "bounded-first-pass",
+  boundedReason: "timeout",
+  evidenceSource: "checkpoint",
+  coveredScope: { reviewedFiles: 1, totalFiles: 3 },
+  remainingScope: { remainingFiles: 2, totalFiles: 3 },
+  findingCount: 2,
+  publication: { eligible: true, hasPublishedOutput: false },
+  continuationPending: true,
+  zeroEvidenceFailure: false,
+};
 
 const BASE_PARAMS = {
   reviewOutputKey: "test-key-001",
@@ -21,6 +34,71 @@ const BASE_PARAMS = {
 };
 
 describe("formatReviewDetailsSummary", () => {
+  it("renders bounded first-pass diagnostics from the normalized contract", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: BOUNDED_TIMEOUT_FIRST_PASS,
+    });
+
+    expect(result).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(result).toContain("- Covered scope: 1/3 changed files");
+    expect(result).toContain("- Remaining scope: 2/3 changed files");
+    expect(result).toContain("- First-pass findings captured: 2");
+    expect(result).toContain("- Publication eligibility: eligible");
+    expect(result).toContain("- Continuation state: follow-up review pending for remaining scope");
+  });
+
+  it("renders zero-evidence hard failure explicitly instead of bounded success", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        state: "zero-evidence-failure",
+        boundedReason: "max-turns",
+        evidenceSource: "none",
+        publication: { eligible: false, hasPublishedOutput: false },
+        continuationPending: false,
+        zeroEvidenceFailure: true,
+      },
+    });
+
+    expect(result).toContain("- Constrained outcome: zero-evidence hard failure after max-turns");
+    expect(result).toContain("- Publication eligibility: ineligible");
+    expect(result).toContain("- Continuation state: stopped after first pass; no follow-up review is pending");
+    expect(result).not.toContain("- Bounded first-pass:");
+    expect(result).not.toContain("- Covered scope:");
+  });
+
+  it("degrades truthfully when remaining scope is missing instead of implying exhaustive coverage", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        ...BOUNDED_TIMEOUT_FIRST_PASS,
+        remainingScope: undefined,
+        continuationPending: true,
+      },
+    });
+
+    expect(result).toContain("- Covered scope: 1/3 changed files");
+    expect(result).toContain("- Remaining scope: not confirmed from structured evidence");
+    expect(result).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
+  });
+
+  it("degrades truthfully when covered scope is missing instead of inventing reviewed coverage", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        ...BOUNDED_TIMEOUT_FIRST_PASS,
+        coveredScope: undefined,
+        remainingScope: { remainingFiles: 2, totalFiles: 3 },
+        continuationPending: false,
+      },
+    });
+
+    expect(result).not.toContain("- Covered scope:");
+    expect(result).toContain("- Remaining scope: 2/3 changed files");
+    expect(result).toContain("- Continuation state: stopped after first pass; 2/3 files remain unreviewed");
+  });
+
   it("renders contributor-experience contract wording without raw tier leakage", () => {
     const cases = [
       {
@@ -147,6 +225,49 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("- Retry state: scheduled reduced-scope retry");
     expect(result).not.toContain("- Files reviewed: 3");
     expect(result).not.toContain("- Findings: 0 critical, 1 major, 2 medium, 0 minor");
+  });
+
+  it("keeps shared bounded first-pass wording visible when timeout retry metadata is present", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: BOUNDED_TIMEOUT_FIRST_PASS,
+      timeoutProgress: {
+        analyzedFiles: 1,
+        totalFiles: 3,
+        findingCount: 2,
+        retryState: "scheduled reduced-scope retry",
+      },
+    });
+
+    expect(result).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(result).toContain("- Covered scope: 1/3 changed files");
+    expect(result).toContain("- Remaining scope: 2/3 changed files");
+    expect(result).toContain("- Continuation state: follow-up review pending for remaining scope");
+    expect(result).toContain("- Retry state: scheduled reduced-scope retry");
+  });
+
+  it("degrades truthfully on timeout metadata when bounded scope fields are missing", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFirstPass: {
+        ...BOUNDED_TIMEOUT_FIRST_PASS,
+        coveredScope: undefined,
+        remainingScope: undefined,
+        continuationPending: true,
+      },
+      timeoutProgress: {
+        analyzedFiles: 1,
+        totalFiles: 3,
+        findingCount: 2,
+        retryState: "retry skipped after timeout",
+      },
+    });
+
+    expect(result).toContain("- Bounded first-pass: timeout via checkpoint evidence");
+    expect(result).toContain("- Remaining scope: not confirmed from structured evidence");
+    expect(result).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
+    expect(result).not.toContain("- Covered scope:");
+    expect(result).toContain("- Retry state: retry skipped after timeout");
   });
 
   it("renders total wall-clock time and the six required phases in stable order", () => {

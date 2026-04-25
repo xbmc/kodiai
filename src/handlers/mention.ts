@@ -41,13 +41,20 @@ import {
   containsMention,
   stripMention,
 } from "./mention-types.ts";
-import { buildMentionContext } from "../execution/mention-context.ts";
+import {
+  buildMentionContext,
+  buildMentionContextDetails,
+  buildMentionContextFingerprint,
+  type MentionContextAdmissionPolicy,
+} from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
-import { buildMentionPrompt } from "../execution/mention-prompt.ts";
-import { buildReviewPrompt, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
+import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
+import { buildSearchCacheKey, createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import {
   type ErrorCategory,
   classifyError,
@@ -157,6 +164,11 @@ export function createMentionHandler(deps: {
   sql?: import("../db/client.ts").Sql;
   /** Optional in-memory coordinator for same-PR review-family publish rights. */
   reviewWorkCoordinator?: ReviewWorkCoordinator;
+  /** Optional derived-context cache store overrides for mention-context reuse tests/fail-open wiring. */
+  mentionDerivedContextCacheOptions?: Pick<
+    SearchCacheOptions<PromptBuildResult>,
+    "ttlMs" | "store" | "inFlightStore"
+  >;
   logger: Logger;
 }): void {
   const {
@@ -171,6 +183,7 @@ export function createMentionHandler(deps: {
     gistPublisher,
     sql,
     reviewWorkCoordinator: injectedReviewWorkCoordinator,
+    mentionDerivedContextCacheOptions,
     logger,
   } = deps;
 
@@ -187,6 +200,22 @@ export function createMentionHandler(deps: {
       "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
     );
   }
+
+  let mentionDerivedContextCacheErrorCount = 0;
+  const mentionDerivedContextCache = createSearchCache<PromptBuildResult>({
+    ...mentionDerivedContextCacheOptions,
+    onError: (error) => {
+      mentionDerivedContextCacheErrorCount += 1;
+      logger.warn(
+        {
+          err: error,
+          gate: "mention-derived-context-cache",
+          gateResult: "degraded",
+        },
+        "Mention derived-context cache degraded; bypassing cache for this request",
+      );
+    },
+  });
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -1044,6 +1073,84 @@ export function createMentionHandler(deps: {
     return reviewDirect.test(normalized) || reviewAsk.test(normalized);
   }
 
+  function deriveMentionAdmissionPolicy(params: {
+    explicitReviewRequest: boolean;
+    config: Awaited<ReturnType<typeof loadRepoConfig>>["config"];
+  }): MentionContextAdmissionPolicy {
+    const source = params.explicitReviewRequest
+      ? params.config.mention.admission.explicitReview
+      : params.config.mention.admission.conversational;
+
+    return {
+      includeConversationHistory: source.includeConversationHistory,
+      includePrMetadata: source.includePrMetadata,
+      includeReviewThread: params.explicitReviewRequest ? source.includeReviewThread : false,
+      includeInlineReviewContext: params.explicitReviewRequest,
+    };
+  }
+
+  function isCodeSeekingMentionRequest(question: string): boolean {
+    const normalized = stripIssueIntentWrappers(question).toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    const directCodeIntent = /\b(where\s+is|which\s+file|what\s+file|show\s+me|point\s+me|find|locate|trace|walk\s+me\s+through|inspect|debug|look\s+at)\b/;
+    const codeSubject = /\b(code|implementation|logic|handler|function|module|class|component|query|workflow|prompt|diff|stack|error|bug|regression|test|file|path|line|symbol|readme|docs?)\b/;
+    const fileReference = /\b[a-z0-9._/-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|yml|yaml|sql|py|rb|go|rs|java|kt|swift|cpp|cc|c|h)\b/;
+    const codeSyntax = /[`/]|::|->|\bsrc\//;
+
+    if (directCodeIntent.test(normalized) && (codeSubject.test(normalized) || fileReference.test(normalized) || codeSyntax.test(normalized))) {
+      return true;
+    }
+
+    const implementationQuestion = /\b(how\s+does|why\s+does|what\s+does)\b/;
+    if (implementationQuestion.test(normalized) && (codeSubject.test(normalized) || fileReference.test(normalized) || codeSyntax.test(normalized))) {
+      return true;
+    }
+
+    const locationQuestion = /\b(file|path|line|symbol|function|module|class|component)\b/;
+    if (locationQuestion.test(normalized) && /\b(where|which|show|find|locate)\b/.test(normalized)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function isDiffSeekingMentionRequest(question: string): boolean {
+    const normalized = stripIssueIntentWrappers(question).toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    const diffNoun = /\b(diff|patch|changes|changed files|delta|hunk|stat|files changed)\b/;
+    const diffVerb = /\b(show|inspect|review|analyze|walk\s+through|summarize|explain|compare|check)\b/;
+    const comparePhrase = /\bwhat\s+changed\b/;
+
+    return comparePhrase.test(normalized) || (diffNoun.test(normalized) && diffVerb.test(normalized));
+  }
+
+  function buildMentionRetrievalBody(params: {
+    userQuestion: string;
+    mentionContext: string;
+    allowHeavyContext: boolean;
+    allowDiffContext: boolean;
+    explicitReviewRequest: boolean;
+  }): string {
+    if (params.explicitReviewRequest) {
+      return params.mentionContext;
+    }
+
+    const summaryLines = [params.userQuestion.trim()];
+    if (params.allowHeavyContext && params.mentionContext.trim().length > 0) {
+      summaryLines.push(params.mentionContext.trim());
+    } else if (params.allowDiffContext) {
+      summaryLines.push("diff-inspection request");
+    }
+
+    return summaryLines.filter((line) => line.length > 0).join("\n\n");
+  }
+
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
     const possibleHandles = [appSlug, "kodai", "claude"];
@@ -1840,19 +1947,76 @@ export function createMentionHandler(deps: {
         // Build mention context (conversation + PR metadata + inline diff context)
         // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
         let mentionContext = "";
+        let mentionContextSectionMetrics: import("../telemetry/types.ts").PromptSectionMetric[] = [];
+        let mentionDerivedContextCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
+        let mentionDerivedContextCacheReason: string | null = null;
+        const mentionAdmissionPolicy = deriveMentionAdmissionPolicy({
+          explicitReviewRequest,
+          config,
+        });
+        const allowIssueCodePointers = isIssueThreadComment && isCodeSeekingMentionRequest(writeIntent.request);
+        const allowPrDiffContext =
+          mention.prNumber !== undefined
+          && (explicitReviewRequest || isDiffSeekingMentionRequest(writeIntent.request));
         try {
-          mentionContext = await buildMentionContext(octokit, mention, {
+          const fingerprintResult = await buildMentionContextFingerprint(octokit, mention, {
+            admissionPolicy: mentionAdmissionPolicy,
             findingLookup,
             maxThreadChars: config.mention.conversation.contextBudgetChars,
+            logger,
           });
+
+          if (fingerprintResult.fingerprint) {
+            const cacheKey = buildSearchCacheKey({
+              repo: `${mention.owner}/${mention.repo}`,
+              searchType: "mention-derived-context",
+              query: `${mention.surface}:${mention.issueNumber}:${mention.commentId}`,
+              extra: {
+                fingerprint: fingerprintResult.fingerprint,
+              },
+            });
+            const cacheErrorsBeforeLookup = mentionDerivedContextCacheErrorCount;
+            let loaderExecuted = false;
+            const mentionContextResult = await mentionDerivedContextCache.getOrLoad(
+              cacheKey,
+              async () => {
+                loaderExecuted = true;
+                return await buildMentionContextDetails(octokit, mention, {
+                  admissionPolicy: mentionAdmissionPolicy,
+                  findingLookup,
+                  maxThreadChars: config.mention.conversation.contextBudgetChars,
+                });
+              },
+            );
+            mentionContext = mentionContextResult.text;
+            mentionContextSectionMetrics = mentionContextResult.sections;
+            const cacheDegraded = mentionDerivedContextCacheErrorCount > cacheErrorsBeforeLookup;
+            mentionDerivedContextCacheStatus = cacheDegraded
+              ? "degraded"
+              : loaderExecuted
+                ? "miss"
+                : "hit";
+          } else {
+            mentionDerivedContextCacheStatus = "bypass";
+            mentionDerivedContextCacheReason = fingerprintResult.missingSignals.join(",") || "incomplete-fingerprint";
+            const mentionContextResult = await buildMentionContextDetails(octokit, mention, {
+              admissionPolicy: mentionAdmissionPolicy,
+              findingLookup,
+              maxThreadChars: config.mention.conversation.contextBudgetChars,
+            });
+            mentionContext = mentionContextResult.text;
+            mentionContextSectionMetrics = mentionContextResult.sections;
+          }
         } catch (err) {
+          mentionDerivedContextCacheStatus = "degraded";
+          mentionDerivedContextCacheReason = "context-build-failed";
           logger.warn(
             { err, surface: mention.surface, issueNumber: mention.issueNumber },
             "Failed to build mention context; proceeding with empty context",
           );
         }
 
-        if (isIssueThreadComment) {
+        if (allowIssueCodePointers) {
           try {
             const issueCodeContext = await buildIssueCodeContext({
               workspaceDir: workspace.dir,
@@ -1860,13 +2024,22 @@ export function createMentionHandler(deps: {
             });
 
             if (issueCodeContext.contextBlock.trim().length > 0) {
-              const contextParts = [
-                mentionContext.trim(),
+              const codePointerSection = [
                 "## Candidate Code Pointers",
                 "",
                 issueCodeContext.contextBlock.trim(),
+              ].join("\n");
+              const contextParts = [
+                mentionContext.trim(),
+                codePointerSection,
               ].filter((part) => part.length > 0);
               mentionContext = `${contextParts.join("\n")}`;
+              mentionContextSectionMetrics.push({
+                sectionName: "candidate-code-pointers",
+                sectionPosition: mentionContextSectionMetrics.length,
+                charCount: codePointerSection.length,
+                estimatedTokens: Math.ceil(codePointerSection.length / 4),
+              });
             }
           } catch (err) {
             logger.warn(
@@ -1962,8 +2135,15 @@ export function createMentionHandler(deps: {
         let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
         if (retriever && config.knowledge?.retrieval?.enabled) {
           try {
+            const retrievalBody = buildMentionRetrievalBody({
+              userQuestion: writeIntent.request,
+              mentionContext,
+              allowHeavyContext: allowIssueCodePointers,
+              allowDiffContext: allowPrDiffContext,
+              explicitReviewRequest,
+            });
             let filePaths: string[] = [];
-            if (mention.prNumber !== undefined && mention.baseRef) {
+            if ((explicitReviewRequest || allowPrDiffContext) && mention.prNumber !== undefined && mention.baseRef) {
               // Try three-dot diff first; fall back to two-dot if merge-base unreachable (shallow clone).
               let diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
                 .quiet()
@@ -2007,7 +2187,7 @@ export function createMentionHandler(deps: {
             const retrievalTopK = Math.max(1, Math.min(config.knowledge?.retrieval?.topK ?? 5, 3));
             const variants = buildRetrievalVariants({
               title: writeIntent.request,
-              body: mentionContext,
+              body: retrievalBody,
               conventionalType: null,
               prLanguages,
               riskSignals: [mention.surface, mention.inReplyToId !== undefined ? "reply-thread" : "single-mention"],
@@ -2024,6 +2204,32 @@ export function createMentionHandler(deps: {
               logger,
               triggerType: "question",
             });
+
+            if (config.telemetry.enabled) {
+              try {
+                const totalEmbeddingLookups = (result?.provenance.embeddingRequests ?? 0) + (result?.provenance.embeddingCacheHits ?? 0);
+                await telemetryStore.recordRateLimitEvent({
+                  deliveryId: event.id,
+                  executionIdentity: `${event.id}:reuse.retrieval-query-embedding.mention`,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  prNumber: mention.prNumber,
+                  eventType: "reuse.retrieval-query-embedding.mention",
+                  cacheHitRate: totalEmbeddingLookups > 0
+                    ? (result?.provenance.embeddingCacheHits ?? 0) / totalEmbeddingLookups
+                    : 0,
+                  skippedQueries: result?.provenance.embeddingCacheHits ?? 0,
+                  retryAttempts: result?.provenance.embeddingRequests ?? 0,
+                  degradationPath: result == null
+                    ? "degraded"
+                    : (result.provenance.embeddingCacheHits > 0 ? "hit" : "miss"),
+                });
+              } catch (err) {
+                logger.warn(
+                  { err, surface: mention.surface, issueNumber: mention.issueNumber },
+                  "Mention retrieval reuse telemetry write failed (non-blocking)",
+                );
+              }
+            }
 
             // Capture unified cross-corpus results (KI-11/KI-12)
             if (result && result.unifiedResults && result.unifiedResults.length > 0) {
@@ -2117,7 +2323,7 @@ export function createMentionHandler(deps: {
         const PR_DIFF_MAX_CHARS = 8_000;
         let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined;
         // mention.baseRef is the PR base branch (e.g. "main"), set by the event parser.
-        if (mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
+        if (allowPrDiffContext && mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
           try {
             // Try three-dot diff first (shows only changes introduced by the PR branch).
             // Falls back to two-dot diff when the merge base isn't reachable — this can happen
@@ -2161,6 +2367,7 @@ export function createMentionHandler(deps: {
 
         setReviewWorkPhase("prompt-build");
         let prompt: string;
+        let promptSections: import("../telemetry/types.ts").PromptSectionRecord[] = [];
         let explicitReviewPromptFileCount: number | undefined;
         if (explicitReviewRequest && mention.prNumber !== undefined) {
           const explicitReviewPrNumber = mention.prNumber;
@@ -2227,7 +2434,7 @@ export function createMentionHandler(deps: {
             .map((label) => typeof label === "string" ? label : label.name)
             .filter((label): label is string => typeof label === "string" && label.length > 0);
 
-          prompt = buildReviewPrompt({
+          const reviewPromptResult = buildReviewPromptDetails({
             owner: mention.owner,
             repo: mention.repo,
             prNumber: mention.prNumber,
@@ -2267,8 +2474,18 @@ export function createMentionHandler(deps: {
               "mcp__github_inline_comment__create_inline_comment",
             ],
           });
+          prompt = reviewPromptResult.text;
+          promptSections = [
+            buildPromptSectionRecord({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              taskType: "review.full",
+              promptKind: "review.user-prompt",
+              sections: reviewPromptResult.sections,
+            }),
+          ];
         } else {
-          prompt = buildMentionPrompt({
+          const mentionPromptResult = buildMentionPromptDetails({
             mention,
             mentionContext,
             retrievalContext,
@@ -2278,14 +2495,28 @@ export function createMentionHandler(deps: {
               .filter((s) => (s ?? "").trim().length > 0)
               .join("\n\n"),
             outputLanguage: config.review.outputLanguage,
-            // Unified cross-corpus context (KI-11/KI-12)
             unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
             contextWindow: contextWindowForPrompt,
-            // Triage context for issue mentions (TRIA-03)
             triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
-            // Pre-fetched PR diff (prevents turn exhaustion on review-intent mentions)
             prDiffContext,
           });
+          prompt = mentionPromptResult.text;
+          promptSections = [
+            buildPromptSectionRecord({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              taskType: "mention.response",
+              promptKind: "mention.context",
+              sections: mentionContextSectionMetrics,
+            }),
+            buildPromptSectionRecord({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              taskType: "mention.response",
+              promptKind: "mention.user-prompt",
+              sections: mentionPromptResult.sections,
+            }),
+          ].filter((record) => record.sections.length > 0);
         }
 
         // Cap max turns for read-only conversational PR mentions.
@@ -2330,6 +2561,7 @@ export function createMentionHandler(deps: {
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
           prompt,
+          promptSections,
           reviewOutputKey,
           maxTurnsOverride: mentionMaxTurns,
           knowledgeStore: deps.knowledgeStore,
@@ -2636,6 +2868,10 @@ export function createMentionHandler(deps: {
             failureSubtype: result.failureSubtype,
             usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
             toolUseNames: result.toolUseNames ?? [],
+            mentionDerivedContextCacheStatus,
+            ...(mentionDerivedContextCacheReason
+              ? { mentionDerivedContextCacheReason }
+              : {}),
             ...(explicitReviewRequest
               ? {
                 explicitReviewRequest: true,
@@ -2657,6 +2893,24 @@ export function createMentionHandler(deps: {
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
           try {
+            await telemetryStore.recordRateLimitEvent({
+              deliveryId: event.id,
+              executionIdentity: `${event.id}:reuse.mention-derived-context`,
+              repo: `${mention.owner}/${mention.repo}`,
+              prNumber: mention.prNumber,
+              eventType: "reuse.mention-derived-context",
+              cacheHitRate: mentionDerivedContextCacheStatus === "hit" ? 1 : 0,
+              skippedQueries: mentionDerivedContextCacheStatus === "hit" ? 1 : 0,
+              retryAttempts: mentionDerivedContextCacheStatus === "hit" ? 0 : 1,
+              degradationPath: mentionDerivedContextCacheReason
+                ? `${mentionDerivedContextCacheStatus}:${mentionDerivedContextCacheReason}`
+                : mentionDerivedContextCacheStatus,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Mention reuse telemetry write failed (non-blocking)");
+          }
+
+          try {
             await telemetryStore.record({
               deliveryId: event.id,
               repo: `${mention.owner}/${mention.repo}`,
@@ -2676,6 +2930,14 @@ export function createMentionHandler(deps: {
             });
           } catch (err) {
             logger.warn({ err }, "Telemetry write failed (non-blocking)");
+          }
+
+          try {
+            for (const promptSectionRecord of result.promptSections ?? promptSections) {
+              await telemetryStore.recordPromptSections(promptSectionRecord);
+            }
+          } catch (err) {
+            logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
           }
 
           // Cost warning (CONFIG-11)

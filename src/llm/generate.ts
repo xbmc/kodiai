@@ -11,6 +11,7 @@ import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { ResolvedModel } from "./task-router.ts";
 import type { CostTracker } from "./cost-tracker.ts";
+import type { PromptSectionRecord } from "../telemetry/types.ts";
 import { createProviderModel } from "./providers.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
 import { buildAgentEnv } from "../execution/env.ts";
@@ -43,6 +44,7 @@ async function generateWithAgentSdk(opts: {
   costTracker?: CostTracker;
   repo?: string;
   deliveryId?: string;
+  promptSections?: PromptSectionRecord[];
   logger: Logger;
 }): Promise<GenerateResult> {
   const startTime = Date.now();
@@ -151,10 +153,22 @@ export async function generateWithFallback(opts: {
   costTracker?: CostTracker;
   repo?: string;
   deliveryId?: string;
+  promptSections?: PromptSectionRecord[];
   logger: Logger;
 }): Promise<GenerateResult> {
   const { taskType, resolved, logger } = opts;
   const startTime = Date.now();
+
+  if (opts.costTracker && opts.repo && opts.promptSections) {
+    for (const promptSectionRecord of opts.promptSections) {
+      void opts.costTracker.trackPromptSections({
+        ...promptSectionRecord,
+        repo: opts.repo,
+        taskType,
+        deliveryId: opts.deliveryId ?? promptSectionRecord.deliveryId,
+      });
+    }
+  }
 
   try {
     // Attempt with primary model using the appropriate SDK.

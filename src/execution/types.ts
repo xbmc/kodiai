@@ -1,6 +1,7 @@
 export type { RepoConfig } from "./config.ts";
 
 import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 export type ExecutionPublishEvent = {
   type: "comment";
@@ -78,6 +79,12 @@ export type ExecutionContext = {
   taskType?: string;
 
   /**
+   * Optional prompt-section accounting prepared before execution.
+   * Contains only named-section size estimates, never raw prompt text.
+   */
+  promptSections?: PromptSectionRecord[];
+
+  /**
    * Enables write-mode execution.
    *
    * When true, the model may edit files in the workspace, but GitHub publishing
@@ -129,4 +136,9 @@ export type ExecutionResult = {
     rateLimitType: string | undefined;
     resetsAt: number | undefined;
   };
+  /**
+   * Prompt-section accounting emitted for this execution.
+   * Stores only named-section size estimates, never raw prompt text.
+   */
+  promptSections?: PromptSectionRecord[];
 };

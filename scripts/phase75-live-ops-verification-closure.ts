@@ -1,16 +1,14 @@
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import pino from "pino";
+import { createDbClient, type Sql } from "../src/db/client.ts";
 
-const DEFAULT_DB_PATH = "./data/kodiai-telemetry.db";
 const REVIEW_EVENT_TYPE_DEFAULT = "pull_request.review_requested";
-
 const FAILING_CONCLUSIONS = new Set(["error", "failed", "failure", "timeout"]);
 
 export const LOCKED_CACHE_SEQUENCE = ["prime", "hit", "changed-query-miss"] as const;
 
 type CacheOutcome = (typeof LOCKED_CACHE_SEQUENCE)[number];
+type AccessState = "available" | "missing" | "unavailable";
 
 export type MatrixStep = {
   surface: "review_requested";
@@ -41,28 +39,30 @@ export type ClosureReport = {
   failOpenIdentities: Identity[];
 };
 
+export type Phase75QueryResult = {
+  executions: Array<{ deliveryId: string; eventType: string; conclusion: string }>;
+  rateLimits: Array<{ deliveryId: string; eventType: string; cacheHitRate: number; degradationPath: string }>;
+  degradedDuplicates: Array<{ deliveryId: string; eventType: string; count: number }>;
+};
+
+export type Phase75Report = {
+  command: "verify:phase75";
+  generatedAt: string;
+  preflight: {
+    databaseAccess: AccessState;
+    detail: string;
+  };
+  overallPassed: boolean;
+  checks: VerificationCheck[];
+  matrix: MatrixStep[];
+  acceptedReviewIdentities: Identity[];
+  degradedIdentities: Identity[];
+  failOpenIdentities: Identity[];
+};
+
 type BuildMatrixInput = {
   review: Record<CacheOutcome, string>;
   reviewEventType?: string;
-};
-
-type ExecutionRow = {
-  delivery_id: string;
-  event_type: string;
-  conclusion: string;
-};
-
-type RateLimitRow = {
-  delivery_id: string;
-  event_type: string;
-  cache_hit_rate: number;
-  degradation_path: string;
-};
-
-type DuplicateRow = {
-  delivery_id: string;
-  event_type: string;
-  cnt: number;
 };
 
 function makeIdentityKey(deliveryId: string, eventType: string): string {
@@ -73,17 +73,11 @@ function asOutcomeRecord(values: string[], label: string): Record<CacheOutcome, 
   if (values.length !== LOCKED_CACHE_SEQUENCE.length) {
     throw new Error(`${label} requires exactly ${LOCKED_CACHE_SEQUENCE.length} values`);
   }
-
   const [prime, hit, changed] = values;
   if (!prime || !hit || !changed) {
     throw new Error(`${label} values must all be non-empty`);
   }
-
-  return {
-    prime,
-    hit,
-    "changed-query-miss": changed,
-  };
+  return { prime, hit, "changed-query-miss": changed };
 }
 
 export function parseIdentity(value: string): Identity {
@@ -94,45 +88,8 @@ export function parseIdentity(value: string): Identity {
   return { deliveryId, eventType };
 }
 
-function makeInClauseFromValues(values: string[]): string {
-  if (values.length === 0) {
-    return "('')";
-  }
-  const quoted = values.map((value) => `'${value.replace(/'/g, "''")}'`);
-  return `(${quoted.join(",")})`;
-}
-
-function mapExecutionRows(rows: ExecutionRow[]): Map<string, ExecutionRow[]> {
-  const mapped = new Map<string, ExecutionRow[]>();
-  for (const row of rows) {
-    const key = makeIdentityKey(row.delivery_id, row.event_type);
-    const existing = mapped.get(key);
-    if (existing) {
-      existing.push(row);
-    } else {
-      mapped.set(key, [row]);
-    }
-  }
-  return mapped;
-}
-
-function mapRateRows(rows: RateLimitRow[]): Map<string, RateLimitRow[]> {
-  const mapped = new Map<string, RateLimitRow[]>();
-  for (const row of rows) {
-    const key = makeIdentityKey(row.delivery_id, row.event_type);
-    const existing = mapped.get(key);
-    if (existing) {
-      existing.push(row);
-    } else {
-      mapped.set(key, [row]);
-    }
-  }
-  return mapped;
-}
-
 export function buildDeterministicMatrix(input: BuildMatrixInput): MatrixStep[] {
   const reviewEventType = input.reviewEventType ?? REVIEW_EVENT_TYPE_DEFAULT;
-
   return LOCKED_CACHE_SEQUENCE.map((outcome) => ({
     surface: "review_requested" as const,
     outcome,
@@ -143,32 +100,28 @@ export function buildDeterministicMatrix(input: BuildMatrixInput): MatrixStep[] 
 }
 
 export function validateDeterministicMatrix(matrix: MatrixStep[]): void {
-  const expectedSequence = [...LOCKED_CACHE_SEQUENCE];
-  const reviewLane = matrix.filter((step) => step.surface === "review_requested");
-  const observed = reviewLane.map((step) => step.outcome);
-
+  const observed = matrix.filter((step) => step.surface === "review_requested").map((step) => step.outcome);
   if (
-    reviewLane.length !== expectedSequence.length
-    || observed.some((value, index) => value !== expectedSequence[index])
+    observed.length !== LOCKED_CACHE_SEQUENCE.length
+    || observed.some((value, index) => value !== LOCKED_CACHE_SEQUENCE[index])
   ) {
     throw new Error(
-      `Locked matrix ordering violated for review_requested. Expected ${expectedSequence.join(" -> ")}, got ${observed.join(" -> ")}`,
+      `Locked matrix ordering violated for review_requested. Expected ${LOCKED_CACHE_SEQUENCE.join(" -> ")}, got ${observed.join(" -> ")}`,
     );
   }
-
-  for (const step of reviewLane) {
+  for (const step of matrix) {
     if (!step.deliveryId.trim()) {
       throw new Error(`Matrix lane review_requested:${step.outcome} is missing identity input`);
     }
   }
 }
 
-function hasNonBlockingConclusion(rows: ExecutionRow[]): boolean {
+function hasNonBlockingConclusion(rows: Array<{ conclusion: string }>): boolean {
   return rows.some((row) => !FAILING_CONCLUSIONS.has(row.conclusion.toLowerCase()));
 }
 
 export function evaluateClosureVerification(
-  db: Database,
+  result: Phase75QueryResult,
   matrix: MatrixStep[],
   acceptedReviewIdentities: Identity[],
   degradedIdentities: Identity[],
@@ -176,137 +129,96 @@ export function evaluateClosureVerification(
 ): ClosureReport {
   validateDeterministicMatrix(matrix);
 
-  const reviewLane = matrix.filter((step) => step.surface === "review_requested");
+  const executionMap = new Map<string, Array<{ conclusion: string }>>();
+  for (const row of result.executions) {
+    const key = makeIdentityKey(row.deliveryId, row.eventType);
+    const existing = executionMap.get(key) ?? [];
+    existing.push({ conclusion: row.conclusion });
+    executionMap.set(key, existing);
+  }
+
+  const rateMap = new Map<string, Array<{ cacheHitRate: number; degradationPath: string }>>();
+  for (const row of result.rateLimits) {
+    const key = makeIdentityKey(row.deliveryId, row.eventType);
+    const existing = rateMap.get(key) ?? [];
+    existing.push({ cacheHitRate: row.cacheHitRate, degradationPath: row.degradationPath });
+    rateMap.set(key, existing);
+  }
+
   const preflightAlignmentFailures: string[] = [];
   for (let index = 0; index < LOCKED_CACHE_SEQUENCE.length; index += 1) {
-    const outcome = LOCKED_CACHE_SEQUENCE[index];
-    const expected = reviewLane[index];
+    const expected = matrix[index];
     const provided = acceptedReviewIdentities[index];
     if (!expected || !provided) {
-      preflightAlignmentFailures.push(`missing accepted review identity for ${outcome}`);
+      preflightAlignmentFailures.push(`missing accepted review identity for ${LOCKED_CACHE_SEQUENCE[index]}`);
       continue;
     }
-
     if (expected.deliveryId !== provided.deliveryId || expected.eventType !== provided.eventType) {
       preflightAlignmentFailures.push(
-        `${outcome} expected=${expected.deliveryId}:${expected.eventType} observed=${provided.deliveryId}:${provided.eventType}`,
+        `${LOCKED_CACHE_SEQUENCE[index]} expected=${expected.deliveryId}:${expected.eventType} observed=${provided.deliveryId}:${provided.eventType}`,
       );
     }
   }
 
-  const matrixDeliveryIds = matrix.map((step) => step.deliveryId);
-  const acceptedReviewDeliveryIds = acceptedReviewIdentities.map((identity) => identity.deliveryId);
-  const degradedDeliveryIds = degradedIdentities.map((identity) => identity.deliveryId);
-  const failOpenDeliveryIds = failOpenIdentities.map((identity) => identity.deliveryId);
-
-  const allDeliveryIds = Array.from(
-    new Set([...matrixDeliveryIds, ...acceptedReviewDeliveryIds, ...degradedDeliveryIds, ...failOpenDeliveryIds]),
-  );
-  const inClause = makeInClauseFromValues(allDeliveryIds);
-
-  const executionRows = db
-    .query<ExecutionRow, []>(
-      `SELECT delivery_id, event_type, conclusion
-       FROM executions
-       WHERE delivery_id IN ${inClause}`,
-    )
-    .all();
-
-  const rateRows = db
-    .query<RateLimitRow, []>(
-      `SELECT delivery_id, event_type, cache_hit_rate, degradation_path
-       FROM rate_limit_events
-       WHERE delivery_id IN ${inClause}`,
-    )
-    .all();
-
-  const executionByIdentity = mapExecutionRows(executionRows);
-  const rateByIdentity = mapRateRows(rateRows);
-
   const preflightExecutionFailures: string[] = [];
   for (const identity of acceptedReviewIdentities) {
-    const key = makeIdentityKey(identity.deliveryId, identity.eventType);
-    const rows = executionByIdentity.get(key) ?? [];
+    const rows = executionMap.get(makeIdentityKey(identity.deliveryId, identity.eventType)) ?? [];
     if (rows.length === 0) {
-      preflightExecutionFailures.push(`${key} missing execution row`);
+      preflightExecutionFailures.push(`${identity.deliveryId}:${identity.eventType} missing execution row`);
       continue;
     }
-
     if (!hasNonBlockingConclusion(rows)) {
-      preflightExecutionFailures.push(`${key} non-passing conclusions=${rows.map((row) => row.conclusion).join(",")}`);
+      preflightExecutionFailures.push(
+        `${identity.deliveryId}:${identity.eventType} non-passing conclusions=${rows.map((row) => row.conclusion).join(",")}`,
+      );
     }
   }
 
   const cacheObservedSequence: number[] = [];
   const cacheLaneFailures: string[] = [];
-  for (const step of reviewLane) {
-    const key = makeIdentityKey(step.deliveryId, step.eventType);
-    const rows = rateByIdentity.get(key) ?? [];
+  for (const step of matrix) {
+    const rows = rateMap.get(makeIdentityKey(step.deliveryId, step.eventType)) ?? [];
     if (rows.length !== 1) {
-      cacheLaneFailures.push(`${key} expected=1-row observed=${rows.length}`);
+      cacheLaneFailures.push(`${step.deliveryId}:${step.eventType} expected=1-row observed=${rows.length}`);
       continue;
     }
     const row = rows[0];
     if (!row) {
-      cacheLaneFailures.push(`${key} expected=row observed=missing`);
+      cacheLaneFailures.push(`${step.deliveryId}:${step.eventType} expected=row observed=missing`);
       continue;
     }
-    cacheObservedSequence.push(row.cache_hit_rate);
-    if (row.cache_hit_rate !== step.expectedCacheHitRate) {
-      cacheLaneFailures.push(`${key} expected=${step.expectedCacheHitRate} observed=${row.cache_hit_rate}`);
+    cacheObservedSequence.push(row.cacheHitRate);
+    if (row.cacheHitRate !== step.expectedCacheHitRate) {
+      cacheLaneFailures.push(
+        `${step.deliveryId}:${step.eventType} expected=${step.expectedCacheHitRate} observed=${row.cacheHitRate}`,
+      );
     }
   }
-
-  const cacheCheck: VerificationCheck = {
-    id: "OPS75-CACHE-01",
-    title: "review_requested cache telemetry follows prime -> hit -> changed-query miss",
-    passed: cacheLaneFailures.length === 0,
-    details:
-      cacheLaneFailures.length === 0
-        ? `Observed cache_hit_rate sequence ${cacheObservedSequence.join(" -> ")} for review_requested deterministic identities.`
-        : cacheLaneFailures.join("; "),
-  };
 
   const degradedMissingOrWrong: string[] = [];
   for (const identity of degradedIdentities) {
-    const key = makeIdentityKey(identity.deliveryId, identity.eventType);
-    const rows = (rateByIdentity.get(key) ?? []).filter((row) => row.degradation_path.toLowerCase() !== "none");
+    const rows = (rateMap.get(makeIdentityKey(identity.deliveryId, identity.eventType)) ?? []).filter(
+      (row) => row.degradationPath.toLowerCase() !== "none",
+    );
     if (rows.length !== 1) {
-      degradedMissingOrWrong.push(`${key} expected=1 degraded row observed=${rows.length}`);
+      degradedMissingOrWrong.push(`${identity.deliveryId}:${identity.eventType} expected=1 degraded row observed=${rows.length}`);
     }
   }
 
-  const degradedIdentitySet = new Set(degradedIdentities.map((identity) => makeIdentityKey(identity.deliveryId, identity.eventType)));
-  const degradedDuplicates = db
-    .query<DuplicateRow, []>(
-      `SELECT delivery_id, event_type, COUNT(*) AS cnt
-       FROM rate_limit_events
-       WHERE delivery_id IN ${makeInClauseFromValues(degradedDeliveryIds)}
-         AND LOWER(COALESCE(degradation_path, 'none')) <> 'none'
-       GROUP BY delivery_id, event_type
-       HAVING COUNT(*) > 1`,
-    )
-    .all()
-    .filter((row) => degradedIdentitySet.has(makeIdentityKey(row.delivery_id, row.event_type)));
-
   const failOpenTelemetryLeaks: string[] = [];
   const failOpenExecutionFailures: string[] = [];
-
   for (const identity of failOpenIdentities) {
-    const key = makeIdentityKey(identity.deliveryId, identity.eventType);
-    const telemetryRows = rateByIdentity.get(key) ?? [];
+    const telemetryRows = rateMap.get(makeIdentityKey(identity.deliveryId, identity.eventType)) ?? [];
     if (telemetryRows.length > 0) {
-      failOpenTelemetryLeaks.push(`${key} expected=0 telemetry rows observed=${telemetryRows.length}`);
+      failOpenTelemetryLeaks.push(`${identity.deliveryId}:${identity.eventType} expected=0 telemetry rows observed=${telemetryRows.length}`);
     }
-
-    const execRows = executionByIdentity.get(key) ?? [];
+    const execRows = executionMap.get(makeIdentityKey(identity.deliveryId, identity.eventType)) ?? [];
     if (execRows.length === 0) {
-      failOpenExecutionFailures.push(`${key} execution row missing`);
+      failOpenExecutionFailures.push(`${identity.deliveryId}:${identity.eventType} execution row missing`);
       continue;
     }
-
     if (!hasNonBlockingConclusion(execRows)) {
-      failOpenExecutionFailures.push(`${key} conclusions=${execRows.map((row) => row.conclusion).join(",")}`);
+      failOpenExecutionFailures.push(`${identity.deliveryId}:${identity.eventType} conclusions=${execRows.map((row) => row.conclusion).join(",")}`);
     }
   }
 
@@ -317,10 +229,18 @@ export function evaluateClosureVerification(
       passed: preflightAlignmentFailures.length === 0 && preflightExecutionFailures.length === 0,
       details:
         preflightAlignmentFailures.length === 0 && preflightExecutionFailures.length === 0
-          ? "Accepted review_requested identities match the review lane and have non-failing execution conclusions."
+          ? "Accepted review_requested identities match the review lane and have non-failing telemetry_events conclusions."
           : [...preflightAlignmentFailures, ...preflightExecutionFailures].join("; "),
     },
-    cacheCheck,
+    {
+      id: "OPS75-CACHE-01",
+      title: "review_requested cache telemetry follows prime -> hit -> changed-query miss",
+      passed: cacheLaneFailures.length === 0,
+      details:
+        cacheLaneFailures.length === 0
+          ? `Observed cache_hit_rate sequence ${cacheObservedSequence.join(" -> ")} for review_requested deterministic identities.`
+          : cacheLaneFailures.join("; "),
+    },
     {
       id: "OPS75-ONCE-01",
       title: "Each degraded execution identity persists exactly one degraded telemetry event",
@@ -333,13 +253,11 @@ export function evaluateClosureVerification(
     {
       id: "OPS75-ONCE-02",
       title: "Duplicate detection query returns no degraded telemetry duplicates",
-      passed: degradedDuplicates.length === 0,
+      passed: result.degradedDuplicates.length === 0,
       details:
-        degradedDuplicates.length === 0
+        result.degradedDuplicates.length === 0
           ? "No duplicate degraded telemetry identities detected in rate_limit_events."
-          : degradedDuplicates
-              .map((row) => `${row.delivery_id}:${row.event_type} count=${row.cnt}`)
-              .join("; "),
+          : result.degradedDuplicates.map((row) => `${row.deliveryId}:${row.eventType} count=${row.count}`).join("; "),
     },
     {
       id: "OPS75-FAILOPEN-01",
@@ -356,7 +274,7 @@ export function evaluateClosureVerification(
       passed: failOpenExecutionFailures.length === 0,
       details:
         failOpenExecutionFailures.length === 0
-          ? `Verified non-blocking execution conclusions for ${failOpenIdentities.length} forced-failure identities.`
+          ? `Verified non-blocking telemetry_events conclusions for ${failOpenIdentities.length} forced-failure identities.`
           : failOpenExecutionFailures.join("; "),
     },
   ];
@@ -371,27 +289,65 @@ export function evaluateClosureVerification(
   };
 }
 
-export function renderFinalVerdict(report: ClosureReport): string {
+export function buildPhase75Report(input: {
+  generatedAt: string;
+  accessState: AccessState;
+  accessDetail: string;
+  verification: ClosureReport | null;
+  matrix: MatrixStep[];
+  acceptedReviewIdentities: Identity[];
+  degradedIdentities: Identity[];
+  failOpenIdentities: Identity[];
+}): Phase75Report {
+  return {
+    command: "verify:phase75",
+    generatedAt: input.generatedAt,
+    preflight: {
+      databaseAccess: input.accessState,
+      detail: input.accessDetail,
+    },
+    overallPassed: input.accessState === "available" ? (input.verification?.overallPassed ?? false) : false,
+    checks: input.verification?.checks ?? [],
+    matrix: input.matrix,
+    acceptedReviewIdentities: input.acceptedReviewIdentities,
+    degradedIdentities: input.degradedIdentities,
+    failOpenIdentities: input.failOpenIdentities,
+  };
+}
+
+export function renderFinalVerdict(report: Phase75Report): string {
+  const header = [
+    "Phase 75 live OPS closure verification",
+    `Database access: ${report.preflight.databaseAccess}`,
+    `Preflight detail: ${report.preflight.detail}`,
+  ];
+
+  if (report.preflight.databaseAccess !== "available") {
+    return [
+      ...header,
+      "",
+      "No live telemetry evidence available. This verifier failed open so operators can inspect the Postgres access state without relying on stale SQLite output.",
+    ].join("\n");
+  }
+
   const evidenceLines = report.checks.map(
     (check) => `- ${check.id} ${check.passed ? "PASS" : "FAIL"}: ${check.title}. ${check.details}`,
   );
 
   const failedIds = report.checks.filter((check) => !check.passed).map((check) => check.id);
   const passedIds = report.checks.filter((check) => check.passed).map((check) => check.id);
-
   const matrixLines = report.matrix.map(
     (step) => `- ${step.surface}:${step.outcome} => ${step.deliveryId}:${step.eventType}`,
   );
   const acceptedReviewLines = report.acceptedReviewIdentities.map(
     (identity) => `- ${identity.deliveryId}:${identity.eventType}`,
   );
-
   const verdict = report.overallPassed
     ? `Final verdict: PASS [${passedIds.join(", ")}]`
     : `Final verdict: FAIL [${failedIds.join(", ")}]`;
 
   return [
-    "Phase 75 live OPS closure verification",
+    ...header,
     "",
     "Deterministic matrix identities:",
     ...matrixLines,
@@ -406,53 +362,60 @@ export function renderFinalVerdict(report: ClosureReport): string {
   ].join("\n");
 }
 
-function printUsage(): void {
-  console.log(`Phase 75 live OPS verification closure
+async function queryPhase75Result(
+  sql: Sql,
+  matrix: MatrixStep[],
+  degradedIdentities: Identity[],
+  failOpenIdentities: Identity[],
+): Promise<Phase75QueryResult> {
+  const deliveryIds = Array.from(
+    new Set([
+      ...matrix.map((step) => step.deliveryId),
+      ...degradedIdentities.map((identity) => identity.deliveryId),
+      ...failOpenIdentities.map((identity) => identity.deliveryId),
+    ]),
+  );
 
-Runs deterministic OPS-04/OPS-05 closure checks with machine-checkable check IDs.
-Cache checks are scoped to the review handler which is where Search API cache
-telemetry is emitted. The mention handler does not use Search API cache.
+  const executions = await sql<Array<{ deliveryId: string; eventType: string; conclusion: string }>>`
+    SELECT delivery_id AS "deliveryId", event_type AS "eventType", conclusion
+    FROM telemetry_events
+    WHERE delivery_id = ANY(${deliveryIds})
+  `;
+  const rateLimits = await sql<Array<{ deliveryId: string; eventType: string; cacheHitRate: number; degradationPath: string }>>`
+    SELECT delivery_id AS "deliveryId", event_type AS "eventType", cache_hit_rate AS "cacheHitRate", degradation_path AS "degradationPath"
+    FROM rate_limit_events
+    WHERE delivery_id = ANY(${deliveryIds})
+  `;
+  const degradedDeliveryIds = degradedIdentities.map((identity) => identity.deliveryId);
+  const degradedDuplicates = degradedDeliveryIds.length === 0
+    ? []
+    : await sql<Array<{ deliveryId: string; eventType: string; count: number }>>`
+        SELECT delivery_id AS "deliveryId", event_type AS "eventType", COUNT(*)::int AS count
+        FROM rate_limit_events
+        WHERE delivery_id = ANY(${degradedDeliveryIds})
+          AND LOWER(COALESCE(degradation_path, 'none')) <> 'none'
+        GROUP BY delivery_id, event_type
+        HAVING COUNT(*) > 1
+      `;
 
-Usage:
-  bun scripts/phase75-live-ops-verification-closure.ts \\
-    --review <prime> --review <hit> --review <changed> \\
-    --review-accepted <prime> --review-accepted <hit> --review-accepted <changed> \\
-    --degraded <delivery:event-type> [...more] \\
-    --failopen <delivery:event-type> [...more] [options]
-
-Required:
-  --review <identity>                   repeat exactly 3x in locked order (prime, hit, changed)
-  --review-accepted <identity>          repeat exactly 3x for accepted review lane evidence
-  --degraded <delivery:event-type>      degraded telemetry identities (repeatable)
-  --failopen <delivery:event-type>      forced telemetry failure identities (repeatable)
-
-Options:
-  --db <path>                           telemetry DB path (default: ./data/kodiai-telemetry.db)
-  --review-event-type <value>           default: pull_request.review_requested
-  --json                                print machine-readable report JSON
-  -h, --help                            show this help
-
-Check IDs:
-  OPS75-PREFLIGHT-01  accepted review_requested evidence + identity alignment
-  OPS75-CACHE-01      review_requested cache prime->hit->miss sequence
-  OPS75-ONCE-01       exactly-once degraded telemetry per identity
-  OPS75-ONCE-02       no duplicate degraded telemetry rows
-  OPS75-FAILOPEN-01   forced failure identities persist zero telemetry rows
-  OPS75-FAILOPEN-02   forced failure identities complete with non-failing conclusions`);
+  return { executions, rateLimits, degradedDuplicates };
 }
 
-function main(): void {
+function printUsage(): void {
+  console.log(`Phase 75 live OPS verification closure\n\nUsage:\n  bun scripts/phase75-live-ops-verification-closure.ts \\\n    --review <prime> --review <hit> --review <changed> \\\n    --review-accepted <prime> --review-accepted <hit> --review-accepted <changed> \\\n    --degraded <delivery:event-type> [...more] \\\n    --failopen <delivery:event-type> [...more] [--json]\n\nNotes:\n  - Reads live Postgres telemetry via createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable`);
+}
+
+async function runCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<{ report: Phase75Report; exitCode: number; json: boolean }> {
   const parsed = parseArgs({
-    args: process.argv.slice(2),
+    args,
     options: {
       review: { type: "string", multiple: true },
       "review-accepted": { type: "string", multiple: true },
       degraded: { type: "string", multiple: true },
       failopen: { type: "string", multiple: true },
-      db: { type: "string", default: DEFAULT_DB_PATH },
-      "review-event-type": { type: "string", default: REVIEW_EVENT_TYPE_DEFAULT },
       json: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
+      "review-event-type": { type: "string", default: REVIEW_EVENT_TYPE_DEFAULT },
     },
     strict: true,
     allowPositionals: false,
@@ -460,12 +423,24 @@ function main(): void {
 
   if (parsed.values.help) {
     printUsage();
-    process.exit(0);
+    return {
+      report: buildPhase75Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "missing",
+        accessDetail: "Help requested.",
+        verification: null,
+        matrix: [],
+        acceptedReviewIdentities: [],
+        degradedIdentities: [],
+        failOpenIdentities: [],
+      }),
+      exitCode: 0,
+      json: Boolean(parsed.values.json),
+    };
   }
 
   const review = asOutcomeRecord(parsed.values.review ?? [], "--review");
   const acceptedReview = asOutcomeRecord(parsed.values["review-accepted"] ?? [], "--review-accepted");
-
   const degradedValues = parsed.values.degraded ?? [];
   const failOpenValues = parsed.values.failopen ?? [];
   if (degradedValues.length === 0) {
@@ -473,14 +448,6 @@ function main(): void {
   }
   if (failOpenValues.length === 0) {
     throw new Error("--failopen requires at least one <delivery:event-type> identity");
-  }
-
-  const degradedIdentities = degradedValues.map(parseIdentity);
-  const failOpenIdentities = failOpenValues.map(parseIdentity);
-
-  const dbPath = resolve(parsed.values.db);
-  if (!existsSync(dbPath)) {
-    throw new Error(`Telemetry database not found at ${dbPath}`);
   }
 
   const matrix = buildDeterministicMatrix({
@@ -491,35 +458,80 @@ function main(): void {
     deliveryId: acceptedReview[outcome],
     eventType: parsed.values["review-event-type"],
   }));
+  const degradedIdentities = degradedValues.map(parseIdentity);
+  const failOpenIdentities = failOpenValues.map(parseIdentity);
 
-  const db = new Database(dbPath, { readonly: true });
-  db.run("PRAGMA busy_timeout = 5000");
-  const report = evaluateClosureVerification(
-    db,
-    matrix,
-    acceptedReviewIdentities,
-    degradedIdentities,
-    failOpenIdentities,
-  );
-  db.close();
-
-  if (parsed.values.json) {
-    console.log(JSON.stringify(report, null, 2));
-  } else {
-    console.log(renderFinalVerdict(report));
+  const connectionString = env.TEST_DATABASE_URL ?? env.DATABASE_URL ?? null;
+  if (!connectionString) {
+    return {
+      report: buildPhase75Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "missing",
+        accessDetail: "Neither TEST_DATABASE_URL nor DATABASE_URL is set.",
+        verification: null,
+        matrix,
+        acceptedReviewIdentities,
+        degradedIdentities,
+        failOpenIdentities,
+      }),
+      exitCode: 0,
+      json: Boolean(parsed.values.json),
+    };
   }
 
-  if (!report.overallPassed) {
-    process.exit(1);
+  const logger = pino({ level: "silent" });
+  let client: ReturnType<typeof createDbClient> | null = null;
+  try {
+    client = createDbClient({ connectionString, logger });
+    const queryResult = await queryPhase75Result(client.sql, matrix, degradedIdentities, failOpenIdentities);
+    const verification = evaluateClosureVerification(
+      queryResult,
+      matrix,
+      acceptedReviewIdentities,
+      degradedIdentities,
+      failOpenIdentities,
+    );
+    return {
+      report: buildPhase75Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "available",
+        accessDetail: "Connected to telemetry Postgres.",
+        verification,
+        matrix,
+        acceptedReviewIdentities,
+        degradedIdentities,
+        failOpenIdentities,
+      }),
+      exitCode: verification.overallPassed ? 0 : 1,
+      json: Boolean(parsed.values.json),
+    };
+  } catch (error) {
+    return {
+      report: buildPhase75Report({
+        generatedAt: new Date().toISOString(),
+        accessState: "unavailable",
+        accessDetail: error instanceof Error ? error.message : String(error),
+        verification: null,
+        matrix,
+        acceptedReviewIdentities,
+        degradedIdentities,
+        failOpenIdentities,
+      }),
+      exitCode: 0,
+      json: Boolean(parsed.values.json),
+    };
+  } finally {
+    await client?.close();
   }
 }
 
 if (import.meta.main) {
   try {
-    main();
+    const { report, exitCode, json } = await runCli(process.argv.slice(2));
+    console.log(json ? JSON.stringify(report, null, 2) : renderFinalVerdict(report));
+    process.exit(exitCode);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Phase 75 closure verification failed: ${message}`);
+    console.error(`Phase 75 closure verification failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }
