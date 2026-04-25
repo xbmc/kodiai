@@ -74,6 +74,7 @@
     "verify:m056:s01": "bun scripts/verify-m056-s01.ts",
     "verify:m056:s02": "bun scripts/verify-m056-s02.ts",
     "verify:m056:s03": "bun scripts/verify-m056-s03.ts",
+    "verify:m057:s01": "bun scripts/verify-m057-s01.ts",
     "verify:m057:s02": "bun scripts/verify-m057-s02.ts",
     "verify:m057:s03": "bun scripts/verify-m057-s03.ts",
     "verify:m057:s04": "bun scripts/verify-m057-s04.ts",
