@@ -48,10 +48,7 @@ const configSchema = z.object({
 });
 
 export type AppConfigInput = z.input<typeof configSchema>;
-type AppConfigSchema = z.output<typeof configSchema>;
-export type AppConfig = Omit<AppConfigSchema, "slackWebhookRelaySources"> & {
-  slackWebhookRelaySources?: AppConfigSchema["slackWebhookRelaySources"];
-};
+export type AppConfig = z.output<typeof configSchema>;
 
 async function loadPrivateKey(): Promise<string> {
   const keyEnv = process.env.GITHUB_PRIVATE_KEY ?? process.env.GITHUB_PRIVATE_KEY_BASE64;
