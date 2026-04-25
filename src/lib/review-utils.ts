@@ -91,6 +91,12 @@ export type TimeoutReviewDetailsProgress = {
   retryState: string;
 };
 
+export type TimeoutBudgetDetails = {
+  remoteRuntimeBudgetSeconds: number;
+  infraOverheadBudgetSeconds: number;
+  totalTimeoutSeconds: number;
+};
+
 function formatBoundedReason(reason: ReviewFirstPassPayload["boundedReason"]): string {
   if (reason === "max-turns") {
     return "max-turns";
@@ -111,7 +117,14 @@ function formatEvidenceSource(source: ReviewFirstPassPayload["evidenceSource"]):
   return "no trustworthy evidence";
 }
 
-function formatTimeoutSuffix(timedOutAfterSeconds?: number): string {
+function formatTimeoutSuffix(
+  timedOutAfterSeconds?: number,
+  timeoutBudget?: TimeoutBudgetDetails | null,
+): string {
+  if (timeoutBudget) {
+    return ` (timeout budget: remote runtime ${timeoutBudget.remoteRuntimeBudgetSeconds}s + infra overhead ${timeoutBudget.infraOverheadBudgetSeconds}s = total ${timeoutBudget.totalTimeoutSeconds}s)`;
+  }
+
   return typeof timedOutAfterSeconds === "number" ? ` (${timedOutAfterSeconds}s timeout)` : "";
 }
 
@@ -163,13 +176,18 @@ function formatContinuationDetail(firstPass: ReviewFirstPassPayload): string {
   return "- Continuation state: stopped after first pass; no follow-up review is pending";
 }
 
-export function buildReviewFirstPassPublicSummary(firstPass: ReviewFirstPassPayload, timedOutAfterSeconds?: number): string {
+export function buildReviewFirstPassPublicSummary(
+  firstPass: ReviewFirstPassPayload,
+  timedOutAfterSeconds?: number,
+  timeoutBudget?: TimeoutBudgetDetails | null,
+): string {
   const reasonLabel = formatBoundedReason(firstPass.boundedReason);
   const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
 
   if (firstPass.state === "zero-evidence-failure") {
     return `hit ${reasonLabel} with no trustworthy structured evidence${formatTimeoutSuffix(
       firstPass.boundedReason === "timeout" ? timedOutAfterSeconds : undefined,
+      firstPass.boundedReason === "timeout" ? timeoutBudget : undefined,
     )}`;
   }
 
@@ -178,6 +196,7 @@ export function buildReviewFirstPassPublicSummary(firstPass: ReviewFirstPassPayl
     formatRemainingScopeSummary(firstPass),
     `${formatContinuationSummary(firstPass)}${formatTimeoutSuffix(
       firstPass.boundedReason === "timeout" ? timedOutAfterSeconds : undefined,
+      firstPass.boundedReason === "timeout" ? timeoutBudget : undefined,
     )}`,
   ].join("; ");
 }
@@ -185,14 +204,24 @@ export function buildReviewFirstPassPublicSummary(firstPass: ReviewFirstPassPayl
 export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
   reasonLabel: string;
   evidenceLabel: string;
-  summaryClause: (timedOutAfterSeconds?: number) => string;
+  summaryClause: (
+    timedOutAfterSeconds?: number,
+    timeoutBudget?: TimeoutBudgetDetails | null,
+  ) => string;
   detailLines: string[];
 } {
   const reasonLabel = formatBoundedReason(firstPass.boundedReason);
   const evidenceLabel = formatEvidenceSource(firstPass.evidenceSource);
 
-  const summaryClause = (timedOutAfterSeconds?: number): string => {
-    return buildReviewFirstPassPublicSummary(firstPass, timedOutAfterSeconds);
+  const summaryClause = (
+    timedOutAfterSeconds?: number,
+    timeoutBudget?: TimeoutBudgetDetails | null,
+  ): string => {
+    return buildReviewFirstPassPublicSummary(
+      firstPass,
+      timedOutAfterSeconds,
+      timeoutBudget,
+    );
   };
 
   if (firstPass.state === "zero-evidence-failure") {
@@ -529,6 +558,7 @@ export function formatReviewDetailsSummary(params: {
   structuralImpact?: StructuralImpactPayload | null;
   phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null;
   timeoutProgress?: TimeoutReviewDetailsProgress | null;
+  timeoutBudget?: TimeoutBudgetDetails | null;
   completedAt?: string;
 }): string {
   const {
@@ -550,6 +580,7 @@ export function formatReviewDetailsSummary(params: {
     structuralImpact,
     phaseTimingSummary,
     timeoutProgress,
+    timeoutBudget,
   } = params;
 
   const formatProfileLine = (label: string, profile: ResolvedReviewProfile): string => {
@@ -584,6 +615,11 @@ export function formatReviewDetailsSummary(params: {
     ? [
         `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
         `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
+        ...(timeoutBudget
+          ? [
+              `- Timeout budget: remote runtime ${timeoutBudget.remoteRuntimeBudgetSeconds}s + infra overhead ${timeoutBudget.infraOverheadBudgetSeconds}s = total ${timeoutBudget.totalTimeoutSeconds}s`,
+            ]
+          : []),
         `- Retry state: ${timeoutProgress.retryState}`,
       ]
     : [];

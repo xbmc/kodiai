@@ -4,11 +4,18 @@ export type TimeoutRiskLevel = "low" | "medium" | "high";
 
 export type TimeoutEstimate = {
   riskLevel: TimeoutRiskLevel;
+  /** Backward-compatible name: this is the remote-review-runtime budget only. */
   dynamicTimeoutSeconds: number;
+  remoteRuntimeBudgetSeconds: number;
+  infraOverheadBudgetSeconds: number;
+  totalTimeoutSeconds: number;
   shouldReduceScope: boolean;
   reducedFileCount: number | null;
   reasoning: string;
 };
+
+export const DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS = 180;
+export const MAX_TIMEOUT_BUDGET_SECONDS = 1800;
 
 /**
  * Compute a weighted-average language complexity score from a map of
@@ -46,7 +53,8 @@ export function computeLanguageComplexity(
  *   lineScore  = min(linesChanged / 5000, 1.0)
  *   langScore  = languageComplexity (0-1)
  *
- * Dynamic timeout = baseTimeoutSeconds * (0.5 + complexity), clamped [30, 1800].
+ * Remote runtime timeout = baseTimeoutSeconds * (0.5 + complexity), clamped [30, 1800].
+ * Total timeout = remote runtime timeout + fixed infra overhead cushion.
  */
 export function estimateTimeoutRisk(params: {
   fileCount: number;
@@ -80,8 +88,17 @@ export function estimateTimeoutRisk(params: {
 
   // Dynamic timeout: range [0.5x, 1.5x] of base, clamped [30, 1800]
   const rawTimeout = baseTimeoutSeconds * (0.5 + complexity);
-  const dynamicTimeoutSeconds = Math.round(
-    Math.max(30, Math.min(rawTimeout, 1800)),
+  const maxRemoteRuntimeBudgetSeconds = Math.max(
+    30,
+    MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
+  );
+  const remoteRuntimeBudgetSeconds = Math.round(
+    Math.max(30, Math.min(rawTimeout, maxRemoteRuntimeBudgetSeconds)),
+  );
+  const infraOverheadBudgetSeconds = DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS;
+  const totalTimeoutSeconds = Math.min(
+    remoteRuntimeBudgetSeconds + infraOverheadBudgetSeconds,
+    MAX_TIMEOUT_BUDGET_SECONDS,
   );
 
   // Scope reduction
@@ -93,11 +110,16 @@ export function estimateTimeoutRisk(params: {
     `Complexity score: ${complexity.toFixed(2)} ` +
     `(files: ${fileCount}, lines: ${linesChanged}, lang risk: ${langPercent}%). ` +
     `Risk level: ${riskLevel}. ` +
-    `Dynamic timeout: ${dynamicTimeoutSeconds}s (base: ${baseTimeoutSeconds}s).`;
+    `Remote runtime budget: ${remoteRuntimeBudgetSeconds}s (base: ${baseTimeoutSeconds}s). ` +
+    `Infra overhead budget: ${infraOverheadBudgetSeconds}s. ` +
+    `Total timeout: ${totalTimeoutSeconds}s.`;
 
   return {
     riskLevel,
-    dynamicTimeoutSeconds,
+    dynamicTimeoutSeconds: remoteRuntimeBudgetSeconds,
+    remoteRuntimeBudgetSeconds,
+    infraOverheadBudgetSeconds,
+    totalTimeoutSeconds,
     shouldReduceScope,
     reducedFileCount,
     reasoning,

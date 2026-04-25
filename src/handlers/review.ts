@@ -114,6 +114,7 @@ import {
   parseSeverityCountsFromBody,
   formatReviewDetailsSummary,
   type TimeoutReviewDetailsProgress,
+  type TimeoutBudgetDetails,
   normalizeSeverity,
   normalizeCategory,
   parseInlineCommentMetadata,
@@ -463,6 +464,23 @@ function buildQueueWaitPhase(metadata?: JobQueueWaitMetadata): ReviewPhaseTiming
   });
 }
 
+export function formatTimeoutErrorDetail(params: {
+  totalTimeoutSeconds: number;
+  complexityInfo: string;
+  hasReviewOutput: boolean;
+  timeoutEstimate?: TimeoutBudgetDetails | null;
+}): string {
+  const summary = params.hasReviewOutput
+    ? "Timed out after partial review output."
+    : "Timed out with no review output.";
+
+  const budgetDetail = params.timeoutEstimate
+    ? `Timeout budget: remote runtime ${params.timeoutEstimate.remoteRuntimeBudgetSeconds}s + infra overhead ${params.timeoutEstimate.infraOverheadBudgetSeconds}s = total ${params.timeoutEstimate.totalTimeoutSeconds}s.`
+    : `Timed out after ${params.totalTimeoutSeconds}s.`;
+
+  return `${summary} ${budgetDetail} PR complexity: ${params.complexityInfo}`;
+}
+
 function buildExecutorUnavailablePhases(detail: string): ExecutorPhaseTiming[] {
   return [
     createReviewPhaseTiming({
@@ -486,7 +504,7 @@ function buildOrderedReviewPhaseSummary(phases: Map<ReviewPhaseName, ReviewPhase
 function buildReviewDetailsPhaseTimingSummary(params: {
   phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
   publicationPhaseStartedAt?: number;
-  totalPhaseStartAt: number;
+  totalPhaseStartAt?: number;
 }) {
   const phaseSnapshot = new Map(params.phases);
 
@@ -509,8 +527,15 @@ function buildReviewDetailsPhaseTimingSummary(params: {
     }
   }
 
+  const totalDurationMs =
+    typeof params.totalPhaseStartAt === "number" &&
+      Number.isFinite(params.totalPhaseStartAt) &&
+      params.totalPhaseStartAt > 0
+      ? Math.max(0, Date.now() - params.totalPhaseStartAt)
+      : undefined;
+
   return {
-    totalDurationMs: Math.max(0, Date.now() - params.totalPhaseStartAt),
+    ...(typeof totalDurationMs === "number" ? { totalDurationMs } : {}),
     phases: buildOrderedReviewPhaseSummary(phaseSnapshot),
   };
 }
@@ -2003,7 +2028,7 @@ export function createReviewHandler(deps: {
           {
             deliveryId: params.deliveryId,
             prNumber: pr.number,
-            reviewOutputKey,
+            reviewOutputKey: params.reviewOutputKey,
             reason: params.reason,
           },
           params.logMessage,
@@ -3312,6 +3337,9 @@ export function createReviewHandler(deps: {
           isLargePR: diffAnalysis?.isLargePR ?? false,
           baseTimeoutSeconds: config.timeoutSeconds,
         });
+        const appliedTimeoutBudget = config.timeout.dynamicScaling !== false
+          ? timeoutEstimate
+          : null;
 
         logger.info(
           {
@@ -3319,6 +3347,9 @@ export function createReviewHandler(deps: {
             gate: "timeout-estimation",
             riskLevel: timeoutEstimate.riskLevel,
             dynamicTimeout: timeoutEstimate.dynamicTimeoutSeconds,
+            remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
+            infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
+            totalTimeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
             shouldReduceScope: timeoutEstimate.shouldReduceScope,
             complexity: timeoutEstimate.reasoning,
           },
@@ -3680,9 +3711,9 @@ export function createReviewHandler(deps: {
           knowledgeStore,
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
-          // TMO-04: Dynamic timeout from risk estimation
-          dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
-            ? timeoutEstimate.dynamicTimeoutSeconds
+          // TMO-04: total timeout = infra overhead cushion + complexity-scaled remote runtime budget
+          dynamicTimeoutSeconds: appliedTimeoutBudget
+            ? appliedTimeoutBudget.totalTimeoutSeconds
             : undefined,
         });
         executorResult = result;
@@ -4240,6 +4271,7 @@ export function createReviewHandler(deps: {
         const buildReviewDetailsBody = (params?: {
           timeoutProgress?: TimeoutReviewDetailsProgress;
           reviewFirstPass?: ReviewFirstPassPayload | null;
+          timeoutBudget?: TimeoutBudgetDetails | null;
         }): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
@@ -4269,6 +4301,7 @@ export function createReviewHandler(deps: {
               totalPhaseStartAt,
             }),
             timeoutProgress: params?.timeoutProgress,
+            timeoutBudget: params?.timeoutBudget,
           });
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
@@ -4812,7 +4845,7 @@ export function createReviewHandler(deps: {
             result.published ?? false,
           );
 
-          const timeoutDuration = timeoutEstimate?.dynamicTimeoutSeconds ?? config.timeoutSeconds;
+          const timeoutDuration = appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds;
           const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
 
           let publishedPartialReview = false;
@@ -4992,6 +5025,13 @@ export function createReviewHandler(deps: {
                 firstPass: timeoutFirstPass,
                 reviewOutputKey,
                 timedOutAfterSeconds: timeoutDuration,
+                timeoutBudget: appliedTimeoutBudget
+                  ? {
+                      remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                      infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                      totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                    }
+                  : null,
                 isRetrySkipped: isChronicTimeout,
                 retrySkipReason: isChronicTimeout
                   ? "Retry skipped -- this repo has timed out frequently for this author."
@@ -5051,6 +5091,13 @@ export function createReviewHandler(deps: {
                     reviewDetailsBlock: buildReviewDetailsBody({
                       timeoutProgress: timeoutReviewDetails,
                       reviewFirstPass: timeoutFirstPass,
+                      timeoutBudget: appliedTimeoutBudget
+                        ? {
+                            remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                            infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                            totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                          }
+                        : null,
                     }),
                     requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                     reviewBoundedness,
@@ -5787,15 +5834,23 @@ export function createReviewHandler(deps: {
               // TMO-03: Partial review -- inline comments were published before timeout
               errorBody = formatErrorComment(
                 category,
-                `Timed out after ${timeoutDuration}s. ` +
-                `PR complexity: ${complexityInfo}`,
+                formatTimeoutErrorDetail({
+                  totalTimeoutSeconds: timeoutDuration,
+                  complexityInfo,
+                  hasReviewOutput: true,
+                  timeoutEstimate: appliedTimeoutBudget,
+                }),
               );
             } else if (category === "timeout") {
               // TMO-03: Full timeout -- nothing was published
               errorBody = formatErrorComment(
                 category,
-                `Timed out after ${timeoutDuration}s with no review output. ` +
-                `PR complexity: ${complexityInfo}`,
+                formatTimeoutErrorDetail({
+                  totalTimeoutSeconds: timeoutDuration,
+                  complexityInfo,
+                  hasReviewOutput: false,
+                  timeoutEstimate: appliedTimeoutBudget,
+                }),
               );
             } else {
               errorBody = formatErrorComment(
@@ -5842,6 +5897,7 @@ export function createReviewHandler(deps: {
                   failureCheckpoint?.summaryDraft ??
                   "Review stopped before finishing, but trustworthy bounded first-pass evidence was preserved.",
                 firstPass: failureFirstPass,
+                reviewOutputKey,
               })
             : exhaustedTurnBudget
             ? [
@@ -5897,16 +5953,18 @@ export function createReviewHandler(deps: {
 
             if (exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass") {
               try {
-                await upsertReviewDetailsComment({
+                await appendReviewDetailsToSummary({
                   octokit,
                   owner: apiOwner,
                   repo: apiRepo,
                   prNumber: pr.number,
                   reviewOutputKey,
-                  body: buildReviewDetailsBody({
+                  reviewDetailsBlock: buildReviewDetailsBody({
                     reviewFirstPass: failureFirstPass,
                   }),
                   botHandles: [githubApp.getAppSlug(), "claude"],
+                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                  reviewBoundedness,
                   recheckCanPublish: () => canPublishVisibleOutput("max-turns Review Details comment"),
                 });
               } catch (reviewDetailsErr) {
@@ -5918,7 +5976,7 @@ export function createReviewHandler(deps: {
                     reviewOutputKey,
                     err: reviewDetailsErr,
                   },
-                  "Failed to publish Review Details for max-turns bounded fallback",
+                  "Failed to merge Review Details into max-turns bounded fallback comment",
                 );
               }
             }

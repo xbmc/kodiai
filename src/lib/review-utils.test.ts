@@ -227,6 +227,25 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("- Findings: 0 critical, 1 major, 2 medium, 0 minor");
   });
 
+  it("renders timeout budget lines when timeout progress includes split budgets", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      timeoutProgress: {
+        analyzedFiles: 1,
+        totalFiles: 3,
+        findingCount: 2,
+        retryState: "scheduled reduced-scope retry",
+      },
+      timeoutBudget: {
+        remoteRuntimeBudgetSeconds: 423,
+        infraOverheadBudgetSeconds: 180,
+        totalTimeoutSeconds: 603,
+      },
+    });
+
+    expect(result).toContain("- Timeout budget: remote runtime 423s + infra overhead 180s = total 603s");
+  });
+
   it("keeps shared bounded first-pass wording visible when timeout retry metadata is present", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
@@ -304,6 +323,21 @@ describe("formatReviewDetailsSummary", () => {
       expect(nextIndex).toBeGreaterThan(lastIndex);
       lastIndex = nextIndex;
     }
+  });
+
+  it("omits total wall-clock when the summary duration is invalid instead of rendering an epoch-sized value", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      phaseTimingSummary: {
+        totalDurationMs: Number.POSITIVE_INFINITY,
+        phases: [
+          { name: "queue wait", status: "completed", durationMs: 350 },
+        ],
+      },
+    });
+
+    expect(result).not.toContain("- Total wall-clock:");
+    expect(result).toContain("queue wait: 350ms");
   });
 
   it("renders degraded and unavailable wording for malformed or missing phase timings instead of throwing", () => {
