@@ -4,7 +4,7 @@ Kodiai is an installable GitHub App that delivers AI-powered code review, conver
 
 Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
 
-30 milestones shipped (v0.1 through v0.30). See [CHANGELOG.md](CHANGELOG.md) for release history.
+32 milestones shipped. See [CHANGELOG.md](CHANGELOG.md) for documented release history.
 
 ## Quick Start
 
@@ -23,13 +23,17 @@ git clone https://github.com/xbmc/kodiai.git
 cd kodiai
 bun install
 
-# Configure environment
+# Configure local environment / deploy inputs
 cp .env.example .env
-# Apply your credentials securely (do not commit .env)
+# Fill in the values you need locally; do not commit .env
 
 # Start the dev server
 bun run dev
 ```
+
+For local development, `.env` is the source of truth for application startup and for `deploy.sh` input values.
+
+For production, the source of truth is the Azure Container Apps runtime secret set wired into the Container App through secret references. The checked-in `.env.example` file is a bootstrap/template surface for local work and deploy input collection; it is **not** the production runtime contract.
 
 The server exposes:
 
@@ -70,6 +74,10 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 ## Configuration
 
 Per-repo behavior is controlled by `.kodiai.yml` — review strictness, model overrides, write-mode rules, and more.
+
+Service-level runtime configuration and secrets are separate from `.kodiai.yml`:
+- local development and manual deploy input come from `.env`
+- production runtime secrets come from Azure Container Apps secret references on the app
 
 See **[docs/configuration.md](docs/configuration.md)** for the complete reference.
 

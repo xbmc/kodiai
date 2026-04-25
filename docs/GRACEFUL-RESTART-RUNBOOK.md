@@ -36,9 +36,9 @@ Run the deploy script:
 ```
 
 This script:
-1. Validates required environment variables (including `DATABASE_URL`)
+1. Validates required local deploy inputs (including `DATABASE_URL`)
 2. Builds the container image via Azure Container Registry (remote build)
-3. Updates secrets and environment variables
+3. Refreshes the app runtime secret references from the production secret source
 4. Creates a new revision with the updated image
 5. Runs a post-deploy health check against `/healthz`
 
@@ -112,7 +112,7 @@ UPDATE webhook_queue SET status = 'pending' WHERE status = 'processing';
 **Cause:** PostgreSQL connection is not working.
 
 **Resolution:**
-- Verify `DATABASE_URL` is set correctly in the container app secrets
+- Verify the production `DATABASE_URL` secret ref resolves correctly for the running app revision
 - Check PostgreSQL server is running and accessible from the container network
 - Check connection pool limits (max 10 connections configured)
 - Review container logs for PostgreSQL connection errors at startup
@@ -133,12 +133,16 @@ az containerapp ingress traffic set \
 
 ## Environment Variables
 
+Local `.env` / exported variables are deploy inputs, not the production runtime source of truth.
+
+For production, the runtime secret contract should come from the Azure Container Apps secret set consumed by the Container App through secret references. This runbook only calls out the restart-specific knobs operators usually need during a deploy:
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | -- | PostgreSQL connection string |
+| `DATABASE_URL` | Yes | -- | PostgreSQL connection string used by the running app runtime contract |
 | `SHUTDOWN_GRACE_MS` | No | `300000` (5 min) | Grace window for drain before force-exit |
 
-All other required environment variables are documented in `deploy.sh`.
+See the deployment guide for the full production secret contract and the app secret refs managed by `deploy.sh`.
 
 ## Monitoring
 

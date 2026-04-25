@@ -44,9 +44,9 @@ can create a second revision that drops env vars and probes if the YAML omits th
 
 The deploy script avoids that failure mode by updating existing apps with one full YAML payload.
 
-### Required Environment Variables
+### Required Local Deploy Inputs
 
-`deploy.sh` requires:
+`deploy.sh` can read these values from your shell environment or a local `.env` file:
 
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY_BASE64` (base64-encoded PEM)
@@ -59,11 +59,17 @@ The deploy script avoids that failure mode by updating existing apps with one fu
 - `SLACK_KODIAI_CHANNEL_ID`
 - `DATABASE_URL`
 
-Optional:
+Optional local deploy inputs:
 
 - `SHUTDOWN_GRACE_MS` (defaults to `300000`)
 - `BOT_USER_PAT` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_LOGIN`)
 - `BOT_USER_LOGIN` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_PAT`)
+
+Important distinction:
+
+- Local `.env` and exported shell variables are an **operator input surface** for development and manual deploys.
+- They are **not** the production runtime source of truth.
+- In production, the runtime source of truth is the Azure Container Apps secret set resolved into the Container App through secret references.
 
 Notes:
 
@@ -89,9 +95,13 @@ On success, the script prints:
 
 ### Secrets and env vars
 
-See `.env.example` for the full list of environment variables. For repository-level behavior configuration (review rules, mention handling, knowledge features), see [Configuration](configuration.md).
+See `.env.example` for the full local-development / deploy-input variable list. For repository-level behavior configuration (review rules, mention handling, knowledge features), see [Configuration](configuration.md).
 
-Azure secrets created by `deploy.sh`:
+#### Production secret contract
+
+For production, the Azure Container Apps secret set is the source of truth. The Container App (`ca-kodiai`) consumes the runtime secret values through secret references rather than through checked-in files or ad-hoc inline env values.
+
+Production secret refs managed by `deploy.sh`:
 
 - `github-app-id`
 - `github-private-key`
@@ -101,9 +111,9 @@ Azure secrets created by `deploy.sh`:
 - `slack-bot-token`
 - `slack-signing-secret`
 - `database-url`
-- `bot-user-pat` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
+- `bot-user-pat` (only when bot-user flows are enabled)
 
-Runtime env vars set by `deploy.sh` on the app template:
+The app runtime resolves those refs as:
 
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY`
@@ -113,10 +123,13 @@ Runtime env vars set by `deploy.sh` on the app template:
 - `SLACK_BOT_TOKEN`
 - `SLACK_SIGNING_SECRET`
 - `DATABASE_URL`
+- `BOT_USER_PAT` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are enabled)
+
+Non-secret runtime values still come from normal env vars on the app template:
+
 - `SLACK_BOT_USER_ID`
 - `SLACK_KODIAI_CHANNEL_ID`
-- `BOT_USER_PAT` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
-- `BOT_USER_LOGIN` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
+- `BOT_USER_LOGIN` (only when bot-user flows are enabled)
 - `SHUTDOWN_GRACE_MS`
 - `PORT=3000`
 - `LOG_LEVEL=info`

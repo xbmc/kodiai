@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.32 (2026-04-25)
+
+Release/docs pass for bounded review flow and production secret contract clarification.
+
+### Added
+
+- Release notes for the bounded review-flow work on `main`: prompt budgeting, continuation-state verifier coverage, and retry-settlement diagnostics.
+
+### Changed
+
+- README now distinguishes local `.env` / deploy input from the production Azure Container Apps runtime secret contract.
+- Deployment docs now treat the Azure Container Apps secret set as the production source of truth and describe how the app consumes those values through secret references.
+- Graceful restart docs now describe deploy input vs production runtime secrets using the same contract language as the deployment guide.
+
 ## v0.30 (2026-04-19)
 
 Truthful Manual Rereview & Slack Webhook Relay.
