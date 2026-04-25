@@ -345,6 +345,29 @@ describe("planReviewContinuation", () => {
     });
   });
 
+  test("rejects invalid timeout budgets before scheduling a continuation", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    expect(() =>
+      mod!.planReviewContinuation({
+        reviewOutputKey: "review-123",
+        firstPass: makeFirstPass(),
+        checkpoint: makeCheckpoint(),
+        riskScores: makeRiskScores([["src/c.ts", 90]]),
+        timeoutSeconds: Number.NaN,
+        hasPublishedInlineFindings: false,
+        isChronicTimeout: false,
+        estimateContinuationTimeout: ({ timeoutSeconds }) => ({
+          riskLevel: "low",
+          dynamicTimeoutSeconds: timeoutSeconds,
+          reasoning: "ok",
+          shouldReduceScope: false,
+        }),
+      }),
+    ).toThrow("timeoutSeconds must be a positive finite number");
+  });
+
   test("rejects missing base review output identity", async () => {
     const mod = await loadLifecycleModule();
     expect(mod).not.toBeNull();
@@ -487,6 +510,36 @@ describe("settleReviewContinuation", () => {
         mergedCheckpoint: expect.objectContaining({
           findingCount: 3,
           filesReviewed: ["src/a.ts", "src/b.ts", "src/c.ts"],
+        }),
+      }),
+    );
+  });
+
+  test("prefers the continuation partial comment id when merge settlement has newer comment state", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const settlement = mod!.settleReviewContinuation({
+      reviewOutputKey: "review-123",
+      continuationReviewOutputKey: "review-123-retry-1",
+      baseCheckpoint: makeCheckpoint({
+        partialCommentId: 2001,
+      }),
+      continuationCheckpoint: makeCheckpoint({
+        reviewOutputKey: "review-123-retry-1",
+        filesReviewed: ["src/c.ts"],
+        findingCount: 2,
+        partialCommentId: 3001,
+        summaryDraft: "Continuation draft",
+      }),
+      continuationPublished: false,
+    });
+
+    expect(settlement).toEqual(
+      expect.objectContaining({
+        decision: "merge-continuation",
+        mergedCheckpoint: expect.objectContaining({
+          partialCommentId: 3001,
         }),
       }),
     );

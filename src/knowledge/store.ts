@@ -705,7 +705,11 @@ export function createKnowledgeStore(opts: {
           projection_status = EXCLUDED.projection_status,
           superseded_by_attempt_id = EXCLUDED.superseded_by_attempt_id,
           updated_at = now()
-        WHERE EXCLUDED.authoritative_attempt_ordinal >= continuation_family_state.authoritative_attempt_ordinal
+        WHERE EXCLUDED.authoritative_attempt_ordinal > continuation_family_state.authoritative_attempt_ordinal
+          OR (
+            EXCLUDED.authoritative_attempt_ordinal = continuation_family_state.authoritative_attempt_ordinal
+            AND EXCLUDED.authoritative_attempt_id = continuation_family_state.authoritative_attempt_id
+          )
       `;
 
       if (result.count === 0) {

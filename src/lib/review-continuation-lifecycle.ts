@@ -96,6 +96,12 @@ function assertNonEmptyString(value: string, name: string): void {
   }
 }
 
+function assertValidPositiveTimeoutSeconds(value: number, name: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive finite number`);
+  }
+}
+
 function isValidCheckpointScope(checkpoint: CheckpointRecord | null): boolean {
   if (!checkpoint) {
     return true;
@@ -123,7 +129,7 @@ function mergeCheckpointState(params: {
     findingCount: Math.max(baseCheckpoint.findingCount, continuationCheckpoint.findingCount),
     summaryDraft: continuationCheckpoint.summaryDraft || baseCheckpoint.summaryDraft,
     totalFiles: Math.max(baseCheckpoint.totalFiles, continuationCheckpoint.totalFiles),
-    partialCommentId: baseCheckpoint.partialCommentId ?? continuationCheckpoint.partialCommentId,
+    partialCommentId: continuationCheckpoint.partialCommentId ?? baseCheckpoint.partialCommentId,
   };
 }
 
@@ -136,6 +142,7 @@ export function planReviewContinuation(
   params: PlanReviewContinuationParams,
 ): ReviewContinuationPlanDecision {
   assertNonEmptyString(params.reviewOutputKey, "reviewOutputKey");
+  assertValidPositiveTimeoutSeconds(params.timeoutSeconds, "timeoutSeconds");
 
   const firstPass = params.firstPass;
   if (!firstPass) {

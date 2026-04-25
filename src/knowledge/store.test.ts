@@ -889,6 +889,56 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
       ]);
     });
 
+    test("equal ordinals only permit idempotent replays for the same attempt id", async () => {
+      const familyKey = "acme/repo#44-equal";
+      const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-44:action-opened:delivery-125:head-ghi-equal";
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "superseded",
+        finalStopReason: "superseded-by-newer-attempt",
+        projectionStatus: "degraded",
+        supersededByAttemptId: "review-work-3",
+      });
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-2",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "quiet-settled",
+        finalStopReason: "settled-without-update",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      let state = await store.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+      expect(state?.authoritativeAttemptId).toBe("review-work-2");
+      expect(state?.authoritativeOutcome).toBe("quiet-settled");
+      expect(state?.finalStopReason).toBe("settled-without-update");
+      expect(state?.projectionStatus).toBe("canonical");
+
+      await store.upsertContinuationFamilyState?.({
+        familyKey,
+        baseReviewOutputKey,
+        authoritativeAttemptId: "review-work-99",
+        authoritativeAttemptOrdinal: 2,
+        authoritativeOutcome: "blocked",
+        finalStopReason: "no-follow-up",
+        projectionStatus: "canonical",
+        supersededByAttemptId: null,
+      });
+
+      state = await store.getContinuationFamilyState?.({ familyKey, baseReviewOutputKey });
+      expect(state?.authoritativeAttemptId).toBe("review-work-2");
+      expect(state?.authoritativeOutcome).toBe("quiet-settled");
+      expect(state?.finalStopReason).toBe("settled-without-update");
+      expect(state?.projectionStatus).toBe("canonical");
+    });
+
     test("newer continuation attempts replace older canonical rows", async () => {
       const familyKey = "acme/repo#45";
       const baseReviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-45:action-opened:delivery-126:head-jkl";
