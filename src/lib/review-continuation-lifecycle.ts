@@ -110,7 +110,7 @@ function isValidCheckpointScope(checkpoint: CheckpointRecord | null): boolean {
   return checkpoint.filesReviewed.length <= checkpoint.totalFiles;
 }
 
-function deriveContinuationReviewOutputKey(reviewOutputKey: string, continuationNumber: 1): string {
+function deriveContinuationReviewOutputKey(reviewOutputKey: string, continuationNumber: number): string {
   return `${reviewOutputKey}-retry-${continuationNumber}`;
 }
 
