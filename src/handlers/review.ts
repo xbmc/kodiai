@@ -1992,6 +1992,31 @@ export function createReviewHandler(deps: {
         });
       }
 
+      async function settleRetryWithoutCanonicalUpdate(params: {
+        attemptId: string;
+        reviewOutputKey?: string;
+        deliveryId: string;
+        reason: string;
+        logMessage: string;
+      }): Promise<void> {
+        logger.warn(
+          {
+            deliveryId: params.deliveryId,
+            prNumber: pr.number,
+            reviewOutputKey,
+            reason: params.reason,
+          },
+          params.logMessage,
+        );
+        await persistContinuationFamilyState({
+          authoritativeAttemptId: params.attemptId,
+          authoritativeOutcome: "quiet-settled",
+          finalStopReason: "settled-without-update",
+          projectionStatus: "canonical",
+          reviewOutputKey: params.reviewOutputKey,
+        });
+      }
+
       async function finalizeContinuationAttempt(params: {
         attemptId: string;
         fallbackOutcome: ContinuationFamilyAuthoritativeOutcome;
@@ -5409,10 +5434,13 @@ export function createReviewHandler(deps: {
                       (retryResult.isTimeout && retryHasResults)
                     ) {
                       if (!checkpoint) {
-                        logger.warn(
-                          { deliveryId: retryDeliveryId, prNumber: pr.number },
-                          "No partial comment ID available for retry update",
-                        );
+                        await settleRetryWithoutCanonicalUpdate({
+                          attemptId: retryReviewWorkAttempt.attemptId,
+                          reviewOutputKey: retryReviewOutputKey,
+                          deliveryId: retryDeliveryId,
+                          reason: "missing-base-checkpoint",
+                          logMessage: "Retry settlement skipped because the base checkpoint was missing",
+                        });
                         return;
                       }
 
@@ -5511,15 +5539,13 @@ export function createReviewHandler(deps: {
                         });
 
                         if (mergedFirstPass?.state !== "bounded-first-pass") {
-                          logger.warn(
-                            {
-                              deliveryId: retryDeliveryId,
-                              prNumber: pr.number,
-                              reviewOutputKey,
-                              settlementReason: settlementDecision.reason,
-                            },
-                            "Retry merge skipped because bounded first-pass state became non-publishable",
-                          );
+                          await settleRetryWithoutCanonicalUpdate({
+                            attemptId: retryReviewWorkAttempt.attemptId,
+                            reviewOutputKey: retryReviewOutputKey,
+                            deliveryId: retryDeliveryId,
+                            reason: "non-publishable-merged-first-pass",
+                            logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
+                          });
                           return;
                         }
 
@@ -5542,10 +5568,13 @@ export function createReviewHandler(deps: {
                         const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
 
                         if (!commentIdToUpdate) {
-                          logger.warn(
-                            { deliveryId: retryDeliveryId, prNumber: pr.number },
-                            "No partial comment ID available for retry update",
-                          );
+                          await settleRetryWithoutCanonicalUpdate({
+                            attemptId: retryReviewWorkAttempt.attemptId,
+                            reviewOutputKey: retryReviewOutputKey,
+                            deliveryId: retryDeliveryId,
+                            reason: "missing-partial-comment-id",
+                            logMessage: "Retry settlement skipped because no partial comment ID was available",
+                          });
                           return;
                         }
 
