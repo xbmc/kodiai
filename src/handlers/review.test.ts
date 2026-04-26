@@ -2202,6 +2202,145 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdReviews[0]?.body).toContain("<summary>Review Details</summary>");
   });
 
+  test("published-output finalization updates only the canonical issue comment when mixed surfaces exist after an issue-comment idempotency accept", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: false });
+
+    let issueCommentUpdateCount = 0;
+    let issueCommentUpdateId: number | undefined;
+    let createReviewCount = 0;
+    let updateReviewCount = 0;
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const issueCommentBodiesByCall = [
+      [{ id: 901, body: `existing issue comment\n\n${marker}` }],
+      [{ id: 901, body: `existing issue comment\n\n${marker}` }],
+      [{ id: 901, body: `existing issue comment\n\n${marker}` }],
+    ] as const;
+    const reviewBodiesByCall = [
+      [{ id: 902, body: `existing pull review\n\n${marker}` }],
+    ] as const;
+    let listCommentsCallCount = 0;
+    let listReviewsCallCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => {
+            const data = reviewBodiesByCall[listReviewsCallCount] ?? [];
+            listReviewsCallCount += 1;
+            return { data };
+          },
+          listCommits: async () => ({ data: [] }),
+          createReview: async () => {
+            createReviewCount += 1;
+            return { data: { id: 950 } };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => {
+            const data = issueCommentBodiesByCall[listCommentsCallCount] ?? [];
+            listCommentsCallCount += 1;
+            return { data };
+          },
+          createComment: async (params: { body: string }) => ({ data: { id: 901, body: params.body } }),
+          updateComment: async ({ comment_id, body }: { comment_id: number; body: string }) => {
+            issueCommentUpdateCount += 1;
+            issueCommentUpdateId = comment_id;
+            expect(body).toContain("<summary>Review Details</summary>");
+            return { data: { id: comment_id, body } };
+          },
+        },
+      },
+      request: async () => {
+        updateReviewCount += 1;
+        return { data: {} };
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: true,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-issue-comment-mixed-surface-finalization",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(issueCommentUpdateId).toBe(901);
+    expect(issueCommentUpdateCount).toBe(1);
+    expect(createReviewCount).toBe(0);
+    expect(updateReviewCount).toBe(0);
+    expect(listReviewsCallCount).toBe(0);
+  });
+
   test("auto-approve includes dep-bump merge confidence inside the shared approval body", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });

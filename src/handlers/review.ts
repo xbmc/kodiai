@@ -680,11 +680,11 @@ async function fetchCommitMessages(
 
 
 
-export type CanonicalReviewSurface =
+type CanonicalReviewSurface =
   | { kind: "issue_comment"; commentId: number; body: string }
   | { kind: "pull_review"; reviewId: number; body: string };
 
-export type CanonicalSurfaceKind = CanonicalReviewSurface["kind"];
+type CanonicalSurfaceKind = CanonicalReviewSurface["kind"];
 
 function getCanonicalReviewSurfaceId(surface: CanonicalReviewSurface): number {
   return surface.kind === "issue_comment" ? surface.commentId : surface.reviewId;
