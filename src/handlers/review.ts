@@ -680,13 +680,15 @@ async function fetchCommitMessages(
 
 
 
-export type CanonicalSurfaceKind = "issue_comment" | "pull_review";
+export type CanonicalReviewSurface =
+  | { kind: "issue_comment"; commentId: number; body: string }
+  | { kind: "pull_review"; reviewId: number; body: string };
 
-export type CanonicalReviewSurface = {
-  kind: CanonicalSurfaceKind;
-  id: number;
-  body: string;
-};
+export type CanonicalSurfaceKind = CanonicalReviewSurface["kind"];
+
+function getCanonicalReviewSurfaceId(surface: CanonicalReviewSurface): number {
+  return surface.kind === "issue_comment" ? surface.commentId : surface.reviewId;
+}
 
 async function findCanonicalReviewSurface(params: {
   octokit: Octokit;
@@ -715,7 +717,7 @@ async function findCanonicalReviewSurface(params: {
   if (issueComment) {
     return {
       kind: "issue_comment",
-      id: issueComment.id,
+      commentId: issueComment.id,
       body: issueComment.body,
     };
   }
@@ -739,7 +741,7 @@ async function findCanonicalReviewSurface(params: {
 
   return {
     kind: "pull_review",
-    id: pullReview.id,
+    reviewId: pullReview.id,
     body: pullReview.body,
   };
 }
@@ -759,24 +761,31 @@ async function updateCanonicalReviewSurface(params: {
     await params.octokit.rest.issues.updateComment({
       owner: params.owner,
       repo: params.repo,
-      comment_id: params.surface.id,
+      comment_id: params.surface.commentId,
       body: sanitizedBody,
     });
-  } else {
-    await params.octokit.request(
-      "PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
-      {
-        owner: params.owner,
-        repo: params.repo,
-        pull_number: params.prNumber,
-        review_id: params.surface.id,
-        body: sanitizedBody,
-      },
-    );
+
+    return {
+      kind: "issue_comment",
+      commentId: params.surface.commentId,
+      body: sanitizedBody,
+    };
   }
 
+  await params.octokit.request(
+    "PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
+    {
+      owner: params.owner,
+      repo: params.repo,
+      pull_number: params.prNumber,
+      review_id: params.surface.reviewId,
+      body: sanitizedBody,
+    },
+  );
+
   return {
-    ...params.surface,
+    kind: "pull_review",
+    reviewId: params.surface.reviewId,
     body: sanitizedBody,
   };
 }
@@ -786,6 +795,7 @@ async function createCanonicalReviewSurface(params: {
   owner: string;
   repo: string;
   prNumber: number;
+  reviewOutputKey: string;
   surfaceKind: CanonicalSurfaceKind;
   body: string;
   botHandles: string[];
@@ -803,7 +813,7 @@ async function createCanonicalReviewSurface(params: {
 
     return {
       kind: "issue_comment",
-      id: response.data.id,
+      commentId: response.data.id,
       body: sanitizedBody,
     };
   }
@@ -819,7 +829,7 @@ async function createCanonicalReviewSurface(params: {
   if (typeof response.data.id === "number") {
     return {
       kind: "pull_review",
-      id: response.data.id,
+      reviewId: response.data.id,
       body: sanitizedBody,
     };
   }
@@ -829,7 +839,7 @@ async function createCanonicalReviewSurface(params: {
     owner: params.owner,
     repo: params.repo,
     prNumber: params.prNumber,
-    reviewOutputKey: extractReviewOutputKey(sanitizedBody) ?? "",
+    reviewOutputKey: params.reviewOutputKey,
   });
 
   if (createdSurface?.kind === "pull_review") {
@@ -880,6 +890,7 @@ async function upsertCanonicalReviewSurface(params: {
     owner: params.owner,
     repo: params.repo,
     prNumber: params.prNumber,
+    reviewOutputKey: params.reviewOutputKey,
     surfaceKind: params.surfaceKind,
     body: params.body,
     botHandles: params.botHandles,
@@ -1028,7 +1039,7 @@ async function appendReviewDetailsToSummary(params: {
     body: updatedBody,
     botHandles,
   });
-  return updatedSurface.id;
+  return getCanonicalReviewSurfaceId(updatedSurface);
 }
 
 async function resolveAuthorTier(params: {
