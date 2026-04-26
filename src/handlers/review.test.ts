@@ -1954,7 +1954,7 @@ describe("createReviewHandler review_requested idempotency", () => {
         getInstallationToken: async () => "token",
       } as unknown as GitHubApp,
       executor: {
-        execute: async (context: { reviewOutputKey?: string }) => {
+        execute: async () => {
           executeCount++;
           return {
             conclusion: "success",
@@ -1962,6 +1962,10 @@ describe("createReviewHandler review_requested idempotency", () => {
             numTurns: 1,
             durationMs: 1,
             sessionId: "session-clean",
+            executorPhaseTimings: [
+              { name: "executor handoff", status: "completed", durationMs: 50 },
+              { name: "remote runtime", status: "completed", durationMs: 500 },
+            ],
           };
         },
       } as never,
@@ -1996,16 +2000,23 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     const marker = buildReviewOutputMarker(expectedReviewOutputKey);
 
-    expect(createdReviews[0]?.body ?? "").toContain("Decision: APPROVE");
-    expect(createdReviews[0]?.body ?? "").toContain("Issues: none");
-    expect(createdReviews[0]?.body ?? "").toContain("Evidence:");
-    expect(createdReviews[0]?.body ?? "").toContain("- Review prompt covered 1 changed file.");
-    expect(createdReviews[0]?.body ?? "").toContain("<summary>Review Details</summary>");
-    expect(createdReviews[0]?.body ?? "").not.toContain("Merge Confidence:");
+    const approvalBody = createdReviews[0]?.body ?? "";
+
+    expect(approvalBody).toContain("Decision: APPROVE");
+    expect(approvalBody).toContain("Issues: none");
+    expect(approvalBody).toContain("Evidence:");
+    expect(approvalBody).toContain("- Review prompt covered 1 changed file.");
+    expect(approvalBody).toContain("<summary>Review Details</summary>");
+    expect(approvalBody).toContain("- Total wall-clock:");
+    expect(approvalBody).toContain("- Phase timings:");
+    expect(approvalBody).toContain("executor handoff: 50ms");
+    expect(approvalBody).toContain("remote runtime: 500ms");
+    expect(approvalBody).toContain("publication:");
+    expect(approvalBody).not.toContain("Merge Confidence:");
     expect(createdIssueComments).toHaveLength(0);
-    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBe(expectedReviewOutputKey);
+    expect(extractReviewOutputKey(approvalBody)).toBe(expectedReviewOutputKey);
     // Ensure marker format stays stable inside the visible approval body.
-    expect(createdReviews[0]?.body ?? "").toContain(marker);
+    expect(approvalBody).toContain(marker);
   });
 
   test("auto-approve includes dep-bump merge confidence inside the shared approval body", async () => {
@@ -14081,10 +14092,19 @@ describe("createReviewHandler Review Details phase timing publication", () => {
 
     expect(issueCommentListCalls).toBeGreaterThanOrEqual(1);
     expect(updatedSummaryCommentId).toBe(77);
+    expect(updatedSummaryBody).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(updatedSummaryBody).toContain("## What Changed");
+    expect(updatedSummaryBody).toContain("- Found one correctness issue worth fixing before merge.");
     expect(updatedSummaryBody).toContain("<summary>Review Details</summary>");
+    expect(updatedSummaryBody).toContain("- Total wall-clock:");
+    expect(updatedSummaryBody).toContain("- Phase timings:");
     expect(updatedSummaryBody).toContain("queue wait: 250ms");
     expect(updatedSummaryBody).toContain("executor handoff: 50ms");
     expect(updatedSummaryBody).toContain("remote runtime: 500ms");
+    expect(updatedSummaryBody).toContain("publication:");
+    expect(updatedSummaryBody?.indexOf("<summary>Kodiai Review Summary</summary>")).toBeLessThan(
+      updatedSummaryBody?.indexOf("<summary>Review Details</summary>") ?? Number.POSITIVE_INFINITY,
+    );
     expect(updatedSummaryBody).toContain(buildReviewOutputMarker(reviewOutputKey));
     expect(createdCommentBodies).toHaveLength(0);
 
@@ -14210,9 +14230,17 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     expect(updateCommentCalls).toBe(1);
     expect(createdCommentBodies).toHaveLength(1);
     expect(createdCommentBodies[0]).toContain("<summary>Review Details</summary>");
+    expect(createdCommentBodies[0]).toContain("Files reviewed:");
+    expect(createdCommentBodies[0]).toMatch(/Lines changed: \+\d+ -\d+/);
+    expect(createdCommentBodies[0]).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
+    expect(createdCommentBodies[0]).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
+    expect(createdCommentBodies[0]).toContain("- Total wall-clock:");
+    expect(createdCommentBodies[0]).toContain("- Phase timings:");
     expect(createdCommentBodies[0]).toContain("queue wait: 250ms");
     expect(createdCommentBodies[0]).toContain("executor handoff: 50ms");
     expect(createdCommentBodies[0]).toContain("remote runtime: 500ms");
+    expect(createdCommentBodies[0]).toContain("publication:");
+    expect(createdCommentBodies[0]).toContain("degraded:");
     expect(
       entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
     ).toBeTrue();
