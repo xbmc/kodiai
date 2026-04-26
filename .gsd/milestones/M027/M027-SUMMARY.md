@@ -111,6 +111,20 @@ Definition of done verification:
 - A passing rerun does not need fresh mutations — durable repair-state evidence plus truthful `repair_not_needed` behavior is the correct healthy-state signal.
 - Six-corpus audit success does not imply six-corpus retriever participation — retriever scope must remain explicit, especially for `issue_comments`.
 
+## M060/M027 ownership boundary
+
+M060 owns direct same-name unit tests plus the manifest in `src/knowledge/test-coverage-exemptions.ts`, proved by `bun run verify:m060:s01`.
+
+M027 owns persisted-corpus audit, repair/status, and live retriever acceptance proof, specifically:
+- `bun run verify:m027:s01`
+- `bun run verify:m027:s02`
+- `bun run verify:m027:s03`
+- `bun run verify:m027:s04`
+
+File overlap is allowed when the proof class differs. The point is not file exclusivity; it is truthful boundary ownership. For example, `issue_comments` remains outside the live retriever while still being audited and repairable under M027.
+
+This ownership boundary is recorded in D171 in `.gsd/DECISIONS.md`, and each side should remain a deterministic repo-local verifier with a distinct contract.
+
 ## Files Created/Modified
 
 - `.gsd/milestones/M027/M027-SUMMARY.md` — milestone closure artifact covering success-criteria verification, definition-of-done verification, requirement transitions, and forward intelligence.

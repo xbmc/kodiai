@@ -186,10 +186,10 @@ Lifecycle vocabulary:
 | scripts/verify-m059-s01.ts | Verifier harness for m059 s01. | M059 | active | package:verify:m059:s01 |
 | scripts/verify-m059-s02.test.ts | Regression tests for verify m059 s02. | M059 | internal | none |
 | scripts/verify-m059-s02.ts | Verifier harness for m059 s02. | M059 | active | package:verify:m059:s02 |
-| scripts/verify-m060-s01.test.ts | Regression tests for verify m060 s01. | M060 | internal | none |
-| scripts/verify-m060-s01.ts | Verifier harness for m060 s01. | M060 | active | package:verify:m060:s01 |
-| scripts/verify-m060-s02.test.ts | Regression tests for verify m060 s02. | M060 | internal | none |
-| scripts/verify-m060-s02.ts | Verifier harness for m060 s02. | M060 | active | package:verify:m060:s02 |
+| scripts/verify-m060-s01.test.ts | Regression tests for the M060 S01 direct-test coverage verifier. | M060 | internal | none |
+| scripts/verify-m060-s01.ts | Verification CLI for the M060 S01 knowledge direct-test coverage contract. | M060 | active | package:verify:m060:s01 |
+| scripts/verify-m060-s02.test.ts | Regression tests for the M060 S02 ownership-boundary verifier. | M060 | internal | none |
+| scripts/verify-m060-s02.ts | Verification CLI for the M060 S02 M060-vs-M027 ownership-boundary contract. | M060 | active | package:verify:m060:s02 |
 | scripts/verify-m061-s01.test.ts | Regression tests for verify m061 s01. | M061 | internal | none |
 | scripts/verify-m061-s01.ts | Verifier harness for m061 s01. | M061 | active | package:verify:m061:s01 |
 | scripts/verify-m061-s02.test.ts | Regression tests for verify m061 s02. | M061 | internal | none |
