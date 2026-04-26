@@ -690,36 +690,39 @@ function getCanonicalReviewSurfaceId(surface: CanonicalReviewSurface): number {
   return surface.kind === "issue_comment" ? surface.commentId : surface.reviewId;
 }
 
-async function findCanonicalReviewSurface(params: {
+export async function findCanonicalReviewSurface(params: {
   octokit: Octokit;
   owner: string;
   repo: string;
   prNumber: number;
   reviewOutputKey: string;
+  surfaceKind: CanonicalSurfaceKind;
 }): Promise<CanonicalReviewSurface | null> {
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
 
-  const commentsResponse = await params.octokit.rest.issues.listComments({
-    owner: params.owner,
-    repo: params.repo,
-    issue_number: params.prNumber,
-    per_page: 100,
-    sort: "created",
-    direction: "desc",
-  });
+  if (params.surfaceKind === "issue_comment") {
+    const commentsResponse = await params.octokit.rest.issues.listComments({
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.prNumber,
+      per_page: 100,
+      sort: "created",
+      direction: "desc",
+    });
 
-  const issueComment = commentsResponse.data.find((comment) =>
-    typeof comment.id === "number"
-    && typeof comment.body === "string"
-    && comment.body.includes(marker)
-  );
+    const issueComment = commentsResponse.data.find((comment) =>
+      typeof comment.id === "number"
+      && typeof comment.body === "string"
+      && comment.body.includes(marker)
+    );
 
-  if (issueComment) {
-    return {
-      kind: "issue_comment",
-      commentId: issueComment.id,
-      body: issueComment.body,
-    };
+    return issueComment
+      ? {
+        kind: "issue_comment",
+        commentId: issueComment.id,
+        body: issueComment.body,
+      }
+      : null;
   }
 
   const reviewsResponse = await params.octokit.rest.pulls.listReviews({
@@ -735,15 +738,13 @@ async function findCanonicalReviewSurface(params: {
     && review.body.includes(marker)
   );
 
-  if (!pullReview) {
-    return null;
-  }
-
-  return {
-    kind: "pull_review",
-    reviewId: pullReview.id,
-    body: pullReview.body,
-  };
+  return pullReview
+    ? {
+      kind: "pull_review",
+      reviewId: pullReview.id,
+      body: pullReview.body,
+    }
+    : null;
 }
 
 async function updateCanonicalReviewSurface(params: {
@@ -840,6 +841,7 @@ async function createCanonicalReviewSurface(params: {
     repo: params.repo,
     prNumber: params.prNumber,
     reviewOutputKey: params.reviewOutputKey,
+    surfaceKind: "pull_review",
   });
 
   if (createdSurface?.kind === "pull_review") {
@@ -849,7 +851,7 @@ async function createCanonicalReviewSurface(params: {
   throw new Error("Created canonical pull review could not be reloaded");
 }
 
-async function upsertCanonicalReviewSurface(params: {
+export async function upsertCanonicalReviewSurface(params: {
   octokit: Octokit;
   owner: string;
   repo: string;
@@ -867,6 +869,7 @@ async function upsertCanonicalReviewSurface(params: {
     repo: params.repo,
     prNumber: params.prNumber,
     reviewOutputKey: params.reviewOutputKey,
+    surfaceKind: params.surfaceKind,
   });
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
@@ -1013,6 +1016,7 @@ async function appendReviewDetailsToSummary(params: {
     repo,
     prNumber,
     reviewOutputKey,
+    surfaceKind: "issue_comment",
   });
 
   if (!canonicalSurface || canonicalSurface.kind !== "issue_comment") {
@@ -2474,13 +2478,21 @@ export function createReviewHandler(deps: {
         });
 
         if (!idempotencyCheck.shouldPublish) {
-          const canonicalSurface = await findCanonicalReviewSurface({
-            octokit: idempotencyOctokit,
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            reviewOutputKey,
-          });
+          const canonicalSurfaceKind = idempotencyCheck.existingLocation === "review"
+            ? "pull_review"
+            : idempotencyCheck.existingLocation === "issue-comment"
+              ? "issue_comment"
+              : null;
+          const canonicalSurface = canonicalSurfaceKind
+            ? await findCanonicalReviewSurface({
+              octokit: idempotencyOctokit,
+              owner: apiOwner,
+              repo: apiRepo,
+              prNumber: pr.number,
+              reviewOutputKey,
+              surfaceKind: canonicalSurfaceKind,
+            })
+            : null;
           const canonicalSurfaceHasReviewDetails = canonicalSurface?.body.includes("<summary>Review Details</summary>") ?? false;
 
           if (canonicalSurface && !canonicalSurfaceHasReviewDetails) {

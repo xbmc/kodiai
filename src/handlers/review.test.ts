@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources } from "./review.ts";
+import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, upsertCanonicalReviewSurface } from "./review.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
@@ -2053,6 +2053,69 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(approvalBody).toContain(marker);
   });
 
+  test("canonical surface upsert honors requested pull_review kind when issue comment and pull review surfaces both exist", async () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    let updatedIssueCommentId: number | undefined;
+    let updatedReviewId: number | undefined;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviews: async () => ({
+            data: [{ id: 902, body: `existing pull review\n\n${marker}` }],
+          }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: [{ id: 901, body: `existing issue comment\n\n${marker}` }],
+          }),
+          updateComment: async ({ comment_id }: { comment_id: number; body: string }) => {
+            updatedIssueCommentId = comment_id;
+            return { data: {} };
+          },
+        },
+      },
+      request: async (
+        route: string,
+        params: { review_id: number; body: string },
+      ) => {
+        expect(route).toBe("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}");
+        updatedReviewId = params.review_id;
+        return { data: {} };
+      },
+    };
+
+    const updatedSurface = await upsertCanonicalReviewSurface({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+      surfaceKind: "pull_review",
+      body: `updated canonical body\n\n${marker}`,
+      botHandles: ["kodiai", "claude"],
+      pullReviewEvent: "APPROVE",
+    });
+
+    expect(updatedSurface).toEqual({
+      kind: "pull_review",
+      reviewId: 902,
+      body: `updated canonical body\n\n${marker}`,
+    });
+    expect(updatedReviewId).toBe(902);
+    expect(updatedIssueCommentId).toBeUndefined();
+  });
+
   test("auto-approve includes dep-bump merge confidence inside the shared approval body", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
@@ -2069,7 +2132,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     await $`git -C ${workspaceFixture.dir} commit -m "add dependency bump fixture"`.quiet();
 
     let approveCount = 0;
-    const createdReviews: Array<{ body?: string }> = [];
+    const createdReviews: Array<{ id: number; body?: string }> = [];
     const previousFetch = globalThis.fetch;
     globalThis.fetch = mock(async () => new Response("Not Found", { status: 404 })) as unknown as typeof globalThis.fetch;
 
@@ -2099,12 +2162,15 @@ describe("createReviewHandler review_requested idempotency", () => {
       rest: {
         pulls: {
           listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
+          listReviews: async () => ({
+            data: createdReviews.map((review) => ({ id: review.id, body: review.body ?? "" })),
+          }),
           listCommits: async () => ({ data: [] }),
           createReview: async ({ body }: { body?: string }) => {
             approveCount++;
-            createdReviews.push({ body });
-            return { data: {} };
+            const id = 700 + approveCount;
+            createdReviews.push({ id, body });
+            return { data: { id } };
           },
         },
         reactions: {
