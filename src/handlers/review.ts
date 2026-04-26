@@ -6417,48 +6417,45 @@ export function createReviewHandler(deps: {
               reviewOutputKey,
               evidence: approvalEvidence,
               approvalConfidence,
+              reviewDetailsBlock: canonicalReviewDetailsBody,
             });
 
-            await octokit.rest.pulls.createReview({
+            const canonicalApprovalReview = await upsertCanonicalReviewSurface({
+              octokit,
               owner: apiOwner,
               repo: apiRepo,
-              pull_number: pr.number,
-              event: "APPROVE",
-              body: sanitizeOutgoingMentions(
-                approvalBody,
-                [appSlug, "claude"],
-              ),
+              prNumber: pr.number,
+              reviewOutputKey,
+              preferredKind: "pull_review",
+              body: approvalBody,
+              botHandles: [appSlug, "claude"],
+              pullReviewEvent: "APPROVE",
+              recheckCanPublish: () => canPublishVisibleOutput("auto-approval"),
             });
 
-            if (canonicalReviewDetailsBody && canPublishVisibleOutput("approval Review Details standalone comment")) {
-              setReviewWorkPhase("publish");
-              const reviewDetailsCommentId = await upsertReviewDetailsComment({
+            finalizePublicationPhaseTiming();
+
+            if (
+              canonicalApprovalReview?.kind === "pull_review"
+              && canonicalReviewDetailsBody
+              && canPublishVisibleOutput("finalized approval Review Details append")
+            ) {
+              await rebuildCanonicalReviewSurfaceWithDetails({
                 octokit,
                 owner: apiOwner,
                 repo: apiRepo,
                 prNumber: pr.number,
                 reviewOutputKey,
-                body: canonicalReviewDetailsBody,
+                preferredKind: "pull_review",
+                reviewDetailsBlock: buildReviewDetailsBody(),
                 botHandles: [appSlug, "claude"],
+                summaryBody: canonicalApprovalReview.body,
+                requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                reviewBoundedness,
+                pullReviewEvent: "APPROVE",
                 recheckCanPublish: () =>
-                  canPublishVisibleOutput("approval Review Details standalone comment"),
+                  canPublishVisibleOutput("finalized approval Review Details append"),
               });
-
-              finalizePublicationPhaseTiming();
-              if (
-                reviewDetailsCommentId !== undefined &&
-                canPublishVisibleOutput("finalized approval Review Details standalone comment")
-              ) {
-                await octokit.rest.issues.updateComment({
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  comment_id: reviewDetailsCommentId,
-                  body: sanitizeOutgoingMentions(
-                    buildReviewDetailsBody(),
-                    [appSlug, "claude"],
-                  ),
-                });
-              }
             }
 
             logger.info(

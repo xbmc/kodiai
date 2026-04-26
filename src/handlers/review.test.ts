@@ -1903,7 +1903,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     ).toBe(true);
   });
 
-  test("clean approval keeps Review Details on the issue-comment path and leaves the approval review body clean", async () => {
+  test("clean approval keeps Review Details inline in the canonical approval review body without creating an issue comment", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
     const { logger } = createCaptureLogger();
@@ -1912,6 +1912,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     const createdIssueComments: string[] = [];
     let executeCount = 0;
     let approveCount = 0;
+    let updatedReviewId: number | undefined;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -1967,6 +1968,7 @@ describe("createReviewHandler review_requested idempotency", () => {
         _route: string,
         params: { review_id: number; body: string },
       ) => {
+        updatedReviewId = params.review_id;
         const review = createdReviews[params.review_id - 1];
         if (review) {
           review.body = params.body;
@@ -2019,6 +2021,7 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     expect(executeCount).toBe(1);
     expect(approveCount).toBe(1);
+    expect(updatedReviewId).toBe(1);
 
     const expectedReviewOutputKey = buildReviewOutputKey({
       installationId: 42,
@@ -2037,14 +2040,12 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(approvalBody).toContain("Issues: none");
     expect(approvalBody).toContain("Evidence:");
     expect(approvalBody).toContain("- Review prompt covered 1 changed file.");
-    expect(approvalBody).not.toContain("<summary>Review Details</summary>");
+    expect(approvalBody).toContain("<summary>Review Details</summary>");
     expect(approvalBody).not.toContain("Merge Confidence:");
     expect(extractReviewOutputKey(approvalBody)).toBe(expectedReviewOutputKey);
     expect(approvalBody).toContain(marker);
 
-    expect(createdIssueComments).toHaveLength(1);
-    const reviewDetailsBody = createdIssueComments[0] ?? "";
-    const reviewDetailsBlock = extractReviewDetailsBlock(reviewDetailsBody);
+    const reviewDetailsBlock = extractReviewDetailsBlock(approvalBody);
     expect(reviewDetailsBlock).toContain("<summary>Review Details</summary>");
     expect(reviewDetailsBlock).toContain("- Total wall-clock:");
     expect(reviewDetailsBlock).toContain("- Phase timings:");
@@ -2052,9 +2053,11 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(reviewDetailsBlock).toContain("remote runtime: 500ms");
     expect(reviewDetailsBlock).toContain("publication:");
     expect(extractReviewOutputKey(reviewDetailsBlock)).toBe(expectedReviewOutputKey);
+
+    expect(createdIssueComments).toHaveLength(0);
   });
 
-  test("auto-approve finalization keeps Review Details on the issue-comment path when mixed surfaces exist after a review-surface idempotency accept", async () => {
+  test("auto-approve finalization refreshes the canonical approval review body instead of creating or updating issue comments", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
 
@@ -2203,14 +2206,14 @@ describe("createReviewHandler review_requested idempotency", () => {
     await workspaceFixture.cleanup();
 
     expect(approveCount).toBe(1);
-    expect(updatedReviewId).toBeUndefined();
-    expect(issueCommentCreateCount).toBe(1);
-    expect(issueCommentUpdateCount).toBe(1);
+    expect(updatedReviewId).toBe(950 + approveCount);
+    expect(issueCommentCreateCount).toBe(0);
+    expect(issueCommentUpdateCount).toBe(0);
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
-    expect(createdReviews[0]?.body).not.toContain("<summary>Review Details</summary>");
-    expect(createdIssueComments).toHaveLength(1);
-    expect(createdIssueComments[0]?.body).toContain("<summary>Review Details</summary>");
+    expect(createdReviews[0]?.body).toContain("<summary>Review Details</summary>");
+    expect(createdReviews[0]?.body).toContain("publication:");
+    expect(createdIssueComments).toHaveLength(0);
   });
 
   test("published-output finalization updates only the canonical issue comment when mixed surfaces exist after an issue-comment idempotency accept", async () => {

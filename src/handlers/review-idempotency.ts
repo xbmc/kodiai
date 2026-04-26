@@ -298,6 +298,7 @@ export function buildApprovedReviewBody(params: {
   reviewOutputKey: string;
   evidence?: string[];
   approvalConfidence?: string | null;
+  reviewDetailsBlock?: string | null;
 }): string {
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
   const evidence = buildApprovedReviewEvidence(params);
@@ -311,8 +312,11 @@ export function buildApprovedReviewBody(params: {
     ].join("\n"),
     "kodiai response",
   );
+  const reviewDetailsBlock = params.reviewDetailsBlock?.trim();
 
-  return [collapsedBody, "", marker].join("\n");
+  return reviewDetailsBlock
+    ? [collapsedBody, "", reviewDetailsBlock, "", marker].join("\n")
+    : [collapsedBody, "", marker].join("\n");
 }
 
 export async function ensureReviewOutputNotPublished(deps: {
