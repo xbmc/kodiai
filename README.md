@@ -4,7 +4,7 @@ Kodiai is an installable GitHub App that delivers AI-powered code review, conver
 
 Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
 
-32 milestones shipped. See [CHANGELOG.md](CHANGELOG.md) for documented release history.
+31 milestones shipped (v0.1 through v0.31). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
 
 ## Quick Start
 
@@ -54,6 +54,18 @@ The system processes GitHub webhooks through a job queue with per-installation c
 For the full architecture walkthrough — components, data flow, retrieval pipeline, structural-impact layer, and extension points — see **[docs/architecture.md](docs/architecture.md)**.
 
 ## Features
+
+Recent shipped milestones include:
+- M051 manual rereview hardening around the explicit `@kodiai review` contract
+- M052 Slack webhook relay operations
+- M053 removal of unsafe `new Function()` usage proven by `verify:m053`
+- M054 planning/verification surface repair proven by `verify:m054:s01` and `verify:m054:s04`
+
+Nightly maintenance workflows are part of the shipped operator surface:
+- `nightly-issue-sync` runs `bun scripts/backfill-issues.ts --sync`
+- `nightly-reaction-sync` runs `bun scripts/sync-triage-reactions.ts`
+- both workflows support `workflow_dispatch` for manual retries
+- operators should inspect GitHub Actions workflow run status first when a nightly sync fails
 
 **Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the dedicated `interactive-review` lane, dependency bump deep-review, bounded shallow-clone diff fallback for both automatic and explicit review flows, risk-weighted file prioritization for large PRs, collapsed clean approvals, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
 
