@@ -1903,7 +1903,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     ).toBe(true);
   });
 
-  test("clean approval uses the approval review body as the only canonical visible surface", async () => {
+  test("clean approval keeps Review Details on the issue-comment path and leaves the approval review body clean", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
     const { logger } = createCaptureLogger();
@@ -1958,7 +1958,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           listComments: async () => ({ data: [] }),
           createComment: async (params: { body: string }) => {
             createdIssueComments.push(params.body);
-            return { data: {} };
+            return { data: { id: createdIssueComments.length } };
           },
           updateComment: async () => ({ data: {} }),
         },
@@ -2014,7 +2014,6 @@ describe("createReviewHandler review_requested idempotency", () => {
     });
 
     await handler!(event);
-    await handler!(event);
 
     await workspaceFixture.cleanup();
 
@@ -2034,23 +2033,25 @@ describe("createReviewHandler review_requested idempotency", () => {
     const marker = buildReviewOutputMarker(expectedReviewOutputKey);
 
     const approvalBody = createdReviews[0]?.body ?? "";
-    const reviewDetailsBlock = extractReviewDetailsBlock(approvalBody);
-
     expect(approvalBody).toContain("Decision: APPROVE");
     expect(approvalBody).toContain("Issues: none");
     expect(approvalBody).toContain("Evidence:");
     expect(approvalBody).toContain("- Review prompt covered 1 changed file.");
+    expect(approvalBody).not.toContain("<summary>Review Details</summary>");
+    expect(approvalBody).not.toContain("Merge Confidence:");
+    expect(extractReviewOutputKey(approvalBody)).toBe(expectedReviewOutputKey);
+    expect(approvalBody).toContain(marker);
+
+    expect(createdIssueComments).toHaveLength(1);
+    const reviewDetailsBody = createdIssueComments[0] ?? "";
+    const reviewDetailsBlock = extractReviewDetailsBlock(reviewDetailsBody);
     expect(reviewDetailsBlock).toContain("<summary>Review Details</summary>");
     expect(reviewDetailsBlock).toContain("- Total wall-clock:");
     expect(reviewDetailsBlock).toContain("- Phase timings:");
     expect(reviewDetailsBlock).toContain("executor handoff: 50ms");
     expect(reviewDetailsBlock).toContain("remote runtime: 500ms");
     expect(reviewDetailsBlock).toContain("publication:");
-    expect(approvalBody).not.toContain("Merge Confidence:");
-    expect(createdIssueComments).toHaveLength(0);
-    expect(extractReviewOutputKey(approvalBody)).toBe(expectedReviewOutputKey);
-    // Ensure marker format stays stable inside the visible approval body.
-    expect(approvalBody).toContain(marker);
+    expect(extractReviewOutputKey(reviewDetailsBlock)).toBe(expectedReviewOutputKey);
   });
 
   test("auto-approve finalization updates the canonical pull review when mixed surfaces exist after a review-surface idempotency accept", async () => {
@@ -9584,6 +9585,170 @@ describe("createReviewHandler timeout resilience", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("falls back to standalone Review Details when timeout canonical comment rebuild fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    const issueComments = new Map<number, string>();
+    let nextCommentId = 700;
+    let failCanonicalUpdate = true;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: {
+          action?: string;
+        },
+      ) => {
+        if (context?.action === "review-retry") {
+          return undefined as T;
+        }
+        return fn(createQueueRunMetadata());
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+          }),
+          createComment: async (params: { body: string }) => {
+            const id = nextCommentId++;
+            issueComments.set(id, params.body);
+            return { data: { id } };
+          },
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            if (failCanonicalUpdate) {
+              failCanonicalUpdate = false;
+              throw new Error("timeout canonical update failed");
+            }
+            issueComments.set(params.comment_id, params.body);
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "error",
+          isTimeout: true,
+          published: false,
+          errorMessage: "timeout",
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-timeout-review-details-fallback",
+          model: "test-model",
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "timeout",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 1,
+          summaryDraft: "Found one issue before timeout.",
+          totalFiles: 1,
+        }),
+        updateCheckpointCommentId: () => undefined,
+        deleteCheckpoint: () => undefined,
+      }) as never,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Timeout review details fallback",
+          body: "",
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    const timeoutSummary = Array.from(issueComments.values()).find((body) =>
+      body.includes("**Bounded first-pass review**")
+    );
+    const standaloneReviewDetails = Array.from(issueComments.values()).find((body) =>
+      body.includes("<summary>Review Details</summary>") && body !== timeoutSummary
+    );
+
+    expect(timeoutSummary).toBeDefined();
+    expect(timeoutSummary).not.toContain("<summary>Review Details</summary>");
+    expect(standaloneReviewDetails).toBeDefined();
+    expect(standaloneReviewDetails).toContain("<summary>Review Details</summary>");
+    expect(
+      entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+
   test("queued retry keeps publish rights after the parent attempt unwinds", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -11250,6 +11415,332 @@ describe("createReviewHandler timeout resilience", () => {
     expect(issueComments.get(900)).toContain("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.");
     expect(issueComments.get(900)).toContain("<summary>Review Details</summary>");
     expect(issueComments.get(901)).toBeUndefined();
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("retry merge falls back to standalone Review Details when canonical comment refresh fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    const checkpointState = new Map<string, {
+      partialCommentId?: number;
+      findingCount?: number;
+      filesReviewed?: string[];
+      summaryDraft?: string;
+      totalFiles?: number;
+    }>();
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const retryReviewOutputKey = `${reviewOutputKey}-retry-1`;
+    checkpointState.set(reviewOutputKey, {
+      findingCount: 2,
+      filesReviewed: ["README.md"],
+      summaryDraft: "Found two issues before timeout.",
+      totalFiles: 3,
+    });
+    checkpointState.set(retryReviewOutputKey, {
+      findingCount: 1,
+      filesReviewed: ["src/a.ts"],
+      summaryDraft: "Retry found one more issue.",
+      totalFiles: 3,
+    });
+
+    let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
+    let nextCommentId = 980;
+    const issueComments = new Map<number, string>();
+    let failCanonicalUpdate = false;
+    let exposeContinuationReviewComments = false;
+    let retryExecutionStarted = false;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const queueMetadata = createQueueRunMetadata();
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: {
+          action?: string;
+        },
+      ) => {
+        if (context?.action === "review-retry") {
+          queuedRetryJob = fn as (metadata: JobQueueRunMetadata) => Promise<unknown>;
+          return undefined as T;
+        }
+        return fn(queueMetadata);
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({
+            data: exposeContinuationReviewComments
+              ? [
+                  {
+                    id: 9801,
+                    path: "README.md",
+                    body: [
+                      "```yaml",
+                      "severity: major",
+                      "category: correctness",
+                      "```",
+                      "**Carry forward timeout finding**",
+                      "",
+                      buildReviewOutputMarker(reviewOutputKey),
+                    ].join("\n"),
+                  },
+                  {
+                    id: 9802,
+                    path: "src/a.ts",
+                    body: [
+                      "```yaml",
+                      "severity: medium",
+                      "category: correctness",
+                      "```",
+                      "**New continuation finding**",
+                      "",
+                      buildReviewOutputMarker(reviewOutputKey),
+                    ].join("\n"),
+                  },
+                ]
+              : [],
+          }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+          }),
+          createComment: async (params: { body: string }) => {
+            const id = nextCommentId++;
+            issueComments.set(id, params.body);
+            return { data: { id } };
+          },
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            if (failCanonicalUpdate) {
+              failCanonicalUpdate = false;
+              throw new Error("retry canonical update failed");
+            }
+            issueComments.set(params.comment_id, params.body);
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { eventType: string }) => {
+          if (context.eventType === "pull_request.review-retry") {
+            retryExecutionStarted = true;
+            exposeContinuationReviewComments = true;
+            return {
+              conclusion: "success",
+              published: false,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-timeout-retry-details-fallback",
+              model: "test-model",
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              stopReason: "end_turn",
+            };
+          }
+          return {
+            conclusion: "error",
+            isTimeout: true,
+            published: false,
+            errorMessage: "timeout",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-timeout-root-details-fallback",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "timeout",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        saveCheckpoint: async (checkpoint: {
+          reviewOutputKey: string;
+          partialCommentId?: number;
+          findingCount?: number;
+          filesReviewed?: string[];
+          summaryDraft?: string;
+          totalFiles?: number;
+        }) => {
+          checkpointState.set(checkpoint.reviewOutputKey, {
+            partialCommentId: checkpoint.partialCommentId,
+            findingCount: checkpoint.findingCount,
+            filesReviewed: checkpoint.filesReviewed,
+            summaryDraft: checkpoint.summaryDraft,
+            totalFiles: checkpoint.totalFiles,
+          });
+        },
+        getCheckpoint: async (key: string) => {
+          const checkpoint = checkpointState.get(key);
+          if (!checkpoint || !checkpoint.filesReviewed || !checkpoint.summaryDraft || !checkpoint.totalFiles) {
+            return null;
+          }
+          return {
+            reviewOutputKey: key,
+            repo: "acme/repo",
+            prNumber: 101,
+            filesReviewed: checkpoint.filesReviewed,
+            findingCount: checkpoint.findingCount ?? 0,
+            summaryDraft: checkpoint.summaryDraft,
+            totalFiles: checkpoint.totalFiles,
+            partialCommentId: checkpoint.partialCommentId,
+          };
+        },
+        getPriorReviewFindings: async () => [
+          {
+            filePath: "README.md",
+            title: "Carry forward timeout finding",
+            titleFingerprint: "fp-46cc3f1d",
+            severity: "major",
+            category: "correctness",
+            startLine: 1,
+            endLine: 1,
+            commentId: 501,
+          },
+          {
+            filePath: "src/b.ts",
+            title: "Resolved timeout finding",
+            titleFingerprint: "fp-c56af86d",
+            severity: "medium",
+            category: "correctness",
+            startLine: 1,
+            endLine: 1,
+            commentId: 502,
+          },
+        ],
+        updateCheckpointCommentId: (key: string, partialCommentId: number) => {
+          const current = checkpointState.get(key) ?? {};
+          checkpointState.set(key, { ...current, partialCommentId });
+        },
+        deleteCheckpoint: (key: string) => {
+          checkpointState.delete(key);
+        },
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      reviewWorkCoordinator: {
+        claim: (claim: Record<string, unknown>) => ({
+          attemptId: claim.deliveryId === "delivery-123-retry-1" ? "review-work-2" : "review-work-1",
+          familyKey: claim.familyKey as string,
+          source: claim.source as "automatic-review",
+          lane: claim.lane as "review",
+          deliveryId: claim.deliveryId as string,
+          phase: claim.phase as "claimed",
+          claimedAtMs: 100,
+          lastProgressAtMs: 100,
+        }),
+        canPublish: () => true,
+        setPhase: () => null,
+        getSnapshot: () => null,
+        release: () => undefined,
+        complete: () => undefined,
+      } as never,
+      logger: logger as never,
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Timeout retry details fallback after summary merge",
+          body: "",
+          commits: 0,
+          additions: 3,
+          deletions: 0,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    expect(queuedRetryJob).toBeDefined();
+    const initialCanonicalComment = issueComments.get(980);
+    expect(initialCanonicalComment).toContain("<summary>Review Details</summary>");
+
+    failCanonicalUpdate = true;
+    await queuedRetryJob!(queueMetadata);
+
+    const standaloneReviewDetails = Array.from(issueComments.values()).find((body) =>
+      body.includes("<summary>Review Details</summary>") && !body.includes("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.")
+    );
+    expect(standaloneReviewDetails).toContain("<summary>Review Details</summary>");
+    expect(
+      entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
+    ).toBeTrue();
+    expect(retryExecutionStarted).toBeTrue();
 
     await workspaceFixture.cleanup();
   });
@@ -15093,7 +15584,137 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(standaloneReviewDetails).toBeUndefined();
 
     await workspaceFixture.cleanup();
+  });  test("falls back to standalone Review Details when max-turns canonical comment rebuild fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    const issueComments = new Map<number, string>();
+    let nextCommentId = 620;
+    let failCanonicalUpdate = true;
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        ) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({
+                data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+              }),
+              createComment: async (params: { body: string }) => {
+                const id = nextCommentId++;
+                issueComments.set(id, params.body);
+                return { data: { id } };
+              },
+              updateComment: async (params: { comment_id: number; body: string }) => {
+                if (failCanonicalUpdate) {
+                  failCanonicalUpdate = false;
+                  throw new Error("max-turns canonical update failed");
+                }
+                issueComments.set(params.comment_id, params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "max_turns",
+          failureSubtype: "error_max_turns",
+          durationMs: 1,
+          numTurns: 25,
+          sessionId: "session-failure-bounded-first-pass-fallback",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 2,
+          summaryDraft: "Found two issues before max-turns.",
+          totalFiles: 3,
+        }),
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    const boundedComment = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
+    const standaloneReviewDetails = Array.from(issueComments.values()).find((body) =>
+      body.includes("<summary>Review Details</summary>") && body !== boundedComment
+    );
+
+    expect(boundedComment).toBeDefined();
+    expect(boundedComment).not.toContain("<summary>Review Details</summary>");
+    expect(standaloneReviewDetails).toBeDefined();
+    expect(standaloneReviewDetails).toContain("<summary>Review Details</summary>");
+    expect(
+      entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
   });
+
 
   test("formats split timeout budget wording for plain timeout error comments", () => {
     const detail = formatTimeoutErrorDetail({

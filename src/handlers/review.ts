@@ -4695,10 +4695,7 @@ export function createReviewHandler(deps: {
             } else {
               const approvalWillOwnCanonicalSurface = config.review.autoApprove && result.conclusion === "success";
 
-              if (approvalWillOwnCanonicalSurface) {
-                // Clean approvals now own the canonical visible surface. The approval review body
-                // gets the Review Details block after the approval is created and can be edited.
-              } else if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
+              if (!approvalWillOwnCanonicalSurface && canPublishVisibleOutput("deterministic Review Details standalone comment")) {
                 setReviewWorkPhase("publish");
                 const reviewDetailsCommentId = await upsertReviewDetailsComment({
                   octokit: extractionOctokit,
@@ -5381,12 +5378,49 @@ export function createReviewHandler(deps: {
                   {
                     ...baseLog,
                     gate: "review-details-output",
-                    gateResult: "timeout-failed",
+                    gateResult: "degraded-fallback",
                     reviewOutputKey,
                     err: reviewDetailsErr,
                   },
-                  "Failed to publish Review Details for timeout partial output",
+                  "Failed to rebuild timeout canonical issue comment with Review Details; posting standalone",
                 );
+
+                if (canPublishVisibleOutput("timeout Review Details standalone comment")) {
+                  try {
+                    await upsertReviewDetailsComment({
+                      octokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      body: buildReviewDetailsBody({
+                        timeoutProgress: timeoutReviewDetails,
+                        reviewFirstPass: timeoutFirstPass,
+                        timeoutBudget: appliedTimeoutBudget
+                          ? {
+                              remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                              infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                              totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                            }
+                          : null,
+                      }),
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("timeout Review Details standalone comment"),
+                    });
+                  } catch (fallbackErr) {
+                    logger.warn(
+                      {
+                        ...baseLog,
+                        gate: "review-details-output",
+                        gateResult: "failed",
+                        reviewOutputKey,
+                        err: fallbackErr,
+                      },
+                      "Failed to publish standalone Review Details for timeout partial output",
+                    );
+                  }
+                }
               }
 
               // Structured resilience telemetry (best-effort)
@@ -5928,12 +5962,51 @@ export function createReviewHandler(deps: {
                               {
                                 ...baseLog,
                                 gate: "review-details-output",
-                                gateResult: "retry-merge-failed",
+                                gateResult: "degraded-fallback",
                                 reviewOutputKey,
                                 err: reviewDetailsErr,
                               },
-                              "Failed to refresh Review Details after retry merge",
+                              "Failed to rebuild retry canonical issue comment with Review Details; posting standalone",
                             );
+
+                            if (
+                              canPublishReviewWorkOutput(
+                                retryReviewWorkAttempt.attemptId,
+                                "retry Review Details standalone comment",
+                                retryDeliveryId,
+                              )
+                            ) {
+                              try {
+                                await upsertReviewDetailsComment({
+                                  octokit: retryOctokit,
+                                  owner: apiOwner,
+                                  repo: apiRepo,
+                                  prNumber: pr.number,
+                                  reviewOutputKey,
+                                  body: buildReviewDetailsBody({
+                                    reviewFirstPass: mergedFirstPass,
+                                  }),
+                                  botHandles: [githubApp.getAppSlug(), "claude"],
+                                  recheckCanPublish: () =>
+                                    canPublishReviewWorkOutput(
+                                      retryReviewWorkAttempt.attemptId,
+                                      "retry Review Details standalone comment",
+                                      retryDeliveryId,
+                                    ),
+                                });
+                              } catch (fallbackErr) {
+                                logger.warn(
+                                  {
+                                    ...baseLog,
+                                    gate: "review-details-output",
+                                    gateResult: "failed",
+                                    reviewOutputKey,
+                                    err: fallbackErr,
+                                  },
+                                  "Failed to publish standalone Review Details after retry merge",
+                                );
+                              }
+                            }
                           }
 
                           logger.info(
@@ -6235,12 +6308,41 @@ export function createReviewHandler(deps: {
                   {
                     ...baseLog,
                     gate: "review-details-output",
-                    gateResult: "failure-fallback-failed",
+                    gateResult: "degraded-fallback",
                     reviewOutputKey,
                     err: reviewDetailsErr,
                   },
-                  "Failed to merge Review Details into max-turns bounded fallback comment",
+                  "Failed to rebuild max-turns canonical issue comment with Review Details; posting standalone",
                 );
+
+                if (canPublishVisibleOutput("max-turns Review Details standalone comment")) {
+                  try {
+                    await upsertReviewDetailsComment({
+                      octokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      body: buildReviewDetailsBody({
+                        reviewFirstPass: failureFirstPass,
+                      }),
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("max-turns Review Details standalone comment"),
+                    });
+                  } catch (fallbackErr) {
+                    logger.warn(
+                      {
+                        ...baseLog,
+                        gate: "review-details-output",
+                        gateResult: "failed",
+                        reviewOutputKey,
+                        err: fallbackErr,
+                      },
+                      "Failed to publish standalone Review Details for max-turns fallback",
+                    );
+                  }
+                }
               }
             }
           }
@@ -6304,20 +6406,11 @@ export function createReviewHandler(deps: {
               ? renderApprovalConfidence(depBumpContext.mergeConfidence)
               : null;
 
-            let approvalBody = buildApprovedReviewBody({
+            const approvalBody = buildApprovedReviewBody({
               reviewOutputKey,
               evidence: approvalEvidence,
               approvalConfidence,
             });
-
-            if (canonicalReviewDetailsBody) {
-              approvalBody = mergeReviewDetailsIntoSummaryBody({
-                summaryBody: approvalBody,
-                reviewDetailsBlock: canonicalReviewDetailsBody,
-                requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                reviewBoundedness,
-              });
-            }
 
             await octokit.rest.pulls.createReview({
               owner: apiOwner,
@@ -6330,29 +6423,35 @@ export function createReviewHandler(deps: {
               ),
             });
 
-            if (canonicalReviewDetailsBody) {
-              finalizePublicationPhaseTiming();
-              await upsertCanonicalReviewSurface({
+            if (canonicalReviewDetailsBody && canPublishVisibleOutput("approval Review Details standalone comment")) {
+              setReviewWorkPhase("publish");
+              const reviewDetailsCommentId = await upsertReviewDetailsComment({
                 octokit,
                 owner: apiOwner,
                 repo: apiRepo,
                 prNumber: pr.number,
                 reviewOutputKey,
-                preferredKind: "pull_review",
-                pullReviewEvent: "APPROVE",
-                body: mergeReviewDetailsIntoSummaryBody({
-                  summaryBody: buildApprovedReviewBody({
-                    reviewOutputKey,
-                    evidence: approvalEvidence,
-                    approvalConfidence,
-                  }),
-                  reviewDetailsBlock: buildReviewDetailsBody(),
-                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                  reviewBoundedness,
-                }),
+                body: canonicalReviewDetailsBody,
                 botHandles: [appSlug, "claude"],
-                recheckCanPublish: () => canPublishVisibleOutput("finalized approval review"),
+                recheckCanPublish: () =>
+                  canPublishVisibleOutput("approval Review Details standalone comment"),
               });
+
+              finalizePublicationPhaseTiming();
+              if (
+                reviewDetailsCommentId !== undefined &&
+                canPublishVisibleOutput("finalized approval Review Details standalone comment")
+              ) {
+                await octokit.rest.issues.updateComment({
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  comment_id: reviewDetailsCommentId,
+                  body: sanitizeOutgoingMentions(
+                    buildReviewDetailsBody(),
+                    [appSlug, "claude"],
+                  ),
+                });
+              }
             }
 
             logger.info(
