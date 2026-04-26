@@ -2054,13 +2054,15 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(extractReviewOutputKey(reviewDetailsBlock)).toBe(expectedReviewOutputKey);
   });
 
-  test("auto-approve finalization updates the canonical pull review when mixed surfaces exist after a review-surface idempotency accept", async () => {
+  test("auto-approve finalization keeps Review Details on the issue-comment path when mixed surfaces exist after a review-surface idempotency accept", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
 
     let approveCount = 0;
+    let issueCommentCreateCount = 0;
     let issueCommentUpdateCount = 0;
     let updatedReviewId: number | undefined;
+    const createdIssueComments: Array<{ id: number; body: string }> = [];
     const createdReviews: Array<{ id: number; body?: string | null }> = [];
 
     const reviewOutputKey = buildReviewOutputKey({
@@ -2135,7 +2137,12 @@ describe("createReviewHandler review_requested idempotency", () => {
             listCommentsCallCount += 1;
             return { data };
           },
-          createComment: async (params: { body: string }) => ({ data: { id: 901, body: params.body } }),
+          createComment: async (params: { body: string }) => {
+            issueCommentCreateCount += 1;
+            const comment = { id: 901, body: params.body };
+            createdIssueComments.push(comment);
+            return { data: comment };
+          },
           updateComment: async ({ comment_id }: { comment_id: number; body: string }) => {
             issueCommentUpdateCount += 1;
             return { data: { id: comment_id } };
@@ -2196,11 +2203,14 @@ describe("createReviewHandler review_requested idempotency", () => {
     await workspaceFixture.cleanup();
 
     expect(approveCount).toBe(1);
-    expect(updatedReviewId).toBe(902);
-    expect(issueCommentUpdateCount).toBe(0);
+    expect(updatedReviewId).toBeUndefined();
+    expect(issueCommentCreateCount).toBe(1);
+    expect(issueCommentUpdateCount).toBe(1);
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
-    expect(createdReviews[0]?.body).toContain("<summary>Review Details</summary>");
+    expect(createdReviews[0]?.body).not.toContain("<summary>Review Details</summary>");
+    expect(createdIssueComments).toHaveLength(1);
+    expect(createdIssueComments[0]?.body).toContain("<summary>Review Details</summary>");
   });
 
   test("published-output finalization updates only the canonical issue comment when mixed surfaces exist after an issue-comment idempotency accept", async () => {
@@ -11423,6 +11433,7 @@ describe("createReviewHandler timeout resilience", () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
+    const canonicalWrites: Array<Record<string, unknown>> = [];
 
     const checkpointState = new Map<string, {
       partialCommentId?: number;
@@ -11668,6 +11679,9 @@ describe("createReviewHandler timeout resilience", () => {
         deleteCheckpoint: (key: string) => {
           checkpointState.delete(key);
         },
+        upsertContinuationFamilyState: async (record: Record<string, unknown>) => {
+          canonicalWrites.push(record);
+        },
       }) as never,
       diffContextCollector: async () => ({
         changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
@@ -11737,6 +11751,18 @@ describe("createReviewHandler timeout resilience", () => {
       body.includes("<summary>Review Details</summary>") && !body.includes("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.")
     );
     expect(standaloneReviewDetails).toContain("<summary>Review Details</summary>");
+    expect(canonicalWrites.at(-1)).toMatchObject({
+      familyKey: buildReviewFamilyKey("acme", "repo", 101),
+      authoritativeAttemptId: "review-work-2",
+      authoritativeAttemptOrdinal: 2,
+      authoritativeOutcome: "merged",
+      finalStopReason: "merged-continuation-results",
+      projectionStatus: "degraded",
+      supersededByAttemptId: null,
+    });
+    expect(
+      entries.some((entry) => entry.message === "Retry complete -- updated partial review comment with merged results; Review Details published via standalone fallback" && entry.data?.projectionStatus === "degraded"),
+    ).toBeTrue();
     expect(
       entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
     ).toBeTrue();

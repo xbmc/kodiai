@@ -5924,6 +5924,9 @@ export function createReviewHandler(deps: {
                         )) {
                           setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
 
+                          let retryMergeProjectionStatus: ContinuationFamilyProjectionStatus = "canonical";
+                          let retryMergeLogMessage = "Retry complete -- updated partial review comment with merged results";
+
                           try {
                             const mergedBodyWithDetails = await rebuildCanonicalReviewSurfaceWithDetails({
                               octokit: retryOctokit,
@@ -5968,6 +5971,9 @@ export function createReviewHandler(deps: {
                               },
                               "Failed to rebuild retry canonical issue comment with Review Details; posting standalone",
                             );
+
+                            retryMergeProjectionStatus = "degraded";
+                            retryMergeLogMessage = "Retry complete -- updated partial review comment with merged results; Review Details published via standalone fallback";
 
                             if (
                               canPublishReviewWorkOutput(
@@ -6017,15 +6023,16 @@ export function createReviewHandler(deps: {
                               retryFilesReviewed,
                               partialCommentId,
                               settlementReason: settlementDecision.reason,
+                              projectionStatus: retryMergeProjectionStatus,
                             },
-                            "Retry complete -- updated partial review comment with merged results",
+                            retryMergeLogMessage,
                           );
 
                           await persistContinuationFamilyState({
                             authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
                             authoritativeOutcome: "merged",
                             finalStopReason: "merged-continuation-results",
-                            projectionStatus: "canonical",
+                            projectionStatus: retryMergeProjectionStatus,
                             reviewOutputKey: retryReviewOutputKey,
                           });
 
