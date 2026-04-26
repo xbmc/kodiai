@@ -1059,17 +1059,20 @@ function mergeReviewDetailsIntoSummaryBody(params: {
     );
   }
 
+  const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
+  if (existingReviewDetailsPattern.test(summaryBody)) {
+    return summaryBody.replace(existingReviewDetailsPattern, `\n\n${updatedReviewDetails}\n\n`).trim();
+  }
+
   const closingTag = '</details>';
   const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
   if (lastCloseIdx === -1) {
     return `${summaryBody}\n\n${updatedReviewDetails}`;
   }
 
-  const before = summaryBody.slice(0, lastCloseIdx);
+  const before = summaryBody.slice(0, lastCloseIdx).trimEnd();
   const after = summaryBody.slice(lastCloseIdx);
-  const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
-  const beforeWithoutExistingDetails = before.replace(existingReviewDetailsPattern, "\n").trimEnd();
-  return `${beforeWithoutExistingDetails}\n\n${updatedReviewDetails}\n${after}`;
+  return `${before}\n\n${updatedReviewDetails}\n${after}`;
 }
 
 function resolveAuthorTier(params: {

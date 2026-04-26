@@ -2053,6 +2053,10 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(reviewDetailsBlock).toContain("remote runtime: 500ms");
     expect(reviewDetailsBlock).toContain("publication:");
     expect(extractReviewOutputKey(reviewDetailsBlock)).toBe(expectedReviewOutputKey);
+    expect(approvalBody.match(/<summary>Review Details<\/summary>/g) ?? []).toHaveLength(1);
+    expect(approvalBody.match(/<details>/g) ?? []).toHaveLength(
+      (approvalBody.match(/<\/details>/g) ?? []).length,
+    );
 
     expect(createdIssueComments).toHaveLength(0);
   });
