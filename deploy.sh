@@ -66,6 +66,13 @@ validate_claude_oauth_token_source() {
 
 validate_claude_oauth_token_source
 
+yaml_quote() {
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1" || {
+    echo "ERROR: yaml_quote failed for value" >&2
+    exit 1
+  }
+}
+
 # -- Configuration (customize as needed) --------------------------------------
 RESOURCE_GROUP="rg-kodiai"
 LOCATION="eastus"
@@ -116,6 +123,11 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 is required for YAML quoting but is not installed."
+  exit 1
+fi
+
 # -- Optional environment variables with defaults --------------------------------
 SHUTDOWN_GRACE_MS=${SHUTDOWN_GRACE_MS:-300000}
 BOT_USER_SECRET_YAML=""
@@ -126,14 +138,14 @@ BOT_USER_CREATE_ENV_ARGS=()
 if [[ -n "${BOT_USER_PAT:-}" && -n "${BOT_USER_LOGIN:-}" ]]; then
   BOT_USER_SECRET_YAML=$(cat <<EOF
       - name: bot-user-pat
-        value: ${BOT_USER_PAT}
+        value: $(yaml_quote "$BOT_USER_PAT")
 EOF
 )
   BOT_USER_ENV_YAML=$(cat <<EOF
           - name: BOT_USER_PAT
             secretRef: bot-user-pat
           - name: BOT_USER_LOGIN
-            value: "${BOT_USER_LOGIN}"
+            value: $(yaml_quote "$BOT_USER_LOGIN")
 EOF
 )
   BOT_USER_CREATE_SECRET_ARGS+=("bot-user-pat=${BOT_USER_PAT}")
@@ -418,12 +430,12 @@ ${BOT_USER_SECRET_YAML}
           - name: DATABASE_URL
             secretRef: database-url
           - name: SLACK_BOT_USER_ID
-            value: "${SLACK_BOT_USER_ID}"
+            value: $(yaml_quote "$SLACK_BOT_USER_ID")
           - name: SLACK_KODIAI_CHANNEL_ID
-            value: "${SLACK_KODIAI_CHANNEL_ID}"
+            value: $(yaml_quote "$SLACK_KODIAI_CHANNEL_ID")
 ${BOT_USER_ENV_YAML}
           - name: SHUTDOWN_GRACE_MS
-            value: "${SHUTDOWN_GRACE_MS}"
+            value: $(yaml_quote "$SHUTDOWN_GRACE_MS")
           - name: PORT
             value: "3000"
           - name: LOG_LEVEL
@@ -535,12 +547,12 @@ properties:
           - name: DATABASE_URL
             secretRef: database-url
           - name: SLACK_BOT_USER_ID
-            value: "${SLACK_BOT_USER_ID}"
+            value: $(yaml_quote "$SLACK_BOT_USER_ID")
           - name: SLACK_KODIAI_CHANNEL_ID
-            value: "${SLACK_KODIAI_CHANNEL_ID}"
+            value: $(yaml_quote "$SLACK_KODIAI_CHANNEL_ID")
 ${BOT_USER_ENV_YAML}
           - name: SHUTDOWN_GRACE_MS
-            value: "${SHUTDOWN_GRACE_MS}"
+            value: $(yaml_quote "$SHUTDOWN_GRACE_MS")
           - name: PORT
             value: "3000"
           - name: LOG_LEVEL
