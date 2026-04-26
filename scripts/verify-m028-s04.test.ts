@@ -421,7 +421,8 @@ describe("buildM028S04ProofHarness", () => {
     const chunks: string[] = [];
     const stdout = { write: (s: string) => { chunks.push(s); } };
     const stderr = { write: (_s: string) => {} };
-    await buildM028S04ProofHarness({ sql: undefined, stdout, stderr, json: true });
+    const sql = () => Promise.reject(new Error("test: no db"));
+    await buildM028S04ProofHarness({ sql, stdout, stderr, json: true });
     const output = chunks.join("");
     const parsed = JSON.parse(output);
     expect(parsed).toHaveProperty("overallPassed");
@@ -433,7 +434,8 @@ describe("buildM028S04ProofHarness", () => {
     const chunks: string[] = [];
     const stdout = { write: (s: string) => { chunks.push(s); } };
     const stderr = { write: (_s: string) => {} };
-    await buildM028S04ProofHarness({ sql: undefined, stdout, stderr, json: false });
+    const sql = () => Promise.reject(new Error("test: no db"));
+    await buildM028S04ProofHarness({ sql, stdout, stderr, json: false });
     const output = chunks.join("");
     expect(output).toContain("M028 / S04 proof harness");
     expect(output).toContain("Final verdict:");
