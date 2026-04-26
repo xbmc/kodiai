@@ -2459,6 +2459,7 @@ export function createReviewHandler(deps: {
         }
 
         const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        let acceptedCanonicalSurface: CanonicalReviewSurface | null = null;
         const idempotencyCheck = await ensureReviewOutputNotPublished({
           octokit: idempotencyOctokit,
           owner: apiOwner,
@@ -2486,6 +2487,7 @@ export function createReviewHandler(deps: {
           const canonicalSurfaceHasReviewDetails = canonicalSurface?.body.includes("<summary>Review Details</summary>") ?? false;
 
           if (canonicalSurface && !canonicalSurfaceHasReviewDetails) {
+            acceptedCanonicalSurface = canonicalSurface;
             logger.info(
               {
                 ...baseLog,
@@ -4597,6 +4599,9 @@ export function createReviewHandler(deps: {
                     prNumber: pr.number,
                     reviewOutputKey,
                     preferredKind: "issue_comment",
+                    canonicalSurface: acceptedCanonicalSurface?.kind === "issue_comment"
+                      ? acceptedCanonicalSurface
+                      : undefined,
                     reviewDetailsBlock: fullDetailsBody,
                     botHandles: [githubApp.getAppSlug(), "claude"],
                     requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
@@ -4635,6 +4640,7 @@ export function createReviewHandler(deps: {
                       prNumber: pr.number,
                       reviewOutputKey,
                       preferredKind: "issue_comment",
+                      canonicalSurface: canonicalIssueComment,
                       reviewDetailsBlock: buildReviewDetailsBody(),
                       botHandles: [githubApp.getAppSlug(), "claude"],
                       summaryBody: canonicalIssueComment.body,
@@ -5319,6 +5325,9 @@ export function createReviewHandler(deps: {
                     prNumber: pr.number,
                     reviewOutputKey,
                     preferredKind: "issue_comment",
+                    canonicalSurface: partialCommentId
+                      ? { kind: "issue_comment", commentId: partialCommentId, body: partialBody }
+                      : undefined,
                     summaryBody: partialBody,
                     reviewDetailsBlock: buildReviewDetailsBody({
                       timeoutProgress: timeoutReviewDetails,

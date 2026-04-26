@@ -2226,7 +2226,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: false });
 
     let issueCommentUpdateCount = 0;
-    let issueCommentUpdateId: number | undefined;
+    const issueCommentUpdateIds: number[] = [];
     let createReviewCount = 0;
     let updateReviewCount = 0;
 
@@ -2244,7 +2244,10 @@ describe("createReviewHandler review_requested idempotency", () => {
     const issueCommentBodiesByCall = [
       [{ id: 901, body: `existing issue comment\n\n${marker}` }],
       [{ id: 901, body: `existing issue comment\n\n${marker}` }],
-      [{ id: 901, body: `existing issue comment\n\n${marker}` }],
+      [
+        { id: 900, body: `older issue comment\n\n${marker}` },
+        { id: 901, body: `existing issue comment\n\n${marker}` },
+      ],
     ] as const;
     const reviewBodiesByCall = [
       [{ id: 902, body: `existing pull review\n\n${marker}` }],
@@ -2301,7 +2304,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           createComment: async (params: { body: string }) => ({ data: { id: 901, body: params.body } }),
           updateComment: async ({ comment_id, body }: { comment_id: number; body: string }) => {
             issueCommentUpdateCount += 1;
-            issueCommentUpdateId = comment_id;
+            issueCommentUpdateIds.push(comment_id);
             expect(body).toContain("<summary>Review Details</summary>");
             return { data: { id: comment_id, body } };
           },
@@ -2353,8 +2356,8 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     await workspaceFixture.cleanup();
 
-    expect(issueCommentUpdateId).toBe(901);
-    expect(issueCommentUpdateCount).toBe(1);
+    expect(issueCommentUpdateIds).toEqual([901, 901]);
+    expect(issueCommentUpdateCount).toBe(2);
     expect(createReviewCount).toBe(0);
     expect(updateReviewCount).toBe(0);
     expect(listReviewsCallCount).toBe(0);
@@ -9599,6 +9602,172 @@ describe("createReviewHandler timeout resilience", () => {
     expect(
       entries.some((entry) => entry.message === "Skipping timeout canonical Review Details merge because publish rights were superseded"),
     ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("timeout canonical Review Details merge refreshes the same bounded partial comment when older marker-matching comments exist", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const issueComments = new Map<number, string>([
+      [700, `older timeout comment\n\n${marker}`],
+    ]);
+    let nextCommentId = 701;
+    let timeoutPartialCommentId: number | undefined;
+    let timeoutCanonicalUpdateId: number | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: { action?: string },
+      ) => {
+        if (context?.action === "review-retry") {
+          return undefined as T;
+        }
+        return fn(createQueueRunMetadata());
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+          }),
+          createComment: async (params: { body: string }) => {
+            const id = nextCommentId++;
+            issueComments.set(id, params.body);
+            if (params.body.includes("**Bounded first-pass review**")) {
+              timeoutPartialCommentId = id;
+            }
+            return { data: { id } };
+          },
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            if (params.body.includes("<summary>Review Details</summary>")) {
+              timeoutCanonicalUpdateId = params.comment_id;
+            }
+            issueComments.set(params.comment_id, params.body);
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "error",
+          isTimeout: true,
+          published: false,
+          errorMessage: "timeout",
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-timeout-review-details-canonical-id",
+          model: "test-model",
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "timeout",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 1,
+          summaryDraft: "Found one issue before timeout.",
+          totalFiles: 1,
+        }),
+        updateCheckpointCommentId: () => undefined,
+        deleteCheckpoint: () => undefined,
+      }) as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Timeout canonical id pinning",
+          body: "",
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    expect(timeoutPartialCommentId).toBeDefined();
+    expect(timeoutCanonicalUpdateId).toBe(timeoutPartialCommentId);
+    expect(timeoutCanonicalUpdateId).not.toBe(700);
 
     await workspaceFixture.cleanup();
   });
