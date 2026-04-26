@@ -921,19 +921,22 @@ async function rebuildCanonicalReviewSurfaceWithDetails(params: {
   reviewDetailsBlock: string;
   botHandles: string[];
   summaryBody?: string;
+  canonicalSurface?: CanonicalReviewSurface;
   pullReviewEvent?: "APPROVE" | "COMMENT" | "REQUEST_CHANGES";
   requireDegradationDisclosure: boolean;
   reviewBoundedness?: ReviewBoundednessContract | null;
   recheckCanPublish?: () => boolean;
 }): Promise<CanonicalReviewSurface | undefined> {
-  const existingSurface = await findCanonicalReviewSurface({
-    octokit: params.octokit,
-    owner: params.owner,
-    repo: params.repo,
-    prNumber: params.prNumber,
-    reviewOutputKey: params.reviewOutputKey,
-    surfaceKind: params.preferredKind,
-  });
+  const existingSurface = params.canonicalSurface?.kind === params.preferredKind
+    ? params.canonicalSurface
+    : await findCanonicalReviewSurface({
+      octokit: params.octokit,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      reviewOutputKey: params.reviewOutputKey,
+      surfaceKind: params.preferredKind,
+    });
 
   const summaryBody = params.summaryBody ?? existingSurface?.body;
   if (!summaryBody) {
@@ -1059,7 +1062,7 @@ function mergeReviewDetailsIntoSummaryBody(params: {
     );
   }
 
-  const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
+  const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>(?:\n?\s*<!--\s*kodiai:review-details:[^>]+-->)?\n?/;
   if (existingReviewDetailsPattern.test(summaryBody)) {
     return summaryBody.replace(existingReviewDetailsPattern, `\n\n${updatedReviewDetails}\n\n`).trim();
   }
@@ -6453,6 +6456,7 @@ export function createReviewHandler(deps: {
                 reviewDetailsBlock: buildReviewDetailsBody(),
                 botHandles: [appSlug, "claude"],
                 summaryBody: canonicalApprovalReview.body,
+                canonicalSurface: canonicalApprovalReview,
                 requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                 reviewBoundedness,
                 pullReviewEvent: "APPROVE",

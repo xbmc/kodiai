@@ -2054,6 +2054,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(reviewDetailsBlock).toContain("publication:");
     expect(extractReviewOutputKey(reviewDetailsBlock)).toBe(expectedReviewOutputKey);
     expect(approvalBody.match(/<summary>Review Details<\/summary>/g) ?? []).toHaveLength(1);
+    expect(approvalBody.match(/<!--\s*kodiai:review-details:[^>]+-->/g) ?? []).toHaveLength(1);
     expect(approvalBody.match(/<details>/g) ?? []).toHaveLength(
       (approvalBody.match(/<\/details>/g) ?? []).length,
     );
@@ -2061,7 +2062,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdIssueComments).toHaveLength(0);
   });
 
-  test("auto-approve finalization refreshes the canonical approval review body instead of creating or updating issue comments", async () => {
+  test("auto-approval finalization refreshes the same canonical approval review id when older marker-matching reviews exist", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
 
@@ -2083,12 +2084,6 @@ describe("createReviewHandler review_requested idempotency", () => {
     });
     const marker = buildReviewOutputMarker(reviewOutputKey);
 
-    const reviewBodiesByCall = [
-      [{ id: 902, body: `existing pull review\n\n${marker}` }],
-      [{ id: 902, body: `existing pull review\n\n${marker}` }],
-      [],
-      [{ id: 902, body: `existing pull review\n\n${marker}` }],
-    ] as const;
     const issueCommentBodiesByCall = [
       [],
       [],
@@ -2123,8 +2118,13 @@ describe("createReviewHandler review_requested idempotency", () => {
         pulls: {
           listReviewComments: async () => ({ data: [] }),
           listReviews: async () => {
-            const data = reviewBodiesByCall[listReviewsCallCount] ?? [];
             listReviewsCallCount += 1;
+            const data = approveCount === 0
+              ? []
+              : [
+                { id: 902, body: `older pull review\n\n${marker}` },
+                { id: 951, body: `canonical approval review\n\n${marker}` },
+              ];
             return { data };
           },
           listCommits: async () => ({ data: [] }),
@@ -2217,6 +2217,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
     expect(createdReviews[0]?.body).toContain("<summary>Review Details</summary>");
     expect(createdReviews[0]?.body).toContain("publication:");
+    expect(createdReviews[0]?.body?.match(/<!--\s*kodiai:review-details:[^>]+-->/g) ?? []).toHaveLength(1);
     expect(createdIssueComments).toHaveLength(0);
   });
 
