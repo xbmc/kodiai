@@ -10920,7 +10920,7 @@ describe("createReviewHandler timeout resilience", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("suppresses retry Review Details refresh after the canonical summary merge loses publish rights", async () => {
+  test("retry merge updates the same canonical comment with merged Review Details in a single upsert", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
@@ -11248,10 +11248,8 @@ describe("createReviewHandler timeout resilience", () => {
     expect(updatedCommentBodies).toHaveLength(updateCountBeforeRetry + 1);
     expect(issueComments.get(900)).toBe(updatedCommentBodies.at(-1));
     expect(issueComments.get(900)).toContain("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.");
-    expect(issueComments.get(900)).not.toContain("<summary>Review Details</summary>");
-    expect(
-      entries.some((entry) => entry.message === "Skipping retry Review Details merge because publish rights were superseded"),
-    ).toBeTrue();
+    expect(issueComments.get(900)).toContain("<summary>Review Details</summary>");
+    expect(issueComments.get(901)).toBeUndefined();
 
     await workspaceFixture.cleanup();
   });
