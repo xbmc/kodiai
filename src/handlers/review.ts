@@ -4648,10 +4648,10 @@ export function createReviewHandler(deps: {
                       {
                         ...baseLog,
                         gate: "review-details-output",
-                        gateResult: "finalized-append-failed",
+                        gateResult: "finalized-canonical-merge-failed",
                         err: appendErr,
                       },
-                      "Failed to refresh finalized Review Details timing in canonical issue comment",
+                      "Failed to refresh finalized canonical Review Details surface",
                     );
                   }
                 }

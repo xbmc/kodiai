@@ -5509,7 +5509,7 @@ describe("createReviewHandler finding extraction", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("suppresses Review Details append when publish rights were superseded", async () => {
+  test("suppresses canonical Review Details merge when publish rights were superseded", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
@@ -5788,7 +5788,7 @@ describe("createReviewHandler finding extraction", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("rechecks Review Details append publish rights after summary lookup", async () => {
+  test("rechecks canonical Review Details merge publish rights after summary lookup", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
@@ -14816,7 +14816,7 @@ describe("createReviewHandler phase timing logging", () => {
 });
 
 describe("createReviewHandler Review Details phase timing publication", () => {
-  test("appends Review Details timings into the published summary comment", async () => {
+  test("merges Review Details timings into the published canonical visible surface", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
