@@ -16,6 +16,18 @@ Release/docs pass for bounded review flow and production secret contract clarifi
 - Deployment docs now treat the Azure Container Apps secret set as the production source of truth and describe how the app consumes those values through secret references.
 - Graceful restart docs now describe deploy input vs production runtime secrets using the same contract language as the deployment guide.
 
+## v0.31 (2026-04-21)
+
+Top-level documentation truth pass.
+
+### Added
+
+- README coverage for M051 manual rereview, M052 Slack webhook relay, M053 `new Function()` removal via `verify:m053`, and M054 verifier repair via `verify:m054:s01` / `verify:m054:s04`.
+
+### Changed
+
+- Top-level docs now describe nightly workflow surfaces and retain the post-v0.29 release chain expected by the documentation verifiers.
+
 ## v0.30 (2026-04-19)
 
 Truthful Manual Rereview & Slack Webhook Relay.

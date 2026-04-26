@@ -109,3 +109,36 @@ Key top-level directories:
 - `src/` — application source code
 - `docs/` — project documentation
 - `scripts/` — operational and migration scripts
+
+
+## GSD v2 Planning Artifacts
+
+KodiAI keeps planning and execution state under `.gsd/`. Treat the checked-in artifact model as part of the contributor contract:
+
+- Milestones use `M###` identifiers
+- Slices use `S##` identifiers
+- Tasks use `T##` identifiers
+- milestone artifacts include `ROADMAP` surfaces
+- slice and task artifacts include `PLAN` surfaces
+- completed work is summarized through `SUMMARY` artifacts
+- durable project decisions live in `.gsd/DECISIONS.md`
+- requirement-contract state lives in `.gsd/REQUIREMENTS.md`
+
+## Migration Rules
+
+Database migrations are handled through `src/db/migrate.ts`. Use the checked-in migration tooling rather than ad-hoc SQL when you need to move schema state forward or backward.
+
+- apply migrations with the repo migration runner
+- rollback example: `bun run src/db/migrate.ts down <version>`
+- every forward migration should ship with a `.down.sql` sibling unless there is an explicit exception
+- Do **not** assume every historical migration already meets the paired-file rule.
+
+## Verification Contract
+
+Local proof comes before PRs. At minimum, contributors should run the relevant combination of:
+
+- `bun test`
+- `bunx tsc --noEmit`
+- targeted `verify:*` commands such as `verify:m053`, `verify:m054:s01`, and `verify:m055:s01`
+
+CI in `.github/workflows/ci.yml` is the final gate. Use it to confirm the same contract that you already exercised locally, not as a substitute for local verification.
