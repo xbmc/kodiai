@@ -67,7 +67,10 @@ validate_claude_oauth_token_source() {
 validate_claude_oauth_token_source
 
 yaml_quote() {
-  python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1"
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1" || {
+    echo "ERROR: yaml_quote failed for value" >&2
+    exit 1
+  }
 }
 
 # -- Configuration (customize as needed) --------------------------------------
@@ -117,6 +120,11 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   done
   echo ""
   echo "Hint: base64-encode your PEM key with:  base64 -w0 < private-key.pem"
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 is required for YAML quoting but is not installed."
   exit 1
 fi
 
