@@ -1880,7 +1880,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     ).toBe(true);
   });
 
-  test("replaying a clean PR review_requested keeps the approval body as the only canonical visible surface", async () => {
+  test("clean approval uses the approval review body as the only canonical visible surface", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
     const { logger } = createCaptureLogger();
@@ -2000,6 +2000,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdReviews[0]?.body ?? "").toContain("Issues: none");
     expect(createdReviews[0]?.body ?? "").toContain("Evidence:");
     expect(createdReviews[0]?.body ?? "").toContain("- Review prompt covered 1 changed file.");
+    expect(createdReviews[0]?.body ?? "").toContain("<summary>Review Details</summary>");
     expect(createdReviews[0]?.body ?? "").not.toContain("Merge Confidence:");
     expect(createdIssueComments).toHaveLength(0);
     expect(extractReviewOutputKey(createdReviews[0]?.body)).toBe(expectedReviewOutputKey);
@@ -13956,14 +13957,13 @@ describe("createReviewHandler phase timing logging", () => {
 });
 
 describe("createReviewHandler Review Details phase timing publication", () => {
-  test("keeps findings Review Details off a second visible comment when the canonical summary is not yet discoverable", async () => {
+  test("appends Review Details timings into the published summary comment", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
+    const createdCommentBodies: string[] = [];
     let updatedSummaryBody: string | undefined;
-    let standaloneDetailsBody: string | undefined;
-    let createCommentCalls = 0;
-    let updateCommentCalls = 0;
+    let updatedSummaryCommentId: number | undefined;
     let issueCommentListCalls = 0;
 
     const reviewOutputKey = buildReviewOutputKey({
@@ -14023,15 +14023,14 @@ describe("createReviewHandler Review Details phase timing publication", () => {
         issues: {
           listComments: async () => {
             issueCommentListCalls += 1;
-            return { data: [] };
+            return { data: [{ id: 77, body: summaryBody }] };
           },
           createComment: async (params: { body: string }) => {
-            createCommentCalls += 1;
-            standaloneDetailsBody = params.body;
+            createdCommentBodies.push(params.body);
             return { data: { id: 88 } };
           },
-          updateComment: async (params: { body: string }) => {
-            updateCommentCalls += 1;
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            updatedSummaryCommentId = params.comment_id;
             updatedSummaryBody = params.body;
             return { data: {} };
           },
@@ -14081,20 +14080,23 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     );
 
     expect(issueCommentListCalls).toBeGreaterThanOrEqual(1);
-    expect(createCommentCalls).toBe(0);
-    expect(updateCommentCalls).toBe(0);
-    expect(standaloneDetailsBody).toBeUndefined();
-    expect(updatedSummaryBody).toBeUndefined();
+    expect(updatedSummaryCommentId).toBe(77);
+    expect(updatedSummaryBody).toContain("<summary>Review Details</summary>");
+    expect(updatedSummaryBody).toContain("queue wait: 250ms");
+    expect(updatedSummaryBody).toContain("executor handoff: 50ms");
+    expect(updatedSummaryBody).toContain("remote runtime: 500ms");
+    expect(updatedSummaryBody).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(createdCommentBodies).toHaveLength(0);
 
     await workspaceFixture.cleanup();
   });
 
-  test("uses standalone Review Details only after canonical summary update failure and logs gateResult='degraded-fallback'", async () => {
+  test("falls back to standalone Review Details only when canonical surface update fails", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
 
-    let standaloneDetailsBody: string | undefined;
+    const createdCommentBodies: string[] = [];
     let updateCommentCalls = 0;
 
     const reviewOutputKey = buildReviewOutputKey({
@@ -14153,10 +14155,10 @@ describe("createReviewHandler Review Details phase timing publication", () => {
         issues: {
           listComments: async () => ({ data: [{ id: 77, body: summaryBody }] }),
           createComment: async (params: { body: string }) => {
-            standaloneDetailsBody = params.body;
+            createdCommentBodies.push(params.body);
             return { data: { id: 188 } };
           },
-          updateComment: async (_params: { body: string }) => {
+          updateComment: async (_params: { comment_id: number; body: string }) => {
             updateCommentCalls += 1;
             throw new Error("canonical update failed");
           },
@@ -14205,14 +14207,12 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       }),
     );
 
-    expect(standaloneDetailsBody).toBeDefined();
-    expect(standaloneDetailsBody).toContain("<summary>Review Details</summary>");
-    expect(standaloneDetailsBody).toContain("- Total wall-clock:");
-    expect(standaloneDetailsBody).toContain("- Phase timings:");
-    expect(standaloneDetailsBody).toContain("queue wait: 250ms");
-    expect(standaloneDetailsBody).toContain("executor handoff: 50ms");
-    expect(standaloneDetailsBody).toContain("remote runtime: 500ms");
-    expect(standaloneDetailsBody).toContain("publication:");
+    expect(updateCommentCalls).toBe(1);
+    expect(createdCommentBodies).toHaveLength(1);
+    expect(createdCommentBodies[0]).toContain("<summary>Review Details</summary>");
+    expect(createdCommentBodies[0]).toContain("queue wait: 250ms");
+    expect(createdCommentBodies[0]).toContain("executor handoff: 50ms");
+    expect(createdCommentBodies[0]).toContain("remote runtime: 500ms");
     expect(
       entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
     ).toBeTrue();
