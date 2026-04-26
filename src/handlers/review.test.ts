@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, upsertCanonicalReviewSurface } from "./review.ts";
+import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources } from "./review.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
@@ -2053,7 +2053,15 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(approvalBody).toContain(marker);
   });
 
-  test("canonical surface upsert honors requested pull_review kind when issue comment and pull review surfaces both exist", async () => {
+  test("auto-approve finalization updates the canonical pull review when mixed surfaces exist after a review-surface idempotency accept", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+
+    let approveCount = 0;
+    let issueCommentUpdateCount = 0;
+    let updatedReviewId: number | undefined;
+    const createdReviews: Array<{ id: number; body?: string | null }> = [];
+
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -2065,23 +2073,71 @@ describe("createReviewHandler review_requested idempotency", () => {
     });
     const marker = buildReviewOutputMarker(reviewOutputKey);
 
-    let updatedIssueCommentId: number | undefined;
-    let updatedReviewId: number | undefined;
+    const reviewBodiesByCall = [
+      [{ id: 902, body: `existing pull review\n\n${marker}` }],
+      [{ id: 902, body: `existing pull review\n\n${marker}` }],
+      [],
+      [{ id: 902, body: `existing pull review\n\n${marker}` }],
+    ] as const;
+    const issueCommentBodiesByCall = [
+      [],
+      [],
+    ] as const;
+    let listReviewsCallCount = 0;
+    let listCommentsCallCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
 
     const octokit = {
       rest: {
         pulls: {
-          listReviews: async () => ({
-            data: [{ id: 902, body: `existing pull review\n\n${marker}` }],
-          }),
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => {
+            const data = reviewBodiesByCall[listReviewsCallCount] ?? [];
+            listReviewsCallCount += 1;
+            return { data };
+          },
+          listCommits: async () => ({ data: [] }),
+          createReview: async ({ body }: { body?: string }) => {
+            approveCount += 1;
+            const review = { id: 950 + approveCount, body: body ?? null };
+            createdReviews.push(review);
+            return { data: { id: review.id } };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
         },
         issues: {
-          listComments: async () => ({
-            data: [{ id: 901, body: `existing issue comment\n\n${marker}` }],
-          }),
+          listComments: async () => {
+            const data = issueCommentBodiesByCall[listCommentsCallCount] ?? [];
+            listCommentsCallCount += 1;
+            return { data };
+          },
+          createComment: async (params: { body: string }) => ({ data: { id: 901, body: params.body } }),
           updateComment: async ({ comment_id }: { comment_id: number; body: string }) => {
-            updatedIssueCommentId = comment_id;
-            return { data: {} };
+            issueCommentUpdateCount += 1;
+            return { data: { id: comment_id } };
           },
         },
       },
@@ -2091,29 +2147,59 @@ describe("createReviewHandler review_requested idempotency", () => {
       ) => {
         expect(route).toBe("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}");
         updatedReviewId = params.review_id;
+        const existingReview = createdReviews.find((review) => review.id === params.review_id);
+        if (existingReview) {
+          existingReview.body = params.body;
+        }
         return { data: {} };
       },
     };
 
-    const updatedSurface = await upsertCanonicalReviewSurface({
-      octokit: octokit as never,
-      owner: "acme",
-      repo: "repo",
-      prNumber: 101,
-      reviewOutputKey,
-      surfaceKind: "pull_review",
-      body: `updated canonical body\n\n${marker}`,
-      botHandles: ["kodiai", "claude"],
-      pullReviewEvent: "APPROVE",
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mixed-surface-finalization",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
     });
 
-    expect(updatedSurface).toEqual({
-      kind: "pull_review",
-      reviewId: 902,
-      body: `updated canonical body\n\n${marker}`,
-    });
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(approveCount).toBe(1);
     expect(updatedReviewId).toBe(902);
-    expect(updatedIssueCommentId).toBeUndefined();
+    expect(issueCommentUpdateCount).toBe(0);
+    expect(createdReviews).toHaveLength(1);
+    expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
+    expect(createdReviews[0]?.body).toContain("<summary>Review Details</summary>");
   });
 
   test("auto-approve includes dep-bump merge confidence inside the shared approval body", async () => {

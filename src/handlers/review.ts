@@ -690,7 +690,7 @@ function getCanonicalReviewSurfaceId(surface: CanonicalReviewSurface): number {
   return surface.kind === "issue_comment" ? surface.commentId : surface.reviewId;
 }
 
-export async function findCanonicalReviewSurface(params: {
+async function findCanonicalReviewSurface(params: {
   octokit: Octokit;
   owner: string;
   repo: string;
@@ -851,7 +851,7 @@ async function createCanonicalReviewSurface(params: {
   throw new Error("Created canonical pull review could not be reloaded");
 }
 
-export async function upsertCanonicalReviewSurface(params: {
+async function upsertCanonicalReviewSurface(params: {
   octokit: Octokit;
   owner: string;
   repo: string;
