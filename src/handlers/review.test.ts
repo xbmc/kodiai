@@ -5657,7 +5657,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(createCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-append-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping deterministic Review Details append because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping canonical Review Details merge because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -5782,7 +5782,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(updateCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-standalone-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping deterministic Review Details standalone comment because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping degraded Review Details fallback comment because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -5939,7 +5939,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(createCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-append-recheck-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping deterministic Review Details append because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping canonical Review Details merge because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -6071,7 +6071,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(updateCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-standalone-recheck-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping deterministic Review Details standalone comment because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping degraded Review Details fallback comment because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -9597,7 +9597,7 @@ describe("createReviewHandler timeout resilience", () => {
     expect(reviewDetails).toBeUndefined();
     expect(completedAttemptIds).toEqual(["attempt-timeout-details-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping timeout Review Details comment because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping timeout canonical Review Details merge because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -11769,7 +11769,7 @@ describe("createReviewHandler timeout resilience", () => {
       supersededByAttemptId: null,
     });
     expect(
-      entries.some((entry) => entry.message === "Retry complete -- updated partial review comment with merged results; Review Details published via standalone fallback" && entry.data?.projectionStatus === "degraded"),
+      entries.some((entry) => entry.message === "Retry complete -- updated partial review comment with merged results; Review Details published via degraded fallback comment" && entry.data?.projectionStatus === "degraded"),
     ).toBeTrue();
     expect(
       entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
@@ -14962,7 +14962,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("falls back to standalone Review Details only when canonical surface update fails", async () => {
+  test("uses degraded fallback Review Details comment only when canonical visible surface update fails", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
