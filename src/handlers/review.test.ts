@@ -76,6 +76,29 @@ function createCaptureLogger() {
   return { logger, entries };
 }
 
+function extractReviewDetailsBlock(body: string): string {
+  const summary = "<summary>Review Details</summary>";
+  const summaryIndex = body.indexOf(summary);
+
+  expect(summaryIndex).toBeGreaterThanOrEqual(0);
+
+  const start = body.lastIndexOf("<details>", summaryIndex);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(start).toBeLessThanOrEqual(summaryIndex);
+
+  const end = body.indexOf("</details>", summaryIndex);
+  expect(end).toBeGreaterThanOrEqual(0);
+
+  const detailsEnd = end + "</details>".length;
+  const markerMatch = body
+    .slice(detailsEnd)
+    .match(/^\s*(<!--\s*kodiai:review-details:[^>]+-->)/);
+
+  return markerMatch
+    ? `${body.slice(start, detailsEnd)}\n\n${markerMatch[1]}`
+    : body.slice(start, detailsEnd);
+}
+
 describe("createReviewHandler coordinator wiring", () => {
   test("logs when the review handler falls back to a private coordinator", () => {
     const { logger, entries } = createCaptureLogger();
@@ -2001,17 +2024,18 @@ describe("createReviewHandler review_requested idempotency", () => {
     const marker = buildReviewOutputMarker(expectedReviewOutputKey);
 
     const approvalBody = createdReviews[0]?.body ?? "";
+    const reviewDetailsBlock = extractReviewDetailsBlock(approvalBody);
 
     expect(approvalBody).toContain("Decision: APPROVE");
     expect(approvalBody).toContain("Issues: none");
     expect(approvalBody).toContain("Evidence:");
     expect(approvalBody).toContain("- Review prompt covered 1 changed file.");
-    expect(approvalBody).toContain("<summary>Review Details</summary>");
-    expect(approvalBody).toContain("- Total wall-clock:");
-    expect(approvalBody).toContain("- Phase timings:");
-    expect(approvalBody).toContain("executor handoff: 50ms");
-    expect(approvalBody).toContain("remote runtime: 500ms");
-    expect(approvalBody).toContain("publication:");
+    expect(reviewDetailsBlock).toContain("<summary>Review Details</summary>");
+    expect(reviewDetailsBlock).toContain("- Total wall-clock:");
+    expect(reviewDetailsBlock).toContain("- Phase timings:");
+    expect(reviewDetailsBlock).toContain("executor handoff: 50ms");
+    expect(reviewDetailsBlock).toContain("remote runtime: 500ms");
+    expect(reviewDetailsBlock).toContain("publication:");
     expect(approvalBody).not.toContain("Merge Confidence:");
     expect(createdIssueComments).toHaveLength(0);
     expect(extractReviewOutputKey(approvalBody)).toBe(expectedReviewOutputKey);
@@ -14095,13 +14119,16 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     expect(updatedSummaryBody).toContain("<summary>Kodiai Review Summary</summary>");
     expect(updatedSummaryBody).toContain("## What Changed");
     expect(updatedSummaryBody).toContain("- Found one correctness issue worth fixing before merge.");
-    expect(updatedSummaryBody).toContain("<summary>Review Details</summary>");
-    expect(updatedSummaryBody).toContain("- Total wall-clock:");
-    expect(updatedSummaryBody).toContain("- Phase timings:");
-    expect(updatedSummaryBody).toContain("queue wait: 250ms");
-    expect(updatedSummaryBody).toContain("executor handoff: 50ms");
-    expect(updatedSummaryBody).toContain("remote runtime: 500ms");
-    expect(updatedSummaryBody).toContain("publication:");
+
+    const reviewDetailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+
+    expect(reviewDetailsBlock).toContain("<summary>Review Details</summary>");
+    expect(reviewDetailsBlock).toContain("- Total wall-clock:");
+    expect(reviewDetailsBlock).toContain("- Phase timings:");
+    expect(reviewDetailsBlock).toContain("queue wait: 250ms");
+    expect(reviewDetailsBlock).toContain("executor handoff: 50ms");
+    expect(reviewDetailsBlock).toContain("remote runtime: 500ms");
+    expect(reviewDetailsBlock).toContain("publication:");
     expect(updatedSummaryBody?.indexOf("<summary>Kodiai Review Summary</summary>")).toBeLessThan(
       updatedSummaryBody?.indexOf("<summary>Review Details</summary>") ?? Number.POSITIVE_INFINITY,
     );
@@ -14229,18 +14256,24 @@ describe("createReviewHandler Review Details phase timing publication", () => {
 
     expect(updateCommentCalls).toBe(1);
     expect(createdCommentBodies).toHaveLength(1);
-    expect(createdCommentBodies[0]).toContain("<summary>Review Details</summary>");
-    expect(createdCommentBodies[0]).toContain("Files reviewed:");
-    expect(createdCommentBodies[0]).toMatch(/Lines changed: \+\d+ -\d+/);
-    expect(createdCommentBodies[0]).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
-    expect(createdCommentBodies[0]).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
-    expect(createdCommentBodies[0]).toContain("- Total wall-clock:");
-    expect(createdCommentBodies[0]).toContain("- Phase timings:");
-    expect(createdCommentBodies[0]).toContain("queue wait: 250ms");
-    expect(createdCommentBodies[0]).toContain("executor handoff: 50ms");
-    expect(createdCommentBodies[0]).toContain("remote runtime: 500ms");
-    expect(createdCommentBodies[0]).toContain("publication:");
-    expect(createdCommentBodies[0]).toContain("degraded:");
+
+    const fallbackCommentBody = createdCommentBodies[0] ?? "";
+    const reviewDetailsBlock = extractReviewDetailsBlock(fallbackCommentBody);
+
+    expect(reviewDetailsBlock).toContain("<summary>Review Details</summary>");
+    expect(reviewDetailsBlock).toContain(`<!-- kodiai:review-details:${reviewOutputKey} -->`);
+    expect(extractReviewOutputKey(reviewDetailsBlock)).toBe(reviewOutputKey);
+    expect(reviewDetailsBlock).toContain("- Files reviewed: 1");
+    expect(reviewDetailsBlock).toContain("- Lines changed: +1 -0");
+    expect(reviewDetailsBlock).toContain("- Findings: 0 critical, 0 major, 0 medium, 0 minor");
+    expect(reviewDetailsBlock).toContain("- Total wall-clock:");
+    expect(reviewDetailsBlock).toContain("- Phase timings:");
+    expect(reviewDetailsBlock).toContain("queue wait: 250ms");
+    expect(reviewDetailsBlock).toContain("executor handoff: 50ms");
+    expect(reviewDetailsBlock).toContain("remote runtime: 500ms");
+    expect(reviewDetailsBlock).toContain("publication:");
+    expect(reviewDetailsBlock).toContain("degraded:");
+    expect(reviewDetailsBlock).toMatch(/- Review completed: \d{4}-\d{2}-\d{2}T/);
     expect(
       entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
     ).toBeTrue();
