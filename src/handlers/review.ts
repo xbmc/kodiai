@@ -1,3 +1,4 @@
+import type { Octokit } from "@octokit/rest";
 import type {
   PullRequestOpenedEvent,
   PullRequestReadyForReviewEvent,
@@ -679,6 +680,213 @@ async function fetchCommitMessages(
 
 
 
+export type CanonicalSurfaceKind = "issue_comment" | "pull_review";
+
+export type CanonicalReviewSurface = {
+  kind: CanonicalSurfaceKind;
+  id: number;
+  body: string;
+};
+
+async function findCanonicalReviewSurface(params: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+}): Promise<CanonicalReviewSurface | null> {
+  const marker = buildReviewOutputMarker(params.reviewOutputKey);
+
+  const commentsResponse = await params.octokit.rest.issues.listComments({
+    owner: params.owner,
+    repo: params.repo,
+    issue_number: params.prNumber,
+    per_page: 100,
+    sort: "created",
+    direction: "desc",
+  });
+
+  const issueComment = commentsResponse.data.find((comment) =>
+    typeof comment.id === "number"
+    && typeof comment.body === "string"
+    && comment.body.includes(marker)
+  );
+
+  if (issueComment) {
+    return {
+      kind: "issue_comment",
+      id: issueComment.id,
+      body: issueComment.body,
+    };
+  }
+
+  const reviewsResponse = await params.octokit.rest.pulls.listReviews({
+    owner: params.owner,
+    repo: params.repo,
+    pull_number: params.prNumber,
+    per_page: 100,
+  });
+
+  const pullReview = reviewsResponse.data.find((review) =>
+    typeof review.id === "number"
+    && typeof review.body === "string"
+    && review.body.includes(marker)
+  );
+
+  if (!pullReview) {
+    return null;
+  }
+
+  return {
+    kind: "pull_review",
+    id: pullReview.id,
+    body: pullReview.body,
+  };
+}
+
+async function updateCanonicalReviewSurface(params: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  surface: CanonicalReviewSurface;
+  body: string;
+  botHandles: string[];
+}): Promise<CanonicalReviewSurface> {
+  const sanitizedBody = sanitizeOutgoingMentions(params.body, params.botHandles);
+
+  if (params.surface.kind === "issue_comment") {
+    await params.octokit.rest.issues.updateComment({
+      owner: params.owner,
+      repo: params.repo,
+      comment_id: params.surface.id,
+      body: sanitizedBody,
+    });
+  } else {
+    await params.octokit.request(
+      "PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
+      {
+        owner: params.owner,
+        repo: params.repo,
+        pull_number: params.prNumber,
+        review_id: params.surface.id,
+        body: sanitizedBody,
+      },
+    );
+  }
+
+  return {
+    ...params.surface,
+    body: sanitizedBody,
+  };
+}
+
+async function createCanonicalReviewSurface(params: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  surfaceKind: CanonicalSurfaceKind;
+  body: string;
+  botHandles: string[];
+  pullReviewEvent?: "APPROVE" | "COMMENT" | "REQUEST_CHANGES";
+}): Promise<CanonicalReviewSurface> {
+  const sanitizedBody = sanitizeOutgoingMentions(params.body, params.botHandles);
+
+  if (params.surfaceKind === "issue_comment") {
+    const response = await params.octokit.rest.issues.createComment({
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.prNumber,
+      body: sanitizedBody,
+    });
+
+    return {
+      kind: "issue_comment",
+      id: response.data.id,
+      body: sanitizedBody,
+    };
+  }
+
+  const response = await params.octokit.rest.pulls.createReview({
+    owner: params.owner,
+    repo: params.repo,
+    pull_number: params.prNumber,
+    event: params.pullReviewEvent ?? "COMMENT",
+    body: sanitizedBody,
+  });
+
+  if (typeof response.data.id === "number") {
+    return {
+      kind: "pull_review",
+      id: response.data.id,
+      body: sanitizedBody,
+    };
+  }
+
+  const createdSurface = await findCanonicalReviewSurface({
+    octokit: params.octokit,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    reviewOutputKey: extractReviewOutputKey(sanitizedBody) ?? "",
+  });
+
+  if (createdSurface?.kind === "pull_review") {
+    return createdSurface;
+  }
+
+  throw new Error("Created canonical pull review could not be reloaded");
+}
+
+async function upsertCanonicalReviewSurface(params: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+  surfaceKind: CanonicalSurfaceKind;
+  body: string;
+  botHandles: string[];
+  pullReviewEvent?: "APPROVE" | "COMMENT" | "REQUEST_CHANGES";
+  recheckCanPublish?: () => boolean;
+}): Promise<CanonicalReviewSurface | undefined> {
+  const existingSurface = await findCanonicalReviewSurface({
+    octokit: params.octokit,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    reviewOutputKey: params.reviewOutputKey,
+  });
+
+  if (params.recheckCanPublish && !params.recheckCanPublish()) {
+    return undefined;
+  }
+
+  if (existingSurface) {
+    return await updateCanonicalReviewSurface({
+      octokit: params.octokit,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      surface: existingSurface,
+      body: params.body,
+      botHandles: params.botHandles,
+    });
+  }
+
+  return await createCanonicalReviewSurface({
+    octokit: params.octokit,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    surfaceKind: params.surfaceKind,
+    body: params.body,
+    botHandles: params.botHandles,
+    pullReviewEvent: params.pullReviewEvent,
+  });
+}
+
 async function upsertReviewDetailsComment(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   owner: string;
@@ -787,30 +995,22 @@ async function appendReviewDetailsToSummary(params: {
   recheckCanPublish?: () => boolean;
 }): Promise<number | undefined> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
-  let updatedReviewDetails = params.reviewDetailsBlock;
-  const marker = buildReviewOutputMarker(reviewOutputKey);
 
-  const commentsResponse = await octokit.rest.issues.listComments({
+  const canonicalSurface = await findCanonicalReviewSurface({
+    octokit,
     owner,
     repo,
-    issue_number: prNumber,
-    per_page: 100,
-    sort: "created",
-    direction: "desc",
+    prNumber,
+    reviewOutputKey,
   });
 
-  const summaryComment = commentsResponse.data.find((comment) =>
-    typeof comment.body === "string" && comment.body.includes(marker)
-  );
-
-  if (!summaryComment) {
+  if (!canonicalSurface || canonicalSurface.kind !== "issue_comment") {
     throw new Error("Summary comment not found for review output marker");
   }
 
-  let summaryBody = summaryComment.body!;
   const updatedBody = mergeReviewDetailsIntoSummaryBody({
-    summaryBody,
-    reviewDetailsBlock: updatedReviewDetails,
+    summaryBody: canonicalSurface.body,
+    reviewDetailsBlock: params.reviewDetailsBlock,
     requireDegradationDisclosure: params.requireDegradationDisclosure,
     reviewBoundedness: params.reviewBoundedness,
   });
@@ -819,13 +1019,16 @@ async function appendReviewDetailsToSummary(params: {
     return undefined;
   }
 
-  await octokit.rest.issues.updateComment({
+  const updatedSurface = await updateCanonicalReviewSurface({
+    octokit,
     owner,
     repo,
-    comment_id: summaryComment.id,
-    body: sanitizeOutgoingMentions(updatedBody, botHandles),
+    prNumber,
+    surface: canonicalSurface,
+    body: updatedBody,
+    botHandles,
   });
-  return summaryComment.id;
+  return updatedSurface.id;
 }
 
 async function resolveAuthorTier(params: {
@@ -2260,18 +2463,42 @@ export function createReviewHandler(deps: {
         });
 
         if (!idempotencyCheck.shouldPublish) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-output-idempotency",
-              gateResult: "skipped",
-              skipReason: "already-published",
-              reviewOutputKey,
-              existingLocation: idempotencyCheck.existingLocation,
-            },
-            "Skipping review execution because output already published for key",
-          );
-          return;
+          const canonicalSurface = await findCanonicalReviewSurface({
+            octokit: idempotencyOctokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            reviewOutputKey,
+          });
+          const canonicalSurfaceHasReviewDetails = canonicalSurface?.body.includes("<summary>Review Details</summary>") ?? false;
+
+          if (canonicalSurface && !canonicalSurfaceHasReviewDetails) {
+            logger.info(
+              {
+                ...baseLog,
+                gate: "review-output-idempotency",
+                gateResult: "accepted",
+                reason: "canonical-surface-missing-review-details",
+                reviewOutputKey,
+                existingLocation: idempotencyCheck.existingLocation,
+                canonicalSurfaceKind: canonicalSurface.kind,
+              },
+              "Review output idempotency check accepted incomplete canonical surface for Review Details finalization",
+            );
+          } else {
+            logger.info(
+              {
+                ...baseLog,
+                gate: "review-output-idempotency",
+                gateResult: "skipped",
+                skipReason: "already-published",
+                reviewOutputKey,
+                existingLocation: idempotencyCheck.existingLocation,
+              },
+              "Skipping review execution because output already published for key",
+            );
+            return;
+          }
         }
 
         logger.info(
@@ -4268,6 +4495,7 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
         const reviewCompletedAt = new Date().toISOString();
+        let canonicalReviewDetailsBody: string | null = null;
         const buildReviewDetailsBody = (params?: {
           timeoutProgress?: TimeoutReviewDetailsProgress;
           reviewFirstPass?: ReviewFirstPassPayload | null;
@@ -4342,6 +4570,7 @@ export function createReviewHandler(deps: {
 
           try {
             const fullDetailsBody = buildReviewDetailsBody();
+            canonicalReviewDetailsBody = fullDetailsBody;
 
             if (result.published) {
               // Summary comment was posted -- append Review Details to it
@@ -4366,12 +4595,12 @@ export function createReviewHandler(deps: {
                 } catch (appendErr) {
                   // Fallback: post standalone if the initial append fails (e.g., summary comment not found yet)
                   logger.warn(
-                    { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
+                    { ...baseLog, gate: "review-details-output", gateResult: "degraded-fallback", err: appendErr },
                     "Failed to append Review Details to summary comment; posting standalone",
                   );
                   if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
                     setReviewWorkPhase("publish");
-                    const reviewDetailsCommentId = await upsertReviewDetailsComment({
+                    await upsertReviewDetailsComment({
                       octokit: extractionOctokit,
                       owner: apiOwner,
                       repo: apiRepo,
@@ -4382,22 +4611,6 @@ export function createReviewHandler(deps: {
                       recheckCanPublish: () =>
                         canPublishVisibleOutput("deterministic Review Details standalone comment"),
                     });
-
-                    finalizePublicationPhaseTiming();
-                    if (
-                      reviewDetailsCommentId !== undefined &&
-                      canPublishVisibleOutput("finalized Review Details standalone comment")
-                    ) {
-                      await extractionOctokit.rest.issues.updateComment({
-                        owner: apiOwner,
-                        repo: apiRepo,
-                        comment_id: reviewDetailsCommentId,
-                        body: sanitizeOutgoingMentions(
-                          buildReviewDetailsBody(),
-                          [githubApp.getAppSlug(), "claude"],
-                        ),
-                      });
-                    }
                   }
                 }
 
@@ -4431,9 +4644,12 @@ export function createReviewHandler(deps: {
                 }
               }
             } else {
-              // No summary comment (clean review) -- post standalone Review Details
-              // FORMAT-11 exemption: no summary exists to embed into; standalone preserves metrics visibility
-              if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
+              const approvalWillOwnCanonicalSurface = config.review.autoApprove && result.conclusion === "success";
+
+              if (approvalWillOwnCanonicalSurface) {
+                // Clean approvals now own the canonical visible surface. The approval review body
+                // gets the Review Details block after the approval is created and can be edited.
+              } else if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
                 setReviewWorkPhase("publish");
                 const reviewDetailsCommentId = await upsertReviewDetailsComment({
                   octokit: extractionOctokit,
@@ -6041,20 +6257,56 @@ export function createReviewHandler(deps: {
               ? renderApprovalConfidence(depBumpContext.mergeConfidence)
               : null;
 
+            let approvalBody = buildApprovedReviewBody({
+              reviewOutputKey,
+              evidence: approvalEvidence,
+              approvalConfidence,
+            });
+
+            if (canonicalReviewDetailsBody) {
+              approvalBody = mergeReviewDetailsIntoSummaryBody({
+                summaryBody: approvalBody,
+                reviewDetailsBlock: canonicalReviewDetailsBody,
+                requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                reviewBoundedness,
+              });
+            }
+
             await octokit.rest.pulls.createReview({
               owner: apiOwner,
               repo: apiRepo,
               pull_number: pr.number,
               event: "APPROVE",
               body: sanitizeOutgoingMentions(
-                buildApprovedReviewBody({
-                  reviewOutputKey,
-                  evidence: approvalEvidence,
-                  approvalConfidence,
-                }),
+                approvalBody,
                 [appSlug, "claude"],
               ),
             });
+
+            if (canonicalReviewDetailsBody) {
+              finalizePublicationPhaseTiming();
+              await upsertCanonicalReviewSurface({
+                octokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                surfaceKind: "pull_review",
+                pullReviewEvent: "APPROVE",
+                body: mergeReviewDetailsIntoSummaryBody({
+                  summaryBody: buildApprovedReviewBody({
+                    reviewOutputKey,
+                    evidence: approvalEvidence,
+                    approvalConfidence,
+                  }),
+                  reviewDetailsBlock: buildReviewDetailsBody(),
+                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                  reviewBoundedness,
+                }),
+                botHandles: [appSlug, "claude"],
+                recheckCanPublish: () => canPublishVisibleOutput("finalized approval review"),
+              });
+            }
 
             logger.info(
               {

@@ -1948,7 +1948,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           createReview: async ({ body }: { body?: string }) => {
             approveCount++;
             createdReviews.push({ body: body ?? null });
-            return { data: {} };
+            return { data: { id: createdReviews.length } };
           },
         },
         reactions: {
@@ -1962,6 +1962,16 @@ describe("createReviewHandler review_requested idempotency", () => {
           },
           updateComment: async () => ({ data: {} }),
         },
+      },
+      request: async (
+        _route: string,
+        params: { review_id: number; body: string },
+      ) => {
+        const review = createdReviews[params.review_id - 1];
+        if (review) {
+          review.body = params.body;
+        }
+        return { data: {} };
       },
     };
 
