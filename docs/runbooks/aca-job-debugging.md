@@ -6,6 +6,7 @@ Use this when an Azure Container Apps job fails, stalls, or times out.
 ## Signals
 - `result.json` is missing or reports failure
 - `agent-diagnostics.log` shows the last remote diagnostics
+- `Last remote diagnostics:` appears in the surfaced timeout/failure output
 - GitHub Actions workflow run status or review proof surfaces show timeout-related failures
 
 ## Commands

@@ -4,7 +4,8 @@
 Use this when a runtime secret is expired, revoked, or suspected compromised.
 
 ## Signals
-- authentication failures in GitHub Actions workflow run status
+- `authentication failures`
+- `GitHub Actions workflow run status` shows the failing rotation-related workflow run
 - repeated startup or webhook auth errors in runtime logs
 
 ## Commands

@@ -5,6 +5,7 @@ Use this when the nightly sync automations stop updating issues or reaction-deri
 
 ## Signals
 - `nightly-issue-sync` or `nightly-reaction-sync` failures in GitHub Actions workflow run status
+- the workflow logs show the `nightly-issue-sync` or `nightly-reaction-sync` job name directly
 - stale issue/reaction sync evidence in operator review
 
 ## Commands

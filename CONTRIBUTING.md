@@ -1,4 +1,4 @@
-# Contributing to KodiAI
+# Contributing to Kodiai
 
 Thanks for your interest in contributing. This guide covers everything you need to get started.
 
@@ -10,7 +10,7 @@ Thanks for your interest in contributing. This guide covers everything you need 
 
 ## Bun Version Contract
 
-KodiAI pins Bun in three places and they must stay aligned:
+Kodiai pins Bun in three places and they must stay aligned:
 
 - `package.json` sets `packageManager` to `bun@1.3.8`
 - `package.json` sets `engines.bun` to `1.3.8`
@@ -113,7 +113,7 @@ Key top-level directories:
 
 ## GSD v2 Planning Artifacts
 
-KodiAI keeps planning and execution state under `.gsd/`. Treat the checked-in artifact model as part of the contributor contract:
+Kodiai keeps planning and execution state under `.gsd/`. Treat the checked-in artifact model as part of the contributor contract:
 
 - Milestones use `M###` identifiers
 - Slices use `S##` identifiers

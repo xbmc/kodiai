@@ -55,7 +55,11 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 
 ## Features
 
-Recent shipped milestones include M051 manual rereview hardening around the explicit `@kodiai review` contract, M052 Slack webhook relay operations, M053 removal of unsafe `new Function()` usage proven by `verify:m053`, and M054 planning/verification surface repair proven by `verify:m054:s01` and `verify:m054:s04`.
+Recent shipped milestones include:
+- M051 manual rereview hardening around the explicit `@kodiai review` contract
+- M052 Slack webhook relay operations
+- M053 removal of unsafe `new Function()` usage proven by `verify:m053`
+- M054 planning/verification surface repair proven by `verify:m054:s01` and `verify:m054:s04`
 
 Nightly maintenance workflows are part of the shipped operator surface:
 - `nightly-issue-sync` runs `bun scripts/backfill-issues.ts --sync`
