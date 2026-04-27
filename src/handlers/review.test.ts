@@ -9536,6 +9536,185 @@ describe("createReviewHandler timeout resilience", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("timeout publication omits split timeout budget when dynamic scaling is disabled", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    await Bun.write(
+      join(workspaceFixture.dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "timeoutSeconds: 600",
+        "timeout:",
+        "  dynamicScaling: false",
+        "",
+      ].join("\n"),
+    );
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: { action?: string },
+      ) => {
+        if (context?.action === "review-retry") {
+          return undefined as T;
+        }
+        return fn(createQueueRunMetadata());
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const issueComments = new Map<number, string>();
+    let nextCommentId = 130;
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+          }),
+          createComment: async (params: { body: string }) => {
+            const id = nextCommentId++;
+            issueComments.set(id, params.body);
+            return { data: { id } };
+          },
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            issueComments.set(params.comment_id, params.body);
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    let dynamicTimeoutSeconds: number | undefined | null = null;
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (params: { dynamicTimeoutSeconds?: number }) => {
+          dynamicTimeoutSeconds = params.dynamicTimeoutSeconds;
+          return {
+            conclusion: "error",
+            isTimeout: true,
+            published: false,
+            errorMessage: "timeout",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-timeout-static-budget",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "timeout",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 2,
+          summaryDraft: "Found two issues before timeout.",
+          totalFiles: 3,
+        }),
+        updateCheckpointCommentId: () => undefined,
+        deleteCheckpoint: () => undefined,
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Timeout checkpoint static budget",
+          body: "",
+          commits: 0,
+          additions: 3,
+          deletions: 0,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    const partial = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
+    expect(dynamicTimeoutSeconds).toBeUndefined();
+    expect(partial).toBeDefined();
+    expect(partial!).toContain("follow-up review is pending (600s timeout).");
+    expect(partial!).not.toContain("timeout budget: remote runtime");
+    expect(partial!).not.toContain("- Timeout budget:");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("suppresses timeout Review Details publication when publish rights are lost after bounded first-pass output", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
