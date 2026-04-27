@@ -735,7 +735,7 @@ async function findCanonicalReviewSurface(params: {
     per_page: 100,
   });
 
-  const pullReview = reviewsResponse.data.find((review) =>
+  const pullReview = [...reviewsResponse.data].reverse().find((review) =>
     typeof review.id === "number"
     && typeof review.body === "string"
     && review.body.includes(marker)
