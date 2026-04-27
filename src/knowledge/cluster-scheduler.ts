@@ -23,13 +23,19 @@ export type ClusterSchedulerOptions = {
   logger: Logger;
   /** Repos to cluster. */
   repos: string[];
+  /** Test seam: avoids module-level mocks that leak across Bun test files. */
+  createClusterStoreFn?: typeof createClusterStore;
+  /** Test seam: avoids module-level mocks that leak across Bun test files. */
+  runClusterPipelineFn?: typeof runClusterPipeline;
 };
 
 export function createClusterScheduler(
   opts: ClusterSchedulerOptions,
 ): ClusterScheduler {
   const { sql, taskRouter, logger, repos } = opts;
-  const store = createClusterStore({ sql, logger });
+  const createStore = opts.createClusterStoreFn ?? createClusterStore;
+  const runPipeline = opts.runClusterPipelineFn ?? runClusterPipeline;
+  const store = createStore({ sql, logger });
   let startupTimer: ReturnType<typeof setTimeout> | null = null;
   let intervalTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -37,7 +43,7 @@ export function createClusterScheduler(
     for (const repo of repos) {
       try {
         logger.info({ repo }, "Starting cluster pipeline for repo");
-        await runClusterPipeline({ sql, store, taskRouter, logger, repo });
+        await runPipeline({ sql, store, taskRouter, logger, repo });
         logger.info({ repo }, "Cluster pipeline completed for repo");
       } catch (err) {
         // Fail-open: log and continue to next repo

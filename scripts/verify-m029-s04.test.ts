@@ -45,7 +45,9 @@ function makeSequentialSqlStub(responses: Array<unknown[] | Error>): unknown {
 }
 
 /** Build a minimal octokit stub that returns paginated comment pages. */
-function makeOctokitStub(pages: Array<Array<{ id: number; body: string }>>) {
+type IssueCleanCommentStub = { id: number; body: string; user?: { login: string; type?: string } };
+
+function makeOctokitStub(pages: Array<Array<IssueCleanCommentStub>>) {
   return {
     rest: {
       issues: {
@@ -358,7 +360,7 @@ describe("ISSUE-CLEAN check", () => {
     const octokit = makeOctokitStub([
       [
         { id: 1, body: "<!-- kodiai:wiki-modification:1 -->\nContent" },
-        { id: 2, body: "This is a plain comment without any marker." },
+        { id: 2, body: "This is a plain comment without any marker.", user: { login: "kodiai[bot]", type: "Bot" } },
       ],
     ]);
     const report = await evaluateM029S04({ octokit });
@@ -367,6 +369,60 @@ describe("ISSUE-CLEAN check", () => {
     expect(check.skipped).toBe(false);
     expect(check.status_code).toBe("unmarked_comments_found");
     expect(check.detail).toContain("violations=1");
+  });
+
+  test("ignores unmarked human comments and fails only on unmarked Kodiai bot artifacts", async () => {
+    const octokit = makeOctokitStub([
+      [
+        {
+          id: 1,
+          body: "@keithah can you explain what it is doing?",
+          user: { login: "KarellenX", type: "User" },
+        },
+        {
+          id: 2,
+          body: "I need to read the actual wiki page to understand its current content.",
+          user: { login: "kodiai[bot]", type: "Bot" },
+        },
+      ],
+    ]);
+    const report = await evaluateM029S04({ octokit });
+    const check = getCheck(report, "M029-S04-ISSUE-CLEAN");
+    expect(check.passed).toBe(false);
+    expect(check.skipped).toBe(false);
+    expect(check.status_code).toBe("unmarked_comments_found");
+    expect(check.detail).toContain("violations=1");
+  });
+
+  test("passes when only unmarked comments are human comments", async () => {
+    const octokit = makeOctokitStub([
+      [
+        {
+          id: 1,
+          body: "@keithah can you explain what it is doing?",
+          user: { login: "KarellenX", type: "User" },
+        },
+        { id: 2, body: "<!-- kodiai:wiki-modification:2 -->\nContent", user: { login: "kodiai[bot]", type: "Bot" } },
+      ],
+    ]);
+    const report = await evaluateM029S04({ octokit });
+    const check = getCheck(report, "M029-S04-ISSUE-CLEAN");
+    expect(check.passed).toBe(true);
+    expect(check.status_code).toBe("issue_clean");
+  });
+
+  test("ignores unmarked comments with missing author identity", async () => {
+    const octokit = makeOctokitStub([
+      [
+        { id: 1, body: "Ghost account comment without marker." },
+        { id: 2, body: "Deleted account comment without marker.", user: null },
+        { id: 3, body: "<!-- kodiai:wiki-modification:3 -->\nContent", user: { login: "kodiai[bot]", type: "Bot" } },
+      ],
+    ]);
+    const report = await evaluateM029S04({ octokit });
+    const check = getCheck(report, "M029-S04-ISSUE-CLEAN");
+    expect(check.passed).toBe(true);
+    expect(check.status_code).toBe("issue_clean");
   });
 
   test("handles pagination correctly — breaks when page returns fewer than 100", async () => {
@@ -435,7 +491,7 @@ describe("overallPassed semantics", () => {
 
   test("overallPassed is false when ISSUE-CLEAN fails", async () => {
     const octokit = makeOctokitStub([
-      [{ id: 1, body: "Plain comment without marker." }],
+      [{ id: 1, body: "Plain comment without marker.", user: { login: "kodiai[bot]", type: "Bot" } }],
     ]);
     const report = await evaluateM029S04({ octokit });
     const check = getCheck(report, "M029-S04-ISSUE-CLEAN");

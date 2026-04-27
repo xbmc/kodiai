@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, vi } from "bun:test";
 import type { Logger } from "pino";
+import { createClusterScheduler } from "./cluster-scheduler.ts";
 
 function createMockLogger(): Logger {
   return {
@@ -28,20 +29,14 @@ describe("createClusterScheduler", () => {
       }
     });
 
-    mock.module("./cluster-store.ts", () => ({
-      createClusterStore: mock(() => ({ mocked: true })),
-    }));
-    mock.module("./cluster-pipeline.ts", () => ({
-      runClusterPipeline,
-    }));
-
-    const { createClusterScheduler } = await import("./cluster-scheduler.ts");
     const logger = createMockLogger();
     const scheduler = createClusterScheduler({
       sql: {} as never,
       taskRouter: {} as never,
       logger,
       repos: ["xbmc/first", "xbmc/second"],
+      createClusterStoreFn: mock(() => ({ mocked: true }) as never),
+      runClusterPipelineFn: runClusterPipeline as never,
     });
 
     await scheduler.runNow();
@@ -63,18 +58,16 @@ describe("createClusterScheduler", () => {
 
   it("start schedules the initial run and recurring interval, and stop clears both", async () => {
     const runClusterPipeline = mock(async () => {});
-    const createClusterStore = mock(() => ({ mocked: true }));
+    const createClusterStore = mock(() => ({ mocked: true }) as never);
     const logger = createMockLogger();
 
-    mock.module("./cluster-store.ts", () => ({ createClusterStore }));
-    mock.module("./cluster-pipeline.ts", () => ({ runClusterPipeline }));
-
-    const { createClusterScheduler } = await import("./cluster-scheduler.ts");
     const scheduler = createClusterScheduler({
       sql: {} as never,
       taskRouter: {} as never,
       logger,
       repos: ["xbmc/one"],
+      createClusterStoreFn: createClusterStore,
+      runClusterPipelineFn: runClusterPipeline as never,
     });
 
     scheduler.start();
@@ -98,17 +91,13 @@ describe("createClusterScheduler", () => {
   it("runNow handles an empty repo list without invoking the pipeline", async () => {
     const runClusterPipeline = mock(async () => {});
 
-    mock.module("./cluster-store.ts", () => ({
-      createClusterStore: mock(() => ({ mocked: true })),
-    }));
-    mock.module("./cluster-pipeline.ts", () => ({ runClusterPipeline }));
-
-    const { createClusterScheduler } = await import("./cluster-scheduler.ts");
     const scheduler = createClusterScheduler({
       sql: {} as never,
       taskRouter: {} as never,
       logger: createMockLogger(),
       repos: [],
+      createClusterStoreFn: mock(() => ({ mocked: true }) as never),
+      runClusterPipelineFn: runClusterPipeline as never,
     });
 
     await expect(scheduler.runNow()).resolves.toBeUndefined();
