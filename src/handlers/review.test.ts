@@ -5297,6 +5297,111 @@ describe("createReviewHandler finding extraction", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("review-comment idempotency accept still publishes Review Details when no canonical issue comment exists yet", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    let exposeInlineFinding = false;
+    let detailsCommentBody: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) =>
+        fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({
+            data: exposeInlineFinding
+              ? [{ id: 41, body: `**Inline finding**\n\n${marker}`, path: "src/a.ts", line: 1, start_line: 1 }]
+              : [],
+          }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: { id: 901 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-review-comment-idempotency-accept",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+
+    expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("publishes Review Details even when execution reports published false", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -11310,8 +11415,11 @@ describe("createReviewHandler timeout resilience", () => {
 
     let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
     let nextCommentId = 900;
-    const issueComments = new Map<number, string>();
+    const issueComments = new Map<number, string>([
+      [899, `older marker match\n\n${buildReviewOutputMarker(reviewOutputKey)}`],
+    ]);
     const updatedCommentBodies: string[] = [];
+    const updatedCommentIds: number[] = [];
     let exposeContinuationReviewComments = false;
     let allowRetryPublish = true;
     let retryExecutionStarted = false;
@@ -11426,6 +11534,7 @@ describe("createReviewHandler timeout resilience", () => {
           },
           updateComment: async (params: { comment_id: number; body: string }) => {
             updatedCommentBodies.push(params.body);
+            updatedCommentIds.push(params.comment_id);
             issueComments.set(params.comment_id, params.body);
             if (retryExecutionStarted) {
               allowRetryPublish = false;
@@ -11598,9 +11707,11 @@ describe("createReviewHandler timeout resilience", () => {
     await queuedRetryJob!(queueMetadata);
 
     expect(updatedCommentBodies).toHaveLength(updateCountBeforeRetry + 1);
+    expect(updatedCommentIds.at(-1)).toBe(900);
     expect(issueComments.get(900)).toBe(updatedCommentBodies.at(-1));
     expect(issueComments.get(900)).toContain("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.");
     expect(issueComments.get(900)).toContain("<summary>Review Details</summary>");
+    expect(issueComments.get(899)).toBe(`older marker match\n\n${buildReviewOutputMarker(reviewOutputKey)}`);
     expect(issueComments.get(901)).toBeUndefined();
 
     await workspaceFixture.cleanup();
@@ -14985,6 +15096,121 @@ describe("createReviewHandler phase timing logging", () => {
 });
 
 describe("createReviewHandler Review Details phase timing publication", () => {
+  test("merges Review Details before later unrelated details blocks in the canonical summary body", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let updatedSummaryBody: string | undefined;
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+
+    const summaryBody = [
+      "<details>",
+      "<summary>Kodiai Review Summary</summary>",
+      "",
+      "## What Changed",
+      "- Found one correctness issue worth fixing before merge.",
+      "",
+      "</details>",
+      "",
+      "<details>",
+      "<summary>Unrelated downstream section</summary>",
+      "",
+      "This block should stay after Review Details.",
+      "",
+      "</details>",
+      "",
+      buildReviewOutputMarker(reviewOutputKey),
+    ].join("\n");
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [{ id: 77, body: summaryBody }] }),
+          createComment: async () => ({ data: { id: 88 } }),
+          updateComment: async (params: { comment_id: number; body: string }) => {
+            updatedSummaryBody = params.body;
+            return { data: {} };
+          },
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+        search: { issuesAndPullRequests: async () => ({ data: { total_count: 4 } }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: true,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-multi-details-summary",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+
+    const reviewDetailsIndex = updatedSummaryBody?.indexOf("<summary>Review Details</summary>") ?? -1;
+    const unrelatedIndex = updatedSummaryBody?.indexOf("<summary>Unrelated downstream section</summary>") ?? -1;
+
+    expect(reviewDetailsIndex).toBeGreaterThan(-1);
+    expect(unrelatedIndex).toBeGreaterThan(-1);
+    expect(reviewDetailsIndex).toBeLessThan(unrelatedIndex);
+
+    await workspaceFixture.cleanup();
+  });
+
   test("merges Review Details timings into the published canonical visible surface", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();

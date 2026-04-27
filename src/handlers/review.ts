@@ -1026,14 +1026,15 @@ function mergeReviewDetailsIntoSummaryBody(params: {
   }
 
   const closingTag = '</details>';
-  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
-  if (lastCloseIdx === -1) {
+  const firstCloseIdx = summaryBody.indexOf(closingTag);
+  if (firstCloseIdx === -1) {
     return `${summaryBody}\n\n${updatedReviewDetails}`;
   }
 
-  const before = summaryBody.slice(0, lastCloseIdx).trimEnd();
-  const after = summaryBody.slice(lastCloseIdx);
-  return `${before}\n\n${updatedReviewDetails}\n${after}`;
+  const insertionIdx = firstCloseIdx + closingTag.length;
+  const before = summaryBody.slice(0, insertionIdx).trimEnd();
+  const after = summaryBody.slice(insertionIdx).trimStart();
+  return after ? `${before}\n\n${updatedReviewDetails}\n\n${after}` : `${before}\n\n${updatedReviewDetails}`;
 }
 
 function resolveAuthorTier(params: {
@@ -5908,6 +5909,11 @@ export function createReviewHandler(deps: {
                               prNumber: pr.number,
                               reviewOutputKey,
                               preferredKind: "issue_comment",
+                              canonicalSurface: {
+                                kind: "issue_comment",
+                                commentId: commentIdToUpdate,
+                                body: mergedBody,
+                              },
                               summaryBody: mergedBody,
                               reviewDetailsBlock: buildReviewDetailsBody({
                                 reviewFirstPass: mergedFirstPass,
