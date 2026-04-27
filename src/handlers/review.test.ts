@@ -8822,6 +8822,7 @@ describe("createReviewHandler finding prioritization", () => {
       ],
     });
 
+    expect(result.detailsCommentBody).toContain("Comment cap saturated: published 1/2 prioritized findings; 1 lower-priority finding(s) omitted from inline publication");
     expect(result.detailsCommentBody).toContain("Prioritization: scored 2 findings");
     expect(result.detailsCommentBody).toContain("top score");
     expect(result.detailsCommentBody).toContain("threshold score");

@@ -483,6 +483,13 @@ test("maxComments overrides default", () => {
   expect(prompt).toContain("at most 3 inline comments");
 });
 
+test("comment cap is a publication cap, not an analysis stopping point", () => {
+  const prompt = buildReviewPrompt(baseContext({ maxComments: 3 }));
+  expect(prompt).toContain("The comment limit is a publication cap, not an analysis stopping point.");
+  expect(prompt).toContain("Continue analyzing after you identify the first 3 candidate findings");
+  expect(prompt).toContain("publish the strongest 3 after completing the full review pass");
+});
+
 test("buildSuppressionRulesSection formats string and object suppressions", () => {
   const section = buildSuppressionRulesSection([
     "missing JSDoc",
@@ -2785,6 +2792,8 @@ describe("buildReviewPrompt graph context integration", () => {
     expect(prompt).toContain(`\"${disclosureSentence}\"`);
     expect(prompt).toContain("Do not paraphrase it.");
     expect(prompt).toContain("Do not repeat it elsewhere in the summary.");
+    expect(prompt).toContain("Do not claim the review found all relevant issues when bounded files or severity filters excluded scope.");
+    expect(prompt).toContain("If the review is bounded, frame the verdict as the result for the inspected scope.");
   });
 
   test("keeps small unbounded standard prompts silent and omits bounded-review instructions in enhanced mode", () => {

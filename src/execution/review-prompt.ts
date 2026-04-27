@@ -398,6 +398,8 @@ function buildCommentCapInstructions(maxComments: number): string {
     "## Comment Limit",
     "",
     `Post at most ${maxComments} inline comments for this PR review.`,
+    "The comment limit is a publication cap, not an analysis stopping point.",
+    `Continue analyzing after you identify the first ${maxComments} candidate findings; publish the strongest ${maxComments} after completing the full review pass.`,
     "Prioritize by severity: CRITICAL first, then MAJOR, MEDIUM, MINOR.",
     "If more issues exist than the limit allows, add a note at the end of your final inline comment:",
     `"Note: Additional lower-severity issues were found but omitted. Increase review.maxComments in .kodiai.yml to see more."`,
@@ -1801,6 +1803,8 @@ export function buildReviewPromptDetails(context: {
       `\"${context.reviewBoundedness.disclosureSentence}\"`,
       "Do not paraphrase it.",
       "Do not repeat it elsewhere in the summary.",
+      "Do not claim the review found all relevant issues when bounded files or severity filters excluded scope.",
+      "If the review is bounded, frame the verdict as the result for the inspected scope.",
     );
   }
   pushBudgetedSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);

@@ -4404,6 +4404,9 @@ export function createReviewHandler(deps: {
           findingsScored: number;
           topScore: number | null;
           thresholdScore: number | null;
+          maxComments?: number;
+          selectedFindings?: number;
+          omittedFindings?: number;
         } | undefined;
 
         if (visibleFindings.length > resolvedMaxComments) {
@@ -4420,7 +4423,12 @@ export function createReviewHandler(deps: {
             weights: config.review.prioritization,
           });
 
-          prioritizationStats = prioritized.stats;
+          prioritizationStats = {
+            ...prioritized.stats,
+            maxComments: resolvedMaxComments,
+            selectedFindings: prioritized.selectedFindings.length,
+            omittedFindings: Math.max(0, visibleFindings.length - prioritized.selectedFindings.length),
+          };
 
           const selectedOriginalIndexes = new Set(
             prioritized.selectedFindings.map((finding) => finding.originalIndex),
