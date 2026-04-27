@@ -243,6 +243,39 @@ describe("review idempotency helpers", () => {
     expect(result).toContain("<summary>kodiai response</summary>");
   });
 
+  test("buildApprovedReviewBody can inline Review Details while preserving canonical marker discovery", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "mention-review",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+
+    const result = buildApprovedReviewBody({
+      reviewOutputKey,
+      evidence: ["Reviewed only source files."],
+      approvalConfidence: null,
+      reviewDetailsBlock: [
+        "<details>",
+        "<summary>Review Details</summary>",
+        "",
+        "- Total wall-clock: 1ms",
+        "",
+        "</details>",
+        "",
+        `<!-- kodiai:review-details:${reviewOutputKey} -->`,
+      ].join("\n"),
+    });
+
+    expect(result).toContain("Decision: APPROVE");
+    expect(result).toContain("<summary>Review Details</summary>");
+    expect(result).toContain(`<!-- kodiai:review-details:${reviewOutputKey} -->`);
+    expect(extractReviewOutputKey(result)).toBe(reviewOutputKey);
+  });
+
   test("buildApprovedReviewBody preserves exactly three normalized evidence bullets without approval confidence", () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
