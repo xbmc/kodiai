@@ -32,26 +32,56 @@
 - Summary: Move Claude agent subprocess into an ephemeral Azure Container Apps Job with zero application secrets. MCP servers exposed over authenticated HTTP from the orchestrator. Workspace shared via Azure Files mount. Orchestrator polls ACA Job API for completion and reads result.json. Closes the /proc/<ppid>/environ attack path confirmed in post-M031 security testing.
 - Context: `.gsd/milestones/M032/M032-CONTEXT.md`
 
-### M044 — Audit Recent XBMC Review Correctness
+### M053 — Unsafe `new Function()` Removal
 - Status: queued
-- Added: 2026-04-08
-- Summary: Audit the most recent ~12 Kodiai-reviewed `xbmc/xbmc` PRs across automatic and explicit review lanes, distinguish valid clean approvals from missing or unpublished findings using GitHub-visible and internal publication evidence, fix any defects exposed by the audit, and leave behind a repeatable audit/verification surface.
-- Context: `.gsd/milestones/M044/M044-CONTEXT.md`
+- Added: 2026-04-20
+- Summary: Remove the unsafe dynamic evaluator surface from `src/`, preserve the operator proof intent, and enforce the no-`new Function()` invariant with `verify:m053`.
+- Context: GitHub issue #92
 
-### M045 — Contributor Experience Product Contract and Architecture
+### M054 — GSD v2 Planning Artifact Repair
 - Status: queued
-- Added: 2026-04-08
-- Summary: Define the long-term contributor-experience product contract, decide how contributor status should affect Kodiai across all tier-related surfaces, and implement the architectural unification needed to express that contract coherently.
-- Context: `.gsd/milestones/M045/M045-CONTEXT.md`
+- Added: 2026-04-20
+- Summary: Reconcile stale queue state, reconstruct missing retrospective milestone artifacts, and repair verifier/rationale coverage for completed historical milestones.
+- Context: GitHub issue #93
 
-### M046 — Contributor Tier Calibration and Fixture Audit
+### M055 — Top-Level Docs Accuracy Pass
 - Status: queued
-- Added: 2026-04-08
-- Summary: Build an xbmc/xbmc-first contributor fixture set, evaluate Kodiai's current scoring and percentile tiering against that evidence under the M045 contract, and produce an explicit calibration verdict.
-- Context: `.gsd/milestones/M046/M046-CONTEXT.md`
+- Added: 2026-04-20
+- Summary: Align README, CHANGELOG, LICENSE, CONTRIBUTING, docs index, and runbooks with the current shipped product and verifier contracts.
+- Context: GitHub issue #94
 
-### M047 — Contributor Experience Redesign and Calibration Rollout
+### M056 — Migration Rollback Completeness
 - Status: queued
-- Added: 2026-04-08
-- Summary: Ship the contributor-experience redesign and approved recalibration across review, retrieval, Slack, and contributor-model plumbing, then prove cross-surface coherence end to end.
-- Context: `.gsd/milestones/M047/M047-CONTEXT.md`
+- Added: 2026-04-20
+- Summary: Add missing down migrations for historical schema changes and enforce that new migrations ship paired rollback scripts.
+- Context: GitHub issue #95
+
+### M057 — Core Handler & Webhook Test Backfill
+- Status: queued
+- Added: 2026-04-20
+- Summary: Backfill high-value tests across webhook routing, core handlers, fork/gist behavior, and orphaned workspace test coverage.
+- Context: GitHub issue #96
+
+### M058 — CI Workflow Hardening
+- Status: queued
+- Added: 2026-04-20
+- Summary: Broaden CI coverage, pin the Bun/runtime contract, and add lint, orphan-test, and migration-down gates.
+- Context: GitHub issue #97
+
+### M059 — Script Registry & Orphan Audit
+- Status: queued
+- Added: 2026-04-20
+- Summary: Create a truthful script registry and sweep orphaned scripts so operational entrypoints have explicit ownership and status.
+- Context: GitHub issue #98
+
+### M060 — Knowledge Subsystem Test Backfill
+- Status: queued
+- Added: 2026-04-20
+- Summary: Backfill direct tests for central knowledge subsystem files and clarify the ownership boundary with M027 embedding-integrity work.
+- Context: GitHub issue #99
+
+## Not Pending
+
+Completed milestone history is tracked in `.gsd/PROJECT.md` and each milestone's committed `.gsd/milestones/<MID>/` artifacts when present. Do not list completed milestones in the pending queue.
+
+Clearly shipped milestones that must stay out of Pending Milestones include M044, M045, M046, M047, M048, M049, M050, M051, and M052.
