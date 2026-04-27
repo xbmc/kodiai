@@ -360,7 +360,7 @@ describe("ISSUE-CLEAN check", () => {
     const octokit = makeOctokitStub([
       [
         { id: 1, body: "<!-- kodiai:wiki-modification:1 -->\nContent" },
-        { id: 2, body: "This is a plain comment without any marker." },
+        { id: 2, body: "This is a plain comment without any marker.", user: { login: "kodiai[bot]", type: "Bot" } },
       ],
     ]);
     const report = await evaluateM029S04({ octokit });
@@ -403,6 +403,20 @@ describe("ISSUE-CLEAN check", () => {
           user: { login: "KarellenX", type: "User" },
         },
         { id: 2, body: "<!-- kodiai:wiki-modification:2 -->\nContent", user: { login: "kodiai[bot]", type: "Bot" } },
+      ],
+    ]);
+    const report = await evaluateM029S04({ octokit });
+    const check = getCheck(report, "M029-S04-ISSUE-CLEAN");
+    expect(check.passed).toBe(true);
+    expect(check.status_code).toBe("issue_clean");
+  });
+
+  test("ignores unmarked comments with missing author identity", async () => {
+    const octokit = makeOctokitStub([
+      [
+        { id: 1, body: "Ghost account comment without marker." },
+        { id: 2, body: "Deleted account comment without marker.", user: null },
+        { id: 3, body: "<!-- kodiai:wiki-modification:3 -->\nContent", user: { login: "kodiai[bot]", type: "Bot" } },
       ],
     ]);
     const report = await evaluateM029S04({ octokit });
@@ -477,7 +491,7 @@ describe("overallPassed semantics", () => {
 
   test("overallPassed is false when ISSUE-CLEAN fails", async () => {
     const octokit = makeOctokitStub([
-      [{ id: 1, body: "Plain comment without marker." }],
+      [{ id: 1, body: "Plain comment without marker.", user: { login: "kodiai[bot]", type: "Bot" } }],
     ]);
     const report = await evaluateM029S04({ octokit });
     const check = getCheck(report, "M029-S04-ISSUE-CLEAN");

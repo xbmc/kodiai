@@ -311,7 +311,7 @@ async function runIssueClean(octokit?: unknown): Promise<M029S04Check> {
         const body = comment.body ?? "";
         const hasMarker = body.includes(WIKI_MODIFICATION_MARKER);
         const isSummaryTable = body.includes(SUMMARY_TABLE_MARKER);
-        const isKodiaiBotArtifact = comment.user == null || comment.user.login === "kodiai[bot]";
+        const isKodiaiBotArtifact = comment.user?.login === "kodiai[bot]";
         if (!hasMarker && !isSummaryTable && isKodiaiBotArtifact) {
           violations++;
         }
