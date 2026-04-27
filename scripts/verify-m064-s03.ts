@@ -123,7 +123,7 @@ function makeCanonicalState(
 
 function createStore(
   stateByBaseReviewOutputKey: Map<string, ContinuationFamilyStateRecord>,
-): Pick<KnowledgeStore, "getContinuationFamilyState"> {
+): OperatorLookupStore {
   return {
     async getContinuationFamilyState(key: ContinuationFamilyStateKey): Promise<ContinuationFamilyStateRecord | null> {
       const state = stateByBaseReviewOutputKey.get(key.baseReviewOutputKey);

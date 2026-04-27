@@ -24,6 +24,7 @@ import {
   pollUntilComplete,
   cancelAcaJob,
   readJobResult,
+  readJobDiagnostics,
 } from "../jobs/aca-launcher.ts";
 import {
   buildAuthFetchUrl,

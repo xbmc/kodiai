@@ -67,7 +67,8 @@ describe("resolveContinuationOperatorEvidence", () => {
       }),
     });
 
-    expect(observedKey).toEqual({
+    expect(observedKey).not.toBeNull();
+    expect(observedKey as unknown as ContinuationFamilyStateKey).toEqual({
       familyKey: "acme/repo#101",
       baseReviewOutputKey: makeReviewOutputKey(),
     });
@@ -121,9 +122,6 @@ describe("buildContinuationOperatorEvidenceReport", () => {
       baseReviewOutputKey: makeReviewOutputKey(),
       familyKey: "acme/repo#101",
       parsedReviewOutputKey: {
-        reviewOutputKey: makeReviewOutputKey(),
-        baseReviewOutputKey: makeReviewOutputKey(),
-        retryAttempt: null,
         installationId: 42,
         owner: "acme",
         repo: "repo",
@@ -133,6 +131,7 @@ describe("buildContinuationOperatorEvidenceReport", () => {
         deliveryId: "delivery-123",
         effectiveDeliveryId: "delivery-123",
         headSha: "abcdef1234567890",
+        retryAttempt: null,
       },
       canonicalState: makeCanonicalState(),
       detail: "resolved",

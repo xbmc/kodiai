@@ -41,6 +41,7 @@ function createTestConfig(): AppConfig {
     port: 3000,
     logLevel: "info",
     botAllowList: [],
+    slackWebhookRelaySources: [],
     slackWikiChannelId: "",
     wikiStalenessThresholdDays: 30,
     wikiGithubOwner: "xbmc",

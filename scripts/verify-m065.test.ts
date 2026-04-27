@@ -98,7 +98,7 @@ type JsonReport = {
       drill_down_command: string;
     };
     freshRegressionProof: {
-      state: "pending" | "satisfied";
+      state: "failed" | "pending" | "satisfied";
       source: string | null;
       detail: string;
       drill_down_command: string;

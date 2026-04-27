@@ -255,7 +255,7 @@ describe("verify-m065-s03", () => {
       json: true,
       stdout: { write: (chunk: string) => void stdout.push(chunk) },
       stderr: { write: (chunk: string) => void stderr.push(chunk) },
-      evaluateRegressionGate: () => ({ checks: [] }),
+      evaluateRegressionGate: () => ({ checks: [] }) as never,
       readTextFile: async (filePath: string) => {
         if (normalize(filePath) === "docs/runbooks/m065-rollout-proof.md") {
           return PASSING_RUNBOOK
