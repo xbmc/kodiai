@@ -5070,21 +5070,28 @@ export function createReviewHandler(deps: {
           );
         }
 
-        // Post error or partial-review comment if execution failed or timed out
-        if (result.conclusion === "error") {
-          const category = classifyError(
-            new Error(result.errorMessage ?? "Unknown error"),
-            result.isTimeout ?? false,
-            result.published ?? false,
-          );
+        const exhaustedTurnBudget =
+          result.stopReason === "max_turns" ||
+          result.failureSubtype === "error_max_turns";
+
+        // Post error or partial-review comment if execution failed, timed out, or exhausted review turns.
+        if (result.conclusion === "error" || (result.conclusion === "failure" && exhaustedTurnBudget)) {
+          const category = exhaustedTurnBudget
+            ? "timeout"
+            : classifyError(
+                new Error(result.errorMessage ?? "Unknown error"),
+                result.isTimeout ?? false,
+                result.published ?? false,
+              );
 
           const timeoutDuration = appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds;
           const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
 
           let publishedPartialReview = false;
           let partialCommentId: number | undefined;
+          let fallbackRetryState: string | undefined;
 
-          if (result.isTimeout) {
+          if (result.isTimeout || exhaustedTurnBudget) {
             // Step 1: Read checkpoint/progress data
             const checkpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
             const hasPublishedInlines = result.published ?? false;
@@ -5130,7 +5137,11 @@ export function createReviewHandler(deps: {
 
             const executionConclusion = result.isTimeout && result.published
               ? "timeout_partial"
-              : "timeout";
+              : result.isTimeout
+                ? "timeout"
+                : exhaustedTurnBudget
+                  ? "max_turns"
+                  : result.conclusion;
 
             let retryState = isChronicTimeout
               ? "skipped (frequent timeouts for this repo/author)"
@@ -5243,6 +5254,7 @@ export function createReviewHandler(deps: {
             const summaryDraft = retrySummaryNote
               ? `${summaryDraftBase}\n\n${retrySummaryNote}`
               : summaryDraftBase;
+            fallbackRetryState = retryState;
             const timeoutReviewDetails = {
               analyzedFiles: timeoutReviewedFiles.length,
               totalFiles: timeoutTotalFiles,
@@ -5549,7 +5561,9 @@ export function createReviewHandler(deps: {
                     await $`git -C ${retryWorkspace.dir} fetch ${fetchRemoteRetry} ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
 
                     const retryInstruction = [
-                      "This is a retry of a timed-out review with reduced scope.",
+                      result.isTimeout
+                        ? "This is a retry of a timed-out review with reduced scope."
+                        : "This is a retry of a review that exhausted max turns with reduced scope.",
                       "Focus ONLY on the changed files listed above.",
                       "Do NOT post a top-level summary comment; only publish inline comments.",
                       retryCheckpointEnabled
@@ -6150,7 +6164,21 @@ export function createReviewHandler(deps: {
 
           let errorBody: string;
           if (!publishedPartialReview) {
-            if (category === "timeout_partial") {
+            if (exhaustedTurnBudget) {
+              errorBody = [
+                "> **Kodiai ran out of steps while reviewing this PR**",
+                "",
+                "_The review run ended before it could publish comments or an approval._",
+                "",
+                ...(result.stopReason ? [`Stop reason: ${result.stopReason}`] : []),
+                ...(result.failureSubtype ? [`Failure subtype: ${result.failureSubtype}`] : []),
+                ...(fallbackRetryState ? [`Retry state: ${fallbackRetryState}`] : []),
+                "",
+                fallbackRetryState?.startsWith("scheduled")
+                  ? "A reduced-scope retry has been scheduled automatically."
+                  : "Kodiai could not preserve enough structured evidence to publish a bounded first-pass review.",
+              ].join("\n");
+            } else if (category === "timeout_partial") {
               // TMO-03: Partial review -- inline comments were published before timeout
               errorBody = formatErrorComment(
                 category,
@@ -6191,71 +6219,16 @@ export function createReviewHandler(deps: {
           }
         }
 
-        if (result.conclusion === "failure" && !(result.published ?? false)) {
-          const exhaustedTurnBudget =
-            result.stopReason === "max_turns" ||
-            result.failureSubtype === "error_max_turns";
-          const failureCheckpoint = exhaustedTurnBudget
-            ? (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null
-            : null;
-          const failureFirstPass = exhaustedTurnBudget
-            ? normalizeReviewFirstPass({
-                boundedness: reviewBoundedness,
-                checkpoint: failureCheckpoint,
-                outcome: {
-                  conclusion: result.conclusion,
-                  stopReason: result.stopReason,
-                  failureSubtype: result.failureSubtype,
-                  isTimeout: result.isTimeout,
-                  published: result.published,
-                },
-              })
-            : null;
-          const failureBody = exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass"
-            ? formatPartialReviewComment({
-                summaryDraft:
-                  failureCheckpoint?.summaryDraft ??
-                  "Review stopped before finishing, but trustworthy bounded first-pass evidence was preserved.",
-                firstPass: failureFirstPass,
-                reviewOutputKey,
-              })
-            : exhaustedTurnBudget
-            ? [
-                "> **Kodiai ran out of steps while reviewing this PR**",
-                "",
-                "_The review run ended before it could publish comments or an approval._",
-                "",
-                ...(result.stopReason ? [`Stop reason: ${result.stopReason}`] : []),
-                ...(result.failureSubtype ? [`Failure subtype: ${result.failureSubtype}`] : []),
-                "",
-                "Try requesting another review after narrowing the scope or improving the available review context.",
-              ].join("\n")
-            : [
-                "> **Kodiai completed the review run but could not publish review output**",
-                "",
-                ...(result.stopReason ? [`Stop reason: ${result.stopReason}`] : []),
-                ...(result.failureSubtype ? [`Failure subtype: ${result.failureSubtype}`] : []),
-                ...(result.errorMessage ? [result.errorMessage] : []),
-                "",
-                "Try requesting another review if you want a fresh attempt.",
-              ].join("\n");
-
-          if (exhaustedTurnBudget) {
-            logger.info(
-              {
-                deliveryId: event.id,
-                prNumber: pr.number,
-                reviewOutputKey,
-                boundedReason: failureFirstPass?.boundedReason ?? null,
-                evidenceSource: failureFirstPass?.evidenceSource ?? "none",
-                zeroEvidenceFailure: failureFirstPass?.state !== "bounded-first-pass",
-                publicationEligible: failureFirstPass?.publication.eligible ?? false,
-              },
-              failureFirstPass?.state === "bounded-first-pass"
-                ? "Publishing bounded first-pass output after max-turns"
-                : "Max-turns ended as a zero-evidence hard failure",
-            );
-          }
+        if (result.conclusion === "failure" && !(result.published ?? false) && !exhaustedTurnBudget) {
+          const failureBody = [
+            "> **Kodiai completed the review run but could not publish review output**",
+            "",
+            ...(result.stopReason ? [`Stop reason: ${result.stopReason}`] : []),
+            ...(result.failureSubtype ? [`Failure subtype: ${result.failureSubtype}`] : []),
+            ...(result.errorMessage ? [result.errorMessage] : []),
+            "",
+            "Try requesting another review if you want a fresh attempt.",
+          ].join("\n");
 
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {
@@ -6270,67 +6243,6 @@ export function createReviewHandler(deps: {
               sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
               logger,
             );
-
-            if (exhaustedTurnBudget && failureFirstPass?.state === "bounded-first-pass") {
-              try {
-                await upsertCanonicalReviewSurface({
-                  octokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  preferredKind: "issue_comment",
-                  summaryBody: failureBody,
-                  reviewDetailsBlock: buildReviewDetailsBody({
-                    reviewFirstPass: failureFirstPass,
-                  }),
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                  reviewBoundedness,
-                  recheckCanPublish: () => canPublishVisibleOutput("max-turns canonical Review Details merge"),
-                });
-              } catch (reviewDetailsErr) {
-                logger.warn(
-                  {
-                    ...baseLog,
-                    gate: "review-details-output",
-                    gateResult: "degraded-fallback",
-                    reviewOutputKey,
-                    err: reviewDetailsErr,
-                  },
-                  "Failed to update max-turns canonical review surface with Review Details; using degraded fallback comment",
-                );
-
-                if (canPublishVisibleOutput("max-turns degraded Review Details fallback comment")) {
-                  try {
-                    await upsertDegradedReviewDetailsFallbackComment({
-                      octokit,
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      prNumber: pr.number,
-                      reviewOutputKey,
-                      body: buildReviewDetailsBody({
-                        reviewFirstPass: failureFirstPass,
-                      }),
-                      botHandles: [githubApp.getAppSlug(), "claude"],
-                      recheckCanPublish: () =>
-                        canPublishVisibleOutput("max-turns degraded Review Details fallback comment"),
-                    });
-                  } catch (fallbackErr) {
-                    logger.warn(
-                      {
-                        ...baseLog,
-                        gate: "review-details-output",
-                        gateResult: "failed",
-                        reviewOutputKey,
-                        err: fallbackErr,
-                      },
-                      "Failed to publish degraded Review Details fallback comment for max-turns fallback",
-                    );
-                  }
-                }
-              }
-            }
           }
         }
 

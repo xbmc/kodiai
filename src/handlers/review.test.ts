@@ -15889,6 +15889,128 @@ describe("createReviewHandler failure fallback publication", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("schedules a reduced-scope retry after max-turns when checkpoint evidence has remaining scope", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const createdCommentBodies: string[] = [];
+    let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+          context?: { action?: string },
+        ) => {
+          if (context?.action === "review-retry") {
+            queuedRetryJob = fn as (metadata: JobQueueRunMetadata) => Promise<unknown>;
+            return undefined as T;
+          }
+          return fn(createQueueRunMetadata());
+        },
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: { id: 777 } };
+              },
+              updateComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "tool_use",
+          failureSubtype: "error_max_turns",
+          durationMs: 1,
+          numTurns: 25,
+          sessionId: "session-max-turns-retry",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          findingCount: 0,
+          summaryDraft: "Reviewed README before max-turns.",
+          totalFiles: 3,
+        }),
+        saveCheckpoint: async () => undefined,
+        updateCheckpointCommentId: async () => undefined,
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    const boundedComment = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
+    expect(boundedComment).toBeDefined();
+    expect(boundedComment).toContain("Scheduling a reduced-scope retry.");
+    expect(queuedRetryJob).toBeDefined();
+
+    await workspaceFixture.cleanup();
+  });
+
   test("merges bounded first-pass Review Details into the max-turns fallback comment when checkpoint evidence exists", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -16192,11 +16314,12 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(detail).not.toContain("Timeout budget: remote runtime");
   });
 
-  test("posts a helpful PR error comment when review execution fails without publishing output", async () => {
+  test("schedules a retry instead of asking the user to rerun when max-turns fails without published output", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
     const createdCommentBodies: string[] = [];
+    let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
 
     createReviewHandler({
       eventRouter: {
@@ -16209,7 +16332,14 @@ describe("createReviewHandler failure fallback publication", () => {
         enqueue: async <T>(
           _installationId: number,
           fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-        ) => fn(createQueueRunMetadata()),
+          context?: { action?: string },
+        ) => {
+          if (context?.action === "review-retry") {
+            queuedRetryJob = fn as (metadata: JobQueueRunMetadata) => Promise<unknown>;
+            return undefined as T;
+          }
+          return fn(createQueueRunMetadata());
+        },
         getQueueSize: () => 0,
         getPendingCount: () => 0,
         getActiveJobs: getEmptyActiveJobs,
@@ -16264,6 +16394,16 @@ describe("createReviewHandler failure fallback publication", () => {
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
       logger: createNoopLogger(),
     });
 
@@ -16276,10 +16416,8 @@ describe("createReviewHandler failure fallback publication", () => {
       }),
     );
 
-    const failureComment = createdCommentBodies.find((body) => body.includes("Kodiai ran out of steps while reviewing this PR"));
-    expect(failureComment).toBeDefined();
-    expect(failureComment).toContain("Stop reason: max_turns");
-    expect(failureComment).toContain("Failure subtype: error_max_turns");
+    expect(queuedRetryJob).toBeDefined();
+    expect(createdCommentBodies.join("\n")).not.toContain("Try requesting another review");
 
     await workspaceFixture.cleanup();
   });
