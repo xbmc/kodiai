@@ -56,7 +56,8 @@ Environment:
   GITHUB_PRIVATE_KEY    GitHub App private key (PEM, file path, or base64) (required)
 
 Default mode (no --delete-all):
-  Targets comments that do NOT contain the marker: <!-- kodiai:wiki-modification:
+  Targets Kodiai bot comments that do NOT contain the marker: <!-- kodiai:wiki-modification:
+  Human comments are preserved.
 
 --delete-all mode:
   Targets ALL comments regardless of marker presence.
@@ -131,15 +132,24 @@ function hasModificationMarker(body: string): boolean {
   return body.includes(MODIFICATION_MARKER);
 }
 
-function shouldDelete(body: string | null | undefined, deleteAllMode: boolean): boolean {
-  if (deleteAllMode) return true;
-  // Default: delete comments that do NOT have the marker
-  return !hasModificationMarker(body ?? "");
+function isKodiaiBotComment(authorLogin: string | null | undefined): boolean {
+  return authorLogin === "kodiai[bot]";
 }
 
-function deletionReason(body: string | null | undefined, deleteAllMode: boolean): string {
+function shouldDelete(
+  body: string | null | undefined,
+  deleteAllMode: boolean,
+  authorLogin?: string | null,
+): boolean {
+  if (deleteAllMode) return true;
+  // Default: delete Kodiai bot artifact comments that do NOT have the marker.
+  // Human follow-up comments on the issue are conversation history, not cleanup targets.
+  return isKodiaiBotComment(authorLogin) && !hasModificationMarker(body ?? "");
+}
+
+function deletionReason(body: string | null | undefined, deleteAllMode: boolean, authorLogin?: string | null): string {
   if (deleteAllMode) return "delete-all mode";
-  if (!hasModificationMarker(body ?? "")) return "no modification marker";
+  if (isKodiaiBotComment(authorLogin) && !hasModificationMarker(body ?? "")) return "kodiai bot comment without modification marker";
   return "unknown";
 }
 
@@ -223,12 +233,12 @@ async function main() {
 
   // ── Classify and process ────────────────────────────────────────────────
 
-  const targets = allComments.filter((c) => shouldDelete(c.body, deleteAll));
+  const targets = allComments.filter((c) => shouldDelete(c.body, deleteAll, c.user?.login));
   let deleted = 0;
   let errors = 0;
 
   for (const comment of targets) {
-    const reason = deletionReason(comment.body, deleteAll);
+    const reason = deletionReason(comment.body, deleteAll, comment.user?.login);
     const snippet = bodySnippet(comment.body);
 
     if (dryRun) {

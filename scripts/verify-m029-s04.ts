@@ -291,7 +291,7 @@ async function runIssueClean(octokit?: unknown): Promise<M029S04Check> {
             issue_number: number;
             per_page: number;
             page: number;
-          }) => Promise<{ data: Array<{ id: number; body?: string | null }> }>;
+          }) => Promise<{ data: Array<{ id: number; body?: string | null; user?: { login?: string | null; type?: string | null } | null }> }>;
         };
       };
     };
@@ -311,7 +311,8 @@ async function runIssueClean(octokit?: unknown): Promise<M029S04Check> {
         const body = comment.body ?? "";
         const hasMarker = body.includes(WIKI_MODIFICATION_MARKER);
         const isSummaryTable = body.includes(SUMMARY_TABLE_MARKER);
-        if (!hasMarker && !isSummaryTable) {
+        const isKodiaiBotArtifact = comment.user == null || comment.user.login === "kodiai[bot]";
+        if (!hasMarker && !isSummaryTable && isKodiaiBotArtifact) {
           violations++;
         }
       }
