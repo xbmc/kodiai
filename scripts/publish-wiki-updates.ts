@@ -157,6 +157,7 @@ async function main() {
       port: 0,
       logLevel: process.env.LOG_LEVEL ?? "info",
       botAllowList: [],
+      slackWebhookRelaySources: [],
       slackWikiChannelId: "",
       wikiStalenessThresholdDays: 30,
       wikiGithubOwner: values.owner!,

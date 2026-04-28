@@ -483,6 +483,13 @@ test("maxComments overrides default", () => {
   expect(prompt).toContain("at most 3 inline comments");
 });
 
+test("comment cap is a publication cap, not an analysis stopping point", () => {
+  const prompt = buildReviewPrompt(baseContext({ maxComments: 3 }));
+  expect(prompt).toContain("The comment limit is a publication cap, not an analysis stopping point.");
+  expect(prompt).toContain("Continue analyzing after you identify the first 3 candidate findings");
+  expect(prompt).toContain("publish the strongest 3 after completing the full review pass");
+});
+
 test("buildSuppressionRulesSection formats string and object suppressions", () => {
   const section = buildSuppressionRulesSection([
     "missing JSDoc",
@@ -762,6 +769,30 @@ test("buildReviewPrompt remains backward compatible without new fields", () => {
   expect(prompt).toContain("Changed files:");
   expect(prompt).not.toContain("## Change Context");
   expect(prompt).not.toContain("## Path-Specific Review Instructions");
+});
+
+test("buildReviewPrompt instructs risk-ranked first-pass triage before deep inspection", () => {
+  const prompt = buildReviewPrompt(baseContext({
+    changedFiles: [
+      "src/auth/token.ts",
+      "src/ui/button.tsx",
+      "docs/readme.md",
+    ],
+  }));
+
+  expect(prompt).toContain("## First-pass changed-file triage");
+  expect(prompt).toContain("Before deep inspection, rank the changed files by review risk and intended impact.");
+  expect(prompt).toContain("Inspect the highest-risk files first so a bounded run preserves the most important coverage.");
+  expect(prompt).toContain("Start with files touching security, correctness, data persistence, public API, concurrency, or error handling.");
+});
+
+test("buildReviewPrompt requires an early checkpoint after planning review order", () => {
+  const prompt = buildReviewPrompt(baseContext({ checkpointEnabled: true }));
+
+  expect(prompt).toContain("Before deep inspection, call the save_review_checkpoint tool once after you choose the initial review order.");
+  expect(prompt).toContain("Use findingCount: 0 for this planning checkpoint.");
+  expect(prompt).toContain("summaryDraft should describe the planned first-pass focus and the highest-risk files selected first.");
+  expect(prompt).toContain("Then continue updating the checkpoint after reviewing every 3-5 files.");
 });
 
 test("buildReviewPrompt includes Focus Hints section when focusHints provided", () => {
@@ -2785,6 +2816,8 @@ describe("buildReviewPrompt graph context integration", () => {
     expect(prompt).toContain(`\"${disclosureSentence}\"`);
     expect(prompt).toContain("Do not paraphrase it.");
     expect(prompt).toContain("Do not repeat it elsewhere in the summary.");
+    expect(prompt).toContain("Do not claim the review found all relevant issues when bounded files or severity filters excluded scope.");
+    expect(prompt).toContain("If the review is bounded, frame the verdict as the result for the inspected scope.");
   });
 
   test("keeps small unbounded standard prompts silent and omits bounded-review instructions in enhanced mode", () => {

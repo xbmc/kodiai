@@ -2062,6 +2062,128 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdIssueComments).toHaveLength(0);
   });
 
+  test("published approval review receives Review Details instead of creating a separate issue comment", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+
+    let issueCommentCreateCount = 0;
+    let updatedReviewId: number | undefined;
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const existingApprovalReview = {
+      id: 777,
+      body: `<details>\n<summary>kodiai response</summary>\n\nDecision: APPROVE\nIssues: none\n\nEvidence:\n- Agent-published clean approval.\n\n</details>\n\n${marker}`,
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [existingApprovalReview] }),
+          createReview: async () => {
+            throw new Error("auto-approval should skip when the executor already published output");
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            issueCommentCreateCount += 1;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+      request: async (
+        route: string,
+        params: { review_id: number; body: string },
+      ) => {
+        expect(route).toBe("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}");
+        updatedReviewId = params.review_id;
+        existingApprovalReview.body = params.body;
+        return { data: {} };
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: true,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-published-approval-details",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(updatedReviewId).toBe(777);
+    expect(issueCommentCreateCount).toBe(0);
+    expect(existingApprovalReview.body).toContain("Decision: APPROVE");
+    expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
+    expect(existingApprovalReview.body).toContain("publication:");
+  });
+
   test("auto-approval finalization refreshes the same canonical approval review id when older marker-matching reviews exist", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
@@ -8822,6 +8944,7 @@ describe("createReviewHandler finding prioritization", () => {
       ],
     });
 
+    expect(result.detailsCommentBody).toContain("Comment cap saturated: published 1/2 prioritized findings; 1 lower-priority finding omitted from inline publication");
     expect(result.detailsCommentBody).toContain("Prioritization: scored 2 findings");
     expect(result.detailsCommentBody).toContain("top score");
     expect(result.detailsCommentBody).toContain("threshold score");
@@ -16597,6 +16720,7 @@ describe("createReviewHandler failure fallback publication", () => {
 
     expect(queuedRetryJob).toBeDefined();
     expect(createdCommentBodies.join("\n")).not.toContain("Try requesting another review");
+    expect(createdCommentBodies.join("\n")).not.toContain("Try requesting another review after narrowing the scope or improving the available review context.");
 
     await workspaceFixture.cleanup();
   });

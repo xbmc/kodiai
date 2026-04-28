@@ -544,6 +544,9 @@ export function formatReviewDetailsSummary(params: {
     findingsScored: number;
     topScore: number | null;
     thresholdScore: number | null;
+    maxComments?: number;
+    selectedFindings?: number;
+    omittedFindings?: number;
   };
   usageLimit?: {
     utilization: number | undefined;
@@ -720,6 +723,19 @@ export function formatReviewDetailsSummary(params: {
   }
 
   if (prioritization) {
+    const hasSaturatedCommentCap =
+      typeof prioritization.maxComments === "number" &&
+      typeof prioritization.selectedFindings === "number" &&
+      typeof prioritization.omittedFindings === "number" &&
+      prioritization.omittedFindings > 0;
+
+    if (hasSaturatedCommentCap) {
+      const omittedFindingLabel = prioritization.omittedFindings === 1 ? "finding" : "findings";
+      sections.push(
+        `- Comment cap saturated: published ${prioritization.selectedFindings}/${prioritization.findingsScored} prioritized findings; ${prioritization.omittedFindings} lower-priority ${omittedFindingLabel} omitted from inline publication`,
+      );
+    }
+
     sections.push(
       `- Prioritization: scored ${prioritization.findingsScored} findings | top score ${prioritization.topScore ?? "n/a"} | threshold score ${prioritization.thresholdScore ?? "n/a"}`,
     );

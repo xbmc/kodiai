@@ -45,7 +45,7 @@ function makeSequentialSqlStub(responses: Array<unknown[] | Error>): unknown {
 }
 
 /** Build a minimal octokit stub that returns paginated comment pages. */
-type IssueCleanCommentStub = { id: number; body: string; user?: { login: string; type?: string } };
+type IssueCleanCommentStub = { id: number; body: string; user?: { login: string; type?: string } | null };
 
 function makeOctokitStub(pages: Array<Array<IssueCleanCommentStub>>) {
   return {

@@ -1,7 +1,7 @@
 import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
-import { evaluateM048S01, type M048S01Report } from "./verify-m048-s01.ts";
-import { evaluateM049S02, type M049S02Report } from "./verify-m049-s02.ts";
-import { evaluateM064S03, type M064S03Report } from "./verify-m064-s03.ts";
+import { evaluateM048S01 } from "./verify-m048-s01.ts";
+import { evaluateM049S02 } from "./verify-m049-s02.ts";
+import { evaluateM064S03 } from "./verify-m064-s03.ts";
 
 export const M065_S02_CHECK_IDS = [
   "M065-S02-IDENTITY-CORRELATION",
@@ -40,6 +40,39 @@ type NestedReportContract = {
   [key: string]: unknown;
 };
 
+type RuntimeTimingNestedReport = NestedReportContract & {
+  review_output_key?: string | null;
+  delivery_id?: string | null;
+  evidence?: {
+    conclusion?: string | null;
+    published?: boolean | null;
+  } | null;
+};
+
+type VisibleReviewNestedReport = NestedReportContract & {
+  repo?: string | null;
+  review_output_key?: string | null;
+  delivery_id?: string | null;
+  artifact?: {
+    source?: string | null;
+    reviewState?: string | null;
+    prNumber?: number | null;
+  } | null;
+  bodyContract?: {
+    valid?: boolean | null;
+  } | null;
+};
+
+type OperatorEvidenceNestedReport = NestedReportContract & {
+  record_count?: number;
+  records?: Array<{
+    baseReviewOutputKey?: string | null;
+    repoFullName?: string | null;
+    prNumber?: number | null;
+    statusCode?: string | null;
+  }>;
+};
+
 export type M065S02Check = {
   id: M065S02CheckId;
   passed: boolean;
@@ -72,9 +105,9 @@ export type M065S02Report = {
   check_ids: M065S02CheckId[];
   checks: M065S02Check[];
   nested_reports: {
-    runtimeTiming: M048S01Report | null;
-    visibleReview: M049S02Report | null;
-    operatorEvidence: M064S03Report | null;
+    runtimeTiming: RuntimeTimingNestedReport | null;
+    visibleReview: VisibleReviewNestedReport | null;
+    operatorEvidence: OperatorEvidenceNestedReport | null;
   };
   failing_check_id: M065S02CheckId | null;
   issues: string[];
@@ -89,9 +122,9 @@ type VerifyM065S02Args = {
   invalidArg: string | null;
 };
 
-type EvaluateRuntimeTiming = (params: { reviewOutputKey: string; deliveryId: string }) => Promise<M048S01Report>;
-type EvaluateVisibleReview = (params: { repo: string; reviewOutputKey: string }) => Promise<M049S02Report>;
-type EvaluateOperatorEvidence = (params: { reviewOutputKey: string }) => Promise<M064S03Report>;
+type EvaluateRuntimeTiming = (params: { reviewOutputKey: string; deliveryId: string }) => Promise<unknown>;
+type EvaluateVisibleReview = (params: { repo: string; reviewOutputKey: string }) => Promise<unknown>;
+type EvaluateOperatorEvidence = (params: { reviewOutputKey: string }) => Promise<unknown>;
 
 type EvaluateParams = {
   reviewOutputKey: string;
@@ -265,20 +298,32 @@ function isBaseNestedReportContract(value: unknown, command: NestedCommand): val
     && record.issues.every((item) => typeof item === "string");
 }
 
-function isRuntimeTimingReport(value: unknown): value is M048S01Report {
-  return isBaseNestedReportContract(value, "verify:m048:s01")
-    && typeof (value as Record<string, unknown>).review_output_key !== "undefined"
-    && typeof (value as Record<string, unknown>).delivery_id !== "undefined";
+function isStringOrNull(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
 }
 
-function isVisibleReviewReport(value: unknown): value is M049S02Report {
-  return isBaseNestedReportContract(value, "verify:m049:s02")
-    && typeof (value as Record<string, unknown>).repo === "string"
-    && typeof (value as Record<string, unknown>).review_output_key !== "undefined"
-    && typeof (value as Record<string, unknown>).delivery_id !== "undefined";
+function isRuntimeTimingReport(value: unknown): value is RuntimeTimingNestedReport {
+  if (!isBaseNestedReportContract(value, "verify:m048:s01")) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return isStringOrNull(record.review_output_key)
+    && isStringOrNull(record.delivery_id);
 }
 
-function isOperatorEvidenceReport(value: unknown): value is M064S03Report {
+function isVisibleReviewReport(value: unknown): value is VisibleReviewNestedReport {
+  if (!isBaseNestedReportContract(value, "verify:m049:s02")) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return isStringOrNull(record.repo)
+    && isStringOrNull(record.review_output_key)
+    && isStringOrNull(record.delivery_id);
+}
+
+function isOperatorEvidenceReport(value: unknown): value is OperatorEvidenceNestedReport {
   return isBaseNestedReportContract(value, "verify:m064:s03")
     && typeof (value as Record<string, unknown>).record_count === "number"
     && Array.isArray((value as Record<string, unknown>).records);
@@ -318,7 +363,7 @@ function buildNestedCheck(params: {
   reportKey: NestedReportKey;
   command: NestedCommand;
   report: unknown;
-  validator: (value: unknown) => boolean;
+  validator: (value: unknown) => value is NestedReportContract;
 }): { check: M065S02Check; issue: string | null; malformed: boolean; failed: boolean } {
   const drillDownCommand = `bun run ${params.command} -- --json`;
 
@@ -467,9 +512,9 @@ function collectIdentityIssues(params: {
   expectedDeliveryId: string;
   expectedRepo: string;
   expectedPrNumber: number;
-  runtimeReport: M048S01Report | null;
-  visibleReport: M049S02Report | null;
-  operatorReport: M064S03Report | null;
+  runtimeReport: RuntimeTimingNestedReport | null;
+  visibleReport: VisibleReviewNestedReport | null;
+  operatorReport: OperatorEvidenceNestedReport | null;
 }): string[] {
   const issues: string[] = [];
 
@@ -523,9 +568,9 @@ function collectIdentityIssues(params: {
 }
 
 function collectRepresentativeBundleIssues(params: {
-  runtimeReport: M048S01Report | null;
-  visibleReport: M049S02Report | null;
-  operatorReport: M064S03Report | null;
+  runtimeReport: RuntimeTimingNestedReport | null;
+  visibleReport: VisibleReviewNestedReport | null;
+  operatorReport: OperatorEvidenceNestedReport | null;
 }): string[] {
   const issues: string[] = [];
 

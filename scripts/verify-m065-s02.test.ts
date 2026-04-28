@@ -442,6 +442,43 @@ describe("verify-m065-s02", () => {
     });
   });
 
+  test("evaluate rejects nested report fields with non-string scalar shapes", async () => {
+    const { evaluateM065S02 } = await loadModule();
+
+    const report = await evaluateM065S02({
+      reviewOutputKey: makeReviewKey(),
+      generatedAt: "2026-04-24T09:45:00.000Z",
+      runtimeTimingEvaluator: async () => ({
+        ...makeRuntimeReport(),
+        review_output_key: 123,
+        delivery_id: { value: "delivery-101" },
+      }),
+      visibleReviewEvaluator: async () => ({
+        ...makeVisibleReport(),
+        repo: ["xbmc", "kodiai"],
+        review_output_key: 123,
+        delivery_id: { value: "delivery-101" },
+      }),
+      operatorEvidenceEvaluator: async () => makeOperatorReport(),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m065_s02_nested_contract_failed");
+    expect(report.failing_check_id).not.toBeNull();
+    expect([
+      "M065-S02-RUNTIME-TIMING-EVIDENCE",
+      "M065-S02-VISIBLE-REVIEW-PROOF",
+    ]).toContain(report.failing_check_id!);
+    expect(report.checks.find((check) => check.id === "M065-S02-RUNTIME-TIMING-EVIDENCE")).toMatchObject({
+      passed: false,
+      status_code: "nested_report_malformed",
+    });
+    expect(report.checks.find((check) => check.id === "M065-S02-VISIBLE-REVIEW-PROOF")).toMatchObject({
+      passed: false,
+      status_code: "nested_report_malformed",
+    });
+  });
+
   test("representative live bundle fails when nested proofs disagree on delivery, repo, or PR identity", async () => {
     const { evaluateM065S02 } = await loadModule();
 

@@ -363,6 +363,39 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("publication: 120ms (degraded: captured before publication completed)");
   });
 
+  it("renders saturated comment-cap diagnostics when prioritization omitted findings", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      prioritization: {
+        findingsScored: 9,
+        topScore: 182,
+        thresholdScore: 97,
+        maxComments: 3,
+        selectedFindings: 3,
+        omittedFindings: 6,
+      },
+    });
+
+    expect(result).toContain("- Comment cap saturated: published 3/9 prioritized findings; 6 lower-priority findings omitted from inline publication");
+    expect(result).toContain("- Prioritization: scored 9 findings | top score 182 | threshold score 97");
+  });
+
+  it("renders singular saturated comment-cap diagnostics when one finding is omitted", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      prioritization: {
+        findingsScored: 4,
+        topScore: 182,
+        thresholdScore: 97,
+        maxComments: 3,
+        selectedFindings: 3,
+        omittedFindings: 1,
+      },
+    });
+
+    expect(result).toContain("- Comment cap saturated: published 3/4 prioritized findings; 1 lower-priority finding omitted from inline publication");
+  });
+
   it("renders requested versus effective bounded-review lines without duplicating the old profile line", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,

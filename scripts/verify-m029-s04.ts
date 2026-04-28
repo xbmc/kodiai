@@ -492,6 +492,7 @@ export async function buildM029S04ProofHarness(opts?: {
           port: 3000,
           logLevel: "silent",
           botAllowList: [],
+          slackWebhookRelaySources: [],
           slackWikiChannelId: "",
           wikiStalenessThresholdDays: 30,
           wikiGithubOwner: "",
@@ -505,7 +506,7 @@ export async function buildM029S04ProofHarness(opts?: {
           acaJobName: "caj-kodiai-agent",
         };
 
-        const githubApp = createGitHubApp(appConfig as Parameters<typeof createGitHubApp>[0], logger);
+        const githubApp = createGitHubApp(appConfig, logger);
         await githubApp.initialize();
         const context = await githubApp.getRepoInstallationContext(REPO_OWNER, REPO_NAME);
         if (!context) {

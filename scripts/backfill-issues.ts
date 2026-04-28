@@ -140,6 +140,7 @@ async function main() {
       port: 0,
       logLevel: "info",
       botAllowList: [],
+      slackWebhookRelaySources: [],
       slackWikiChannelId: "",
       wikiStalenessThresholdDays: 30,
       wikiGithubOwner: "",

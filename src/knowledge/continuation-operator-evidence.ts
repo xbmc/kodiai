@@ -105,8 +105,9 @@ export function buildContinuationOperatorEvidenceReport(
   const parsed = lookup.parsedReviewOutputKey;
 
   if (!canonicalState) {
+    const status = lookup.status === "resolved" ? "lookup-unavailable" : lookup.status;
     return {
-      status: lookup.status,
+      status,
       detail: lookup.detail,
       reviewOutputKey: lookup.reviewOutputKey,
       baseReviewOutputKey: lookup.baseReviewOutputKey,
