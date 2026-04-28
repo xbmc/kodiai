@@ -423,7 +423,7 @@ describe("verify-m065-s02", () => {
         generated_at: "2026-04-24T09:45:00.000Z",
         success: true,
         issues: [],
-      }) as never,
+      }),
       visibleReviewEvaluator: async () => makeVisibleReport(),
       operatorEvidenceEvaluator: async () => makeOperatorReport(),
     });

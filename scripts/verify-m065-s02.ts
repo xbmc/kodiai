@@ -122,9 +122,9 @@ type VerifyM065S02Args = {
   invalidArg: string | null;
 };
 
-type EvaluateRuntimeTiming = (params: { reviewOutputKey: string; deliveryId: string }) => Promise<RuntimeTimingNestedReport>;
-type EvaluateVisibleReview = (params: { repo: string; reviewOutputKey: string }) => Promise<VisibleReviewNestedReport>;
-type EvaluateOperatorEvidence = (params: { reviewOutputKey: string }) => Promise<OperatorEvidenceNestedReport>;
+type EvaluateRuntimeTiming = (params: { reviewOutputKey: string; deliveryId: string }) => Promise<unknown>;
+type EvaluateVisibleReview = (params: { repo: string; reviewOutputKey: string }) => Promise<unknown>;
+type EvaluateOperatorEvidence = (params: { reviewOutputKey: string }) => Promise<unknown>;
 
 type EvaluateParams = {
   reviewOutputKey: string;

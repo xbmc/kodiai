@@ -94,7 +94,7 @@ type StdWriter = {
 
 type EvaluateOptions = {
   generatedAt?: string;
-  evaluateRegressionGate?: () => RegressionGateReport;
+  evaluateRegressionGate?: () => unknown;
   readTextFile?: (filePath: string) => Promise<string>;
   fileExists?: (filePath: string) => Promise<boolean>;
 };
