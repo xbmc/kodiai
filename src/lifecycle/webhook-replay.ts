@@ -30,7 +30,8 @@ export async function replayQueuedWebhook(params: {
       logger.warn({ err, id: entry.id, source: entry.source }, "Failed to parse queued GitHub webhook body");
       return { status: "ignored", source: "github", reason: "malformed_json" };
     }
-    const installation = payload.installation as { id: number } | undefined;
+    const installation = payload.installation as { id?: unknown } | undefined;
+    const installationId = typeof installation?.id === "number" ? installation.id : 0;
     if (typeof installation?.id !== "number") {
       logger.warn({ id: entry.id, source: entry.source }, "Queued GitHub webhook replay missing installation id; dispatching with legacy sentinel");
     }
@@ -38,7 +39,7 @@ export async function replayQueuedWebhook(params: {
       id: entry.deliveryId ?? `replay-${entry.id}`,
       name: entry.eventName ?? "unknown",
       payload,
-      installationId: installation?.id ?? 0,
+      installationId,
     });
     return { status: "dispatched", source: "github" };
   }

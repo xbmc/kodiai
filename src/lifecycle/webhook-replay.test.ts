@@ -189,6 +189,25 @@ describe("replayQueuedWebhook", () => {
     expect(processed).toHaveLength(0);
   });
 
+  test("normalizes malformed GitHub installation id to the legacy sentinel", async () => {
+    const dispatched: WebhookEvent[] = [];
+
+    await replayQueuedWebhook({
+      entry: {
+        id: 6,
+        source: "github",
+        deliveryId: "delivery-malformed-installation",
+        eventName: "issues",
+        headers: {},
+        body: JSON.stringify({ installation: { id: "123" }, action: "opened" }),
+      },
+      ...createBaseReplayParams({ dispatched }),
+    });
+
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]!.installationId).toBe(0);
+  });
+
   test("shared replay-time Slack thread store allows queued thread follow-up after bootstrap", async () => {
     const sharedStore = createSlackThreadSessionStore();
     const processedWithSharedStore: SlackV1BootstrapPayload[] = [];

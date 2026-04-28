@@ -637,7 +637,7 @@ try {
     }
 
     try {
-      const result = await replayQueuedWebhook({
+      await replayQueuedWebhook({
         entry,
         config,
         logger,
