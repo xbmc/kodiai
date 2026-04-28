@@ -771,6 +771,30 @@ test("buildReviewPrompt remains backward compatible without new fields", () => {
   expect(prompt).not.toContain("## Path-Specific Review Instructions");
 });
 
+test("buildReviewPrompt instructs risk-ranked first-pass triage before deep inspection", () => {
+  const prompt = buildReviewPrompt(baseContext({
+    changedFiles: [
+      "src/auth/token.ts",
+      "src/ui/button.tsx",
+      "docs/readme.md",
+    ],
+  }));
+
+  expect(prompt).toContain("## First-pass changed-file triage");
+  expect(prompt).toContain("Before deep inspection, rank the changed files by review risk and intended impact.");
+  expect(prompt).toContain("Inspect the highest-risk files first so a bounded run preserves the most important coverage.");
+  expect(prompt).toContain("Start with files touching security, correctness, data persistence, public API, concurrency, or error handling.");
+});
+
+test("buildReviewPrompt requires an early checkpoint after planning review order", () => {
+  const prompt = buildReviewPrompt(baseContext({ checkpointEnabled: true }));
+
+  expect(prompt).toContain("Before deep inspection, call the save_review_checkpoint tool once after you choose the initial review order.");
+  expect(prompt).toContain("Use findingCount: 0 for this planning checkpoint.");
+  expect(prompt).toContain("summaryDraft should describe the planned first-pass focus and the highest-risk files selected first.");
+  expect(prompt).toContain("Then continue updating the checkpoint after reviewing every 3-5 files.");
+});
+
 test("buildReviewPrompt includes Focus Hints section when focusHints provided", () => {
   const prompt = buildReviewPrompt(
     baseContext({ focusHints: ["auth", "ios"] }),

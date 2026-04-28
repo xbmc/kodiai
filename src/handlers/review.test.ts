@@ -16720,6 +16720,7 @@ describe("createReviewHandler failure fallback publication", () => {
 
     expect(queuedRetryJob).toBeDefined();
     expect(createdCommentBodies.join("\n")).not.toContain("Try requesting another review");
+    expect(createdCommentBodies.join("\n")).not.toContain("Try requesting another review after narrowing the scope or improving the available review context.");
 
     await workspaceFixture.cleanup();
   });

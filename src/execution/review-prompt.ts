@@ -1897,6 +1897,13 @@ export function buildReviewPromptDetails(context: {
     `To see changed files with stats: Bash(git log origin/${context.baseBranch}..HEAD --stat)`,
     "Read the diff carefully before posting any comments.",
     "",
+    "## First-pass changed-file triage",
+    "",
+    "Before deep inspection, rank the changed files by review risk and intended impact.",
+    "Inspect the highest-risk files first so a bounded run preserves the most important coverage.",
+    "Start with files touching security, correctness, data persistence, public API, concurrency, or error handling.",
+    "Use the remaining files as lower-priority follow-up scope if the run becomes bounded by timeout or max turns.",
+    "",
     "## What to look for",
     "",
     "Review the changes for:",
@@ -1931,12 +1938,20 @@ export function buildReviewPromptDetails(context: {
   if (context.checkpointEnabled === true) {
     instructionLines.push(
       "",
-      "IMPORTANT: This review may time out. Call the save_review_checkpoint tool after reviewing every 3-5 files. Include:",
+      "IMPORTANT: This review may time out or run out of turns. Preserve progress with the save_review_checkpoint tool.",
+      "Before deep inspection, call the save_review_checkpoint tool once after you choose the initial review order. Include:",
+      "- filesReviewed: []",
+      "- findingCount: 0",
+      "- summaryDraft: describe the planned first-pass focus and the highest-risk files selected first",
+      "",
+      "Use findingCount: 0 for this planning checkpoint.",
+      "summaryDraft should describe the planned first-pass focus and the highest-risk files selected first.",
+      "Then continue updating the checkpoint after reviewing every 3-5 files. Include:",
       "- filesReviewed: list of file paths you have fully analyzed",
       "- findingCount: total findings generated so far",
       "- summaryDraft: a brief summary of findings so far",
       "",
-      "This ensures your work is preserved if the session times out.",
+      "This ensures your work is preserved if the session times out or exhausts max turns.",
     );
   }
 
