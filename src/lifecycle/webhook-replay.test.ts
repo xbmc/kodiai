@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 import type { SlackV1BootstrapPayload } from "../slack/safety-rails.ts";
+import { createSlackThreadSessionStore } from "../slack/thread-session-store.ts";
 import type { WebhookEvent } from "../webhook/types.ts";
 import { replayQueuedWebhook } from "./webhook-replay.ts";
 
@@ -46,6 +47,25 @@ function createTestConfig(): AppConfig {
   };
 }
 
+function createBaseReplayParams(overrides?: {
+  processed?: SlackV1BootstrapPayload[];
+  dispatched?: WebhookEvent[];
+}) {
+  const processed = overrides?.processed ?? [];
+  const dispatched = overrides?.dispatched ?? [];
+
+  return {
+    config: createTestConfig(),
+    logger: createTestLogger(),
+    dispatchGitHubEvent: async (event: WebhookEvent) => {
+      dispatched.push(event);
+    },
+    handleSlackAllowedEvent: async (payload: SlackV1BootstrapPayload) => {
+      processed.push(payload);
+    },
+  };
+}
+
 describe("replayQueuedWebhook", () => {
   test("replays queued GitHub webhook through the event router", async () => {
     const dispatched: WebhookEvent[] = [];
@@ -59,12 +79,7 @@ describe("replayQueuedWebhook", () => {
         headers: {},
         body: JSON.stringify({ installation: { id: 123 }, action: "opened" }),
       },
-      config: createTestConfig(),
-      logger: createTestLogger(),
-      dispatchGitHubEvent: async (event) => {
-        dispatched.push(event);
-      },
-      handleSlackBootstrap: async () => undefined,
+      ...createBaseReplayParams({ dispatched }),
     });
 
     expect(dispatched).toEqual([
@@ -97,12 +112,7 @@ describe("replayQueuedWebhook", () => {
           },
         }),
       },
-      config: createTestConfig(),
-      logger: createTestLogger(),
-      dispatchGitHubEvent: async () => undefined,
-      handleSlackBootstrap: async (payload) => {
-        processed.push(payload);
-      },
+      ...createBaseReplayParams({ processed }),
     });
 
     expect(processed).toHaveLength(0);
@@ -128,12 +138,7 @@ describe("replayQueuedWebhook", () => {
           },
         }),
       },
-      config: createTestConfig(),
-      logger: createTestLogger(),
-      dispatchGitHubEvent: async () => undefined,
-      handleSlackBootstrap: async (payload) => {
-        processed.push(payload);
-      },
+      ...createBaseReplayParams({ processed }),
     });
 
     expect(processed).toEqual([
@@ -146,5 +151,103 @@ describe("replayQueuedWebhook", () => {
         replyTarget: "thread-only",
       },
     ]);
+  });
+
+  test("ignores malformed GitHub JSON without dispatching", async () => {
+    const dispatched: WebhookEvent[] = [];
+
+    const result = await replayQueuedWebhook({
+      entry: {
+        id: 4,
+        source: "github",
+        deliveryId: "delivery-malformed-github",
+        eventName: "issues",
+        headers: {},
+        body: "{not-json",
+      },
+      ...createBaseReplayParams({ dispatched }),
+    });
+
+    expect(result).toEqual({ status: "ignored", source: "github", reason: "malformed_json" });
+    expect(dispatched).toHaveLength(0);
+  });
+
+  test("ignores malformed Slack JSON without dispatching", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+
+    const result = await replayQueuedWebhook({
+      entry: {
+        id: 5,
+        source: "slack",
+        headers: {},
+        body: "{not-json",
+      },
+      ...createBaseReplayParams({ processed }),
+    });
+
+    expect(result).toEqual({ status: "ignored", source: "slack", reason: "malformed_json" });
+    expect(processed).toHaveLength(0);
+  });
+
+  test("shared replay-time Slack thread store allows queued thread follow-up after bootstrap", async () => {
+    const sharedStore = createSlackThreadSessionStore();
+    const processedWithSharedStore: SlackV1BootstrapPayload[] = [];
+    const processedWithoutSharedStore: SlackV1BootstrapPayload[] = [];
+
+    const bootstrapEntry = {
+      id: 6,
+      source: "slack" as const,
+      headers: {},
+      body: JSON.stringify({
+        type: "event_callback",
+        event: {
+          type: "message",
+          channel: "C123KODIAI",
+          channel_type: "channel",
+          ts: "1700000000.000888",
+          user: "U888USER",
+          text: "<@U123BOT> start thread",
+        },
+      }),
+    };
+    const followUpEntry = {
+      id: 7,
+      source: "slack" as const,
+      headers: {},
+      body: JSON.stringify({
+        type: "event_callback",
+        event: {
+          type: "message",
+          channel: "C123KODIAI",
+          channel_type: "channel",
+          ts: "1700000000.000889",
+          thread_ts: "1700000000.000888",
+          user: "U888USER",
+          text: "follow-up without mention token",
+        },
+      }),
+    };
+
+    await replayQueuedWebhook({
+      entry: bootstrapEntry,
+      slackThreadSessionStore: sharedStore,
+      ...createBaseReplayParams({ processed: processedWithSharedStore }),
+    });
+    await replayQueuedWebhook({
+      entry: followUpEntry,
+      slackThreadSessionStore: sharedStore,
+      ...createBaseReplayParams({ processed: processedWithSharedStore }),
+    });
+
+    await replayQueuedWebhook({
+      entry: followUpEntry,
+      ...createBaseReplayParams({ processed: processedWithoutSharedStore }),
+    });
+
+    expect(processedWithSharedStore.map((payload) => payload.text)).toEqual([
+      "<@U123BOT> start thread",
+      "follow-up without mention token",
+    ]);
+    expect(processedWithoutSharedStore).toHaveLength(0);
   });
 });

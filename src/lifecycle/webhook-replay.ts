@@ -8,6 +8,7 @@ import type { WebhookQueueEntry } from "./types.ts";
 
 export type ReplayQueuedWebhookResult =
   | { status: "dispatched"; source: "github" | "slack" }
+  | { status: "ignored"; source: "github" | "slack"; reason: "malformed_json" }
   | { status: "ignored"; source: "slack"; reason: string }
   | { status: "ignored"; source: string; reason: "unsupported_source" };
 
@@ -16,14 +17,23 @@ export async function replayQueuedWebhook(params: {
   config: AppConfig;
   logger: Logger;
   dispatchGitHubEvent: (event: WebhookEvent) => Promise<void> | void;
-  handleSlackBootstrap: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
+  handleSlackAllowedEvent: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
   slackThreadSessionStore?: SlackThreadSessionStore;
 }): Promise<ReplayQueuedWebhookResult> {
-  const { entry, config, logger, dispatchGitHubEvent, handleSlackBootstrap } = params;
+  const { entry, config, logger, dispatchGitHubEvent, handleSlackAllowedEvent } = params;
 
   if (entry.source === "github") {
-    const payload = JSON.parse(entry.body) as Record<string, unknown>;
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(entry.body) as Record<string, unknown>;
+    } catch (err) {
+      logger.warn({ err, id: entry.id, source: entry.source }, "Failed to parse queued GitHub webhook body");
+      return { status: "ignored", source: "github", reason: "malformed_json" };
+    }
     const installation = payload.installation as { id: number } | undefined;
+    if (typeof installation?.id !== "number") {
+      logger.warn({ id: entry.id, source: entry.source }, "Queued GitHub webhook replay missing installation id; dispatching with legacy sentinel");
+    }
     await dispatchGitHubEvent({
       id: entry.deliveryId ?? `replay-${entry.id}`,
       name: entry.eventName ?? "unknown",
@@ -34,7 +44,13 @@ export async function replayQueuedWebhook(params: {
   }
 
   if (entry.source === "slack") {
-    const payload = JSON.parse(entry.body) as unknown;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(entry.body) as unknown;
+    } catch (err) {
+      logger.warn({ err, id: entry.id, source: entry.source }, "Failed to parse queued Slack webhook body");
+      return { status: "ignored", source: "slack", reason: "malformed_json" };
+    }
     const eventCallback = toSlackEventCallback(payload);
     if (!eventCallback) {
       logger.info({ id: entry.id, source: entry.source, reason: "unsupported_payload" }, "Queued Slack webhook replay ignored");
@@ -65,7 +81,7 @@ export async function replayQueuedWebhook(params: {
       }
     }
 
-    await handleSlackBootstrap(decision.bootstrap);
+    await handleSlackAllowedEvent(decision.bootstrap);
     return { status: "dispatched", source: "slack" };
   }
 

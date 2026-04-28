@@ -629,26 +629,30 @@ try {
   const replaySlackThreadSessionStore = createSlackThreadSessionStore();
 
   for (const entry of pendingWebhooks) {
+    const entryId = entry.id;
+    if (typeof entryId !== "number") {
+      logger.error({ entry }, "Dequeued webhook entry missing ID; skipping startup replay because completion state cannot be recorded");
+      queuedWebhooksFailed++;
+      continue;
+    }
+
     try {
       const result = await replayQueuedWebhook({
         entry,
         config,
         logger,
         dispatchGitHubEvent: (event) => eventRouter.dispatch(event),
-        handleSlackBootstrap: async (payload) => {
+        handleSlackAllowedEvent: async (payload) => {
           await slackAssistantHandler.handle(payload);
         },
         slackThreadSessionStore: replaySlackThreadSessionStore,
       });
 
-      await webhookQueueStore.markCompleted(entry.id!);
+      await webhookQueueStore.markCompleted(entryId);
       queuedWebhooksProcessed++;
-      if (result.status === "ignored") {
-        logger.info({ id: entry.id, source: entry.source, reason: result.reason }, "Queued webhook replay marked complete after ignore decision");
-      }
     } catch (err) {
-      logger.warn({ err, id: entry.id, source: entry.source }, "Failed to replay queued webhook");
-      await webhookQueueStore.markFailed(entry.id!);
+      logger.warn({ err, id: entryId, source: entry.source }, "Failed to replay queued webhook");
+      await webhookQueueStore.markFailed(entryId);
       queuedWebhooksFailed++;
     }
   }
