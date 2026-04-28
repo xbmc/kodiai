@@ -878,7 +878,7 @@ async function upsertCanonicalReviewSurface(params: {
   pullReviewEvent?: "APPROVE" | "COMMENT" | "REQUEST_CHANGES";
   recheckCanPublish?: () => boolean;
 }): Promise<CanonicalReviewSurface | undefined> {
-  const existingSurface = params.canonicalSurface?.kind === params.preferredKind
+  let existingSurface = params.canonicalSurface?.kind === params.preferredKind
     ? params.canonicalSurface
     : await findCanonicalReviewSurface({
       octokit: params.octokit,
@@ -888,6 +888,18 @@ async function upsertCanonicalReviewSurface(params: {
       reviewOutputKey: params.reviewOutputKey,
       surfaceKind: params.preferredKind,
     });
+
+  if (!existingSurface && params.reviewDetailsBlock) {
+    const alternateKind: CanonicalSurfaceKind = params.preferredKind === "issue_comment" ? "pull_review" : "issue_comment";
+    existingSurface = await findCanonicalReviewSurface({
+      octokit: params.octokit,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      reviewOutputKey: params.reviewOutputKey,
+      surfaceKind: alternateKind,
+    });
+  }
 
   const body = params.reviewDetailsBlock
     ? (() => {
