@@ -68,7 +68,7 @@ describe("resolveContinuationOperatorEvidence", () => {
     });
 
     expect(observedKey).not.toBeNull();
-    expect(observedKey as unknown as ContinuationFamilyStateKey).toEqual({
+    expect(observedKey!).toEqual({
       familyKey: "acme/repo#101",
       baseReviewOutputKey: makeReviewOutputKey(),
     });

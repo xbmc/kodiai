@@ -730,8 +730,9 @@ export function formatReviewDetailsSummary(params: {
       prioritization.omittedFindings > 0;
 
     if (hasSaturatedCommentCap) {
+      const omittedFindingLabel = prioritization.omittedFindings === 1 ? "finding" : "findings";
       sections.push(
-        `- Comment cap saturated: published ${prioritization.selectedFindings}/${prioritization.findingsScored} prioritized findings; ${prioritization.omittedFindings} lower-priority finding(s) omitted from inline publication`,
+        `- Comment cap saturated: published ${prioritization.selectedFindings}/${prioritization.findingsScored} prioritized findings; ${prioritization.omittedFindings} lower-priority ${omittedFindingLabel} omitted from inline publication`,
       );
     }
 
