@@ -302,9 +302,10 @@ export function buildApprovedReviewBody(params: {
 }): string {
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
   const evidence = buildApprovedReviewEvidence(params);
+  const visibleDecisionLine = "Decision: APPROVE";
   const collapsedBody = wrapInDetails(
     [
-      "Decision: APPROVE",
+      visibleDecisionLine,
       "Issues: none",
       "",
       "Evidence:",
@@ -312,11 +313,12 @@ export function buildApprovedReviewBody(params: {
     ].join("\n"),
     "kodiai response",
   );
+  const approvalBody = `${visibleDecisionLine}\n\n${collapsedBody}`;
   const reviewDetailsBlock = params.reviewDetailsBlock?.trim();
 
   return reviewDetailsBlock
-    ? [collapsedBody, "", reviewDetailsBlock, "", marker].join("\n")
-    : [collapsedBody, "", marker].join("\n");
+    ? [approvalBody, "", reviewDetailsBlock, "", marker].join("\n")
+    : [approvalBody, "", marker].join("\n");
 }
 
 export async function ensureReviewOutputNotPublished(deps: {

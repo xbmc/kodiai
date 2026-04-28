@@ -128,6 +128,9 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("Do NOT claim any edits were made");
 
     expect(approvalSection).toContain("Decision: APPROVE");
+    expect(approvalSection.indexOf("Decision: APPROVE")).toBeLessThan(
+      approvalSection.indexOf("<details>"),
+    );
     expect(approvalSection).toContain("Issues: none");
     expect(approvalSection).toContain("Evidence:");
     expect(approvalSection).toContain("- <factual evidence>");

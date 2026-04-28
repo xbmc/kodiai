@@ -289,9 +289,12 @@ export function buildMentionPromptDetails(params: {
 
   lines.push("- If (and only if) the user is asking for a PR review / approval decision:");
   lines.push(
-    "  - Keep APPROVE responses wrapped in `<details>` so the review stays collapsed in GitHub.",
+    "  - Put `Decision: APPROVE` on the first line so the approval is visible without expanding the collapsed response.",
+    "  - Keep the detailed APPROVE response wrapped in `<details>` below that visible decision line.",
     "  - Use this exact APPROVE body:",
     "    ```",
+    "    Decision: APPROVE",
+    "    ",
     "    <details>",
     '    <summary>kodiai response</summary>',
     "    ",
