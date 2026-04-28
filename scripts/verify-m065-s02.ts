@@ -298,17 +298,29 @@ function isBaseNestedReportContract(value: unknown, command: NestedCommand): val
     && record.issues.every((item) => typeof item === "string");
 }
 
+function isStringOrNull(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
 function isRuntimeTimingReport(value: unknown): value is RuntimeTimingNestedReport {
-  return isBaseNestedReportContract(value, "verify:m048:s01")
-    && typeof (value as Record<string, unknown>).review_output_key !== "undefined"
-    && typeof (value as Record<string, unknown>).delivery_id !== "undefined";
+  if (!isBaseNestedReportContract(value, "verify:m048:s01")) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return isStringOrNull(record.review_output_key)
+    && isStringOrNull(record.delivery_id);
 }
 
 function isVisibleReviewReport(value: unknown): value is VisibleReviewNestedReport {
-  return isBaseNestedReportContract(value, "verify:m049:s02")
-    && typeof (value as Record<string, unknown>).repo === "string"
-    && typeof (value as Record<string, unknown>).review_output_key !== "undefined"
-    && typeof (value as Record<string, unknown>).delivery_id !== "undefined";
+  if (!isBaseNestedReportContract(value, "verify:m049:s02")) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return isStringOrNull(record.repo)
+    && isStringOrNull(record.review_output_key)
+    && isStringOrNull(record.delivery_id);
 }
 
 function isOperatorEvidenceReport(value: unknown): value is OperatorEvidenceNestedReport {
