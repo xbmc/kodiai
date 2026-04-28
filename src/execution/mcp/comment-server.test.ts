@@ -185,6 +185,9 @@ describe("createCommentServer", () => {
     expect(createReviewParams!.body).toContain("<details>");
     expect(createReviewParams!.body).toContain("<summary>kodiai response</summary>");
     expect(createReviewParams!.body).toContain("Decision: APPROVE");
+    expect(String(createReviewParams!.body).indexOf("Decision: APPROVE")).toBeLessThan(
+      String(createReviewParams!.body).indexOf("<details>"),
+    );
     expect(createReviewParams!.body).toContain("Issues: none");
     expect(createReviewParams!.body).toContain("Evidence:");
     expect(extractReviewOutputKey(String(createReviewParams!.body))).toBe(reviewOutputKey);
@@ -243,6 +246,9 @@ describe("createCommentServer", () => {
     expect(createReviewBody).toContain("<details>");
     expect(createReviewBody).toContain("<summary>kodiai response</summary>");
     expect(createReviewBody).toContain("Decision: APPROVE");
+    expect(createReviewBody!.indexOf("Decision: APPROVE")).toBeLessThan(
+      createReviewBody!.indexOf("<details>"),
+    );
     expect(createReviewBody).toContain("Issues: none");
     expect(createReviewBody).toContain("Evidence:");
   });

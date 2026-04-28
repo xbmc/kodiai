@@ -45,11 +45,13 @@ import { createContributorProfileStore } from "./contributor/index.ts";
 import { createSlackCommandRoutes } from "./routes/slack-commands.ts";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
+import { createSlackThreadSessionStore } from "./slack/thread-session-store.ts";
 import { createSlackWriteRunner } from "./slack/write-runner.ts";
 import { deliverWebhookRelayEvent } from "./slack/webhook-relay-delivery.ts";
 import { createRequestTracker } from "./lifecycle/request-tracker.ts";
 import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
+import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
 
 // Global error handlers — log and keep running instead of silently crashing
 process.on("uncaughtException", (err) => {
@@ -624,43 +626,33 @@ let queuedWebhooksFailed = 0;
 
 try {
   const pendingWebhooks = await webhookQueueStore.dequeuePending();
+  const replaySlackThreadSessionStore = createSlackThreadSessionStore();
 
   for (const entry of pendingWebhooks) {
+    const entryId = entry.id;
+    if (typeof entryId !== "number") {
+      logger.error({ entry }, "Dequeued webhook entry missing ID; skipping startup replay because completion state cannot be recorded");
+      queuedWebhooksFailed++;
+      continue;
+    }
+
     try {
-      if (entry.source === "github") {
-        // Reconstruct WebhookEvent from queued data
-        const payload = JSON.parse(entry.body) as Record<string, unknown>;
-        const installation = payload.installation as { id: number } | undefined;
-        const event = {
-          id: entry.deliveryId ?? `replay-${entry.id}`,
-          name: entry.eventName ?? "unknown",
-          payload,
-          installationId: installation?.id ?? 0,
-        };
-        await eventRouter.dispatch(event);
-      } else if (entry.source === "slack") {
-        // Reconstruct Slack bootstrap payload and dispatch
-        const slackPayload = JSON.parse(entry.body) as Record<string, unknown>;
-        const slackEvent = slackPayload.event as Record<string, unknown> | undefined;
+      await replayQueuedWebhook({
+        entry,
+        config,
+        logger,
+        dispatchGitHubEvent: (event) => eventRouter.dispatch(event),
+        handleSlackAllowedEvent: async (payload) => {
+          await slackAssistantHandler.handle(payload);
+        },
+        slackThreadSessionStore: replaySlackThreadSessionStore,
+      });
 
-        if (slackEvent) {
-          const bootstrapPayload = {
-            channel: (slackEvent.channel as string) ?? "",
-            threadTs: (slackEvent.thread_ts as string) ?? (slackEvent.ts as string) ?? "",
-            messageTs: (slackEvent.ts as string) ?? "",
-            user: (slackEvent.user as string) ?? "",
-            text: (slackEvent.text as string) ?? "",
-            replyTarget: "thread-only" as const,
-          };
-          await slackAssistantHandler.handle(bootstrapPayload);
-        }
-      }
-
-      await webhookQueueStore.markCompleted(entry.id!);
+      await webhookQueueStore.markCompleted(entryId);
       queuedWebhooksProcessed++;
     } catch (err) {
-      logger.warn({ err, id: entry.id, source: entry.source }, "Failed to replay queued webhook");
-      await webhookQueueStore.markFailed(entry.id!);
+      logger.warn({ err, id: entryId, source: entry.source }, "Failed to replay queued webhook");
+      await webhookQueueStore.markFailed(entryId);
       queuedWebhooksFailed++;
     }
   }

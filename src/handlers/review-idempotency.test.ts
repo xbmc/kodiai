@@ -202,6 +202,7 @@ describe("review idempotency helpers", () => {
     expect(result).toContain("<details>");
     expect(result).toContain("<summary>kodiai response</summary>");
     expect(result).toContain("Decision: APPROVE");
+    expect(result.indexOf("Decision: APPROVE")).toBeLessThan(result.indexOf("<details>"));
     expect(result).toContain("Issues: none");
     expect(result).toContain("Evidence:");
     expect(result).toContain(marker);

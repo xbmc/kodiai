@@ -121,7 +121,7 @@ export function createCommentServer(
         throw new Error("Invalid kodiai response: APPROVE must include 1-3 evidence bullets");
       }
 
-      return wrapInDetails(
+      const collapsedBody = wrapInDetails(
         [
           "Decision: APPROVE",
           "Issues: none",
@@ -131,6 +131,8 @@ export function createCommentServer(
         ].join("\n"),
         "kodiai response",
       );
+
+      return `Decision: APPROVE\n\n${collapsedBody}`;
     }
 
     // NOT APPROVED: require Issues: header and issue lines.
