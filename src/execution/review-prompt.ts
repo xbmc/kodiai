@@ -1605,6 +1605,20 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
   return lines.join("\n");
 }
 
+export function buildSmallDiffScopeSection(): string {
+  return [
+    "## Tiny-diff scope contract",
+    "",
+    "This is a small diff (≤2 files, ≤20 lines). Follow these constraints:",
+    "- Inspect `git diff` first.",
+    "- Read only the changed file and directly adjacent context.",
+    "- Broaden scope only if the diff itself proves an ambiguity that cannot be resolved without wider context.",
+    "- Do not do generalized architecture exploration.",
+    "- If no actionable issue exists, end without additional exploratory turns.",
+    "- Produce a merge decision after one focused inspection pass.",
+  ].join("\n");
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -1624,6 +1638,7 @@ export function buildReviewPromptDetails(context: {
   changedFiles: string[];
   customInstructions?: string;
   checkpointEnabled?: boolean;
+  smallDiffReview?: boolean;
   // Review mode & severity control fields
   mode?: "standard" | "enhanced";
   severityMinLevel?: "critical" | "major" | "medium" | "minor";
@@ -1767,6 +1782,10 @@ export function buildReviewPromptDetails(context: {
     prContextLines.push("", "PR description:", "---", prBodyTruncated.text, "---");
   }
   pushSection("review-pr-context", prContextLines);
+
+  if (context.smallDiffReview) {
+    pushSection("review-small-diff-scope", buildSmallDiffScopeSection().split("\n"));
+  }
 
   const changeContextLines = ["Changed files:"];
   for (const file of changedFilesCapped) {
@@ -2309,6 +2328,7 @@ export function buildReviewPrompt(context: {
   changedFiles: string[];
   customInstructions?: string;
   checkpointEnabled?: boolean;
+  smallDiffReview?: boolean;
   mode?: "standard" | "enhanced";
   severityMinLevel?: "critical" | "major" | "medium" | "minor";
   focusAreas?: string[];

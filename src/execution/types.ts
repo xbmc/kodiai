@@ -58,6 +58,9 @@ export type ExecutionContext = {
   /** Optional max turns override. When set, overrides config.maxTurns. */
   maxTurnsOverride?: number;
 
+  /** Optional allowed-tools override. When set, replaces the default base/write/MCP tool list. */
+  allowedToolsOverride?: string[];
+
   /** Optional model override. When set, overrides config.model. */
   modelOverride?: string;
 

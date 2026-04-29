@@ -9,6 +9,8 @@
 export const TASK_TYPES = {
   /** Full PR review (agentic, Agent SDK default). */
   REVIEW_FULL: "review.full",
+  /** Tiny PR review fast path (agentic, Agent SDK default). */
+  REVIEW_SMALL_DIFF: "review.small-diff",
   /** PR summary label generation (non-agentic). */
   REVIEW_SUMMARY: "review.summary",
   /** @mention handling (agentic, Agent SDK default). */
@@ -42,6 +44,7 @@ export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
  */
 export const AGENTIC_TASK_TYPES: Set<string> = new Set([
   TASK_TYPES.REVIEW_FULL,
+  TASK_TYPES.REVIEW_SMALL_DIFF,
   TASK_TYPES.MENTION_RESPONSE,
   TASK_TYPES.SLACK_RESPONSE,
 ]);

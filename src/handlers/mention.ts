@@ -50,6 +50,12 @@ import {
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
 import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
+import {
+  resolveReviewRoutingLineCount,
+  resolveReviewTaskRouting,
+  type ReviewTaskRouting,
+} from "../lib/review-routing.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
@@ -2369,6 +2375,10 @@ export function createMentionHandler(deps: {
         let prompt: string;
         let promptSections: import("../telemetry/types.ts").PromptSectionRecord[] = [];
         let explicitReviewPromptFileCount: number | undefined;
+        let explicitReviewRouting: ReviewTaskRouting = {
+          taskType: TASK_TYPES.REVIEW_FULL,
+          routingReason: "standard",
+        };
         if (explicitReviewRequest && mention.prNumber !== undefined) {
           const explicitReviewPrNumber = mention.prNumber;
           const { data: explicitReviewPr } = await octokit.rest.pulls.get({
@@ -2405,6 +2415,33 @@ export function createMentionHandler(deps: {
             numstatLines: promptDiffContext.numstatLines,
             fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
           });
+          const diffAnalysisLinesChanged = (diffAnalysis.metrics.totalLinesAdded ?? 0) +
+            (diffAnalysis.metrics.totalLinesRemoved ?? 0);
+          const prApiLinesChanged = (explicitReviewPr.additions ?? 0) + (explicitReviewPr.deletions ?? 0);
+          const explicitReviewLinesChanged = resolveReviewRoutingLineCount({
+            diffLinesChanged: diffAnalysisLinesChanged,
+            prApiLinesChanged,
+          });
+          explicitReviewRouting = resolveReviewTaskRouting({
+            changedFileCount: promptChangedFiles.length,
+            linesChanged: explicitReviewLinesChanged,
+          });
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              prNumber: mention.prNumber,
+              gate: "review-routing",
+              taskType: explicitReviewRouting.taskType,
+              routingReason: explicitReviewRouting.routingReason,
+              changedFiles: promptChangedFiles.length,
+              linesChanged: explicitReviewLinesChanged,
+              maxTurns: explicitReviewRouting.maxTurnsOverride ?? null,
+              lane: "interactive-review",
+            },
+            "Mention review routing decision",
+          );
           const matchedPathInstructions = matchPathInstructions(
             config.review.pathInstructions,
             promptChangedFiles,
@@ -2463,6 +2500,7 @@ export function createMentionHandler(deps: {
             outputLanguage: config.review.outputLanguage,
             prLabels,
             isDraft: explicitReviewPr.draft,
+            smallDiffReview: explicitReviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
             largePRContext: tieredFiles.isLargePR ? {
               fullReviewFiles: tieredFiles.full.map((file) => file.filePath),
               abbreviatedFiles: tieredFiles.abbreviated.map((file) => file.filePath),
@@ -2479,7 +2517,7 @@ export function createMentionHandler(deps: {
             buildPromptSectionRecord({
               deliveryId: event.id,
               repo: `${mention.owner}/${mention.repo}`,
-              taskType: "review.full",
+              taskType: explicitReviewRouting.taskType,
               promptKind: "review.user-prompt",
               sections: reviewPromptResult.sections,
             }),
@@ -2524,7 +2562,7 @@ export function createMentionHandler(deps: {
         // large PRs do not terminate mid-tool-call before any publish step occurs.
         const mentionMaxTurns =
           explicitReviewRequest
-            ? undefined
+            ? explicitReviewRouting.maxTurnsOverride
             : (!writeEnabled && mention.prNumber !== undefined)
               ? (prDiffContext !== undefined ? 12 : 20)
               : undefined; // undefined → falls through to config.maxTurns
@@ -2557,7 +2595,7 @@ export function createMentionHandler(deps: {
           deliveryId: event.id,
           botHandles: possibleHandles,
           writeMode: writeEnabled,
-          taskType: explicitReviewRequest ? "review.full" : "mention.response",
+          taskType: explicitReviewRequest ? explicitReviewRouting.taskType : "mention.response",
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
           prompt,
@@ -3796,9 +3834,15 @@ export function createMentionHandler(deps: {
               [
                 "I ran out of steps analyzing this and wasn't able to post a complete response.",
                 "",
-                "This can happen on PRs with large or complex diffs. To get a response:",
-                "- Ask a more targeted question (e.g. `@kodiai review LangInfo.cpp only`)",
-                "- Or mention me again — the next run may complete within the step budget",
+                ...(explicitReviewRouting.routingReason === "tiny-diff"
+                  ? [
+                      "This was a tiny-diff review, so this indicates an execution-budget or tool-loop problem rather than PR size. The run has been recorded with small-diff routing diagnostics.",
+                    ]
+                  : [
+                      "This can happen on PRs with large or complex diffs. To get a response:",
+                      "- Ask a more targeted question (e.g. `@kodiai review LangInfo.cpp only`)",
+                      "- Or mention me again — the next run may complete within the step budget",
+                    ]),
               ].join("\n"),
               "kodiai response",
             );

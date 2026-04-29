@@ -31,6 +31,8 @@ import {
   createAzureFilesWorkspaceDir,
 } from "../jobs/workspace.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
+import { SMALL_DIFF_REVIEW_BASE_TOOLS } from "../lib/review-routing.ts";
 
 export function buildSecurityClaudeMd(): string {
   return `# Security Policy
@@ -434,31 +436,41 @@ export function createExecutor(deps: {
         // handler for trigger semantics, but they still need the broader review tool
         // budget. Only conversational PR mentions keep the reduced tool surface.
         const hasGitTools = await hasGitWorkspace(context.workspace.dir);
+        const isSmallDiffReview = taskType === TASK_TYPES.REVIEW_SMALL_DIFF;
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
-          taskType !== "review.full";
-        const baseTools = isReadOnlyPrMention
+          taskType === TASK_TYPES.MENTION_RESPONSE;
+        const baseTools = isSmallDiffReview
           ? [
-              "Read",
-              "Grep",
-              ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : []),
-            ]
-          : [
               "Read",
               "Grep",
               "Glob",
               ...(hasGitTools
-                ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
+                ? SMALL_DIFF_REVIEW_BASE_TOOLS.filter((tool) => tool.startsWith("Bash("))
                 : []),
-            ];
+            ]
+          : isReadOnlyPrMention
+            ? [
+                "Read",
+                "Grep",
+                ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : []),
+              ]
+            : [
+                "Read",
+                "Grep",
+                "Glob",
+                ...(hasGitTools
+                  ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
+                  : []),
+              ];
 
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         // Compute server names from the same deps (no instance construction yet)
         const mcpServerNames = Object.keys(buildMcpServerFactories(mcpServerDeps));
         const mcpTools = buildAllowedMcpTools(mcpServerNames);
-        const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
+        const allowedTools = context.allowedToolsOverride ?? [...baseTools, ...writeTools, ...mcpTools];
 
         // Build prompt
         const prompt = context.prompt ?? buildPrompt(context);
