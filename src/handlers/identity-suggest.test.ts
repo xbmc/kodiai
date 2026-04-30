@@ -217,6 +217,92 @@ describe("suggestIdentityLink", () => {
     expect(requests).toEqual(["https://slack.com/api/users.list"]);
   });
 
+  test("missing Slack users.list scope disables identity suggestions without warning", async () => {
+    const logger = createMockLogger();
+    const requests: string[] = [];
+    let missingScopeForFirstToken = true;
+    const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requests.push(url);
+      const authHeader = init?.headers instanceof Headers
+        ? init.headers.get("authorization")
+        : (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (authHeader === "Bearer xoxb-missing-scope" && missingScopeForFirstToken) {
+        missingScopeForFirstToken = false;
+        return jsonResponse({ ok: false, error: "missing_scope" });
+      }
+      return jsonResponse({ ok: true, members: [] });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "scope-missing-user",
+      githubDisplayName: "Scope Missing User",
+      slackBotToken: "xoxb-missing-scope",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "scope-missing-user-2",
+      githubDisplayName: "Scope Missing User 2",
+      slackBotToken: "xoxb-missing-scope",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "scope-valid-user",
+      githubDisplayName: "Scope Valid User",
+      slackBotToken: "xoxb-valid-scope",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+
+    expect(requests).toEqual([
+      "https://slack.com/api/users.list",
+      "https://slack.com/api/users.list",
+    ]);
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("missing Slack users.list scope disable cache evicts old token entries", async () => {
+    const logger = createMockLogger();
+    const requests: string[] = [];
+    const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const authHeader = init?.headers instanceof Headers
+        ? init.headers.get("authorization")
+        : (init?.headers as Record<string, string> | undefined)?.authorization;
+      requests.push(`${url}:${authHeader ?? ""}`);
+      return jsonResponse({ ok: false, error: "missing_scope" });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    for (let index = 0; index < 101; index++) {
+      await identitySuggest.suggestIdentityLink({
+        githubUsername: `scope-missing-${index}`,
+        githubDisplayName: `Scope Missing ${index}`,
+        slackBotToken: `xoxb-missing-scope-${index}`,
+        profileStore: createMockProfileStore(),
+        logger,
+      });
+    }
+
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "scope-missing-first-again",
+      githubDisplayName: "Scope Missing First Again",
+      slackBotToken: "xoxb-missing-scope-0",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+
+    expect(requests).toHaveLength(102);
+    expect(requests.at(-1)).toBe(
+      "https://slack.com/api/users.list:Bearer xoxb-missing-scope-0",
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
   test("high-confidence match sends one truthful DM body", async () => {
     const requests: Array<{ url: string; body: string | null }> = [];
     const logger = createMockLogger();

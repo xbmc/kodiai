@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { createLearningMemoryStore } from "./memory-store.ts";
+import { createLearningMemoryStore, normalizeSafeInteger } from "./memory-store.ts";
 import { createDbClient, type Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import type { LearningMemoryStore, LearningMemoryRecord } from "./types.ts";
@@ -14,6 +14,31 @@ const mockLogger = {
   child: () => mockLogger,
   level: "silent",
 } as unknown as import("pino").Logger;
+
+describe("normalizeSafeInteger", () => {
+  test("rejects bigint values before precision-losing Number conversion", () => {
+    expect(() => normalizeSafeInteger(9007199254740993n, "test.bigint_id")).toThrow(
+      "test.bigint_id exceeds JavaScript safe integer range: 9007199254740993",
+    );
+  });
+
+  test("rejects string values before precision-losing Number conversion", () => {
+    expect(() => normalizeSafeInteger("9007199254740993", "test.string_id")).toThrow(
+      "test.string_id exceeds JavaScript safe integer range: 9007199254740993",
+    );
+  });
+
+  test("rejects non-integer string values", () => {
+    expect(() => normalizeSafeInteger("123.5", "test.string_id")).toThrow(
+      "test.string_id is not an integer: 123.5",
+    );
+  });
+
+  test("accepts safe bigint and string values", () => {
+    expect(normalizeSafeInteger(3164871419n, "test.bigint_id")).toBe(3164871419);
+    expect(normalizeSafeInteger("3164871419", "test.string_id")).toBe(3164871419);
+  });
+});
 
 function makeRecord(overrides: Partial<LearningMemoryRecord> = {}): LearningMemoryRecord {
   return {
@@ -93,6 +118,27 @@ describe.skipIf(!TEST_DB_URL)("LearningMemoryStore (pgvector)", () => {
     expect(rows[0]!.owner).toBe("owner");
     expect(rows[0]!.severity).toBe("major");
     expect(rows[0]!.embedding).not.toBeNull();
+  });
+
+  test("writeMemory stores GitHub-sized finding IDs above 32-bit integer range", async () => {
+    const githubReviewCommentId = 3_164_871_419;
+    const record = makeRecord({ findingId: githubReviewCommentId });
+    const embedding = makeEmbedding(44);
+
+    await store.writeMemory(record, embedding);
+
+    const rows = await sql`
+      SELECT id, finding_id
+      FROM learning_memories
+      WHERE finding_id = ${githubReviewCommentId}
+    `;
+    expect(rows.length).toBe(1);
+    expect(Number(rows[0]!.finding_id)).toBe(githubReviewCommentId);
+
+    const stored = await store.getMemoryRecord(rows[0]!.id);
+    expect(stored).not.toBeNull();
+    expect(stored!.findingId).toBe(githubReviewCommentId);
+    expect(typeof stored!.findingId).toBe("number");
   });
 
   test("writeMemory stores record and getMemoryRecord retrieves it", async () => {
