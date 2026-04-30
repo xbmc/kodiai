@@ -64,6 +64,10 @@ import {
 import {
   resolveReviewProfile,
 } from "../lib/auto-profile.ts";
+import {
+  resolveReviewRoutingLineCount,
+  resolveReviewTaskRouting,
+} from "../lib/review-routing.ts";
 import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
@@ -3596,6 +3600,33 @@ export function createReviewHandler(deps: {
           ? timeoutEstimate
           : null;
 
+        const diffAnalysisLinesChanged = (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
+          (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
+        const prApiLinesChanged = Math.max(0, (pr.additions ?? 0) + (pr.deletions ?? 0));
+        const reviewRoutingLinesChanged = resolveReviewRoutingLineCount({
+          diffLinesChanged: diffAnalysisLinesChanged,
+          prApiLinesChanged,
+        });
+        const reviewRouting = resolveReviewTaskRouting({
+          changedFileCount: changedFiles.length,
+          linesChanged: reviewRoutingLinesChanged,
+        });
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-routing",
+            taskType: reviewRouting.taskType,
+            routingReason: reviewRouting.routingReason,
+            changedFiles: changedFiles.length,
+            linesChanged: reviewRoutingLinesChanged,
+            diffAnalysisLinesChanged,
+            prApiLinesChanged,
+            maxTurns: reviewRouting.maxTurnsOverride ?? null,
+          },
+          "Review routing decision",
+        );
+
         logger.info(
           {
             ...baseLog,
@@ -3903,6 +3934,7 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
+          smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
         } satisfies ReviewPromptBuildContext;
         const reviewPromptCacheState: {
           status: "hit" | "miss" | "degraded" | "bypass";
@@ -3923,7 +3955,7 @@ export function createReviewHandler(deps: {
           buildPromptSectionRecord({
             deliveryId: event.id,
             repo: `${apiOwner}/${apiRepo}`,
-            taskType: "review.full",
+            taskType: reviewRouting.taskType,
             promptKind: "review.user-prompt",
             sections: reviewPromptResult.sections,
           }),
@@ -3957,7 +3989,7 @@ export function createReviewHandler(deps: {
           commentId: undefined,
           botHandles: [githubApp.getAppSlug(), "claude"],
           eventType: `pull_request.${payload.action}`,
-          taskType: "review.full",
+          taskType: reviewRouting.taskType,
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
           promptSections: reviewPromptSections,
@@ -3970,6 +4002,7 @@ export function createReviewHandler(deps: {
           dynamicTimeoutSeconds: appliedTimeoutBudget
             ? appliedTimeoutBudget.totalTimeoutSeconds
             : undefined,
+          maxTurnsOverride: reviewRouting.maxTurnsOverride,
         });
         executorResult = result;
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
@@ -5491,6 +5524,14 @@ export function createReviewHandler(deps: {
               const retryTimeoutEstimate = retryPlan.timeoutEstimate;
               const retryCheckpointEnabled = retryPlan.checkpointEnabled;
               const retryScopeRatio = retryPlan.scopeRatio;
+              const retryDeliveryId = `${event.id}-retry-1`;
+              const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
+                familyKey: reviewFamilyKey,
+                source: "automatic-review",
+                lane: "review",
+                deliveryId: retryDeliveryId,
+                phase: "claimed",
+              });
 
               // Update resilience telemetry with retry plan
               if (config.telemetry.enabled) {
@@ -5535,15 +5576,6 @@ export function createReviewHandler(deps: {
                 },
                 "Enqueueing retry with reduced scope",
               );
-
-              const retryDeliveryId = `${event.id}-retry-1`;
-              const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
-                familyKey: reviewFamilyKey,
-                source: "automatic-review",
-                lane: "review",
-                deliveryId: retryDeliveryId,
-                phase: "claimed",
-              });
 
               await persistContinuationFamilyState({
                 authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
@@ -5669,6 +5701,7 @@ export function createReviewHandler(deps: {
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
+                      smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
                     } satisfies ReviewPromptBuildContext;
                     const retryPromptCacheState: {
                       status: "hit" | "miss" | "degraded" | "bypass";
@@ -5689,7 +5722,7 @@ export function createReviewHandler(deps: {
                       buildPromptSectionRecord({
                         deliveryId: retryDeliveryId,
                         repo: `${apiOwner}/${apiRepo}`,
-                        taskType: "review.full",
+                        taskType: reviewRouting.taskType,
                         promptKind: "review.user-prompt",
                         sections: retryPromptResult.sections,
                       }),
@@ -5715,13 +5748,14 @@ export function createReviewHandler(deps: {
                       commentId: undefined,
                       botHandles: [githubApp.getAppSlug(), "claude"],
                       eventType: "pull_request.review-retry",
-                      taskType: "review.full",
+                      taskType: reviewRouting.taskType,
                       triggerBody: "",
                       prompt: retryPrompt,
                       promptSections: retryPromptSections,
                       reviewOutputKey: retryReviewOutputKey,
                       deliveryId: retryDeliveryId,
                       dynamicTimeoutSeconds: retryTimeout,
+                      maxTurnsOverride: reviewRouting.maxTurnsOverride,
                       knowledgeStore,
                       totalFiles: timeoutTotalFiles,
                       enableCheckpointTool: retryCheckpointEnabled,

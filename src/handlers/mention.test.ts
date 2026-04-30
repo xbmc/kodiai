@@ -7875,6 +7875,10 @@ describe("createMentionHandler review command", () => {
 
     expect(issueReplies).toHaveLength(1);
     expect(issueReplies[0]).toContain("I ran out of steps analyzing this and wasn't able to post a complete response.");
+    expect(issueReplies[0]).toContain("This was a tiny-diff review");
+    expect(issueReplies[0]).toContain("small-diff routing diagnostics");
+    expect(issueReplies[0]).not.toContain("Ask a more targeted question");
+    expect(issueReplies[0]).not.toContain("This can happen on PRs with large or complex diffs");
     expect(issueReplies[0]).not.toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
 
     await workspaceFixture.cleanup();
@@ -9026,7 +9030,7 @@ describe("createMentionHandler review command", () => {
     );
 
     expect(capturedQueueLane).toBe("interactive-review");
-    expect(capturedTaskType).toBe("review.full");
+    expect(capturedTaskType).toBe("review.small-diff");
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
@@ -10247,7 +10251,7 @@ describe("createMentionHandler review command", () => {
       }),
     );
 
-    expect(capturedTaskType).toBe("review.full");
+    expect(capturedTaskType).toBe("review.small-diff");
     expect(capturedReviewOutputKey).toBeDefined();
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
 
@@ -10361,14 +10365,15 @@ describe("createMentionHandler review command", () => {
       }),
     );
 
-    expect(capturedTaskType).toBe("review.full");
+    expect(capturedTaskType).toBe("review.small-diff");
     expect(capturedReviewOutputKey).toBeDefined();
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedTriggerBody).toBe("review");
     expect(capturedPrompt).toContain("You are reviewing pull request #102 in acme/repo.");
     expect(capturedPrompt).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+    expect(capturedPrompt).toContain("## Tiny-diff scope contract");
     expect(capturedPrompt).not.toContain("You MUST post a reply when you are mentioned.");
-    expect(capturedMaxTurnsOverride).toBeUndefined();
+    expect(capturedMaxTurnsOverride).toBe(8);
     expect(capturedEnableInlineTools).toBe(true);
 
     await workspaceFixture.cleanup();
@@ -10749,11 +10754,11 @@ describe("createMentionHandler review command", () => {
       }),
     );
 
-    expect(capturedTaskType).toBe("review.full");
+    expect(capturedTaskType).toBe("review.small-diff");
     expect(capturedReviewOutputKey).toBeDefined();
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedTriggerBody).toBe("please retry review");
-    expect(capturedMaxTurnsOverride).toBeUndefined();
+    expect(capturedMaxTurnsOverride).toBe(8);
 
     await workspaceFixture.cleanup();
   });

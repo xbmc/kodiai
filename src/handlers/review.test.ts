@@ -12758,7 +12758,7 @@ describe("createReviewHandler review prompt section telemetry", () => {
 
     expect(promptSectionEntries).toHaveLength(1);
     expect(promptSectionEntries[0]?.promptKind).toBe("review.user-prompt");
-    expect(promptSectionEntries[0]?.taskType).toBe("review.full");
+    expect(promptSectionEntries[0]?.taskType).toBe("review.small-diff");
     expect(promptSectionEntries[0]?.sections.length).toBeGreaterThan(1);
     expect(promptSectionEntries[0]?.sections.map((section) => section.sectionName)).toEqual(
       expect.arrayContaining([
@@ -12945,7 +12945,7 @@ describe("createReviewHandler review prompt section telemetry", () => {
       "delivery-123-retry-1",
     ]);
     for (const entry of promptSectionEntries) {
-      expect(entry.taskType).toBe("review.full");
+      expect(entry.taskType).toBe("review.small-diff");
       expect(entry.sections.length).toBeGreaterThan(1);
       expect(entry.sections.map((section) => section.sectionName)).toEqual(
         expect.arrayContaining([

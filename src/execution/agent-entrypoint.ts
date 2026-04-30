@@ -77,7 +77,7 @@ function defaultDeps(): EntrypointDeps {
   };
 }
 
-type AssistantContentPart = {
+export type AssistantContentPart = {
   type?: string;
   name?: string;
   input?: unknown;
@@ -107,6 +107,32 @@ function extractToolCommand(input: unknown): string | undefined {
     const candidate = (input as { command?: unknown }).command;
     return typeof candidate === "string" ? candidate : undefined;
   }
+  return undefined;
+}
+
+export function extractNormalizedToolTarget(part: AssistantContentPart): string | undefined {
+  if (part.type !== "tool_use" || typeof part.input !== "object" || part.input === null) {
+    return undefined;
+  }
+
+  const input = part.input as Record<string, unknown>;
+  if (typeof input.command === "string") {
+    const [program, ...rest] = input.command.trim().split(/\s+/);
+    if (program === "git" && typeof rest[0] === "string") {
+      return `git ${rest[0]}`;
+    }
+    return program || "bash";
+  }
+  if (typeof input.file_path === "string") {
+    return input.file_path;
+  }
+  if (typeof input.pattern === "string") {
+    return input.pattern.slice(0, 80);
+  }
+  if (typeof input.glob === "string") {
+    return input.glob.slice(0, 80);
+  }
+
   return undefined;
 }
 
@@ -278,6 +304,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     let lastRateLimitEvent: SDKRateLimitEvent | undefined;
     const toolUseNames: string[] = [];
     let usedRepoInspectionTools = false;
+    let currentTurn = 0;
 
     for await (const message of sdkQueryResult) {
       if (message.type === "system" && (message as SystemInitMessage).subtype === "init") {
@@ -295,6 +322,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
           `sdk init tools=${initTools.join(",") || "none"} mcpServers=${initMcpServers.join(",") || "none"}`,
         );
       } else if (message.type === "assistant") {
+        currentTurn++;
         const parts = ((message as { message?: { content?: AssistantContentPart[] } }).message?.content ?? []) as AssistantContentPart[];
         for (const part of parts) {
           const toolName = extractToolUseName(part);
@@ -306,6 +334,10 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
           }
           if (isRepoInspectionToolUse(part)) {
             usedRepoInspectionTools = true;
+          }
+          const target = extractNormalizedToolTarget(part);
+          if (target) {
+            await appendDiagnostic(`turn=${currentTurn} tool=${toolName} target=${target}`);
           }
         }
       } else if (message.type === "result") {

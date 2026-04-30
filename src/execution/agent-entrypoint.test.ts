@@ -3,13 +3,33 @@ import { mkdtemp, mkdir, rm, symlink, writeFile, lstat } from "node:fs/promises"
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
-import { main, MCP_SERVER_NAMES } from "./agent-entrypoint.ts";
+import { main, MCP_SERVER_NAMES, extractNormalizedToolTarget } from "./agent-entrypoint.ts";
 import type { EntrypointDeps } from "./agent-entrypoint.ts";
 import type { Query, SDKResultMessage, SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+describe("extractNormalizedToolTarget", () => {
+  test("normalizes tool targets without raw output", () => {
+    expect(extractNormalizedToolTarget({
+      type: "tool_use",
+      name: "Bash",
+      input: { command: "git diff origin/master...HEAD -- file.cpp" },
+    })).toBe("git diff");
+    expect(extractNormalizedToolTarget({
+      type: "tool_use",
+      name: "Read",
+      input: { file_path: "src/file.ts" },
+    })).toBe("src/file.ts");
+    expect(extractNormalizedToolTarget({
+      type: "tool_use",
+      name: "Grep",
+      input: { pattern: "ClassPathToName" },
+    })).toBe("ClassPathToName");
+  });
+});
 
 /** Minimal valid agent config JSON */
 const VALID_AGENT_CONFIG = JSON.stringify({

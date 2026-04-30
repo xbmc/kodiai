@@ -16,6 +16,7 @@ import {
   buildReviewedCategoriesLine,
   buildReviewPrompt,
   buildReviewPromptDetails,
+  buildSmallDiffScopeSection,
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
   buildEpistemicBoundarySection,
@@ -28,6 +29,24 @@ import {
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
+
+describe("small-diff review prompt scope", () => {
+  test("adds a tiny-diff scope contract when requested", () => {
+    const result = buildReviewPromptDetails(baseContext({ smallDiffReview: true }));
+
+    expect(buildSmallDiffScopeSection()).toContain("Inspect `git diff` first.");
+    expect(result.text).toContain("## Tiny-diff scope contract");
+    expect(result.text).toContain("Do not do generalized architecture exploration.");
+    expect(result.sections.some((section) => section.sectionName === "review-small-diff-scope")).toBe(true);
+  });
+
+  test("omits the tiny-diff scope contract for normal reviews", () => {
+    const result = buildReviewPromptDetails(baseContext());
+
+    expect(result.text).not.toContain("## Tiny-diff scope contract");
+    expect(result.sections.some((section) => section.sectionName === "review-small-diff-scope")).toBe(false);
+  });
+});
 
 function baseContext(overrides: Record<string, unknown> = {}) {
   return {

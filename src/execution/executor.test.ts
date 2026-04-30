@@ -471,17 +471,27 @@ function createTestableExecutor(deps: {
 
         const hasGitTools = await $`git -C ${context.workspace.dir} rev-parse --is-inside-work-tree`.quiet().nothrow()
           .then((result) => result.exitCode === 0 && result.stdout.toString().trim() === "true");
+        const { TASK_TYPES } = await import("../llm/task-types.ts");
+        const { SMALL_DIFF_REVIEW_BASE_TOOLS } = await import("../lib/review-routing.ts");
+        const isSmallDiffReview = taskType === TASK_TYPES.REVIEW_SMALL_DIFF;
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
-          taskType !== "review.full";
-        const baseTools = isReadOnlyPrMention
-          ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
-          : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
+          taskType === TASK_TYPES.MENTION_RESPONSE;
+        const baseTools = isSmallDiffReview
+          ? [
+              "Read",
+              "Grep",
+              "Glob",
+              ...(hasGitTools ? SMALL_DIFF_REVIEW_BASE_TOOLS.filter((tool) => tool.startsWith("Bash(")) : []),
+            ]
+          : isReadOnlyPrMention
+            ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
+            : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
-        const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
+        const allowedTools = context.allowedToolsOverride ?? [...baseTools, ...writeTools, ...mcpTools];
 
         const { buildPrompt } = await import("./prompt.ts");
         const prompt = context.prompt ?? buildPrompt(context);
@@ -1222,6 +1232,67 @@ test("ACA dispatch: explicit review mention stages a review bundle transport wit
     baseRef: "main",
     originUrl: "https://github.com/xbmc/xbmc.git",
   });
+});
+
+test("ACA dispatch: explicit small-diff review mention uses constrained review toolset", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const sourceRepoDir = join(tmpDir, "source");
+  await mkdir(join(sourceRepoDir, "src"), { recursive: true });
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = 'base';\n");
+  await $`git -C ${sourceRepoDir} init --initial-branch=main`.quiet();
+  await $`git -C ${sourceRepoDir} config user.email test@example.com`.quiet();
+  await $`git -C ${sourceRepoDir} config user.name "Test User"`.quiet();
+  await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m base`.quiet();
+  await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+  await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = 'updated';\n");
+  await $`git -C ${sourceRepoDir} commit -am feature`.quiet();
+  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
+
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-small-diff-review" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult(),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  await executor.execute(
+    makeContext(sourceRepoDir, {
+      eventType: "issue_comment.created",
+      prNumber: 80,
+      taskType: "review.small-diff",
+      maxTurnsOverride: 8,
+      enableInlineTools: true,
+    }),
+  );
+
+  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    maxTurns: number;
+    allowedTools: string[];
+    taskType: string;
+  };
+
+  expect(agentConfig.taskType).toBe("review.small-diff");
+  expect(agentConfig.maxTurns).toBe(8);
+  expect(agentConfig.allowedTools).toContain("Read");
+  expect(agentConfig.allowedTools).toContain("Grep");
+  expect(agentConfig.allowedTools).toContain("Glob");
+  expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
+  expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git status:*)");
+  expect(agentConfig.allowedTools).toContain("mcp__github_inline_comment__create_inline_comment");
 });
 
 test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {
