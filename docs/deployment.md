@@ -44,9 +44,9 @@ can create a second revision that drops env vars and probes if the YAML omits th
 
 The deploy script avoids that failure mode by updating existing apps with one full YAML payload.
 
-### Required Local Deploy Inputs
+### Required Environment Variables
 
-`deploy.sh` can read these values from your shell environment or a local `.env` file:
+`deploy.sh` requires:
 
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY_BASE64` (base64-encoded PEM)
@@ -59,22 +59,21 @@ The deploy script avoids that failure mode by updating existing apps with one fu
 - `SLACK_KODIAI_CHANNEL_ID`
 - `DATABASE_URL`
 
-Optional local deploy inputs:
+Optional:
 
 - `SHUTDOWN_GRACE_MS` (defaults to `300000`)
+- `KEY_VAULT_NAME` (optional; overrides the default Key Vault name `kv-kodiai-<subscription-prefix>`)
+- `DEPLOYER_OBJECT_ID` / `DEPLOYER_PRINCIPAL_TYPE` (optional; override Key Vault secret-write role assignment principal for non-interactive deploys)
 - `BOT_USER_PAT` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_LOGIN`)
 - `BOT_USER_LOGIN` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_PAT`)
 
-Important distinction:
-
-- Local `.env` and exported shell variables are an **operator input surface** for development and manual deploys.
-- They are **not** the production runtime source of truth.
-- In production, the runtime source of truth is the Azure Container Apps secret set resolved into the Container App through secret references.
-
 Notes:
 
-- The app runtime expects `GITHUB_PRIVATE_KEY`; the deploy script stores the base64 PEM in an Azure secret and maps it to `GITHUB_PRIVATE_KEY`.
+- The app runtime expects `GITHUB_PRIVATE_KEY`; the deploy script stores the base64 PEM in Azure Key Vault and maps it to `GITHUB_PRIVATE_KEY` via a Container Apps Key Vault secret reference.
 - `CLAUDE_CODE_OAUTH_TOKEN` must be the 1-year token from `claude setup-token`. Do **not** point it at `~/.claude/.credentials.json` `claudeAiOauth.accessToken`; that rotating login token is rejected by the deployed runtime path.
+- `deploy.sh` now treats Azure Key Vault as the source of truth for runtime secrets. The container app and ACA job both read the same Key Vault-backed secret references instead of keeping separate inline ACA secret values.
+- `KEY_VAULT_NAME` must satisfy Azure Key Vault naming rules: 3-24 characters, alphanumerics and hyphens, start with a letter, and do not end with a hyphen.
+- For non-interactive Azure deploys, set `DEPLOYER_OBJECT_ID` and `DEPLOYER_PRINCIPAL_TYPE` when the CLI account cannot resolve its own object ID. `DEPLOYER_PRINCIPAL_TYPE` should be `User` or `ServicePrincipal`.
 - Structural-impact output depends on the review-graph and canonical-code substrates being reachable in the deployed environment.
 
 ### Run
@@ -95,13 +94,9 @@ On success, the script prints:
 
 ### Secrets and env vars
 
-See `.env.example` for the full local-development / deploy-input variable list. For repository-level behavior configuration (review rules, mention handling, knowledge features), see [Configuration](configuration.md).
+See `.env.example` for the full list of environment variables. For repository-level behavior configuration (review rules, mention handling, knowledge features), see [Configuration](configuration.md).
 
-#### Production secret contract
-
-For production, the Azure Container Apps secret set is the source of truth. The Container App (`ca-kodiai`) consumes the runtime secret values through secret references rather than through checked-in files or ad-hoc inline env values.
-
-Production secret refs managed by `deploy.sh`:
+Azure Key Vault secrets synced by `deploy.sh`:
 
 - `github-app-id`
 - `github-private-key`
@@ -111,9 +106,11 @@ Production secret refs managed by `deploy.sh`:
 - `slack-bot-token`
 - `slack-signing-secret`
 - `database-url`
-- `bot-user-pat` (only when bot-user flows are enabled)
+- `bot-user-pat` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
 
-The app runtime resolves those refs as:
+Container Apps secret references created by `deploy.sh` point at those Key Vault secrets rather than storing raw secret values directly in ACA.
+
+Runtime env vars set by `deploy.sh` on the app template:
 
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY`
@@ -123,13 +120,10 @@ The app runtime resolves those refs as:
 - `SLACK_BOT_TOKEN`
 - `SLACK_SIGNING_SECRET`
 - `DATABASE_URL`
-- `BOT_USER_PAT` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are enabled)
-
-Non-secret runtime values still come from normal env vars on the app template:
-
 - `SLACK_BOT_USER_ID`
 - `SLACK_KODIAI_CHANNEL_ID`
-- `BOT_USER_LOGIN` (only when bot-user flows are enabled)
+- `BOT_USER_PAT` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
+- `BOT_USER_LOGIN` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
 - `SHUTDOWN_GRACE_MS`
 - `PORT=3000`
 - `LOG_LEVEL=info`
