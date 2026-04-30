@@ -6284,7 +6284,6 @@ export function createReviewHandler(deps: {
             "Try requesting another review if you want a fresh attempt.",
           ].join("\n");
 
-
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {
             setReviewWorkPhase("publish");
@@ -6298,7 +6297,6 @@ export function createReviewHandler(deps: {
               sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
               logger,
             );
-
           }
         }
 

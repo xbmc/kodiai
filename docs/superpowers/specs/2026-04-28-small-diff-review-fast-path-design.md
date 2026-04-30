@@ -130,7 +130,7 @@ Add lightweight per-turn trace lines to `agent-diagnostics.log`:
 - compact target summary
 
 Examples:
-- `turn=1 tool=Bash target="git diff origin/master...HEAD"`
+- `turn=1 tool=Bash target="git diff origin/main...HEAD"`
 - `turn=2 tool=Read target="xbmc/platform/android/activity/JNIXBMCNsdManagerDiscoveryListener.cpp"`
 - `turn=3 tool=Grep target="ClassPathToName"`
 
