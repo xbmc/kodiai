@@ -80,12 +80,17 @@ ENVIRONMENT="cae-kodiai"
 APP_NAME="ca-kodiai"
 ACR_NAME="kodiairegistry"          # Must be globally unique, alphanumeric only
 IDENTITY_NAME="id-kodiai"
+KEY_VAULT_NAME=${KEY_VAULT_NAME:-}
 BUILD_CONTEXT_DIR=$(mktemp -d)
+KEYVAULT_TEMP_FILES=()
 
-cleanup_build_context() {
+cleanup_deploy_artifacts() {
   rm -rf "$BUILD_CONTEXT_DIR"
+  if [[ ${#KEYVAULT_TEMP_FILES[@]} -gt 0 ]]; then
+    rm -f "${KEYVAULT_TEMP_FILES[@]}"
+  fi
 }
-trap cleanup_build_context EXIT
+trap cleanup_deploy_artifacts EXIT
 
 prepare_build_context() {
   mkdir -p "$BUILD_CONTEXT_DIR"
@@ -130,32 +135,10 @@ fi
 
 # -- Optional environment variables with defaults --------------------------------
 SHUTDOWN_GRACE_MS=${SHUTDOWN_GRACE_MS:-300000}
-BOT_USER_SECRET_YAML=""
 BOT_USER_ENV_YAML=""
+BOT_USER_SECRET_REF_YAML=""
 BOT_USER_CREATE_SECRET_ARGS=()
 BOT_USER_CREATE_ENV_ARGS=()
-
-if [[ -n "${BOT_USER_PAT:-}" && -n "${BOT_USER_LOGIN:-}" ]]; then
-  BOT_USER_SECRET_YAML=$(cat <<EOF
-      - name: bot-user-pat
-        value: $(yaml_quote "$BOT_USER_PAT")
-EOF
-)
-  BOT_USER_ENV_YAML=$(cat <<EOF
-          - name: BOT_USER_PAT
-            secretRef: bot-user-pat
-          - name: BOT_USER_LOGIN
-            value: $(yaml_quote "$BOT_USER_LOGIN")
-EOF
-)
-  BOT_USER_CREATE_SECRET_ARGS+=("bot-user-pat=${BOT_USER_PAT}")
-  BOT_USER_CREATE_ENV_ARGS+=(
-    "BOT_USER_PAT=secretref:bot-user-pat"
-    "BOT_USER_LOGIN=${BOT_USER_LOGIN}"
-  )
-elif [[ -n "${BOT_USER_PAT:-}" || -n "${BOT_USER_LOGIN:-}" ]]; then
-  echo "WARNING: BOT_USER_PAT and BOT_USER_LOGIN must both be set to enable fork/gist features; skipping bot-user env injection."
-fi
 
 echo "==> Installing / upgrading Azure CLI extensions..."
 if ! az extension show --name containerapp >/dev/null 2>&1; then
@@ -171,6 +154,32 @@ fi
 OPS_PROVIDER_STATE=$(az provider show --namespace Microsoft.OperationalInsights --query registrationState --output tsv 2>/dev/null || true)
 if [[ "$OPS_PROVIDER_STATE" != "Registered" ]]; then
   az provider register --namespace Microsoft.OperationalInsights --wait
+fi
+
+KV_PROVIDER_STATE=$(az provider show --namespace Microsoft.KeyVault --query registrationState --output tsv 2>/dev/null || true)
+if [[ "$KV_PROVIDER_STATE" != "Registered" ]]; then
+  az provider register --namespace Microsoft.KeyVault --wait || {
+    echo "ERROR: Failed to register Azure provider Microsoft.KeyVault." >&2
+    exit 1
+  }
+fi
+
+if [[ -z "$KEY_VAULT_NAME" ]]; then
+  if ! SUBSCRIPTION_ID=$(az account show --query id --output tsv); then
+    echo "ERROR: Failed to read Azure subscription ID for default Key Vault naming." >&2
+    exit 1
+  fi
+  if [[ -z "$SUBSCRIPTION_ID" ]]; then
+    echo "ERROR: Azure subscription ID was empty; set KEY_VAULT_NAME explicitly." >&2
+    exit 1
+  fi
+  KEY_VAULT_NAME="kv-kodiai-${SUBSCRIPTION_ID%%-*}"
+fi
+
+if [[ ! "$KEY_VAULT_NAME" =~ ^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$ ]]; then
+  echo "ERROR: KEY_VAULT_NAME='$KEY_VAULT_NAME' violates Azure naming constraints." >&2
+  echo "       Use 3-24 characters: alphanumerics and hyphens, start with a letter, and do not end with a hyphen." >&2
+  exit 1
 fi
 
 # -- Resource Group -----------------------------------------------------------
@@ -368,6 +377,253 @@ else
 fi
 rm -f "$ACA_JOB_YAML"
 
+# -- Azure Key Vault (shared runtime secrets) ----------------------------------
+echo "==> Creating Azure Key Vault: $KEY_VAULT_NAME..."
+if ! az keyvault show --name "$KEY_VAULT_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  az keyvault create \
+    --name "$KEY_VAULT_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --location "$LOCATION" \
+    --enable-rbac-authorization true \
+    --output none || {
+      echo "ERROR: Failed to create Key Vault '$KEY_VAULT_NAME' in resource group '$RESOURCE_GROUP'." >&2
+      exit 1
+    }
+fi
+
+if ! KEY_VAULT_ID=$(az keyvault show --name "$KEY_VAULT_NAME" --resource-group "$RESOURCE_GROUP" --query id --output tsv); then
+  echo "ERROR: Failed to read Key Vault resource ID for '$KEY_VAULT_NAME'." >&2
+  exit 1
+fi
+if [[ -z "$KEY_VAULT_ID" ]]; then
+  echo "ERROR: Key Vault resource ID for '$KEY_VAULT_NAME' was empty." >&2
+  exit 1
+fi
+KEY_VAULT_URI="https://${KEY_VAULT_NAME}.vault.azure.net/secrets"
+
+ensure_role_assignment() {
+  local assignee_object_id="$1"
+  local principal_type="$2"
+  local role_name="$3"
+  local scope="$4"
+  local description="$5"
+  local err_file
+  err_file=$(mktemp)
+  KEYVAULT_TEMP_FILES+=("$err_file")
+  if az role assignment create \
+    --assignee-object-id "$assignee_object_id" \
+    --assignee-principal-type "$principal_type" \
+    --role "$role_name" \
+    --scope "$scope" \
+    --output none 2>"$err_file"; then
+    rm -f "$err_file"
+    return 0
+  fi
+
+  if grep -Eqi "already exists|RoleAssignmentExists" "$err_file"; then
+    rm -f "$err_file"
+    return 0
+  fi
+
+  echo "ERROR: Failed to grant $role_name to $description on $scope:" >&2
+  cat "$err_file" >&2
+  rm -f "$err_file"
+  return 1
+}
+
+resolve_deployer_principal() {
+  DEPLOYER_PRINCIPAL_TYPE=${DEPLOYER_PRINCIPAL_TYPE:-}
+  DEPLOYER_OBJECT_ID=${DEPLOYER_OBJECT_ID:-}
+
+  if { [[ -n "$DEPLOYER_OBJECT_ID" ]] && [[ -z "$DEPLOYER_PRINCIPAL_TYPE" ]]; } || { [[ -z "$DEPLOYER_OBJECT_ID" ]] && [[ -n "$DEPLOYER_PRINCIPAL_TYPE" ]]; }; then
+    echo "ERROR: DEPLOYER_OBJECT_ID and DEPLOYER_PRINCIPAL_TYPE must be set together." >&2
+    echo "       DEPLOYER_PRINCIPAL_TYPE must be User or ServicePrincipal." >&2
+    exit 1
+  fi
+
+  if [[ -n "$DEPLOYER_OBJECT_ID" && -n "$DEPLOYER_PRINCIPAL_TYPE" ]]; then
+    case "$DEPLOYER_PRINCIPAL_TYPE" in
+      User|ServicePrincipal) return 0 ;;
+      *)
+        echo "ERROR: DEPLOYER_PRINCIPAL_TYPE must be User or ServicePrincipal, got '$DEPLOYER_PRINCIPAL_TYPE'." >&2
+        exit 1
+        ;;
+    esac
+  fi
+
+  local account_user_type
+  account_user_type=$(az account show --query user.type --output tsv 2>/dev/null || true)
+  case "$account_user_type" in
+    user)
+      if [[ -z "$DEPLOYER_OBJECT_ID" ]]; then
+        if ! DEPLOYER_OBJECT_ID=$(az ad signed-in-user show --query id --output tsv); then
+          echo "ERROR: Failed to resolve Azure signed-in user object ID." >&2
+          echo "       Set DEPLOYER_OBJECT_ID and DEPLOYER_PRINCIPAL_TYPE explicitly if directory lookup is blocked." >&2
+          exit 1
+        fi
+      fi
+      DEPLOYER_PRINCIPAL_TYPE=${DEPLOYER_PRINCIPAL_TYPE:-User}
+      ;;
+    servicePrincipal)
+      if [[ -z "$DEPLOYER_OBJECT_ID" ]]; then
+        local service_principal_app_id
+        if ! service_principal_app_id=$(az account show --query user.name --output tsv); then
+          echo "ERROR: Failed to resolve Azure service principal app ID from current account." >&2
+          exit 1
+        fi
+        if [[ -z "$service_principal_app_id" ]]; then
+          echo "ERROR: Azure service principal app ID was empty." >&2
+          exit 1
+        fi
+        if ! DEPLOYER_OBJECT_ID=$(az ad sp show --id "$service_principal_app_id" --query id --output tsv); then
+          echo "ERROR: Failed to resolve Azure service principal object ID for '$service_principal_app_id'." >&2
+          echo "       Set DEPLOYER_OBJECT_ID and DEPLOYER_PRINCIPAL_TYPE explicitly if Graph lookup is blocked." >&2
+          exit 1
+        fi
+      fi
+      DEPLOYER_PRINCIPAL_TYPE=${DEPLOYER_PRINCIPAL_TYPE:-ServicePrincipal}
+      ;;
+    *)
+      echo "ERROR: Could not determine Azure deployer principal type." >&2
+      echo "       Set DEPLOYER_OBJECT_ID and DEPLOYER_PRINCIPAL_TYPE explicitly for non-interactive deploys." >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ -z "$DEPLOYER_OBJECT_ID" ]]; then
+    echo "ERROR: Could not resolve Azure deployer object ID." >&2
+    echo "       Set DEPLOYER_OBJECT_ID and DEPLOYER_PRINCIPAL_TYPE explicitly for this deployment identity." >&2
+    exit 1
+  fi
+
+  case "$DEPLOYER_PRINCIPAL_TYPE" in
+    User|ServicePrincipal) ;;
+    *)
+      echo "ERROR: DEPLOYER_PRINCIPAL_TYPE must be User or ServicePrincipal, got '$DEPLOYER_PRINCIPAL_TYPE'." >&2
+      exit 1
+      ;;
+  esac
+}
+
+if [[ -n "${BOT_USER_PAT:-}" && -n "${BOT_USER_LOGIN:-}" ]]; then
+  BOT_USER_SECRET_REF_YAML=$(cat <<EOF
+      - name: bot-user-pat
+        keyVaultUrl: ${KEY_VAULT_URI}/bot-user-pat
+        identity: ${IDENTITY_RESOURCE_ID}
+EOF
+)
+  BOT_USER_ENV_YAML=$(cat <<EOF
+          - name: BOT_USER_PAT
+            secretRef: bot-user-pat
+          - name: BOT_USER_LOGIN
+            value: $(yaml_quote "$BOT_USER_LOGIN")
+EOF
+)
+  BOT_USER_CREATE_SECRET_ARGS+=("bot-user-pat=keyvaultref:${KEY_VAULT_URI}/bot-user-pat,identityref:${IDENTITY_RESOURCE_ID}")
+  BOT_USER_CREATE_ENV_ARGS+=(
+    "BOT_USER_PAT=secretref:bot-user-pat"
+    "BOT_USER_LOGIN=${BOT_USER_LOGIN}"
+  )
+elif [[ -n "${BOT_USER_PAT:-}" || -n "${BOT_USER_LOGIN:-}" ]]; then
+  echo "WARNING: BOT_USER_PAT and BOT_USER_LOGIN must both be set to enable fork/gist features; skipping bot-user env injection."
+fi
+
+echo "==> Granting Key Vault secret-read access to managed identity..."
+ensure_role_assignment \
+  "$IDENTITY_PRINCIPAL_ID" \
+  ServicePrincipal \
+  "Key Vault Secrets User" \
+  "$KEY_VAULT_ID" \
+  "managed identity $IDENTITY_NAME" || {
+    echo "ERROR: Managed identity cannot read Key Vault secrets; aborting deploy." >&2
+    exit 1
+  }
+
+echo "==> Granting Key Vault secret-write access to deployer..."
+resolve_deployer_principal
+ensure_role_assignment \
+  "$DEPLOYER_OBJECT_ID" \
+  "$DEPLOYER_PRINCIPAL_TYPE" \
+  "Key Vault Secrets Officer" \
+  "$KEY_VAULT_ID" \
+  "deployer principal $DEPLOYER_OBJECT_ID" || {
+    echo "ERROR: Deployer cannot write Key Vault secrets; aborting deploy." >&2
+    exit 1
+  }
+
+set_keyvault_secret() {
+  local name="$1"
+  local value="$2"
+  local attempts=30
+  local delay=10
+  local i
+  local err_file
+  local first_err_file
+  err_file=$(mktemp)
+  first_err_file=$(mktemp)
+  KEYVAULT_TEMP_FILES+=("$err_file" "$first_err_file")
+  for i in $(seq 1 "$attempts"); do
+    if printf '%s' "$value" | az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "$name" --file /dev/stdin --output none 2>"$err_file"; then
+      if [[ "$i" -gt 1 ]]; then
+        echo "  -> $name: succeeded after $i attempts"
+      fi
+      rm -f "$err_file" "$first_err_file"
+      return 0
+    fi
+    if [[ "$i" -eq 1 ]]; then
+      cp "$err_file" "$first_err_file"
+    fi
+    if [[ "$i" -lt "$attempts" ]]; then
+      echo "  -> $name: attempt $i/$attempts failed; retrying in ${delay}s..."
+    fi
+    sleep "$delay"
+  done
+  echo "ERROR: Failed to set Key Vault secret '$name' after $attempts attempts." >&2
+  echo "First failure:" >&2
+  cat "$first_err_file" >&2
+  echo "Last failure:" >&2
+  cat "$err_file" >&2
+  rm -f "$err_file" "$first_err_file"
+  return 1
+}
+
+sync_keyvault_secret() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "$value" ]]; then
+    echo "ERROR: Required Key Vault secret '$name' has an empty deploy input value; aborting deploy." >&2
+    exit 1
+  fi
+  set_keyvault_secret "$name" "$value" || {
+    echo "ERROR: Required Key Vault secret '$name' was not synced; aborting deploy." >&2
+    exit 1
+  }
+}
+
+echo "==> Syncing runtime secrets into Azure Key Vault..."
+sync_keyvault_secret github-app-id "$GITHUB_APP_ID"
+sync_keyvault_secret github-private-key "$GITHUB_PRIVATE_KEY_BASE64"
+sync_keyvault_secret github-webhook-secret "$GITHUB_WEBHOOK_SECRET"
+sync_keyvault_secret claude-code-oauth-token "$CLAUDE_CODE_OAUTH_TOKEN"
+sync_keyvault_secret voyage-api-key "$VOYAGE_API_KEY"
+sync_keyvault_secret slack-bot-token "$SLACK_BOT_TOKEN"
+sync_keyvault_secret slack-signing-secret "$SLACK_SIGNING_SECRET"
+sync_keyvault_secret database-url "$DATABASE_URL"
+if [[ -n "${BOT_USER_PAT:-}" && -n "${BOT_USER_LOGIN:-}" ]]; then
+  sync_keyvault_secret bot-user-pat "$BOT_USER_PAT"
+fi
+
+echo "==> Pointing ACA Job secrets at Azure Key Vault..."
+az containerapp job secret set \
+  --name "$ACA_JOB_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --secrets \
+    "claude-code-oauth-token=keyvaultref:${KEY_VAULT_URI}/claude-code-oauth-token,identityref:${IDENTITY_RESOURCE_ID}" \
+  --output none || {
+    echo "ERROR: Failed to point ACA Job Claude token secret at Azure Key Vault; aborting deploy." >&2
+    exit 1
+  }
+
 # -- Deploy Container App -----------------------------------------------------
 echo "==> Deploying container app: $APP_NAME..."
 if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
@@ -387,22 +643,30 @@ properties:
         identity: ${IDENTITY_RESOURCE_ID}
     secrets:
       - name: github-app-id
-        value: ${GITHUB_APP_ID}
+        keyVaultUrl: ${KEY_VAULT_URI}/github-app-id
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: github-private-key
-        value: ${GITHUB_PRIVATE_KEY_BASE64}
+        keyVaultUrl: ${KEY_VAULT_URI}/github-private-key
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: github-webhook-secret
-        value: ${GITHUB_WEBHOOK_SECRET}
+        keyVaultUrl: ${KEY_VAULT_URI}/github-webhook-secret
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: claude-code-oauth-token
-        value: ${CLAUDE_CODE_OAUTH_TOKEN}
+        keyVaultUrl: ${KEY_VAULT_URI}/claude-code-oauth-token
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: voyage-api-key
-        value: ${VOYAGE_API_KEY}
+        keyVaultUrl: ${KEY_VAULT_URI}/voyage-api-key
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: slack-bot-token
-        value: ${SLACK_BOT_TOKEN}
+        keyVaultUrl: ${KEY_VAULT_URI}/slack-bot-token
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: slack-signing-secret
-        value: ${SLACK_SIGNING_SECRET}
+        keyVaultUrl: ${KEY_VAULT_URI}/slack-signing-secret
+        identity: ${IDENTITY_RESOURCE_ID}
       - name: database-url
-        value: ${DATABASE_URL}
-${BOT_USER_SECRET_YAML}
+        keyVaultUrl: ${KEY_VAULT_URI}/database-url
+        identity: ${IDENTITY_RESOURCE_ID}
+${BOT_USER_SECRET_REF_YAML}
   template:
     revisionSuffix: ${REVISION_SUFFIX}
     terminationGracePeriodSeconds: 600
@@ -493,14 +757,14 @@ else
     --max-replicas 1 \
     --termination-grace-period 600 \
     --secrets \
-      github-app-id="$GITHUB_APP_ID" \
-      github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
-      github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
-      claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
-      voyage-api-key="$VOYAGE_API_KEY" \
-      slack-bot-token="$SLACK_BOT_TOKEN" \
-      slack-signing-secret="$SLACK_SIGNING_SECRET" \
-      database-url="$DATABASE_URL" \
+      "github-app-id=keyvaultref:${KEY_VAULT_URI}/github-app-id,identityref:${IDENTITY_RESOURCE_ID}" \
+      "github-private-key=keyvaultref:${KEY_VAULT_URI}/github-private-key,identityref:${IDENTITY_RESOURCE_ID}" \
+      "github-webhook-secret=keyvaultref:${KEY_VAULT_URI}/github-webhook-secret,identityref:${IDENTITY_RESOURCE_ID}" \
+      "claude-code-oauth-token=keyvaultref:${KEY_VAULT_URI}/claude-code-oauth-token,identityref:${IDENTITY_RESOURCE_ID}" \
+      "voyage-api-key=keyvaultref:${KEY_VAULT_URI}/voyage-api-key,identityref:${IDENTITY_RESOURCE_ID}" \
+      "slack-bot-token=keyvaultref:${KEY_VAULT_URI}/slack-bot-token,identityref:${IDENTITY_RESOURCE_ID}" \
+      "slack-signing-secret=keyvaultref:${KEY_VAULT_URI}/slack-signing-secret,identityref:${IDENTITY_RESOURCE_ID}" \
+      "database-url=keyvaultref:${KEY_VAULT_URI}/database-url,identityref:${IDENTITY_RESOURCE_ID}" \
       "${BOT_USER_CREATE_SECRET_ARGS[@]}" \
     --env-vars \
       GITHUB_APP_ID=secretref:github-app-id \
