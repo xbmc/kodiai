@@ -225,9 +225,10 @@ describe("estimateTimeoutRisk", () => {
     const fileScore = Math.min(fileCount / 100, 1.0);
     const lineScore = Math.min(linesChanged / 5000, 1.0);
     const complexity = fileScore * 0.4 + lineScore * 0.4 + languageComplexity * 0.2;
-    const expectedRemoteRuntimeBudgetSeconds = Math.min(
-      Math.round(baseTimeout * (0.5 + complexity)),
-      MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
+    const maxRemoteRuntimeBudgetSeconds =
+      MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS;
+    const expectedRemoteRuntimeBudgetSeconds = Math.round(
+      Math.max(30, Math.min(baseTimeout * (0.5 + complexity), maxRemoteRuntimeBudgetSeconds)),
     );
 
     expect(result.remoteRuntimeBudgetSeconds).toBe(expectedRemoteRuntimeBudgetSeconds);
