@@ -16,11 +16,11 @@ function float32ArrayToVectorString(arr: Float32Array): string {
 }
 
 type MemoryRow = {
-  id: number;
+  id: number | string | bigint;
   repo: string;
   owner: string;
-  finding_id: number;
-  review_id: number;
+  finding_id: number | string | bigint;
+  review_id: number | string | bigint;
   source_repo: string;
   finding_text: string;
   severity: string;
@@ -62,13 +62,38 @@ type RepairStateRow = {
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS = "learning_memories" as const satisfies EmbeddingRepairCorpus;
 
+export function normalizeSafeInteger(value: number | string | bigint, fieldName: string): number {
+  if (typeof value === "bigint") {
+    if (value > BigInt(Number.MAX_SAFE_INTEGER) || value < BigInt(Number.MIN_SAFE_INTEGER)) {
+      throw new Error(`${fieldName} exceeds JavaScript safe integer range: ${String(value)}`);
+    }
+    return Number(value);
+  }
+
+  if (typeof value === "string") {
+    if (!/^-?\d+$/.test(value)) {
+      throw new Error(`${fieldName} is not an integer: ${String(value)}`);
+    }
+    const bigintValue = BigInt(value);
+    if (bigintValue > BigInt(Number.MAX_SAFE_INTEGER) || bigintValue < BigInt(Number.MIN_SAFE_INTEGER)) {
+      throw new Error(`${fieldName} exceeds JavaScript safe integer range: ${String(value)}`);
+    }
+    return Number(bigintValue);
+  }
+
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${fieldName} exceeds JavaScript safe integer range: ${String(value)}`);
+  }
+  return value;
+}
+
 function rowToRecord(row: MemoryRow): LearningMemoryRecord {
   return {
-    id: row.id,
+    id: normalizeSafeInteger(row.id, "learning_memories.id"),
     repo: row.repo,
     owner: row.owner,
-    findingId: row.finding_id,
-    reviewId: row.review_id,
+    findingId: normalizeSafeInteger(row.finding_id, "learning_memories.finding_id"),
+    reviewId: normalizeSafeInteger(row.review_id, "learning_memories.review_id"),
     sourceRepo: row.source_repo,
     findingText: row.finding_text,
     severity: row.severity as LearningMemoryRecord["severity"],

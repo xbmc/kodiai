@@ -36,6 +36,40 @@ type ReactionEntry = {
   created_at?: string | null;
 };
 
+function isReactionPermissionDenied(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const maybe = err as { status?: unknown; message?: unknown; response?: { data?: { message?: unknown } } };
+  const status = typeof maybe.status === "number" ? maybe.status : undefined;
+  const message = typeof maybe.message === "string"
+    ? maybe.message
+    : typeof maybe.response?.data?.message === "string"
+      ? maybe.response.data.message
+      : "";
+
+  return status === 403 && message.toLowerCase().includes("resource not accessible");
+}
+
+function logReactionFetchFailure(params: {
+  logger: Logger;
+  err: unknown;
+  repo: string;
+  commentId: number;
+}): void {
+  const { logger, err, repo, commentId } = params;
+  if (isReactionPermissionDenied(err)) {
+    logger.info(
+      { repo, commentId, reason: "reaction-permission-denied" },
+      "Feedback sync reaction fetch skipped; app lacks reaction read permission",
+    );
+    return;
+  }
+
+  logger.warn(
+    { err, repo, commentId },
+    "Feedback sync reaction fetch failed for review comment; continuing",
+  );
+}
+
 const DEFAULT_MAX_CANDIDATES = 100;
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
 
@@ -166,10 +200,7 @@ export function createFeedbackSyncHandler(deps: {
 
           reactionsByCommentId.set(commentId, response.data as ReactionEntry[]);
         } catch (err) {
-          logger.warn(
-            { err, repo, commentId },
-            "Feedback sync reaction fetch failed for review comment; continuing",
-          );
+          logReactionFetchFailure({ logger, err, repo, commentId });
         }
       }
 

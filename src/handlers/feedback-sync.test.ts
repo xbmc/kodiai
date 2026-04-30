@@ -74,10 +74,19 @@ function buildCandidate(overrides: Partial<FindingCommentCandidate> = {}): Findi
 
 function createCaptureLogger(): {
   logger: Logger;
+  infos: Array<{ message: string; data?: Record<string, unknown> }>;
   warnings: Array<{ message: string; data?: Record<string, unknown> }>;
 } {
+  const infos: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const noop = () => undefined;
+  const info = (data: unknown, message?: string) => {
+    if (typeof data === "string") {
+      infos.push({ message: data });
+      return;
+    }
+    infos.push({ message: message ?? "", data: (data ?? {}) as Record<string, unknown> });
+  };
   const warn = (data: unknown, message?: string) => {
     if (typeof data === "string") {
       warnings.push({ message: data });
@@ -88,7 +97,7 @@ function createCaptureLogger(): {
 
   return {
     logger: {
-      info: noop,
+      info,
       warn,
       error: noop,
       debug: noop,
@@ -96,6 +105,7 @@ function createCaptureLogger(): {
       fatal: noop,
       child: () => createNoopLogger(),
     } as unknown as Logger,
+    infos,
     warnings,
   };
 }
@@ -296,6 +306,34 @@ describe("createFeedbackSyncHandler", () => {
     expect(
       warnings.some((entry) =>
         entry.message.includes("Feedback sync reaction persistence failed; continuing")
+      ),
+    ).toBe(true);
+  });
+
+  test("logs reaction permission denials as skipped diagnostics instead of warnings", async () => {
+    const { logger, infos, warnings } = createCaptureLogger();
+    const permissionError = Object.assign(new Error("Resource not accessible by integration"), {
+      status: 403,
+      response: { data: { message: "Resource not accessible by integration" } },
+    });
+    const { handlers, recorded } = createHarness({
+      candidates: [buildCandidate({ findingId: 1, commentId: 31 })],
+      listReactions: async () => {
+        throw permissionError;
+      },
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!(buildPullRequestOpenedEvent());
+
+    expect(recorded).toHaveLength(0);
+    expect(warnings).toHaveLength(0);
+    expect(
+      infos.some((entry) =>
+        entry.message.includes("Feedback sync reaction fetch skipped; app lacks reaction read permission")
       ),
     ).toBe(true);
   });

@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS learning_memories (
   id BIGSERIAL PRIMARY KEY,
   repo TEXT NOT NULL,
   owner TEXT NOT NULL,
-  finding_id INTEGER,
+  finding_id BIGINT,
   review_id INTEGER,
   source_repo TEXT NOT NULL,
   finding_text TEXT NOT NULL,

@@ -22,6 +22,9 @@ type SlackMember = {
 let cachedMembers: SlackMember[] | null = null;
 let cachedMembersAt = 0;
 const MEMBER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS = 100;
+
+const slackMemberLookupDisabledReasonsByToken = new Map<string, string>();
 
 /** Track which GitHub usernames we've already suggested to avoid repeats. */
 const suggestedUsernames = new Set<string>();
@@ -29,6 +32,7 @@ const suggestedUsernames = new Set<string>();
 export function resetIdentitySuggestionStateForTests(): void {
   cachedMembers = null;
   cachedMembersAt = 0;
+  slackMemberLookupDisabledReasonsByToken.clear();
   suggestedUsernames.clear();
 }
 
@@ -36,6 +40,15 @@ async function fetchSlackMembers(
   botToken: string,
   logger: Logger,
 ): Promise<SlackMember[]> {
+  const disabledReason = slackMemberLookupDisabledReasonsByToken.get(botToken);
+  if (disabledReason) {
+    logger.debug(
+      { reason: disabledReason },
+      "Slack member lookup disabled for token; skipping identity suggestion",
+    );
+    return [];
+  }
+
   const now = Date.now();
   if (cachedMembers && now - cachedMembersAt < MEMBER_CACHE_TTL_MS) {
     return cachedMembers;
@@ -66,7 +79,23 @@ async function fetchSlackMembers(
   };
 
   if (!data.ok) {
-    throw new Error(`Slack users.list failed: ${data.error ?? "unknown"}`);
+    const errorCode = data.error ?? "unknown";
+    if (errorCode === "missing_scope") {
+      slackMemberLookupDisabledReasonsByToken.set(botToken, errorCode);
+      if (slackMemberLookupDisabledReasonsByToken.size > MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS) {
+        const oldestToken = slackMemberLookupDisabledReasonsByToken.keys().next().value;
+        if (oldestToken !== undefined) {
+          slackMemberLookupDisabledReasonsByToken.delete(oldestToken);
+        }
+      }
+      logger.info(
+        { reason: errorCode },
+        "Slack member lookup disabled; missing users.list scope",
+      );
+      return [];
+    }
+
+    throw new Error(`Slack users.list failed: ${errorCode}`);
   }
 
   const members: SlackMember[] = (data.members ?? [])
