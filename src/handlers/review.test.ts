@@ -16437,7 +16437,9 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(standaloneReviewDetails).toBeUndefined();
 
     await workspaceFixture.cleanup();
-  });  test("falls back to standalone Review Details when max-turns canonical comment rebuild fails", async () => {
+  });
+
+  test("falls back to standalone Review Details when max-turns canonical comment rebuild fails", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();

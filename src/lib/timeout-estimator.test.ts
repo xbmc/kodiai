@@ -210,6 +210,34 @@ describe("estimateTimeoutRisk", () => {
     expect(result.totalTimeoutSeconds).toBe(MAX_TIMEOUT_BUDGET_SECONDS);
   });
 
+  test("timeout budgets separate remote runtime from infra overhead", () => {
+    const fileCount = 1;
+    const linesChanged = 10;
+    const languageComplexity = 1.0;
+    const result = estimateTimeoutRisk({
+      fileCount,
+      linesChanged,
+      languageComplexity,
+      isLargePR: false,
+      baseTimeoutSeconds: baseTimeout,
+    });
+
+    const fileScore = Math.min(fileCount / 100, 1.0);
+    const lineScore = Math.min(linesChanged / 5000, 1.0);
+    const complexity = fileScore * 0.4 + lineScore * 0.4 + languageComplexity * 0.2;
+    const maxRemoteRuntimeBudgetSeconds =
+      MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS;
+    const expectedRemoteRuntimeBudgetSeconds = Math.round(
+      Math.max(30, Math.min(baseTimeout * (0.5 + complexity), maxRemoteRuntimeBudgetSeconds)),
+    );
+
+    expect(result.remoteRuntimeBudgetSeconds).toBe(expectedRemoteRuntimeBudgetSeconds);
+    expect(result.infraOverheadBudgetSeconds).toBe(DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS);
+    expect(result.totalTimeoutSeconds).toBe(
+      result.remoteRuntimeBudgetSeconds + result.infraOverheadBudgetSeconds,
+    );
+  });
+
   test("reasoning string contains key metrics", () => {
     const result = estimateTimeoutRisk({
       fileCount: 10,
