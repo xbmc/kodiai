@@ -191,12 +191,13 @@ Expected success and recovery outcomes:
     - `explicitReviewRequest=true`
     - `publishResolution=executor`
     - `reviewOutputKey=<key>`
-- **Fresh approval publish**
+- **Fresh clean-review publish**
   - `Explicit mention review idempotency check passed`
-  - `Submitted approval review for explicit mention request`
+  - Default (`review.autoApprove: false`): `Submitted approval-shaped comment for explicit mention request`
+  - Opt-in (`review.autoApprove: true`): `Submitted approval review for explicit mention request`
   - `Mention execution completed` with:
     - `explicitReviewRequest=true`
-    - `publishResolution=approval-bridge`
+    - `publishResolution=comment-approval` by default, or `approval-bridge` when `review.autoApprove: true`
     - `reviewOutputKey=<key>`
 - **Already published / idempotent skip**
   - `Skipping explicit mention review publish because output already exists`
@@ -209,8 +210,8 @@ Expected success and recovery outcomes:
 
 Failure-path outcomes are also explicit:
 
-- `publishResolution=publish-failure-fallback` means the approval publish failed and Kodiai posted an error comment instead.
-- `publishResolution=publish-failure-comment-failed` means the approval publish failed and even the fallback error comment could not be delivered.
+- `publishResolution=publish-failure-fallback` means the clean-review publish failed and Kodiai posted an error comment instead.
+- `publishResolution=publish-failure-comment-failed` means the clean-review publish failed and even the fallback error comment could not be delivered.
 
 `reviewOutputKey` is the durable correlation key across the idempotency logs, the evidence bundle, and the final completion log.
 

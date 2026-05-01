@@ -2062,6 +2062,116 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdIssueComments).toHaveLength(0);
   });
 
+  test("clean review posts approval-shaped issue comment when autoApprove is disabled", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: false });
+
+    const createdReviews: Array<{ body?: string | null }> = [];
+    const createdIssueComments: string[] = [];
+    let executeCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: createdReviews.map((review, index) => ({ id: index + 1, body: review.body ?? null })) }),
+          createReview: async ({ body }: { body?: string }) => {
+            createdReviews.push({ body: body ?? null });
+            return { data: { id: createdReviews.length } };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            createdIssueComments.push(params.body);
+            return { data: { id: createdIssueComments.length, body: params.body } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+      request: async () => ({ data: {} }),
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount++;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-clean-comment-only",
+            executorPhaseTimings: [
+              { name: "executor handoff", status: "completed", durationMs: 50 },
+              { name: "remote runtime", status: "completed", durationMs: 500 },
+            ],
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+
+    await workspaceFixture.cleanup();
+
+    expect(executeCount).toBe(1);
+    expect(createdReviews).toHaveLength(0);
+    expect(createdIssueComments).toHaveLength(1);
+    expect(createdIssueComments[0]).toContain("Decision: APPROVE");
+    expect(createdIssueComments[0]).toContain("Issues: none");
+    expect(createdIssueComments[0]).toContain("<summary>Review Details</summary>");
+    expect(createdIssueComments[0]).toContain(buildReviewOutputMarker(buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    })));
+  });
+
   test("published approval review receives Review Details instead of creating a separate issue comment", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
@@ -4390,7 +4500,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await $`git -C ${dir} commit -m "feature"`.quiet();
     await $`git -C ${dir} remote add origin ${dir}`.quiet();
 
-    let costWarningBody: string | undefined;
+    const commentBodies: string[] = [];
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => { handlers.set(eventKey, handler); },
@@ -4415,7 +4525,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
         issues: {
           listComments: async () => ({ data: [] }),
           createComment: async (params: { body: string }) => {
-            costWarningBody = params.body;
+            commentBodies.push(params.body);
             return { data: {} };
           },
         },
@@ -4450,6 +4560,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     );
 
     await rm(dir, { recursive: true, force: true });
+    const costWarningBody = commentBodies.find((body) => body.includes("cost warning"));
     expect(costWarningBody).toBeDefined();
     expect(costWarningBody!).toContain("cost warning");
     expect(costWarningBody!).toContain("$2.5000");
@@ -6012,7 +6123,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(updateCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-standalone-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping degraded Review Details fallback comment because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping clean review publication because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();
@@ -6296,12 +6407,12 @@ describe("createReviewHandler finding extraction", () => {
       }),
     );
 
-    expect(listCommentsCalls).toBe(1);
+    expect(listCommentsCalls).toBeGreaterThanOrEqual(1);
     expect(createCommentCalls).toBe(0);
     expect(updateCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-standalone-recheck-1"]);
     expect(
-      entries.some((entry) => entry.message === "Skipping degraded Review Details fallback comment because publish rights were superseded"),
+      entries.some((entry) => entry.message === "Skipping clean review publication because publish rights were superseded"),
     ).toBeTrue();
 
     await workspaceFixture.cleanup();

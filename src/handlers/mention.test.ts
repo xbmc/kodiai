@@ -9074,6 +9074,174 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("explicit PR review mention posts approval-shaped issue comment when autoApprove is disabled", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: false\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+    let capturedQueueLane: string | undefined;
+    let capturedTaskType: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: JobQueueContext,
+      ) => {
+        capturedQueueLane = context?.lane;
+        return fn(createQueueRunMetadata());
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { taskType?: string }) => {
+          capturedTaskType = context.taskType;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 3,
+            durationMs: 1,
+            sessionId: "session-mention-approve",
+            model: "claude-sonnet-4-5-20250929",
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+            toolUseNames: ["Glob", "Read"],
+            usedRepoInspectionTools: true,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(capturedQueueLane).toBe("interactive-review");
+    expect(capturedTaskType).toBe("review.small-diff");
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("<details>");
+    expect(issueReplies[0]).toContain("<summary>kodiai response</summary>");
+    expect(issueReplies[0]).toContain("Decision: APPROVE");
+    expect(issueReplies[0]).toContain("Issues: none");
+    expect(issueReplies[0]).toContain("Evidence:");
+    expect(issueReplies[0]).toContain("- Review prompt covered 1 changed file.");
+    expect(issueReplies[0]).toContain("- Repo inspection tools were used to verify the changed code.");
+    expect(extractReviewOutputKey(issueReplies[0])).toBeDefined();
+
+    const idempotencyLog = infoCalls.find((entry) =>
+      entry.message === "Explicit mention review idempotency check passed",
+    );
+    const idempotencyReviewOutputKey =
+      typeof idempotencyLog?.bindings.reviewOutputKey === "string"
+        ? idempotencyLog.bindings.reviewOutputKey
+        : null;
+    expect(idempotencyReviewOutputKey).toBeDefined();
+    expect(extractReviewOutputKey(issueReplies[0])).toBe(idempotencyReviewOutputKey);
+    expect(idempotencyLog?.bindings.idempotencyDecision).toBe("publish");
+    expect(idempotencyLog?.bindings.gate).toBe("review-output-idempotency");
+    expect(idempotencyLog?.bindings.gateResult).toBe("accepted");
+
+    const publishAttemptLog = infoCalls.find((entry) =>
+      entry.message === "Submitted approval-shaped comment for explicit mention request",
+    );
+    expect(publishAttemptLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
+    expect(publishAttemptLog?.bindings.publishAttemptOutcome).toBe("submitted-comment");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
+    expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
+    expect(completionLog?.bindings.taskType).toBe("review.full");
+    expect(completionLog?.bindings.lane).toBe("interactive-review");
+    expect(completionLog?.bindings.published).toBe(true);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("comment-approval");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("logs stale predecessor telemetry when an explicit review claim finds an older family attempt", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const { logger, infoCalls } = createMockLogger();

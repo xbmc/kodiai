@@ -4717,7 +4717,7 @@ export function createReviewHandler(deps: {
                 }
               }
             } else {
-              const approvalWillOwnCanonicalSurface = config.review.autoApprove && result.conclusion === "success";
+              const approvalWillOwnCanonicalSurface = result.conclusion === "success";
 
               if (!approvalWillOwnCanonicalSurface && canPublishVisibleOutput("degraded Review Details fallback comment")) {
                 setReviewWorkPhase("publish");
@@ -6300,9 +6300,10 @@ export function createReviewHandler(deps: {
           }
         }
 
-        // Auto-approval: only when autoApprove is enabled AND execution succeeded AND
-        // the model produced zero GitHub-visible output (no summary comment, no inline comments).
-        if (config.review.autoApprove && result.conclusion === "success") {
+        // Clean review publication: when no output was produced, publish the clean
+        // result either as an approving pull review (explicit opt-in) or as a
+        // normal issue comment (default behavior).
+        if (result.conclusion === "success") {
           try {
             // If the review execution published any output (summary comment, inline comments, etc.),
             // do NOT auto-approve. Auto-approval is only valid when the bot produced zero output.
@@ -6343,10 +6344,43 @@ export function createReviewHandler(deps: {
                 },
                 "Skipping auto-approval because review output marker was published",
               );
+              if (
+                canonicalReviewDetailsBody &&
+                canPublishVisibleOutput("degraded Review Details fallback comment")
+              ) {
+                setReviewWorkPhase("publish");
+                const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
+                  octokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  body: canonicalReviewDetailsBody,
+                  botHandles: [appSlug, "claude"],
+                  recheckCanPublish: () =>
+                    canPublishVisibleOutput("degraded Review Details fallback comment"),
+                });
+
+                finalizePublicationPhaseTiming();
+                if (
+                  reviewDetailsCommentId !== undefined &&
+                  canPublishVisibleOutput("finalized Review Details timing update")
+                ) {
+                  await octokit.rest.issues.updateComment({
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    comment_id: reviewDetailsCommentId,
+                    body: sanitizeOutgoingMentions(canonicalReviewDetailsBody, [appSlug, "claude"]),
+                  });
+                }
+              }
               return;
             }
 
-            if (!canPublishVisibleOutput("auto-approval")) {
+            const cleanReviewPublicationReason = config.review.autoApprove
+              ? "auto-approval"
+              : "clean review publication";
+            if (!canPublishVisibleOutput(cleanReviewPublicationReason)) {
               return;
             }
 
@@ -6365,25 +6399,29 @@ export function createReviewHandler(deps: {
               reviewDetailsBlock: canonicalReviewDetailsBody,
             });
 
+            const cleanReviewSurfaceKind: CanonicalSurfaceKind = config.review.autoApprove
+              ? "pull_review"
+              : "issue_comment";
+
             const canonicalApprovalReview = await upsertCanonicalReviewSurface({
               octokit,
               owner: apiOwner,
               repo: apiRepo,
               prNumber: pr.number,
               reviewOutputKey,
-              preferredKind: "pull_review",
+              preferredKind: cleanReviewSurfaceKind,
               body: approvalBody,
               botHandles: [appSlug, "claude"],
-              pullReviewEvent: "APPROVE",
-              recheckCanPublish: () => canPublishVisibleOutput("auto-approval"),
+              ...(config.review.autoApprove ? { pullReviewEvent: "APPROVE" as const } : {}),
+              recheckCanPublish: () => canPublishVisibleOutput(cleanReviewPublicationReason),
             });
 
             finalizePublicationPhaseTiming();
 
             if (
-              canonicalApprovalReview?.kind === "pull_review"
+              canonicalApprovalReview?.kind === cleanReviewSurfaceKind
               && canonicalReviewDetailsBody
-              && canPublishVisibleOutput("finalized approval canonical Review Details merge")
+              && canPublishVisibleOutput("finalized clean review canonical Review Details merge")
             ) {
               await upsertCanonicalReviewSurface({
                 octokit,
@@ -6391,23 +6429,23 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 prNumber: pr.number,
                 reviewOutputKey,
-                preferredKind: "pull_review",
+                preferredKind: cleanReviewSurfaceKind,
                 reviewDetailsBlock: buildReviewDetailsBody(),
                 botHandles: [appSlug, "claude"],
                 summaryBody: canonicalApprovalReview.body,
                 canonicalSurface: canonicalApprovalReview,
                 requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                 reviewBoundedness,
-                pullReviewEvent: "APPROVE",
+                ...(config.review.autoApprove ? { pullReviewEvent: "APPROVE" as const } : {}),
                 recheckCanPublish: () =>
-                  canPublishVisibleOutput("finalized approval canonical Review Details merge"),
+                  canPublishVisibleOutput("finalized clean review canonical Review Details merge"),
               });
             }
 
             logger.info(
               {
                 evidenceType: "review",
-                outcome: "submitted-approval",
+                outcome: config.review.autoApprove ? "submitted-approval" : "published-comment-approval",
                 deliveryId: event.id,
                 installationId: event.installationId,
                 owner: apiOwner,
@@ -6420,12 +6458,16 @@ export function createReviewHandler(deps: {
             );
             logger.info(
               { prNumber: pr.number, reviewOutputKey },
-              "Submitted silent approval (no issues found)",
+              config.review.autoApprove
+                ? "Submitted silent approval (no issues found)"
+                : "Published clean review comment (no issues found)",
             );
           } catch (err) {
             logger.error(
               { err, prNumber: pr.number },
-              "Failed to submit approval",
+              config.review.autoApprove
+                ? "Failed to submit approval"
+                : "Failed to publish clean review comment",
             );
           }
         }

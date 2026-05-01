@@ -73,7 +73,7 @@ GitHub webhook
 - **Large PR triage**: PRs exceeding configured thresholds are triaged by file risk scores. Lower-risk files may be skipped to stay within LLM context limits.
 - **Dependency bump detection**: PRs that are pure dependency updates (npm, pip, etc.) get a specialized review flow with changelog and advisory enrichment.
 - **Guardrails**: A post-processing pipeline validates LLM output for epistemic quality — suppressing hallucinated line references, fabricated claims, and overconfident findings.
-- **Auto-approval**: If configured and all findings are below the severity threshold, Kodiai can submit an approving review.
+- **Clean-review publication**: By default, clean reviews publish approval-shaped issue comments without changing GitHub's review approval state. Repositories can opt in to approving GitHub reviews with `review.autoApprove: true`.
 - **Fork-based write mode**: For repos where Kodiai lacks push access, write operations go through a fork managed by a bot user account.
 
 ## Request Lifecycle: Mentions

@@ -110,7 +110,7 @@ const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
     triggers: reviewTriggersSchema,
-    autoApprove: z.boolean().default(true),
+    autoApprove: z.boolean().default(false),
     prompt: z.string().optional(),
     skipAuthors: z.array(z.string()).default([]),
     skipPaths: z.array(z.string()).default([]),
@@ -177,7 +177,7 @@ const reviewSchema = z
       onReviewRequested: true,
       onSynchronize: false,
     },
-    autoApprove: true,
+    autoApprove: false,
     skipAuthors: [],
     skipPaths: [],
     mode: "standard",

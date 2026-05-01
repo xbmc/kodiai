@@ -104,6 +104,7 @@ type MentionPublishResolution =
   | "none"
   | "executor"
   | "approval-bridge"
+  | "comment-approval"
   | "idempotency-skip"
   | "duplicate-suppressed"
   | "publish-failure-fallback"
@@ -2630,7 +2631,6 @@ export function createMentionHandler(deps: {
           !result.published &&
           result.usedRepoInspectionTools === true &&
           reviewOutputKey &&
-          config.review.autoApprove &&
           !explicitReviewHasUnpublishedFindings;
 
         if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
@@ -2645,9 +2645,7 @@ export function createMentionHandler(deps: {
                     ? "missing-inspection-evidence"
                     : !reviewOutputKey
                       ? "missing-review-output-key"
-                      : !config.review.autoApprove
-                        ? "auto-approve-disabled"
-                        : "not-eligible";
+                      : "not-eligible";
 
           logger.info(
             {
@@ -2749,22 +2747,33 @@ export function createMentionHandler(deps: {
                 );
               } else {
                 setReviewWorkPhase("publish");
-                await publishOctokit.rest.pulls.createReview({
-                  owner: mention.owner,
-                  repo: mention.repo,
-                  pull_number: mention.prNumber,
-                  event: "APPROVE",
-                  body: sanitizeOutgoingMentions(
-                    buildApprovedReviewBody({ reviewOutputKey, evidence: approvalEvidence }),
-                    [appSlug, "claude", "kodai"],
-                  ),
-                });
+                const cleanReviewBody = sanitizeOutgoingMentions(
+                  buildApprovedReviewBody({ reviewOutputKey, evidence: approvalEvidence }),
+                  [appSlug, "claude", "kodai"],
+                );
+                if (config.review.autoApprove) {
+                  await publishOctokit.rest.pulls.createReview({
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    pull_number: mention.prNumber,
+                    event: "APPROVE",
+                    body: cleanReviewBody,
+                  });
+                  publishResolution = "approval-bridge";
+                } else {
+                  await publishOctokit.rest.issues.createComment({
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    issue_number: mention.prNumber,
+                    body: cleanReviewBody,
+                  });
+                  publishResolution = "comment-approval";
+                }
                 mentionOutputPublished = true;
-                publishResolution = "approval-bridge";
                 logger.info(
                   {
                     evidenceType: "review",
-                    outcome: "submitted-approval",
+                    outcome: config.review.autoApprove ? "submitted-approval" : "published-comment-approval",
                     deliveryId: event.id,
                     installationId: event.installationId,
                     owner: mention.owner,
@@ -2772,9 +2781,11 @@ export function createMentionHandler(deps: {
                     repo: `${mention.owner}/${mention.repo}`,
                     prNumber: mention.prNumber,
                     reviewOutputKey,
-                    publishAttemptOutcome: "submitted-approval",
+                    publishAttemptOutcome: config.review.autoApprove ? "submitted-approval" : "submitted-comment",
                   },
-                  "Submitted approval review for explicit mention request",
+                  config.review.autoApprove
+                    ? "Submitted approval review for explicit mention request"
+                    : "Submitted approval-shaped comment for explicit mention request",
                 );
               }
             }

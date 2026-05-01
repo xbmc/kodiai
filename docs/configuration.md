@@ -14,7 +14,8 @@ timeoutSeconds: 600
 
 review:
   enabled: true
-  autoApprove: true
+  # Default is false: clean reviews publish as comments unless you opt in to GitHub approvals.
+  autoApprove: false
   triggers:
     onOpened: true
     onReadyForReview: true
@@ -175,9 +176,9 @@ Use the nested `review.triggers.onSynchronize` shape. Legacy `review.onSynchroni
 | | |
 |---|---|
 | **Type** | `boolean` |
-| **Default** | `true` |
+| **Default** | `false` |
 
-If `true`, Kodiai submits an approving review when no critical/major findings exist. Set to `false` to always submit as a comment-only review.
+If `true`, Kodiai submits an approving GitHub review when the review completes cleanly with no published findings. The default is `false`, so clean reviews publish the same approval-shaped content as a normal PR issue comment instead of changing GitHub's review approval state. Set this to `true` only for repositories that explicitly want Kodiai to approve PRs.
 
 ### `review.prompt`
 
