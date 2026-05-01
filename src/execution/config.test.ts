@@ -34,7 +34,7 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.triggers.onOpened).toBe(true);
     expect(config.review.triggers.onReadyForReview).toBe(true);
     expect(config.review.triggers.onReviewRequested).toBe(true);
-    expect(config.review.autoApprove).toBe(true);
+    expect(config.review.autoApprove).toBe(false);
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
     expect(config.review.prompt).toBeUndefined();
@@ -276,7 +276,7 @@ test("parses review.prompt from YAML", async () => {
     const { config } = await loadRepoConfig(dir);
     expect(config.review.prompt).toBe("Focus on security issues");
     expect(config.review.enabled).toBe(true);
-    expect(config.review.autoApprove).toBe(true);
+    expect(config.review.autoApprove).toBe(false);
   } finally {
     await rm(dir, { recursive: true });
   }
