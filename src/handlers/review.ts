@@ -3643,6 +3643,7 @@ export function createReviewHandler(deps: {
         );
 
         const checkpointEnabled =
+          reviewRouting.taskType === TASK_TYPES.REVIEW_FULL ||
           timeoutEstimate.riskLevel === "medium" ||
           timeoutEstimate.riskLevel === "high";
 
@@ -5254,7 +5255,7 @@ export function createReviewHandler(deps: {
                       break;
                     case "zero-evidence-failure": {
                       retryState = "not scheduled (zero-evidence timeout)";
-                      const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
+                      const retryRemoteRuntimeBudgetSeconds = Math.max(30, Math.floor(timeoutDuration / 2));
                       const retryScope = computeRetryScope({
                         allFiles: riskScores,
                         filesAlreadyReviewed: timeoutReviewedFiles,
@@ -5272,7 +5273,7 @@ export function createReviewHandler(deps: {
                           }, 0),
                           languageComplexity,
                           isLargePR: false,
-                          baseTimeoutSeconds: retryTimeout,
+                          baseTimeoutSeconds: retryRemoteRuntimeBudgetSeconds,
                         });
                         retryPlan = {
                           decision: "schedule-continuation",
@@ -5282,8 +5283,11 @@ export function createReviewHandler(deps: {
                           continuationNumber: 1,
                           continuationFiles,
                           scopeRatio: retryScope.scopeRatio,
-                          timeoutSeconds: retryTimeout,
-                          checkpointEnabled: timeoutEstimate.riskLevel === "medium" || timeoutEstimate.riskLevel === "high",
+                          timeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
+                          checkpointEnabled:
+                            reviewRouting.taskType === TASK_TYPES.REVIEW_FULL ||
+                            timeoutEstimate.riskLevel === "medium" ||
+                            timeoutEstimate.riskLevel === "high",
                           timeoutEstimate,
                           firstPass: timeoutFirstPass,
                           checkpoint,
