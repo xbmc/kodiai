@@ -20,6 +20,21 @@ type McpJobEntry = {
 export function createMcpJobRegistry() {
   const registry = new Map<string, McpJobEntry>();
 
+  const inspectToken = (token: string):
+    | { ok: true; ttlRemainingMs: number }
+    | { ok: false; reason: "missing" | "expired"; ttlRemainingMs?: number } => {
+    const entry = registry.get(token);
+    if (!entry) return { ok: false, reason: "missing" };
+
+    const ttlRemainingMs = entry.expiresAt - Date.now();
+    if (ttlRemainingMs <= 0) {
+      registry.delete(token);
+      return { ok: false, reason: "expired", ttlRemainingMs };
+    }
+
+    return { ok: true, ttlRemainingMs };
+  };
+
   return {
     register(
       token: string,
@@ -33,28 +48,18 @@ export function createMcpJobRegistry() {
       registry.delete(token);
     },
 
+    inspectToken,
+
     hasToken(token: string): boolean {
-      const entry = registry.get(token);
-      if (!entry) return false;
-      // Treat expired entries as absent (lazy expiry).
-      if (entry.expiresAt <= Date.now()) {
-        registry.delete(token);
-        return false;
-      }
-      return true;
+      return inspectToken(token).ok;
     },
 
     getFactory(
       token: string,
       serverName: string,
     ): (() => McpSdkServerConfigWithInstance) | undefined {
-      const entry = registry.get(token);
-      if (!entry) return undefined;
-      if (entry.expiresAt <= Date.now()) {
-        registry.delete(token);
-        return undefined;
-      }
-      return entry.factories[serverName];
+      if (!inspectToken(token).ok) return undefined;
+      return registry.get(token)?.factories[serverName];
     },
   };
 }
@@ -84,9 +89,24 @@ export function createMcpHttpRoutes(
     const authHeader = c.req.header("Authorization");
     const token = authHeader?.replace(/^Bearer /, "");
 
-    if (!token || !registry.hasToken(token)) {
+    if (!token) {
       logger?.warn(
-        { tokenPrefix: token?.slice(0, 8) },
+        { tokenPrefix: undefined, authFailureReason: "missing" },
+        "MCP HTTP: unauthorized",
+      );
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const authState = registry.inspectToken(token);
+    if (!authState.ok) {
+      logger?.warn(
+        {
+          tokenPrefix: token.slice(0, 8),
+          authFailureReason: authState.reason,
+          ...(authState.ttlRemainingMs !== undefined
+            ? { ttlRemainingMs: authState.ttlRemainingMs }
+            : {}),
+        },
         "MCP HTTP: unauthorized",
       );
       return c.json({ error: "Unauthorized" }, 401);

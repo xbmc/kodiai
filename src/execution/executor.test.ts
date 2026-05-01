@@ -358,6 +358,7 @@ function createTestableExecutor(deps: {
       const executorHandoffStartedAt = Date.now();
       let executorHandoffDurationMs: number | undefined;
       let remoteRuntimeDurationMs: number | undefined;
+      let registeredMcpBearerToken: string | undefined;
 
       const buildExecutorPhaseTimings = (params: {
         handoffStatus: "completed" | "degraded" | "unavailable";
@@ -501,19 +502,6 @@ function createTestableExecutor(deps: {
         const { buildSecurityClaudeMd } = await import("./executor.ts");
         await writeFile(join(context.workspace.dir, "CLAUDE.md"), buildSecurityClaudeMd());
 
-        // Generate token
-        const mcpBearerToken = Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex");
-
-        // Register
-        const factories: Record<string, () => unknown> = {};
-        for (const [name, server] of Object.entries(mcpServers)) {
-          const captured = server;
-          factories[name] = () => captured;
-        }
-        mcpJobRegistry.register(mcpBearerToken, factories as never, (timeoutSeconds + 60) * 1000);
-
         // Create workspace
         const workspaceDir = await createWorkspaceDirFn({
           mountBase: "/mnt/kodiai-workspaces",
@@ -539,6 +527,17 @@ function createTestableExecutor(deps: {
             token: context.workspace.token,
           });
         }
+
+        const mcpBearerToken = Buffer.from(
+          crypto.getRandomValues(new Uint8Array(32)),
+        ).toString("hex");
+        const factories: Record<string, () => unknown> = {};
+        for (const [name, server] of Object.entries(mcpServers)) {
+          const captured = server;
+          factories[name] = () => captured;
+        }
+        mcpJobRegistry.register(mcpBearerToken, factories as never, (timeoutSeconds + 60) * 1000);
+        registeredMcpBearerToken = mcpBearerToken;
 
         const { buildAcaJobSpec } = await import("../jobs/aca-launcher.ts");
         const spec = buildAcaJobSpec({
@@ -585,6 +584,7 @@ function createTestableExecutor(deps: {
             });
           } catch {}
           mcpJobRegistry.unregister(mcpBearerToken);
+          registeredMcpBearerToken = undefined;
           return {
             conclusion: "error",
             costUsd: undefined,
@@ -615,6 +615,7 @@ function createTestableExecutor(deps: {
 
         if (status === "failed") {
           mcpJobRegistry.unregister(mcpBearerToken);
+          registeredMcpBearerToken = undefined;
           return {
             conclusion: "error",
             costUsd: undefined,
@@ -652,6 +653,7 @@ function createTestableExecutor(deps: {
           }),
         );
         mcpJobRegistry.unregister(mcpBearerToken);
+        registeredMcpBearerToken = undefined;
 
         return {
           ...jobResult,
@@ -667,6 +669,10 @@ function createTestableExecutor(deps: {
         const durationMs = Date.now() - startTime;
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error({ err, durationMs }, "Execution failed");
+        if (registeredMcpBearerToken) {
+          mcpJobRegistry.unregister(registeredMcpBearerToken);
+          registeredMcpBearerToken = undefined;
+        }
         return {
           conclusion: "error",
           costUsd: undefined,
@@ -851,7 +857,7 @@ test("ACA dispatch: failed path — no cancel, failure result returned", async (
   expect(result.durationMs).toBe(3000);
 });
 
-test("ACA dispatch: registry — token registered before launch, unregistered after completion", async () => {
+test("ACA dispatch: registry — token registered immediately before launch, unregistered after completion", async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
   const config = makeConfig();
   const logger = makeLogger();
@@ -860,7 +866,69 @@ test("ACA dispatch: registry — token registered before launch, unregistered af
 
   const registeredTokens: string[] = [];
   const unregisteredTokens: string[] = [];
+  const operationOrder: string[] = [];
   let tokenAtLaunchTime: string | undefined;
+
+  const wrappedRegistry = {
+    register: (token: string, factories: never, ttlMs?: number) => {
+      operationOrder.push("register");
+      registeredTokens.push(token);
+      registry.register(token, factories, ttlMs);
+    },
+    unregister: (token: string) => {
+      operationOrder.push("unregister");
+      unregisteredTokens.push(token);
+      registry.unregister(token);
+    },
+    hasToken: registry.hasToken.bind(registry),
+    getFactory: registry.getFactory.bind(registry),
+  };
+
+  const executor = createTestableExecutor({
+    githubApp,
+    logger,
+    config,
+    mcpJobRegistry: wrappedRegistry as never,
+    launchFn: async () => {
+      operationOrder.push("launch");
+      // At launch time, token should already be registered
+      tokenAtLaunchTime = registeredTokens[0];
+      return { executionName: "exec-registry" };
+    },
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult(),
+    createWorkspaceDirFn: async () => {
+      operationOrder.push("workspace");
+      return tmpDir!;
+    },
+  });
+
+  const context = makeContext(tmpDir!);
+  await executor.execute(context);
+
+  // Token is minted and registered only after the agent workspace exists, so TTL starts immediately before launch.
+  expect(operationOrder.slice(0, 3)).toEqual(["workspace", "register", "launch"]);
+  expect(registeredTokens.length).toBe(1);
+  expect(tokenAtLaunchTime).toBeDefined();
+  expect(tokenAtLaunchTime).toBe(registeredTokens[0]);
+
+  // Token was unregistered after completion
+  expect(unregisteredTokens.length).toBe(1);
+  expect(unregisteredTokens[0]).toBe(registeredTokens[0]);
+
+  // Registry is clean after completion
+  expect(registry.hasToken(registeredTokens[0]!)).toBe(false);
+});
+
+test("ACA dispatch: registry — token unregistered even when launch throws", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const githubApp = makeGithubApp();
+  const registry = createMcpJobRegistry();
+
+  const registeredTokens: string[] = [];
+  const unregisteredTokens: string[] = [];
 
   const wrappedRegistry = {
     register: (token: string, factories: never, ttlMs?: number) => {
@@ -880,29 +948,18 @@ test("ACA dispatch: registry — token registered before launch, unregistered af
     logger,
     config,
     mcpJobRegistry: wrappedRegistry as never,
-    launchFn: async (opts) => {
-      // At launch time, token should already be registered
-      tokenAtLaunchTime = registeredTokens[0];
-      return { executionName: "exec-registry" };
+    launchFn: async () => {
+      throw new Error("launch failed");
     },
-    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
-    readResultFn: async () => makeJobResult(),
     createWorkspaceDirFn: async () => tmpDir!,
   });
 
-  const context = makeContext(tmpDir!);
-  await executor.execute(context);
+  const result = await executor.execute(makeContext(tmpDir!));
 
-  // Token was registered before launch
+  expect(result.conclusion).toBe("error");
+  expect(result.errorMessage).toBe("launch failed");
   expect(registeredTokens.length).toBe(1);
-  expect(tokenAtLaunchTime).toBeDefined();
-  expect(tokenAtLaunchTime).toBe(registeredTokens[0]);
-
-  // Token was unregistered after completion
-  expect(unregisteredTokens.length).toBe(1);
-  expect(unregisteredTokens[0]).toBe(registeredTokens[0]);
-
-  // Registry is clean after completion
+  expect(unregisteredTokens).toEqual(registeredTokens);
   expect(registry.hasToken(registeredTokens[0]!)).toBe(false);
 });
 

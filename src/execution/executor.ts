@@ -325,6 +325,7 @@ export function createExecutor(deps: {
       const executorHandoffStartedAt = Date.now();
       let executorHandoffDurationMs: number | undefined;
       let remoteRuntimeDurationMs: number | undefined;
+      let registeredMcpBearerToken: string | undefined;
 
       try {
         // Load repo config (.kodiai.yml) with defaults
@@ -480,18 +481,6 @@ export function createExecutor(deps: {
 
         // --- ACA Job dispatch ---
 
-        // Generate per-job bearer token (32 bytes → 64 hex chars)
-        const mcpBearerToken = Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex");
-
-        // Register MCP server factories in the registry under this token.
-        // Each factory re-calls the server creator on every invocation so the
-        // HTTP handler gets a fresh McpServer per request — required because
-        // McpServer.connect() can only be called once per instance.
-        const factories = buildMcpServerFactories(mcpServerDeps);
-        mcpJobRegistry.register(mcpBearerToken, factories, (timeoutSeconds + 60) * 1000);
-
         // Create workspace dir on Azure Files and stage a repo snapshot for the agent.
         // WORKSPACE_DIR holds control/artifact files plus a full repo copy under ./repo
         // so the remote agent can use Read/Grep/Glob/git tools against real project files.
@@ -511,6 +500,16 @@ export function createExecutor(deps: {
           promptSections: context.promptSections,
           token: context.workspace.token,
         });
+
+        // Generate and register the per-job bearer token only after the remote
+        // workspace is staged. This keeps the registry TTL aligned with the
+        // ACA launch window instead of burning it during local handoff work.
+        const mcpBearerToken = Buffer.from(
+          crypto.getRandomValues(new Uint8Array(32)),
+        ).toString("hex");
+        const factories = buildMcpServerFactories(mcpServerDeps);
+        mcpJobRegistry.register(mcpBearerToken, factories, (timeoutSeconds + 60) * 1000);
+        registeredMcpBearerToken = mcpBearerToken;
 
         // Build and launch the ACA job
         const spec = buildAcaJobSpec({
@@ -588,6 +587,7 @@ export function createExecutor(deps: {
             remoteRuntimeDetail: "remote runtime timed out",
           });
           mcpJobRegistry.unregister(mcpBearerToken);
+          registeredMcpBearerToken = undefined;
           return {
             conclusion: "error",
             costUsd: undefined,
@@ -647,6 +647,7 @@ export function createExecutor(deps: {
             // best effort only
           }
           mcpJobRegistry.unregister(mcpBearerToken);
+          registeredMcpBearerToken = undefined;
           return {
             conclusion: "error",
             costUsd: undefined,
@@ -687,6 +688,7 @@ export function createExecutor(deps: {
 
         // Unregister after reading result
         mcpJobRegistry.unregister(mcpBearerToken);
+        registeredMcpBearerToken = undefined;
 
         // Merge published / publishEvents from MCP callbacks (fired during pollUntilComplete)
         return {
@@ -707,6 +709,10 @@ export function createExecutor(deps: {
         const errorMessage =
           err instanceof Error ? err.message : String(err);
         logger.error({ err, durationMs }, "Execution failed");
+        if (registeredMcpBearerToken) {
+          mcpJobRegistry.unregister(registeredMcpBearerToken);
+          registeredMcpBearerToken = undefined;
+        }
 
         const executorPhaseTimings = buildExecutorPhaseTimings({
           handoffStatus: executorHandoffDurationMs === undefined ? "degraded" : "completed",

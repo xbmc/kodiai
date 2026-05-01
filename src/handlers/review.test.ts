@@ -16302,10 +16302,107 @@ describe("createReviewHandler failure fallback publication", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("enables checkpoint preservation for full reviews even when timeout risk is low", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const executeContexts: Array<Record<string, unknown>> = [];
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) =>
+          fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async () => ({ data: { id: 900 } }),
+              updateComment: async () => ({ data: {} }),
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 0 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: Record<string, unknown>) => {
+          executeContexts.push(context);
+          return {
+            conclusion: "success",
+            published: false,
+            durationMs: 1,
+            numTurns: 1,
+            sessionId: "session-full-review-checkpoint",
+            costUsd: 0,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub() as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: ["1\t1\tREADME.md", "1\t1\tsrc/a.ts", "1\t1\tsrc/b.ts"],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(executeContexts.length).toBe(1);
+    expect(executeContexts[0]).toMatchObject({
+      taskType: "review.full",
+      enableCheckpointTool: true,
+    });
+
+    await workspaceFixture.cleanup();
+  });
+
   test("schedules a reduced-scope retry after max-turns when checkpoint evidence has remaining scope", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const createdCommentBodies: string[] = [];
+    const { logger, entries } = createCaptureLogger();
     let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
 
     createReviewHandler({
@@ -16404,7 +16501,7 @@ describe("createReviewHandler failure fallback publication", () => {
         unshallowAttempted: false,
         diffRange: "github-api:file-list",
       }),
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("pull_request.review_requested");
@@ -16420,6 +16517,10 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(boundedComment).toBeDefined();
     expect(boundedComment).toContain("Scheduling a reduced-scope retry.");
     expect(queuedRetryJob).toBeDefined();
+
+    const retryLog = entries.find((entry) => entry.message === "Enqueueing retry with reduced scope");
+    expect(retryLog?.data?.retryTimeout).toEqual(expect.any(Number));
+    expect(retryLog!.data!.retryTimeout as number).toBeGreaterThan(30);
 
     await workspaceFixture.cleanup();
   });

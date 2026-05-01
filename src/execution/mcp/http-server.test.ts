@@ -71,6 +71,20 @@ describe("createMcpJobRegistry", () => {
     reg.register("tok-exp", { test_server: makeFactory() }, -1); // already expired
     expect(reg.hasToken("tok-exp")).toBe(false);
   });
+
+  test("inspectToken distinguishes missing from expired tokens", () => {
+    const reg = createMcpJobRegistry();
+    reg.register("tok-exp", { test_server: makeFactory() }, -1);
+
+    expect(reg.inspectToken("missing-token")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(reg.inspectToken("tok-exp")).toMatchObject({
+      ok: false,
+      reason: "expired",
+    });
+  });
 });
 
 describe("createMcpHttpRoutes", () => {
@@ -98,6 +112,27 @@ describe("createMcpHttpRoutes", () => {
     expect(res.status).toBe(401);
     const body = await res.json() as { error: string };
     expect(body.error).toBe("Unauthorized");
+  });
+
+  test("unauthorized requests log missing versus expired token reasons", async () => {
+    const registry = createMcpJobRegistry();
+    registry.register("expired-token", { test_server: makeFactory() }, -1);
+    const warnings: Array<Record<string, unknown>> = [];
+    const logger = {
+      warn: (data: Record<string, unknown>) => warnings.push(data),
+    };
+    const app = createMcpHttpRoutes(registry, logger as never);
+
+    const missing = await mcpPost(app, "test_server", "missing-token");
+    const expired = await mcpPost(app, "test_server", "expired-token");
+
+    expect(missing.status).toBe(401);
+    expect(expired.status).toBe(401);
+    expect(warnings).toContainEqual(expect.objectContaining({ authFailureReason: "missing" }));
+    expect(warnings).toContainEqual(expect.objectContaining({ authFailureReason: "expired" }));
+    expect(warnings.find((entry) => entry.authFailureReason === "expired")).toEqual(
+      expect.objectContaining({ ttlRemainingMs: expect.any(Number) }),
+    );
   });
 
   test("valid token + unknown server name → 404", async () => {
