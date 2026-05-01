@@ -8910,6 +8910,125 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("explicit PR review mention applies complexity-scaled timeout budget", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    const prNumber = 204;
+    await $`git -C ${workspaceFixture.dir} checkout feature`.quiet();
+    await $`mkdir -p ${join(workspaceFixture.dir, "src")}`.quiet();
+    await Bun.write(
+      join(workspaceFixture.dir, "src", "large-review-surface.ts"),
+      Array.from({ length: 3000 }, (_, index) => `export const value${index} = ${index};`).join("\n") + "\n",
+    );
+    await $`git -C ${workspaceFixture.dir} add src/large-review-surface.ts`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "large review surface"`.quiet();
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git -C ${workspaceFixture.dir} push -f origin feature`.quiet();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    let capturedDynamicTimeoutSeconds: number | undefined;
+    let capturedTaskType: string | undefined;
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        ) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            reactions: {
+              createForIssueComment: async () => ({ data: {} }),
+              createForPullRequestReviewComment: async () => ({ data: {} }),
+            },
+            pulls: {
+              get: async () => ({
+                data: {
+                  title: "Large explicit review PR",
+                  body: "",
+                  additions: 3000,
+                  deletions: 0,
+                  draft: false,
+                  labels: [],
+                  user: { login: "octocat" },
+                  head: { ref: "feature" },
+                  base: { ref: "main" },
+                },
+              }),
+              list: async () => ({ data: [] }),
+              listFiles: async () => ({ data: [{ filename: "src/large-review-surface.ts" }] }),
+              listReviews: async () => ({ data: [] }),
+              listReviewComments: async () => ({ data: [] }),
+              createReplyForReviewComment: async () => ({ data: {} }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async () => ({ data: {} }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { dynamicTimeoutSeconds?: number; taskType?: string }) => {
+          capturedDynamicTimeoutSeconds = context.dynamicTimeoutSeconds;
+          capturedTaskType = context.taskType;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 3,
+            durationMs: 1,
+            sessionId: "session-explicit-timeout-budget",
+            stopReason: "end_turn",
+            toolUseNames: ["Read"],
+            usedRepoInspectionTools: true,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(capturedTaskType).toBe("review.full");
+    expect(capturedDynamicTimeoutSeconds).toEqual(expect.any(Number));
+    expect(capturedDynamicTimeoutSeconds!).toBeGreaterThan(600);
+
+    await workspaceFixture.cleanup();
+  });
+
   test("explicit PR review mention stays on interactive-review/review.full and submits approval review when inspection evidence is present", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
