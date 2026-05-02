@@ -55,6 +55,7 @@ import { TASK_TYPES } from "../llm/task-types.ts";
 import {
   resolveReviewRoutingLineCount,
   resolveReviewTaskRouting,
+  resolveReviewMaxTurnsOverride,
   type ReviewTaskRouting,
 } from "../lib/review-routing.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
@@ -2383,6 +2384,7 @@ export function createMentionHandler(deps: {
         let promptSections: import("../telemetry/types.ts").PromptSectionRecord[] = [];
         let explicitReviewPromptFileCount: number | undefined;
         let explicitReviewDynamicTimeoutSeconds: number | undefined;
+        let explicitReviewMaxTurnsOverride: number | undefined;
         let explicitReviewRouting: ReviewTaskRouting = {
           taskType: TASK_TYPES.REVIEW_FULL,
           routingReason: "standard",
@@ -2445,6 +2447,12 @@ export function createMentionHandler(deps: {
           explicitReviewDynamicTimeoutSeconds = config.timeout.dynamicScaling !== false
             ? timeoutEstimate.totalTimeoutSeconds
             : undefined;
+          explicitReviewMaxTurnsOverride = resolveReviewMaxTurnsOverride({
+            taskType: explicitReviewRouting.taskType,
+            routingMaxTurnsOverride: explicitReviewRouting.maxTurnsOverride,
+            timeoutRiskLevel: timeoutEstimate.riskLevel,
+            baseMaxTurns: config.maxTurns,
+          });
           logger.info(
             {
               surface: mention.surface,
@@ -2456,7 +2464,8 @@ export function createMentionHandler(deps: {
               routingReason: explicitReviewRouting.routingReason,
               changedFiles: promptChangedFiles.length,
               linesChanged: explicitReviewLinesChanged,
-              maxTurns: explicitReviewRouting.maxTurnsOverride ?? null,
+              maxTurns: explicitReviewMaxTurnsOverride ?? null,
+              maxTurnsSource: explicitReviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
               timeoutSeconds: explicitReviewDynamicTimeoutSeconds ?? null,
               timeoutRiskLevel: timeoutEstimate.riskLevel,
               remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
@@ -2585,7 +2594,7 @@ export function createMentionHandler(deps: {
         // large PRs do not terminate mid-tool-call before any publish step occurs.
         const mentionMaxTurns =
           explicitReviewRequest
-            ? explicitReviewRouting.maxTurnsOverride
+            ? explicitReviewMaxTurnsOverride
             : (!writeEnabled && mention.prNumber !== undefined)
               ? (prDiffContext !== undefined ? 12 : 20)
               : undefined; // undefined → falls through to config.maxTurns

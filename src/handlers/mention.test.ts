@@ -8930,6 +8930,7 @@ describe("createMentionHandler review command", () => {
     await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
     let capturedDynamicTimeoutSeconds: number | undefined;
+    let capturedMaxTurnsOverride: number | undefined;
     let capturedTaskType: string | undefined;
 
     createMentionHandler({
@@ -8992,8 +8993,9 @@ describe("createMentionHandler review command", () => {
         }) as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async (context: { dynamicTimeoutSeconds?: number; taskType?: string }) => {
+        execute: async (context: { dynamicTimeoutSeconds?: number; maxTurnsOverride?: number; taskType?: string }) => {
           capturedDynamicTimeoutSeconds = context.dynamicTimeoutSeconds;
+          capturedMaxTurnsOverride = context.maxTurnsOverride;
           capturedTaskType = context.taskType;
           return {
             conclusion: "success",
@@ -9025,6 +9027,8 @@ describe("createMentionHandler review command", () => {
     expect(capturedTaskType).toBe("review.full");
     expect(capturedDynamicTimeoutSeconds).toEqual(expect.any(Number));
     expect(capturedDynamicTimeoutSeconds!).toBeGreaterThan(600);
+    expect(capturedMaxTurnsOverride).toEqual(expect.any(Number));
+    expect(capturedMaxTurnsOverride!).toBeGreaterThan(25);
 
     await workspaceFixture.cleanup();
   });

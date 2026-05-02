@@ -5,7 +5,10 @@ import {
   isSmallDiffReviewEligible,
   resolveReviewRoutingLineCount,
   resolveReviewTaskRouting,
+  resolveReviewMaxTurnsOverride,
   SMALL_DIFF_MAX_TURNS,
+  HIGH_RISK_REVIEW_MAX_TURNS,
+  MEDIUM_RISK_REVIEW_MAX_TURNS,
 } from "./review-routing.ts";
 
 describe("review-routing", () => {
@@ -56,5 +59,36 @@ describe("review-routing", () => {
       taskType: TASK_TYPES.REVIEW_FULL,
       routingReason: "standard",
     });
+  });
+
+  test("keeps small-diff turn override ahead of risk scaling", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_SMALL_DIFF,
+      routingMaxTurnsOverride: SMALL_DIFF_MAX_TURNS,
+      timeoutRiskLevel: "high",
+      baseMaxTurns: 25,
+    })).toBe(SMALL_DIFF_MAX_TURNS);
+  });
+
+  test("raises standard full-review turn budget for medium and high timeout risk", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "medium",
+      baseMaxTurns: 25,
+    })).toBe(MEDIUM_RISK_REVIEW_MAX_TURNS);
+
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "high",
+      baseMaxTurns: 25,
+    })).toBe(HIGH_RISK_REVIEW_MAX_TURNS);
+  });
+
+  test("does not lower an explicitly higher repo maxTurns setting", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "high",
+      baseMaxTurns: 100,
+    })).toBeUndefined();
   });
 });
