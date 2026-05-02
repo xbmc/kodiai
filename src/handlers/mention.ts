@@ -22,6 +22,7 @@ import {
   commitAndPushToRemoteRef,
   pushHeadToRemoteRef,
   buildAuthFetchUrl,
+  fetchRemoteTrackingBranch,
   WritePolicyError,
   assertOriginIsFork,
   shouldUseGist,
@@ -1568,8 +1569,12 @@ export function createMentionHandler(deps: {
           // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
           // origin/BASE...HEAD even in --single-branch workspaces.
           if (mention.baseRef) {
-            const fetchRemote1 = await buildAuthFetchUrl(workspace.dir, workspace.token);
-            await $`git -C ${workspace.dir} fetch ${fetchRemote1} ${mention.baseRef}:refs/remotes/origin/${mention.baseRef} --depth=1`.quiet();
+            await fetchRemoteTrackingBranch({
+              dir: workspace.dir,
+              branch: mention.baseRef,
+              token: workspace.token,
+              depth: 1,
+            });
           }
         }
 
