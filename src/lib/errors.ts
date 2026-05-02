@@ -14,14 +14,15 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { redactGitHubTokens } from "./sanitizer.ts";
 
-/** The six user-facing error categories */
+/** User-facing error categories. */
 export type ErrorCategory =
   | "timeout"
   | "timeout_partial"
   | "api_error"
   | "config_error"
   | "clone_error"
-  | "internal_error";
+  | "internal_error"
+  | "usage_limit";
 
 export type ErrorCommentPublicationMethod = "create-comment" | "update-comment";
 export type ErrorCommentPublicationResolution = "created" | "updated" | "failed";
@@ -62,6 +63,10 @@ export function classifyError(
 
   if (message.includes(".kodiai.yml")) return "config_error";
 
+  if (/you(?:'|’)ve hit your limit|you have hit your limit|usage limit/i.test(message)) {
+    return "usage_limit";
+  }
+
   if (status !== undefined && status >= 400 && status < 600) return "api_error";
 
   // API errors checked before clone errors: "rate limit" contains "git"
@@ -81,6 +86,7 @@ const HEADERS: Record<ErrorCategory, string> = {
   config_error: "Kodiai found a configuration problem",
   clone_error: "Kodiai couldn't access the repository",
   internal_error: "Kodiai encountered an error",
+  usage_limit: "Kodiai hit its Claude usage limit",
 };
 
 /** Actionable suggestions for each error category */
@@ -95,7 +101,12 @@ const SUGGESTIONS: Record<ErrorCategory, string> = {
   clone_error:
     "Verify the repository is accessible and the branch exists.",
   internal_error: "If this persists, please report this issue.",
+  usage_limit:
+    "Kodiai cannot run another Claude review until the provider usage limit resets. Please try again after the reset time shown above.",
 };
+
+const USAGE_LIMIT_ERROR_MARKER = "<!-- kodiai:error:usage-limit -->";
+const USAGE_LIMIT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * Format an error into a user-facing markdown comment.
@@ -115,7 +126,46 @@ export function formatErrorComment(
   const suggestion = SUGGESTIONS[category];
   const sanitizedDetail = redactGitHubTokens(detail);
 
-  return `> **${header}**\n\n_${sanitizedDetail}_\n\n${suggestion}`;
+  return [
+    `> **${header}**\n\n_${sanitizedDetail}_\n\n${suggestion}`,
+    category === "usage_limit" ? USAGE_LIMIT_ERROR_MARKER : undefined,
+  ].filter((line): line is string => line !== undefined).join("\n\n");
+}
+
+async function findRecentUsageLimitErrorComment(
+  octokit: Octokit,
+  target: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+  },
+): Promise<number | undefined> {
+  const listComments = octokit.rest.issues.listComments;
+  if (typeof listComments !== "function") {
+    return undefined;
+  }
+
+  const { data } = await listComments({
+    owner: target.owner,
+    repo: target.repo,
+    issue_number: target.issueNumber,
+    per_page: 100,
+  });
+
+  const cutoffMs = Date.now() - USAGE_LIMIT_DEDUPE_WINDOW_MS;
+  const recent = data
+    .filter((comment) => {
+      const body = typeof comment.body === "string" ? comment.body : "";
+      const login = comment.user?.login ?? "";
+      const createdAtMs = Date.parse(comment.created_at ?? "");
+      return body.includes(USAGE_LIMIT_ERROR_MARKER)
+        && login.includes("kodiai")
+        && Number.isFinite(createdAtMs)
+        && createdAtMs >= cutoffMs;
+    })
+    .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
+
+  return recent[0]?.id;
 }
 
 /**
@@ -158,6 +208,19 @@ export async function postOrUpdateErrorComment(
         body,
       });
       return { ok: true, resolution: "updated", method };
+    }
+
+    if (body.includes(USAGE_LIMIT_ERROR_MARKER)) {
+      const duplicateCommentId = await findRecentUsageLimitErrorComment(octokit, target);
+      if (duplicateCommentId !== undefined) {
+        await octokit.rest.issues.updateComment({
+          owner: target.owner,
+          repo: target.repo,
+          comment_id: duplicateCommentId,
+          body,
+        });
+        return { ok: true, resolution: "updated", method: "update-comment" };
+      }
     }
 
     await octokit.rest.issues.createComment({
