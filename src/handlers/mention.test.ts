@@ -12785,3 +12785,130 @@ describe("createMentionHandler mention derived-context cache", () => {
     await workspaceFixture.cleanup();
   });
 });
+
+
+test("review-comment error fallback checks parent existence before choosing top-level comment", async () => {
+  const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+  const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+  const prNumber = 109;
+  const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+    .text()
+    .trim();
+  await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+  const { logger, infoCalls } = createMockLogger();
+  const issueReplies: string[] = [];
+  let getReviewCommentCalls = 0;
+  let createReplyCalls = 0;
+
+  const eventRouter: EventRouter = {
+    register: (eventKey, handler) => {
+      handlers.set(eventKey, handler);
+    },
+    dispatch: async () => undefined,
+  };
+
+  const jobQueue: JobQueue = {
+    enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+    getQueueSize: () => 0,
+    getPendingCount: () => 0,
+    getActiveJobs: getEmptyActiveJobs,
+  };
+
+  const workspaceManager: WorkspaceManager = {
+    create: async (_installationId: number, options: CloneOptions) => {
+      await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+      return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+    },
+    cleanupStale: async () => 0,
+  };
+
+  const octokit = {
+    rest: {
+      reactions: {
+        createForIssueComment: async () => ({ data: {} }),
+        createForPullRequestReviewComment: async () => ({ data: {} }),
+      },
+      pulls: {
+        get: async () => ({
+          data: {
+            title: "Test PR",
+            body: "",
+            user: { login: "octocat" },
+            head: { ref: "feature", repo: { name: "repo", owner: { login: "acme" } } },
+            base: { ref: "main" },
+          },
+        }),
+        list: async () => ({ data: [] }),
+        listReviews: async () => ({ data: [] }),
+        listReviewComments: async () => ({ data: [] }),
+        getReviewComment: async () => {
+          getReviewCommentCalls += 1;
+          throw Object.assign(new Error("Not Found"), { status: 404 });
+        },
+        createReplyForReviewComment: async () => {
+          createReplyCalls += 1;
+          return { data: {} };
+        },
+        createReview: async () => ({ data: {} }),
+      },
+      issues: {
+        listComments: async () => ({ data: [] }),
+        createComment: async ({ body }: { body: string }) => {
+          issueReplies.push(body);
+          return { data: { id: issueReplies.length } };
+        },
+      },
+    },
+  };
+
+  createMentionHandler({
+    eventRouter,
+    jobQueue,
+    workspaceManager,
+    githubApp: {
+      getAppSlug: () => "kodiai",
+      getInstallationOctokit: async () => octokit as never,
+    } as unknown as GitHubApp,
+    executor: {
+      execute: async () => ({
+        conclusion: "error",
+        published: false,
+        durationMs: 1,
+        errorMessage: "Claude Code returned an error result: You've hit your limit · resets 10:50pm (UTC)",
+        toolUseNames: [],
+        usedRepoInspectionTools: false,
+      }),
+    } as never,
+    telemetryStore: noopTelemetryStore,
+    logger,
+  });
+
+  const handler = handlers.get("pull_request_review_comment.created");
+  expect(handler).toBeDefined();
+
+  await handler!(
+    buildReviewCommentMentionEvent({
+      prNumber,
+      baseRef: "main",
+      headRef: "feature",
+      headRepoOwner: "acme",
+      headRepoName: "repo",
+      commentBody: "@kodiai review",
+      commentId: 3177222400,
+    }),
+  );
+
+  expect(getReviewCommentCalls).toBe(1);
+  expect(createReplyCalls).toBe(0);
+  expect(issueReplies).toHaveLength(1);
+  expect(issueReplies[0]).toContain("You've hit your limit");
+  expect(issueReplies[0]).toContain("kodiai:error:usage-limit");
+
+  const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+  expect(completionLog?.bindings.failureSubtype).toBe("usage_limit");
+  expect(completionLog?.bindings.errorCategory).toBe("usage_limit");
+
+  await workspaceFixture.cleanup();
+});

@@ -122,6 +122,15 @@ type MentionErrorPostResult = {
   delivery: MentionErrorDelivery;
 };
 
+type MentionExecutionFailureSubtype = "usage_limit";
+
+function classifyMentionExecutionFailureSubtype(errorMessage: string | undefined): MentionExecutionFailureSubtype | undefined {
+  if (errorMessage === undefined) {
+    return undefined;
+  }
+  return classifyError(new Error(errorMessage), false) === "usage_limit" ? "usage_limit" : undefined;
+}
+
 const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
 function buildMentionQueueKey(owner: string, repo: string, issueOrPrNumber: number): string {
@@ -1411,22 +1420,53 @@ export function createMentionHandler(deps: {
 
         async function postMentionError(errorBody: string): Promise<MentionErrorPostResult> {
           const sanitizedBody = sanitizeOutgoingMentions(errorBody, possibleHandles);
-          // Prefer replying in-thread for inline review comment mentions.
+          // Prefer replying in-thread for inline review comment mentions, but only
+          // after proving the parent still exists. GitHub returns 404 when users
+          // delete stale review comments between webhook receipt and error
+          // publication; probing first avoids a noisy failed reply attempt.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            let parentReviewCommentExists = true;
             try {
-              await octokit.rest.pulls.createReplyForReviewComment({
+              await octokit.rest.pulls.getReviewComment({
                 owner: mention.owner,
                 repo: mention.repo,
-                pull_number: mention.prNumber,
                 comment_id: mention.commentId,
-                body: sanitizedBody,
               });
-              return { posted: true, delivery: "review-thread-reply" };
             } catch (err) {
-              logger.warn(
-                { err, prNumber: mention.prNumber, commentId: mention.commentId },
-                "Failed to post in-thread error reply; falling back to top-level error comment",
-              );
+              const status = typeof err === "object" && err !== null
+                ? (err as { status?: unknown }).status
+                : undefined;
+              if (status === 404) {
+                parentReviewCommentExists = false;
+                logger.info(
+                  { prNumber: mention.prNumber, commentId: mention.commentId },
+                  "Skipping in-thread error reply because parent review comment no longer exists",
+                );
+              } else {
+                logger.warn(
+                  { err, prNumber: mention.prNumber, commentId: mention.commentId },
+                  "Could not verify parent review comment before posting error reply; falling back to top-level error comment",
+                );
+                parentReviewCommentExists = false;
+              }
+            }
+
+            if (parentReviewCommentExists) {
+              try {
+                await octokit.rest.pulls.createReplyForReviewComment({
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  pull_number: mention.prNumber,
+                  comment_id: mention.commentId,
+                  body: sanitizedBody,
+                });
+                return { posted: true, delivery: "review-thread-reply" };
+              } catch (err) {
+                logger.warn(
+                  { err, prNumber: mention.prNumber, commentId: mention.commentId },
+                  "Failed to post in-thread error reply; falling back to top-level error comment",
+                );
+              }
             }
           }
 
@@ -2930,6 +2970,12 @@ export function createMentionHandler(deps: {
           }
         }
 
+        const mentionExecutionErrorCategory = result.errorMessage !== undefined
+          ? classifyError(new Error(result.errorMessage), result.isTimeout ?? false, result.published)
+          : undefined;
+        const mentionFailureSubtype = result.failureSubtype
+          ?? classifyMentionExecutionFailureSubtype(result.errorMessage);
+
         logger.info(
           {
             surface: mention.surface,
@@ -2946,7 +2992,8 @@ export function createMentionHandler(deps: {
             durationMs: result.durationMs,
             sessionId: result.sessionId,
             stopReason: result.stopReason,
-            failureSubtype: result.failureSubtype,
+            failureSubtype: mentionFailureSubtype,
+            errorCategory: mentionExecutionErrorCategory,
             usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
             toolUseNames: result.toolUseNames ?? [],
             mentionDerivedContextCacheStatus,

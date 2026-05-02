@@ -1,7 +1,8 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, mock } from "bun:test";
 import {
   classifyError,
   formatErrorComment,
+  postOrUpdateErrorComment,
   type ErrorCategory,
 } from "./errors";
 
@@ -65,6 +66,15 @@ describe("classifyError", () => {
     ).toBe("api_error");
   });
 
+  test("returns 'usage_limit' for Claude Code usage limit errors", () => {
+    expect(
+      classifyError(new Error("Claude Code returned an error result: You've hit your limit · resets 10:50pm (UTC)"), false),
+    ).toBe("usage_limit");
+    expect(
+      classifyError(new Error("usage limit exceeded"), false),
+    ).toBe("usage_limit");
+  });
+
   test("returns 'internal_error' as default", () => {
     expect(
       classifyError(new Error("something unexpected happened"), false),
@@ -89,6 +99,7 @@ describe("formatErrorComment", () => {
     "config_error",
     "clone_error",
     "internal_error",
+    "usage_limit",
   ];
 
   test("produces correct markdown structure for each category", () => {
@@ -99,6 +110,7 @@ describe("formatErrorComment", () => {
       config_error: "Kodiai found a configuration problem",
       clone_error: "Kodiai couldn't access the repository",
       internal_error: "Kodiai encountered an error",
+      usage_limit: "Kodiai hit its Claude usage limit",
     };
 
     for (const category of categories) {
@@ -144,6 +156,12 @@ describe("formatErrorComment", () => {
     expect(result).toContain("report");
   });
 
+  test("includes suggestion for usage_limit", () => {
+    const result = formatErrorComment("usage_limit", "Claude Code returned an error result: You've hit your limit · resets 10:50pm (UTC)");
+    expect(result).toContain("try again after the reset time");
+    expect(result).toContain("kodiai:error:usage-limit");
+  });
+
   test("redacts GitHub tokens in detail", () => {
     const token = "ghs_" + "a".repeat(36);
     const result = formatErrorComment("internal_error", `Error with token ${token}`);
@@ -163,3 +181,48 @@ describe("formatErrorComment", () => {
     expect(result).toContain("[REDACTED_GITHUB_TOKEN]");
   });
 });
+
+// --- postOrUpdateErrorComment duplicate handling ---
+
+describe("postOrUpdateErrorComment", () => {
+  test("updates a recent usage-limit error comment instead of creating a duplicate", async () => {
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const existingBody = wrapUsageLimitBody("first failure");
+    const replacementBody = wrapUsageLimitBody("second failure");
+    const createComment = mock(async () => ({ data: { id: 2 } }));
+    const updateComment = mock(async () => ({ data: { id: 1 } }));
+    const listComments = mock(async () => ({
+      data: [
+        {
+          id: 1,
+          body: existingBody,
+          created_at: createdAt,
+          user: { login: "kodiai[bot]" },
+        },
+      ],
+    }));
+    const logger = { error: mock(() => undefined) };
+
+    const result = await postOrUpdateErrorComment(
+      {
+        rest: {
+          issues: { createComment, updateComment, listComments },
+        },
+      } as never,
+      { owner: "acme", repo: "repo", issueNumber: 42 },
+      replacementBody,
+      logger as never,
+    );
+
+    expect(result).toEqual({ ok: true, resolution: "updated", method: "update-comment" });
+    expect(listComments).toHaveBeenCalledTimes(1);
+    expect(updateComment).toHaveBeenCalledTimes(1);
+    const updateCall = updateComment.mock.calls[0] as unknown[] | undefined;
+    expect(updateCall?.[0]).toMatchObject({ comment_id: 1, body: replacementBody });
+    expect(createComment).not.toHaveBeenCalled();
+  });
+});
+
+function wrapUsageLimitBody(detail: string): string {
+  return `<details>\n<summary>Kodiai encountered an error</summary>\n\n${formatErrorComment("usage_limit", detail)}\n\n</details>`;
+}
