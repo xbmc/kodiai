@@ -22,6 +22,7 @@ import {
   commitAndPushToRemoteRef,
   pushHeadToRemoteRef,
   buildAuthFetchUrl,
+  fetchRemoteTrackingBranch,
   WritePolicyError,
   assertOriginIsFork,
   shouldUseGist,
@@ -60,6 +61,7 @@ import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/p
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
+import { computeLanguageComplexity, estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { buildSearchCacheKey, createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import {
   type ErrorCategory,
@@ -1567,8 +1569,12 @@ export function createMentionHandler(deps: {
           // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
           // origin/BASE...HEAD even in --single-branch workspaces.
           if (mention.baseRef) {
-            const fetchRemote1 = await buildAuthFetchUrl(workspace.dir, workspace.token);
-            await $`git -C ${workspace.dir} fetch ${fetchRemote1} ${mention.baseRef}:refs/remotes/origin/${mention.baseRef} --depth=1`.quiet();
+            await fetchRemoteTrackingBranch({
+              dir: workspace.dir,
+              branch: mention.baseRef,
+              token: workspace.token,
+              depth: 1,
+            });
           }
         }
 
@@ -2376,6 +2382,7 @@ export function createMentionHandler(deps: {
         let prompt: string;
         let promptSections: import("../telemetry/types.ts").PromptSectionRecord[] = [];
         let explicitReviewPromptFileCount: number | undefined;
+        let explicitReviewDynamicTimeoutSeconds: number | undefined;
         let explicitReviewRouting: ReviewTaskRouting = {
           taskType: TASK_TYPES.REVIEW_FULL,
           routingReason: "standard",
@@ -2427,6 +2434,17 @@ export function createMentionHandler(deps: {
             changedFileCount: promptChangedFiles.length,
             linesChanged: explicitReviewLinesChanged,
           });
+          const languageComplexity = computeLanguageComplexity(diffAnalysis.filesByLanguage);
+          const timeoutEstimate = estimateTimeoutRisk({
+            fileCount: promptChangedFiles.length,
+            linesChanged: explicitReviewLinesChanged,
+            languageComplexity,
+            isLargePR: diffAnalysis.isLargePR,
+            baseTimeoutSeconds: config.timeoutSeconds,
+          });
+          explicitReviewDynamicTimeoutSeconds = config.timeout.dynamicScaling !== false
+            ? timeoutEstimate.totalTimeoutSeconds
+            : undefined;
           logger.info(
             {
               surface: mention.surface,
@@ -2439,6 +2457,10 @@ export function createMentionHandler(deps: {
               changedFiles: promptChangedFiles.length,
               linesChanged: explicitReviewLinesChanged,
               maxTurns: explicitReviewRouting.maxTurnsOverride ?? null,
+              timeoutSeconds: explicitReviewDynamicTimeoutSeconds ?? null,
+              timeoutRiskLevel: timeoutEstimate.riskLevel,
+              remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
+              infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
               lane: "interactive-review",
             },
             "Mention review routing decision",
@@ -2603,6 +2625,7 @@ export function createMentionHandler(deps: {
           promptSections,
           reviewOutputKey,
           maxTurnsOverride: mentionMaxTurns,
+          dynamicTimeoutSeconds: explicitReviewDynamicTimeoutSeconds,
           knowledgeStore: deps.knowledgeStore,
           totalFiles: explicitReviewPromptFileCount,
           enableInlineTools: explicitReviewRequest ? true : undefined,

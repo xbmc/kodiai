@@ -166,6 +166,36 @@ export async function buildAuthFetchUrl(dir: string, token: string | undefined):
   return makeAuthUrl(url, token);
 }
 
+/**
+ * Fetch a branch into its remote-tracking ref, force-updating the local tracking
+ * ref when the remote branch was rewound or the workspace has stale state.
+ *
+ * Git refuses non-fast-forward updates to refs/remotes/* unless the refspec is
+ * force-prefixed. Kodiai workspaces are ephemeral review/checkouts, so the
+ * remote-tracking ref should mirror the remote exactly instead of failing the
+ * review when a base branch moves backwards between clone and refresh.
+ */
+export async function fetchRemoteTrackingBranch(options: {
+  dir: string;
+  branch: string;
+  remoteName?: string;
+  token?: string;
+  depth?: number;
+}): Promise<void> {
+  const { dir, branch, remoteName = "origin", token, depth = 1 } = options;
+  validateBranchName(branch);
+  validateBranchName(remoteName);
+
+  try {
+    const strippedUrl = (await $`git -C ${dir} remote get-url ${remoteName}`.quiet()).text().trim();
+    const fetchUrl = makeAuthUrl(strippedUrl, token);
+    await $`git -C ${dir} fetch ${fetchUrl} +${branch}:refs/remotes/${remoteName}/${branch} --depth=${depth}`.quiet();
+  } catch (err) {
+    redactTokenFromError(err, token);
+    throw err;
+  }
+}
+
 function redactTokenFromError(err: unknown, token: string | undefined): void {
   if (!(err instanceof Error)) return;
 

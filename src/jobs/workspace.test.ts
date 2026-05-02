@@ -9,6 +9,7 @@ import {
   WritePolicyError,
   buildAuthFetchUrl,
   createWorkspaceManager,
+  fetchRemoteTrackingBranch,
 } from "./workspace.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 
@@ -211,6 +212,47 @@ async function setupBareAndClone(bareDir: string, cloneDir: string): Promise<str
     await rm(srcDir, { recursive: true, force: true });
   }
 }
+
+// ---------------------------------------------------------------------------
+// buildAuthFetchUrl tests
+// ---------------------------------------------------------------------------
+
+describe("fetchRemoteTrackingBranch", () => {
+  test("force-updates a stale remote-tracking branch after base history rewinds", async () => {
+    const tmpBase = await mkdtemp(join(tmpdir(), "kodiai-workspace-test-"));
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+
+      const originalRemoteMain = (await $`git -C ${cloneDir} rev-parse refs/remotes/origin/main`.quiet()).text().trim();
+
+      await $`git -C ${cloneDir} checkout -B local-diverged refs/remotes/origin/main`.quiet();
+      await writeFile(join(cloneDir, "README.md"), "locally diverged\n");
+      await $`git -C ${cloneDir} add README.md`.quiet();
+      await $`git -C ${cloneDir} commit -m "local diverged remote tracking state"`.quiet();
+      const divergedSha = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+      await $`git -C ${cloneDir} update-ref refs/remotes/origin/main ${divergedSha}`.quiet();
+
+      const rejectedFetch = await $`git -C ${cloneDir} fetch origin main:refs/remotes/origin/main --depth=1`.quiet().nothrow();
+      expect(rejectedFetch.exitCode).toBe(1);
+      expect(rejectedFetch.stderr.toString()).toContain("non-fast-forward");
+
+      await fetchRemoteTrackingBranch({
+        dir: cloneDir,
+        branch: "main",
+        depth: 1,
+      });
+
+      const refreshedRemoteMain = (await $`git -C ${cloneDir} rev-parse refs/remotes/origin/main`.quiet()).text().trim();
+      expect(refreshedRemoteMain).toBe(originalRemoteMain);
+      expect(refreshedRemoteMain).not.toBe(divergedSha);
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // buildAuthFetchUrl tests

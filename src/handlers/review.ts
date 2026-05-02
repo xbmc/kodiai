@@ -140,7 +140,7 @@ import {
 } from "../knowledge/code-snippet-chunker.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { $ } from "bun";
-import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl } from "../jobs/workspace.ts";
+import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
@@ -1406,7 +1406,7 @@ export async function collectDiffContext(params: {
       );
 
       const deepenResult = await diffCommandRunner(
-        ["fetch", fetchRemote, `${baseRef}:refs/remotes/origin/${baseRef}`, `--deepen=${step}`],
+        ["fetch", fetchRemote, `+${baseRef}:refs/remotes/origin/${baseRef}`, `--deepen=${step}`],
         commandTimeoutMs,
       );
       if (deepenResult.timedOut) {
@@ -1446,7 +1446,7 @@ export async function collectDiffContext(params: {
       );
 
       const unshallowResult = await diffCommandRunner(
-        ["fetch", fetchRemote, `${baseRef}:refs/remotes/origin/${baseRef}`, "--unshallow"],
+        ["fetch", fetchRemote, `+${baseRef}:refs/remotes/origin/${baseRef}`, "--unshallow"],
         commandTimeoutMs,
       );
       if (unshallowResult.timedOut) {
@@ -2413,8 +2413,12 @@ export function createReviewHandler(deps: {
 
         // Fetch base branch so git diff origin/BASE...HEAD works.
         // Explicit refspec needed because --single-branch clones don't track other branches.
-        const fetchRemoteReview = await buildAuthFetchUrl(workspace.dir, workspace.token);
-        await $`git -C ${workspace.dir} fetch ${fetchRemoteReview} ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
+        await fetchRemoteTrackingBranch({
+          dir: workspace.dir,
+          branch: pr.base.ref,
+          token: workspace.token,
+          depth: 1,
+        });
 
         setReviewWorkPhase("load-config");
         // Load repo config (.kodiai.yml) with defaults
@@ -5613,8 +5617,12 @@ export function createReviewHandler(deps: {
                       });
                     }
 
-                    const fetchRemoteRetry = await buildAuthFetchUrl(retryWorkspace.dir, retryWorkspace.token);
-                    await $`git -C ${retryWorkspace.dir} fetch ${fetchRemoteRetry} ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
+                    await fetchRemoteTrackingBranch({
+                      dir: retryWorkspace.dir,
+                      branch: pr.base.ref,
+                      token: retryWorkspace.token,
+                      depth: 1,
+                    });
 
                     const retryInstruction = [
                       result.isTimeout
