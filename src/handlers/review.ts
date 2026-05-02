@@ -67,6 +67,7 @@ import {
 import {
   resolveReviewRoutingLineCount,
   resolveReviewTaskRouting,
+  resolveReviewMaxTurnsOverride,
 } from "../lib/review-routing.ts";
 import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
@@ -3615,6 +3616,12 @@ export function createReviewHandler(deps: {
           changedFileCount: changedFiles.length,
           linesChanged: reviewRoutingLinesChanged,
         });
+        const reviewMaxTurnsOverride = resolveReviewMaxTurnsOverride({
+          taskType: reviewRouting.taskType,
+          routingMaxTurnsOverride: reviewRouting.maxTurnsOverride,
+          timeoutRiskLevel: timeoutEstimate.riskLevel,
+          baseMaxTurns: config.maxTurns,
+        });
 
         logger.info(
           {
@@ -3626,7 +3633,8 @@ export function createReviewHandler(deps: {
             linesChanged: reviewRoutingLinesChanged,
             diffAnalysisLinesChanged,
             prApiLinesChanged,
-            maxTurns: reviewRouting.maxTurnsOverride ?? null,
+            maxTurns: reviewMaxTurnsOverride ?? null,
+            maxTurnsSource: reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
           },
           "Review routing decision",
         );
@@ -4007,7 +4015,7 @@ export function createReviewHandler(deps: {
           dynamicTimeoutSeconds: appliedTimeoutBudget
             ? appliedTimeoutBudget.totalTimeoutSeconds
             : undefined,
-          maxTurnsOverride: reviewRouting.maxTurnsOverride,
+          maxTurnsOverride: reviewMaxTurnsOverride,
         });
         executorResult = result;
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
@@ -5767,7 +5775,7 @@ export function createReviewHandler(deps: {
                       reviewOutputKey: retryReviewOutputKey,
                       deliveryId: retryDeliveryId,
                       dynamicTimeoutSeconds: retryTimeout,
-                      maxTurnsOverride: reviewRouting.maxTurnsOverride,
+                      maxTurnsOverride: reviewMaxTurnsOverride,
                       knowledgeStore,
                       totalFiles: timeoutTotalFiles,
                       enableCheckpointTool: retryCheckpointEnabled,
