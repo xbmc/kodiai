@@ -303,6 +303,15 @@ describe("formatPartialReviewComment", () => {
       reason: "workspace-prep-terminated",
     });
   });
+
+  test("classifies string exit code 143 as retry infrastructure failure", () => {
+    const err = Object.assign(new Error("process exited"), { exitCode: "143" });
+
+    expect(classifyRetryFailure(err)).toEqual({
+      category: "retry-infra-failure",
+      reason: "workspace-prep-terminated",
+    });
+  });
 });
 
 describe("formatContinuationRevisionSummary", () => {

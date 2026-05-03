@@ -853,6 +853,7 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
         },
       } as unknown as import("pino").Logger;
       const loggingStore = createKnowledgeStore({ sql, logger });
+      debugCalls.length = 0;
 
       await loggingStore.upsertContinuationFamilyState?.({
         familyKey,
@@ -876,10 +877,7 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
         supersededByAttemptId: null,
       });
 
-      const conflictDebugCalls = debugCalls.filter((call) =>
-        call.message === "Continuation family state update skipped due to ordinal conflict"
-      );
-      expect(conflictDebugCalls).toEqual([
+      expect(debugCalls).toEqual([
         {
           bindings: expect.objectContaining({
             familyKey,

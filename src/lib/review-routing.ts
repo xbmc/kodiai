@@ -81,16 +81,20 @@ export function hasSemanticReviewFanout(changedFiles: readonly string[] | undefi
   }
 
   return changedFiles.some((filePath) => {
-    const normalized = filePath.toLowerCase();
-    return normalized.includes("guilib/")
+    const normalized = filePath.toLowerCase().replace(/\\/g, "/");
+    const isGuiPath = normalized.includes("/guilib/") || normalized.startsWith("guilib/");
+
+    return isGuiPath
       || normalized.includes("guiwindow")
       || normalized.includes("guicontrol")
       || normalized.includes("buttoncontrol")
       || normalized.includes("windowmanager")
       || normalized.includes("playercorefactory")
-      || normalized.includes("event")
-      || normalized.includes("message")
-      || normalized.includes("dispatcher");
+      || (isGuiPath && (
+        normalized.includes("event")
+        || normalized.includes("message")
+        || normalized.includes("dispatcher")
+      ));
   });
 }
 

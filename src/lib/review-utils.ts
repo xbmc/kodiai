@@ -140,7 +140,7 @@ export function classifyRetryFailure(err: unknown): ReviewRetryFailureClassifica
     : undefined;
   const message = err instanceof Error ? err.message : String(err);
 
-  if (exitCode === 143 || /exit code 143|sigterm/i.test(message)) {
+  if (exitCode === 143 || exitCode === "143" || /exit code 143|sigterm/i.test(message)) {
     return { category: "retry-infra-failure", reason: "workspace-prep-terminated" };
   }
 

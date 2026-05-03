@@ -99,6 +99,19 @@ describe("review-routing", () => {
     })).toBe(SEMANTIC_FANOUT_REVIEW_MAX_TURNS);
   });
 
+  test("does not raise turn budget for unrelated event or message paths", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "low",
+      baseMaxTurns: 25,
+      changedFiles: [
+        "src/handlers/message-handler.ts",
+        "src/lib/event-emitter.ts",
+        "src/execution/dispatcher.ts",
+      ],
+    })).toBeUndefined();
+  });
+
   test("does not lower an explicitly higher repo maxTurns setting", () => {
     expect(resolveReviewMaxTurnsOverride({
       taskType: TASK_TYPES.REVIEW_FULL,

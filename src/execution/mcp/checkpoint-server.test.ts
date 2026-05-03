@@ -106,6 +106,44 @@ describe("createCheckpointServer", () => {
     });
   });
 
+  test("rejects checkpoints where fully reviewed files are missing from inspected files", async () => {
+    const calls: unknown[] = [];
+    const warnings: unknown[] = [];
+    const knowledgeStore = {
+      saveCheckpoint: (data: unknown) => {
+        calls.push(data);
+      },
+    };
+    const logger = {
+      warn: (...args: unknown[]) => warnings.push(args),
+    };
+
+    const server = createCheckpointServer(
+      knowledgeStore as never,
+      "review-key",
+      "acme/repo",
+      42,
+      12,
+      logger as never,
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      filesReviewed: ["src/a.ts", "src/b.ts"],
+      filesInspected: ["src/a.ts"],
+      findingCount: 1,
+      summaryDraft: "Partially inconsistent checkpoint",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      saved: false,
+      reason: "filesInspected must include every filesReviewed path",
+    });
+    expect(warnings).toHaveLength(1);
+  });
+
   test("waits for checkpoint persistence before reporting success", async () => {
     const deferred = createDeferred<void>();
     const knowledgeStore = {
