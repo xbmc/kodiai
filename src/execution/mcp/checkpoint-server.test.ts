@@ -74,6 +74,38 @@ describe("createCheckpointServer", () => {
     expect(parsed.totalFiles).toBe(12);
   });
 
+  test("tool handler persists inspected files separately from fully reviewed files", async () => {
+    const calls: unknown[] = [];
+    const knowledgeStore = {
+      saveCheckpoint: (data: unknown) => {
+        calls.push(data);
+      },
+    };
+
+    const server = createCheckpointServer(
+      knowledgeStore as never,
+      "review-key",
+      "acme/repo",
+      42,
+      12,
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      filesReviewed: [],
+      filesInspected: ["src/a.ts", "src/b.ts"],
+      findingCount: 0,
+      summaryDraft: "Still investigating",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(calls[0]).toMatchObject({
+      filesReviewed: [],
+      filesInspected: ["src/a.ts", "src/b.ts"],
+      totalFiles: 12,
+    });
+  });
+
   test("waits for checkpoint persistence before reporting success", async () => {
     const deferred = createDeferred<void>();
     const knowledgeStore = {

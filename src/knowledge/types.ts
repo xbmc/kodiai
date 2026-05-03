@@ -154,6 +154,7 @@ export type CheckpointRecord = {
   summaryDraft: string;
   totalFiles: number;
   partialCommentId?: number | null;
+  filesInspected?: string[];
   createdAt?: string;
 };
 

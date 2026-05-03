@@ -2492,6 +2492,7 @@ export function createMentionHandler(deps: {
             routingMaxTurnsOverride: explicitReviewRouting.maxTurnsOverride,
             timeoutRiskLevel: timeoutEstimate.riskLevel,
             baseMaxTurns: config.maxTurns,
+            changedFiles: promptChangedFiles,
           });
           logger.info(
             {

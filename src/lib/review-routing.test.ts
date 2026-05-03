@@ -6,6 +6,7 @@ import {
   resolveReviewRoutingLineCount,
   resolveReviewTaskRouting,
   resolveReviewMaxTurnsOverride,
+  SEMANTIC_FANOUT_REVIEW_MAX_TURNS,
   SMALL_DIFF_MAX_TURNS,
   HIGH_RISK_REVIEW_MAX_TURNS,
   MEDIUM_RISK_REVIEW_MAX_TURNS,
@@ -82,6 +83,20 @@ describe("review-routing", () => {
       timeoutRiskLevel: "high",
       baseMaxTurns: 25,
     })).toBe(HIGH_RISK_REVIEW_MAX_TURNS);
+  });
+
+  test("raises low-risk full-review turn budget for GUI control-flow semantic fan-out", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "low",
+      baseMaxTurns: 25,
+      changedFiles: [
+        "xbmc/guilib/GUIWindowManager.cpp",
+        "xbmc/guilib/GUIButtonControl.cpp",
+        "xbmc/guilib/GUIControl.cpp",
+        "xbmc/guilib/GUIControl.h",
+      ],
+    })).toBe(SEMANTIC_FANOUT_REVIEW_MAX_TURNS);
   });
 
   test("does not lower an explicitly higher repo maxTurns setting", () => {

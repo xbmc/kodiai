@@ -119,6 +119,8 @@ import {
   buildReviewDetailsMarker,
   parseSeverityCountsFromBody,
   formatReviewDetailsSummary,
+  classifyRetryFailure,
+  resolveReviewDetailsLineCounts,
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
   normalizeSeverity,
@@ -3621,6 +3623,7 @@ export function createReviewHandler(deps: {
           routingMaxTurnsOverride: reviewRouting.maxTurnsOverride,
           timeoutRiskLevel: timeoutEstimate.riskLevel,
           baseMaxTurns: config.maxTurns,
+          changedFiles,
         });
 
         logger.info(
@@ -4572,9 +4575,13 @@ export function createReviewHandler(deps: {
           minor: processedFindings.filter((finding) => finding.severity === "minor").length,
         };
         const suppressionsApplied = processedFindings.filter((finding) => finding.suppressed).length;
-        const linesChanged =
-          (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
-          (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
+        const reviewDetailsLineCounts = resolveReviewDetailsLineCounts({
+          diffLinesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
+          diffLinesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
+          prApiLinesAdded: pr.additions ?? 0,
+          prApiLinesRemoved: pr.deletions ?? 0,
+        });
+        const linesChanged = reviewDetailsLineCounts.linesAdded + reviewDetailsLineCounts.linesRemoved;
 
         const reviewCompletedAt = new Date().toISOString();
         let canonicalReviewDetailsBody: string | null = null;
@@ -4586,8 +4593,8 @@ export function createReviewHandler(deps: {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
             filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
-            linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
-            linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
+            linesAdded: reviewDetailsLineCounts.linesAdded,
+            linesRemoved: reviewDetailsLineCounts.linesRemoved,
             findingCounts,
             largePRTriage: tieredFiles.isLargePR ? {
               fullCount: tieredFiles.full.length,
@@ -4612,6 +4619,7 @@ export function createReviewHandler(deps: {
             }),
             timeoutProgress: params?.timeoutProgress,
             timeoutBudget: params?.timeoutBudget,
+            lineCountSource: reviewDetailsLineCounts.source,
           });
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
@@ -5176,6 +5184,10 @@ export function createReviewHandler(deps: {
               ...(checkpoint?.filesReviewed ?? []),
               ...timeoutInlineFindings.map((finding) => finding.filePath),
             ]));
+            const timeoutInspectedFiles = Array.from(new Set([
+              ...timeoutReviewedFiles,
+              ...(checkpoint?.filesInspected ?? []),
+            ]));
             const timeoutFindingCount = Math.max(
               checkpoint?.findingCount ?? 0,
               timeoutInlineFindings.length,
@@ -5325,7 +5337,7 @@ export function createReviewHandler(deps: {
               : summaryDraftBase;
             fallbackRetryState = retryState;
             const timeoutReviewDetails = {
-              analyzedFiles: timeoutReviewedFiles.length,
+              analyzedFiles: timeoutInspectedFiles.length,
               totalFiles: timeoutTotalFiles,
               findingCount: timeoutFindingCount,
               retryState,
@@ -5368,6 +5380,7 @@ export function createReviewHandler(deps: {
                   repo: `${apiOwner}/${apiRepo}`,
                   prNumber: pr.number,
                   filesReviewed: timeoutReviewedFiles,
+                  filesInspected: timeoutInspectedFiles,
                   findingCount: timeoutFindingCount,
                   summaryDraft,
                   totalFiles: timeoutTotalFiles,
@@ -5387,6 +5400,7 @@ export function createReviewHandler(deps: {
                   boundedReason: timeoutFirstPass.boundedReason,
                   evidenceSource: timeoutFirstPass.evidenceSource,
                   coveredFiles: timeoutFirstPass.coveredScope?.reviewedFiles ?? null,
+                  inspectedFiles: timeoutFirstPass.inspectedScope?.inspectedFiles ?? timeoutInspectedFiles.length,
                   remainingFiles: timeoutFirstPass.remainingScope?.remainingFiles ?? null,
                   findingCount: timeoutFindingCount,
                   hasPartialResults,
@@ -5492,6 +5506,7 @@ export function createReviewHandler(deps: {
                     executionConclusion,
                     hadInlineOutput: hasPublishedInlines,
                     checkpointFilesReviewed: timeoutReviewedFiles.length,
+                    checkpointFilesInspected: timeoutInspectedFiles.length,
                     checkpointFindingCount: timeoutFindingCount,
                     checkpointTotalFiles: timeoutTotalFiles,
                     partialCommentId,
@@ -5563,6 +5578,7 @@ export function createReviewHandler(deps: {
                     executionConclusion,
                     hadInlineOutput: hasPublishedInlines,
                     checkpointFilesReviewed: timeoutReviewedFiles.length,
+                    checkpointFilesInspected: timeoutInspectedFiles.length,
                     checkpointFindingCount: timeoutFindingCount,
                     checkpointTotalFiles: timeoutTotalFiles,
                     partialCommentId,
@@ -6188,6 +6204,7 @@ export function createReviewHandler(deps: {
                         err: retryErr,
                         deliveryId: retryDeliveryId,
                         prNumber: pr.number,
+                        ...classifyRetryFailure(retryErr),
                       },
                       "Retry failed with error",
                     );
@@ -6229,7 +6246,7 @@ export function createReviewHandler(deps: {
                   });
                   reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId);
                   logger.error(
-                    { err, deliveryId: event.id, prNumber: pr.number },
+                    { err, deliveryId: event.id, prNumber: pr.number, ...classifyRetryFailure(err) },
                     "Failed to enqueue retry job",
                   );
                 });

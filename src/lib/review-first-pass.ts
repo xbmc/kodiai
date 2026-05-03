@@ -8,6 +8,11 @@ export type ReviewFirstPassScope = {
   totalFiles: number;
 };
 
+export type ReviewFirstPassInspectedScope = {
+  inspectedFiles: number;
+  totalFiles: number;
+};
+
 export type ReviewFirstPassRemainingScope = {
   remainingFiles: number;
   totalFiles: number;
@@ -23,6 +28,7 @@ export type ReviewFirstPassPayload = {
   boundedReason: ReviewFirstPassBoundedReason;
   evidenceSource: ReviewFirstPassEvidenceSource;
   coveredScope?: ReviewFirstPassScope;
+  inspectedScope?: ReviewFirstPassInspectedScope;
   remainingScope?: ReviewFirstPassRemainingScope;
   findingCount?: number;
   publication: ReviewFirstPassPublicationState;
@@ -82,6 +88,7 @@ function resolveEvidenceSource(params: {
 
 function normalizeCheckpointScope(checkpoint: CheckpointRecord | null | undefined): {
   coveredScope?: ReviewFirstPassScope;
+  inspectedScope?: ReviewFirstPassInspectedScope;
   remainingScope?: ReviewFirstPassRemainingScope;
 } {
   if (!checkpoint) {
@@ -89,12 +96,17 @@ function normalizeCheckpointScope(checkpoint: CheckpointRecord | null | undefine
   }
 
   const reviewedFiles = checkpoint.filesReviewed.length;
+  const inspectedFiles = Array.isArray(checkpoint.filesInspected)
+    ? checkpoint.filesInspected.length
+    : reviewedFiles;
   const totalFiles = checkpoint.totalFiles;
 
   if (
     !Array.isArray(checkpoint.filesReviewed) ||
+    (checkpoint.filesInspected !== undefined && !Array.isArray(checkpoint.filesInspected)) ||
     !isFiniteNonNegativeNumber(totalFiles) ||
-    reviewedFiles > totalFiles
+    reviewedFiles > totalFiles ||
+    inspectedFiles > totalFiles
   ) {
     return {};
   }
@@ -104,6 +116,12 @@ function normalizeCheckpointScope(checkpoint: CheckpointRecord | null | undefine
       reviewedFiles,
       totalFiles,
     },
+    inspectedScope: inspectedFiles > reviewedFiles
+      ? {
+          inspectedFiles,
+          totalFiles,
+        }
+      : undefined,
     remainingScope: {
       remainingFiles: totalFiles - reviewedFiles,
       totalFiles,
@@ -147,6 +165,7 @@ function resolveScope(params: {
   boundedness: ReviewBoundednessContract | null | undefined;
 }): {
   coveredScope?: ReviewFirstPassScope;
+  inspectedScope?: ReviewFirstPassInspectedScope;
   remainingScope?: ReviewFirstPassRemainingScope;
 } {
   const checkpointScope = normalizeCheckpointScope(params.checkpoint);
@@ -209,6 +228,7 @@ export function normalizeReviewFirstPass(params: {
     boundedReason,
     evidenceSource,
     coveredScope: scope.coveredScope,
+    inspectedScope: scope.inspectedScope,
     remainingScope: scope.remainingScope,
     findingCount: resolveFindingCount(params.checkpoint),
     publication,

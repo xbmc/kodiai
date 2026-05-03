@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { formatContinuationRevisionSummary, formatPartialReviewComment } from "./partial-review-formatter.ts";
-import { formatReviewDetailsSummary } from "./review-utils.ts";
+import {
+  classifyRetryFailure,
+  formatReviewDetailsSummary,
+  resolveReviewDetailsLineCounts,
+} from "./review-utils.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 
@@ -11,6 +15,19 @@ const TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
   coveredScope: { reviewedFiles: 4, totalFiles: 12 },
   remainingScope: { remainingFiles: 8, totalFiles: 12 },
   findingCount: 2,
+  publication: { eligible: true, hasPublishedOutput: false },
+  continuationPending: true,
+  zeroEvidenceFailure: false,
+};
+
+const MAX_TURNS_WITH_INSPECTION_FIRST_PASS: ReviewFirstPassPayload = {
+  state: "bounded-first-pass",
+  boundedReason: "max-turns",
+  evidenceSource: "checkpoint",
+  coveredScope: { reviewedFiles: 0, totalFiles: 4 },
+  inspectedScope: { inspectedFiles: 4, totalFiles: 4 },
+  remainingScope: { remainingFiles: 4, totalFiles: 4 },
+  findingCount: 0,
   publication: { eligible: true, hasPublishedOutput: false },
   continuationPending: true,
   zeroEvidenceFailure: false,
@@ -239,6 +256,52 @@ describe("formatPartialReviewComment", () => {
     expect(details).toContain("- Remaining scope: not confirmed from structured evidence");
     expect(details).toContain("- Continuation state: follow-up review pending; remaining scope still unconfirmed");
     expect(details).not.toContain("- Covered scope:");
+  });
+
+  test("Review Details distinguishes checkpoint-covered files from inspected files before max-turns", () => {
+    const details = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      reviewFirstPass: MAX_TURNS_WITH_INSPECTION_FIRST_PASS,
+      timeoutProgress: {
+        analyzedFiles: 4,
+        totalFiles: 4,
+        findingCount: 0,
+        retryState: "scheduled reduced-scope retry",
+      },
+    });
+
+    expect(details).toContain("- Covered scope: 0/4 changed files");
+    expect(details).toContain("- Inspected before max-turns: 4/4 changed files");
+    expect(details).toContain("- Remaining scope: 4/4 changed files");
+  });
+
+  test("Review Details reports PR API line counts when local diff stats degraded to zero", () => {
+    const counts = resolveReviewDetailsLineCounts({
+      diffLinesAdded: 0,
+      diffLinesRemoved: 0,
+      prApiLinesAdded: 62,
+      prApiLinesRemoved: 3,
+    });
+
+    expect(counts).toEqual({ linesAdded: 62, linesRemoved: 3, source: "github-pr-api-fallback" });
+
+    const details = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      linesAdded: counts.linesAdded,
+      linesRemoved: counts.linesRemoved,
+      lineCountSource: counts.source,
+    });
+
+    expect(details).toContain("- Lines changed: +62 -3 (GitHub PR API fallback; local diff stats unavailable)");
+  });
+
+  test("classifies SIGTERM retry workspace failures as retry infrastructure failures", () => {
+    const err = Object.assign(new Error("Failed with exit code 143"), { exitCode: 143 });
+
+    expect(classifyRetryFailure(err)).toEqual({
+      category: "retry-infra-failure",
+      reason: "workspace-prep-terminated",
+    });
   });
 });
 

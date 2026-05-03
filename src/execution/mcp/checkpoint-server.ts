@@ -22,6 +22,10 @@ export function createCheckpointServer(
           filesReviewed: z
             .array(z.string())
             .describe("File paths that have been fully reviewed so far"),
+          filesInspected: z
+            .array(z.string())
+            .optional()
+            .describe("File paths inspected so far, including files not yet fully reviewed"),
           findingCount: z
             .number()
             .describe("Total number of findings generated so far"),
@@ -31,7 +35,7 @@ export function createCheckpointServer(
               "Draft summary of findings so far (will be used as partial review body)",
             ),
         },
-        async ({ filesReviewed, findingCount, summaryDraft }) => {
+        async ({ filesReviewed, filesInspected, findingCount, summaryDraft }) => {
           try {
             if (!knowledgeStore.saveCheckpoint) {
               logger?.warn(
@@ -56,6 +60,7 @@ export function createCheckpointServer(
               repo,
               prNumber,
               filesReviewed,
+              filesInspected,
               findingCount,
               summaryDraft,
               totalFiles,
