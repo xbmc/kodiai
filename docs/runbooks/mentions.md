@@ -195,6 +195,15 @@ ContainerAppConsoleLogs_CL
 | order by TimeGenerated desc
 ```
 
+```sh
+# Claude usage-limit mention failures and deduped error comments
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where Log_s has_any ("failureSubtype\":\"usage_limit", "errorCategory\":\"usage_limit", "kodiai:error:usage-limit")
+| project TimeGenerated, RevisionName_s, Log_s
+| order by TimeGenerated desc
+```
+
 ## 3) Confirm Mention Detection + Gate Decisions
 
 For the same `deliveryId`, search for mention handler logs.
