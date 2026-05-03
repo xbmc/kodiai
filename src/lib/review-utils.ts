@@ -97,6 +97,56 @@ export type TimeoutBudgetDetails = {
   totalTimeoutSeconds: number;
 };
 
+export type ReviewDetailsLineCountSource = "local-diff" | "github-pr-api-fallback";
+
+export type ReviewRetryFailureClassification = {
+  category: "retry-infra-failure" | "retry-execution-failure";
+  reason: "workspace-prep-terminated" | "unknown";
+};
+
+export function resolveReviewDetailsLineCounts(params: {
+  diffLinesAdded: number;
+  diffLinesRemoved: number;
+  prApiLinesAdded?: number;
+  prApiLinesRemoved?: number;
+}): {
+  linesAdded: number;
+  linesRemoved: number;
+  source: ReviewDetailsLineCountSource;
+} {
+  const diffLinesAdded = Math.max(0, params.diffLinesAdded);
+  const diffLinesRemoved = Math.max(0, params.diffLinesRemoved);
+  const prApiLinesAdded = Math.max(0, params.prApiLinesAdded ?? 0);
+  const prApiLinesRemoved = Math.max(0, params.prApiLinesRemoved ?? 0);
+
+  if (diffLinesAdded + diffLinesRemoved === 0 && prApiLinesAdded + prApiLinesRemoved > 0) {
+    return {
+      linesAdded: prApiLinesAdded,
+      linesRemoved: prApiLinesRemoved,
+      source: "github-pr-api-fallback",
+    };
+  }
+
+  return {
+    linesAdded: diffLinesAdded,
+    linesRemoved: diffLinesRemoved,
+    source: "local-diff",
+  };
+}
+
+export function classifyRetryFailure(err: unknown): ReviewRetryFailureClassification {
+  const exitCode = typeof err === "object" && err !== null
+    ? (err as { exitCode?: unknown }).exitCode
+    : undefined;
+  const message = err instanceof Error ? err.message : String(err);
+
+  if (exitCode === 143 || /exit code 143|sigterm/i.test(message)) {
+    return { category: "retry-infra-failure", reason: "workspace-prep-terminated" };
+  }
+
+  return { category: "retry-execution-failure", reason: "unknown" };
+}
+
 function formatBoundedReason(reason: ReviewFirstPassPayload["boundedReason"]): string {
   if (reason === "max-turns") {
     return "max-turns";
@@ -241,6 +291,9 @@ export function describeReviewFirstPass(firstPass: ReviewFirstPassPayload): {
     `- Bounded first-pass: ${reasonLabel} via ${evidenceLabel}`,
     ...(firstPass.coveredScope
       ? [`- Covered scope: ${firstPass.coveredScope.reviewedFiles}/${firstPass.coveredScope.totalFiles} changed files`]
+      : []),
+    ...(firstPass.inspectedScope
+      ? [`- Inspected before ${reasonLabel}: ${firstPass.inspectedScope.inspectedFiles}/${firstPass.inspectedScope.totalFiles} changed files`]
       : []),
     ...(firstPass.remainingScope
       ? [`- Remaining scope: ${firstPass.remainingScope.remainingFiles}/${firstPass.remainingScope.totalFiles} changed files`]
@@ -562,6 +615,7 @@ export function formatReviewDetailsSummary(params: {
   phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null;
   timeoutProgress?: TimeoutReviewDetailsProgress | null;
   timeoutBudget?: TimeoutBudgetDetails | null;
+  lineCountSource?: ReviewDetailsLineCountSource;
   completedAt?: string;
 }): string {
   const {
@@ -584,6 +638,7 @@ export function formatReviewDetailsSummary(params: {
     phaseTimingSummary,
     timeoutProgress,
     timeoutBudget,
+    lineCountSource = "local-diff",
   } = params;
 
   const formatProfileLine = (label: string, profile: ResolvedReviewProfile): string => {
@@ -627,13 +682,17 @@ export function formatReviewDetailsSummary(params: {
       ]
     : [];
 
+  const lineCountText = lineCountSource === "github-pr-api-fallback"
+    ? `- Lines changed: +${linesAdded} -${linesRemoved} (GitHub PR API fallback; local diff stats unavailable)`
+    : `- Lines changed: +${linesAdded} -${linesRemoved}`;
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
     ...primaryReviewDetailLines,
     ...timeoutProgressLines,
-    `- Lines changed: +${linesAdded} -${linesRemoved}`,
+    lineCountText,
     ...(hasBoundedProfileDetails && reviewBoundedness
       ? [
           formatProfileLine("Requested profile", reviewBoundedness.requestedProfile),

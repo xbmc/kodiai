@@ -5,6 +5,7 @@ export const SMALL_DIFF_MAX_LINES = 20;
 export const SMALL_DIFF_MAX_TURNS = 8;
 export const MEDIUM_RISK_REVIEW_MAX_TURNS = 50;
 export const HIGH_RISK_REVIEW_MAX_TURNS = 75;
+export const SEMANTIC_FANOUT_REVIEW_MAX_TURNS = MEDIUM_RISK_REVIEW_MAX_TURNS;
 
 export type ReviewTimeoutRiskLevel = "low" | "medium" | "high";
 
@@ -74,11 +75,31 @@ export function resolveReviewTaskRouting(params: {
   };
 }
 
+export function hasSemanticReviewFanout(changedFiles: readonly string[] | undefined): boolean {
+  if (!changedFiles || changedFiles.length === 0) {
+    return false;
+  }
+
+  return changedFiles.some((filePath) => {
+    const normalized = filePath.toLowerCase();
+    return normalized.includes("guilib/")
+      || normalized.includes("guiwindow")
+      || normalized.includes("guicontrol")
+      || normalized.includes("buttoncontrol")
+      || normalized.includes("windowmanager")
+      || normalized.includes("playercorefactory")
+      || normalized.includes("event")
+      || normalized.includes("message")
+      || normalized.includes("dispatcher");
+  });
+}
+
 export function resolveReviewMaxTurnsOverride(params: {
   taskType: string;
   routingMaxTurnsOverride?: number;
   timeoutRiskLevel: ReviewTimeoutRiskLevel;
   baseMaxTurns: number;
+  changedFiles?: readonly string[];
 }): number | undefined {
   if (params.routingMaxTurnsOverride !== undefined) {
     return params.routingMaxTurnsOverride;
@@ -90,8 +111,8 @@ export function resolveReviewMaxTurnsOverride(params: {
 
   const scaledMaxTurns = params.timeoutRiskLevel === "high"
     ? HIGH_RISK_REVIEW_MAX_TURNS
-    : params.timeoutRiskLevel === "medium"
-      ? MEDIUM_RISK_REVIEW_MAX_TURNS
+    : params.timeoutRiskLevel === "medium" || hasSemanticReviewFanout(params.changedFiles)
+      ? SEMANTIC_FANOUT_REVIEW_MAX_TURNS
       : params.baseMaxTurns;
 
   return scaledMaxTurns > params.baseMaxTurns ? scaledMaxTurns : undefined;

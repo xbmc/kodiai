@@ -810,6 +810,8 @@ test("buildReviewPrompt requires an early checkpoint after planning review order
 
   expect(prompt).toContain("Before deep inspection, call the save_review_checkpoint tool once after you choose the initial review order.");
   expect(prompt).toContain("Use findingCount: 0 for this planning checkpoint.");
+  expect(prompt).toContain("- filesInspected: []");
+  expect(prompt).toContain("- filesInspected: list of changed file paths you have inspected, even if not fully reviewed yet");
   expect(prompt).toContain("summaryDraft should describe the planned first-pass focus and the highest-risk files selected first.");
   expect(prompt).toContain("Then continue updating the checkpoint after reviewing every 3-5 files.");
 });

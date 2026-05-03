@@ -47,6 +47,7 @@ export type ResilienceEventRecord = {
   hadInlineOutput?: boolean;
 
   checkpointFilesReviewed?: number;
+  checkpointFilesInspected?: number;
   checkpointFindingCount?: number;
   checkpointTotalFiles?: number;
   partialCommentId?: number;

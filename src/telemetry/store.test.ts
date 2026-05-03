@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import postgres from "postgres";
 import { createTelemetryStore } from "./store.ts";
+import { runMigrations } from "../db/migrate.ts";
 import type { TelemetryStore } from "./types.ts";
 import type { PromptSectionRecord, ResilienceEventRecord, RateLimitEventRecord } from "./types.ts";
 import type { Sql } from "../db/client.ts";
@@ -122,6 +123,7 @@ async function truncateAll(): Promise<void> {
 describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
   beforeAll(async () => {
     sql = postgres(TEST_DB_URL!, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+    await runMigrations(sql);
     store = createTelemetryStore({ sql, logger: mockLogger });
   });
 
@@ -407,6 +409,7 @@ describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
         reviewOutputKey: "rok-1",
         executionConclusion: "timeout",
         checkpointFilesReviewed: 3,
+        checkpointFilesInspected: 5,
         checkpointFindingCount: 2,
         checkpointTotalFiles: 10,
         partialCommentId: 123,
@@ -430,6 +433,7 @@ describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
         eventType: "pull_request.opened",
         executionConclusion: "timeout_partial",
         checkpointFilesReviewed: 4,
+        checkpointFilesInspected: 6,
       }),
     );
 
@@ -443,6 +447,7 @@ describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
     expect(row!.kind).toBe("timeout");
     expect(row!.execution_conclusion).toBe("timeout_partial");
     expect(row!.checkpoint_files_reviewed).toBe(4);
+    expect(row!.checkpoint_files_inspected).toBe(6);
     expect(row!.created_at).toBeTruthy();
   });
 

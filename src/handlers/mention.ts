@@ -1089,7 +1089,11 @@ export function createMentionHandler(deps: {
     // Polite ask: "can you review", "can you do a review", "can you retry the review"
     const reviewAsk = new RegExp(`^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?${reviewCommand}\\b`);
 
-    return reviewDirect.test(normalized) || reviewAsk.test(normalized);
+    // Follow-up after a PR update: "better now?", "fixed now?", "can you check again?".
+    // On PR surfaces these are operator shorthand for rerunning the review after addressing feedback.
+    const reviewFollowUp = /^(?:(?:is\s+)?(?:it\s+)?better\s+now|(?:is\s+)?(?:it\s+)?fixed\s+now|(?:how\s+about|what\s+about)\s+now|(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:check|look|take\s+a\s+look)\s+again)\??$/;
+
+    return reviewDirect.test(normalized) || reviewAsk.test(normalized) || reviewFollowUp.test(normalized);
   }
 
   function deriveMentionAdmissionPolicy(params: {
@@ -2492,6 +2496,7 @@ export function createMentionHandler(deps: {
             routingMaxTurnsOverride: explicitReviewRouting.maxTurnsOverride,
             timeoutRiskLevel: timeoutEstimate.riskLevel,
             baseMaxTurns: config.maxTurns,
+            changedFiles: promptChangedFiles,
           });
           logger.info(
             {

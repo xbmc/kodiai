@@ -26,6 +26,7 @@ import type {
 
 type CheckpointData = {
   filesReviewed: string[];
+  filesInspected?: string[];
   findingCount: number;
   summaryDraft: string;
   totalFiles: number;
@@ -606,6 +607,7 @@ export function createKnowledgeStore(opts: {
     async saveCheckpoint(data: CheckpointRecord): Promise<void> {
       const checkpointData: CheckpointData = {
         filesReviewed: data.filesReviewed,
+        filesInspected: data.filesInspected,
         findingCount: data.findingCount,
         summaryDraft: data.summaryDraft,
         totalFiles: data.totalFiles,
@@ -654,6 +656,7 @@ export function createKnowledgeStore(opts: {
         repo: row.repo,
         prNumber: row.pr_number,
         filesReviewed: Array.isArray(parsed.filesReviewed) ? parsed.filesReviewed : [],
+        filesInspected: Array.isArray(parsed.filesInspected) ? parsed.filesInspected : undefined,
         findingCount: typeof parsed.findingCount === "number" ? parsed.findingCount : 0,
         summaryDraft: typeof parsed.summaryDraft === "string" ? parsed.summaryDraft : "",
         totalFiles: typeof parsed.totalFiles === "number" ? parsed.totalFiles : 0,
