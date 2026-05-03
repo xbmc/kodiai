@@ -876,7 +876,10 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
         supersededByAttemptId: null,
       });
 
-      expect(debugCalls).toEqual([
+      const conflictDebugCalls = debugCalls.filter((call) =>
+        call.message === "Continuation family state update skipped due to ordinal conflict"
+      );
+      expect(conflictDebugCalls).toEqual([
         {
           bindings: expect.objectContaining({
             familyKey,

@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import postgres from "postgres";
 import { createTelemetryStore } from "./store.ts";
+import { runMigrations } from "../db/migrate.ts";
 import type { TelemetryStore } from "./types.ts";
 import type { PromptSectionRecord, ResilienceEventRecord, RateLimitEventRecord } from "./types.ts";
 import type { Sql } from "../db/client.ts";
@@ -122,6 +123,7 @@ async function truncateAll(): Promise<void> {
 describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
   beforeAll(async () => {
     sql = postgres(TEST_DB_URL!, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+    await runMigrations(sql);
     store = createTelemetryStore({ sql, logger: mockLogger });
   });
 

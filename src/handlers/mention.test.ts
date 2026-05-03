@@ -11054,6 +11054,124 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("@kodiai better now? after PR updates stays on the explicit review path", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\n",
+    );
+
+    const prNumber = 105;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    let capturedTaskType: string | undefined;
+    let capturedReviewOutputKey: string | undefined;
+    let capturedTriggerBody: string | undefined;
+    let capturedQueueLane: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: JobQueueContext,
+      ) => {
+        capturedQueueLane = context?.lane;
+        return fn(createQueueRunMetadata());
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { taskType?: string; reviewOutputKey?: string; triggerBody?: string }) => {
+          capturedTaskType = ctx.taskType;
+          capturedReviewOutputKey = ctx.reviewOutputKey;
+          capturedTriggerBody = ctx.triggerBody;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-better-now",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai better now?",
+      }),
+    );
+
+    expect(capturedQueueLane).toBe("interactive-review");
+    expect(capturedTaskType).toBe("review.small-diff");
+    expect(capturedReviewOutputKey).toBeDefined();
+    expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
+    expect(capturedTriggerBody).toBe("better now?");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("@kodiai review triggers executor instead of delegating to aireview team", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
