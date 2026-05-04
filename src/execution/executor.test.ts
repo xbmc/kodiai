@@ -1643,14 +1643,13 @@ test("prepareAgentWorkspace writes a review bundle transport for repos with trac
   }
 });
 
-test("prepareAgentWorkspace unshallows PR workspaces before writing a review bundle transport", async () => {
+test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "kodiai-shallow-bundle-"));
   const bareRepoDir = join(tempRoot, "origin.git");
   const seedRepoDir = join(tempRoot, "seed");
   const shallowRepoDir = join(tempRoot, "shallow");
   const workspaceDir = await mkdtemp(join(tmpdir(), "kodiai-agent-shallow-workspace-"));
-  const cloneCheckDir = await mkdtemp(join(tmpdir(), "kodiai-bundle-clone-check-"));
-  const cleanupDirs = [tempRoot, workspaceDir, cloneCheckDir];
+  const cleanupDirs = [tempRoot, workspaceDir];
 
   try {
     await $`git init --bare ${bareRepoDir}`.quiet();
@@ -1682,35 +1681,26 @@ test("prepareAgentWorkspace unshallows PR workspaces before writing a review bun
       prompt: "Review this PR",
       model: "claude-sonnet-4-5-20250929",
       maxTurns: 25,
-      allowedTools: ["Read", "Grep", "Glob"],
+      allowedTools: ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git status:*)"],
       taskType: "review.full",
       mcpServerNames: ["github_comment"],
     }) as { repoCwd?: string; repoBundlePath?: string };
 
-    expect(result.repoCwd).toBeUndefined();
-    expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+    expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
+    expect(result.repoBundlePath).toBeUndefined();
+    expect(result.repoCwd).toBe(join(workspaceDir, "repo"));
 
     const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
     const agentConfig = JSON.parse(rawAgentConfig) as {
-      repoTransport?: {
-        kind?: string;
-        bundlePath?: string;
-        headRef?: string;
-        baseRef?: string;
-        originUrl?: string;
-      };
+      repoCwd?: string;
+      repoTransport?: unknown;
     };
 
-    expect(agentConfig.repoTransport).toEqual({
-      kind: "review-bundle",
-      bundlePath: join(workspaceDir, "repo.bundle"),
-      headRef: "pr-mention",
-      baseRef: "master",
-      originUrl: "file://" + bareRepoDir,
-    });
-
-    await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
-    expect((await $`git -C ${cloneCheckDir} diff origin/master...HEAD --stat`.quiet().text())).toContain("feature.txt");
+    expect(agentConfig.repoTransport).toBeUndefined();
+    expect(agentConfig.repoCwd).toBe(join(workspaceDir, "repo"));
+    expect((agentConfig as { allowedTools?: string[] }).allowedTools).toEqual(["Read", "Grep", "Glob"]);
+    expect(await readFile(join(workspaceDir, "repo", "feature.txt"), "utf-8")).toBe("one\ntwo\npr\n");
+    await expect(stat(join(workspaceDir, "repo", ".git"))).rejects.toThrow();
   } finally {
     await Promise.all(cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })));
   }

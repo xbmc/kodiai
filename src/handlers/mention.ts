@@ -953,6 +953,12 @@ export function createMentionHandler(deps: {
     surface: MentionEvent["surface"];
     token?: string;
     fallbackFileProvider?: () => Promise<string[]>;
+    fallbackDiffProvider?: () => Promise<Array<{
+      filename: string;
+      additions?: number | null;
+      deletions?: number | null;
+      patch?: string | null;
+    }>>;
   }): Promise<{
     changedFiles: string[];
     numstatLines: string[];
@@ -971,6 +977,7 @@ export function createMentionHandler(deps: {
       },
       token: input.token,
       fallbackFileProvider: input.fallbackFileProvider,
+      fallbackDiffProvider: input.fallbackDiffProvider,
     });
 
     return {
@@ -2450,14 +2457,19 @@ export function createMentionHandler(deps: {
                 baseRef: mention.baseRef,
                 surface: mention.surface,
                 token: workspace.token,
-                fallbackFileProvider: async () => {
+                fallbackDiffProvider: async () => {
                   const listFilesResponse = await octokit.rest.pulls.listFiles({
                     owner: mention.owner,
                     repo: mention.repo,
                     pull_number: explicitReviewPrNumber,
                     per_page: 100,
                   });
-                  return listFilesResponse.data.map((file) => file.filename);
+                  return listFilesResponse.data.map((file) => ({
+                    filename: file.filename,
+                    additions: file.additions,
+                    deletions: file.deletions,
+                    patch: file.patch,
+                  }));
                 },
               })
             : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
