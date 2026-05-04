@@ -246,6 +246,21 @@ async function buildGitRepoTransport(params: {
   };
 }
 
+async function buildGitArchiveTransport(params: {
+  sourceRepoDir: string;
+  workspaceDir: string;
+}): Promise<{ archivePath: string; repoTransport: RepoTransport }> {
+  const archivePath = join(params.workspaceDir, "repo.tar");
+  await $`git -C ${params.sourceRepoDir} archive --format=tar -o ${archivePath} HEAD`.quiet();
+  return {
+    archivePath,
+    repoTransport: {
+      kind: "working-tree-archive",
+      archivePath,
+    },
+  };
+}
+
 async function hasTrackedSymlinks(repoDir: string): Promise<boolean> {
   const result = await $`git -C ${repoDir} ls-files -s`.quiet().nothrow();
   if (result.exitCode !== 0) {
@@ -296,12 +311,12 @@ export async function prepareAgentWorkspace(params: {
     if (sourceIsShallow) {
       const sourceHasTrackedSymlinks = await hasTrackedSymlinks(params.sourceRepoDir);
       if (sourceHasTrackedSymlinks) {
-        const preparedRepo = await buildGitRepoTransport({
+        const preparedRepo = await buildGitArchiveTransport({
           sourceRepoDir: params.sourceRepoDir,
           workspaceDir: params.workspaceDir,
         });
-        repoBundlePath = preparedRepo.repoBundlePath;
         repoTransport = preparedRepo.repoTransport;
+        allowedTools = filterGitToolsForSnapshot(params.allowedTools);
       } else {
         repoCwd = await exportGitWorkingTreeSnapshot({
           sourceRepoDir: params.sourceRepoDir,

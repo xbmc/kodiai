@@ -13,7 +13,7 @@
 
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from "@anthropic-ai/claude-agent-sdk";
-import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile, mkdtemp } from "node:fs/promises";
+import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile, mkdtemp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
@@ -168,6 +168,12 @@ async function materializeRepoTransport(transport: RepoTransport): Promise<strin
     return repoDir;
   }
 
+  if (transport.kind === "working-tree-archive") {
+    await mkdir(repoDir, { recursive: true });
+    await $`tar -xf ${transport.archivePath} -C ${repoDir}`.quiet();
+    return repoDir;
+  }
+
   await $`git clone ${transport.bundlePath} ${repoDir}`.quiet();
   if (transport.originUrl) {
     await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
@@ -266,7 +272,9 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       await appendDiagnostic(
         repoTransport.kind === "review-bundle"
           ? `repo transport kind=${repoTransport.kind} headRef=${repoTransport.headRef} baseRef=${repoTransport.baseRef} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`
-          : `repo transport kind=${repoTransport.kind} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`,
+          : repoTransport.kind === "working-tree-archive"
+            ? `repo transport kind=${repoTransport.kind}`
+            : `repo transport kind=${repoTransport.kind} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`,
       );
     }
 
@@ -278,7 +286,9 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       await appendDiagnostic(
         repoTransport.kind === "review-bundle"
           ? `materialized review bundle headRef=${repoTransport.headRef} baseRef=${repoTransport.baseRef}`
-          : "materialized repo bundle kind=bundle-all",
+          : repoTransport.kind === "working-tree-archive"
+            ? "materialized repo archive kind=working-tree-archive"
+            : "materialized repo bundle kind=bundle-all",
       );
     }
 

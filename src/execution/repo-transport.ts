@@ -12,7 +12,12 @@ export type ReviewBundleRepoTransport = {
   originUrl?: string;
 };
 
-export type RepoTransport = BundleAllRepoTransport | ReviewBundleRepoTransport;
+export type WorkingTreeArchiveRepoTransport = {
+  kind: "working-tree-archive";
+  archivePath: string;
+};
+
+export type RepoTransport = BundleAllRepoTransport | ReviewBundleRepoTransport | WorkingTreeArchiveRepoTransport;
 
 function readRequiredString(
   value: unknown,
@@ -71,6 +76,13 @@ export function resolveRepoTransport(config: {
       headRef: readRequiredString(raw.headRef, "headRef", kind),
       baseRef: readRequiredString(raw.baseRef, "baseRef", kind),
       ...(readOptionalString(raw.originUrl) ? { originUrl: readOptionalString(raw.originUrl) } : {}),
+    };
+  }
+
+  if (kind === "working-tree-archive") {
+    return {
+      kind,
+      archivePath: readRequiredString(raw.archivePath, "archivePath", kind),
     };
   }
 

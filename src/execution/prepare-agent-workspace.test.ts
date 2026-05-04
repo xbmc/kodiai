@@ -132,7 +132,7 @@ test("prepareAgentWorkspace writes a review bundle transport for repos with trac
   expect((await $`git -C ${cloneCheckDir} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
 });
 
-test("prepareAgentWorkspace uses bundle transport for shallow repos with tracked symlinks", async () => {
+test("prepareAgentWorkspace uses archive transport for shallow repos with tracked symlinks", async () => {
   const tempRoot = await makeTempDir("kodiai-shallow-symlink-bundle-");
   const bareRepoDir = join(tempRoot, "origin.git");
   const seedRepoDir = join(tempRoot, "seed");
@@ -175,24 +175,21 @@ test("prepareAgentWorkspace uses bundle transport for shallow repos with tracked
 
   expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
   expect(result.repoCwd).toBeUndefined();
-  expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+  expect(result.repoBundlePath).toBeUndefined();
 
   const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
   const agentConfig = JSON.parse(rawAgentConfig) as {
     repoCwd?: string;
-    repoTransport?: { kind?: string; bundlePath?: string; headRef?: string; baseRef?: string; originUrl?: string };
+    repoTransport?: { kind?: string; bundlePath?: string; headRef?: string; baseRef?: string; originUrl?: string; archivePath?: string };
     allowedTools?: string[];
   };
 
   expect(agentConfig.repoCwd).toBeUndefined();
   expect(agentConfig.repoTransport).toEqual({
-    kind: "review-bundle",
-    bundlePath: join(workspaceDir, "repo.bundle"),
-    headRef: "pr-mention",
-    baseRef: "master",
-    originUrl: `file://${bareRepoDir}`,
+    kind: "working-tree-archive",
+    archivePath: join(workspaceDir, "repo.tar"),
   });
-  expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
+  expect(agentConfig.allowedTools).toEqual(["Read", "Grep", "Glob"]);
   await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
 });
 
