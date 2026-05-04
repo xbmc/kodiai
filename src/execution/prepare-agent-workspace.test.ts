@@ -132,6 +132,70 @@ test("prepareAgentWorkspace writes a review bundle transport for repos with trac
   expect((await $`git -C ${cloneCheckDir} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
 });
 
+test("prepareAgentWorkspace uses bundle transport for shallow repos with tracked symlinks", async () => {
+  const tempRoot = await makeTempDir("kodiai-shallow-symlink-bundle-");
+  const bareRepoDir = join(tempRoot, "origin.git");
+  const seedRepoDir = join(tempRoot, "seed");
+  const shallowRepoDir = join(tempRoot, "shallow");
+  const workspaceDir = await makeTempDir("kodiai-agent-shallow-symlink-workspace-");
+
+  await $`git init --bare ${bareRepoDir}`.quiet();
+  await $`git clone file://${bareRepoDir} ${seedRepoDir}`.quiet();
+  await $`git -C ${seedRepoDir} config user.email t@example.com`.quiet();
+  await $`git -C ${seedRepoDir} config user.name T`.quiet();
+  await mkdir(join(seedRepoDir, "system", "settings"), { recursive: true });
+  await writeFile(join(seedRepoDir, "system", "settings", "linux.xml"), "<settings />\n");
+  await symlink("linux.xml", join(seedRepoDir, "system", "settings", "freebsd.xml"));
+  await $`git -C ${seedRepoDir} add .`.quiet();
+  await $`git -C ${seedRepoDir} commit -m init`.quiet();
+  await $`git -C ${seedRepoDir} branch -M master`.quiet();
+  await $`git -C ${seedRepoDir} push origin master`.quiet();
+  await $`git -C ${seedRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(seedRepoDir, "feature.txt"), "pr\n");
+  await $`git -C ${seedRepoDir} add feature.txt`.quiet();
+  await $`git -C ${seedRepoDir} commit -m pr`.quiet();
+  await $`git -C ${seedRepoDir} push origin pr-mention`.quiet();
+
+  await $`git clone --depth=1 --single-branch --branch master file://${bareRepoDir} ${shallowRepoDir}`.quiet();
+  await $`git -C ${shallowRepoDir} fetch file://${bareRepoDir} pr-mention:pr-mention`.quiet();
+  await $`git -C ${shallowRepoDir} checkout pr-mention`.quiet();
+  await $`git -C ${shallowRepoDir} fetch origin master:refs/remotes/origin/master --depth=1`.quiet();
+  expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
+
+  const result = await prepareAgentWorkspace({
+    sourceRepoDir: shallowRepoDir,
+    workspaceDir,
+    prompt: "Review this PR",
+    model: "claude-sonnet-4-5-20250929",
+    maxTurns: 25,
+    allowedTools: ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git status:*)"],
+    taskType: "review.full",
+    mcpServerNames: ["github_comment"],
+  }) as unknown as { repoCwd?: string; repoBundlePath?: string };
+
+  expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
+  expect(result.repoCwd).toBeUndefined();
+  expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+
+  const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    repoCwd?: string;
+    repoTransport?: { kind?: string; bundlePath?: string; headRef?: string; baseRef?: string; originUrl?: string };
+    allowedTools?: string[];
+  };
+
+  expect(agentConfig.repoCwd).toBeUndefined();
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(workspaceDir, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "master",
+    originUrl: `file://${bareRepoDir}`,
+  });
+  expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
+  await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
+});
+
 test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing", async () => {
   const tempRoot = await makeTempDir("kodiai-shallow-bundle-");
   const bareRepoDir = join(tempRoot, "origin.git");
