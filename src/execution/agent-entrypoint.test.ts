@@ -723,6 +723,69 @@ describe("happy path", () => {
     expect(diagnostics.join("")).toContain("materialized review bundle");
   });
 
+  test("materializes working-tree archive transport without git metadata", async () => {
+    const workspaceDir = await makeTempDir("agent-entrypoint-archive-workspace-");
+    const sourceRepoDir = await makeTempDir("agent-entrypoint-archive-source-");
+    const archivePath = join(workspaceDir, "repo.tar");
+    const diagnostics: string[] = [];
+
+    await mkdir(join(sourceRepoDir, "system", "settings"), { recursive: true });
+    await writeFile(join(sourceRepoDir, "system", "settings", "linux.xml"), "<settings />\n");
+    await symlink("linux.xml", join(sourceRepoDir, "system", "settings", "freebsd.xml"));
+    await $`git -C ${sourceRepoDir} init`.quiet();
+    await $`git -C ${sourceRepoDir} config user.email t@example.com`.quiet();
+    await $`git -C ${sourceRepoDir} config user.name T`.quiet();
+    await $`git -C ${sourceRepoDir} add .`.quiet();
+    await $`git -C ${sourceRepoDir} commit -m init`.quiet();
+    await $`git -C ${sourceRepoDir} archive --format=tar -o ${archivePath} HEAD`.quiet();
+
+    const agentConfig = {
+      prompt: "Review this PR",
+      model: "claude-sonnet-4-5-20250929",
+      maxTurns: 20,
+      allowedTools: ["Read", "Grep"],
+      repoTransport: {
+        kind: "working-tree-archive",
+        archivePath,
+      },
+    };
+    await writeFile(join(workspaceDir, "agent-config.json"), JSON.stringify(agentConfig));
+
+    setEnv({
+      WORKSPACE_DIR: workspaceDir,
+      MCP_BASE_URL: "https://api.example.com",
+      MCP_BEARER_TOKEN: "bearer-tok",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    });
+
+    let capturedParams: { prompt: string; options?: Record<string, unknown> } | undefined;
+    const written: Record<string, string> = {};
+    const deps: Partial<EntrypointDeps> = {
+      appendFileFn: async (_path, content) => {
+        diagnostics.push(content);
+      },
+      writeFileFn: async (path, content) => {
+        written[path] = content;
+        await writeFile(path, content);
+      },
+      queryFn: (params) => {
+        capturedParams = params as { prompt: string; options?: Record<string, unknown> };
+        return makeAsyncIterable([makeResultSuccess()]);
+      },
+    };
+
+    await main(deps);
+
+    expect(capturedParams, written[join(workspaceDir, "result.json")]).toBeDefined();
+    const cwd = capturedParams!.options!.cwd as string;
+    expect(cwd).not.toBe(workspaceDir);
+    expect(cwd).not.toBe(archivePath);
+    expect(await $`git -C ${cwd} rev-parse --is-inside-work-tree`.quiet().nothrow().then((r) => r.exitCode)).not.toBe(0);
+    expect((await lstat(join(cwd, "system", "settings", "freebsd.xml"))).isSymbolicLink()).toBe(true);
+    expect(diagnostics.join("")).toContain("repo transport kind=working-tree-archive");
+    expect(diagnostics.join("")).toContain("materialized repo archive kind=working-tree-archive");
+  });
+
   test("writes an error result when repoTransport metadata is malformed", async () => {
     const written: Record<string, string> = {};
     let queryCalled = false;
