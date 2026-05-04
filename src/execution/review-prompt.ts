@@ -1610,7 +1610,7 @@ export function buildSmallDiffScopeSection(): string {
     "## Tiny-diff scope contract",
     "",
     "This is a small diff (≤2 files, ≤20 lines). Follow these constraints:",
-    "- Inspect `git diff` first.",
+    "- Inspect the provided diff context first.",
     "- Read only the changed file and directly adjacent context.",
     "- Broaden scope only if the diff itself proves an ambiguity that cannot be resolved without wider context.",
     "- Do not do generalized architecture exploration.",
@@ -1708,6 +1708,7 @@ export function buildReviewPromptDetails(context: {
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
+  gitDiffInstructionsAvailable?: boolean;
 }): PromptBuildResult {
   const sectionBlocks: Array<{ sectionName: string; text: string; truncated?: boolean }> = [];
   const scaleNotes: string[] = [];
@@ -1909,11 +1910,18 @@ export function buildReviewPromptDetails(context: {
   }
   pushBudgetedSection("review-knowledge-context", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);
 
+  const gitDiffInstructionsAvailable = context.gitDiffInstructionsAvailable !== false;
   const instructionLines: string[] = [
     "## Reading the code",
     "",
-    `To see the full diff: Bash(git diff origin/${context.baseBranch}...HEAD)`,
-    `To see changed files with stats: Bash(git log origin/${context.baseBranch}..HEAD --stat)`,
+    ...(gitDiffInstructionsAvailable
+      ? [
+          `To see the full diff: Bash(git diff origin/${context.baseBranch}...HEAD)`,
+          `To see changed files with stats: Bash(git log origin/${context.baseBranch}..HEAD --stat)`,
+        ]
+      : [
+          "Git history is not available in this remote workspace; use the changed-file list, embedded diff context, and Read/Grep/Glob instead of git commands.",
+        ]),
     "Read the diff carefully before posting any comments.",
     "",
     "## First-pass changed-file triage",

@@ -5016,12 +5016,15 @@ describe("createReviewHandler diff collection resilience", () => {
         fallbackDiffProvider: async () => [
           {
             filename: "src/api/phase27-uat-example.ts",
+            status: "renamed",
+            previousFilename: "src/api/old-phase27-uat-example.ts",
             additions: 7,
             deletions: 2,
             patch: "@@ -1 +1 @@\n-old\n+new",
           },
           {
             filename: "docs/phase27-note.md",
+            status: "added",
             additions: 1,
             deletions: 0,
           },
@@ -5037,7 +5040,9 @@ describe("createReviewHandler diff collection resilience", () => {
         "7\t2\tsrc/api/phase27-uat-example.ts",
         "1\t0\tdocs/phase27-note.md",
       ]);
-      expect(result.diffContent).toContain("diff --git a/src/api/phase27-uat-example.ts b/src/api/phase27-uat-example.ts");
+      expect(result.diffContent).toContain("diff --git a/src/api/old-phase27-uat-example.ts b/src/api/phase27-uat-example.ts");
+      expect(result.diffContent).toContain("--- a/src/api/old-phase27-uat-example.ts");
+      expect(result.diffContent).toContain("+++ b/src/api/phase27-uat-example.ts");
       expect(result.diffContent).toContain("@@ -1 +1 @@");
     } finally {
       await workspaceFixture.cleanup();

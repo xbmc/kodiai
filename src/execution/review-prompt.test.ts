@@ -34,7 +34,7 @@ describe("small-diff review prompt scope", () => {
   test("adds a tiny-diff scope contract when requested", () => {
     const result = buildReviewPromptDetails(baseContext({ smallDiffReview: true }));
 
-    expect(buildSmallDiffScopeSection()).toContain("Inspect `git diff` first.");
+    expect(buildSmallDiffScopeSection()).toContain("Inspect the provided diff context first.");
     expect(result.text).toContain("## Tiny-diff scope contract");
     expect(result.text).toContain("Do not do generalized architecture exploration.");
     expect(result.sections.some((section) => section.sectionName === "review-small-diff-scope")).toBe(true);
@@ -45,6 +45,13 @@ describe("small-diff review prompt scope", () => {
 
     expect(result.text).not.toContain("## Tiny-diff scope contract");
     expect(result.sections.some((section) => section.sectionName === "review-small-diff-scope")).toBe(false);
+  });
+  test("omits git command instructions when the remote workspace has no git metadata", () => {
+    const result = buildReviewPromptDetails(baseContext({ gitDiffInstructionsAvailable: false }));
+
+    expect(result.text).toContain("Git history is not available in this remote workspace");
+    expect(result.text).not.toContain("Bash(git diff origin/main...HEAD)");
+    expect(result.text).not.toContain("Bash(git log origin/main..HEAD --stat)");
   });
 });
 

@@ -89,12 +89,7 @@ export function hasSemanticReviewFanout(changedFiles: readonly string[] | undefi
       || normalized.includes("guicontrol")
       || normalized.includes("buttoncontrol")
       || normalized.includes("windowmanager")
-      || normalized.includes("playercorefactory")
-      || (isGuiPath && (
-        normalized.includes("event")
-        || normalized.includes("message")
-        || normalized.includes("dispatcher")
-      ));
+      || normalized.includes("playercorefactory");
   });
 }
 

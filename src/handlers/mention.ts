@@ -63,6 +63,7 @@ import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
 import { computeLanguageComplexity, estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
+import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { buildSearchCacheKey, createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import {
   type ErrorCategory,
@@ -955,6 +956,8 @@ export function createMentionHandler(deps: {
     fallbackFileProvider?: () => Promise<string[]>;
     fallbackDiffProvider?: () => Promise<Array<{
       filename: string;
+      status?: string;
+      previousFilename?: string;
       additions?: number | null;
       deletions?: number | null;
       patch?: string | null;
@@ -2457,20 +2460,12 @@ export function createMentionHandler(deps: {
                 baseRef: mention.baseRef,
                 surface: mention.surface,
                 token: workspace.token,
-                fallbackDiffProvider: async () => {
-                  const listFilesResponse = await octokit.rest.pulls.listFiles({
-                    owner: mention.owner,
-                    repo: mention.repo,
-                    pull_number: explicitReviewPrNumber,
-                    per_page: 100,
-                  });
-                  return listFilesResponse.data.map((file) => ({
-                    filename: file.filename,
-                    additions: file.additions,
-                    deletions: file.deletions,
-                    patch: file.patch,
-                  }));
-                },
+                fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
+                  octokit,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  pullNumber: explicitReviewPrNumber,
+                }),
               })
             : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
           const promptChangedFiles = promptDiffContext.changedFiles;
@@ -2596,6 +2591,7 @@ export function createMentionHandler(deps: {
               mentionOnlyCount: tieredFiles.mentionOnly.length,
               totalFiles: tieredFiles.totalFiles,
             } : null,
+            gitDiffInstructionsAvailable: false,
             publishToolNames: [
               "mcp__github_comment__create_comment",
               "mcp__github_inline_comment__create_inline_comment",

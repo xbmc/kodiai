@@ -76,6 +76,7 @@ import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../fe
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import { fetchAllPullRequestFiles, type PullRequestFileMetadata } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import {
   ensureReviewBoundednessDisclosureInSummary,
@@ -1233,12 +1234,7 @@ type DiffCommandResult = {
 
 type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffCommandResult>;
 
-type DiffFallbackFile = {
-  filename: string;
-  additions?: number | null;
-  deletions?: number | null;
-  patch?: string | null;
-};
+type DiffFallbackFile = PullRequestFileMetadata;
 
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
 const DIFF_COMMAND_TIMEOUT_MS = 15_000;
@@ -1300,12 +1296,16 @@ async function runDiffCommandWithTimeout(params: {
 function buildFallbackPatchDiff(files: DiffFallbackFile[]): string | undefined {
   const chunks = files
     .filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0)
-    .map((file) => [
-      `diff --git a/${file.filename} b/${file.filename}`,
-      `--- a/${file.filename}`,
-      `+++ b/${file.filename}`,
-      file.patch!.trimEnd(),
-    ].join("\n"));
+    .map((file) => {
+      const oldPath = file.status === "added" ? "/dev/null" : `a/${file.previousFilename ?? file.filename}`;
+      const newPath = file.status === "removed" ? "/dev/null" : `b/${file.filename}`;
+      return [
+        `diff --git a/${file.previousFilename ?? file.filename} b/${file.filename}`,
+        `--- ${oldPath}`,
+        `+++ ${newPath}`,
+        file.patch!.trimEnd(),
+      ].join("\n");
+    });
 
   return chunks.length > 0 ? chunks.join("\n") + "\n" : undefined;
 }
@@ -2829,20 +2829,12 @@ export function createReviewHandler(deps: {
           logger,
           baseLog,
           token: workspace.token,
-          fallbackDiffProvider: async () => {
-            const listFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
-              owner: apiOwner,
-              repo: apiRepo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
-            return listFilesResponse.data.map((file) => ({
-              filename: file.filename,
-              additions: file.additions,
-              deletions: file.deletions,
-              patch: file.patch,
-            }));
-          },
+          fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
+            octokit: idempotencyOctokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            pullNumber: pr.number,
+          }),
         });
         const allChangedFiles = diffContext.changedFiles;
 
@@ -2869,16 +2861,15 @@ export function createReviewHandler(deps: {
         if (dependsBumpInfo) {
           try {
             // 1. Fetch PR files with status/patch from GitHub API
-            const prFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
+            const prFilesForDepends = (await fetchAllPullRequestFiles({
+              octokit: idempotencyOctokit,
               owner: apiOwner,
               repo: apiRepo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
-            const prFilesForDepends = prFilesResponse.data.map(f => ({
-              filename: f.filename,
-              status: f.status,
-              patch: f.patch,
+              pullNumber: pr.number,
+            })).map((file) => ({
+              filename: file.filename,
+              status: file.status,
+              patch: file.patch ?? undefined,
             }));
 
             // 2. Parse VERSION file diffs from PR files
@@ -4005,6 +3996,7 @@ export function createReviewHandler(deps: {
             mentionOnlyCount: tieredFiles.mentionOnly.length,
             totalFiles: tieredFiles.totalFiles,
           } : null,
+          gitDiffInstructionsAvailable: false,
           publishToolNames: [
             "mcp__github_comment__create_comment",
             "mcp__github_inline_comment__create_inline_comment",
@@ -5795,6 +5787,7 @@ export function createReviewHandler(deps: {
                           }
                         : null,
                       largePRContext: null,
+                      gitDiffInstructionsAvailable: false,
                       publishToolNames: [
                         "mcp__github_comment__create_comment",
                         "mcp__github_inline_comment__create_inline_comment",

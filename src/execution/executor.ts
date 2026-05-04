@@ -252,7 +252,7 @@ async function exportGitWorkingTreeSnapshot(params: {
 }): Promise<string> {
   const repoCwd = join(params.workspaceDir, "repo");
   await mkdir(repoCwd, { recursive: true });
-  await $`git -C ${params.sourceRepoDir} archive HEAD | tar -x -C ${repoCwd}`.quiet();
+  await $`git -C ${params.sourceRepoDir} checkout-index -a -f --prefix=${repoCwd + "/"}`.quiet();
   return repoCwd;
 }
 
