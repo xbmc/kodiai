@@ -4996,6 +4996,59 @@ describe("createReviewHandler diff collection resilience", () => {
     }
   });
 
+  test("uses GitHub PR file metadata when merge-base recovery times out", async () => {
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
+    const { logger } = createCaptureLogger();
+
+    try {
+      const result = await collectDiffContext({
+        workspaceDir: workspaceFixture.dir,
+        baseRef: "main",
+        maxFilesForFullDiff: 200,
+        logger,
+        baseLog: { deliveryId: "delivery-123", prNumber: 101 },
+        runGitCommand: async () => ({
+          exitCode: 124,
+          stdout: "",
+          stderr: "timed out",
+          timedOut: true,
+        }),
+        fallbackDiffProvider: async () => [
+          {
+            filename: "src/api/phase27-uat-example.ts",
+            status: "renamed",
+            previousFilename: "src/api/old-phase27-uat-example.ts",
+            additions: 7,
+            deletions: 2,
+            patch: "@@ -1 +1 @@\n-old\n+new",
+          },
+          {
+            filename: "docs/phase27-note.md",
+            status: "added",
+            additions: 1,
+            deletions: 0,
+          },
+        ],
+      });
+
+      expect(result.strategy).toBe("github-pr-files-fallback");
+      expect(result.changedFiles).toEqual([
+        "src/api/phase27-uat-example.ts",
+        "docs/phase27-note.md",
+      ]);
+      expect(result.numstatLines).toEqual([
+        "7\t2\tsrc/api/phase27-uat-example.ts",
+        "1\t0\tdocs/phase27-note.md",
+      ]);
+      expect(result.diffContent).toContain("diff --git a/src/api/old-phase27-uat-example.ts b/src/api/phase27-uat-example.ts");
+      expect(result.diffContent).toContain("--- a/src/api/old-phase27-uat-example.ts");
+      expect(result.diffContent).toContain("+++ b/src/api/phase27-uat-example.ts");
+      expect(result.diffContent).toContain("@@ -1 +1 @@");
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  });
+
   test("continues review flow when diff collection degrades to file-list fallback", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();

@@ -27,7 +27,6 @@ import {
   readJobDiagnostics,
 } from "../jobs/aca-launcher.ts";
 import {
-  buildAuthFetchUrl,
   createAzureFilesWorkspaceDir,
 } from "../jobs/workspace.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
@@ -247,6 +246,20 @@ async function buildGitRepoTransport(params: {
   };
 }
 
+async function exportGitWorkingTreeSnapshot(params: {
+  sourceRepoDir: string;
+  workspaceDir: string;
+}): Promise<string> {
+  const repoCwd = join(params.workspaceDir, "repo");
+  await mkdir(repoCwd, { recursive: true });
+  await $`git -C ${params.sourceRepoDir} checkout-index -a -f --prefix=${repoCwd + "/"}`.quiet();
+  return repoCwd;
+}
+
+function filterGitToolsForSnapshot(allowedTools: string[]): string[] {
+  return allowedTools.filter((tool) => !tool.startsWith("Bash(git "));
+}
+
 export async function prepareAgentWorkspace(params: {
   sourceRepoDir: string;
   workspaceDir: string;
@@ -262,6 +275,7 @@ export async function prepareAgentWorkspace(params: {
   let repoCwd: string | undefined;
   let repoBundlePath: string | undefined;
   let repoTransport: RepoTransport | undefined;
+  let allowedTools = params.allowedTools;
 
   const sourceGitDir = join(params.sourceRepoDir, ".git");
   const sourceIsGitRepo = await stat(sourceGitDir).then(() => true).catch(() => false);
@@ -272,15 +286,19 @@ export async function prepareAgentWorkspace(params: {
       .then((value) => value.trim() === "true")
       .catch(() => false);
     if (sourceIsShallow) {
-      const fetchRemote = await buildAuthFetchUrl(params.sourceRepoDir, params.token);
-      await $`git -C ${params.sourceRepoDir} fetch --unshallow ${fetchRemote}`.quiet();
+      repoCwd = await exportGitWorkingTreeSnapshot({
+        sourceRepoDir: params.sourceRepoDir,
+        workspaceDir: params.workspaceDir,
+      });
+      allowedTools = filterGitToolsForSnapshot(params.allowedTools);
+    } else {
+      const preparedRepo = await buildGitRepoTransport({
+        sourceRepoDir: params.sourceRepoDir,
+        workspaceDir: params.workspaceDir,
+      });
+      repoBundlePath = preparedRepo.repoBundlePath;
+      repoTransport = preparedRepo.repoTransport;
     }
-    const preparedRepo = await buildGitRepoTransport({
-      sourceRepoDir: params.sourceRepoDir,
-      workspaceDir: params.workspaceDir,
-    });
-    repoBundlePath = preparedRepo.repoBundlePath;
-    repoTransport = preparedRepo.repoTransport;
   } else {
     repoCwd = join(params.workspaceDir, "repo");
     await mkdir(repoCwd, { recursive: true });
@@ -294,7 +312,7 @@ export async function prepareAgentWorkspace(params: {
       prompt: params.prompt,
       model: params.model,
       maxTurns: params.maxTurns,
-      allowedTools: params.allowedTools,
+      allowedTools,
       taskType: params.taskType,
       ...(repoCwd ? { repoCwd } : {}),
       ...(repoTransport ? { repoTransport } : {}),

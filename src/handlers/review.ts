@@ -76,6 +76,7 @@ import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../fe
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import { fetchAllPullRequestFiles, type PullRequestFileMetadata } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import {
   ensureReviewBoundednessDisclosureInSummary,
@@ -1210,7 +1211,8 @@ type DiffCollectionStrategy =
   | "triple-dot"
   | "deepened-triple-dot"
   | "fallback-two-dot"
-  | "github-file-list-fallback";
+  | "github-file-list-fallback"
+  | "github-pr-files-fallback";
 
 type DiffCollectionResult = {
   changedFiles: string[];
@@ -1231,6 +1233,8 @@ type DiffCommandResult = {
 };
 
 type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffCommandResult>;
+
+type DiffFallbackFile = PullRequestFileMetadata;
 
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
 const DIFF_COMMAND_TIMEOUT_MS = 15_000;
@@ -1289,8 +1293,34 @@ async function runDiffCommandWithTimeout(params: {
   }
 }
 
+function buildFallbackPatchDiff(files: DiffFallbackFile[]): string | undefined {
+  const chunks = files
+    .filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0)
+    .map((file) => {
+      const oldPath = file.status === "added" ? "/dev/null" : `a/${file.previousFilename ?? file.filename}`;
+      const newPath = file.status === "removed" ? "/dev/null" : `b/${file.filename}`;
+      return [
+        `diff --git a/${file.previousFilename ?? file.filename} b/${file.filename}`,
+        `--- ${oldPath}`,
+        `+++ ${newPath}`,
+        file.patch!.trimEnd(),
+      ].join("\n");
+    });
+
+  return chunks.length > 0 ? chunks.join("\n") + "\n" : undefined;
+}
+
+function buildFallbackNumstatLines(files: DiffFallbackFile[]): string[] {
+  return files.map((file) => {
+    const additions = typeof file.additions === "number" && Number.isFinite(file.additions) ? String(file.additions) : "-";
+    const deletions = typeof file.deletions === "number" && Number.isFinite(file.deletions) ? String(file.deletions) : "-";
+    return `${additions}\t${deletions}\t${file.filename}`;
+  });
+}
+
 async function buildDiffCollectionFallback(params: {
   fallbackFileProvider?: () => Promise<string[]>;
+  fallbackDiffProvider?: () => Promise<DiffFallbackFile[]>;
   logger: Logger;
   baseLog: Record<string, unknown>;
   stage: string;
@@ -1302,6 +1332,7 @@ async function buildDiffCollectionFallback(params: {
 }): Promise<DiffCollectionResult> {
   const {
     fallbackFileProvider,
+    fallbackDiffProvider,
     logger,
     baseLog,
     stage,
@@ -1311,6 +1342,42 @@ async function buildDiffCollectionFallback(params: {
     mergeBaseRecovered,
     diffRange,
   } = params;
+
+  if (fallbackDiffProvider) {
+    const fallbackFiles = await fallbackDiffProvider();
+    const uniqueFiles = Array.from(new Map(fallbackFiles.map((file) => [file.filename, file])).values());
+    const changedFiles = uniqueFiles.map((file) => file.filename);
+    const numstatLines = buildFallbackNumstatLines(uniqueFiles);
+    const diffContent = buildFallbackPatchDiff(uniqueFiles);
+
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage,
+        reason,
+        strategy: "github-pr-files-fallback",
+        deepenAttempts,
+        unshallowAttempted,
+        mergeBaseRecovered,
+        diffRange,
+        changedFilesCount: changedFiles.length,
+        patchFilesCount: uniqueFiles.filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0).length,
+      },
+      "Diff collection degraded to GitHub PR files fallback",
+    );
+
+    return {
+      changedFiles,
+      numstatLines,
+      diffContent,
+      strategy: "github-pr-files-fallback",
+      mergeBaseRecovered,
+      deepenAttempts,
+      unshallowAttempted,
+      diffRange: "github-api:pr-files",
+    };
+  }
 
   if (!fallbackFileProvider) {
     throw new Error(`Diff collection timed out during ${stage} (${reason}) and no fallback provider was configured`);
@@ -1355,6 +1422,7 @@ export async function collectDiffContext(params: {
   token?: string;
   runGitCommand?: DiffCommandRunner;
   fallbackFileProvider?: () => Promise<string[]>;
+  fallbackDiffProvider?: () => Promise<DiffFallbackFile[]>;
   commandTimeoutMs?: number;
 }): Promise<DiffCollectionResult> {
   const {
@@ -1366,6 +1434,7 @@ export async function collectDiffContext(params: {
     token,
     runGitCommand,
     fallbackFileProvider,
+    fallbackDiffProvider,
     commandTimeoutMs = DIFF_COMMAND_TIMEOUT_MS,
   } = params;
 
@@ -1415,6 +1484,7 @@ export async function collectDiffContext(params: {
       if (deepenResult.timedOut) {
         return await buildDiffCollectionFallback({
           fallbackFileProvider,
+          fallbackDiffProvider,
           logger,
           baseLog,
           stage: "merge-base-recovery",
@@ -1455,6 +1525,7 @@ export async function collectDiffContext(params: {
       if (unshallowResult.timedOut) {
         return await buildDiffCollectionFallback({
           fallbackFileProvider,
+          fallbackDiffProvider,
           logger,
           baseLog,
           stage: "merge-base-recovery",
@@ -1483,6 +1554,7 @@ export async function collectDiffContext(params: {
   if (nameOnlyResult.timedOut) {
     return await buildDiffCollectionFallback({
       fallbackFileProvider,
+      fallbackDiffProvider,
       logger,
       baseLog,
       stage: "name-only",
@@ -1510,6 +1582,7 @@ export async function collectDiffContext(params: {
     if (nameOnlyResult.timedOut) {
       return await buildDiffCollectionFallback({
         fallbackFileProvider,
+        fallbackDiffProvider,
         logger,
         baseLog,
         stage: "name-only",
@@ -2756,15 +2829,12 @@ export function createReviewHandler(deps: {
           logger,
           baseLog,
           token: workspace.token,
-          fallbackFileProvider: async () => {
-            const listFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
-              owner: apiOwner,
-              repo: apiRepo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
-            return listFilesResponse.data.map((file) => file.filename);
-          },
+          fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
+            octokit: idempotencyOctokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            pullNumber: pr.number,
+          }),
         });
         const allChangedFiles = diffContext.changedFiles;
 
@@ -2791,16 +2861,15 @@ export function createReviewHandler(deps: {
         if (dependsBumpInfo) {
           try {
             // 1. Fetch PR files with status/patch from GitHub API
-            const prFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
+            const prFilesForDepends = (await fetchAllPullRequestFiles({
+              octokit: idempotencyOctokit,
               owner: apiOwner,
               repo: apiRepo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
-            const prFilesForDepends = prFilesResponse.data.map(f => ({
-              filename: f.filename,
-              status: f.status,
-              patch: f.patch,
+              pullNumber: pr.number,
+            })).map((file) => ({
+              filename: file.filename,
+              status: file.status,
+              patch: file.patch ?? undefined,
             }));
 
             // 2. Parse VERSION file diffs from PR files
@@ -3927,6 +3996,7 @@ export function createReviewHandler(deps: {
             mentionOnlyCount: tieredFiles.mentionOnly.length,
             totalFiles: tieredFiles.totalFiles,
           } : null,
+          gitDiffInstructionsAvailable: false,
           publishToolNames: [
             "mcp__github_comment__create_comment",
             "mcp__github_inline_comment__create_inline_comment",
@@ -5717,6 +5787,7 @@ export function createReviewHandler(deps: {
                           }
                         : null,
                       largePRContext: null,
+                      gitDiffInstructionsAvailable: false,
                       publishToolNames: [
                         "mcp__github_comment__create_comment",
                         "mcp__github_inline_comment__create_inline_comment",
