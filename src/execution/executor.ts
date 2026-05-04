@@ -246,6 +246,14 @@ async function buildGitRepoTransport(params: {
   };
 }
 
+async function hasTrackedSymlinks(repoDir: string): Promise<boolean> {
+  const result = await $`git -C ${repoDir} ls-files -s`.quiet().nothrow();
+  if (result.exitCode !== 0) {
+    return false;
+  }
+  return result.stdout.toString().split(/\r?\n/).some((line) => line.startsWith("120000 "));
+}
+
 async function exportGitWorkingTreeSnapshot(params: {
   sourceRepoDir: string;
   workspaceDir: string;
@@ -286,11 +294,21 @@ export async function prepareAgentWorkspace(params: {
       .then((value) => value.trim() === "true")
       .catch(() => false);
     if (sourceIsShallow) {
-      repoCwd = await exportGitWorkingTreeSnapshot({
-        sourceRepoDir: params.sourceRepoDir,
-        workspaceDir: params.workspaceDir,
-      });
-      allowedTools = filterGitToolsForSnapshot(params.allowedTools);
+      const sourceHasTrackedSymlinks = await hasTrackedSymlinks(params.sourceRepoDir);
+      if (sourceHasTrackedSymlinks) {
+        const preparedRepo = await buildGitRepoTransport({
+          sourceRepoDir: params.sourceRepoDir,
+          workspaceDir: params.workspaceDir,
+        });
+        repoBundlePath = preparedRepo.repoBundlePath;
+        repoTransport = preparedRepo.repoTransport;
+      } else {
+        repoCwd = await exportGitWorkingTreeSnapshot({
+          sourceRepoDir: params.sourceRepoDir,
+          workspaceDir: params.workspaceDir,
+        });
+        allowedTools = filterGitToolsForSnapshot(params.allowedTools);
+      }
     } else {
       const preparedRepo = await buildGitRepoTransport({
         sourceRepoDir: params.sourceRepoDir,
