@@ -35,7 +35,7 @@ The slice closes only when the captured evidence satisfies the existing S05 veri
   - Files: `docs/smoke/m066-formatter-suggestions.md`
   - Verify: Confirm non-secret smoke prerequisites are captured: repo, PR URL/number, controlled formatting diff description, deployed revision/log correlation target, and an authenticated write/read path is available without exposing tokens. If unavailable, record a blocker and do not proceed to trigger/verification tasks.
 
-- [ ] **T03: Trigger authenticated formatter-suggestion smoke** `est:45m`
+- [x] **T03: Trigger authenticated formatter-suggestion smoke** `est:45m`
   Using the credentialed path and controlled PR from T02, post or otherwise create the explicit `@kodiai format suggestions` trigger in the deployed/operator environment. Capture only non-secret evidence: trigger comment URL/id, repo, PR URL/number, delivery id if available, deployed revision/log correlation, formatter-specific reviewOutputKey containing the `mention-format-suggestions` intent, formatter subflow status fields, and any bounded failure reason if Kodiai declines to publish. Do not store secrets, raw formatter stdout, private keys, tokens, or full webhook payloads.
   - Files: `docs/smoke/m066-formatter-suggestions.md`
   - Verify: Confirm captured fields include repo, PR URL, trigger comment URL/id, reviewOutputKey containing `mention-format-suggestions`, deployed revision/log correlation, formatter subflow status, and either delivery id or a documented reason delivery id is unavailable.

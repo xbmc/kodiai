@@ -357,3 +357,5 @@
 {"id":"4c7bf8cc-a3a4-4414-af51-b6a17d8e6981","ts":"2026-05-05T03:03:54.657Z","severity":"info","message":"Recovered 16 tool calls from paused session. Resuming with context.","source":"notify","read":false}
 {"id":"9544e265-de44-4ac1-bf27-a33788ead8d0","ts":"2026-05-05T03:06:52.741Z","severity":"info","message":"Committed: feat: Blocked live formatter-suggestion trigger because no authenticate…","source":"notify","read":false}
 {"id":"cb87f757-ad84-4966-8cf4-ef8f5f09d0d7","ts":"2026-05-05T03:06:59.463Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"11bce98a-5db7-4faa-b754-959e37dfcf3f","ts":"2026-05-05T03:13:44.162Z","severity":"info","message":"Committed: feat: Documented credentialed M066 formatter smoke readiness with contr…","source":"notify","read":false}
+{"id":"4855b991-1132-4791-bd8f-3247c0afdb9c","ts":"2026-05-05T03:13:50.872Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
