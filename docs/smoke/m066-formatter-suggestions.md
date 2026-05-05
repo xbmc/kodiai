@@ -1,6 +1,6 @@
 # M066 Formatter Suggestions Smoke Proof
 
-Status: **T03 live trigger executed on controlled PR #134; Kodiai acknowledged and completed the mention job, but no formatter-suggestion review was produced. T04 rechecked GitHub review surfaces and verifier inputs; accepted live formatter-suggestion proof is still not captured.**
+Status: **T04 deployed the formatter-routing fix to Azure Container Apps revision `ca-kodiai--deploy-20260504-222417`; `/healthz` and `/readiness` both returned HTTP 200. Accepted same-PR formatter-suggestion proof is still pending a fresh T05 smoke trigger.**
 
 This file is the bounded operator record for M066/S05. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr here.
 
@@ -21,17 +21,17 @@ Pending accepted proof fields:
 
 | Surface | Current state | Next step |
 |---|---|---|
-| Trigger comment URL/id | Captured in T03: `https://github.com/xbmc/kodiai/pull/134#issuecomment-4376297998` / `4376297998` | Retry only after fixing the deployed trigger classification/runtime path. |
-| Captured GitHub `deliveryId` | Captured in T03: `9961ce70-4830-11f1-86fa-c01e4dffd5b0` | Reuse only as failure evidence; accepted proof requires the delivery for a formatter run. |
-| Captured formatter `reviewOutputKey` | Not captured — no key containing `mention-format-suggestions` appeared in GitHub surfaces or bounded ACA logs. | Capture from a future formatter review marker or completion log. |
-| Accepted same-PR formatter Pull Request Review URL/id | Pending — only a Copilot review and Kodiai issue comments were visible after T03. | T04 can proceed only after a formatter review exists. |
-| Accepted suggestion review comment URL/id | Pending — current PR review comments contain no fenced `suggestion` blocks. | T04 verifies at least one associated review comment contains a fenced GitHub `suggestion` block. |
-| Deployed revision/log correlation | Captured failure correlation: `ca-kodiai--deploy-20260504-081420`, ACA job `caj-kodiai-agent-3dzowdd`, workspace `/mnt/kodiai-workspaces/9961ce70-4830-11f1-86fa-c01e4dffd5b0`. | Query by future formatter delivery id/reviewOutputKey after retry. |
+| Trigger comment URL/id | Captured in T03: `https://github.com/xbmc/kodiai/pull/134#issuecomment-4376297998` / `4376297998` | T05 should post a fresh trigger after the T04 deployment. |
+| Captured GitHub `deliveryId` | Captured in T03: `9961ce70-4830-11f1-86fa-c01e4dffd5b0` | Reuse only as failure evidence; accepted proof requires the new formatter-run delivery. |
+| Captured formatter `reviewOutputKey` | Not captured — no key containing `mention-format-suggestions` appeared in GitHub surfaces or bounded ACA logs before the T04 deployment. | Capture from a future formatter review marker or completion log. |
+| Accepted same-PR formatter Pull Request Review URL/id | Pending — only a Copilot review and Kodiai issue comments were visible after T03. | T05 can proceed now that revision `ca-kodiai--deploy-20260504-222417` is active. |
+| Accepted suggestion review comment URL/id | Pending — current PR review comments contain no fenced `suggestion` blocks. | T05 verifies at least one associated review comment contains a fenced GitHub `suggestion` block. |
+| Deployed revision/log correlation | Current retry target: `ca-kodiai--deploy-20260504-222417`. Prior failure correlation: `ca-kodiai--deploy-20260504-081420`, ACA job `caj-kodiai-agent-3dzowdd`, workspace `/mnt/kodiai-workspaces/9961ce70-4830-11f1-86fa-c01e4dffd5b0`. | Query by future formatter delivery id/reviewOutputKey after retry. |
 | Verifier JSON | Pending — verifier cannot pass without a formatter `reviewOutputKey`. | Run `bun run verify:m066:s05` only with a captured formatter key. |
 
 ## T02 credentialed smoke readiness
 
-T02 established a credentialed operator path and a controlled PR without exposing secrets. The accepted formatter-suggestion proof is still pending T03/T04; do not treat this section as `m066_s05_ok` evidence.
+T02 established a credentialed operator path and a controlled PR without exposing secrets. The accepted formatter-suggestion proof is still pending T05; do not treat this section as `m066_s05_ok` evidence.
 
 | Field | Value |
 |---|---|
@@ -90,7 +90,24 @@ T02 established a credentialed operator path and a controlled PR without exposin
 | Trigger comment URL | `https://github.com/xbmc/kodiai/pull/134#issuecomment-4376297998` |
 | Delivery ID (`X-GitHub-Delivery`) | `9961ce70-4830-11f1-86fa-c01e4dffd5b0` |
 | Review output key | `not captured for formatter trigger` |
-| Deployed revision | `ca-kodiai--deploy-20260504-081420` |
+| Deployed revision | Current T05 retry target: `ca-kodiai--deploy-20260504-222417`; original T03 decline ran on `ca-kodiai--deploy-20260504-081420` |
+
+## T04 deployment proof — formatter-routing fix
+
+T04 deployed the source revision containing the T03 formatter-routing observability fix through the documented Azure Container Apps deploy path. The first deploy attempt reached ACA job secret-reference update and failed with an Azure CLI `Connection reset by peer` before updating the container app revision. Because `deploy.sh` is documented idempotent, T04 retried the same command; the retry completed successfully and reported active revision `ca-kodiai--deploy-20260504-222417`.
+
+| Field | Value |
+|---|---|
+| Deploy command | `./deploy.sh` |
+| First attempt result | Failed before app revision update while pointing ACA Job secrets at Azure Key Vault: Azure CLI connection reset |
+| Retry result | Succeeded |
+| ACR app build id | `ca84` |
+| ACR agent build id | `ca85` |
+| Active revision | `ca-kodiai--deploy-20260504-222417` |
+| App URL | `https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io` |
+| `/healthz` | HTTP 200, `{"status":"ok","db":"connected"}` |
+| `/readiness` | HTTP 200, `{"status":"ready"}` |
+| Independent revision check | `az containerapp revision list --name ca-kodiai --resource-group rg-kodiai --query '[?properties.active && properties.trafficWeight > \`0\`] | sort_by(@, &properties.createdTime) | [-1].name' --output tsv` returned `ca-kodiai--deploy-20260504-222417` |
 
 ## T04 verifier attempt — no accepted proof
 

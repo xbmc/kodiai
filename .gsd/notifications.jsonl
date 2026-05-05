@@ -381,3 +381,5 @@
 {"id":"000bf558-f947-4490-9d73-bfe8c432367e","ts":"2026-05-05T05:09:23.123Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"2e37e22c-d57d-4422-b85d-a532071e8a9b","ts":"2026-05-05T05:11:54.889Z","severity":"info","message":"Committed: feat: Added a red regression for the live formatter trigger observabili…","source":"notify","read":false}
 {"id":"c5907f03-054a-492c-a74b-375d171dcf16","ts":"2026-05-05T05:12:01.632Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"cf2ebdae-2ff4-4152-9475-12f62641afe5","ts":"2026-05-05T05:15:16.973Z","severity":"info","message":"Committed: feat: Added formatter mention completion evidence for delivery id and r…","source":"notify","read":false}
+{"id":"9dc0961e-f295-44e1-bdce-481996c8d8a4","ts":"2026-05-05T05:15:25.709Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

@@ -41,7 +41,7 @@ The slice is complete only when a fresh authenticated/deployed smoke run capture
   - Files: `src/handlers/mention.ts`, `src/handlers/formatter-suggestion-intent.ts`, `src/handlers/formatter-suggestion-orchestration.ts`, `src/execution/config.ts`, `src/handlers/mention.test.ts`
   - Verify: `bun test ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts ./scripts/verify-m066-s05.test.ts --timeout 30000 && bunx tsc --noEmit --pretty false && bunx eslint src/handlers/mention.ts src/handlers/formatter-suggestion-orchestration.ts src/execution/formatter-suggestions.ts src/execution/formatter-suggestion-publisher.ts scripts/verify-m066-s05.ts scripts/verify-m066-s05.test.ts`
 
-- [ ] **T04: Deploy the formatter-routing fix and capture revision proof** `est:1 context`
+- [x] **T04: Deploy the formatter-routing fix and capture revision proof** `est:1 context`
   Deploy or otherwise update the runtime used by GitHub webhooks with the T03 fix, then capture non-secret deployment evidence: active revision, readiness/health signal, and any deployment command output needed by existing runbooks. Do not paste secrets. If deployment is not possible in the environment, stop with a blocker and do not attempt to claim live proof from local tests.
   - Files: `docs/smoke/m066-formatter-suggestions.md`, `deploy.sh`, `docs/runbooks/formatter-suggestions.md`
   - Verify: Use the project deploy/runbook command appropriate for this repo and record active ACA revision plus `/healthz` and `/readiness` success, or record a plan-invalidating blocker if deployment access is unavailable.

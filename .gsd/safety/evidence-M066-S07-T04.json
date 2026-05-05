@@ -1,0 +1,86 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_b5Ql4jn0FyzaOJ7TnCUwHwQH|fc_01728ab12f5c65c00169f97d032d7c8191bf1a812d9fce8b1a",
+    "command": "rg -n \"deploy|ACA|Azure Container|healthz|readiness|az containerapp|revision|smoke\" docs deploy.sh package.json README.md .github 2>/dev/null",
+    "exitCode": 0,
+    "outputSnippet": "package.json:27:    \"verify:phase80:smoke\": \"bun scripts/phase80-slack-smoke.ts\",\npackage.json:29:    \"verify:phase81:smoke\": \"bun scripts/phase81-slack-write-smoke.ts\",\ndeploy.sh:5:# kodiai -- Azure Container Apps Deployment Script\ndeploy.sh:7:# This script provisions all Azure resources and deploys the kodiai container.\ndeploy.sh:22:#                                rotating Claude login token, not the deploy\ndeploy.sh:36:# file and run `./deploy.sh`. This script will source it automatically.\nd",
+    "timestamp": 1777958148376
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_rjzquoDbbay5pFCSwlUcmO6n|fc_01728ab12f5c65c00169f97d1986a48191ad5831a748733606",
+    "command": "python3 - <<'PY'\nimport os, shutil\nrequired=['GITHUB_APP_ID','GITHUB_PRIVATE_KEY_BASE64','GITHUB_WEBHOOK_SECRET','CLAUDE_CODE_OAUTH_TOKEN','VOYAGE_API_KEY','SLACK_BOT_TOKEN','SLACK_SIGNING_SECRET','SLACK_BOT_USER_ID','SLACK_KODIAI_CHANNEL_ID','DATABASE_URL']\nprint('az_cli=' + ('present' if shutil.which('az') else 'missing'))\nprint('curl=' + ('present' if shutil.which('curl') else 'missing'))\nprint('missing_env=' + ','.join([k for k in required if not os.environ.get(k)]) )\nprint('env_file=' + ('present' if os.path.exists('.env') else 'missing'))\nPY\naz account show --query '{name:name, tenantId:tenantId, user:user.name}' -o json 2>/dev/null || echo 'az_account=unavailable'",
+    "exitCode": 0,
+    "outputSnippet": "az_cli=present\ncurl=present\nmissing_env=GITHUB_APP_ID,GITHUB_PRIVATE_KEY_BASE64,GITHUB_WEBHOOK_SECRET,CLAUDE_CODE_OAUTH_TOKEN,VOYAGE_API_KEY,SLACK_BOT_TOKEN,SLACK_SIGNING_SECRET,SLACK_BOT_USER_ID,SLACK_KODIAI_CHANNEL_ID,DATABASE_URL\nenv_file=present\n{\n  \"name\": \"Azure Sponsorship\",\n  \"tenantId\": \"64e8fc11-76e8-472a-b467-abf41a0e961b\",\n  \"user\": \"Keith@teamkodi.onmicrosoft.com\"\n}\n",
+    "timestamp": 1777958170567
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_AEfRSLFakKfDdluSFhmRFceM|fc_01728ab12f5c65c00169f97f26b608819182a7be94fe67cc0c",
+    "command": "set -euo pipefail\nACTIVE_REVISION=$(az containerapp revision list --name ca-kodiai --resource-group rg-kodiai --query '[?properties.active && properties.trafficWeight > `0`] | sort_by(@, &properties.createdTime) | [-1].name' --output tsv)\nFQDN=$(az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn --output tsv)\nHEALTH_STATUS=$(curl -s -o /tmp/kodiai-healthz.json -w '%{http_code}' \"https://${FQDN}/healthz\")\nREADINESS_STATUS=$(curl -s -o /tmp/kodiai-readiness.json -w '%{http_code}' \"https://${FQDN}/readiness\")\nprintf 'active_revision=%s\\n' \"$ACTIVE_REVISION\"\nprintf 'fqdn=%s\\n' \"$FQDN\"\nprintf 'healthz_status=%s\\n' \"$HEALTH_STATUS\"\nprintf 'readiness_status=%s\\n' \"$READINESS_STATUS\"\nprintf 'healthz_body='; python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('/tmp/kodiai-healthz.json').read_text()[:500])\nPY\nprintf 'readiness_body='; python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('/tmp/kodiai-readiness.json').read_text()[:500])\nPY",
+    "exitCode": 0,
+    "outputSnippet": "WARNING: The behavior of this command has been altered by the following extension: containerapp\nactive_revision=ca-kodiai--deploy-20260504-222417\nfqdn=ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io\nhealthz_status=200\nreadiness_status=200\nhealthz_body={\"status\":\"ok\",\"db\":\"connected\"}\nreadiness_body={\"status\":\"ready\"}\n",
+    "timestamp": 1777958696663
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_SquBzHI33hSaWsDNi857by2g|fc_01728ab12f5c65c00169f97f39ed7c8191a17254cc075d5e4c",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777958714869
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_4ocHoYCZSvIdHYDnFZdrxj78|fc_01728ab12f5c65c00169f97f3d378c8191b1d359ee6b1ebe70",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777958722864
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_9ZT1nvSWg1A6Pq9ngyZMnDoS|fc_01728ab12f5c65c00169f97f49c7e081919d93007c2405b92b",
+    "command": "python3 - <<'PY'\nimport subprocess, time\ncmd = r'''set -euo pipefail\nACTIVE_REVISION=$(az containerapp revision list --name ca-kodiai --resource-group rg-kodiai --query '[?properties.active && properties.trafficWeight > `0`] | sort_by(@, &properties.createdTime) | [-1].name' --output tsv)\nFQDN=$(az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn --output tsv)\nHEALTH_STATUS=$(curl -s -o /tmp/kodiai-healthz.verify.json -w '%{http_code}' \"https://${FQDN}/healthz\")\nREADINESS_STATUS=$(curl -s -o /tmp/kodiai-readiness.verify.json -w '%{http_code}' \"https://${FQDN}/readiness\")\ntest \"$ACTIVE_REVISION\" = \"ca-kodiai--deploy-20260504-222417\"\ntest \"$HEALTH_STATUS\" = \"200\"\ntest \"$READINESS_STATUS\" = \"200\"\nprintf 'active_revision=%s\\nhealthz_status=%s\\nreadiness_status=%s\\n' \"$ACTIVE_REVISION\" \"$HEALTH_STATUS\" \"$READINESS_STATUS\"\n'''\nstart=time.perf_counter()\nproc=subprocess.run(['bash','-lc',cmd], text=True, capture_output=True)\ndur=int((time.perf_counter()-start)*1000)\nprint(proc.stdout, end='')\nif proc.stderr:\n    print(proc.stderr, end='', file=__import__('sys').stderr)\nprint(f'duration_ms={dur}')\nraise SystemExit(proc.returncode)\nPY",
+    "exitCode": 0,
+    "outputSnippet": "WARNING: The behavior of this command has been altered by the following extension: containerapp\nactive_revision=ca-kodiai--deploy-20260504-222417\nhealthz_status=200\nreadiness_status=200\nduration_ms=10073\n",
+    "timestamp": 1777958733560
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_fdd60ziN0xmYBLUVfZqzGdMW|fc_01728ab12f5c65c00169f97f6627108191b5a073aee4855c91",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777958764369
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_eeecmexvRUOorBnt1xkksbR5|fc_01728ab12f5c65c00169f97f71583481919c8e7c3bea5635cf",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777958770747
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_KspKZWwdnPD6OtUo4BztogNb|fc_01728ab12f5c65c00169f97f7791608191a77ab469a4a13ced",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777958777109
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_VJpsStydBPdsKh0qztOsahVy|fc_01728ab12f5c65c00169f97f7be45881918ce79574223a768f",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777958781346
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_9nns84Hyn4MhRbD9Hw1sRhZl|fc_01728ab12f5c65c00169f97f820c7c8191a9fa6c1ee35073af",
+    "command": "python3 - <<'PY'\nfrom pathlib import Path\np=Path('docs/smoke/m066-formatter-suggestions.md')\ntext=p.read_text()\nrequired=['ca-kodiai--deploy-20260504-222417','/healthz` | HTTP 200','/readiness` | HTTP 200','T05 should post a fresh trigger']\nmissing=[s for s in required if s not in text]\nprint('smoke_artifact=' + ('ok' if not missing else 'missing:' + ','.join(missing)))\nPY",
+    "exitCode": 0,
+    "outputSnippet": "smoke_artifact=ok\n",
+    "timestamp": 1777958787738
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_ZWXe886jCHnTbNcL97NV9gaq|fc_01728ab12f5c65c00169f97f9bdcb081919bb69d5f8e627858",
+    "command": "python3 - <<'PY'\nimport subprocess, time, pathlib, sys\ncmd = r'''set -euo pipefail\nACTIVE_REVISION=$(az containerapp revision list --name ca-kodiai --resource-group rg-kodiai --query '[?properties.active && properties.trafficWeight > `0`] | sort_by(@, &properties.createdTime) | [-1].name' --output tsv)\nFQDN=$(az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn --output tsv)\nHEALTH_STATUS=$(curl -s -o /tmp/kodiai-healthz.final.json -w '%{http_code}' \"https://${FQDN}/healthz\")\nREADINESS_STATUS=$(curl -s -o /tmp/kodiai-readiness.final.json -w '%{http_code}' \"https://${FQDN}/readiness\")\ntest \"$ACTIVE_REVISION\" = \"ca-kodiai--deploy-20260504-222417\"\ntest \"$HEALTH_STATUS\" = \"200\"\ntest \"$READINESS_STATUS\" = \"200\"\nprintf 'active_revision=%s\\nhealthz_status=%s\\nreadiness_status=%s\\n' \"$ACTIVE_REVISION\" \"$HEALTH_STATUS\" \"$READINESS_STATUS\"\n'''\nstart=time.perf_counter()\nproc=subprocess.run(['bash','-lc',cmd], text=True, capture_output=True)\ndur=int((time.perf_counter()-start)*1000)\nprint(proc.stdout, end='')\nif proc.stderr:\n    print(proc.stderr, end='', file=sys.stderr)\ntext=pathlib.Path('docs/smoke/m066-formatter-suggestions.md').read_text()\nrequired=['ca-kodiai--deploy-20260504-222417','T05 should post a fresh trigger','/healthz` | HTTP 200','/readiness` | HTTP 200']\nmissing=[s for s in required if s not in text]\nprint('smoke_artifact=' + ('ok' if not missing else 'missing:' + ','.join(missing)))\nprint(f'duration_ms={dur}')\nraise SystemExit(proc.returncode or (1 if missing else 0))\nPY",
+    "exitCode": 0,
+    "outputSnippet": "WARNING: The behavior of this command has been altered by the following extension: containerapp\nactive_revision=ca-kodiai--deploy-20260504-222417\nhealthz_status=200\nreadiness_status=200\nsmoke_artifact=ok\nduration_ms=8836\n",
+    "timestamp": 1777958814899
+  }
+]
