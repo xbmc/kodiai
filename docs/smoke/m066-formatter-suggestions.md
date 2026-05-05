@@ -1,6 +1,8 @@
 # M066 Formatter Suggestions Smoke Proof
 
-Use this template to record final live proof for same-PR formatter suggestions. Keep entries bounded and redact secrets. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr.
+Status: **blocked — accepted live formatter-suggestion proof not captured in this environment**.
+
+This file is the bounded operator record for M066/S05. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr here.
 
 ## Scope
 
@@ -11,58 +13,93 @@ Use this template to record final live proof for same-PR formatter suggestions. 
 - Required visible surface: same-PR Pull Request Review with at least one fenced `suggestion` block
 - Not claimed: formatter suggestions in normal automatic PR reviews
 
+## Blocked smoke status
+
+The live smoke was not accepted because this task session did not have a real captured formatter-suggestion delivery bundle to verify. No PR review URL, suggestion comment URL, deployed revision, or `m066_s05_ok` verifier output was available in tracked artifacts or ambient task context.
+
+Missing or unavailable access surfaces observed from this session:
+
+| Surface | Observed state | Retry path |
+|---|---|---|
+| Captured formatter `reviewOutputKey` | Missing | Trigger `@kodiai format suggestions` on a controlled smoke PR and copy the key that encodes `action-mention-format-suggestions`. |
+| Captured GitHub `deliveryId` | Missing | Capture the `X-GitHub-Delivery` id for the same trigger as the formatter review. |
+| Accepted same-PR formatter Pull Request Review URL/id | Missing | Verify the deployed app posted a Pull Request Review, not only an issue comment or standalone PR comment. |
+| Accepted suggestion review comment URL/id | Missing | Verify at least one associated review comment contains a fenced GitHub `suggestion` block. |
+| Deployed revision/log correlation | Missing | Query Azure Container Apps logs by delivery id and reviewOutputKey after the live trigger. |
+| Shell `GITHUB_TOKEN` for `gh`/API inspection | Unset | Run from an authenticated operator environment if GitHub API inspection through `gh` is needed. |
+| Shell `GITHUB_APP_ID` | Unset in ambient shell | Run the verifier from the deployed/operator environment with GitHub App credentials available; do not paste values into logs. |
+| Shell `GITHUB_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_BASE64` | Unset in ambient shell | Provide one of these keys through the operator secret store before running the live verifier. |
+| Azure CLI environment (`AZURE_CONFIG_DIR`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) | Unset in ambient shell | Use an authenticated Azure operator environment to capture deployed revision and log fields. |
+
+A local verifier probe using a synthetic formatter key failed closed and did **not** constitute proof:
+
+```sh
+bun run verify:m066:s05 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-format-suggestions:delivery-delivery-101:head-head-101 --delivery-id delivery-101 --json
+```
+
+Bounded result:
+
+```json
+{
+  "success": false,
+  "status_code": "m066_s05_github_unavailable",
+  "preflight": {
+    "githubAccess": "unavailable"
+  },
+  "issues": [
+    "GitHub formatter-suggestion proof collection failed: Not Found - https://docs.github.com/rest/pulls/reviews#list-reviews-for-a-pull-request"
+  ]
+}
+```
+
 ## Smoke PR
 
 | Field | Value |
 |---|---|
-| Repository | `<owner/repo>` |
-| PR URL | `<https://github.com/owner/repo/pull/number>` |
-| Safe smoke shape | `<one or two files, formatting-only diff, no secrets/generated files>` |
-| Trigger mode | `<format-only / review-and-format>` |
-| Trigger comment URL | `<https://github.com/owner/repo/pull/number#issuecomment-...>` |
-| Delivery ID (`X-GitHub-Delivery`) | `<delivery-id>` |
-| Review output key | `<kodiai-review-output:v1:...:action-mention-format-suggestions:...>` |
-| Deployed revision | `<active Azure Container Apps revision>` |
+| Repository | `xbmc/kodiai` preferred, but not verified |
+| PR URL | `blocked — no controlled live smoke PR URL captured` |
+| Safe smoke shape | `required: one or two files, formatting-only diff, no secrets/generated files` |
+| Trigger mode | `required: format-only first` |
+| Trigger comment URL | `blocked — no trigger comment URL captured` |
+| Delivery ID (`X-GitHub-Delivery`) | `blocked — missing captured delivery id` |
+| Review output key | `blocked — missing captured mention-format-suggestions reviewOutputKey` |
+| Deployed revision | `blocked — missing Azure Container Apps revision/log access` |
 
 ## Formatter review proof
 
 | Field | Value |
 |---|---|
-| Formatter Pull Request Review URL | `<review-url>` |
-| Formatter Pull Request Review ID | `<review-id>` |
-| Suggestion comment URL | `<review-comment-url>` |
-| Suggestion comment ID | `<review-comment-id>` |
-| Number of posted suggestions | `<posted-count>` |
-| Number skipped | `<skipped-count>` |
-| Number capped | `<capped-count>` |
-| Number publisherFailed | `<publisher-failed-count>` |
+| Formatter Pull Request Review URL | `blocked — not captured` |
+| Formatter Pull Request Review ID | `blocked — not captured` |
+| Suggestion comment URL | `blocked — not captured` |
+| Suggestion comment ID | `blocked — not captured` |
+| Number of posted suggestions | `blocked — not captured` |
+| Number skipped | `blocked — not captured` |
+| Number capped | `blocked — not captured` |
+| Number publisherFailed | `blocked — not captured` |
 
 ## Verifier evidence
 
-Command:
+Required live command once identifiers are captured:
 
 ```sh
 bun run verify:m066:s05 -- --repo <owner/repo> --review-output-key <captured-mention-format-suggestions-key> --delivery-id <captured-delivery-id> --json
 ```
 
-Output summary:
+Required passing status before this proof can be accepted:
 
 ```json
 {
-  "status": "<pass/fail>",
-  "status_code": "<status-code>",
-  "repo": "<owner/repo>",
-  "delivery_id": "<delivery-id>",
-  "review_output_key": "<review-output-key>",
-  "matched_review_id": "<review-id>",
-  "suggestion_comment_count": "<count>",
-  "issues": []
+  "success": true,
+  "status_code": "m066_s05_ok"
 }
 ```
 
+Current accepted live output: **none**.
+
 ## Log evidence
 
-Log query used:
+Log query to run after the live trigger:
 
 ```kusto
 ContainerAppConsoleLogs_CL
@@ -72,32 +109,30 @@ ContainerAppConsoleLogs_CL
 | order by TimeGenerated asc
 ```
 
-Observed completion message:
-
-- `<Format-only formatter suggestion request completed / Combined review-and-format mention request completed>`
+Observed completion message: `blocked — no deployed log row captured`.
 
 Observed bounded fields:
 
 | Field | Value |
 |---|---|
-| `formatterStatus` | `<value>` |
-| `commandStatus` | `<value>` |
-| `publisherStatus` | `<value>` |
-| `suggestions` | `<number>` |
-| `skipped` | `<number>` |
-| `capped` | `<number>` |
-| `posted` | `<number>` |
-| `publisherSkipped` | `<number>` |
-| `publisherFailed` | `<number>` |
-| `deliveryId` | `<delivery-id>` |
-| `reviewOutputKey` | `<review-output-key>` |
+| `formatterStatus` | `blocked — not captured` |
+| `commandStatus` | `blocked — not captured` |
+| `publisherStatus` | `blocked — not captured` |
+| `suggestions` | `blocked — not captured` |
+| `skipped` | `blocked — not captured` |
+| `capped` | `blocked — not captured` |
+| `posted` | `blocked — not captured` |
+| `publisherSkipped` | `blocked — not captured` |
+| `publisherFailed` | `blocked — not captured` |
+| `deliveryId` | `blocked — not captured` |
+| `reviewOutputKey` | `blocked — not captured` |
 
 ## Optional visual evidence
 
 | Field | Value |
 |---|---|
-| Screenshot URL | `<url-or-n/a>` |
-| Notes | `<bounded operator notes>` |
+| Screenshot URL | `n/a — no accepted live proof` |
+| Notes | `Retry from an authenticated operator environment with a fresh trigger comment or new PR head commit to avoid idempotency noise.` |
 
 ## Final interpretation
 
@@ -105,4 +140,4 @@ Observed bounded fields:
 - [ ] The review body includes the formatter reviewOutputKey marker.
 - [ ] At least one associated review comment contains a fenced `suggestion` block.
 - [ ] The verifier passed for the captured repo, reviewOutputKey, and delivery id.
-- [ ] The proof does not claim automatic-review formatter suggestions are live.
+- [x] The proof does not claim automatic-review formatter suggestions are live.

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M066/S05/T02",
+  "timestamp": 1777945394447,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "test -s docs/runbooks/formatter-suggestions.md",
+      "exitCode": 0,
+      "durationMs": 8,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -s docs/smoke/m066-formatter-suggestions.md",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    }
+  ]
+}

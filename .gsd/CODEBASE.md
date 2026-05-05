@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-05T01:38:45Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T01:38:45Z","fingerprint":"f02af3192437a0f8843edf3ab21181f0728c16fc","fileCount":500,"truncated":true} -->
+Generated: 2026-05-05T01:43:14Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T01:43:14Z","fingerprint":"ff6e2f8fb79e3af9e98c708081dd5b25ff203d08","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -44,6 +44,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 ### docs/runbooks/
 - `docs/runbooks/aca-job-debugging.md`
 - `docs/runbooks/deploy-rollback.md`
+- `docs/runbooks/formatter-suggestions.md`
 - `docs/runbooks/key-rotation.md`
 - `docs/runbooks/m065-rollout-proof.md`
 - `docs/runbooks/mentions.md`
@@ -57,6 +58,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/xbmc-ops.md`
 
 ### docs/smoke/
+- `docs/smoke/m066-formatter-suggestions.md`
 - `docs/smoke/phase27-uat-notes.md`
 - `docs/smoke/phase72-telemetry-follow-through.md`
 - `docs/smoke/phase74-reliability-regression-gate.md`
@@ -172,5 +174,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 ### src/knowledge/
 - `src/knowledge/active-rules.test.ts`
 - `src/knowledge/active-rules.ts`
-- `src/knowledge/adaptive-threshold.test.ts`
-- `src/knowledge/adaptive-threshold.ts`
