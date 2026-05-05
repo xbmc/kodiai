@@ -31,7 +31,7 @@
 - [x] **S06: S06** `risk:high` `depends:[]`
   > After this: After this: M066 has a real authenticated/deployed smoke proof showing GitHub accepted at least one Kodiai-generated same-PR formatter suggestion, and `verify:m066:s05` returns `m066_s05_ok` for the captured evidence.
 
-- [ ] **S07: S07** `risk:high` `depends:[]`
+- [x] **S07: S07** `risk:high` `depends:[]`
   > After this: After this: a deployed authenticated smoke run produces a formatter `mention-format-suggestions` reviewOutputKey, a COMMENTED same-PR Kodiai Pull Request Review with at least one fenced suggestion comment, and `bun run verify:m066:s05` returns `m066_s05_ok`.
 
 ## Boundary Map

@@ -10,11 +10,11 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 ## Current State
 
-The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, multi-model routing, and explicit mention-driven review handling.
+The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, multi-model routing, explicit mention-driven review handling, and explicit same-PR formatter suggestions.
 
-Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt.
+Milestones M043, M044, M045, M046, M047, M051, and **M066** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt, and M066 shipped explicit same-PR formatter suggestions with accepted live GitHub proof.
 
-**M066 is active: Same-PR Formatter Suggestions.** S01, S02, S03, S04, and S05 are closed in the GSD roadmap. S06 has completed its task execution as a bounded live-smoke attempt, but it did **not** produce the required accepted same-PR formatter suggestion proof. The controlled PR #134 trigger proved authenticated operator access, PR-head smoke configuration, GitHub delivery/log correlation, and deterministic verifier behavior, but the deployed app handled `@kodiai format suggestions` as a generic conversational formatting request instead of entering the formatter-suggestion subflow. `docs/smoke/m066-formatter-suggestions.md` truthfully records the missing formatter `mention-format-suggestions` reviewOutputKey, missing Kodiai Pull Request Review, missing fenced suggestion comment, and failing verifier state. R077/R085 remain unvalidated until a future live run returns `m066_s05_ok`.
+**M066 is complete: Same-PR Formatter Suggestions.** The milestone has accepted live proof for same-PR formatter suggestions: the deployed Azure Container Apps revision `ca-kodiai--deploy-20260504-222417` handled a fresh authenticated `@kodiai format suggestions` trigger on `xbmc/kodiai#134` as formatter intent, emitted a formatter `mention-format-suggestions` reviewOutputKey, published a same-PR COMMENTED Kodiai Pull Request Review with one fenced GitHub `suggestion` review comment, and `bun run verify:m066:s05` returned `success: true` with `status_code: "m066_s05_ok"`. R077 and R085 are validated with this live evidence.
 
 M066 delivered these staged contracts:
 
@@ -23,7 +23,8 @@ M066 delivered these staged contracts:
 - **S03:** Batched same-PR Pull Request Review publication through `publishFormatterSuggestionReview()`, including idempotency markers, outgoing secret scanning, mention sanitization, and bounded failure statuses. It never falls back to branch pushes, new PRs, bot commits, issue comments, or standalone comments as a proof surface.
 - **S04:** Runtime mention orchestration for explicit format-only and combined review-and-format requests. Format-only bypasses Claude and stays read-only; combined requests preserve normal review behavior while running formatter suggestions independently.
 - **S05:** `verify:m066:s05`, operator docs, and the durable smoke artifact. The verifier requires a `mention-format-suggestions` review-output key, exactly one matching `COMMENTED` Pull Request Review on the encoded PR, and at least one associated inline review comment containing a fenced GitHub `suggestion` block. Missing GitHub App access and GitHub API failures surface as named bounded statuses without printing secrets.
-- **S06:** Authenticated live-smoke retry on `xbmc/kodiai#134` with non-secret evidence. It resolved the initial missing-credentials blocker through the authenticated `gh` operator path, created a controlled PR with a one-hunk README formatter diff and PR-head formatter config, posted `@kodiai format suggestions`, captured delivery `9961ce70-4830-11f1-86fa-c01e4dffd5b0`, revision `ca-kodiai--deploy-20260504-081420`, ACA job `caj-kodiai-agent-3dzowdd`, and bounded decline evidence. It did not close the live-proof requirement because no formatter subflow fields, reviewOutputKey, same-PR Kodiai review, or fenced suggestion comment appeared.
+- **S06:** Authenticated live-smoke retry on `xbmc/kodiai#134` with non-secret evidence. It resolved the initial missing-credentials blocker through the authenticated `gh` operator path, created a controlled PR with a one-hunk README formatter diff and PR-head formatter config, posted `@kodiai format suggestions`, captured delivery/log correlation, and truthfully recorded a bounded decline because the then-deployed app handled the trigger as a generic conversational request.
+- **S07:** Remediated the deployed formatter-suggestion mention path. It root-caused the live miss to deployed formatter-intent routing/observability drift before the formatter subflow, added a deterministic PR issue-comment regression, aligned `mention-format-suggestions` review-output identity between mention routing and formatter subflow logs, deployed the fix, captured active revision/health/readiness proof, then captured accepted same-PR GitHub suggestion proof on PR #134 with delivery `462ed8c0-4843-11f1-8135-1c6010084b2c`, Pull Request Review `4225484818`, suggestion comment `3186219778`, and verifier status `m066_s05_ok`.
 
 ## Architecture / Key Patterns
 
@@ -34,6 +35,7 @@ M066 delivered these staged contracts:
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
 - **Formatter-suggestion config seam:** `review.formatterSuggestions` in `src/execution/config.ts` controls automatic formatter-suggestion inclusion separately from explicit mention access. `automatic` defaults false and is reserved for future automatic-review inclusion until that path is wired and smoked; explicit mention requests are operationally documented separately.
 - **Formatter-suggestion mention seam:** `src/handlers/formatter-suggestion-intent.ts` is the pure parser for explicit formatter-suggestion requests. `src/handlers/mention.ts` stores the parsed descriptor on `ExecutionContext.formatterSuggestionRequest` so downstream execution/publishing code should not re-parse mention text.
+- **Formatter mention review-output identity seam:** `src/handlers/mention.ts` owns the shared `mention-format-suggestions` action identity for explicit formatter mentions and passes it into `formatterSuggestionSubflow()`. Format-only and combined formatter completion logs include `deliveryId`, `reviewOutputKey`, and `reviewOutputAction` so deployed live-smoke failures can be distinguished from generic conversational handling.
 - **Formatter-suggestion orchestration seam:** `src/handlers/formatter-suggestion-orchestration.ts` composes formatter command execution, PR diff collection, commentability indexing, formatter diff mapping, head-SHA resolution, and batched same-PR review publication into a structured subflow result. Expected runtime failures are returned as bounded statuses and visible messages, not thrown exceptions.
 - **Formatter-suggestion routing invariant:** format-only suggestions remain read-only, bypass Claude, and must not enter write mode; combined `review-and-format` requests preserve explicit review routing while letting the formatter subflow run independently after review work.
 - **Formatter command runner seam:** `src/execution/formatter-suggestions.ts` owns formatter command execution. It accepts injected process execution for tests, uses workspace cwd for the default Bun-backed runner, reports `no-command`/`no-op`/`success`/`failed`/`timed-out`, substitutes only `{baseRef}`, `{headRef}`, and `{diffRange}`, and never stages, commits, pushes, or publishes by itself.
@@ -65,7 +67,7 @@ M066 delivered these staged contracts:
 
 ## Capability Contract
 
-See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement status, and coverage mapping. M066 S06 did **not** validate R085/R077 live committability proof; those requirements still need an authenticated live smoke run and `m066_s05_ok` evidence before being marked validated.
+See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement status, and coverage mapping. M066 S07 validated R077 and R085 with accepted same-PR formatter suggestion proof on `xbmc/kodiai#134` and `verify:m066:s05` status `m066_s05_ok`.
 
 ## Milestone Sequence
 
@@ -76,10 +78,11 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M046: Contributor Tier Calibration and Fixture Audit
 - [x] M047: Contributor Experience Redesign and Calibration Rollout
 - [x] M051: Manual rereview trigger truthfulness
-- [ ] M066: Same-PR Formatter Suggestions
+- [x] M066: Same-PR Formatter Suggestions
   - [x] S01: Formatter suggestion config and mention intent
   - [x] S02: Formatter command and diff-to-suggestion mapper
   - [x] S03: Batched same-PR suggestion review publisher
   - [x] S04: Explicit and combined request orchestration
-  - [x] S05: Live-proof verifier, operator docs, and blocked smoke artifact
-  - [ ] S06: Authenticated live-smoke retry produced bounded decline, not accepted same-PR formatter suggestion proof
+  - [x] S05: Live-proof verifier, operator docs, and first smoke artifact
+  - [x] S06: Authenticated live-smoke retry produced bounded decline evidence for the deployed formatter trigger miss
+  - [x] S07: Deployed formatter-routing remediation and accepted live same-PR suggestion proof
