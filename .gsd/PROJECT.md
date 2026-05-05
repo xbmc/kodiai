@@ -14,7 +14,7 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt.
 
-**M066 is active: Same-PR Formatter Suggestions.** S01, S02, S03, S04, and S05 are now closed in the GSD roadmap, but S05 closed with a documented live-proof limitation: the verifier, docs, and smoke proof artifact exist, deterministic regression gates passed, and `docs/smoke/m066-formatter-suggestions.md` truthfully records that accepted live GitHub proof remains blocked until an authenticated operator environment captures real same-PR formatter Pull Request Review evidence and `verify:m066:s05` returns `m066_s05_ok`.
+**M066 is active: Same-PR Formatter Suggestions.** S01, S02, S03, S04, and S05 are closed in the GSD roadmap. S06 has completed its task execution as a bounded live-smoke attempt, but it did **not** produce the required accepted same-PR formatter suggestion proof. The controlled PR #134 trigger proved authenticated operator access, PR-head smoke configuration, GitHub delivery/log correlation, and deterministic verifier behavior, but the deployed app handled `@kodiai format suggestions` as a generic conversational formatting request instead of entering the formatter-suggestion subflow. `docs/smoke/m066-formatter-suggestions.md` truthfully records the missing formatter `mention-format-suggestions` reviewOutputKey, missing Kodiai Pull Request Review, missing fenced suggestion comment, and failing verifier state. R077/R085 remain unvalidated until a future live run returns `m066_s05_ok`.
 
 M066 delivered these staged contracts:
 
@@ -23,6 +23,7 @@ M066 delivered these staged contracts:
 - **S03:** Batched same-PR Pull Request Review publication through `publishFormatterSuggestionReview()`, including idempotency markers, outgoing secret scanning, mention sanitization, and bounded failure statuses. It never falls back to branch pushes, new PRs, bot commits, issue comments, or standalone comments as a proof surface.
 - **S04:** Runtime mention orchestration for explicit format-only and combined review-and-format requests. Format-only bypasses Claude and stays read-only; combined requests preserve normal review behavior while running formatter suggestions independently.
 - **S05:** `verify:m066:s05`, operator docs, and the durable smoke artifact. The verifier requires a `mention-format-suggestions` review-output key, exactly one matching `COMMENTED` Pull Request Review on the encoded PR, and at least one associated inline review comment containing a fenced GitHub `suggestion` block. Missing GitHub App access and GitHub API failures surface as named bounded statuses without printing secrets.
+- **S06:** Authenticated live-smoke retry on `xbmc/kodiai#134` with non-secret evidence. It resolved the initial missing-credentials blocker through the authenticated `gh` operator path, created a controlled PR with a one-hunk README formatter diff and PR-head formatter config, posted `@kodiai format suggestions`, captured delivery `9961ce70-4830-11f1-86fa-c01e4dffd5b0`, revision `ca-kodiai--deploy-20260504-081420`, ACA job `caj-kodiai-agent-3dzowdd`, and bounded decline evidence. It did not close the live-proof requirement because no formatter subflow fields, reviewOutputKey, same-PR Kodiai review, or fenced suggestion comment appeared.
 
 ## Architecture / Key Patterns
 
@@ -41,6 +42,7 @@ M066 delivered these staged contracts:
 - **Formatter suggestion publisher seam:** `publishFormatterSuggestionReview()` in `src/execution/formatter-suggestion-publisher.ts` consumes S02 payloads directly, uses `octokit.rest.pulls.createReview` with `event: "COMMENT"`, creates one same-PR Pull Request Review with batched inline suggestions, applies review-output idempotency gates, scans outgoing content for secrets, sanitizes configured bot handles, and reports all-or-nothing `posted`/`skipped`/`no-suggestions`/`blocked`/`failed` statuses.
 - **Formatter publisher idempotency gotcha:** the inbound `sanitizeContent` pipeline strips HTML comments; outgoing formatter review bodies intentionally use raw secret scanning plus targeted `sanitizeOutgoingMentions()` so `buildReviewOutputMarker(reviewOutputKey)` survives publication.
 - **Formatter live-proof verifier seam:** `scripts/verify-m066-s05.ts` is the M066 S05 proof gate. It validates arguments before network access, uses GitHub App credentials without printing secrets, scopes reads to the PR encoded by the key, rejects duplicate/wrong-state/wrong-surface evidence, and only accepts associated inline fenced suggestion comments on the same Pull Request Review.
+- **M066 live-smoke gotcha:** PR-head `.kodiai.yml` formatter config is necessary for smoke PRs when `main` has no `review.formatterSuggestions.command`, because Kodiai loads repo config after checking out the PR head. Even with that config, proof is not accepted unless the deployed runtime emits a formatter `mention-format-suggestions` reviewOutputKey and GitHub accepts a same-PR suggestion review.
 - **Combined formatter/review partial-failure contract:** formatter failures post/log bounded diagnostics without suppressing normal review publication/fallback; normal review result failures or thrown executor errors still attempt formatter suggestions when the workspace/config/PR identity are available, then preserve existing review error behavior.
 - **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger. Team-only `pull_request.review_requested` events — including `ai-review` / `aireview` — are retired as operator triggers and should surface only as skipped manual-trigger negatives.
 - **Manual rereview observability seam:** explicit manual review proof comes from mention completion/publish evidence (`lane=interactive-review`, `taskType=review.full`, approval/fallback publish resolution), not from reviewer-team topology or self-generated open-event requests.
@@ -63,7 +65,7 @@ M066 delivered these staged contracts:
 
 ## Capability Contract
 
-See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement status, and coverage mapping. M066 S05 did **not** validate R085/R077 live committability proof; those requirements still need an authenticated live smoke run and `m066_s05_ok` evidence before being marked validated.
+See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement status, and coverage mapping. M066 S06 did **not** validate R085/R077 live committability proof; those requirements still need an authenticated live smoke run and `m066_s05_ok` evidence before being marked validated.
 
 ## Milestone Sequence
 
@@ -80,3 +82,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: Batched same-PR suggestion review publisher
   - [x] S04: Explicit and combined request orchestration
   - [x] S05: Live-proof verifier, operator docs, and blocked smoke artifact
+  - [ ] S06: Authenticated live-smoke retry produced bounded decline, not accepted same-PR formatter suggestion proof

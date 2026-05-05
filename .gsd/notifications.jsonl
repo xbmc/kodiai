@@ -363,3 +363,9 @@
 {"id":"71f2f59f-8985-4bf9-87e6-2979e5dc08a9","ts":"2026-05-05T03:22:37.789Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"8d5fb031-79cf-4fea-9cdc-e204d9c31332","ts":"2026-05-05T03:25:03.088Z","severity":"info","message":"Committed: feat: Reconfirmed PR #134 lacks accepted Kodiai formatter review proof…","source":"notify","read":false}
 {"id":"171a9ec3-99d2-4d85-bf6c-a45e710079ea","ts":"2026-05-05T03:25:09.546Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"6141c9a9-a677-4aa8-8ba8-8254d24f297b","ts":"2026-05-05T03:26:30.592Z","severity":"info","message":"Committed: feat: Revalidated deterministic M066 formatter-suggestion checks but fo…","source":"notify","read":false}
+{"id":"da700c00-c965-4922-b244-7a52adb66e15","ts":"2026-05-05T03:26:30.625Z","severity":"warning","message":"[safety] task marked complete with verification commands but no bash calls were executed","source":"workflow-logger","read":false}
+{"id":"a763fa74-f56c-4ba4-b9a9-5b65075e1745","ts":"2026-05-05T03:26:30.626Z","severity":"warning","message":"Safety: task T05 has verification commands but no bash calls were recorded","source":"notify","read":false}
+{"id":"1932a3fb-2124-4f82-a28e-a9f6da1fb975","ts":"2026-05-05T03:26:39.886Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"555f7829-38e6-4425-9260-ceb31acbfede","ts":"2026-05-05T03:26:39.899Z","severity":"warning","message":"[safety] task marked complete with verification commands but no bash calls were executed","source":"notify","read":false}
+{"id":"a7e106ad-4200-4927-8e20-cfa7f011b5bc","ts":"2026-05-05T03:34:52.452Z","severity":"warning","message":"[recovery] verify-fail complete-milestone M066: existsSync false for /home/keith/src/kodiai/.gsd/milestones/M066/M066-SUMMARY.md","source":"workflow-logger","read":false}

@@ -28,7 +28,7 @@
 - [x] **S05: S05** `risk:medium` `depends:[]`
   > After this: A deployed run posts at least one committable formatter suggestion on a real/test PR and documents how maintainers enable automatic mode later.
 
-- [ ] **S06: S06** `risk:high` `depends:[]`
+- [x] **S06: S06** `risk:high` `depends:[]`
   > After this: After this: M066 has a real authenticated/deployed smoke proof showing GitHub accepted at least one Kodiai-generated same-PR formatter suggestion, and `verify:m066:s05` returns `m066_s05_ok` for the captured evidence.
 
 ## Boundary Map
