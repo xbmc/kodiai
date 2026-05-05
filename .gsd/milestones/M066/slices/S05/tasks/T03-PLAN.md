@@ -1,15 +1,10 @@
 ---
 estimated_steps: 5
 estimated_files: 8
-skills_used:
-  - github-bot
-  - github-workflows
-  - gh
-  - azure-container-apps
-  - verify-before-complete
+skills_used: []
 ---
 
-# T03: Run live formatter smoke and record accepted suggestion proof
+# T03: Recorded a blocked M066 S05 live formatter smoke proof with bounded missing-access diagnostics.
 
 skills_used frontmatter expectation: `github-bot`, `github-workflows`, `gh`, `azure-container-apps`, `verify-before-complete`.
 

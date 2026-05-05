@@ -1,6 +1,6 @@
 # M066 Formatter Suggestions Smoke Proof
 
-Status: **blocked — accepted live formatter-suggestion proof not captured in this environment**.
+Status: **blocked — accepted live formatter-suggestion proof not captured in this environment after T04 recheck**.
 
 This file is the bounded operator record for M066/S05. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr here.
 
@@ -15,7 +15,7 @@ This file is the bounded operator record for M066/S05. Do not paste GitHub App p
 
 ## Blocked smoke status
 
-The live smoke was not accepted because this task session did not have a real captured formatter-suggestion delivery bundle to verify. No PR review URL, suggestion comment URL, deployed revision, or `m066_s05_ok` verifier output was available in tracked artifacts or ambient task context.
+The live smoke was not accepted because this task session did not have a real captured formatter-suggestion delivery bundle to verify. No PR review URL, suggestion comment URL, deployed revision, or `m066_s05_ok` verifier output was available in tracked artifacts or ambient task context. T04 also found `M066_S05_REPO`, `M066_S05_REVIEW_OUTPUT_KEY`, `GITHUB_APP_ID`, and `GITHUB_PRIVATE_KEY`/`GITHUB_PRIVATE_KEY_BASE64` unset in the ambient shell, so the proof variables for T05 remain unavailable rather than exported with placeholder values.
 
 Missing or unavailable access surfaces observed from this session:
 
@@ -26,6 +26,9 @@ Missing or unavailable access surfaces observed from this session:
 | Accepted same-PR formatter Pull Request Review URL/id | Missing | Verify the deployed app posted a Pull Request Review, not only an issue comment or standalone PR comment. |
 | Accepted suggestion review comment URL/id | Missing | Verify at least one associated review comment contains a fenced GitHub `suggestion` block. |
 | Deployed revision/log correlation | Missing | Query Azure Container Apps logs by delivery id and reviewOutputKey after the live trigger. |
+| Shell `M066_S05_REPO` | Unset in ambient shell | Export the concrete smoke repository slug (for example, the repo that received the accepted formatter PR review) only after a real live trigger is captured. |
+| Shell `M066_S05_REVIEW_OUTPUT_KEY` | Unset in ambient shell | Export the captured `action-mention-format-suggestions` reviewOutputKey from the same live trigger; do not use placeholder or synthetic keys. |
+| Optional shell `M066_S05_DELIVERY_ID` | Unset in ambient shell | Export the captured `X-GitHub-Delivery` id when available so the verifier can bind proof to the same delivery. |
 | Shell `GITHUB_TOKEN` for `gh`/API inspection | Unset | Run from an authenticated operator environment if GitHub API inspection through `gh` is needed. |
 | Shell `GITHUB_APP_ID` | Unset in ambient shell | Run the verifier from the deployed/operator environment with GitHub App credentials available; do not paste values into logs. |
 | Shell `GITHUB_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_BASE64` | Unset in ambient shell | Provide one of these keys through the operator secret store before running the live verifier. |
@@ -80,10 +83,14 @@ Bounded result:
 
 ## Verifier evidence
 
-Required live command once identifiers are captured:
+Required live command once identifiers are captured and exported:
 
 ```sh
-bun run verify:m066:s05 -- --repo <owner/repo> --review-output-key <captured-mention-format-suggestions-key> --delivery-id <captured-delivery-id> --json
+if test -n "${M066_S05_DELIVERY_ID:-}"; then
+  bun run verify:m066:s05 -- --repo "$M066_S05_REPO" --review-output-key "$M066_S05_REVIEW_OUTPUT_KEY" --delivery-id "$M066_S05_DELIVERY_ID" --json
+else
+  bun run verify:m066:s05 -- --repo "$M066_S05_REPO" --review-output-key "$M066_S05_REVIEW_OUTPUT_KEY" --json
+fi
 ```
 
 Required passing status before this proof can be accepted:
@@ -99,12 +106,12 @@ Current accepted live output: **none**.
 
 ## Log evidence
 
-Log query to run after the live trigger:
+Log query to run after the live trigger, substituting the captured delivery id and reviewOutputKey from the operator environment:
 
 ```kusto
 ContainerAppConsoleLogs_CL
 | where TimeGenerated > ago(24h)
-| where Log_s has "<delivery-id>" or Log_s has "<review-output-key>"
+| where Log_s has "captured-delivery-id" or Log_s has "captured-review-output-key"
 | project TimeGenerated, RevisionName_s, Log_s
 | order by TimeGenerated asc
 ```

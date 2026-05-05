@@ -1,14 +1,10 @@
 ---
 estimated_steps: 3
 estimated_files: 7
-skills_used:
-  - write-docs
-  - github-workflows
-  - azure-container-apps
-  - verify-before-complete
+skills_used: []
 ---
 
-# T02: Document formatter suggestions configuration and operator runbook
+# T02: Documented explicit formatter-suggestion configuration, operator smoke workflow, and fillable M066 proof record.
 
 skills_used frontmatter expectation: `write-docs`, `github-workflows`, `azure-container-apps`, `verify-before-complete`.
 

@@ -1,15 +1,10 @@
 ---
 estimated_steps: 5
 estimated_files: 7
-skills_used:
-  - github-bot
-  - github-workflows
-  - gh
-  - test-driven-development
-  - verify-before-complete
+skills_used: []
 ---
 
-# T01: Add formatter suggestion live verifier with tests
+# T01: Added the M066 S05 formatter-suggestion live verifier and test suite.
 
 skills_used frontmatter expectation: `github-bot`, `github-workflows`, `gh`, `test-driven-development`, `verify-before-complete`.
 
