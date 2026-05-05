@@ -109,17 +109,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions.
 - Notes: The user explicitly rejected a separate PR; humans should choose whether to apply GitHub's suggestions.
 
-### R078 — Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
-- Class: integration
-- Status: active
-- Description: Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
-- Why it matters: Kodiai must own the suggestion generation loop while avoiding a hardcoded one-off implementation that blocks later formatter support.
-- Source: user
-- Primary owning slice: M053/S01
-- Supporting slices: M053/S02
-- Validation: Config and command-runner tests prove command parsing, placeholder substitution, and no Jenkins artifact dependency.
-- Notes: Jenkins artifacts are out of scope; Kodiai computes suggestions independently from the PR workspace.
-
 ### R080 — Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
 - Class: functional
 - Status: active
@@ -141,28 +130,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M053/S04
 - Validation: Publisher tests prove one review API call carries multiple inline comments and idempotency markers.
 - Notes: Avoid looping standalone comments for the normal formatter suggestion path.
-
-### R082 — Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
-- Class: quality-attribute
-- Status: active
-- Description: Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
-- Why it matters: GitHub suggestion blocks are only safe when their replacement range is exact; bad mappings create invalid or misleading committable changes.
-- Source: inferred
-- Primary owning slice: M053/S02
-- Supporting slices: M053/S03,M053/S05
-- Validation: Fixture tests cover single-line, multi-line, multi-hunk, multi-file, deleted-only, binary, unmappable, and capped hunks.
-- Notes: Claude must not invent or repair formatter hunks; invalid/unmappable hunks are skipped.
-
-### R083 — Formatter suggestion posting must enforce caps and skip unsafe hunks with structured visibility into skipped counts and reasons.
-- Class: operability
-- Status: active
-- Description: Formatter suggestion posting must enforce caps and skip unsafe hunks with structured visibility into skipped counts and reasons.
-- Why it matters: Formatting diffs can be large; Kodiai must avoid spamming PRs or posting unsafe suggestions.
-- Source: user
-- Primary owning slice: M053/S02
-- Supporting slices: M053/S03,M053/S04
-- Validation: Cap/skip tests prove maxSuggestions is enforced and skip reasons are surfaced without malformed suggestion blocks.
-- Notes: Partial success should publish valid suggestions while logging/publicly accounting for skipped hunks.
 
 ### R084 — Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
 - Class: failure-visibility
@@ -860,6 +827,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M066/S01 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts --timeout 30000` (245 pass, 0 fail). Parser and full mention-handler tests prove `@kodiai format suggestions` and `@kodiai suggest formatting fixes` route as explicit formatter-suggestion requests.
 - Notes: M053 discussion: formatter suggestions are always accessible by explicit mention; repo config does not disable explicit access.
 
+### R078 — Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
+- Class: integration
+- Status: validated
+- Description: Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
+- Why it matters: Kodiai must own the suggestion generation loop while avoiding a hardcoded one-off implementation that blocks later formatter support.
+- Source: user
+- Primary owning slice: M053/S01
+- Supporting slices: M053/S02
+- Validation: M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Command-runner fixture tests prove repository-configured formatter commands use only allowlisted placeholders, return structured no-command/no-op/success/failed/timed-out statuses, and produce bounded/redacted diagnostics without relying on Jenkins artifacts.
+- Notes: Jenkins artifacts are out of scope; Kodiai computes suggestions independently from the PR workspace.
+
 ### R079 — Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
 - Class: constraint
 - Status: validated
@@ -870,6 +848,28 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M053/S04
 - Validation: M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off.
 - Notes: Use config semantics like `review.formatterSuggestions.automatic: false`, not `enabled: false`.
+
+### R082 — Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
+- Class: quality-attribute
+- Status: validated
+- Description: Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
+- Why it matters: GitHub suggestion blocks are only safe when their replacement range is exact; bad mappings create invalid or misleading committable changes.
+- Source: inferred
+- Primary owning slice: M053/S02
+- Supporting slices: M053/S03,M053/S05
+- Validation: M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Formatter parser/mapper tests prove git unified diffs become deterministic RIGHT-side GitHub suggestion payloads only when every target line maps to the PR diff index; malformed, unsupported, pure insertion/deletion, path-mismatch, and off-diff hunks are skipped rather than guessed.
+- Notes: Claude must not invent or repair formatter hunks; invalid/unmappable hunks are skipped.
+
+### R083 — Formatter suggestion posting must enforce caps and skip unsafe hunks with structured visibility into skipped counts and reasons.
+- Class: operability
+- Status: validated
+- Description: Formatter suggestion posting must enforce caps and skip unsafe hunks with structured visibility into skipped counts and reasons.
+- Why it matters: Formatting diffs can be large; Kodiai must avoid spamming PRs or posting unsafe suggestions.
+- Source: user
+- Primary owning slice: M053/S02
+- Supporting slices: M053/S03,M053/S04
+- Validation: M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging.
+- Notes: Partial success should publish valid suggestions while logging/publicly accounting for skipped hunks.
 
 ## Deferred
 
@@ -1055,12 +1055,12 @@ This file is the explicit capability and coverage contract for the project.
 | R075 | correctness | validated | M064/S02 | none | M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`; checkpoint acknowledgements now wait for durable save completion and never report `saved: true` on rejected writes. |
 | R076 | functional | validated | M053/S01 | M053/S04 | M066/S01 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts --timeout 30000` (245 pass, 0 fail). Parser and full mention-handler tests prove `@kodiai format suggestions` and `@kodiai suggest formatting fixes` route as explicit formatter-suggestion requests. |
 | R077 | functional | active | M053/S03 | M053/S02,M053/S04,M053/S05 | Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions. |
-| R078 | integration | active | M053/S01 | M053/S02 | Config and command-runner tests prove command parsing, placeholder substitution, and no Jenkins artifact dependency. |
+| R078 | integration | validated | M053/S01 | M053/S02 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Command-runner fixture tests prove repository-configured formatter commands use only allowlisted placeholders, return structured no-command/no-op/success/failed/timed-out statuses, and produce bounded/redacted diagnostics without relying on Jenkins artifacts. |
 | R079 | constraint | validated | M053/S01 | M053/S04 | M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off. |
 | R080 | functional | active | M053/S04 | M053/S01,M053/S02,M053/S03 | Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete. |
 | R081 | functional | active | M053/S03 | M053/S04 | Publisher tests prove one review API call carries multiple inline comments and idempotency markers. |
-| R082 | quality-attribute | active | M053/S02 | M053/S03,M053/S05 | Fixture tests cover single-line, multi-line, multi-hunk, multi-file, deleted-only, binary, unmappable, and capped hunks. |
-| R083 | operability | active | M053/S02 | M053/S03,M053/S04 | Cap/skip tests prove maxSuggestions is enforced and skip reasons are surfaced without malformed suggestion blocks. |
+| R082 | quality-attribute | validated | M053/S02 | M053/S03,M053/S05 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Formatter parser/mapper tests prove git unified diffs become deterministic RIGHT-side GitHub suggestion payloads only when every target line maps to the PR diff index; malformed, unsupported, pure insertion/deletion, path-mismatch, and off-diff hunks are skipped rather than guessed. |
+| R083 | operability | validated | M053/S02 | M053/S03,M053/S04 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging. |
 | R084 | failure-visibility | active | M053/S04 | M053/S03,M053/S05 | Failure-path tests prove command errors, empty output, GitHub batch rejection, and combined-mode partial success surfaces are concise and independent. |
 | R085 | quality-attribute | active | M053/S05 | none | Live smoke artifact links to a GitHub PR review suggestion plus logs showing success and no old review regression. |
 | R086 | functional | deferred | later | M053/S01,M053/S04 | Unmapped until a later milestone or explicit repo opt-in exercises automatic behavior. |
@@ -1072,7 +1072,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 17
-- Mapped to slices: 17
-- Validated: 65 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R079)
+- Active requirements: 14
+- Mapped to slices: 14
+- Validated: 68 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R078, R079, R082, R083)
 - Unmapped active requirements: 0

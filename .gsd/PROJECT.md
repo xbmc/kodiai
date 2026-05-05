@@ -14,13 +14,28 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt.
 
-**M066 is active: Same-PR Formatter Suggestions.** S01 is complete and established the default-off formatter-suggestion config plus explicit mention intent contract:
+**M066 is active: Same-PR Formatter Suggestions.** S01 and S02 are complete.
+
+S01 established the default-off formatter-suggestion config plus explicit mention intent contract:
 
 - `review.formatterSuggestions` exists with `automatic: false` by default, optional `command`, and bounded `maxSuggestions` defaulting to `10`.
 - Explicit formatter-suggestion mentions such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` are recognized without requiring automatic mode or a configured command.
 - Combined `@kodiai review & format suggestions` requests preserve the normal explicit review lane while carrying a formatter-suggestion descriptor for later orchestration.
 - Format-only formatter-suggestion requests stay read-only and do not trigger write mode.
 - Requirements **R076** and **R079** are validated by M066/S01 test evidence.
+
+S02 delivered the pure formatter execution and diff-to-suggestion mapping contract for downstream publication/orchestration:
+
+- `src/execution/formatter-suggestions.ts` exposes a side-effect-injected formatter command runner with `no-command`, `no-op`, `success`, `failed`, and `timed-out` statuses.
+- Formatter commands substitute only `{baseRef}`, `{headRef}`, and `{diffRange}`; unknown brace placeholders remain literal.
+- Formatter stderr summaries are bounded and redacted before becoming visible diagnostics.
+- Formatter git unified diffs parse into conservative file/hunk/line models with old/current and new/formatted cursor positions.
+- Binary, added, deleted, renamed, malformed file, malformed hunk, pure insertion, pure deletion, path mismatch, and off-PR-diff cases are skipped rather than guessed.
+- `buildPrDiffCommentabilityIndex()` records PR diff RIGHT-side commentable context/addition line numbers by path.
+- `mapFormatterDiffToSuggestions()` emits S03-ready payloads with `path`, `line`, optional `startLine`, `side: "RIGHT"`, markdown suggestion block, raw `suggestionBody`, and source metadata, enforcing `maxSuggestions` after safety validation.
+- Requirements **R078**, **R082**, and **R083** are validated by M066/S02 fixture/regression evidence.
+
+Remaining M066 work: S03 must publish the batch as one same-PR GitHub review with idempotency/rejection handling, S04 must wire explicit and combined mention flows with independent subflow failure handling, and S05 must provide live GitHub smoke proof plus operator docs.
 
 **M051 is complete.** The repo now carries one truthful manual rereview contract and one repaired M048 verifier contract:
 
@@ -42,6 +57,9 @@ Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restore
 - **Formatter-suggestion config seam:** `review.formatterSuggestions` in `src/execution/config.ts` controls automatic formatter-suggestion inclusion separately from explicit mention access. `automatic` defaults false; downstream formatter slices should consume `command` and `maxSuggestions` from this nested config.
 - **Formatter-suggestion mention seam:** `src/handlers/formatter-suggestion-intent.ts` is the pure parser for explicit formatter-suggestion requests. `src/handlers/mention.ts` stores the parsed descriptor on `ExecutionContext.formatterSuggestionRequest` so downstream execution/publishing code should not re-parse mention text.
 - **Formatter-suggestion routing invariant:** format-only suggestions remain read-only and must not enter write mode; combined `review-and-format` requests should preserve explicit review routing while letting the formatter subflow run independently.
+- **Formatter command runner seam:** `src/execution/formatter-suggestions.ts` owns formatter command execution. It accepts injected process execution for tests, uses workspace cwd for the default Bun-backed runner, reports `no-command`/`no-op`/`success`/`failed`/`timed-out`, substitutes only `{baseRef}`, `{headRef}`, and `{diffRange}`, and never stages, commits, pushes, or publishes by itself.
+- **Formatter diff parser seam:** formatter stdout is parsed conservatively into file/hunk/line models with old/current and new/formatted cursor positions. Unsupported or malformed diff states are structured skips, not partial guesses.
+- **Formatter suggestion mapping seam:** `buildPrDiffCommentabilityIndex()` records RIGHT-side PR diff target lines, and `mapFormatterDiffToSuggestions()` validates every formatter replacement target line before emitting S03-batchable GitHub suggestion payloads. Caps are enforced after safety validation so skipped/capped counts stay truthful.
 - **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger. Team-only `pull_request.review_requested` events — including `ai-review` / `aireview` — are retired as operator triggers and should surface only as skipped manual-trigger negatives.
 - **Manual rereview observability seam:** explicit manual review proof now comes from mention completion/publish evidence (`lane=interactive-review`, `taskType=review.full`, approval/fallback publish resolution), not from reviewer-team topology or self-generated open-event requests.
 - **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated reviewer/team requests cannot be used as proof for human manual rereview behavior.
@@ -96,7 +114,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: Residual operator truthfulness cleanup
 - [ ] M066: Same-PR Formatter Suggestions
   - [x] S01: Formatter suggestion config and mention intent
-  - [ ] S02: Formatter command and diff-to-suggestion mapper
+  - [x] S02: Formatter command and diff-to-suggestion mapper
   - [ ] S03: Batched same-PR suggestion review publisher
   - [ ] S04: Explicit and combined request orchestration
   - [ ] S05: Live smoke proof and operator docs

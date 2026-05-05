@@ -319,3 +319,5 @@
 {"id":"25c0117f-5265-465f-9c4d-88dafe1a776f","ts":"2026-05-05T00:26:10.958Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"07148b31-7c35-4725-a4bb-6c437a7ce583","ts":"2026-05-05T00:28:34.224Z","severity":"info","message":"Committed: feat: Parsed formatter unified diffs into conservative file, hunk, line…","source":"notify","read":false}
 {"id":"29f5267a-530c-4f1f-80c5-9ad57f695ad7","ts":"2026-05-05T00:28:34.299Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"7b9a5602-4cf5-447d-9275-3e870b587eb4","ts":"2026-05-05T00:31:24.444Z","severity":"info","message":"Committed: feat: Mapped formatter diff replacement blocks to capped, PR-safe GitHu…","source":"notify","read":false}
+{"id":"c8561383-1bf4-4956-8374-78c8c266c826","ts":"2026-05-05T00:31:30.896Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
