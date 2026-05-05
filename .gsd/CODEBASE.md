@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-05T00:58:16Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T00:58:16Z","fingerprint":"cb0294cdb7ee5c7823da629ff648d41e135fcb81","fileCount":500,"truncated":true} -->
+Generated: 2026-05-05T01:06:59Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T01:06:59Z","fingerprint":"39045a3dc2073e27bfa06d2129ba3339c32cdd3c","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -151,7 +151,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(30 files: 30 .ts)*
+- *(32 files: 32 .ts)*
 
 ### src/jobs/
 - `src/jobs/aca-launcher.test.ts`
@@ -176,5 +176,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/knowledge/adaptive-threshold.ts`
 - `src/knowledge/canonical-code-backfill.test.ts`
 - `src/knowledge/canonical-code-backfill.ts`
-- `src/knowledge/canonical-code-chunker.test.ts`
-- `src/knowledge/canonical-code-chunker.ts`

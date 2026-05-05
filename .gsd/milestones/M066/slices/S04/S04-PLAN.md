@@ -63,7 +63,7 @@ Negative Tests (Q7):
   - Files: `src/handlers/formatter-suggestion-orchestration.ts`, `src/handlers/formatter-suggestion-orchestration.test.ts`, `src/execution/formatter-suggestions.ts`, `src/execution/formatter-suggestion-publisher.ts`, `src/handlers/review.ts`, `src/handlers/review-idempotency.ts`
   - Verify: bun test ./src/handlers/formatter-suggestion-orchestration.test.ts --timeout 30000
 
-- [ ] **T02: Wire format-only PR mentions to bypass Claude and run formatter suggestions** `est:2h`
+- [x] **T02: Wire format-only PR mentions to bypass Claude and run formatter suggestions** `est:2h`
   Executor skills expected in task plan frontmatter: `using-superpowers`, `test-driven-development`, `observability`, `verify-before-complete`.
 
 Why: S04's first user-visible behavior change is that `@kodiai format suggestions` should run only the deterministic formatter suggestion subflow, not the generic Claude mention executor. This task integrates the T01 helper into the real mention handler for format-only requests and updates the S01-era tests whose old expectations were intentionally provisional.

@@ -5,6 +5,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createMentionHandler } from "./mention.ts";
+import type {
+  FormatterSuggestionSubflowOptions,
+  FormatterSuggestionSubflowResult,
+} from "./formatter-suggestion-orchestration.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
@@ -12667,7 +12671,14 @@ describe("createMentionHandler formatter suggestion intent context", () => {
   async function runPrFormatterMention(params: {
     commentBody: string;
     configYml?: string;
-  }): Promise<CapturedFormatterMentionContext> {
+    formatterSubflowResult?: FormatterSuggestionSubflowResult;
+  }): Promise<{
+    capturedContext?: CapturedFormatterMentionContext;
+    executorCalls: CapturedFormatterMentionContext[];
+    formatterSubflowCalls: FormatterSuggestionSubflowOptions[];
+    commentBodies: string[];
+    infoCalls: LogCall[];
+  }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       params.configYml ?? [
@@ -12676,6 +12687,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         "review:",
         "  formatterSuggestions:",
         "    automatic: false",
+        "    command: bun fmt",
+        "    maxSuggestions: 7",
       ].join("\n") + "\n",
     );
     const prNumber = 109;
@@ -12685,6 +12698,10 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
     let capturedContext: CapturedFormatterMentionContext | undefined;
+    const executorCalls: CapturedFormatterMentionContext[] = [];
+    const formatterSubflowCalls: FormatterSuggestionSubflowOptions[] = [];
+    const commentBodies: string[] = [];
+    const { logger, infoCalls } = createMockLogger();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -12716,7 +12733,10 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async () => ({ data: {} }),
+          createComment: async (params: { body: string }) => {
+            commentBodies.push(params.body);
+            return { data: {} };
+          },
         },
         pulls: {
           list: async () => ({ data: [] }),
@@ -12762,6 +12782,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
             reviewOutputKey: ctx.reviewOutputKey,
             enableInlineTools: ctx.enableInlineTools,
           };
+          executorCalls.push(capturedContext);
           return {
             conclusion: "success",
             published: true,
@@ -12772,8 +12793,20 @@ describe("createMentionHandler formatter suggestion intent context", () => {
           };
         },
       } as never,
+      formatterSuggestionSubflow: async (options) => {
+        formatterSubflowCalls.push(options);
+        return params.formatterSubflowResult ?? {
+          status: "posted",
+          commandStatus: "success",
+          publisherStatus: "posted",
+          suggestions: 2,
+          skipped: 0,
+          capped: 0,
+          posted: 2,
+        };
+      },
       telemetryStore: noopTelemetryStore,
-      logger: createNoopLogger(),
+      logger: logger as never,
     });
 
     const handler = handlers.get("issue_comment.created");
@@ -12786,32 +12819,54 @@ describe("createMentionHandler formatter suggestion intent context", () => {
           commentBody: params.commentBody,
         }),
       );
-      expect(capturedContext).toBeDefined();
-      return capturedContext!;
+      return { capturedContext, executorCalls, formatterSubflowCalls, commentBodies, infoCalls };
     } finally {
       await workspaceFixture.cleanup();
     }
   }
 
-  test("@kodiai format suggestions carries a read-only formatter descriptor when automatic suggestions are off", async () => {
-    const capturedContext = await runPrFormatterMention({
+  test("@kodiai format suggestions bypasses Claude and runs the formatter subflow with PR identity", async () => {
+    const result = await runPrFormatterMention({
       commentBody: "@kodiai format suggestions",
     });
 
-    expect(capturedContext.formatterSuggestionRequest).toEqual({
-      requested: true,
-      mode: "format-only",
-      source: "explicit-mention",
-      normalizedRequest: "format suggestions",
+    expect(result.executorCalls).toHaveLength(0);
+    expect(result.capturedContext).toBeUndefined();
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls[0]).toMatchObject({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 109,
+      baseRef: "main",
+      headRef: "feature",
+      formatterCommand: "bun fmt",
+      maxSuggestions: 7,
+      installationId: 42,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      botHandles: ["kodiai", "kodai", "claude"],
     });
-    expect(capturedContext.writeMode).toBe(false);
-    expect(capturedContext.taskType).toBe("mention.response");
-    expect(capturedContext.reviewOutputKey).toBeUndefined();
-    expect(capturedContext.enableInlineTools).toBeUndefined();
+    expect(result.formatterSubflowCalls[0]?.fallbackFileProvider).toBeFunction();
+    expect(result.formatterSubflowCalls[0]?.octokit).toBeDefined();
+    expect(result.commentBodies).toHaveLength(0);
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Format-only formatter suggestion request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      formatterSuggestionRequest: true,
+      formatterMode: "format-only",
+      formatterStatus: "posted",
+      commandStatus: "success",
+      publisherStatus: "posted",
+      suggestions: 2,
+      skipped: 0,
+      capped: 0,
+      visibleReplyPosted: false,
+    });
   });
 
-  test("@kodiai suggest formatting fixes works without a configured formatter command", async () => {
-    const capturedContext = await runPrFormatterMention({
+  test("@kodiai suggest formatting fixes posts setup guidance without calling Claude when no command is configured", async () => {
+    const result = await runPrFormatterMention({
       commentBody: "@kodiai suggest formatting fixes",
       configYml: [
         "mention:",
@@ -12820,34 +12875,51 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         "  formatterSuggestions:",
         "    automatic: false",
       ].join("\n") + "\n",
+      formatterSubflowResult: {
+        status: "setup-needed",
+        commandStatus: "no-command",
+        suggestions: 0,
+        skipped: 0,
+        capped: 0,
+        visibleMessage: "Formatter suggestions are not configured. Add review.formatterSuggestions.command to .kodiai.yml to enable explicit formatter suggestion requests.",
+      },
     });
 
-    expect(capturedContext.formatterSuggestionRequest).toEqual({
-      requested: true,
-      mode: "format-only",
-      source: "explicit-mention",
-      normalizedRequest: "suggest formatting fixes",
+    expect(result.executorCalls).toHaveLength(0);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls[0]?.formatterCommand).toBeUndefined();
+    expect(result.commentBodies).toHaveLength(1);
+    expect(result.commentBodies[0]).toContain("Formatter suggestions are not configured");
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Format-only formatter suggestion request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      formatterStatus: "setup-needed",
+      commandStatus: "no-command",
+      visibleReplyPosted: true,
     });
-    expect(capturedContext.writeMode).toBe(false);
-    expect(capturedContext.taskType).toBe("mention.response");
   });
 
   test("@kodiai review & format suggestions preserves review routing and carries formatter descriptor", async () => {
-    const capturedContext = await runPrFormatterMention({
+    const result = await runPrFormatterMention({
       commentBody: "@kodiai review & format suggestions",
     });
+    const capturedContext = result.capturedContext;
 
-    expect(capturedContext.formatterSuggestionRequest).toEqual({
+    expect(result.executorCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls).toHaveLength(0);
+    expect(capturedContext?.formatterSuggestionRequest).toEqual({
       requested: true,
       mode: "review-and-format",
       source: "explicit-mention",
       normalizedRequest: "review & format suggestions",
     });
-    expect(capturedContext.writeMode).toBe(false);
-    expect(capturedContext.taskType).toBe("review.small-diff");
-    expect(capturedContext.reviewOutputKey).toBeDefined();
-    expect(capturedContext.reviewOutputKey).toContain("kodiai-review-output:v1:");
-    expect(capturedContext.enableInlineTools).toBe(true);
+    expect(capturedContext?.writeMode).toBe(false);
+    expect(capturedContext?.taskType).toBe("review.small-diff");
+    expect(capturedContext?.reviewOutputKey).toBeDefined();
+    expect(capturedContext?.reviewOutputKey).toContain("kodiai-review-output:v1:");
+    expect(capturedContext?.enableInlineTools).toBe(true);
   });
 });
 

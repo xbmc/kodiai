@@ -87,6 +87,10 @@ import {
 } from "./review-idempotency.ts";
 import { collectDiffContext } from "./review.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
+import {
+  runFormatterSuggestionSubflow,
+  type FormatterSuggestionSubflowResult,
+} from "./formatter-suggestion-orchestration.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -125,6 +129,41 @@ type MentionErrorPostResult = {
 };
 
 type MentionExecutionFailureSubtype = "usage_limit";
+
+const FORMATTER_SUBFLOW_STATUSES = new Set([
+  "setup-needed",
+  "no-op",
+  "pr-diff-unavailable",
+  "mapped-no-suggestions",
+  "posted",
+  "duplicate",
+  "blocked",
+  "failed",
+]);
+
+function isKnownFormatterSubflowStatus(status: unknown): boolean {
+  return typeof status === "string" && FORMATTER_SUBFLOW_STATUSES.has(status);
+}
+
+function buildFormatterSubflowFallbackResult(params: {
+  status?: unknown;
+  commandStatus?: unknown;
+  publisherStatus?: unknown;
+  reason?: string;
+}): FormatterSuggestionSubflowResult {
+  const status = isKnownFormatterSubflowStatus(params.status) ? params.status as FormatterSuggestionSubflowResult["status"] : "failed";
+  return {
+    status,
+    commandStatus: typeof params.commandStatus === "string" ? params.commandStatus as FormatterSuggestionSubflowResult["commandStatus"] : undefined,
+    publisherStatus: typeof params.publisherStatus === "string" ? params.publisherStatus as FormatterSuggestionSubflowResult["publisherStatus"] : undefined,
+    suggestions: 0,
+    skipped: 0,
+    capped: 0,
+    reason: params.reason ?? "formatter subflow returned an unknown or malformed status",
+    visibleMessage: "Formatter suggestions could not be completed because the formatter subflow returned an unexpected status. Please retry after checking the formatter configuration.",
+    partialFailure: true,
+  };
+}
 
 function classifyMentionExecutionFailureSubtype(errorMessage: string | undefined): MentionExecutionFailureSubtype | undefined {
   if (errorMessage === undefined) {
@@ -190,6 +229,8 @@ export function createMentionHandler(deps: {
     SearchCacheOptions<PromptBuildResult>,
     "ttlMs" | "store" | "inFlightStore"
   >;
+  /** Optional formatter-suggestion subflow override for mention orchestration tests. */
+  formatterSuggestionSubflow?: typeof runFormatterSuggestionSubflow;
   logger: Logger;
 }): void {
   const {
@@ -205,6 +246,7 @@ export function createMentionHandler(deps: {
     sql,
     reviewWorkCoordinator: injectedReviewWorkCoordinator,
     mentionDerivedContextCacheOptions,
+    formatterSuggestionSubflow = runFormatterSuggestionSubflow,
     logger,
   } = deps;
 
@@ -1825,6 +1867,126 @@ export function createMentionHandler(deps: {
           mention.prNumber !== undefined
             ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`
             : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}#issuecomment-${mention.commentId}`;
+
+        if (isPrSurface && formatterSuggestionRequest?.mode === "format-only") {
+          const formatterWorkspace = workspace;
+          const runFormatterOnlySubflow = async (): Promise<FormatterSuggestionSubflowResult> => {
+            if (!formatterWorkspace || !mention.baseRef || !mention.headRef || mention.prNumber === undefined) {
+              return buildFormatterSubflowFallbackResult({
+                status: "pr-diff-unavailable",
+                reason: !formatterWorkspace
+                  ? "missing workspace for formatter suggestion request"
+                  : "missing PR base/head ref for formatter suggestion mapping",
+              });
+            }
+
+            try {
+              const fallbackDiffProvider = async () => fetchAllPullRequestFiles({
+                octokit: octokit as never,
+                owner: mention.owner,
+                repo: mention.repo,
+                pullNumber: mention.prNumber!,
+              });
+              return await formatterSuggestionSubflow({
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                workspaceDir: formatterWorkspace.dir,
+                baseRef: mention.baseRef,
+                headRef: mention.headRef,
+                formatterCommand: config.review.formatterSuggestions.command,
+                maxSuggestions: config.review.formatterSuggestions.maxSuggestions,
+                installationId: event.installationId,
+                deliveryId: event.id,
+                octokit: octokit as never,
+                token: formatterWorkspace.token,
+                botHandles: possibleHandles,
+                fallbackFileProvider: async () => (await fallbackDiffProvider()).map((file) => file.filename),
+                fallbackDiffProvider,
+                logger,
+              });
+            } catch (err) {
+              logger.warn(
+                {
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  formatterSuggestionRequest: true,
+                  formatterMode: "format-only",
+                  formatterStatus: "failed",
+                  failureCategory: classifyError(err, false),
+                },
+                "Format-only formatter suggestion subflow threw before returning a structured result",
+              );
+              return buildFormatterSubflowFallbackResult({
+                status: "failed",
+                reason: "formatter subflow threw before returning a structured result",
+              });
+            }
+          };
+
+          let formatterResult = await runFormatterOnlySubflow();
+          if (!isKnownFormatterSubflowStatus(formatterResult.status)) {
+            formatterResult = buildFormatterSubflowFallbackResult({
+              status: formatterResult.status,
+              commandStatus: formatterResult.commandStatus,
+              publisherStatus: formatterResult.publisherStatus,
+              reason: formatterResult.reason,
+            });
+          }
+
+          let visibleReplyPosted = false;
+          let visibleReplyFailed = false;
+          if (formatterResult.visibleMessage) {
+            try {
+              await postMentionReply(formatterResult.visibleMessage);
+              visibleReplyPosted = true;
+            } catch (err) {
+              visibleReplyFailed = true;
+              logger.warn(
+                {
+                  err,
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  formatterSuggestionRequest: true,
+                  formatterMode: "format-only",
+                  formatterStatus: formatterResult.status,
+                  failureCategory: classifyError(err, false),
+                },
+                "Failed to post format-only formatter suggestion visible diagnostic",
+              );
+            }
+          }
+
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              formatterSuggestionRequest: true,
+              formatterMode: "format-only",
+              formatterStatus: formatterResult.status,
+              commandStatus: formatterResult.commandStatus,
+              publisherStatus: formatterResult.publisherStatus,
+              suggestions: formatterResult.suggestions,
+              skipped: formatterResult.skipped,
+              capped: formatterResult.capped,
+              posted: formatterResult.posted,
+              publisherSkipped: formatterResult.publisherSkipped,
+              publisherFailed: formatterResult.publisherFailed,
+              partialFailure: formatterResult.partialFailure ?? false,
+              visibleReplyPosted,
+              visibleReplyFailed,
+            },
+            "Format-only formatter suggestion request completed",
+          );
+          return;
+        }
 
         if (writeEnabled && writeOutputKey && writeBranchName) {
           // Idempotency: if a PR already exists for this deterministic head branch, reuse it.
