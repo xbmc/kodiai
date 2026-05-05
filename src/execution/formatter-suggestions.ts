@@ -51,6 +51,287 @@ export interface FormatterCommandResult {
   exitCode?: number;
 }
 
+export type FormatterSuggestionSkipReason =
+  | "target-range-not-in-pr-diff"
+  | "pure-insertion"
+  | "pure-deletion"
+  | "unsupported-file"
+  | "malformed-diff"
+  | "max-suggestions-exceeded";
+
+export type FormatterDiffLineKind = "context" | "removed" | "added";
+
+export interface FormatterDiffLine {
+  kind: FormatterDiffLineKind;
+  text: string;
+  oldLine?: number;
+  newLine?: number;
+}
+
+export interface FormatterDiffHunk {
+  oldStart: number;
+  oldLineCount: number;
+  newStart: number;
+  newLineCount: number;
+  section: string;
+  lines: FormatterDiffLine[];
+}
+
+export interface FormatterDiffFile {
+  oldPath: string;
+  newPath: string;
+  hunks: FormatterDiffHunk[];
+}
+
+export interface FormatterDiffSkip {
+  reason: FormatterSuggestionSkipReason;
+  detail: string;
+  oldPath?: string;
+  newPath?: string;
+}
+
+export interface ParseFormatterUnifiedDiffResult {
+  files: FormatterDiffFile[];
+  skipped: FormatterDiffSkip[];
+}
+
+const GIT_DIFF_HEADER_RE = /^diff --git\s+(\S+)\s+(\S+)$/;
+const FORMATTER_HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@\s?(.*)$/;
+
+interface MutableFormatterDiffFile {
+  oldPath?: string;
+  newPath?: string;
+  hunks: FormatterDiffHunk[];
+  hasDiffBody: boolean;
+  malformed: boolean;
+  unsupportedDetail?: string;
+  oldCursor?: number;
+  newCursor?: number;
+  currentHunk?: FormatterDiffHunk;
+}
+
+function normalizeDiffPath(path: string | undefined): string | undefined {
+  if (!path || path === "/dev/null") {
+    return undefined;
+  }
+  if (path.startsWith("a/") || path.startsWith("b/")) {
+    return path.slice(2);
+  }
+  return path;
+}
+
+function parseDiffHeaderPath(path: string): string | undefined {
+  return normalizeDiffPath(path);
+}
+
+function parseFileHeaderPath(line: string): string | undefined {
+  return normalizeDiffPath(line.slice(4).trim().split("\t")[0]);
+}
+
+function makeSkip(
+  reason: FormatterSuggestionSkipReason,
+  detail: string,
+  file: Pick<MutableFormatterDiffFile, "oldPath" | "newPath">,
+): FormatterDiffSkip {
+  return {
+    reason,
+    detail,
+    oldPath: file.oldPath,
+    newPath: file.newPath,
+  };
+}
+
+function finalizeFormatterDiffFile(
+  file: MutableFormatterDiffFile | undefined,
+  result: ParseFormatterUnifiedDiffResult,
+): void {
+  if (!file) {
+    return;
+  }
+
+  if (file.unsupportedDetail) {
+    result.skipped.push(makeSkip("unsupported-file", file.unsupportedDetail, file));
+    return;
+  }
+
+  if (file.malformed || (file.hasDiffBody && file.hunks.length === 0)) {
+    result.skipped.push(makeSkip("malformed-diff", "file has diff body but no valid hunks", file));
+    return;
+  }
+
+  if (!file.oldPath || !file.newPath) {
+    result.skipped.push(makeSkip("malformed-diff", "file is missing old or new path headers", file));
+    return;
+  }
+
+  if (file.hunks.length > 0) {
+    result.files.push({
+      oldPath: file.oldPath,
+      newPath: file.newPath,
+      hunks: file.hunks,
+    });
+  }
+}
+
+function markUnsupported(file: MutableFormatterDiffFile, detail: string): void {
+  file.unsupportedDetail ??= detail;
+}
+
+export function parseFormatterUnifiedDiff(diffText: string): ParseFormatterUnifiedDiffResult {
+  const result: ParseFormatterUnifiedDiffResult = { files: [], skipped: [] };
+  if (diffText.length === 0) {
+    return result;
+  }
+
+  const lines = diffText.split(/\r?\n/);
+  let currentFile: MutableFormatterDiffFile | undefined;
+
+  for (const line of lines) {
+    const diffHeaderMatch = GIT_DIFF_HEADER_RE.exec(line);
+    if (diffHeaderMatch) {
+      finalizeFormatterDiffFile(currentFile, result);
+      currentFile = {
+        oldPath: parseDiffHeaderPath(diffHeaderMatch[1]!),
+        newPath: parseDiffHeaderPath(diffHeaderMatch[2]!),
+        hunks: [],
+        hasDiffBody: false,
+        malformed: false,
+      };
+      continue;
+    }
+
+    if (!currentFile) {
+      if (line.trim().length > 0) {
+        result.skipped.push({ reason: "malformed-diff", detail: "diff text does not start with a git file header" });
+      }
+      continue;
+    }
+
+    if (line === "") {
+      continue;
+    }
+
+    if (line.startsWith("\\ No newline at end of file")) {
+      continue;
+    }
+
+    if (line === "new file mode" || line.startsWith("new file mode ")) {
+      markUnsupported(currentFile, "added file is not supported");
+      continue;
+    }
+
+    if (line === "deleted file mode" || line.startsWith("deleted file mode ")) {
+      markUnsupported(currentFile, "deleted file is not supported");
+      continue;
+    }
+
+    if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
+      markUnsupported(currentFile, "binary diff is not supported");
+      continue;
+    }
+
+    if (line.startsWith("rename from ") || line.startsWith("rename to ")) {
+      markUnsupported(currentFile, "renamed file is not supported");
+      continue;
+    }
+
+    if (line.startsWith("--- ")) {
+      currentFile.oldPath = parseFileHeaderPath(line);
+      if (!currentFile.oldPath) {
+        markUnsupported(currentFile, "added file is not supported");
+      }
+      continue;
+    }
+
+    if (line.startsWith("+++ ")) {
+      currentFile.newPath = parseFileHeaderPath(line);
+      if (!currentFile.newPath) {
+        markUnsupported(currentFile, "deleted file is not supported");
+      }
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      currentFile.hasDiffBody = true;
+      const hunkHeaderMatch = FORMATTER_HUNK_HEADER_RE.exec(line);
+      if (!hunkHeaderMatch) {
+        currentFile.malformed = true;
+        currentFile.currentHunk = undefined;
+        continue;
+      }
+
+      const oldStart = Number.parseInt(hunkHeaderMatch[1]!, 10);
+      const oldLineCount = Number.parseInt(hunkHeaderMatch[2] ?? "1", 10);
+      const newStart = Number.parseInt(hunkHeaderMatch[3]!, 10);
+      const newLineCount = Number.parseInt(hunkHeaderMatch[4] ?? "1", 10);
+      if (![oldStart, oldLineCount, newStart, newLineCount].every(Number.isFinite)) {
+        currentFile.malformed = true;
+        currentFile.currentHunk = undefined;
+        continue;
+      }
+
+      const hunk: FormatterDiffHunk = {
+        oldStart,
+        oldLineCount,
+        newStart,
+        newLineCount,
+        section: hunkHeaderMatch[5]?.trim() ?? "",
+        lines: [],
+      };
+      currentFile.hunks.push(hunk);
+      currentFile.currentHunk = hunk;
+      currentFile.oldCursor = oldStart;
+      currentFile.newCursor = newStart;
+      continue;
+    }
+
+    if (line.startsWith("index ") || line.startsWith("old mode ") || line.startsWith("new mode ") || line.startsWith("similarity index ") || line.startsWith("dissimilarity index ")) {
+      continue;
+    }
+
+    if (line.startsWith(" ") || line.startsWith("+") || line.startsWith("-")) {
+      currentFile.hasDiffBody = true;
+      if (!currentFile.currentHunk || currentFile.oldCursor === undefined || currentFile.newCursor === undefined) {
+        currentFile.malformed = true;
+        continue;
+      }
+
+      const text = line.slice(1);
+      if (line.startsWith(" ")) {
+        currentFile.currentHunk.lines.push({
+          kind: "context",
+          text,
+          oldLine: currentFile.oldCursor,
+          newLine: currentFile.newCursor,
+        });
+        currentFile.oldCursor += 1;
+        currentFile.newCursor += 1;
+      } else if (line.startsWith("-")) {
+        currentFile.currentHunk.lines.push({
+          kind: "removed",
+          text,
+          oldLine: currentFile.oldCursor,
+        });
+        currentFile.oldCursor += 1;
+      } else {
+        currentFile.currentHunk.lines.push({
+          kind: "added",
+          text,
+          newLine: currentFile.newCursor,
+        });
+        currentFile.newCursor += 1;
+      }
+      continue;
+    }
+
+    currentFile.hasDiffBody = true;
+    currentFile.malformed = true;
+  }
+
+  finalizeFormatterDiffFile(currentFile, result);
+  return result;
+}
+
 function substituteFormatterPlaceholder(value: string, options: ResolveFormatterCommandOptions): string {
   switch (value) {
     case "baseRef":

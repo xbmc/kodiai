@@ -60,7 +60,7 @@ Negative Tests (Q7): blank command, unknown placeholders, token-like stderr, lon
   - Files: `src/execution/formatter-suggestions.ts`, `src/execution/formatter-suggestions.test.ts`, `src/lib/sanitizer.ts`, `src/execution/config.ts`
   - Verify: bun test ./src/execution/formatter-suggestions.test.ts --timeout 30000
 
-- [ ] **T02: Parse formatter unified diffs into conservative file and hunk models** `est:2h`
+- [x] **T02: Parse formatter unified diffs into conservative file and hunk models** `est:2h`
   Use installed skills in task-plan frontmatter: `test-driven-development`, `tdd`, `verify-before-complete`.
 
 Why: R082 depends on deterministic parsing of formatter output before any safe GitHub line mapping can happen. The existing `src/knowledge/code-snippet-chunker.ts` parser is intentionally insufficient because it drops file headers, deletions, old ranges, binary/rename state, and replacement blocks.
