@@ -1,6 +1,6 @@
 # M066 Formatter Suggestions Smoke Proof
 
-Status: **blocked — accepted live formatter-suggestion proof not captured in this environment after T04 recheck**.
+Status: **ready for authenticated T03 trigger on controlled PR #134; accepted live formatter-suggestion proof still not captured**.
 
 This file is the bounded operator record for M066/S05. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr here.
 
@@ -13,60 +13,58 @@ This file is the bounded operator record for M066/S05. Do not paste GitHub App p
 - Required visible surface: same-PR Pull Request Review with at least one fenced `suggestion` block
 - Not claimed: formatter suggestions in normal automatic PR reviews
 
-## Blocked smoke status
+## Current smoke status
 
-The live smoke was not accepted because this task session did not have a real captured formatter-suggestion delivery bundle to verify. No PR review URL, suggestion comment URL, deployed revision, or `m066_s05_ok` verifier output was available in tracked artifacts or ambient task context. T04 also found `M066_S05_REPO`, `M066_S05_REVIEW_OUTPUT_KEY`, `GITHUB_APP_ID`, and `GITHUB_PRIVATE_KEY`/`GITHUB_PRIVATE_KEY_BASE64` unset in the ambient shell, so the proof variables for T05 remain unavailable rather than exported with placeholder values.
+The live smoke is ready for an authenticated T03 trigger, but it is not accepted proof yet. T02 established a controlled PR and a GitHub API operator path; T03/T04 still must post the explicit trigger, capture the delivery/review identifiers, confirm GitHub accepted a same-PR Pull Request Review with a fenced `suggestion` block, and run the verifier to `m066_s05_ok`.
 
-Missing or unavailable access surfaces observed from this session:
+Pending proof fields:
 
-| Surface | Observed state | Retry path |
+| Surface | Current state | Next step |
 |---|---|---|
-| Captured formatter `reviewOutputKey` | Missing | Trigger `@kodiai format suggestions` on a controlled smoke PR and copy the key that encodes `action-mention-format-suggestions`. |
-| Captured GitHub `deliveryId` | Missing | Capture the `X-GitHub-Delivery` id for the same trigger as the formatter review. |
-| Accepted same-PR formatter Pull Request Review URL/id | Missing | Verify the deployed app posted a Pull Request Review, not only an issue comment or standalone PR comment. |
-| Accepted suggestion review comment URL/id | Missing | Verify at least one associated review comment contains a fenced GitHub `suggestion` block. |
-| Deployed revision/log correlation | Missing | Query Azure Container Apps logs by delivery id and reviewOutputKey after the live trigger. |
-| Shell `M066_S05_REPO` | Unset in ambient shell | Export the concrete smoke repository slug (for example, the repo that received the accepted formatter PR review) only after a real live trigger is captured. |
-| Shell `M066_S05_REVIEW_OUTPUT_KEY` | Unset in ambient shell | Export the captured `action-mention-format-suggestions` reviewOutputKey from the same live trigger; do not use placeholder or synthetic keys. |
-| Optional shell `M066_S05_DELIVERY_ID` | Unset in ambient shell | Export the captured `X-GitHub-Delivery` id when available so the verifier can bind proof to the same delivery. |
-| Shell `GITHUB_TOKEN` for `gh`/API inspection | Unset | Run from an authenticated operator environment if GitHub API inspection through `gh` is needed. |
-| Shell `GITHUB_APP_ID` | Unset in ambient shell | Run the verifier from the deployed/operator environment with GitHub App credentials available; do not paste values into logs. |
-| Shell `GITHUB_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_BASE64` | Unset in ambient shell | Provide one of these keys through the operator secret store before running the live verifier. |
-| Azure CLI environment (`AZURE_CONFIG_DIR`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) | Unset in ambient shell | Use an authenticated Azure operator environment to capture deployed revision and log fields. |
+| Trigger comment URL/id | Pending | T03 posts `@kodiai format suggestions` on PR #134. |
+| Captured GitHub `deliveryId` | Pending | Capture the `X-GitHub-Delivery` id for the T03 trigger when available. |
+| Captured formatter `reviewOutputKey` | Pending | Capture the key from logs or the review marker; it must encode `action-mention-format-suggestions`. |
+| Accepted same-PR formatter Pull Request Review URL/id | Pending | T04 verifies Kodiai posted a PR review, not only an issue comment or standalone PR comment. |
+| Accepted suggestion review comment URL/id | Pending | T04 verifies at least one associated review comment contains a fenced GitHub `suggestion` block. |
+| Deployed revision/log correlation | Pending | Query Azure Container Apps logs by delivery id and reviewOutputKey and record `RevisionName_s` plus bounded formatter status fields. |
+| Verifier JSON | Pending | Run `bun run verify:m066:s05` with the captured repo, reviewOutputKey, and delivery id; proof requires `success: true` and `status_code: "m066_s05_ok"`. |
 
-A local verifier probe using a synthetic formatter key failed closed and did **not** constitute proof:
+## T02 credentialed smoke readiness
 
-```sh
-bun run verify:m066:s05 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-format-suggestions:delivery-delivery-101:head-head-101 --delivery-id delivery-101 --json
-```
+T02 established a credentialed operator path and a controlled PR without exposing secrets. The accepted formatter-suggestion proof is still pending T03/T04; do not treat this section as `m066_s05_ok` evidence.
 
-Bounded result:
-
-```json
-{
-  "success": false,
-  "status_code": "m066_s05_github_unavailable",
-  "preflight": {
-    "githubAccess": "unavailable"
-  },
-  "issues": [
-    "GitHub formatter-suggestion proof collection failed: Not Found - https://docs.github.com/rest/pulls/reviews#list-reviews-for-a-pull-request"
-  ]
-}
-```
+| Field | Value |
+|---|---|
+| Auth path | `gh` CLI authenticated as `keithah`; GitHub API reports admin/maintain/push/pull/triage permissions on `xbmc/kodiai` |
+| Write capability checked | Created remote branch `smoke/m066-formatter-suggestions-1777950652` and PR #134 through GitHub API |
+| Read capability checked | Read PR metadata, files, reviews, issue comments, and review comments for PR #134 through GitHub API |
+| Repository | `xbmc/kodiai` |
+| PR URL | `https://github.com/xbmc/kodiai/pull/134` |
+| PR number | `134` |
+| Base branch / SHA | `main` / `a270c47f8029e6b2e802c645589720ae43c63905` |
+| Head branch / SHA | `smoke/m066-formatter-suggestions-1777950652` / `df017da6b6959038a288f8eae070b7a384ef0fa4` |
+| Controlled formatting diff | `README.md` has one intentional double-space in the first paragraph; the smoke formatter fixes it back to a single space |
+| Formatter config source | PR-head `.kodiai.yml` adds `review.formatterSuggestions.command` because `main` does not yet configure formatter suggestions |
+| Formatter command | `python3 scripts/m066-formatter-smoke.py` |
+| Trigger mode for T03 | `@kodiai format suggestions` |
+| Trigger status | `not posted by T02` |
+| Delivery ID (`X-GitHub-Delivery`) | `pending T03 trigger` |
+| Review output key | `pending T03 trigger; must encode action-mention-format-suggestions` |
+| Deployed revision/log correlation target | Azure Container Apps `ContainerAppConsoleLogs_CL` filtered by the future delivery id or reviewOutputKey; project `RevisionName_s` plus bounded formatter status fields |
+| Azure operator access in this shell | `not present; AZURE_CONFIG_DIR/AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID unset` |
 
 ## Smoke PR
 
 | Field | Value |
 |---|---|
-| Repository | `xbmc/kodiai` preferred, but not verified |
-| PR URL | `blocked — no controlled live smoke PR URL captured` |
-| Safe smoke shape | `required: one or two files, formatting-only diff, no secrets/generated files` |
-| Trigger mode | `required: format-only first` |
-| Trigger comment URL | `blocked — no trigger comment URL captured` |
-| Delivery ID (`X-GitHub-Delivery`) | `blocked — missing captured delivery id` |
-| Review output key | `blocked — missing captured mention-format-suggestions reviewOutputKey` |
-| Deployed revision | `blocked — missing Azure Container Apps revision/log access` |
+| Repository | `xbmc/kodiai` |
+| PR URL | `https://github.com/xbmc/kodiai/pull/134` |
+| Safe smoke shape | `controlled PR with one README whitespace-only formatter hunk plus PR-head smoke formatter configuration` |
+| Trigger mode | `format-only first: @kodiai format suggestions` |
+| Trigger comment URL | `pending T03 — no trigger comment posted by T02` |
+| Delivery ID (`X-GitHub-Delivery`) | `pending T03 trigger` |
+| Review output key | `pending T03 trigger` |
+| Deployed revision | `pending log correlation after T03 trigger` |
 
 ## Formatter review proof
 

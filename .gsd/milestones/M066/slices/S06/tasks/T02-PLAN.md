@@ -4,22 +4,27 @@ estimated_files: 1
 skills_used: []
 ---
 
-# T02: Verify GitHub accepted the same-PR suggestion
+# T02: Establish credentialed smoke gate and controlled PR
 
-Inspect GitHub Pull Request Reviews and associated review comments for the captured PR/reviewOutputKey, confirm exactly one matching COMMENTED formatter review body includes the marker, and confirm at least one associated inline review comment contains a fenced `suggestion` block. Run `verify:m066:s05` against the captured evidence and preserve the passing JSON shape.
+Resolve the T01 environment blocker before attempting another live smoke. Verify whether a credentialed operator path is available through secure environment collection or already-present CI/operator environment variables without printing secret values. Required capability is one authenticated path that can post a PR comment/trigger and read PR reviews/comments for the selected repo. Establish or identify a safe controlled PR with a small formatting-only diff, and capture non-secret prerequisites: repo, PR URL/number, branch/head SHA, deployed environment/revision or log stream identifier, and which auth path is active. If no authenticated path is available after secure collection/gating, stop with a blocker summary rather than modifying proof docs or fabricating evidence.
 
 ## Inputs
 
-- `scripts/verify-m066-s05.ts`
+- `T01 blocker summary`
+- `docs/runbooks/formatter-suggestions.md`
 - `docs/smoke/m066-formatter-suggestions.md`
+- `existing deployment/operator environment`
+- `secure environment variables for GitHub/App auth when available`
 
 ## Expected Output
 
-- `Passing `m066_s05_ok` verifier JSON or a named bounded failure with remediation details.`
+- `A credentialed smoke readiness note with no secrets`
+- `A selected controlled PR ready for @kodiai format suggestions`
+- `A documented auth path and deployment/log correlation target, or a new blocker if auth remains unavailable`
 
 ## Verification
 
-If a delivery id is captured: `bun run verify:m066:s05 -- --repo "$M066_S05_REPO" --review-output-key "$M066_S05_REVIEW_OUTPUT_KEY" --delivery-id "$M066_S05_DELIVERY_ID" --json`. If no delivery id is available: `bun run verify:m066:s05 -- --repo "$M066_S05_REPO" --review-output-key "$M066_S05_REVIEW_OUTPUT_KEY" --json`. The verifier must return `success: true` and `status_code: "m066_s05_ok"`; also run the focused S05 verifier tests if verifier code changes.
+Confirm non-secret smoke prerequisites are captured: repo, PR URL/number, controlled formatting diff description, deployed revision/log correlation target, and an authenticated write/read path is available without exposing tokens. If unavailable, record a blocker and do not proceed to trigger/verification tasks.
 
 ## Observability Impact
 

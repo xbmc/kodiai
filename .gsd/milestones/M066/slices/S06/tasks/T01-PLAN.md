@@ -4,7 +4,7 @@ estimated_files: 1
 skills_used: []
 ---
 
-# T01: Trigger authenticated formatter-suggestion smoke
+# T01: Blocked live formatter-suggestion trigger because no authenticated GitHub operator credentials are available in auto-mode.
 
 Prepare a safe controlled PR or identify an existing test PR with a small formatting-only diff, verify deployed Kodiai is available, and trigger `@kodiai format suggestions`. Capture the trigger comment URL, delivery id if accessible, repo/PR identity, and the formatter-specific reviewOutputKey from logs or visible output. Do not store secrets.
 

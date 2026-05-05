@@ -1,28 +1,28 @@
 ---
 estimated_steps: 1
-estimated_files: 2
+estimated_files: 1
 skills_used: []
 ---
 
-# T03: Record accepted smoke proof and revalidate milestone
+# T03: Trigger authenticated formatter-suggestion smoke
 
-Replace the blocked placeholders in `docs/smoke/m066-formatter-suggestions.md` with the real accepted proof fields and bounded verifier output, preserving the no-secrets/no-raw-stdout rule. Re-run deterministic M066 checks and update requirement validation only where supported by evidence.
+Using the credentialed path and controlled PR from T02, post or otherwise create the explicit `@kodiai format suggestions` trigger in the deployed/operator environment. Capture only non-secret evidence: trigger comment URL/id, repo, PR URL/number, delivery id if available, deployed revision/log correlation, formatter-specific reviewOutputKey containing the `mention-format-suggestions` intent, formatter subflow status fields, and any bounded failure reason if Kodiai declines to publish. Do not store secrets, raw formatter stdout, private keys, tokens, or full webhook payloads.
 
 ## Inputs
 
-- `docs/smoke/m066-formatter-suggestions.md`
-- `.gsd/REQUIREMENTS.md`
-- `.gsd/milestones/M066/M066-VALIDATION.md`
+- `T02 credentialed smoke readiness output`
+- `controlled PR`
+- `deployed Kodiai logs/operator console`
+- `docs/runbooks/formatter-suggestions.md`
 
 ## Expected Output
 
-- `Updated `docs/smoke/m066-formatter-suggestions.md` with accepted live proof.`
-- `Fresh deterministic verification output.`
-- `Requirement updates for R077/R085 if live proof passes.`
+- `A live trigger evidence bundle with reviewOutputKey and log/deployment correlation`
+- `No secrets or raw formatter output recorded`
 
 ## Verification
 
-`bun test ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts ./scripts/verify-m066-s05.test.ts --timeout 30000 && bunx tsc --noEmit --pretty false && bunx eslint src/handlers/mention.ts src/handlers/formatter-suggestion-orchestration.ts src/execution/formatter-suggestions.ts src/execution/formatter-suggestion-publisher.ts scripts/verify-m066-s05.ts scripts/verify-m066-s05.test.ts`
+Confirm captured fields include repo, PR URL, trigger comment URL/id, reviewOutputKey containing `mention-format-suggestions`, deployed revision/log correlation, formatter subflow status, and either delivery id or a documented reason delivery id is unavailable.
 
 ## Observability Impact
 
