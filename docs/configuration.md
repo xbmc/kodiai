@@ -16,6 +16,12 @@ review:
   enabled: true
   # Default is false: clean reviews publish as comments unless you opt in to GitHub approvals.
   autoApprove: false
+  formatterSuggestions:
+    # Explicit @kodiai format suggestions requests are supported when command is set.
+    # automatic is reserved for later automatic-review inclusion and defaults to false.
+    automatic: false
+    command: "bun run format:diff -- --base {baseRef} --head {headRef}"
+    maxSuggestions: 10
   triggers:
     onOpened: true
     onReadyForReview: true
@@ -179,6 +185,41 @@ Use the nested `review.triggers.onSynchronize` shape. Legacy `review.onSynchroni
 | **Default** | `false` |
 
 If `true`, Kodiai submits an approving GitHub review when the review completes cleanly with no published findings. The default is `false`, so clean reviews publish the same approval-shaped content as a normal PR issue comment instead of changing GitHub's review approval state. Set this to `true` only for repositories that explicitly want Kodiai to approve PRs.
+
+### `review.formatterSuggestions`
+
+Controls formatter-generated GitHub suggestion reviews for explicit mention requests. This section does **not** make formatter suggestions part of normal automatic PR reviews yet; `automatic` is parsed now but remains reserved until runtime wiring is added.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `automatic` | `boolean` | `false` | Reserved for future automatic-review inclusion. Keep `false` for current deployed behavior. |
+| `command` | `string` | *(none)* | Optional shell command Kodiai runs in the checked-out PR workspace. It must emit a git unified diff to stdout. |
+| `maxSuggestions` | `number` | `10` | Maximum formatter suggestions to publish for a request. Valid range: `1–100`. |
+
+Supported command placeholders:
+
+| Placeholder | Meaning |
+|---|---|
+| `{baseRef}` | Base branch/ref for the PR |
+| `{headRef}` | Head branch/ref for the PR |
+| `{diffRange}` | Git diff range for the PR |
+
+Example:
+
+```yaml
+review:
+  formatterSuggestions:
+    automatic: false
+    command: "bun run format:diff -- --base {baseRef} --head {headRef}"
+    maxSuggestions: 10
+```
+
+Operational notes:
+
+- The command must write a git unified diff to stdout; no suggestions are published when stdout has no applicable PR diff hunks.
+- Explicit PR mentions can request formatter suggestions with `@kodiai format suggestions` or combine review and formatting with `@kodiai review & format suggestions`.
+- The published proof surface is a same-PR Pull Request Review containing `suggestion` blocks, not a branch push or automatic commit.
+- See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, verifier usage, and failure interpretation.
 
 ### `review.prompt`
 

@@ -67,7 +67,7 @@ Nightly maintenance workflows are part of the shipped operator surface:
 - both workflows support `workflow_dispatch` for manual retries
 - operators should inspect GitHub Actions workflow run status first when a nightly sync fails
 
-**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the dedicated `interactive-review` lane, dependency bump deep-review, bounded shallow-clone diff fallback for both automatic and explicit review flows, risk-weighted file prioritization for large PRs, collapsed clean approvals, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
+**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the dedicated `interactive-review` lane, explicit `@kodiai format suggestions` requests that can publish same-PR committable formatter suggestions when configured, dependency bump deep-review, bounded shallow-clone diff fallback for both automatic and explicit review flows, risk-weighted file prioritization for large PRs, collapsed clean approvals, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
 
 **@kodiai Mentions** — Conversational responses to `@kodiai` across issue comments, PR comments, and review threads with context-aware follow-ups.
 
@@ -91,7 +91,7 @@ Service-level runtime configuration and secrets are separate from `.kodiai.yml`:
 - local development and manual deploy input come from `.env`
 - production runtime secrets come from Azure Container Apps secret references on the app
 
-See **[docs/configuration.md](docs/configuration.md)** for the complete reference.
+See **[docs/configuration.md](docs/configuration.md)** for the complete reference, including explicit formatter-suggestion configuration under `review.formatterSuggestions`.
 
 For environment variables and application-level settings, see [`.env.example`](.env.example).
 
@@ -117,7 +117,7 @@ Full documentation lives in the `docs/` directory:
 
 Kodiai deploys to Azure Container Apps via ACR remote build with zero-downtime rolling deploys, and the deploy script reports the active revision for post-deploy proof.
 
-See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md). For Slack assistant operations, see [docs/runbooks/slack-integration.md](docs/runbooks/slack-integration.md). For webhook relay setup and troubleshooting, see [docs/runbooks/slack-webhook-relay.md](docs/runbooks/slack-webhook-relay.md).
+See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md). For explicit formatter-suggestion smoke proof, see [docs/runbooks/formatter-suggestions.md](docs/runbooks/formatter-suggestions.md). For Slack assistant operations, see [docs/runbooks/slack-integration.md](docs/runbooks/slack-integration.md). For webhook relay setup and troubleshooting, see [docs/runbooks/slack-webhook-relay.md](docs/runbooks/slack-webhook-relay.md).
 
 ## Contributing
 

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M066/S05/T01",
+  "timestamp": 1777945116042,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m066-s05.test.ts --timeout 30000",
+      "exitCode": 0,
+      "durationMs": 83,
+      "verdict": "pass"
+    },
+    {
+      "command": "bunx tsc --noEmit --pretty false",
+      "exitCode": 0,
+      "durationMs": 8991,
+      "verdict": "pass"
+    },
+    {
+      "command": "bunx eslint scripts/verify-m066-s05.ts scripts/verify-m066-s05.test.ts",
+      "exitCode": 0,
+      "durationMs": 346,
+      "verdict": "pass"
+    }
+  ]
+}

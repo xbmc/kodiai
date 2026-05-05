@@ -290,6 +290,19 @@ Operator quick map:
 - `rate-limited`
   - action: wait for `write.minIntervalSeconds` window or lower it in `.kodiai.yml`
 
+## Formatter suggestion mentions
+
+Explicit formatter-suggestion mentions have a dedicated operator runbook: [Formatter Suggestions](formatter-suggestions.md).
+
+Use it when a PR-scoped `@kodiai format suggestions` or `@kodiai review & format suggestions` request should publish same-PR Pull Request Review suggestions. The formatter path is explicit only: `review.formatterSuggestions.automatic` defaults to `false` and is reserved for later automatic-review inclusion.
+
+Key proof fields to capture alongside the normal mention evidence:
+
+- `reviewOutputKey` for the formatter request; it must encode `mention-format-suggestions`.
+- Pull Request Review URL/id containing the formatter marker.
+- At least one formatter suggestion comment URL/id.
+- Formatter completion fields: `formatterStatus`, `commandStatus`, `publisherStatus`, `suggestions`, `skipped`, `capped`, `posted`, `publisherSkipped`, and `publisherFailed`.
+
 ## 4) Verify Eyes Reaction Attempt (Non-Blocking)
 
 The handler tries to add an ":eyes:" reaction to the trigger comment.
