@@ -86,7 +86,7 @@ Negative Tests (Q7): empty suggestions, duplicate marker in existing review, gat
   - Files: `src/execution/formatter-suggestion-publisher.test.ts`, `src/execution/formatter-suggestion-publisher.ts`, `src/execution/mcp/review-output-publication-gate.ts`, `src/handlers/review-idempotency.ts`, `src/execution/formatter-suggestions.ts`
   - Verify: bun test ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000
 
-- [ ] **T03: Add outgoing safety checks and whole-batch rejection handling** `est:1h`
+- [x] **T03: Add outgoing safety checks and whole-batch rejection handling** `est:1h`
   Use installed skills in task-plan frontmatter: `test-driven-development`, `tdd`, `verify-before-complete`.
 
 Why: The risky part of S03 is publishing untrusted repo-derived markdown to GitHub in an all-or-nothing batch. This task closes R077/R081 fixture proof and R084 reporting by proving mention sanitization, secret blocking, and GitHub rejection handling.

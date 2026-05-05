@@ -8,6 +8,10 @@ import {
 } from "../handlers/review-idempotency.ts";
 import type { FormatterDiffSkip, FormatterSuggestionPayload } from "./formatter-suggestions.ts";
 import {
+  sanitizeOutgoingMentions,
+  scanOutgoingForSecrets,
+} from "../lib/sanitizer.ts";
+import {
   createReviewOutputPublicationGate,
   type ReviewOutputPublicationGate,
 } from "./mcp/review-output-publication-gate.ts";
@@ -58,6 +62,11 @@ export interface PublishFormatterSuggestionReviewOptions {
   reviewOutputKey?: string;
   skipped?: FormatterDiffSkip[];
   publicationGate?: ReviewOutputPublicationGate;
+  botHandles?: string[];
+  logger?: {
+    warn?(fields: Record<string, unknown>, message?: string): void;
+    error?(fields: Record<string, unknown>, message?: string): void;
+  };
 }
 
 export interface FormatterSuggestionReviewOutputResult {
@@ -75,6 +84,16 @@ export interface FormatterSuggestionPublishedReview {
   url?: string;
 }
 
+export interface FormatterSuggestionBlockedPublication {
+  pattern: string;
+  location: "review-body" | "comment";
+}
+
+export interface FormatterSuggestionRejectedPublication {
+  status?: number;
+  message: string;
+}
+
 export interface FormatterSuggestionPublisherResult {
   status: FormatterSuggestionPublisherStatus;
   posted: number;
@@ -83,6 +102,9 @@ export interface FormatterSuggestionPublisherResult {
   reviewOutput: FormatterSuggestionReviewOutputResult;
   skippedSuggestions: FormatterDiffSkip[];
   error?: string;
+  blocked?: FormatterSuggestionBlockedPublication;
+  failed?: boolean;
+  rejection?: FormatterSuggestionRejectedPublication;
 }
 
 function buildReviewBody(options: Pick<PublishFormatterSuggestionReviewOptions, "suggestions" | "reviewOutputKey">): string {
@@ -139,11 +161,64 @@ function buildReviewOutputResult(params: {
 }
 
 function buildBoundedErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const responseMessage = typeof error === "object" && error !== null && "response" in error
+    ? (error as { response?: { data?: { message?: unknown } } }).response?.data?.message
+    : undefined;
+  const message = typeof responseMessage === "string"
+    ? responseMessage
+    : error instanceof Error
+      ? error.message
+      : String(error);
   return message
     .replace(/\bgh[pors]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
     .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/\bsk-ant-[a-z0-9]+-[A-Za-z0-9_\-]+\b/gi, "[REDACTED_ANTHROPIC_API_KEY]")
     .slice(0, 500);
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("status" in error)) {
+    return undefined;
+  }
+
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
+
+function safelyLog(
+  logger: PublishFormatterSuggestionReviewOptions["logger"] | undefined,
+  level: "warn" | "error",
+  fields: Record<string, unknown>,
+  message: string,
+): void {
+  try {
+    logger?.[level]?.(fields, message);
+  } catch {
+    // Best-effort observability must never change publication behavior.
+  }
+}
+
+function sanitizeOutgoingBody(body: string, botHandles: string[] | undefined): string {
+  return sanitizeOutgoingMentions(body, botHandles ?? []);
+}
+
+function scanOutgoingBodies(params: {
+  reviewBody: string;
+  comments: FormatterSuggestionReviewCommentPayload[];
+}): FormatterSuggestionBlockedPublication | undefined {
+  const reviewScan = scanOutgoingForSecrets(params.reviewBody);
+  if (reviewScan.blocked && reviewScan.matchedPattern) {
+    return { pattern: reviewScan.matchedPattern, location: "review-body" };
+  }
+
+  for (const comment of params.comments) {
+    const commentScan = scanOutgoingForSecrets(comment.body);
+    if (commentScan.blocked && commentScan.matchedPattern) {
+      return { pattern: commentScan.matchedPattern, location: "comment" };
+    }
+  }
+
+  return undefined;
 }
 
 export async function publishFormatterSuggestionReview(
@@ -204,16 +279,74 @@ export async function publishFormatterSuggestionReview(
   }
 
   const body = buildReviewBody(options);
-  const comments = options.suggestions.map(mapSuggestionToReviewComment);
-  const response = await options.octokit.rest.pulls.createReview({
-    owner: options.owner,
-    repo: options.repo,
-    pull_number: options.prNumber,
-    commit_id: options.commitId,
-    event: "COMMENT",
-    body,
-    comments,
-  });
+  const rawComments = options.suggestions.map(mapSuggestionToReviewComment);
+  const blocked = scanOutgoingBodies({ reviewBody: body, comments: rawComments });
+  if (blocked) {
+    safelyLog(options.logger, "warn", {
+      status: "blocked",
+      posted: 0,
+      pattern: blocked.pattern,
+      location: blocked.location,
+      suggestions: rawComments.length,
+    }, "Blocked formatter suggestion review publication due to outgoing secret pattern");
+    return {
+      status: "blocked",
+      posted: 0,
+      skipped: options.skipped?.length ?? 0,
+      blocked,
+      reviewOutput: buildReviewOutputResult({
+        reviewOutputKey: blocked.location === "review-body" ? undefined : options.reviewOutputKey,
+        markerIncluded: false,
+        publicationStatus: blocked.location === "review-body" ? undefined : publicationStatus,
+      }),
+      skippedSuggestions: options.skipped ?? [],
+    };
+  }
+
+  const sanitizedBody = sanitizeOutgoingBody(body, options.botHandles);
+  const comments = rawComments.map((comment) => ({
+    ...comment,
+    body: sanitizeOutgoingBody(comment.body, options.botHandles),
+  }));
+
+  let response: { data: { id?: number | null; html_url?: string | null } };
+  try {
+    response = await options.octokit.rest.pulls.createReview({
+      owner: options.owner,
+      repo: options.repo,
+      pull_number: options.prNumber,
+      commit_id: options.commitId,
+      event: "COMMENT",
+      body: sanitizedBody,
+      comments,
+    });
+  } catch (error) {
+    const rejection = {
+      status: getErrorStatus(error),
+      message: buildBoundedErrorMessage(error),
+    };
+    safelyLog(options.logger, "error", {
+      status: "failed",
+      posted: 0,
+      rejectionStatus: rejection.status,
+      rejectionMessage: rejection.message,
+      suggestions: comments.length,
+    }, "GitHub rejected formatter suggestion review batch");
+    return {
+      status: "failed",
+      posted: 0,
+      skipped: options.skipped?.length ?? 0,
+      failed: true,
+      rejection,
+      error: rejection.message,
+      reviewOutput: buildReviewOutputResult({
+        reviewOutputKey: options.reviewOutputKey,
+        markerIncluded: false,
+        publicationStatus,
+      }),
+      skippedSuggestions: options.skipped ?? [],
+    };
+  }
 
   return {
     status: "posted",

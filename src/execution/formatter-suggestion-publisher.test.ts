@@ -362,4 +362,124 @@ describe("publishFormatterSuggestionReview", () => {
     expect(result.error).toContain("GitHub scan failed");
     expect(result.error).not.toContain("ghp_secret");
   });
+
+  test("strips configured bot mentions from review and inline suggestion bodies before publishing", async () => {
+    const { octokit, createReviewCalls } = createFakeScanningOctokit({});
+
+    const result = await publishFormatterSuggestionReview({
+      octokit,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      commitId: "abc123def456",
+      reviewOutputKey: "@kodiai-output-key",
+      botHandles: ["@kodiai"],
+      suggestions: [makeSuggestion({
+        suggestionBody: "```suggestion\n// @kodiai should not be pinged\nconst value = 1;\n```",
+      })],
+    });
+
+    expect(result.status).toBe("posted");
+    expect(createReviewCalls).toHaveLength(1);
+    expect(createReviewCalls[0]?.body).toContain("kodiai-output-key");
+    expect(createReviewCalls[0]?.body).not.toContain("@kodiai");
+    expect(createReviewCalls[0]?.comments[0]?.body).toBe("```suggestion\n// kodiai should not be pinged\nconst value = 1;\n```");
+  });
+
+  test("blocks publication when a suggestion body contains a credential-like literal", async () => {
+    const { octokit, createReviewCalls } = createFakeOctokit();
+
+    const result = await publishFormatterSuggestionReview({
+      octokit,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      commitId: "abc123def456",
+      suggestions: [makeSuggestion({
+        suggestionBody: "```suggestion\nconst token = 'ghp_123456789012345678901234567890123456';\n```",
+      })],
+    });
+
+    expect(createReviewCalls).toHaveLength(0);
+    expect(result).toMatchObject({
+      status: "blocked",
+      posted: 0,
+      skipped: 0,
+      blocked: {
+        pattern: "github-pat",
+        location: "comment",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("ghp_123456789012345678901234567890123456");
+  });
+
+  test("blocks publication when the generated review body contains a credential-like literal", async () => {
+    const { octokit, createReviewCalls } = createFakeOctokit();
+    const tokenLikeKey = "ghp_123456789012345678901234567890123456";
+
+    const { gate } = createFakePublicationGate(makePublicationStatus({ reviewOutputKey: tokenLikeKey }));
+
+    const result = await publishFormatterSuggestionReview({
+      octokit,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      commitId: "abc123def456",
+      reviewOutputKey: tokenLikeKey,
+      publicationGate: gate,
+      suggestions: [makeSuggestion()],
+    });
+
+    expect(createReviewCalls).toHaveLength(0);
+    expect(result).toMatchObject({
+      status: "blocked",
+      posted: 0,
+      blocked: {
+        pattern: "github-pat",
+        location: "review-body",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(tokenLikeKey);
+  });
+
+  test("returns failed with bounded sanitized rejection details when GitHub rejects the review batch", async () => {
+    const createReviewCalls: CreateReviewPayload[] = [];
+    const rejection = new Error(
+      `Validation Failed: body is too long ghp_123456789012345678901234567890123456 ${"x".repeat(1000)}`,
+    ) as Error & { status?: number; response?: { data?: { message?: string } } };
+    rejection.status = 422;
+    rejection.response = { data: { message: rejection.message } };
+    const octokit: FormatterSuggestionPublisherOctokit = {
+      rest: {
+        pulls: {
+          createReview: async (payload: CreateReviewPayload) => {
+            createReviewCalls.push(payload);
+            throw rejection;
+          },
+        },
+      },
+    };
+
+    const result = await publishFormatterSuggestionReview({
+      octokit,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      commitId: "abc123def456",
+      suggestions: [makeSuggestion()],
+    });
+
+    expect(createReviewCalls).toHaveLength(1);
+    expect(result.status).toBe("failed");
+    expect(result.posted).toBe(0);
+    expect(result).toMatchObject({
+      failed: true,
+      rejection: {
+        status: 422,
+      },
+    });
+    expect(result.rejection?.message.length).toBeLessThanOrEqual(500);
+    expect(result.rejection?.message).toContain("Validation Failed");
+    expect(result.rejection?.message).not.toContain("ghp_123456789012345678901234567890123456");
+  });
 });
