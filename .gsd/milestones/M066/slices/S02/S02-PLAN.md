@@ -85,7 +85,7 @@ Negative Tests (Q7): empty diff, malformed headers, malformed hunk ranges, binar
   - Files: `src/execution/formatter-suggestions.ts`, `src/execution/formatter-suggestions.test.ts`, `src/knowledge/code-snippet-chunker.ts`
   - Verify: bun test ./src/execution/formatter-suggestions.test.ts --timeout 30000
 
-- [ ] **T03: Map safe formatter replacement blocks to capped GitHub suggestion payloads** `est:2h 30m`
+- [x] **T03: Map safe formatter replacement blocks to capped GitHub suggestion payloads** `est:2h 30m`
   Use installed skills in task-plan frontmatter: `test-driven-development`, `tdd`, `verify-before-complete`.
 
 Why: R082 and R083 require formatter hunks to become deterministic, GitHub-commentable same-PR suggestion payloads while skipping unsafe/unmappable ranges and exposing capped/skipped counts for S03/S04.

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   FORMATTER_STDERR_SUMMARY_MAX_CHARS,
+  buildPrDiffCommentabilityIndex,
+  mapFormatterDiffToSuggestions,
   parseFormatterUnifiedDiff,
   resolveFormatterCommand,
   runFormatterCommand,
@@ -182,6 +184,242 @@ describe("parseFormatterUnifiedDiff", () => {
     expect(result.skipped).toEqual([
       { reason: "malformed-diff", detail: "file has diff body but no valid hunks", oldPath: "src/a.ts", newPath: "src/a.ts" },
     ]);
+  });
+});
+
+describe("buildPrDiffCommentabilityIndex", () => {
+  test("records RIGHT-side context and added lines but excludes deletions", () => {
+    const index = buildPrDiffCommentabilityIndex([
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,3 +1,4 @@",
+      " keep one",
+      "-removed",
+      "+added",
+      " keep two",
+      "diff --git a/src/b.ts b/src/b.ts",
+      "--- a/src/b.ts",
+      "+++ b/src/b.ts",
+      "@@ -10 +11 @@",
+      "+new b",
+      "",
+    ].join("\n"));
+
+    expect([...index.get("src/a.ts") ?? []]).toEqual([1, 2, 3]);
+    expect([...index.get("src/b.ts") ?? []]).toEqual([11]);
+  });
+
+  test("malformed PR diff hunks do not invent commentable lines", () => {
+    const index = buildPrDiffCommentabilityIndex([
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ nope @@",
+      "+added",
+      "",
+    ].join("\n"));
+
+    expect(index.get("src/a.ts")).toBeUndefined();
+  });
+});
+
+describe("mapFormatterDiffToSuggestions", () => {
+  test("maps one-line replacements to line-only RIGHT-side GitHub suggestions", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -2 +2 @@",
+      "-const oldName = 1;",
+      "+const newName = 1;",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([["src/a.ts", new Set([2])]]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 10 });
+
+    expect(result.suggestions).toEqual([
+      {
+        path: "src/a.ts",
+        line: 2,
+        side: "RIGHT",
+        suggestionBody: "```suggestion\nconst newName = 1;\n```",
+        oldStart: 2,
+        oldEnd: 2,
+        newStart: 2,
+        hunkHeader: "@@ -2 +2 @@",
+      },
+    ]);
+    expect(result.skipped).toEqual([]);
+    expect(result.counts).toMatchObject({ suggestions: 1, skipped: 0, capped: 0 });
+    expect(result.capped).toBe(false);
+  });
+
+  test("maps multi-line and uneven-count replacements when every old target line is commentable", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -10,2 +10,3 @@",
+      "-const a = 1;",
+      "-const b = 2;",
+      "+const a = 1;",
+      "+",
+      "+const b = 2;",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([["src/a.ts", new Set([10, 11])]]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 10 });
+
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0]).toMatchObject({ path: "src/a.ts", startLine: 10, line: 11, side: "RIGHT", oldStart: 10, oldEnd: 11, newStart: 10 });
+    expect(result.suggestions[0]?.suggestionBody).toBe("```suggestion\nconst a = 1;\n\nconst b = 2;\n```");
+    expect(result.skipped).toEqual([]);
+  });
+
+  test("skips pure insertions and pure deletions", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,2 +1,3 @@",
+      " keep",
+      "+inserted",
+      " keep too",
+      "@@ -10,2 +10 @@",
+      " keep before",
+      "-deleted",
+      " keep after",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([["src/a.ts", new Set([1, 2, 10, 11])]]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 10 });
+
+    expect(result.suggestions).toEqual([]);
+    expect(result.skipped.map((skip) => skip.reason)).toEqual(["pure-insertion", "pure-deletion"]);
+    expect(result.counts).toMatchObject({ suggestions: 0, skipped: 2, capped: 0 });
+  });
+
+  test("skips formatter replacement ranges outside the PR diff RIGHT-side index", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -5 +5 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex: new Map(), maxSuggestions: 10 });
+
+    expect(result.suggestions).toEqual([]);
+    expect(result.skipped).toEqual([
+      { reason: "target-range-not-in-pr-diff", detail: "src/a.ts:5-5 is not fully commentable on the PR RIGHT side", oldPath: "src/a.ts", newPath: "src/a.ts" },
+    ]);
+  });
+
+  test("skips path mismatches and off-by-one target ranges without guessing", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -5 +5 @@",
+      "-old path mismatch",
+      "+new path mismatch",
+      "diff --git a/src/b.ts b/src/b.ts",
+      "--- a/src/b.ts",
+      "+++ b/src/b.ts",
+      "@@ -10,2 +10,2 @@",
+      "-old one",
+      "-old two",
+      "+new one",
+      "+new two",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([
+      ["src/other.ts", new Set([5])],
+      ["src/b.ts", new Set([10])],
+    ]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 10 });
+
+    expect(result.suggestions).toEqual([]);
+    expect(result.skipped).toEqual([
+      { reason: "target-range-not-in-pr-diff", detail: "src/a.ts:5-5 is not fully commentable on the PR RIGHT side", oldPath: "src/a.ts", newPath: "src/a.ts" },
+      { reason: "target-range-not-in-pr-diff", detail: "src/b.ts:10-11 is not fully commentable on the PR RIGHT side", oldPath: "src/b.ts", newPath: "src/b.ts" },
+    ]);
+  });
+
+  test("returns partial success for mixed safe and unsafe formatter hunks", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -2 +2 @@",
+      "-old safe",
+      "+new safe",
+      "@@ -8 +8 @@",
+      "-old unsafe",
+      "+new unsafe",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([["src/a.ts", new Set([2])]]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 10 });
+
+    expect(result.suggestions.map((suggestion) => suggestion.line)).toEqual([2]);
+    expect(result.skipped.map((skip) => skip.reason)).toEqual(["target-range-not-in-pr-diff"]);
+    expect(result.counts).toMatchObject({ suggestions: 1, skipped: 1, capped: 0 });
+  });
+
+  test("caps safe candidates after validation and records dropped suggestions", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-old one",
+      "+new one",
+      "@@ -2 +2 @@",
+      "-old two",
+      "+new two",
+      "@@ -3 +3 @@",
+      "-old three",
+      "+new three",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([["src/a.ts", new Set([1, 2, 3])]]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 1 });
+
+    expect(result.suggestions.map((suggestion) => suggestion.line)).toEqual([1]);
+    expect(result.capped).toBe(true);
+    expect(result.skipped.map((skip) => skip.reason)).toEqual(["max-suggestions-exceeded", "max-suggestions-exceeded"]);
+    expect(result.counts).toMatchObject({ suggestions: 1, skipped: 2, capped: 2 });
+  });
+
+  test("propagates parser skips into mapper diagnostics", () => {
+    const formatterDiff = [
+      "diff --git a/src/added.ts b/src/added.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/src/added.ts",
+      "@@ -0,0 +1 @@",
+      "+added",
+      "",
+    ].join("\n");
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex: new Map(), maxSuggestions: 10 });
+
+    expect(result.suggestions).toEqual([]);
+    expect(result.skipped).toEqual([
+      { reason: "unsupported-file", detail: "added file is not supported", oldPath: undefined, newPath: "src/added.ts" },
+    ]);
+    expect(result.counts).toMatchObject({ suggestions: 0, skipped: 1, parserSkipped: 1 });
   });
 });
 

@@ -90,6 +90,42 @@ export interface FormatterDiffSkip {
   newPath?: string;
 }
 
+export type PrDiffCommentabilityIndex = Map<string, Set<number>>;
+
+export interface FormatterSuggestionPayload {
+  path: string;
+  line: number;
+  startLine?: number;
+  side: "RIGHT";
+  suggestionBody: string;
+  oldStart: number;
+  oldEnd: number;
+  newStart: number;
+  hunkHeader: string;
+}
+
+export interface MapFormatterDiffToSuggestionsOptions {
+  formatterDiff: string;
+  prDiffIndex: PrDiffCommentabilityIndex;
+  maxSuggestions: number;
+}
+
+export interface FormatterSuggestionCounts {
+  suggestions: number;
+  skipped: number;
+  capped: number;
+  parsedFiles: number;
+  parserSkipped: number;
+  candidateGroups: number;
+}
+
+export interface MapFormatterDiffToSuggestionsResult {
+  suggestions: FormatterSuggestionPayload[];
+  skipped: FormatterDiffSkip[];
+  counts: FormatterSuggestionCounts;
+  capped: boolean;
+}
+
 export interface ParseFormatterUnifiedDiffResult {
   files: FormatterDiffFile[];
   skipped: FormatterDiffSkip[];
@@ -97,6 +133,7 @@ export interface ParseFormatterUnifiedDiffResult {
 
 const GIT_DIFF_HEADER_RE = /^diff --git\s+(\S+)\s+(\S+)$/;
 const FORMATTER_HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@\s?(.*)$/;
+const PR_HUNK_HEADER_RE = /^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@/;
 
 interface MutableFormatterDiffFile {
   oldPath?: string;
@@ -330,6 +367,226 @@ export function parseFormatterUnifiedDiff(diffText: string): ParseFormatterUnifi
 
   finalizeFormatterDiffFile(currentFile, result);
   return result;
+}
+
+export function buildPrDiffCommentabilityIndex(prDiffText: string): PrDiffCommentabilityIndex {
+  const index: PrDiffCommentabilityIndex = new Map();
+  let currentPath: string | undefined;
+  let rightCursor: number | undefined;
+
+  for (const line of prDiffText.split(/\r?\n/)) {
+    const diffHeaderMatch = GIT_DIFF_HEADER_RE.exec(line);
+    if (diffHeaderMatch) {
+      currentPath = parseDiffHeaderPath(diffHeaderMatch[2]!);
+      rightCursor = undefined;
+      continue;
+    }
+
+    if (line.startsWith("+++ ")) {
+      currentPath = parseFileHeaderPath(line);
+      rightCursor = undefined;
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      const hunkHeaderMatch = PR_HUNK_HEADER_RE.exec(line);
+      rightCursor = hunkHeaderMatch ? Number.parseInt(hunkHeaderMatch[1]!, 10) : undefined;
+      continue;
+    }
+
+    if (!currentPath || rightCursor === undefined) {
+      continue;
+    }
+
+    if (line.startsWith(" ") || line.startsWith("+")) {
+      let pathLines = index.get(currentPath);
+      if (!pathLines) {
+        pathLines = new Set<number>();
+        index.set(currentPath, pathLines);
+      }
+      pathLines.add(rightCursor);
+      rightCursor += 1;
+      continue;
+    }
+
+    if (line.startsWith("-")) {
+      continue;
+    }
+
+    if (line.startsWith("\\ No newline at end of file") || line === "") {
+      continue;
+    }
+
+    rightCursor = undefined;
+  }
+
+  return index;
+}
+
+interface FormatterChangeGroup {
+  removed: FormatterDiffLine[];
+  added: FormatterDiffLine[];
+}
+
+function formatFormatterHunkHeader(hunk: FormatterDiffHunk): string {
+  const oldRange = hunk.oldLineCount === 1 ? `${hunk.oldStart}` : `${hunk.oldStart},${hunk.oldLineCount}`;
+  const newRange = hunk.newLineCount === 1 ? `${hunk.newStart}` : `${hunk.newStart},${hunk.newLineCount}`;
+  const section = hunk.section ? ` ${hunk.section}` : "";
+  return `@@ -${oldRange} +${newRange} @@${section}`;
+}
+
+function extractFormatterChangeGroups(hunk: FormatterDiffHunk): FormatterChangeGroup[] {
+  const groups: FormatterChangeGroup[] = [];
+  let current: FormatterChangeGroup | undefined;
+
+  const flushCurrent = () => {
+    if (current && (current.removed.length > 0 || current.added.length > 0)) {
+      groups.push(current);
+    }
+    current = undefined;
+  };
+
+  for (const line of hunk.lines) {
+    if (line.kind === "context") {
+      flushCurrent();
+      continue;
+    }
+
+    current ??= { removed: [], added: [] };
+    if (line.kind === "removed") {
+      current.removed.push(line);
+    } else {
+      current.added.push(line);
+    }
+  }
+
+  flushCurrent();
+  return groups;
+}
+
+function makeSuggestionBody(lines: FormatterDiffLine[]): string {
+  return `\`\`\`suggestion\n${lines.map((line) => line.text).join("\n")}\n\`\`\``;
+}
+
+function hasEveryTargetLine(index: PrDiffCommentabilityIndex, path: string, oldStart: number, oldEnd: number): boolean {
+  const commentableLines = index.get(path);
+  if (!commentableLines) {
+    return false;
+  }
+
+  for (let line = oldStart; line <= oldEnd; line += 1) {
+    if (!commentableLines.has(line)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function normalizedSuggestionLimit(maxSuggestions: number): number {
+  if (!Number.isFinite(maxSuggestions)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.max(0, Math.floor(maxSuggestions));
+}
+
+export function mapFormatterDiffToSuggestions(
+  options: MapFormatterDiffToSuggestionsOptions,
+): MapFormatterDiffToSuggestionsResult {
+  const parsed = parseFormatterUnifiedDiff(options.formatterDiff);
+  const suggestions: FormatterSuggestionPayload[] = [];
+  const skipped: FormatterDiffSkip[] = [...parsed.skipped];
+  const maxSuggestions = normalizedSuggestionLimit(options.maxSuggestions);
+  let candidateGroups = 0;
+  let capped = 0;
+
+  for (const file of parsed.files) {
+    for (const hunk of file.hunks) {
+      for (const group of extractFormatterChangeGroups(hunk)) {
+        candidateGroups += 1;
+        if (group.removed.length === 0) {
+          skipped.push({
+            reason: "pure-insertion",
+            detail: `${file.newPath}:${group.added[0]?.newLine ?? hunk.newStart} has no existing PR RIGHT-side range to replace`,
+            oldPath: file.oldPath,
+            newPath: file.newPath,
+          });
+          continue;
+        }
+
+        if (group.added.length === 0) {
+          const oldStart = group.removed[0]?.oldLine ?? hunk.oldStart;
+          const oldEnd = group.removed.at(-1)?.oldLine ?? oldStart;
+          skipped.push({
+            reason: "pure-deletion",
+            detail: `${file.newPath}:${oldStart}-${oldEnd} has no formatter replacement lines`,
+            oldPath: file.oldPath,
+            newPath: file.newPath,
+          });
+          continue;
+        }
+
+        const oldStart = group.removed[0]?.oldLine;
+        const oldEnd = group.removed.at(-1)?.oldLine;
+        const newStart = group.added[0]?.newLine;
+        if (oldStart === undefined || oldEnd === undefined || newStart === undefined) {
+          skipped.push({
+            reason: "malformed-diff",
+            detail: `${file.newPath} formatter change group is missing line metadata`,
+            oldPath: file.oldPath,
+            newPath: file.newPath,
+          });
+          continue;
+        }
+
+        if (!hasEveryTargetLine(options.prDiffIndex, file.newPath, oldStart, oldEnd)) {
+          skipped.push({
+            reason: "target-range-not-in-pr-diff",
+            detail: `${file.newPath}:${oldStart}-${oldEnd} is not fully commentable on the PR RIGHT side`,
+            oldPath: file.oldPath,
+            newPath: file.newPath,
+          });
+          continue;
+        }
+
+        if (suggestions.length >= maxSuggestions) {
+          capped += 1;
+          skipped.push({
+            reason: "max-suggestions-exceeded",
+            detail: `${file.newPath}:${oldStart}-${oldEnd} exceeded maxSuggestions=${maxSuggestions}`,
+            oldPath: file.oldPath,
+            newPath: file.newPath,
+          });
+          continue;
+        }
+
+        suggestions.push({
+          path: file.newPath,
+          line: oldEnd,
+          startLine: oldStart === oldEnd ? undefined : oldStart,
+          side: "RIGHT",
+          suggestionBody: makeSuggestionBody(group.added),
+          oldStart,
+          oldEnd,
+          newStart,
+          hunkHeader: formatFormatterHunkHeader(hunk),
+        });
+      }
+    }
+  }
+
+  return {
+    suggestions,
+    skipped,
+    counts: {
+      suggestions: suggestions.length,
+      skipped: skipped.length,
+      capped,
+      parsedFiles: parsed.files.length,
+      parserSkipped: parsed.skipped.length,
+      candidateGroups,
+    },
+    capped: capped > 0,
+  };
 }
 
 function substituteFormatterPlaceholder(value: string, options: ResolveFormatterCommandOptions): string {
