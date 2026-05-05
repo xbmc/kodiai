@@ -1,0 +1,56 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_mbT5HMCE1ihdm2FCnt8uPds6|fc_0abec0e4f7fb69720169f97b9a67d481919f227c9cf503f217",
+    "command": "rg -n \"formatter|format-only|format suggestions|runFormatterSuggestion|formatter suggestion\" src/handlers/mention.test.ts src/handlers/mention.ts src/handlers/formatter-suggestion-intent.test.ts src/handlers/formatter-suggestion-intent.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/formatter-suggestion-intent.ts:1:export type FormatterSuggestionRequestMode = \"format-only\" | \"review-and-format\";\nsrc/handlers/formatter-suggestion-intent.ts:38:      mode: \"format-only\",\nsrc/handlers/formatter-suggestion-intent.test.ts:2:import { detectFormatterSuggestionRequest } from \"./formatter-suggestion-intent.ts\";\nsrc/handlers/formatter-suggestion-intent.test.ts:6:    \"format suggestions\",\nsrc/handlers/formatter-suggestion-intent.test.ts:10:  ])(\"detects format-only phrase ",
+    "timestamp": 1777957786925
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_C7szW4gOREKnA72xWuDkNzK8|fc_0abec0e4f7fb69720169f97bb3c7208191913ca459798fe694",
+    "command": "rg -n \"reviewOutputAction|reviewOutputKey|buildReviewOutputKey\" src/handlers/formatter-suggestion-orchestration.ts src/handlers/mention.ts",
+    "exitCode": 0,
+    "outputSnippet": "src/handlers/formatter-suggestion-orchestration.ts:20:import { buildReviewOutputKey } from \"./review-idempotency.ts\";\nsrc/handlers/formatter-suggestion-orchestration.ts:68:  reviewOutputAction?: string;\nsrc/handlers/formatter-suggestion-orchestration.ts:96:  reviewOutputKey?: string;\nsrc/handlers/formatter-suggestion-orchestration.ts:214:  reviewOutputKey: string;\nsrc/handlers/formatter-suggestion-orchestration.ts:228:    reviewOutputKey: params.reviewOutputKey,\nsrc/handlers/formatter-suggestion",
+    "timestamp": 1777957812505
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_W4JxQ5LT3GRcABz7z59etYso|fc_0abec0e4f7fb69720169f97bcdb9fc8191bcb636e4c8f4eac6",
+    "path": "src/handlers/mention.test.ts",
+    "timestamp": 1777957838353
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_JyfZEjyHqBe8nzzKX90CJT6w|fc_0abec0e4f7fb69720169f97bd224108191a4e110644efa90f5",
+    "path": "src/handlers/mention.test.ts",
+    "timestamp": 1777957843211
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_bX9Umdzgdzx5ggiYnZ2jOGrr|fc_0abec0e4f7fb69720169f97bd637ec8191a2bc6f693e85b8bc",
+    "path": "src/handlers/mention.test.ts",
+    "timestamp": 1777957847346
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_KprynRiFJSdFzLDuRVVNnIhE|fc_0abec0e4f7fb69720169f97bdd6d688191a5cfe12751cee0f9",
+    "path": "src/handlers/mention.test.ts",
+    "timestamp": 1777957854525
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_29pBKgMe7ZE8xW0lnDDThmIT|fc_0abec0e4f7fb69720169f97be3b90081919a74123e85349c28",
+    "path": "src/handlers/mention.test.ts",
+    "timestamp": 1777957865918
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_VSSrcCqZXUF4dnq3Mlst6xgh|fc_0abec0e4f7fb69720169f97befba0c8191a83355351bf3638a",
+    "command": "bun test ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-intent.test.ts --timeout 30000",
+    "exitCode": 1,
+    "outputSnippet": "bun test v1.3.8 (b64edcb4)\n\nsrc/handlers/mention.test.ts:\n(pass) createMentionHandler coordinator wiring > logs when the mention handler falls back to a private coordinator [1.00ms]\n(pass) createMentionHandler queued-claim cleanup > releases a pre-enqueue explicit-review claim when the request aborts before execution [59.00ms]\n(pass) createMentionHandler enqueue routing > explicit review mentions enqueue onto the interactive-review lane with a stable PR key [1.00ms]\n(pass) createMentionHandler e",
+    "timestamp": 1777957872172
+  }
+]

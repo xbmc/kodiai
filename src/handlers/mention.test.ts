@@ -485,9 +485,10 @@ function buildPrIssueCommentMentionEvent(params: {
   commentAuthor?: string;
   commentId?: number;
   defaultBranch?: string;
+  deliveryId?: string;
 }): WebhookEvent {
   return {
-    id: "delivery-pr-issue-comment-mention",
+    id: params.deliveryId ?? "delivery-pr-issue-comment-mention",
     name: "issue_comment",
     installationId: 42,
     payload: {
@@ -12670,6 +12671,9 @@ describe("createMentionHandler formatter suggestion intent context", () => {
 
   async function runPrFormatterMention(params: {
     commentBody: string;
+    prNumber?: number;
+    deliveryId?: string;
+    commentId?: number;
     configYml?: string;
     formatterSubflowResult?: FormatterSuggestionSubflowResult;
     executorResult?: {
@@ -12705,7 +12709,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         "    maxSuggestions: 7",
       ].join("\n") + "\n",
     );
-    const prNumber = 109;
+    const prNumber = params.prNumber ?? 109;
     const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
       .text()
       .trim();
@@ -12834,6 +12838,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         buildPrIssueCommentMentionEvent({
           prNumber,
           commentBody: params.commentBody,
+          deliveryId: params.deliveryId,
+          commentId: params.commentId,
         }),
       );
       return { capturedContext, executorCalls, formatterSubflowCalls, commentBodies, infoCalls, warnCalls, errorCalls };
@@ -12880,6 +12886,74 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       capped: 0,
       visibleReplyPosted: false,
     });
+  });
+
+  test("live PR issue-comment formatter trigger logs delivery id and formatter review output key", async () => {
+    const deliveryId = "9961ce70-4830-11f1-86fa-c01e4dffd5b0";
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 134,
+      action: "mention-format-suggestions",
+      deliveryId,
+      headSha: "df017da6b6959038a288f8eae070b7a384ef0fa4",
+    });
+
+    const result = await runPrFormatterMention({
+      prNumber: 134,
+      deliveryId,
+      commentId: 4376297998,
+      commentBody: "@kodiai format suggestions",
+      configYml: [
+        "mention:",
+        "  enabled: true",
+        "review:",
+        "  formatterSuggestions:",
+        "    automatic: false",
+        "    command: python3 scripts/m066-formatter-smoke.py",
+        "    maxSuggestions: 7",
+      ].join("\n") + "\n",
+      formatterSubflowResult: {
+        status: "posted",
+        commandStatus: "success",
+        publisherStatus: "posted",
+        suggestions: 1,
+        skipped: 0,
+        capped: 0,
+        posted: 1,
+        reviewOutputKey,
+        headSha: "df017da6b6959038a288f8eae070b7a384ef0fa4",
+        reviewUrl: "https://github.com/acme/repo/pull/134#pullrequestreview-123",
+        reviewId: 123,
+      },
+    });
+
+    expect(result.executorCalls).toHaveLength(0);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls[0]).toMatchObject({
+      prNumber: 134,
+      deliveryId,
+      formatterCommand: "python3 scripts/m066-formatter-smoke.py",
+    });
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Format-only formatter suggestion request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      surface: "pr_comment",
+      formatterSuggestionRequest: true,
+      formatterMode: "format-only",
+      formatterStatus: "posted",
+      commandStatus: "success",
+      publisherStatus: "posted",
+      deliveryId,
+      reviewOutputKey,
+      reviewOutputAction: "mention-format-suggestions",
+    });
+    expect(
+      result.infoCalls.some((entry) => entry.message === "Mention execution completed"),
+    ).toBe(false);
   });
 
   test("@kodiai suggest formatting fixes posts setup guidance without calling Claude when no command is configured", async () => {

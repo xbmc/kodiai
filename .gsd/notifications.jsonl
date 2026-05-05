@@ -377,3 +377,5 @@
 {"id":"e458be58-dc03-4a63-9b3a-46c94f7c46d8","ts":"2026-05-05T05:06:53.164Z","severity":"info","message":"Auto-mode resumed.","source":"notify","read":false}
 {"id":"e6994e97-ae25-4a46-b2f7-c592e7f0ce74","ts":"2026-05-05T05:06:55.421Z","severity":"info","message":"Resume: applied 7 fix(es) to state.","source":"notify","read":false}
 {"id":"a8c338ee-ac48-477a-8789-e1c38efe4bb5","ts":"2026-05-05T05:06:55.462Z","severity":"info","message":"Recovered 22 tool calls from paused session. Resuming with context.","source":"notify","read":false}
+{"id":"029912e0-3913-45fa-861e-02a2eb19855f","ts":"2026-05-05T05:09:16.409Z","severity":"info","message":"Committed: feat: Root-caused the deployed formatter trigger miss to formatter-inte…","source":"notify","read":false}
+{"id":"000bf558-f947-4490-9d73-bfe8c432367e","ts":"2026-05-05T05:09:23.123Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

@@ -31,7 +31,7 @@ The slice is complete only when a fresh authenticated/deployed smoke run capture
   - Files: `docs/smoke/m066-formatter-suggestions.md`, `src/handlers/mention.ts`, `src/handlers/formatter-suggestion-intent.ts`, `src/handlers/mention.test.ts`, `.gsd/milestones/M066/slices/S06/tasks/T03-SUMMARY.md`, `.gsd/milestones/M066/slices/S06/tasks/T04-SUMMARY.md`
   - Verify: No code-change gate yet. Verification is evidence quality: cite the exact boundary and source lines/artifacts showing why `@kodiai format suggestions` fell through to conversational handling.
 
-- [ ] **T02: Pin the live trigger miss with a failing regression** `est:1 context`
+- [x] **T02: Pin the live trigger miss with a failing regression** `est:1 context`
   Add the smallest deterministic regression that reproduces the PR #134 failure shape. Prefer extending `src/handlers/mention.test.ts` or `src/handlers/formatter-suggestion-intent.test.ts` with the exact event/comment shape from the smoke: top-level PR issue comment body `@kodiai format suggestions`, PR context, formatter config loaded from the PR head, and expected format-only subflow dispatch without Claude. Run the targeted test and confirm it fails before implementation, unless T01 proves the failure is deployment/config drift not represented in current code; in that case, add a regression around the discovered drift boundary.
   - Files: `src/handlers/mention.test.ts`, `src/handlers/formatter-suggestion-intent.test.ts`, `src/handlers/formatter-suggestion-orchestration.test.ts`
   - Verify: `bun test ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-intent.test.ts --timeout 30000` must show the new regression fails before the implementation change, then pass after T03.
