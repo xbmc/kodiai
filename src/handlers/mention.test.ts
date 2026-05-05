@@ -12672,12 +12672,26 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     commentBody: string;
     configYml?: string;
     formatterSubflowResult?: FormatterSuggestionSubflowResult;
+    executorResult?: {
+      conclusion: "success" | "error" | "failure";
+      published: boolean;
+      resultText?: string;
+      errorMessage?: string;
+      isTimeout?: boolean;
+      failureSubtype?: string;
+      stopReason?: string;
+      usedRepoInspectionTools?: boolean;
+      toolUseNames?: string[];
+    };
+    executorThrows?: Error;
   }): Promise<{
     capturedContext?: CapturedFormatterMentionContext;
     executorCalls: CapturedFormatterMentionContext[];
     formatterSubflowCalls: FormatterSuggestionSubflowOptions[];
     commentBodies: string[];
     infoCalls: LogCall[];
+    warnCalls: LogCall[];
+    errorCalls: LogCall[];
   }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
@@ -12701,7 +12715,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     const executorCalls: CapturedFormatterMentionContext[] = [];
     const formatterSubflowCalls: FormatterSuggestionSubflowOptions[] = [];
     const commentBodies: string[] = [];
-    const { logger, infoCalls } = createMockLogger();
+    const { logger, infoCalls, warnCalls, errorCalls } = createMockLogger();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -12783,7 +12797,10 @@ describe("createMentionHandler formatter suggestion intent context", () => {
             enableInlineTools: ctx.enableInlineTools,
           };
           executorCalls.push(capturedContext);
-          return {
+          if (params.executorThrows) {
+            throw params.executorThrows;
+          }
+          return params.executorResult ?? {
             conclusion: "success",
             published: true,
             costUsd: 0,
@@ -12819,7 +12836,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
           commentBody: params.commentBody,
         }),
       );
-      return { capturedContext, executorCalls, formatterSubflowCalls, commentBodies, infoCalls };
+      return { capturedContext, executorCalls, formatterSubflowCalls, commentBodies, infoCalls, warnCalls, errorCalls };
     } finally {
       await workspaceFixture.cleanup();
     }
@@ -12901,14 +12918,26 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     });
   });
 
-  test("@kodiai review & format suggestions preserves review routing and carries formatter descriptor", async () => {
+  test("@kodiai review & format suggestions preserves review routing and runs formatter subflow independently", async () => {
     const result = await runPrFormatterMention({
       commentBody: "@kodiai review & format suggestions",
     });
     const capturedContext = result.capturedContext;
 
     expect(result.executorCalls).toHaveLength(1);
-    expect(result.formatterSubflowCalls).toHaveLength(0);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls[0]).toMatchObject({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 109,
+      baseRef: "main",
+      headRef: "feature",
+      formatterCommand: "bun fmt",
+      maxSuggestions: 7,
+      installationId: 42,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      botHandles: ["kodiai", "kodai", "claude"],
+    });
     expect(capturedContext?.formatterSuggestionRequest).toEqual({
       requested: true,
       mode: "review-and-format",
@@ -12920,6 +12949,107 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     expect(capturedContext?.reviewOutputKey).toBeDefined();
     expect(capturedContext?.reviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedContext?.enableInlineTools).toBe(true);
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Combined review-and-format mention request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      formatterSuggestionRequest: true,
+      formatterMode: "review-and-format",
+      reviewConclusion: "success",
+      publishResolution: "executor",
+      formatterStatus: "posted",
+      commandStatus: "success",
+      publisherStatus: "posted",
+      combinedPartialFailure: false,
+    });
+  });
+
+  test("combined review-and-format still runs formatter when executor returns an error result", async () => {
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review & format suggestions",
+      executorResult: {
+        conclusion: "error",
+        published: false,
+        errorMessage: "Claude execution failed",
+        usedRepoInspectionTools: false,
+        toolUseNames: [],
+      },
+    });
+
+    expect(result.executorCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.commentBodies.some((body) => body.includes("Claude execution failed"))).toBe(true);
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Combined review-and-format mention request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      reviewConclusion: "error",
+      publishResolution: "none",
+      formatterStatus: "posted",
+      combinedPartialFailure: true,
+    });
+  });
+
+  test("combined review-and-format runs formatter before preserving executor thrown error handling", async () => {
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review & format suggestions",
+      executorThrows: new Error("executor exploded"),
+    });
+
+    expect(result.executorCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.errorCalls.some((entry) => entry.message === "Mention handler failed")).toBe(true);
+    expect(result.commentBodies.some((body) => body.includes("executor exploded"))).toBe(true);
+
+    const combinedAttemptLog = result.infoCalls.find(
+      (entry) => entry.message === "Combined review-and-format formatter subflow completed after review executor threw",
+    );
+    expect(combinedAttemptLog?.bindings).toMatchObject({
+      reviewConclusion: "threw",
+      formatterStatus: "posted",
+      combinedPartialFailure: true,
+    });
+  });
+
+  test("combined review-and-format posts formatter diagnostics without suppressing normal review fallback", async () => {
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review & format suggestions",
+      executorResult: {
+        conclusion: "success",
+        published: false,
+        resultText: "",
+        usedRepoInspectionTools: true,
+        toolUseNames: ["Read"],
+      },
+      formatterSubflowResult: {
+        status: "failed",
+        commandStatus: "failed",
+        publisherStatus: "failed",
+        suggestions: 0,
+        skipped: 0,
+        capped: 0,
+        visibleMessage: "Formatter command failed. Check configuration.",
+        partialFailure: true,
+      },
+    });
+
+    expect(result.executorCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.commentBodies.some((body) => body.includes("Formatter command failed"))).toBe(true);
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Combined review-and-format mention request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      reviewConclusion: "success",
+      formatterStatus: "failed",
+      commandStatus: "failed",
+      publisherStatus: "failed",
+      combinedPartialFailure: true,
+      formatterVisibleReplyPosted: true,
+    });
   });
 });
 

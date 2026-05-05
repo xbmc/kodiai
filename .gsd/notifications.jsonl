@@ -329,3 +329,5 @@
 {"id":"28b497b6-2dd0-4a78-a267-8753ca02232c","ts":"2026-05-05T00:51:19.792Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
 {"id":"1f2658bc-cffd-447e-a4d2-bd9eefb0a763","ts":"2026-05-05T01:06:58.910Z","severity":"info","message":"Committed: test: Added a formatter suggestion subflow helper with structured statu…","source":"notify","read":false}
 {"id":"d89c9a7b-683e-426a-82fd-f0e02b1c1c99","ts":"2026-05-05T01:06:59.147Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"de8a932c-6d92-4e7d-9326-aca8d8e3a43e","ts":"2026-05-05T01:13:21.059Z","severity":"info","message":"Committed: feat: Wired format-only PR mentions to run formatter suggestions direct…","source":"notify","read":false}
+{"id":"fa27e0f2-2171-40c5-a4b4-2e1d58650b52","ts":"2026-05-05T01:13:27.413Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

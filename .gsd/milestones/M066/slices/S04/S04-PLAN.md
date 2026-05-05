@@ -99,7 +99,7 @@ Negative Tests (Q7):
   - Files: `src/handlers/mention.ts`, `src/handlers/mention.test.ts`, `src/handlers/formatter-suggestion-orchestration.ts`, `src/handlers/formatter-suggestion-orchestration.test.ts`
   - Verify: bun test ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts --timeout 30000
 
-- [ ] **T03: Wire combined review-and-format mentions with independent subflow failure handling** `est:2.5h`
+- [x] **T03: Wire combined review-and-format mentions with independent subflow failure handling** `est:2.5h`
   Executor skills expected in task plan frontmatter: `using-superpowers`, `test-driven-development`, `observability`, `verify-before-complete`.
 
 Why: The milestone's core demo requires `@kodiai review & format suggestions` to run normal review plus formatter suggestions from one mention. The risk is accidental coupling: normal review failures must not suppress formatter suggestions, and formatter failures must not suppress normal review routing/publication.

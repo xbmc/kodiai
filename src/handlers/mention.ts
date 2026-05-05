@@ -1868,74 +1868,82 @@ export function createMentionHandler(deps: {
             ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`
             : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}#issuecomment-${mention.commentId}`;
 
-        if (isPrSurface && formatterSuggestionRequest?.mode === "format-only") {
+        const runFormatterSuggestionForMention = async (
+          formatterMode: "format-only" | "review-and-format",
+        ): Promise<FormatterSuggestionSubflowResult> => {
           const formatterWorkspace = workspace;
-          const runFormatterOnlySubflow = async (): Promise<FormatterSuggestionSubflowResult> => {
-            if (!formatterWorkspace || !mention.baseRef || !mention.headRef || mention.prNumber === undefined) {
-              return buildFormatterSubflowFallbackResult({
-                status: "pr-diff-unavailable",
-                reason: !formatterWorkspace
-                  ? "missing workspace for formatter suggestion request"
-                  : "missing PR base/head ref for formatter suggestion mapping",
-              });
-            }
-
-            try {
-              const fallbackDiffProvider = async () => fetchAllPullRequestFiles({
-                octokit: octokit as never,
-                owner: mention.owner,
-                repo: mention.repo,
-                pullNumber: mention.prNumber!,
-              });
-              return await formatterSuggestionSubflow({
-                owner: mention.owner,
-                repo: mention.repo,
-                prNumber: mention.prNumber,
-                workspaceDir: formatterWorkspace.dir,
-                baseRef: mention.baseRef,
-                headRef: mention.headRef,
-                formatterCommand: config.review.formatterSuggestions.command,
-                maxSuggestions: config.review.formatterSuggestions.maxSuggestions,
-                installationId: event.installationId,
-                deliveryId: event.id,
-                octokit: octokit as never,
-                token: formatterWorkspace.token,
-                botHandles: possibleHandles,
-                fallbackFileProvider: async () => (await fallbackDiffProvider()).map((file) => file.filename),
-                fallbackDiffProvider,
-                logger,
-              });
-            } catch (err) {
-              logger.warn(
-                {
-                  surface: mention.surface,
-                  owner: mention.owner,
-                  repo: mention.repo,
-                  prNumber: mention.prNumber,
-                  formatterSuggestionRequest: true,
-                  formatterMode: "format-only",
-                  formatterStatus: "failed",
-                  failureCategory: classifyError(err, false),
-                },
-                "Format-only formatter suggestion subflow threw before returning a structured result",
-              );
-              return buildFormatterSubflowFallbackResult({
-                status: "failed",
-                reason: "formatter subflow threw before returning a structured result",
-              });
-            }
-          };
-
-          let formatterResult = await runFormatterOnlySubflow();
-          if (!isKnownFormatterSubflowStatus(formatterResult.status)) {
-            formatterResult = buildFormatterSubflowFallbackResult({
-              status: formatterResult.status,
-              commandStatus: formatterResult.commandStatus,
-              publisherStatus: formatterResult.publisherStatus,
-              reason: formatterResult.reason,
+          if (!formatterWorkspace || !mention.baseRef || !mention.headRef || mention.prNumber === undefined) {
+            return buildFormatterSubflowFallbackResult({
+              status: "pr-diff-unavailable",
+              reason: !formatterWorkspace
+                ? "missing workspace for formatter suggestion request"
+                : "missing PR base/head ref for formatter suggestion mapping",
             });
           }
 
+          try {
+            const fallbackDiffProvider = async () => fetchAllPullRequestFiles({
+              octokit: octokit as never,
+              owner: mention.owner,
+              repo: mention.repo,
+              pullNumber: mention.prNumber!,
+            });
+            const formatterResult = await formatterSuggestionSubflow({
+              owner: mention.owner,
+              repo: mention.repo,
+              prNumber: mention.prNumber,
+              workspaceDir: formatterWorkspace.dir,
+              baseRef: mention.baseRef,
+              headRef: mention.headRef,
+              formatterCommand: config.review.formatterSuggestions.command,
+              maxSuggestions: config.review.formatterSuggestions.maxSuggestions,
+              installationId: event.installationId,
+              deliveryId: event.id,
+              octokit: octokit as never,
+              token: formatterWorkspace.token,
+              botHandles: possibleHandles,
+              fallbackFileProvider: async () => (await fallbackDiffProvider()).map((file) => file.filename),
+              fallbackDiffProvider,
+              logger,
+            });
+
+            if (!isKnownFormatterSubflowStatus(formatterResult.status)) {
+              return buildFormatterSubflowFallbackResult({
+                status: formatterResult.status,
+                commandStatus: formatterResult.commandStatus,
+                publisherStatus: formatterResult.publisherStatus,
+                reason: formatterResult.reason,
+              });
+            }
+
+            return formatterResult;
+          } catch (err) {
+            logger.warn(
+              {
+                surface: mention.surface,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                formatterSuggestionRequest: true,
+                formatterMode,
+                formatterStatus: "failed",
+                failureCategory: classifyError(err, false),
+              },
+              formatterMode === "format-only"
+                ? "Format-only formatter suggestion subflow threw before returning a structured result"
+                : "Combined review-and-format formatter suggestion subflow threw before returning a structured result",
+            );
+            return buildFormatterSubflowFallbackResult({
+              status: "failed",
+              reason: "formatter subflow threw before returning a structured result",
+            });
+          }
+        };
+
+        const postFormatterVisibleDiagnostic = async (
+          formatterResult: FormatterSuggestionSubflowResult,
+          formatterMode: "format-only" | "review-and-format",
+        ): Promise<{ visibleReplyPosted: boolean; visibleReplyFailed: boolean }> => {
           let visibleReplyPosted = false;
           let visibleReplyFailed = false;
           if (formatterResult.visibleMessage) {
@@ -1952,14 +1960,25 @@ export function createMentionHandler(deps: {
                   repo: mention.repo,
                   prNumber: mention.prNumber,
                   formatterSuggestionRequest: true,
-                  formatterMode: "format-only",
+                  formatterMode,
                   formatterStatus: formatterResult.status,
                   failureCategory: classifyError(err, false),
                 },
-                "Failed to post format-only formatter suggestion visible diagnostic",
+                formatterMode === "format-only"
+                  ? "Failed to post format-only formatter suggestion visible diagnostic"
+                  : "Failed to post combined review-and-format formatter suggestion visible diagnostic",
               );
             }
           }
+          return { visibleReplyPosted, visibleReplyFailed };
+        };
+
+        if (isPrSurface && formatterSuggestionRequest?.mode === "format-only") {
+          const formatterResult = await runFormatterSuggestionForMention("format-only");
+          const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic(
+            formatterResult,
+            "format-only",
+          );
 
           logger.info(
             {
@@ -2833,35 +2852,90 @@ export function createMentionHandler(deps: {
             })
           : undefined;
 
-        // Execute via Claude
+        // Execute via Claude. Combined review-and-format requests run Claude first so
+        // formatter workspace mutations cannot affect review prompt/executor context;
+        // if Claude throws, the formatter subflow still gets an independent attempt.
         if (reviewWorkAttempt) {
           setReviewWorkPhase("executor-dispatch");
         }
-        const result = await executor.execute({
-          workspace,
-          installationId: event.installationId,
-          owner: mention.owner,
-          repo: mention.repo,
-          prNumber: mention.prNumber,
-          // For inline review comment mentions, provide the triggering review comment id
-          // so the executor can enable the in-thread reply MCP tool.
-          commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
-          deliveryId: event.id,
-          botHandles: possibleHandles,
-          writeMode: writeEnabled,
-          taskType: explicitReviewRequest ? explicitReviewRouting.taskType : "mention.response",
-          eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
-          triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
-          prompt,
-          promptSections,
-          reviewOutputKey,
-          maxTurnsOverride: mentionMaxTurns,
-          dynamicTimeoutSeconds: explicitReviewDynamicTimeoutSeconds,
-          knowledgeStore: deps.knowledgeStore,
-          formatterSuggestionRequest,
-          totalFiles: explicitReviewPromptFileCount,
-          enableInlineTools: explicitReviewRequest ? true : undefined,
-        });
+        const isCombinedFormatterSuggestionRequest =
+          isPrSurface && formatterSuggestionRequest?.mode === "review-and-format";
+        let result: Awaited<ReturnType<typeof executor.execute>>;
+        try {
+          result = await executor.execute({
+            workspace,
+            installationId: event.installationId,
+            owner: mention.owner,
+            repo: mention.repo,
+            prNumber: mention.prNumber,
+            // For inline review comment mentions, provide the triggering review comment id
+            // so the executor can enable the in-thread reply MCP tool.
+            commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
+            deliveryId: event.id,
+            botHandles: possibleHandles,
+            writeMode: writeEnabled,
+            taskType: explicitReviewRequest ? explicitReviewRouting.taskType : "mention.response",
+            eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
+            triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
+            prompt,
+            promptSections,
+            reviewOutputKey,
+            maxTurnsOverride: mentionMaxTurns,
+            dynamicTimeoutSeconds: explicitReviewDynamicTimeoutSeconds,
+            knowledgeStore: deps.knowledgeStore,
+            formatterSuggestionRequest,
+            totalFiles: explicitReviewPromptFileCount,
+            enableInlineTools: explicitReviewRequest ? true : undefined,
+          });
+        } catch (err) {
+          if (isCombinedFormatterSuggestionRequest) {
+            logger.warn(
+              {
+                surface: mention.surface,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                formatterSuggestionRequest: true,
+                formatterMode: "review-and-format",
+                reviewConclusion: "threw",
+                failureCategory: classifyError(err, false),
+              },
+              "Combined review-and-format review executor threw before formatter subflow",
+            );
+            const formatterResult = await runFormatterSuggestionForMention("review-and-format");
+            const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic(
+              formatterResult,
+              "review-and-format",
+            );
+            logger.info(
+              {
+                surface: mention.surface,
+                owner: mention.owner,
+                repo: mention.repo,
+                issueNumber: mention.issueNumber,
+                prNumber: mention.prNumber,
+                formatterSuggestionRequest: true,
+                formatterMode: "review-and-format",
+                reviewConclusion: "threw",
+                formatterStatus: formatterResult.status,
+                commandStatus: formatterResult.commandStatus,
+                publisherStatus: formatterResult.publisherStatus,
+                suggestions: formatterResult.suggestions,
+                skipped: formatterResult.skipped,
+                capped: formatterResult.capped,
+                posted: formatterResult.posted,
+                publisherSkipped: formatterResult.publisherSkipped,
+                publisherFailed: formatterResult.publisherFailed,
+                formatterPartialFailure: formatterResult.partialFailure ?? false,
+                formatterVisibleReplyPosted: visibleReplyPosted,
+                formatterVisibleReplyFailed: visibleReplyFailed,
+                combinedPartialFailure: true,
+              },
+              "Combined review-and-format formatter subflow completed after review executor threw",
+            );
+          }
+          throw err;
+        }
 
         // Explicit PR review mentions bypass the pull_request review handler's
         // deterministic clean-review publish path. Bridge that gap here so a
@@ -4161,6 +4235,55 @@ export function createMentionHandler(deps: {
               );
             }
           }
+        }
+
+        if (isCombinedFormatterSuggestionRequest) {
+          const formatterResult = await runFormatterSuggestionForMention("review-and-format");
+          const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic(
+            formatterResult,
+            "review-and-format",
+          );
+          const reviewPartialFailure =
+            result.conclusion !== "success"
+            || publishResolution === "publish-failure-fallback"
+            || publishResolution === "publish-failure-comment-failed"
+            || publishFailureCategory !== null;
+          const formatterPartialFailure =
+            formatterResult.partialFailure === true
+            || formatterResult.status === "failed"
+            || formatterResult.status === "blocked"
+            || formatterResult.status === "pr-diff-unavailable"
+            || formatterResult.status === "setup-needed";
+
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              formatterSuggestionRequest: true,
+              formatterMode: "review-and-format",
+              reviewConclusion: result.conclusion,
+              publishResolution,
+              publishFailureCategory,
+              publishFallbackDelivery,
+              formatterStatus: formatterResult.status,
+              commandStatus: formatterResult.commandStatus,
+              publisherStatus: formatterResult.publisherStatus,
+              suggestions: formatterResult.suggestions,
+              skipped: formatterResult.skipped,
+              capped: formatterResult.capped,
+              posted: formatterResult.posted,
+              publisherSkipped: formatterResult.publisherSkipped,
+              publisherFailed: formatterResult.publisherFailed,
+              formatterPartialFailure,
+              formatterVisibleReplyPosted: visibleReplyPosted,
+              formatterVisibleReplyFailed: visibleReplyFailed,
+              combinedPartialFailure: reviewPartialFailure || formatterPartialFailure || visibleReplyFailed,
+            },
+            "Combined review-and-format mention request completed",
+          );
         }
       } catch (err) {
         logger.error(
