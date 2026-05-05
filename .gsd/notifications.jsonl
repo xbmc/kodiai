@@ -379,3 +379,5 @@
 {"id":"a8c338ee-ac48-477a-8789-e1c38efe4bb5","ts":"2026-05-05T05:06:55.462Z","severity":"info","message":"Recovered 22 tool calls from paused session. Resuming with context.","source":"notify","read":false}
 {"id":"029912e0-3913-45fa-861e-02a2eb19855f","ts":"2026-05-05T05:09:16.409Z","severity":"info","message":"Committed: feat: Root-caused the deployed formatter trigger miss to formatter-inte…","source":"notify","read":false}
 {"id":"000bf558-f947-4490-9d73-bfe8c432367e","ts":"2026-05-05T05:09:23.123Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"2e37e22c-d57d-4422-b85d-a532071e8a9b","ts":"2026-05-05T05:11:54.889Z","severity":"info","message":"Committed: feat: Added a red regression for the live formatter trigger observabili…","source":"notify","read":false}
+{"id":"c5907f03-054a-492c-a74b-375d171dcf16","ts":"2026-05-05T05:12:01.632Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

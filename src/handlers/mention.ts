@@ -130,6 +130,8 @@ type MentionErrorPostResult = {
 
 type MentionExecutionFailureSubtype = "usage_limit";
 
+const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
+
 const FORMATTER_SUBFLOW_STATUSES = new Set([
   "setup-needed",
   "no-op",
@@ -1899,6 +1901,7 @@ export function createMentionHandler(deps: {
               maxSuggestions: config.review.formatterSuggestions.maxSuggestions,
               installationId: event.installationId,
               deliveryId: event.id,
+              reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
               octokit: octokit as never,
               token: formatterWorkspace.token,
               botHandles: possibleHandles,
@@ -1987,6 +1990,9 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               issueNumber: mention.issueNumber,
               prNumber: mention.prNumber,
+              deliveryId: event.id,
+              reviewOutputKey: formatterResult.reviewOutputKey,
+              reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
               formatterSuggestionRequest: true,
               formatterMode: "format-only",
               formatterStatus: formatterResult.status,
@@ -2914,6 +2920,9 @@ export function createMentionHandler(deps: {
                 repo: mention.repo,
                 issueNumber: mention.issueNumber,
                 prNumber: mention.prNumber,
+                deliveryId: event.id,
+                reviewOutputKey: formatterResult.reviewOutputKey,
+                reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
                 formatterSuggestionRequest: true,
                 formatterMode: "review-and-format",
                 reviewConclusion: "threw",
@@ -4262,6 +4271,9 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               issueNumber: mention.issueNumber,
               prNumber: mention.prNumber,
+              deliveryId: event.id,
+              reviewOutputKey: formatterResult.reviewOutputKey,
+              reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
               formatterSuggestionRequest: true,
               formatterMode: "review-and-format",
               reviewConclusion: result.conclusion,
