@@ -13,10 +13,10 @@
 
 ## Slices
 
-- [ ] **S01: S01** `risk:medium` `depends:[]`
+- [x] **S01: S01** `risk:medium` `depends:[]`
   > After this: `@kodiai format suggestions` and `@kodiai review & format suggestions` are recognized, and config shows automatic suggestions default off while explicit requests stay allowed.
 
-- [ ] **S02: Formatter command and diff-to-suggestion mapper** `risk:high` `depends:[S01]`
+- [ ] **S02: S02** `risk:high` `depends:[]`
   > After this: Fixture tests prove formatter unified diffs become safe GitHub suggestion payloads, with unmappable hunks skipped and capped.
 
 - [ ] **S03: Batched same-PR suggestion review publisher** `risk:high` `depends:[S02]`

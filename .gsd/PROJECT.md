@@ -10,9 +10,17 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 ## Current State
 
-The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
+The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, multi-model routing, and explicit mention-driven review handling.
 
 Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt.
+
+**M066 is active: Same-PR Formatter Suggestions.** S01 is complete and established the default-off formatter-suggestion config plus explicit mention intent contract:
+
+- `review.formatterSuggestions` exists with `automatic: false` by default, optional `command`, and bounded `maxSuggestions` defaulting to `10`.
+- Explicit formatter-suggestion mentions such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` are recognized without requiring automatic mode or a configured command.
+- Combined `@kodiai review & format suggestions` requests preserve the normal explicit review lane while carrying a formatter-suggestion descriptor for later orchestration.
+- Format-only formatter-suggestion requests stay read-only and do not trigger write mode.
+- Requirements **R076** and **R079** are validated by M066/S01 test evidence.
 
 **M051 is complete.** The repo now carries one truthful manual rereview contract and one repaired M048 verifier contract:
 
@@ -31,6 +39,9 @@ Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restore
 - **Agent SDK:** `@anthropic-ai/claude-agent-sdk` via `src/execution/agent-entrypoint.ts`.
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
+- **Formatter-suggestion config seam:** `review.formatterSuggestions` in `src/execution/config.ts` controls automatic formatter-suggestion inclusion separately from explicit mention access. `automatic` defaults false; downstream formatter slices should consume `command` and `maxSuggestions` from this nested config.
+- **Formatter-suggestion mention seam:** `src/handlers/formatter-suggestion-intent.ts` is the pure parser for explicit formatter-suggestion requests. `src/handlers/mention.ts` stores the parsed descriptor on `ExecutionContext.formatterSuggestionRequest` so downstream execution/publishing code should not re-parse mention text.
+- **Formatter-suggestion routing invariant:** format-only suggestions remain read-only and must not enter write mode; combined `review-and-format` requests should preserve explicit review routing while letting the formatter subflow run independently.
 - **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger. Team-only `pull_request.review_requested` events — including `ai-review` / `aireview` — are retired as operator triggers and should surface only as skipped manual-trigger negatives.
 - **Manual rereview observability seam:** explicit manual review proof now comes from mention completion/publish evidence (`lane=interactive-review`, `taskType=review.full`, approval/fallback publish resolution), not from reviewer-team topology or self-generated open-event requests.
 - **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated reviewer/team requests cannot be used as proof for human manual rereview behavior.
@@ -83,4 +94,9 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Rereview trigger proof and decision
   - [x] S02: Manual rereview contract implementation
   - [x] S03: Residual operator truthfulness cleanup
-- [ ] M053: Same-PR Formatter Suggestions — explicit and optionally automatic committable formatting suggestions on existing PRs
+- [ ] M066: Same-PR Formatter Suggestions
+  - [x] S01: Formatter suggestion config and mention intent
+  - [ ] S02: Formatter command and diff-to-suggestion mapper
+  - [ ] S03: Batched same-PR suggestion review publisher
+  - [ ] S04: Explicit and combined request orchestration
+  - [ ] S05: Live smoke proof and operator docs

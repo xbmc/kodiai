@@ -98,17 +98,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
-### R076 — Kodiai must recognize explicit formatter-suggestion requests such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` on PR mentions.
-- Class: functional
-- Status: active
-- Description: Kodiai must recognize explicit formatter-suggestion requests such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` on PR mentions.
-- Why it matters: Maintainers need to request committable formatting suggestions on demand without relying on automatic review behavior.
-- Source: user
-- Primary owning slice: M053/S01
-- Supporting slices: M053/S04
-- Validation: Mention intent tests prove explicit formatter requests route to the formatter-suggestion workflow.
-- Notes: M053 discussion: formatter suggestions are always accessible by explicit mention; repo config does not disable explicit access.
-
 ### R077 — Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
 - Class: functional
 - Status: active
@@ -130,17 +119,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M053/S02
 - Validation: Config and command-runner tests prove command parsing, placeholder substitution, and no Jenkins artifact dependency.
 - Notes: Jenkins artifacts are out of scope; Kodiai computes suggestions independently from the PR workspace.
-
-### R079 — Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
-- Class: constraint
-- Status: active
-- Description: Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
-- Why it matters: The user wants to trial the capability on request without changing normal review behavior by default.
-- Source: user
-- Primary owning slice: M053/S01
-- Supporting slices: M053/S04
-- Validation: Config tests prove automatic defaults false and explicit mention routing still invokes the formatter workflow.
-- Notes: Use config semantics like `review.formatterSuggestions.automatic: false`, not `enabled: false`.
 
 ### R080 — Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
 - Class: functional
@@ -871,6 +849,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`; checkpoint acknowledgements now wait for durable save completion and never report `saved: true` on rejected writes.
 - Notes: Introduced by M064 planning from research candidate requirement on checkpoint acknowledgment reliability.
 
+### R076 — Kodiai must recognize explicit formatter-suggestion requests such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` on PR mentions.
+- Class: functional
+- Status: validated
+- Description: Kodiai must recognize explicit formatter-suggestion requests such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` on PR mentions.
+- Why it matters: Maintainers need to request committable formatting suggestions on demand without relying on automatic review behavior.
+- Source: user
+- Primary owning slice: M053/S01
+- Supporting slices: M053/S04
+- Validation: M066/S01 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts --timeout 30000` (245 pass, 0 fail). Parser and full mention-handler tests prove `@kodiai format suggestions` and `@kodiai suggest formatting fixes` route as explicit formatter-suggestion requests.
+- Notes: M053 discussion: formatter suggestions are always accessible by explicit mention; repo config does not disable explicit access.
+
+### R079 — Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
+- Class: constraint
+- Status: validated
+- Description: Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
+- Why it matters: The user wants to trial the capability on request without changing normal review behavior by default.
+- Source: user
+- Primary owning slice: M053/S01
+- Supporting slices: M053/S04
+- Validation: M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off.
+- Notes: Use config semantics like `review.formatterSuggestions.automatic: false`, not `enabled: false`.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -1053,10 +1053,10 @@ This file is the explicit capability and coverage contract for the project.
 | R073 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output returns controlled `finalStopReason` values (`merged-continuation-results`, `settled-without-update`, `no-follow-up`, `superseded-by-newer-attempt`) directly from canonical continuation-family state; verified by `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`. |
 | R074 | operational | validated | M064/S03 | M064/S02 | M064/S03 reran `bun test src/knowledge/continuation-operator-evidence.test.ts && bun test scripts/verify-m064-s03.test.ts && bun run verify:m064:s03 -- --json && bun run verify:m064:s03 && bun test scripts/verify-m064-s01.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s01 -- --json && bun run verify:m064:s02 -- --json`; the operator-evidence surface now resolves continuation lifecycle truth directly from canonical continuation-family state and renders degraded/pending `projectionStatus` explicitly. |
 | R075 | correctness | validated | M064/S02 | none | M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`; checkpoint acknowledgements now wait for durable save completion and never report `saved: true` on rejected writes. |
-| R076 | functional | active | M053/S01 | M053/S04 | Mention intent tests prove explicit formatter requests route to the formatter-suggestion workflow. |
+| R076 | functional | validated | M053/S01 | M053/S04 | M066/S01 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts --timeout 30000` (245 pass, 0 fail). Parser and full mention-handler tests prove `@kodiai format suggestions` and `@kodiai suggest formatting fixes` route as explicit formatter-suggestion requests. |
 | R077 | functional | active | M053/S03 | M053/S02,M053/S04,M053/S05 | Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions. |
 | R078 | integration | active | M053/S01 | M053/S02 | Config and command-runner tests prove command parsing, placeholder substitution, and no Jenkins artifact dependency. |
-| R079 | constraint | active | M053/S01 | M053/S04 | Config tests prove automatic defaults false and explicit mention routing still invokes the formatter workflow. |
+| R079 | constraint | validated | M053/S01 | M053/S04 | M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off. |
 | R080 | functional | active | M053/S04 | M053/S01,M053/S02,M053/S03 | Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete. |
 | R081 | functional | active | M053/S03 | M053/S04 | Publisher tests prove one review API call carries multiple inline comments and idempotency markers. |
 | R082 | quality-attribute | active | M053/S02 | M053/S03,M053/S05 | Fixture tests cover single-line, multi-line, multi-hunk, multi-file, deleted-only, binary, unmappable, and capped hunks. |
@@ -1072,7 +1072,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 19
-- Mapped to slices: 19
-- Validated: 63 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075)
+- Active requirements: 17
+- Mapped to slices: 17
+- Validated: 65 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R079)
 - Unmapped active requirements: 0
