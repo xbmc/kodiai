@@ -118,9 +118,9 @@ test("defaults review.formatterSuggestions when no config exists", async () => {
 
     expect(config.review.formatterSuggestions).toEqual({
       automatic: false,
+      command: "git clang-format --diff origin/{baseRef} HEAD",
       maxSuggestions: 10,
     });
-    expect(config.review.formatterSuggestions.command).toBeUndefined();
     expect((config.review.formatterSuggestions as Record<string, unknown>).enabled).toBeUndefined();
     expect(warnings).toEqual([]);
   } finally {
@@ -135,7 +135,7 @@ test("defaults review.formatterSuggestions when review block omits it", async ()
     const { config, warnings } = await loadRepoConfig(dir);
 
     expect(config.review.formatterSuggestions.automatic).toBe(false);
-    expect(config.review.formatterSuggestions.command).toBeUndefined();
+    expect(config.review.formatterSuggestions.command).toBe("git clang-format --diff origin/{baseRef} HEAD");
     expect(config.review.formatterSuggestions.maxSuggestions).toBe(10);
     expect((config.review.formatterSuggestions as Record<string, unknown>).enabled).toBeUndefined();
     expect(warnings).toEqual([]);
@@ -208,7 +208,7 @@ test("bounds review.formatterSuggestions.maxSuggestions and falls back review se
       "review:\n  formatterSuggestions:\n    command: ''\n",
     );
     const invalidCommand = await loadRepoConfig(dir);
-    expect(invalidCommand.config.review.formatterSuggestions.command).toBeUndefined();
+    expect(invalidCommand.config.review.formatterSuggestions.command).toBe("git clang-format --diff origin/{baseRef} HEAD");
     expect(invalidCommand.warnings.some((w) => w.section === "review")).toBe(true);
 
     await writeFile(

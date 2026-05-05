@@ -106,17 +106,20 @@ const findingPrioritizationWeightsSchema = z
     recurrence: 0.1,
   });
 
+const DEFAULT_FORMATTER_SUGGESTION_COMMAND = "git clang-format --diff origin/{baseRef} HEAD";
+
 const formatterSuggestionsSchema = z
   .object({
     /** Enable automatic formatter-suggestion reviews. Explicit mention requests are handled separately. */
     automatic: z.boolean().default(false),
     /** Repo-controlled formatter command used by downstream suggestion generation. */
-    command: z.string().min(1).optional(),
+    command: z.string().min(1).default(DEFAULT_FORMATTER_SUGGESTION_COMMAND),
     /** Maximum formatter suggestions to surface for a request. */
     maxSuggestions: z.number().min(1).max(100).default(10),
   })
   .default({
     automatic: false,
+    command: DEFAULT_FORMATTER_SUGGESTION_COMMAND,
     maxSuggestions: 10,
   });
 
@@ -210,6 +213,7 @@ const reviewSchema = z
     },
     formatterSuggestions: {
       automatic: false,
+      command: DEFAULT_FORMATTER_SUGGESTION_COMMAND,
       maxSuggestions: 10,
     },
     pathInstructions: [],

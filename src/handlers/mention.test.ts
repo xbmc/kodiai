@@ -12956,7 +12956,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     ).toBe(false);
   });
 
-  test("@kodiai suggest formatting fixes posts setup guidance without calling Claude when no command is configured", async () => {
+  test("@kodiai suggest formatting fixes uses the default formatter command without calling Claude", async () => {
     const result = await runPrFormatterMention({
       commentBody: "@kodiai suggest formatting fixes",
       configYml: [
@@ -12966,29 +12966,20 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         "  formatterSuggestions:",
         "    automatic: false",
       ].join("\n") + "\n",
-      formatterSubflowResult: {
-        status: "setup-needed",
-        commandStatus: "no-command",
-        suggestions: 0,
-        skipped: 0,
-        capped: 0,
-        visibleMessage: "Formatter suggestions are not configured. Add review.formatterSuggestions.command to .kodiai.yml to enable explicit formatter suggestion requests.",
-      },
     });
 
     expect(result.executorCalls).toHaveLength(0);
     expect(result.formatterSubflowCalls).toHaveLength(1);
-    expect(result.formatterSubflowCalls[0]?.formatterCommand).toBeUndefined();
-    expect(result.commentBodies).toHaveLength(1);
-    expect(result.commentBodies[0]).toContain("Formatter suggestions are not configured");
+    expect(result.formatterSubflowCalls[0]?.formatterCommand).toBe("git clang-format --diff origin/{baseRef} HEAD");
+    expect(result.commentBodies).toHaveLength(0);
 
     const completionLog = result.infoCalls.find(
       (entry) => entry.message === "Format-only formatter suggestion request completed",
     );
     expect(completionLog?.bindings).toMatchObject({
-      formatterStatus: "setup-needed",
-      commandStatus: "no-command",
-      visibleReplyPosted: true,
+      formatterStatus: "posted",
+      commandStatus: "success",
+      visibleReplyPosted: false,
     });
   });
 
