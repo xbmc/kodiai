@@ -12650,6 +12650,207 @@ describe("PR surface implicit write intent detection", () => {
   });
 });
 
+describe("createMentionHandler formatter suggestion intent context", () => {
+  type CapturedFormatterMentionContext = {
+    formatterSuggestionRequest?: {
+      requested?: boolean;
+      mode?: string;
+      source?: string;
+      normalizedRequest?: string;
+    };
+    writeMode?: boolean;
+    taskType?: string;
+    reviewOutputKey?: string;
+    enableInlineTools?: boolean;
+  };
+
+  async function runPrFormatterMention(params: {
+    commentBody: string;
+    configYml?: string;
+  }): Promise<CapturedFormatterMentionContext> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      params.configYml ?? [
+        "mention:",
+        "  enabled: true",
+        "review:",
+        "  formatterSuggestions:",
+        "    automatic: false",
+      ].join("\n") + "\n",
+    );
+    const prNumber = 109;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    let capturedContext: CapturedFormatterMentionContext | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({
+            data: {
+              number: prNumber,
+              title: "Test PR",
+              body: "",
+              additions: 1,
+              deletions: 0,
+              draft: false,
+              labels: [],
+              user: { login: "octocat" },
+              head: {
+                ref: "feature",
+                repo: {
+                  name: "repo",
+                  owner: { login: "acme" },
+                },
+              },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: CapturedFormatterMentionContext) => {
+          capturedContext = {
+            formatterSuggestionRequest: ctx.formatterSuggestionRequest,
+            writeMode: ctx.writeMode,
+            taskType: ctx.taskType,
+            reviewOutputKey: ctx.reviewOutputKey,
+            enableInlineTools: ctx.enableInlineTools,
+          };
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-formatter-suggestion",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(
+        buildPrIssueCommentMentionEvent({
+          prNumber,
+          commentBody: params.commentBody,
+        }),
+      );
+      expect(capturedContext).toBeDefined();
+      return capturedContext!;
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  }
+
+  test("@kodiai format suggestions carries a read-only formatter descriptor when automatic suggestions are off", async () => {
+    const capturedContext = await runPrFormatterMention({
+      commentBody: "@kodiai format suggestions",
+    });
+
+    expect(capturedContext.formatterSuggestionRequest).toEqual({
+      requested: true,
+      mode: "format-only",
+      source: "explicit-mention",
+      normalizedRequest: "format suggestions",
+    });
+    expect(capturedContext.writeMode).toBe(false);
+    expect(capturedContext.taskType).toBe("mention.response");
+    expect(capturedContext.reviewOutputKey).toBeUndefined();
+    expect(capturedContext.enableInlineTools).toBeUndefined();
+  });
+
+  test("@kodiai suggest formatting fixes works without a configured formatter command", async () => {
+    const capturedContext = await runPrFormatterMention({
+      commentBody: "@kodiai suggest formatting fixes",
+      configYml: [
+        "mention:",
+        "  enabled: true",
+        "review:",
+        "  formatterSuggestions:",
+        "    automatic: false",
+      ].join("\n") + "\n",
+    });
+
+    expect(capturedContext.formatterSuggestionRequest).toEqual({
+      requested: true,
+      mode: "format-only",
+      source: "explicit-mention",
+      normalizedRequest: "suggest formatting fixes",
+    });
+    expect(capturedContext.writeMode).toBe(false);
+    expect(capturedContext.taskType).toBe("mention.response");
+  });
+
+  test("@kodiai review & format suggestions preserves review routing and carries formatter descriptor", async () => {
+    const capturedContext = await runPrFormatterMention({
+      commentBody: "@kodiai review & format suggestions",
+    });
+
+    expect(capturedContext.formatterSuggestionRequest).toEqual({
+      requested: true,
+      mode: "review-and-format",
+      source: "explicit-mention",
+      normalizedRequest: "review & format suggestions",
+    });
+    expect(capturedContext.writeMode).toBe(false);
+    expect(capturedContext.taskType).toBe("review.small-diff");
+    expect(capturedContext.reviewOutputKey).toBeDefined();
+    expect(capturedContext.reviewOutputKey).toContain("kodiai-review-output:v1:");
+    expect(capturedContext.enableInlineTools).toBe(true);
+  });
+});
+
 describe("createMentionHandler mention derived-context cache", () => {
   test("reuses identical mention context state and misses when the fingerprinted state drifts", async () => {
     const reuseTelemetry: Array<Record<string, unknown>> = [];

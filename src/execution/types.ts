@@ -1,6 +1,7 @@
 export type { RepoConfig } from "./config.ts";
 
 import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { FormatterSuggestionRequest } from "../handlers/formatter-suggestion-intent.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 export type ExecutionPublishEvent = {
@@ -69,6 +70,10 @@ export type ExecutionContext = {
 
   /** Optional KnowledgeStore for checkpoint accumulation MCP tools. */
   knowledgeStore?: KnowledgeStore;
+
+  /** Explicit formatter-suggestion request detected from a mention. */
+  formatterSuggestionRequest?: FormatterSuggestionRequest;
+
   /** Total files in the PR (used for checkpoint coverage metadata). */
   totalFiles?: number;
   /** Enable review checkpoint MCP tool (save_review_checkpoint). */

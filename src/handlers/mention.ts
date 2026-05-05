@@ -86,6 +86,7 @@ import {
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
 import { collectDiffContext } from "./review.ts";
+import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -1240,9 +1241,11 @@ export function createMentionHandler(deps: {
     // The response will be posted as a new comment.
 
     const provisionalUserQuestion = stripMention(mention.commentBody, possibleHandles);
+    const provisionalFormatterSuggestionRequest = detectFormatterSuggestionRequest(provisionalUserQuestion);
     const reviewPrNumber = mention.prNumber;
     const isExplicitReviewRequest =
-      reviewPrNumber !== undefined && isReviewRequest(provisionalUserQuestion);
+      reviewPrNumber !== undefined &&
+      (isReviewRequest(provisionalUserQuestion) || provisionalFormatterSuggestionRequest?.mode === "review-and-format");
     const mentionQueueKey = buildMentionQueueKey(
       mention.owner,
       mention.repo,
@@ -1707,6 +1710,7 @@ export function createMentionHandler(deps: {
         }
 
         const userQuestion = stripMention(mention.commentBody, acceptedHandles);
+        const formatterSuggestionRequest = detectFormatterSuggestionRequest(userQuestion);
         const normalizedQuestion = userQuestion.trim().toLowerCase();
         if (userQuestion.trim().length === 0) {
           logger.info(
@@ -1725,7 +1729,9 @@ export function createMentionHandler(deps: {
 
         const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
         const isPrSurface = mention.prNumber !== undefined;
-        explicitReviewRequest = isPrSurface && isReviewRequest(userQuestion);
+        explicitReviewRequest = isPrSurface && (
+          isReviewRequest(userQuestion) || formatterSuggestionRequest?.mode === "review-and-format"
+        );
         const parsedWriteIntent = parseWriteIntent(userQuestion);
 
         // Issue surfaces: broad implicit intent detection (existing behavior)
@@ -1738,6 +1744,7 @@ export function createMentionHandler(deps: {
         // Guard: explicit review requests must never trigger write mode — they are always read-only.
         const prWriteIntent =
           isPrSurface && !isIssueThreadComment && !parsedWriteIntent.writeIntent &&
+          formatterSuggestionRequest === undefined &&
           !isReviewRequest(parsedWriteIntent.request)
             ? detectImplicitPrPatchIntent(parsedWriteIntent.request)
             : undefined;
@@ -2689,6 +2696,7 @@ export function createMentionHandler(deps: {
           maxTurnsOverride: mentionMaxTurns,
           dynamicTimeoutSeconds: explicitReviewDynamicTimeoutSeconds,
           knowledgeStore: deps.knowledgeStore,
+          formatterSuggestionRequest,
           totalFiles: explicitReviewPromptFileCount,
           enableInlineTools: explicitReviewRequest ? true : undefined,
         });

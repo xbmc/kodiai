@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-05T00:07:56Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T00:07:56Z","fingerprint":"afd2841aca3e71aa60c9c8172f987720e3d9c296","fileCount":500,"truncated":true} -->
+Generated: 2026-05-05T00:12:03Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T00:12:03Z","fingerprint":"6866486b65b9068200cece1a6ce58e87837a7f4c","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -151,7 +151,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(28 files: 28 .ts)*
+- *(30 files: 30 .ts)*
 
 ### src/jobs/
 - `src/jobs/aca-launcher.test.ts`
@@ -182,5 +182,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/knowledge/canonical-code-ingest.ts`
 - `src/knowledge/canonical-code-retrieval.test.ts`
 - `src/knowledge/canonical-code-retrieval.ts`
-- `src/knowledge/canonical-code-store.test.ts`
-- `src/knowledge/canonical-code-store.ts`
