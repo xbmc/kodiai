@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-05T00:26:10Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T00:26:10Z","fingerprint":"e42a99552864b829ab979b81369230754e2ab39e","fileCount":500,"truncated":true} -->
+Generated: 2026-05-05T00:42:10Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T00:42:10Z","fingerprint":"cb0294cdb7ee5c7823da629ff648d41e135fcb81","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -118,7 +118,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/enforcement/types.ts`
 
 ### src/execution/
-- *(27 files: 27 .ts)*
+- *(29 files: 29 .ts)*
 
 ### src/execution/mcp/
 - `src/execution/mcp/checkpoint-server.test.ts`
@@ -178,5 +178,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/knowledge/canonical-code-backfill.ts`
 - `src/knowledge/canonical-code-chunker.test.ts`
 - `src/knowledge/canonical-code-chunker.ts`
-- `src/knowledge/canonical-code-ingest.test.ts`
-- `src/knowledge/canonical-code-ingest.ts`

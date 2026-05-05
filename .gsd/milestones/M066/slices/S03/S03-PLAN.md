@@ -61,7 +61,7 @@ Negative Tests (Q7): single-line vs multi-line payload mapping, marker body pres
   - Files: `src/execution/formatter-suggestion-publisher.test.ts`, `src/execution/formatter-suggestion-publisher.ts`, `src/execution/formatter-suggestions.ts`, `src/handlers/review-idempotency.ts`, `src/execution/mcp/review-output-publication-gate.ts`, `src/lib/sanitizer.ts`
   - Verify: bun test ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000
 
-- [ ] **T02: Implement no-op and idempotency skip publication gates** `est:45m`
+- [x] **T02: Implement no-op and idempotency skip publication gates** `est:45m`
   Use installed skills in task-plan frontmatter: `test-driven-development`, `tdd`, `verify-before-complete`.
 
 Why: R081 requires a publisher that can be safely retried without duplicate batched reviews, and S04 needs truthful no-op behavior when S2 produced no safe suggestions.
