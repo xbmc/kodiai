@@ -1,6 +1,6 @@
 # M066 Formatter Suggestions Smoke Proof
 
-Status: **T03 live trigger executed on controlled PR #134; Kodiai acknowledged and completed the mention job, but no formatter-suggestion review was produced. Accepted live formatter-suggestion proof is still not captured.**
+Status: **T03 live trigger executed on controlled PR #134; Kodiai acknowledged and completed the mention job, but no formatter-suggestion review was produced. T04 rechecked GitHub review surfaces and verifier inputs; accepted live formatter-suggestion proof is still not captured.**
 
 This file is the bounded operator record for M066/S05. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr here.
 
@@ -91,6 +91,12 @@ T02 established a credentialed operator path and a controlled PR without exposin
 | Delivery ID (`X-GitHub-Delivery`) | `9961ce70-4830-11f1-86fa-c01e4dffd5b0` |
 | Review output key | `not captured for formatter trigger` |
 | Deployed revision | `ca-kodiai--deploy-20260504-081420` |
+
+## T04 verifier attempt — no accepted proof
+
+T04 rechecked the live PR review surface after T03. GitHub still shows exactly one Pull Request Review on PR #134, from `copilot-pull-request-reviewer[bot]`, with no Kodiai formatter marker. The four associated review comments are from Copilot, contain no fenced `suggestion` blocks, and are not associated with a Kodiai formatter review. Kodiai has only issue comments for the formatter trigger and generic response; no same-PR Kodiai formatter Pull Request Review exists.
+
+The existing verifier was run only as a bounded negative check against the observed non-formatter `action-opened` reviewOutputKey. It correctly returned `success: false`, `status_code: "m066_s05_invalid_arg"`, and issues stating that the key must encode `mention-format-suggestions` and that the provided delivery id does not match the key's encoded delivery id. This is not accepted M066/S05 proof.
 
 ## Formatter review proof
 

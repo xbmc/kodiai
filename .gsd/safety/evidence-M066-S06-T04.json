@@ -1,0 +1,46 @@
+[
+  {
+    "kind": "bash",
+    "toolCallId": "call_nUVWpG2WwIaNVqk1UIineJ5k|fc_0e4f60c91b2ddc350169f9629fe9788191b5f10d4e9ae34e6f",
+    "command": "python3 - <<'PY'\nimport json, subprocess, sys\nrepo='xbmc/kodiai'\npr='134'\ncmds={\n  'reviews':['gh','api',f'repos/{repo}/pulls/{pr}/reviews','--paginate'],\n  'review_comments':['gh','api',f'repos/{repo}/pulls/{pr}/comments','--paginate'],\n  'issue_comments':['gh','api',f'repos/{repo}/issues/{pr}/comments','--paginate'],\n}\nfor name, cmd in cmds.items():\n    try:\n        out=subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT, timeout=60)\n        data=json.loads(out or '[]')\n    except subprocess.CalledProcessError as e:\n        print(f'{name}: ERROR exit={e.returncode} output={e.output[:500]}')\n        continue\n    except Exception as e:\n        print(f'{name}: ERROR {type(e).__name__}: {e}')\n        continue\n    print(f'== {name}: {len(data)} ==')\n    if name=='reviews':\n        for r in data:\n            body=(r.get('body') or '')\n            has_marker='kodiai-review-output' in body or 'mention-format-suggestions' in body\n            print(json.dumps({\n                'id': r.get('id'), 'user': (r.get('user') or {}).get('login'), 'state': r.get('state'),\n                'submitted_at': r.get('submitted_at'), 'html_url': r.get('html_url'),\n                'has_marker': has_marker,\n                'body_excerpt': body[:240].replace('\\n',' ')\n            }))\n    elif name=='review_comments':\n        for c in data:\n            body=(c.get('body') or '')\n            has_suggestion='```suggestion' in body\n            has_marker='kodiai-review-output' in body or 'mention-format-suggestions' in body\n            print(json.dumps({\n                'id': c.get('id'), 'pull_request_review_id': c.get('pull_request_review_id'),\n                'user': (c.get('user') or {}).get('login'), 'created_at': c.get('created_at'),\n                'html_url': c.get('html_url'), 'has_suggestion': has_suggestion, 'has_marker': has_marker,\n                'body_excerpt': body[:240].replace('\\n',' ')\n            }))\n    else:\n        for c in data[-8:]:\n            body=(c.get('body') or '')\n            has_formatter='mention-format-suggestions' in body or '@kodiai format suggestions' in body\n            print(json.dumps({\n                'id': c.get('id'), 'user': (c.get('user') or {}).get('login'), 'created_at': c.get('created_at'),\n                'html_url': c.get('html_url'), 'has_formatter_text': has_formatter,\n                'body_excerpt': body[:240].replace('\\n',' ')\n            }))\nPY",
+    "exitCode": 0,
+    "outputSnippet": "== reviews: 1 ==\n{\"id\": 4225061633, \"user\": \"copilot-pull-request-reviewer[bot]\", \"state\": \"COMMENTED\", \"submitted_at\": \"2026-05-05T03:15:10Z\", \"html_url\": \"https://github.com/xbmc/kodiai/pull/134#pullrequestreview-4225061633\", \"has_marker\": false, \"body_excerpt\": \"## Pull request overview  This PR is a smoke/acceptance fixture for Kodiai\\u2019s review configuration: it tries to prove a formatter-suggestions flow by introducing a controlled README whitespace regression and wiring a formatter com",
+    "timestamp": 1777951402325
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_N7UjMS5299IJhrzLRMy9t8ZE|fc_0e4f60c91b2ddc350169f962b3381c8191aacb679a473ae092",
+    "command": "bun run verify:m066:s05 -- --repo xbmc/kodiai --review-output-key 'kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-134:action-opened:delivery-097b4660-4830-11f1-886f-a26be3448653:head-df017da6b6959038a288f8eae070b7a384ef0fa4' --delivery-id 9961ce70-4830-11f1-86fa-c01e4dffd5b0 --json",
+    "exitCode": 1,
+    "outputSnippet": "$ bun scripts/verify-m066-s05.ts --repo xbmc/kodiai --review-output-key \"kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-134:action-opened:delivery-097b4660-4830-11f1-886f-a26be3448653:head-df017da6b6959038a288f8eae070b7a384ef0fa4\" --delivery-id \"9961ce70-4830-11f1-86fa-c01e4dffd5b0\" --json\n{\n  \"command\": \"verify:m066:s05\",\n  \"generated_at\": \"2026-05-05T03:23:32.136Z\",\n  \"repo\": \"xbmc/kodiai\",\n  \"review_output_key\": \"kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-134:action-opened:d",
+    "timestamp": 1777951412071
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_ZrsVWVA007Rrp0f0eDkfAGp4|fc_0e4f60c91b2ddc350169f962c022a48191aaeadcff01665b98",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777951426308
+  },
+  {
+    "kind": "edit",
+    "toolCallId": "call_pJP9fJFQfkGwVYTsr91dnKq2|fc_0e4f60c91b2ddc350169f962c9fbbc8191875738a5ae7fe30b",
+    "path": "docs/smoke/m066-formatter-suggestions.md",
+    "timestamp": 1777951440488
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_txqmMYOxw4sRsuhgxtZn15w6|fc_0e4f60c91b2ddc350169f962da348081918191bbad6cf6fb87",
+    "command": "python3 - <<'PY'\nfrom pathlib import Path\np=Path('docs/smoke/m066-formatter-suggestions.md')\ns=p.read_text()\nchecks={\n 't04_section':'## T04 verifier attempt — no accepted proof' in s,\n 'status_negative':'accepted live formatter-suggestion proof is still not captured' in s,\n 'pending_review':'Formatter Pull Request Review URL | `blocked — not captured`' in s,\n 'invalid_arg':'m066_s05_invalid_arg' in s,\n 'no_false_ok':'m066_s05_ok` evidence' not in s and 'Current accepted live output: **none**' in s,\n}\nfor k,v in checks.items(): print(f'{k}={v}')\nraise SystemExit(0 if all(checks.values()) else 1)\nPY",
+    "exitCode": 1,
+    "outputSnippet": "t04_section=True\nstatus_negative=True\npending_review=True\ninvalid_arg=True\nno_false_ok=False\n\n\nCommand exited with code 1",
+    "timestamp": 1777951452439
+  },
+  {
+    "kind": "bash",
+    "toolCallId": "call_zwmWw9osO6SJSXVp6gjTFmxE|fc_0e4f60c91b2ddc350169f962e5b2848191931311e9f3d63c31",
+    "command": "python3 - <<'PY'\nfrom pathlib import Path\ns=Path('docs/smoke/m066-formatter-suggestions.md').read_text()\nchecks={\n 't04_section':'## T04 verifier attempt — no accepted proof' in s,\n 'status_negative':'accepted live formatter-suggestion proof is still not captured' in s,\n 'pending_review':'Formatter Pull Request Review URL | `blocked — not captured`' in s,\n 'invalid_arg':'m066_s05_invalid_arg' in s,\n 'accepted_output_none':'Current accepted live output: **none**' in s,\n 'final_unchecked_review':'- [ ] The PR review is on the same PR as the trigger.' in s,\n 'final_unchecked_verifier':'- [ ] The verifier passed for the captured repo, reviewOutputKey, and delivery id.' in s,\n}\nfor k,v in checks.items(): print(f'{k}={v}')\nraise SystemExit(0 if all(checks.values()) else 1)\nPY",
+    "exitCode": 0,
+    "outputSnippet": "t04_section=True\nstatus_negative=True\npending_review=True\ninvalid_arg=True\naccepted_output_none=True\nfinal_unchecked_review=True\nfinal_unchecked_verifier=True\n",
+    "timestamp": 1777951463002
+  }
+]

@@ -40,7 +40,7 @@ The slice closes only when the captured evidence satisfies the existing S05 veri
   - Files: `docs/smoke/m066-formatter-suggestions.md`
   - Verify: Confirm captured fields include repo, PR URL, trigger comment URL/id, reviewOutputKey containing `mention-format-suggestions`, deployed revision/log correlation, formatter subflow status, and either delivery id or a documented reason delivery id is unavailable.
 
-- [ ] **T04: Verify GitHub accepted the same-PR suggestion** `est:45m`
+- [x] **T04: Verify GitHub accepted the same-PR suggestion** `est:45m`
   Inspect GitHub Pull Request Reviews and associated review comments for the captured PR and formatter reviewOutputKey. Confirm exactly one matching Kodiai formatter Pull Request Review has COMMENTED state, includes the expected marker/idempotency body, and has at least one associated inline review comment containing a fenced `suggestion` block that GitHub accepted on the same PR. Run the existing verifier with the actual syntax and captured non-secret inputs, preserving the passing bounded JSON result.
   - Files: `docs/smoke/m066-formatter-suggestions.md`
   - Verify: `bun run verify:m066:s05 -- --repo "$M066_S05_REPO" --review-output-key "$M066_S05_REVIEW_OUTPUT_KEY" --delivery-id "$M066_S05_DELIVERY_ID" --json` returns `success: true` and `status_code: "m066_s05_ok"`; also run `bun test ./scripts/verify-m066-s05.test.ts --timeout 30000` if verifier code or assumptions change.
