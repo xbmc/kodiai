@@ -325,3 +325,5 @@
 {"id":"bb7cb0a0-c058-491a-a8c7-3d30221fd119","ts":"2026-05-05T00:42:10.125Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"f75738c6-b69e-4197-a49f-6d0a82ad7b97","ts":"2026-05-05T00:47:10.452Z","severity":"info","message":"Committed: feat: Added no-op and idempotency publication gates for formatter sugge…","source":"notify","read":false}
 {"id":"c3a98317-80b5-4890-9ecd-c1080c8dd159","ts":"2026-05-05T00:47:10.519Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"3f9ce9e8-186b-4477-bb29-710f76fa5ffb","ts":"2026-05-05T00:51:13.323Z","severity":"info","message":"Committed: feat: Added outgoing secret blocking, bot-mention sanitization, and who…","source":"notify","read":false}
+{"id":"28b497b6-2dd0-4a78-a267-8753ca02232c","ts":"2026-05-05T00:51:19.792Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}

@@ -120,17 +120,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete.
 - Notes: The semantic review and formatter suggestion subflows should remain independent under the combined intent.
 
-### R081 — Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
-- Class: functional
-- Status: active
-- Description: Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
-- Why it matters: One batched review reduces notification spam and matches the user's preference for one output with many inline suggestions.
-- Source: user
-- Primary owning slice: M053/S03
-- Supporting slices: M053/S04
-- Validation: Publisher tests prove one review API call carries multiple inline comments and idempotency markers.
-- Notes: Avoid looping standalone comments for the normal formatter suggestion path.
-
 ### R084 — Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
 - Class: failure-visibility
 - Status: active
@@ -849,6 +838,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off.
 - Notes: Use config semantics like `review.formatterSuggestions.automatic: false`, not `enabled: false`.
 
+### R081 — Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
+- Class: functional
+- Status: validated
+- Description: Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
+- Why it matters: One batched review reduces notification spam and matches the user's preference for one output with many inline suggestions.
+- Source: user
+- Primary owning slice: M053/S03
+- Supporting slices: M053/S04
+- Validation: M066/S03 publisher tests passed in current slice verification: `bun test ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (34 pass, 117 assertions) and regression bundle `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (279 pass, 1289 assertions). Tests prove one `pulls.createReview` call carries multiple inline suggestion comments plus review-output idempotency markers, with no standalone comment fallback.
+- Notes: Avoid looping standalone comments for the normal formatter suggestion path.
+
 ### R082 — Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
 - Class: quality-attribute
 - Status: validated
@@ -1058,7 +1058,7 @@ This file is the explicit capability and coverage contract for the project.
 | R078 | integration | validated | M053/S01 | M053/S02 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Command-runner fixture tests prove repository-configured formatter commands use only allowlisted placeholders, return structured no-command/no-op/success/failed/timed-out statuses, and produce bounded/redacted diagnostics without relying on Jenkins artifacts. |
 | R079 | constraint | validated | M053/S01 | M053/S04 | M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off. |
 | R080 | functional | active | M053/S04 | M053/S01,M053/S02,M053/S03 | Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete. |
-| R081 | functional | active | M053/S03 | M053/S04 | Publisher tests prove one review API call carries multiple inline comments and idempotency markers. |
+| R081 | functional | validated | M053/S03 | M053/S04 | M066/S03 publisher tests passed in current slice verification: `bun test ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (34 pass, 117 assertions) and regression bundle `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (279 pass, 1289 assertions). Tests prove one `pulls.createReview` call carries multiple inline suggestion comments plus review-output idempotency markers, with no standalone comment fallback. |
 | R082 | quality-attribute | validated | M053/S02 | M053/S03,M053/S05 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Formatter parser/mapper tests prove git unified diffs become deterministic RIGHT-side GitHub suggestion payloads only when every target line maps to the PR diff index; malformed, unsupported, pure insertion/deletion, path-mismatch, and off-diff hunks are skipped rather than guessed. |
 | R083 | operability | validated | M053/S02 | M053/S03,M053/S04 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging. |
 | R084 | failure-visibility | active | M053/S04 | M053/S03,M053/S05 | Failure-path tests prove command errors, empty output, GitHub batch rejection, and combined-mode partial success surfaces are concise and independent. |
@@ -1072,7 +1072,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 14
-- Mapped to slices: 14
-- Validated: 68 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R078, R079, R082, R083)
+- Active requirements: 13
+- Mapped to slices: 13
+- Validated: 69 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R078, R079, R081, R082, R083)
 - Unmapped active requirements: 0

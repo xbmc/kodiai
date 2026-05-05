@@ -14,7 +14,7 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt.
 
-**M066 is active: Same-PR Formatter Suggestions.** S01 and S02 are complete.
+**M066 is active: Same-PR Formatter Suggestions.** S01, S02, and S03 are complete.
 
 S01 established the default-off formatter-suggestion config plus explicit mention intent contract:
 
@@ -35,17 +35,16 @@ S02 delivered the pure formatter execution and diff-to-suggestion mapping contra
 - `mapFormatterDiffToSuggestions()` emits S03-ready payloads with `path`, `line`, optional `startLine`, `side: "RIGHT"`, markdown suggestion block, raw `suggestionBody`, and source metadata, enforcing `maxSuggestions` after safety validation.
 - Requirements **R078**, **R082**, and **R083** are validated by M066/S02 fixture/regression evidence.
 
-Remaining M066 work: S03 must publish the batch as one same-PR GitHub review with idempotency/rejection handling, S04 must wire explicit and combined mention flows with independent subflow failure handling, and S05 must provide live GitHub smoke proof plus operator docs.
+S03 delivered the batched same-PR formatter suggestion publisher contract for downstream orchestration:
 
-**M051 is complete.** The repo now carries one truthful manual rereview contract and one repaired M048 verifier contract:
+- `src/execution/formatter-suggestion-publisher.ts` exports `publishFormatterSuggestionReview()` and result/status types for publishing S02 `FormatterSuggestionPayload[]` as one GitHub Pull Request Review.
+- The publisher uses exactly one `octokit.rest.pulls.createReview` call with `event: "COMMENT"`, caller-provided `commit_id`, a review body with optional `buildReviewOutputMarker(reviewOutputKey)`, and multiple inline `suggestion` comment bodies.
+- Empty suggestion batches return `status: "no-suggestions"`; duplicate review-output keys return `status: "skipped"`; both avoid GitHub writes.
+- Publication-gate failures, GitHub validation errors, and outgoing secret detections are surfaced as structured `failed` or `blocked` results with `posted: 0`, bounded/redacted messages, and no fallback to standalone comments, branch pushes, commits, or new PRs.
+- Outgoing review and suggestion bodies are scanned for secrets before any write and have configured bot handles sanitized while preserving suggestion fences and idempotency markers.
+- Requirement **R081** is validated by M066/S03 publisher/regression evidence. **R077** still requires S05 live GitHub committability proof, and **R080/R084** still require S04 orchestration proof for combined requests and independent subflow failure handling.
 
-- **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger.
-- **Retired path:** team-only `pull_request.review_requested` deliveries — including `ai-review` / `aireview` — are no longer a supported operator rereview mechanism and remain only as skipped negative evidence (`skipReason=team-only-request`).
-- **Proof surfaces:** explicit manual rereviews are now evidenced by mention completion and publish-resolution logs carrying `lane=interactive-review` plus `taskType=review.full`.
-- **Config/docs/runtime alignment:** the stale rereview-team config keys, helper/runtime path, checked-in example config, operator runbook, and smoke proof surfaces were all cleaned up together so the repo no longer advertises an unproven UI-team trigger.
-- **Requirement status:** **R055 is validated** on the shipped contract above.
-- **Residual truthfulness debt:** the M048 parser/verifier surfaces now preserve matched-but-invalid correlated phase evidence as `invalid-phase-payload`, use tri-state publication wording (`publication unknown` when appropriate), and keep downstream S03 reporting pinned to the repaired S01 summary string.
-- **Known debt on this axis:** no known PR #87 operator/verifier truthfulness debt remains on `main` after M051.
+Remaining M066 work: S04 must wire explicit and combined mention flows with independent subflow failure handling, and S05 must provide live GitHub smoke proof plus operator docs.
 
 ## Architecture / Key Patterns
 
@@ -60,6 +59,8 @@ Remaining M066 work: S03 must publish the batch as one same-PR GitHub review wit
 - **Formatter command runner seam:** `src/execution/formatter-suggestions.ts` owns formatter command execution. It accepts injected process execution for tests, uses workspace cwd for the default Bun-backed runner, reports `no-command`/`no-op`/`success`/`failed`/`timed-out`, substitutes only `{baseRef}`, `{headRef}`, and `{diffRange}`, and never stages, commits, pushes, or publishes by itself.
 - **Formatter diff parser seam:** formatter stdout is parsed conservatively into file/hunk/line models with old/current and new/formatted cursor positions. Unsupported or malformed diff states are structured skips, not partial guesses.
 - **Formatter suggestion mapping seam:** `buildPrDiffCommentabilityIndex()` records RIGHT-side PR diff target lines, and `mapFormatterDiffToSuggestions()` validates every formatter replacement target line before emitting S03-batchable GitHub suggestion payloads. Caps are enforced after safety validation so skipped/capped counts stay truthful.
+- **Formatter suggestion publisher seam:** `publishFormatterSuggestionReview()` in `src/execution/formatter-suggestion-publisher.ts` is the only S03 publisher. It consumes S02 payloads directly, uses a narrow `rest.pulls.createReview` Octokit port, creates one same-PR COMMENT review with batched inline suggestions, applies review-output idempotency gates, scans outgoing content for secrets, sanitizes configured bot handles, and reports all-or-nothing `posted`/`skipped`/`no-suggestions`/`blocked`/`failed` statuses for S04.
+- **Formatter publisher idempotency gotcha:** the inbound `sanitizeContent` pipeline strips HTML comments; outgoing formatter review bodies intentionally use raw secret scanning plus targeted `sanitizeOutgoingMentions()` so `buildReviewOutputMarker(reviewOutputKey)` survives publication.
 - **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger. Team-only `pull_request.review_requested` events — including `ai-review` / `aireview` — are retired as operator triggers and should surface only as skipped manual-trigger negatives.
 - **Manual rereview observability seam:** explicit manual review proof now comes from mention completion/publish evidence (`lane=interactive-review`, `taskType=review.full`, approval/fallback publish resolution), not from reviewer-team topology or self-generated open-event requests.
 - **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated reviewer/team requests cannot be used as proof for human manual rereview behavior.
@@ -115,6 +116,6 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [ ] M066: Same-PR Formatter Suggestions
   - [x] S01: Formatter suggestion config and mention intent
   - [x] S02: Formatter command and diff-to-suggestion mapper
-  - [ ] S03: Batched same-PR suggestion review publisher
+  - [x] S03: Batched same-PR suggestion review publisher
   - [ ] S04: Explicit and combined request orchestration
   - [ ] S05: Live smoke proof and operator docs
