@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T04",
+  "unitId": "M066/S05/T04",
+  "timestamp": 1777945843952,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bash -lc 'test -n \"${M066_S05_REPO:-}\"",
+      "exitCode": 2,
+      "durationMs": 7,
+      "verdict": "fail"
+    },
+    {
+      "command": "test -n \"${M066_S05_REVIEW_OUTPUT_KEY:-}\"",
+      "exitCode": 1,
+      "durationMs": 6,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}
