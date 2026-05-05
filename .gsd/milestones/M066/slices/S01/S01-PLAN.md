@@ -30,7 +30,7 @@ Upstream surfaces consumed: `src/execution/config.ts`, `src/handlers/mention.ts`
   - Files: `src/execution/config.ts`, `src/execution/config.test.ts`
   - Verify: bun test ./src/execution/config.test.ts --timeout 30000
 
-- [ ] **T02: Create pure formatter suggestion mention intent parser** `est:1h`
+- [x] **T02: Create pure formatter suggestion mention intent parser** `est:1h`
   Create a small pure parser module for formatter-suggestion mentions so downstream slices can consume a stable descriptor without depending on the large mention handler. Write tests first in `src/handlers/formatter-suggestion-intent.test.ts` for format-only phrases (`format suggestions`, `formatting suggestions`, `suggest formatting fixes`, `suggest formatting changes`) and combined phrases (`review & format suggestions`, `review and format suggestions`, `review + format suggestions`, `review with format suggestions`), including polite prefixes. Implement `src/handlers/formatter-suggestion-intent.ts` with a serializable descriptor type containing `requested: true`, `mode: "format-only" | "review-and-format"`, `source: "explicit-mention"`, and `normalizedRequest`. Keep matching conservative: do not classify broad write-like commands such as `format this PR` unless they are suggestion-oriented.
   - Files: `src/handlers/formatter-suggestion-intent.ts`, `src/handlers/formatter-suggestion-intent.test.ts`
   - Verify: bun test ./src/handlers/formatter-suggestion-intent.test.ts --timeout 30000

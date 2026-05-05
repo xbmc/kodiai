@@ -306,3 +306,8 @@
 {"id":"724c11cb-83ee-4b39-8aa5-50420ec45f31","ts":"2026-05-04T23:58:39.290Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
 {"id":"ba00490b-9b6c-40c3-bf91-3a3b12cc8670","ts":"2026-05-04T23:58:39.292Z","severity":"info","message":"Pre-flight: 54 milestones queued. All have full context.","source":"notify","read":false}
 {"id":"d75bf75e-0d4a-47ad-81b6-91d8a43b43de","ts":"2026-05-04T23:58:39.729Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 529m of uncommitted changes","source":"notify","read":false}
+{"id":"a9104f6d-cad4-4ba4-8599-882dfb387549","ts":"2026-05-05T00:10:00.010Z","severity":"info","message":"Committed: chore: Added default-off formatter suggestion config parsing with bound…","source":"notify","read":false}
+{"id":"f87b7243-79a6-4142-8f70-043ae850736a","ts":"2026-05-05T00:10:00.043Z","severity":"warning","message":"[safety] file-change: .gitignore — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"c88c3424-1615-4879-9b11-fb17e277e69e","ts":"2026-05-05T00:10:00.044Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"67c43240-864e-4b32-8883-9bd2e836cd33","ts":"2026-05-05T00:10:00.171Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"14763cdb-819d-4b2a-9611-ba4df4b382d8","ts":"2026-05-05T00:10:00.186Z","severity":"warning","message":"[safety] file-change: .gitignore — Modified but not in task plan's expected output","source":"notify","read":false}
