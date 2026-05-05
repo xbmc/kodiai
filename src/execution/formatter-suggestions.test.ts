@@ -503,6 +503,23 @@ describe("runFormatterCommand", () => {
     expect(result.exitCode).toBe(0);
   });
 
+  test("returns success for nonzero exit with formatter diff stdout", async () => {
+    const stdout = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const result = await runFormatterCommand({
+      workspaceDir,
+      command: "formatter --diff",
+      baseRef: "main",
+      headRef: "feature",
+      diffRange: "origin/main...HEAD",
+      timeoutMs: 1000,
+      runProcess: createRunner({ exitCode: 1, stdout, stderr: "", timedOut: false, durationMs: 10 }),
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.stdout).toBe(stdout);
+    expect(result.exitCode).toBe(1);
+  });
+
   test("returns failed with bounded and redacted stderr summary for nonzero exit", async () => {
     const token = `ghp_${"a".repeat(36)}`;
     const longStderr = `${token}\n${"x".repeat(FORMATTER_STDERR_SUMMARY_MAX_CHARS + 50)}`;

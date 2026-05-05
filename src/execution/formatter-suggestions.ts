@@ -689,6 +689,10 @@ export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
   }
 };
 
+function looksLikeUnifiedDiff(text: string): boolean {
+  return /^diff --git\s+/m.test(text) && /^@@\s+-\d+/m.test(text);
+}
+
 export async function runFormatterCommand(
   options: RunFormatterCommandOptions,
 ): Promise<FormatterCommandResult> {
@@ -732,7 +736,7 @@ export async function runFormatterCommand(
     };
   }
 
-  if (exitCode !== 0) {
+  if (exitCode !== 0 && !looksLikeUnifiedDiff(stdout)) {
     return {
       status: "failed",
       stdout,
