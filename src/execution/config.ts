@@ -106,6 +106,20 @@ const findingPrioritizationWeightsSchema = z
     recurrence: 0.1,
   });
 
+const formatterSuggestionsSchema = z
+  .object({
+    /** Enable automatic formatter-suggestion reviews. Explicit mention requests are handled separately. */
+    automatic: z.boolean().default(false),
+    /** Repo-controlled formatter command used by downstream suggestion generation. */
+    command: z.string().min(1).optional(),
+    /** Maximum formatter suggestions to surface for a request. */
+    maxSuggestions: z.number().min(1).max(100).default(10),
+  })
+  .default({
+    automatic: false,
+    maxSuggestions: 10,
+  });
+
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -155,6 +169,7 @@ const reviewSchema = z
       .default([]),
     minConfidence: z.number().min(0).max(100).default(0),
     prioritization: findingPrioritizationWeightsSchema,
+    formatterSuggestions: formatterSuggestionsSchema,
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
     /** Output language for review prose. Free-form string (ISO code or full name). Default: "en". */
@@ -192,6 +207,10 @@ const reviewSchema = z
       fileRisk: 0.3,
       category: 0.15,
       recurrence: 0.1,
+    },
+    formatterSuggestions: {
+      automatic: false,
+      maxSuggestions: 10,
     },
     pathInstructions: [],
     outputLanguage: "en",

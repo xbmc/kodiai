@@ -87,6 +87,127 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: None
 - Notes: Owned by M048 S03 because trigger-shape continuity and verifier failure behavior land there.
 
+### R070 — The redesigned large-PR lifecycle is proven on at least one real large PR with bounded first pass, automatic continuation, and in-place visible comment updates
+- Class: launchability
+- Status: active
+- Description: The redesigned large-PR lifecycle is proven on at least one real large PR with bounded first pass, automatic continuation, and in-place visible comment updates
+- Why it matters: This redesign changes the public review contract and should not be considered done on test fixtures alone
+- Source: user
+- Primary owning slice: M065/S02
+- Supporting slices: none
+- Validation: mapped
+- Notes: Live proof requirement for the redesign track.
+
+### R076 — Kodiai must recognize explicit formatter-suggestion requests such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` on PR mentions.
+- Class: functional
+- Status: active
+- Description: Kodiai must recognize explicit formatter-suggestion requests such as `@kodiai format suggestions` and `@kodiai suggest formatting fixes` on PR mentions.
+- Why it matters: Maintainers need to request committable formatting suggestions on demand without relying on automatic review behavior.
+- Source: user
+- Primary owning slice: M053/S01
+- Supporting slices: M053/S04
+- Validation: Mention intent tests prove explicit formatter requests route to the formatter-suggestion workflow.
+- Notes: M053 discussion: formatter suggestions are always accessible by explicit mention; repo config does not disable explicit access.
+
+### R077 — Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
+- Class: functional
+- Status: active
+- Description: Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
+- Why it matters: The desired workflow is one-click application inside the current PR, preserving the human GitHub review trust boundary.
+- Source: user
+- Primary owning slice: M053/S03
+- Supporting slices: M053/S02,M053/S04,M053/S05
+- Validation: Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions.
+- Notes: The user explicitly rejected a separate PR; humans should choose whether to apply GitHub's suggestions.
+
+### R078 — Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
+- Class: integration
+- Status: active
+- Description: Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
+- Why it matters: Kodiai must own the suggestion generation loop while avoiding a hardcoded one-off implementation that blocks later formatter support.
+- Source: user
+- Primary owning slice: M053/S01
+- Supporting slices: M053/S02
+- Validation: Config and command-runner tests prove command parsing, placeholder substitution, and no Jenkins artifact dependency.
+- Notes: Jenkins artifacts are out of scope; Kodiai computes suggestions independently from the PR workspace.
+
+### R079 — Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
+- Class: constraint
+- Status: active
+- Description: Automatic formatter suggestions during normal reviews must default off; explicit formatter requests remain available regardless of automatic mode.
+- Why it matters: The user wants to trial the capability on request without changing normal review behavior by default.
+- Source: user
+- Primary owning slice: M053/S01
+- Supporting slices: M053/S04
+- Validation: Config tests prove automatic defaults false and explicit mention routing still invokes the formatter workflow.
+- Notes: Use config semantics like `review.formatterSuggestions.automatic: false`, not `enabled: false`.
+
+### R080 — Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
+- Class: functional
+- Status: active
+- Description: Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
+- Why it matters: Maintainers should be able to ask for normal review plus formatting suggestions in one request.
+- Source: user
+- Primary owning slice: M053/S04
+- Supporting slices: M053/S01,M053/S02,M053/S03
+- Validation: Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete.
+- Notes: The semantic review and formatter suggestion subflows should remain independent under the combined intent.
+
+### R081 — Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
+- Class: functional
+- Status: active
+- Description: Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
+- Why it matters: One batched review reduces notification spam and matches the user's preference for one output with many inline suggestions.
+- Source: user
+- Primary owning slice: M053/S03
+- Supporting slices: M053/S04
+- Validation: Publisher tests prove one review API call carries multiple inline comments and idempotency markers.
+- Notes: Avoid looping standalone comments for the normal formatter suggestion path.
+
+### R082 — Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
+- Class: quality-attribute
+- Status: active
+- Description: Formatter unified diffs must be converted into GitHub suggestion payloads deterministically, posting only hunks that map cleanly to PR diff line ranges.
+- Why it matters: GitHub suggestion blocks are only safe when their replacement range is exact; bad mappings create invalid or misleading committable changes.
+- Source: inferred
+- Primary owning slice: M053/S02
+- Supporting slices: M053/S03,M053/S05
+- Validation: Fixture tests cover single-line, multi-line, multi-hunk, multi-file, deleted-only, binary, unmappable, and capped hunks.
+- Notes: Claude must not invent or repair formatter hunks; invalid/unmappable hunks are skipped.
+
+### R083 — Formatter suggestion posting must enforce caps and skip unsafe hunks with structured visibility into skipped counts and reasons.
+- Class: operability
+- Status: active
+- Description: Formatter suggestion posting must enforce caps and skip unsafe hunks with structured visibility into skipped counts and reasons.
+- Why it matters: Formatting diffs can be large; Kodiai must avoid spamming PRs or posting unsafe suggestions.
+- Source: user
+- Primary owning slice: M053/S02
+- Supporting slices: M053/S03,M053/S04
+- Validation: Cap/skip tests prove maxSuggestions is enforced and skip reasons are surfaced without malformed suggestion blocks.
+- Notes: Partial success should publish valid suggestions while logging/publicly accounting for skipped hunks.
+
+### R084 — Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
+- Class: failure-visibility
+- Status: active
+- Description: Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
+- Why it matters: A combined request should not lose a useful review or useful formatter suggestions because the other subflow failed.
+- Source: user
+- Primary owning slice: M053/S04
+- Supporting slices: M053/S03,M053/S05
+- Validation: Failure-path tests prove command errors, empty output, GitHub batch rejection, and combined-mode partial success surfaces are concise and independent.
+- Notes: Formatter failure must not block normal review; normal review failure must not block formatter suggestions when they can run safely.
+
+### R085 — Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
+- Class: quality-attribute
+- Status: active
+- Description: Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
+- Why it matters: GitHub suggestion acceptance has edge cases that fixture tests alone cannot fully prove.
+- Source: user
+- Primary owning slice: M053/S05
+- Supporting slices: none
+- Validation: Live smoke artifact links to a GitHub PR review suggestion plus logs showing success and no old review regression.
+- Notes: The live proof should run after merge/deploy, preferably on a test or real PR with a controlled formatter diff.
+
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -555,6 +676,201 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Validated by M051 closeout evidence: `bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts ./src/handlers/mention.test.ts` passed 327/327 with team-only `ai-review` / `aireview` requests skipped and `@kodiai review` staying on `interactive-review` / `review.full`; `! rg -n "uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n "@kodiai review|interactive-review|review\.full|team-only-request" ...` confirmed the stale UI-team contract is gone while the surviving manual trigger and proof surfaces remain; `bun run tsc --noEmit` completed successfully.
 - Notes: M051 settled the manual rereview contract on `@kodiai review` only and retired the unsupported UI-team rereview path from runtime/config/docs/tests.
 
+### R056 — Operators can configure inbound webhook sources that relay selected events to Slack channels with optional filtering and explicit suppression reasons.
+- Class: functional
+- Status: validated
+- Description: Operators can configure inbound webhook sources that relay selected events to Slack channels with optional filtering and explicit suppression reasons.
+- Why it matters: External system events need a repeatable, low-noise path into Slack without ad hoc one-off integrations or unverifiable filtering behavior.
+- Source: issue-76
+- Primary owning slice: M052
+- Supporting slices: none
+- Validation: `bun run verify:m052` reports `m052_ok`; the committed PR branch also passes `bun test ./src/config.test.ts ./src/slack/webhook-relay-config.test.ts ./src/slack/webhook-relay.test.ts ./src/slack/webhook-relay-delivery.test.ts ./src/routes/slack-relay-webhooks.test.ts ./scripts/verify-m052-s01.test.ts ./scripts/verify-m052-s02.test.ts ./scripts/verify-m052.test.ts` and `bun run tsc --noEmit`. The feature now provides env-backed source config, explicit suppression reasons, explicit delivery failure, and operator docs/smoke guidance.
+- Notes: Implemented on branch `m052-slack-webhook-relay` and opened as PR #89 during M052 closeout. The shipped proof surface is `bun run verify:m052`, which composes the S01 contract verifier and S02 route+delivery verifier.
+
+### R057 — Kodiai must persist GitHub issues and issue comments in PostgreSQL with an IssueStore interface that supports CRUD plus vector and full-text retrieval for issue-triage workflows.
+- Class: functional
+- Status: validated
+- Description: Kodiai must persist GitHub issues and issue comments in PostgreSQL with an IssueStore interface that supports CRUD plus vector and full-text retrieval for issue-triage workflows.
+- Why it matters: Issue-triage and follow-on review features need a durable, queryable issue corpus instead of transient webhook payloads.
+- Source: M021
+- Primary owning slice: M021/S01
+- Supporting slices: none
+- Validation: M021/S01 summary and shipped code in src/knowledge/issue-store.ts prove the IssueStore factory, schema migration, and 15 PostgreSQL-backed tests covering issue/comment CRUD, similarity search, full-text search, and cascade delete.
+
+### R058 — Kodiai must expose opt-in MCP tools for GitHub issue label and comment mutations with repo-aware validation, bounded error handling, and truthful partial-success reporting.
+- Class: functional
+- Status: validated
+- Description: Kodiai must expose opt-in MCP tools for GitHub issue label and comment mutations with repo-aware validation, bounded error handling, and truthful partial-success reporting.
+- Why it matters: Triage operators and automated mention flows need safe write surfaces for issue labels and comments that do not guess repo state or hide partial failures.
+- Source: M021
+- Primary owning slice: M021/S02
+- Supporting slices: none
+- Validation: M021/S02 summary plus src/execution/mcp/issue-label-server.ts and src/execution/mcp/issue-comment-server.ts prove shipped add_labels/create_comment/update_comment tooling with config gating, case-insensitive label validation, retry on rate limits, closed-issue warnings, truncation, and passing unit/integration coverage.
+
+### R059 — Kodiai must validate issue mentions against repository issue templates and append concise triage guidance or label recommendations on the mention lane without blocking the primary response.
+- Class: functional
+- Status: validated
+- Description: Kodiai must validate issue mentions against repository issue templates and append concise triage guidance or label recommendations on the mention lane without blocking the primary response.
+- Why it matters: Issue mentions should help reporters supply missing structured information while preserving the normal mention-response path.
+- Source: M021
+- Primary owning slice: M021/S03
+- Supporting slices: none
+- Validation: M021/S03 summary plus src/triage/triage-agent.ts, src/handlers/mention.ts, and src/execution/mention-prompt.ts prove template diffing, needs-info label recommendation, mention-prompt triage context injection, and fail-open cooldown-gated mention integration with passing triage/config/mention/MCP tests.
+
+### R061 — Large PRs return a truthful bounded first review instead of ending as a dead max_turns failure with no useful outcome
+- Class: core-capability
+- Status: validated
+- Description: Large PRs return a truthful bounded first review instead of ending as a dead max_turns failure with no useful outcome
+- Why it matters: Large PR review is currently untrustworthy if the system burns turns and leaves maintainers without a useful review contract
+- Source: user
+- Primary owning slice: M062/S01
+- Supporting slices: none
+- Validation: Validated by M062. Fresh milestone-close verification passed: `bun test ./scripts/verify-m062-s03.test.ts ./scripts/verify-m062-s01.test.ts` (20/20), `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s01 -- --json` (`status_code: "m062_s01_ok"` across 4 scenarios), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"` with three `bounded-parity-ok` scenarios and one `dead-end-rejected` zero-evidence scenario), and `bun run tsc --noEmit` (exit 0). The milestone proves large PRs now return a truthful bounded first review instead of a dead `max_turns` failure when structured evidence exists.
+- Notes: First-pass contract for the redesign track. This is about useful bounded output, not yet automatic continuation.
+
+### R062 — When a large-PR review is bounded, Kodiai automatically continues review work in the background without requiring a manual follow-up command
+- Class: continuity
+- Status: validated
+- Description: When a large-PR review is bounded, Kodiai automatically continues review work in the background without requiring a manual follow-up command
+- Why it matters: The large-PR experience should not depend on humans remembering to ask for deeper review after the first bounded pass
+- Source: user
+- Primary owning slice: M063/S01
+- Supporting slices: none
+- Validation: M063/S01 verified automatic bounded-review continuation with fresh evidence: `bun test src/lib/review-continuation-lifecycle.test.ts` (12 pass), `bun test src/handlers/review.test.ts --filter "continuation"` (147 pass, including continuation enqueue/merge/suppression coverage), and `bun test scripts/verify-m063-s01.test.ts && bun run scripts/verify-m063-s01.ts --json` (`status_code: m063_s01_ok`, proving schedule, merge, no-delta settlement, and stale-authority suppression).
+- Notes: Validated for the shipped S01 lifecycle contract: automatic continuation through the real handler path, explicit merge/settlement decisions, and stale-authority suppression. Later milestone slices still extend same-surface revision semantics and prompt narrowing.
+
+### R063 — Automatic continuation updates the same visible review surface in place and must not create an additional public comment for the same review lifecycle
+- Class: continuity
+- Status: validated
+- Description: Automatic continuation updates the same visible review surface in place and must not create an additional public comment for the same review lifecycle
+- Why it matters: The user experience should stay quiet and legible on GitHub rather than turning one review lifecycle into comment spam
+- Source: user
+- Primary owning slice: M063/S02
+- Supporting slices: none
+- Validation: Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; scenarios reported `same-surface-pending`, `same-surface-revised`, and `same-surface-quiet-settlement` with `visibleSurfaceCount: 1` and `continuationSurfaceCount: 0`), and `bun run tsc --noEmit` (exit 0). Continuation now updates one canonical visible review surface anchored to the base reviewOutputKey without creating an extra lifecycle comment.
+- Notes: One stable public review identity across first pass and continuation.
+
+### R064 — The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
+- Class: failure-visibility
+- Status: validated
+- Description: The visible review must report truthful coverage state, including what was reviewed, what remains, and whether continuation is still in progress or has stopped
+- Why it matters: Bounded review is only trustworthy if the visible output tells maintainers what Kodiai actually covered and what remains
+- Source: user
+- Primary owning slice: M062/S02
+- Supporting slices: M063/S02
+- Validation: Validated by M062. Fresh milestone-close verification passed: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"`; timeout, max-turns, and large-PR bounded scenarios all reported `bounded-parity-ok` for bounded reason, covered scope, remaining scope, and continuation state), and `bun run tsc --noEmit` (exit 0). The visible review surfaces now truthfully report covered scope, remaining scope, and continuation status from one coherent contract.
+- Notes: S02 completed the visible bounded-review rendering contract; S03 remains responsible for a milestone-level deterministic proof harness that guards this contract against regression.
+
+### R065 — Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
+- Class: correctness
+- Status: validated
+- Description: Kodiai may revise earlier findings during continuation, but every revision must be explicit rather than a silent rewrite of previously visible conclusions
+- Why it matters: A bounded first pass can be incomplete, but later correction must remain legible to users and operators
+- Source: user
+- Primary owning slice: M063/S02
+- Supporting slices: none
+- Validation: Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; the merge-revisions scenario reported `same-surface-revised` with explicit revision visibility and the no-delta scenario reported `same-surface-quiet-settlement` with no public churn), and `bun run tsc --noEmit` (exit 0). Continuation revisions are now rendered explicitly on the canonical surface instead of silently rewriting prior visible conclusions.
+- Notes: Revisions are allowed; silent mutation is not.
+
+### R066 — Continuation stops after sufficient high-risk coverage is achieved and must disclose that the review is sufficient-but-bounded rather than exhaustive
+- Class: constraint
+- Status: validated
+- Description: Continuation stops after sufficient high-risk coverage is achieved and must disclose that the review is sufficient-but-bounded rather than exhaustive
+- Why it matters: The redesign should optimize for truthful sufficiency rather than pretending exhaustive eventual coverage is always practical
+- Source: user
+- Primary owning slice: M063/S03
+- Supporting slices: M065/S02
+- Validation: Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths.
+- Notes: The stopping contract is explicitly non-exhaustive.
+
+### R067 — New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
+- Class: continuity
+- Status: validated
+- Description: New commits supersede stale continuation work cleanly so old background review attempts cannot overwrite or misrepresent the latest PR state
+- Why it matters: Automatic continuation is unsafe unless stale work yields to newer PR state deterministically
+- Source: inferred
+- Primary owning slice: M064/S01
+- Supporting slices: none
+- Validation: M064/S01 reran `bun test src/handlers/review.test.ts` and `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`; canonical continuation-family state preserves newer-attempt authority and the verifier proves stale superseded attempts cannot overwrite the winning attempt.
+- Notes: Supersession must be first-class in the continuation lifecycle.
+
+### R068 — Large-PR continuation and comment evolution are backed by durable operator evidence so maintainers can tell why continuation progressed, stopped, failed, or was superseded
+- Class: operability
+- Status: validated
+- Description: Large-PR continuation and comment evolution are backed by durable operator evidence so maintainers can tell why continuation progressed, stopped, failed, or was superseded
+- Why it matters: Operators need attributable lifecycle evidence instead of guessing from GitHub-visible output alone
+- Source: inferred
+- Primary owning slice: M064/S03
+- Supporting slices: M065/S02
+- Validation: M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. M064 must extend this by proving continuation lifecycle truth resolves from canonical family state directly, with explicit projection-status reporting when supporting evidence lags or fails.
+- Notes: M061 validated the earlier operator-evidence surface. M064 tightens the contract so continuation lifecycle evidence must resolve from canonical continuation-family state first, with telemetry/checkpoint/report rows treated as projections.
+
+### R069 — The redesign must preserve small and normal PR behavior and avoid regressing review latency, noise, or publication semantics on non-large PRs
+- Class: quality-attribute
+- Status: validated
+- Description: The redesign must preserve small and normal PR behavior and avoid regressing review latency, noise, or publication semantics on non-large PRs
+- Why it matters: Large-PR improvements are not acceptable if they make standard reviews slower, noisier, or less trustworthy
+- Source: inferred
+- Primary owning slice: M065/S01
+- Supporting slices: none
+- Validation: M061/S05 pinned and passed mention, review, retrieval, reporting, and verifier regression suites via `bun scripts/phase-m061-token-regression-gate.ts`, preserving non-large-PR behavior and publication semantics while token-reduction work evolves.
+- Notes: Regression guard across the rest of the review path.
+
+### R071 — Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
+- Class: functional
+- Status: validated
+- Description: Canonical continuation-family lifecycle state is persisted durably and survives process restarts as the authoritative source of continuation truth.
+- Why it matters: Runtime-only coordinator state is not enough for operator truth or restart-safe supersession semantics.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: M064/S01 reran `bun test src/handlers/review.test.ts` and `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`; canonical continuation-family rows answer merged, quiet-settled, blocked, and superseded scenarios directly from durable state.
+- Notes: Introduced by M064 planning from research candidate requirement on durable canonical continuation-family state.
+
+### R072 — Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
+- Class: operational
+- Status: validated
+- Description: Canonical continuation-family state records the final authoritative attempt identity explicitly so operators can see which attempt held authority without correlating logs.
+- Why it matters: Operators currently infer the winning attempt from telemetry and log correlation, which is fragile under retries and supersession.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: M064/S01 verifier output returns `authoritativeAttemptId` and `authoritativeAttemptOrdinal` directly from canonical continuation-family state for merged, quiet-settled, blocked, and superseded scenarios; verified by `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`.
+- Notes: Introduced by M064 planning from research candidate requirement on explicit authoritative attempt identity.
+
+### R073 — Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
+- Class: operational
+- Status: validated
+- Description: Canonical continuation-family state records final stop reason using a controlled lifecycle enum/contract rather than scattered helper-specific strings.
+- Why it matters: Operators need one direct answer for why continuation stopped, and that answer is currently spread across helpers, logs, and telemetry.
+- Source: M064
+- Primary owning slice: M064/S01
+- Supporting slices: M064/S02,M064/S03
+- Validation: M064/S01 verifier output returns controlled `finalStopReason` values (`merged-continuation-results`, `settled-without-update`, `no-follow-up`, `superseded-by-newer-attempt`) directly from canonical continuation-family state; verified by `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`.
+- Notes: Introduced by M064 planning from research candidate requirement on explicit final stop reason contract.
+
+### R074 — Projection failures for continuation lifecycle evidence are surfaced as projection status on top of canonical state instead of creating ambiguity about lifecycle truth.
+- Class: operational
+- Status: validated
+- Description: Projection failures for continuation lifecycle evidence are surfaced as projection status on top of canonical state instead of creating ambiguity about lifecycle truth.
+- Why it matters: Telemetry, checkpoints, and reports may fail independently; operators still need an unambiguous authoritative lifecycle answer.
+- Source: M064
+- Primary owning slice: M064/S03
+- Supporting slices: M064/S02
+- Validation: M064/S03 reran `bun test src/knowledge/continuation-operator-evidence.test.ts && bun test scripts/verify-m064-s03.test.ts && bun run verify:m064:s03 -- --json && bun run verify:m064:s03 && bun test scripts/verify-m064-s01.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s01 -- --json && bun run verify:m064:s02 -- --json`; the operator-evidence surface now resolves continuation lifecycle truth directly from canonical continuation-family state and renders degraded/pending `projectionStatus` explicitly.
+- Notes: Slice-close verification confirmed canonical, degraded, pending, superseded, missing-canonical-row, and invalid-review-output-key report states.
+
+### R075 — Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
+- Class: correctness
+- Status: validated
+- Description: Checkpoint persistence acknowledgements must be truthful: writes are awaited and success is reported only after durable save completes.
+- Why it matters: A non-awaited checkpoint save can misreport success and undermine continuation evidence durability.
+- Source: M064
+- Primary owning slice: M064/S02
+- Supporting slices: none
+- Validation: M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`; checkpoint acknowledgements now wait for durable save completion and never report `saved: true` on rejected writes.
+- Notes: Introduced by M064 planning from research candidate requirement on checkpoint acknowledgment reliability.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -578,6 +894,85 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: unmapped
 - Notes: Deferred — investigate ts-prune or knip in a future milestone
+
+### R060 — Kodiai must validate issue mentions against repository issue templates and append concise triage guidance or label recommendations on the mention lane without blocking the primary response.
+- Class: functional
+- Status: deferred
+- Description: Kodiai must validate issue mentions against repository issue templates and append concise triage guidance or label recommendations on the mention lane without blocking the primary response.
+- Why it matters: Issue mentions should help reporters supply missing structured information while preserving the normal mention-response path.
+- Source: M021
+- Primary owning slice: M021/S03
+- Supporting slices: none
+- Validation: M021/S03 summary plus src/triage/triage-agent.ts, src/handlers/mention.ts, and src/execution/mention-prompt.ts prove template diffing, needs-info label recommendation, mention-prompt triage context injection, and fail-open cooldown-gated mention integration with passing triage/config/mention/MCP tests.
+- Notes: Duplicate of R059 created during S04/T01 traceability backfill retry after an initial render omission. R059 is the canonical M021/S03 requirement record; ignore R060 for milestone validation and future ownership mapping.
+
+### R086 — Normal review triggers may include formatter suggestions automatically only after repo config explicitly opts into automatic formatter suggestions.
+- Class: functional
+- Status: deferred
+- Description: Normal review triggers may include formatter suggestions automatically only after repo config explicitly opts into automatic formatter suggestions.
+- Why it matters: Automatic formatting suggestions may be useful later, but the first release should prove explicit request behavior without changing default reviews.
+- Source: user
+- Primary owning slice: later
+- Supporting slices: M053/S01,M053/S04
+- Validation: Unmapped until a later milestone or explicit repo opt-in exercises automatic behavior.
+- Notes: The configuration path should be present in M053, but automatic execution can remain disabled until explicitly configured.
+
+### R087 — Multiple formatter adapters beyond the first configured-command seam are deferred.
+- Class: integration
+- Status: deferred
+- Description: Multiple formatter adapters beyond the first configured-command seam are deferred.
+- Why it matters: The user wants future support, but first value comes from proving the generic command seam and clang-format-style path.
+- Source: inferred
+- Primary owning slice: later
+- Supporting slices: M053/S01,M053/S02
+- Validation: Unmapped; future formatter adapters can reuse the command/diff parser seam.
+- Notes: M053 should create a seam for future formatters but does not need to ship a broad formatter adapter library.
+
+### R088 — A dry-run preview workflow for formatter suggestions is deferred.
+- Class: admin/support
+- Status: deferred
+- Description: A dry-run preview workflow for formatter suggestions is deferred.
+- Why it matters: Preview adds ceremony and an extra output mode that was not requested for the first version.
+- Source: inferred
+- Primary owning slice: later
+- Supporting slices: none
+- Validation: Unmapped.
+- Notes: The user chose direct publish on request; preview mode may be useful later if maintainers want extra review before posting suggestions.
+
+## Out of Scope
+
+### R089 — Kodiai must not depend on or consume `jenkins4kodi` formatting diff artifacts for this capability.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Kodiai must not depend on or consume `jenkins4kodi` formatting diff artifacts for this capability.
+- Why it matters: The user explicitly wants Kodiai to produce formatting suggestions independently of Jenkins.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: The Jenkins comment on xbmc/xbmc#28259 is example evidence only.
+
+### R090 — Kodiai must not create separate formatting-fix pull requests as part of formatter suggestion handling.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Kodiai must not create separate formatting-fix pull requests as part of formatter suggestion handling.
+- Why it matters: The user explicitly wants same-PR committable suggestions, not another PR.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Suggestions stay on the existing PR.
+
+### R091 — Kodiai must not push formatter commits directly to contributor branches as part of this feature.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Kodiai must not push formatter commits directly to contributor branches as part of this feature.
+- Why it matters: Same-PR suggestions preserve human control and avoid changing contributor branches directly.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Humans apply suggestions through GitHub if desired.
 
 ## Traceability
 
@@ -638,10 +1033,46 @@ This file is the explicit capability and coverage contract for the project.
 | R053 | non-functional | validated | M050 | none | Fresh milestone closeout reran `bun test ./src/lib/timeout-estimator.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/execution/executor.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts ./scripts/verify-m048-s03.test.ts && bun run tsc --noEmit` with 209 pass / 0 fail / exit 0. Live proof from S02 remained the milestone evidence set: `verify:m048:s01` returned `m048_s01_ok` for the opened and synchronize `xbmc/kodiai#86` runs on revision `ca-kodiai--deploy-20260416-143108`, and `verify:m048:s02` reported `latency-improved` with a `-660095ms` targeted delta versus the historical `xbmc/kodi-tv#1240` degraded baseline. |
 | R054 | functional | validated | M050 | none | Fresh milestone closeout reran `bun test ./src/lib/timeout-estimator.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/execution/executor.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts ./scripts/verify-m048-s03.test.ts && bun run tsc --noEmit` with 209 pass / 0 fail / exit 0. That bundle kept the truthful timeout-surface contract green in `src/handlers/review.test.ts`, `src/lib/review-utils.test.ts`, `scripts/verify-m048-s01.test.ts`, and `scripts/verify-m048-s03.test.ts`, proving analyzed progress, captured findings, retry state, and explicit publication-phase timing stay truthful; S02’s live/operator proof remained green via `verify:m048:s03` on the `xbmc/kodiai#86` synchronize run. |
 | R055 | functional | validated | none | none | Validated by M051 closeout evidence: `bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts ./src/handlers/mention.test.ts` passed 327/327 with team-only `ai-review` / `aireview` requests skipped and `@kodiai review` staying on `interactive-review` / `review.full`; `! rg -n "uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n "@kodiai review|interactive-review|review\.full|team-only-request" ...` confirmed the stale UI-team contract is gone while the surviving manual trigger and proof surfaces remain; `bun run tsc --noEmit` completed successfully. |
+| R056 | functional | validated | M052 | none | `bun run verify:m052` reports `m052_ok`; the committed PR branch also passes `bun test ./src/config.test.ts ./src/slack/webhook-relay-config.test.ts ./src/slack/webhook-relay.test.ts ./src/slack/webhook-relay-delivery.test.ts ./src/routes/slack-relay-webhooks.test.ts ./scripts/verify-m052-s01.test.ts ./scripts/verify-m052-s02.test.ts ./scripts/verify-m052.test.ts` and `bun run tsc --noEmit`. The feature now provides env-backed source config, explicit suppression reasons, explicit delivery failure, and operator docs/smoke guidance. |
+| R057 | functional | validated | M021/S01 | none | M021/S01 summary and shipped code in src/knowledge/issue-store.ts prove the IssueStore factory, schema migration, and 15 PostgreSQL-backed tests covering issue/comment CRUD, similarity search, full-text search, and cascade delete. |
+| R058 | functional | validated | M021/S02 | none | M021/S02 summary plus src/execution/mcp/issue-label-server.ts and src/execution/mcp/issue-comment-server.ts prove shipped add_labels/create_comment/update_comment tooling with config gating, case-insensitive label validation, retry on rate limits, closed-issue warnings, truncation, and passing unit/integration coverage. |
+| R059 | functional | validated | M021/S03 | none | M021/S03 summary plus src/triage/triage-agent.ts, src/handlers/mention.ts, and src/execution/mention-prompt.ts prove template diffing, needs-info label recommendation, mention-prompt triage context injection, and fail-open cooldown-gated mention integration with passing triage/config/mention/MCP tests. |
+| R060 | functional | deferred | M021/S03 | none | M021/S03 summary plus src/triage/triage-agent.ts, src/handlers/mention.ts, and src/execution/mention-prompt.ts prove template diffing, needs-info label recommendation, mention-prompt triage context injection, and fail-open cooldown-gated mention integration with passing triage/config/mention/MCP tests. |
+| R061 | core-capability | validated | M062/S01 | none | Validated by M062. Fresh milestone-close verification passed: `bun test ./scripts/verify-m062-s03.test.ts ./scripts/verify-m062-s01.test.ts` (20/20), `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s01 -- --json` (`status_code: "m062_s01_ok"` across 4 scenarios), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"` with three `bounded-parity-ok` scenarios and one `dead-end-rejected` zero-evidence scenario), and `bun run tsc --noEmit` (exit 0). The milestone proves large PRs now return a truthful bounded first review instead of a dead `max_turns` failure when structured evidence exists. |
+| R062 | continuity | validated | M063/S01 | none | M063/S01 verified automatic bounded-review continuation with fresh evidence: `bun test src/lib/review-continuation-lifecycle.test.ts` (12 pass), `bun test src/handlers/review.test.ts --filter "continuation"` (147 pass, including continuation enqueue/merge/suppression coverage), and `bun test scripts/verify-m063-s01.test.ts && bun run scripts/verify-m063-s01.ts --json` (`status_code: m063_s01_ok`, proving schedule, merge, no-delta settlement, and stale-authority suppression). |
+| R063 | continuity | validated | M063/S02 | none | Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; scenarios reported `same-surface-pending`, `same-surface-revised`, and `same-surface-quiet-settlement` with `visibleSurfaceCount: 1` and `continuationSurfaceCount: 0`), and `bun run tsc --noEmit` (exit 0). Continuation now updates one canonical visible review surface anchored to the base reviewOutputKey without creating an extra lifecycle comment. |
+| R064 | failure-visibility | validated | M062/S02 | M063/S02 | Validated by M062. Fresh milestone-close verification passed: `bun test ./src/lib/review-utils.test.ts ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts` (159/159), `bun run verify:m062:s03 -- --json` (`status_code: "m062_s03_ok"`; timeout, max-turns, and large-PR bounded scenarios all reported `bounded-parity-ok` for bounded reason, covered scope, remaining scope, and continuation state), and `bun run tsc --noEmit` (exit 0). The visible review surfaces now truthfully report covered scope, remaining scope, and continuation status from one coherent contract. |
+| R065 | correctness | validated | M063/S02 | none | Validated by M063/S02 slice-close verification: `bun test ./src/lib/partial-review-formatter.test.ts ./src/handlers/review.test.ts ./scripts/verify-m063-s02.test.ts ./scripts/verify-m063-s01.test.ts` (162/162 pass), `bun run verify:m063:s02 -- --json` (`status_code: "m063_s02_ok"`; the merge-revisions scenario reported `same-surface-revised` with explicit revision visibility and the no-delta scenario reported `same-surface-quiet-settlement` with no public churn), and `bun run tsc --noEmit` (exit 0). Continuation revisions are now rendered explicitly on the canonical surface instead of silently rewriting prior visible conclusions. |
+| R066 | constraint | validated | M063/S03 | M065/S02 | Validated in M063/S03 with fresh slice-close evidence: `bun test src/execution/review-prompt.test.ts --filter "continuation"`, `bun test scripts/verify-m063-s03.test.ts`, `bun run verify:m063:s03 -- --json`, `bun test src/handlers/review.test.ts --filter "retry"`, `bun run verify:m063:s02 -- --json`, and `bun run tsc --noEmit` all passed. The verifier proves continuation narrows `review-change-context`, omits first-pass-only `review-size-context`, preserves required sections, avoids exhaustive-coverage claims, and the retry handler tests prove stale/superseded continuation cannot overwrite canonical summary or Review Details paths. |
+| R067 | continuity | validated | M064/S01 | none | M064/S01 reran `bun test src/handlers/review.test.ts` and `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`; canonical continuation-family state preserves newer-attempt authority and the verifier proves stale superseded attempts cannot overwrite the winning attempt. |
+| R068 | operability | validated | M064/S03 | M065/S02 | M061/S05 added the integrated `verify-m061-s05` proof surface on the canonical Postgres-backed usage-report path and verified fail-open preflight reporting when telemetry is unavailable plus the DB-independent `phase-m061-token-regression-gate` operator surface. M064 must extend this by proving continuation lifecycle truth resolves from canonical family state directly, with explicit projection-status reporting when supporting evidence lags or fails. |
+| R069 | quality-attribute | validated | M065/S01 | none | M061/S05 pinned and passed mention, review, retrieval, reporting, and verifier regression suites via `bun scripts/phase-m061-token-regression-gate.ts`, preserving non-large-PR behavior and publication semantics while token-reduction work evolves. |
+| R070 | launchability | active | M065/S02 | none | mapped |
+| R071 | functional | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 reran `bun test src/handlers/review.test.ts` and `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`; canonical continuation-family rows answer merged, quiet-settled, blocked, and superseded scenarios directly from durable state. |
+| R072 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output returns `authoritativeAttemptId` and `authoritativeAttemptOrdinal` directly from canonical continuation-family state for merged, quiet-settled, blocked, and superseded scenarios; verified by `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`. |
+| R073 | operational | validated | M064/S01 | M064/S02,M064/S03 | M064/S01 verifier output returns controlled `finalStopReason` values (`merged-continuation-results`, `settled-without-update`, `no-follow-up`, `superseded-by-newer-attempt`) directly from canonical continuation-family state; verified by `bun test scripts/verify-m064-s01.test.ts && bun run verify:m064:s01 -- --json`. |
+| R074 | operational | validated | M064/S03 | M064/S02 | M064/S03 reran `bun test src/knowledge/continuation-operator-evidence.test.ts && bun test scripts/verify-m064-s03.test.ts && bun run verify:m064:s03 -- --json && bun run verify:m064:s03 && bun test scripts/verify-m064-s01.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s01 -- --json && bun run verify:m064:s02 -- --json`; the operator-evidence surface now resolves continuation lifecycle truth directly from canonical continuation-family state and renders degraded/pending `projectionStatus` explicitly. |
+| R075 | correctness | validated | M064/S02 | none | M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`; checkpoint acknowledgements now wait for durable save completion and never report `saved: true` on rejected writes. |
+| R076 | functional | active | M053/S01 | M053/S04 | Mention intent tests prove explicit formatter requests route to the formatter-suggestion workflow. |
+| R077 | functional | active | M053/S03 | M053/S02,M053/S04,M053/S05 | Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions. |
+| R078 | integration | active | M053/S01 | M053/S02 | Config and command-runner tests prove command parsing, placeholder substitution, and no Jenkins artifact dependency. |
+| R079 | constraint | active | M053/S01 | M053/S04 | Config tests prove automatic defaults false and explicit mention routing still invokes the formatter workflow. |
+| R080 | functional | active | M053/S04 | M053/S01,M053/S02,M053/S03 | Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete. |
+| R081 | functional | active | M053/S03 | M053/S04 | Publisher tests prove one review API call carries multiple inline comments and idempotency markers. |
+| R082 | quality-attribute | active | M053/S02 | M053/S03,M053/S05 | Fixture tests cover single-line, multi-line, multi-hunk, multi-file, deleted-only, binary, unmappable, and capped hunks. |
+| R083 | operability | active | M053/S02 | M053/S03,M053/S04 | Cap/skip tests prove maxSuggestions is enforced and skip reasons are surfaced without malformed suggestion blocks. |
+| R084 | failure-visibility | active | M053/S04 | M053/S03,M053/S05 | Failure-path tests prove command errors, empty output, GitHub batch rejection, and combined-mode partial success surfaces are concise and independent. |
+| R085 | quality-attribute | active | M053/S05 | none | Live smoke artifact links to a GitHub PR review suggestion plus logs showing success and no old review regression. |
+| R086 | functional | deferred | later | M053/S01,M053/S04 | Unmapped until a later milestone or explicit repo opt-in exercises automatic behavior. |
+| R087 | integration | deferred | later | M053/S01,M053/S02 | Unmapped; future formatter adapters can reuse the command/diff parser seam. |
+| R088 | admin/support | deferred | later | none | Unmapped. |
+| R089 | anti-feature | out-of-scope | none | none | n/a |
+| R090 | anti-feature | out-of-scope | none | none | n/a |
+| R091 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 8
-- Mapped to slices: 8
-- Validated: 45 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055)
+- Active requirements: 19
+- Mapped to slices: 19
+- Validated: 63 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075)
 - Unmapped active requirements: 0

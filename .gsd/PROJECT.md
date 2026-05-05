@@ -83,3 +83,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Rereview trigger proof and decision
   - [x] S02: Manual rereview contract implementation
   - [x] S03: Residual operator truthfulness cleanup
+- [ ] M053: Same-PR Formatter Suggestions — explicit and optionally automatic committable formatting suggestions on existing PRs

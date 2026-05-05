@@ -111,6 +111,118 @@ test("reads and validates .kodiai.yml when present", async () => {
   }
 });
 
+test("defaults review.formatterSuggestions when no config exists", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.formatterSuggestions).toEqual({
+      automatic: false,
+      maxSuggestions: 10,
+    });
+    expect(config.review.formatterSuggestions.command).toBeUndefined();
+    expect((config.review.formatterSuggestions as Record<string, unknown>).enabled).toBeUndefined();
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("defaults review.formatterSuggestions when review block omits it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.formatterSuggestions.automatic).toBe(false);
+    expect(config.review.formatterSuggestions.command).toBeUndefined();
+    expect(config.review.formatterSuggestions.maxSuggestions).toBe(10);
+    expect((config.review.formatterSuggestions as Record<string, unknown>).enabled).toBeUndefined();
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.formatterSuggestions from YAML without requiring write mode", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  formatterSuggestions:",
+        "    automatic: true",
+        "    command: bun run lint --fix",
+        "    maxSuggestions: 25",
+        "write:",
+        "  enabled: false",
+        "",
+      ].join("\n"),
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.formatterSuggestions).toEqual({
+      automatic: true,
+      command: "bun run lint --fix",
+      maxSuggestions: 25,
+    });
+    expect(config.write.enabled).toBe(false);
+    expect((config.review.formatterSuggestions as Record<string, unknown>).enabled).toBeUndefined();
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("bounds review.formatterSuggestions.maxSuggestions and falls back review section on invalid nested config", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  formatterSuggestions:\n    maxSuggestions: 1\n",
+    );
+    const lower = await loadRepoConfig(dir);
+    expect(lower.config.review.formatterSuggestions.maxSuggestions).toBe(1);
+    expect(lower.warnings).toEqual([]);
+
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  formatterSuggestions:\n    maxSuggestions: 100\n",
+    );
+    const upper = await loadRepoConfig(dir);
+    expect(upper.config.review.formatterSuggestions.maxSuggestions).toBe(100);
+    expect(upper.warnings).toEqual([]);
+
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  maxComments: 12\n  formatterSuggestions:\n    automatic: sometimes\n",
+    );
+    const invalidAutomatic = await loadRepoConfig(dir);
+    expect(invalidAutomatic.config.review.maxComments).toBe(7);
+    expect(invalidAutomatic.config.review.formatterSuggestions.automatic).toBe(false);
+    expect(invalidAutomatic.warnings.some((w) => w.section === "review")).toBe(true);
+
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  formatterSuggestions:\n    command: ''\n",
+    );
+    const invalidCommand = await loadRepoConfig(dir);
+    expect(invalidCommand.config.review.formatterSuggestions.command).toBeUndefined();
+    expect(invalidCommand.warnings.some((w) => w.section === "review")).toBe(true);
+
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  formatterSuggestions:\n    maxSuggestions: 101\n",
+    );
+    const invalidMax = await loadRepoConfig(dir);
+    expect(invalidMax.config.review.formatterSuggestions.maxSuggestions).toBe(10);
+    expect(invalidMax.warnings.some((w) => w.section === "review")).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 test("ignores deprecated rereview team keys when loading config", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {

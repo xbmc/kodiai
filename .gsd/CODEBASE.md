@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-19T00:55:21Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-19T00:55:21Z","fingerprint":"89a08bbe1c744f67d6a23f5fd2dceea118cd70ad","fileCount":500,"truncated":true} -->
+Generated: 2026-05-05T00:07:56Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T00:07:56Z","fingerprint":"afd2841aca3e71aa60c9c8172f987720e3d9c296","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -16,6 +16,8 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docker-compose.yml`
 - `Dockerfile`
 - `Dockerfile.agent`
+- `eslint.config.mjs`
+- `LICENSE`
 - `package.json`
 - `README.md`
 
@@ -30,6 +32,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/deployment.md`
 - `docs/GRACEFUL-RESTART-RUNBOOK.md`
 - `docs/guardrails.md`
+- `docs/INDEX.md`
 - `docs/issue-intelligence.md`
 - `docs/knowledge-system.md`
 - `docs/m029-s04-ops-runbook.md`
@@ -39,11 +42,17 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/operations/embedding-integrity.md`
 
 ### docs/runbooks/
+- `docs/runbooks/aca-job-debugging.md`
+- `docs/runbooks/deploy-rollback.md`
+- `docs/runbooks/key-rotation.md`
+- `docs/runbooks/m065-rollout-proof.md`
 - `docs/runbooks/mentions.md`
+- `docs/runbooks/nightly-sync-failures.md`
 - `docs/runbooks/recent-review-audit.md`
 - `docs/runbooks/review-requested-debug.md`
 - `docs/runbooks/scale.md`
 - `docs/runbooks/slack-integration.md`
+- `docs/runbooks/slack-webhook-relay.md`
 - `docs/runbooks/xbmc-cutover.md`
 - `docs/runbooks/xbmc-ops.md`
 
@@ -53,15 +62,27 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/smoke/phase74-reliability-regression-gate.md`
 - `docs/smoke/phase75-live-ops-verification-closure.md`
 - `docs/smoke/phase80-slack-operator-hardening.md`
+- `docs/smoke/slack-webhook-relay.md`
 - `docs/smoke/xbmc-kodiai-write-flow.md`
 - `docs/smoke/xbmc-xbmc-write-flow.md`
+
+### docs/superpowers/plans/
+- `docs/superpowers/plans/2026-04-26-m055-docs-accuracy.md`
+
+### docs/superpowers/specs/
+- `docs/superpowers/specs/2026-04-26-m055-docs-accuracy-design.md`
+- `docs/superpowers/specs/2026-04-28-small-diff-review-fast-path-design.md`
 
 ### fixtures/contributor-calibration/
 - `fixtures/contributor-calibration/xbmc-manifest.json`
 - `fixtures/contributor-calibration/xbmc-snapshot.json`
 
+### fixtures/slack-webhook-relay/
+- `fixtures/slack-webhook-relay/accepted.json`
+- `fixtures/slack-webhook-relay/suppressed.json`
+
 ### scripts/
-- *(119 files: 116 .ts, 3 .sh)*
+- *(209 files: 205 .ts, 3 .sh, 1 .md)*
 
 ### src/
 - `src/config.test.ts`
@@ -84,7 +105,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(63 files: 63 .sql)*
+- *(82 files: 82 .sql)*
 
 ### src/enforcement/
 - `src/enforcement/index.ts`
@@ -97,7 +118,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/enforcement/types.ts`
 
 ### src/execution/
-- *(23 files: 23 .ts)*
+- *(25 files: 25 .ts)*
 
 ### src/execution/mcp/
 - `src/execution/mcp/checkpoint-server.test.ts`
@@ -130,12 +151,14 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(27 files: 27 .ts)*
+- *(28 files: 28 .ts)*
 
 ### src/jobs/
 - `src/jobs/aca-launcher.test.ts`
 - `src/jobs/aca-launcher.ts`
+- `src/jobs/fork-manager.test.ts`
 - `src/jobs/fork-manager.ts`
+- `src/jobs/gist-publisher.test.ts`
 - `src/jobs/gist-publisher.ts`
 - `src/jobs/queue.test-helpers.ts`
 - `src/jobs/queue.test.ts`
@@ -147,4 +170,17 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(143 files: 143 .ts)*
+- `src/knowledge/active-rules.test.ts`
+- `src/knowledge/active-rules.ts`
+- `src/knowledge/adaptive-threshold.test.ts`
+- `src/knowledge/adaptive-threshold.ts`
+- `src/knowledge/canonical-code-backfill.test.ts`
+- `src/knowledge/canonical-code-backfill.ts`
+- `src/knowledge/canonical-code-chunker.test.ts`
+- `src/knowledge/canonical-code-chunker.ts`
+- `src/knowledge/canonical-code-ingest.test.ts`
+- `src/knowledge/canonical-code-ingest.ts`
+- `src/knowledge/canonical-code-retrieval.test.ts`
+- `src/knowledge/canonical-code-retrieval.ts`
+- `src/knowledge/canonical-code-store.test.ts`
+- `src/knowledge/canonical-code-store.ts`
