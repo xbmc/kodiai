@@ -109,28 +109,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions.
 - Notes: The user explicitly rejected a separate PR; humans should choose whether to apply GitHub's suggestions.
 
-### R080 — Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
-- Class: functional
-- Status: active
-- Description: Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
-- Why it matters: Maintainers should be able to ask for normal review plus formatting suggestions in one request.
-- Source: user
-- Primary owning slice: M053/S04
-- Supporting slices: M053/S01,M053/S02,M053/S03
-- Validation: Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete.
-- Notes: The semantic review and formatter suggestion subflows should remain independent under the combined intent.
-
-### R084 — Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
-- Class: failure-visibility
-- Status: active
-- Description: Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
-- Why it matters: A combined request should not lose a useful review or useful formatter suggestions because the other subflow failed.
-- Source: user
-- Primary owning slice: M053/S04
-- Supporting slices: M053/S03,M053/S05
-- Validation: Failure-path tests prove command errors, empty output, GitHub batch rejection, and combined-mode partial success surfaces are concise and independent.
-- Notes: Formatter failure must not block normal review; normal review failure must not block formatter suggestions when they can run safely.
-
 ### R085 — Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
 - Class: quality-attribute
 - Status: active
@@ -838,6 +816,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off.
 - Notes: Use config semantics like `review.formatterSuggestions.automatic: false`, not `enabled: false`.
 
+### R080 — Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
+- Class: functional
+- Status: validated
+- Description: Kodiai must support a combined request, `@kodiai review & format suggestions`, that runs normal review and formatter suggestions from one mention.
+- Why it matters: Maintainers should be able to ask for normal review plus formatting suggestions in one request.
+- Source: user
+- Primary owning slice: M053/S04
+- Supporting slices: M053/S01,M053/S02,M053/S03
+- Validation: M066/S04 verification passed: combined-mode mention tests in `src/handlers/mention.test.ts` prove `@kodiai review & format suggestions` preserves normal explicit review routing while invoking the formatter suggestion subflow, attempts formatter suggestions when executor returns error or throws after setup, and keeps formatter diagnostics independent. Fresh slice verification passed `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (293 pass, 0 fail).
+- Notes: The semantic review and formatter suggestion subflows should remain independent under the combined intent.
+
 ### R081 — Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
 - Class: functional
 - Status: validated
@@ -870,6 +859,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M053/S03,M053/S04
 - Validation: M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging.
 - Notes: Partial success should publish valid suggestions while logging/publicly accounting for skipped hunks.
+
+### R084 — Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
+- Class: failure-visibility
+- Status: validated
+- Description: Formatter failures and combined-mode partial failures must be visible without blocking independent successful subflows.
+- Why it matters: A combined request should not lose a useful review or useful formatter suggestions because the other subflow failed.
+- Source: user
+- Primary owning slice: M053/S04
+- Supporting slices: M053/S03,M053/S05
+- Validation: M066/S04 verification passed: formatter orchestration and mention-handler tests prove setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed diagnostics are bounded and visible for explicit formatter requests, and combined-mode tests prove formatter failure diagnostics do not suppress normal review fallback while review executor failures still attempt formatter suggestions when setup is available. Fresh slice verification passed the full S04 regression suite (293 pass, 0 fail) plus TypeScript and targeted ESLint checks.
+- Notes: Formatter failure must not block normal review; normal review failure must not block formatter suggestions when they can run safely.
 
 ## Deferred
 
@@ -1057,11 +1057,11 @@ This file is the explicit capability and coverage contract for the project.
 | R077 | functional | active | M053/S03 | M053/S02,M053/S04,M053/S05 | Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions. |
 | R078 | integration | validated | M053/S01 | M053/S02 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Command-runner fixture tests prove repository-configured formatter commands use only allowlisted placeholders, return structured no-command/no-op/success/failed/timed-out statuses, and produce bounded/redacted diagnostics without relying on Jenkins artifacts. |
 | R079 | constraint | validated | M053/S01 | M053/S04 | M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off. |
-| R080 | functional | active | M053/S04 | M053/S01,M053/S02,M053/S03 | Combined-mode tests prove both subflows are invoked and one subflow failure does not suppress the other when it can safely complete. |
+| R080 | functional | validated | M053/S04 | M053/S01,M053/S02,M053/S03 | M066/S04 verification passed: combined-mode mention tests in `src/handlers/mention.test.ts` prove `@kodiai review & format suggestions` preserves normal explicit review routing while invoking the formatter suggestion subflow, attempts formatter suggestions when executor returns error or throws after setup, and keeps formatter diagnostics independent. Fresh slice verification passed `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (293 pass, 0 fail). |
 | R081 | functional | validated | M053/S03 | M053/S04 | M066/S03 publisher tests passed in current slice verification: `bun test ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (34 pass, 117 assertions) and regression bundle `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (279 pass, 1289 assertions). Tests prove one `pulls.createReview` call carries multiple inline suggestion comments plus review-output idempotency markers, with no standalone comment fallback. |
 | R082 | quality-attribute | validated | M053/S02 | M053/S03,M053/S05 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Formatter parser/mapper tests prove git unified diffs become deterministic RIGHT-side GitHub suggestion payloads only when every target line maps to the PR diff index; malformed, unsupported, pure insertion/deletion, path-mismatch, and off-diff hunks are skipped rather than guessed. |
 | R083 | operability | validated | M053/S02 | M053/S03,M053/S04 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging. |
-| R084 | failure-visibility | active | M053/S04 | M053/S03,M053/S05 | Failure-path tests prove command errors, empty output, GitHub batch rejection, and combined-mode partial success surfaces are concise and independent. |
+| R084 | failure-visibility | validated | M053/S04 | M053/S03,M053/S05 | M066/S04 verification passed: formatter orchestration and mention-handler tests prove setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed diagnostics are bounded and visible for explicit formatter requests, and combined-mode tests prove formatter failure diagnostics do not suppress normal review fallback while review executor failures still attempt formatter suggestions when setup is available. Fresh slice verification passed the full S04 regression suite (293 pass, 0 fail) plus TypeScript and targeted ESLint checks. |
 | R085 | quality-attribute | active | M053/S05 | none | Live smoke artifact links to a GitHub PR review suggestion plus logs showing success and no old review regression. |
 | R086 | functional | deferred | later | M053/S01,M053/S04 | Unmapped until a later milestone or explicit repo opt-in exercises automatic behavior. |
 | R087 | integration | deferred | later | M053/S01,M053/S02 | Unmapped; future formatter adapters can reuse the command/diff parser seam. |
@@ -1072,7 +1072,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 13
-- Mapped to slices: 13
-- Validated: 69 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R078, R079, R081, R082, R083)
+- Active requirements: 11
+- Mapped to slices: 11
+- Validated: 71 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R078, R079, R080, R081, R082, R083, R084)
 - Unmapped active requirements: 0

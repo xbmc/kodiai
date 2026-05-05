@@ -331,3 +331,5 @@
 {"id":"d89c9a7b-683e-426a-82fd-f0e02b1c1c99","ts":"2026-05-05T01:06:59.147Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"de8a932c-6d92-4e7d-9326-aca8d8e3a43e","ts":"2026-05-05T01:13:21.059Z","severity":"info","message":"Committed: feat: Wired format-only PR mentions to run formatter suggestions direct…","source":"notify","read":false}
 {"id":"fa27e0f2-2171-40c5-a4b4-2e1d58650b52","ts":"2026-05-05T01:13:27.413Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"c34c0d96-e11b-4458-aafd-5712816147b5","ts":"2026-05-05T01:18:22.755Z","severity":"info","message":"Committed: feat: Wired combined review-and-format mentions to run Claude review an…","source":"notify","read":false}
+{"id":"e01da81d-c849-45bb-ac55-443528ee3753","ts":"2026-05-05T01:18:35.843Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
