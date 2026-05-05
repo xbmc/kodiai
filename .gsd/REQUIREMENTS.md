@@ -98,28 +98,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
-### R077 — Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
-- Class: functional
-- Status: active
-- Description: Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
-- Why it matters: The desired workflow is one-click application inside the current PR, preserving the human GitHub review trust boundary.
-- Source: user
-- Primary owning slice: M053/S03
-- Supporting slices: M053/S02,M053/S04,M053/S05
-- Validation: Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions.
-- Notes: The user explicitly rejected a separate PR; humans should choose whether to apply GitHub's suggestions.
-
-### R085 — Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
-- Class: quality-attribute
-- Status: active
-- Description: Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
-- Why it matters: GitHub suggestion acceptance has edge cases that fixture tests alone cannot fully prove.
-- Source: user
-- Primary owning slice: M053/S05
-- Supporting slices: none
-- Validation: Live smoke artifact links to a GitHub PR review suggestion plus logs showing success and no old review regression.
-- Notes: The live proof should run after merge/deploy, preferably on a test or real PR with a controlled formatter diff.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -794,6 +772,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M066/S01 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts --timeout 30000` (245 pass, 0 fail). Parser and full mention-handler tests prove `@kodiai format suggestions` and `@kodiai suggest formatting fixes` route as explicit formatter-suggestion requests.
 - Notes: M053 discussion: formatter suggestions are always accessible by explicit mention; repo config does not disable explicit access.
 
+### R077 — Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
+- Class: functional
+- Status: validated
+- Description: Formatter suggestions must be posted as GitHub committable suggested changes on the same PR, not as a new branch, new PR, or bot-authored commit.
+- Why it matters: The desired workflow is one-click application inside the current PR, preserving the human GitHub review trust boundary.
+- Source: user
+- Primary owning slice: M053/S03
+- Supporting slices: M053/S02,M053/S04,M053/S05
+- Validation: M066/S07/T05 live smoke proof on xbmc/kodiai PR #134 posted a same-PR COMMENTED Kodiai Pull Request Review with review id 4225484818 and fenced suggestion comment 3186219778; `bun run verify:m066:s05 -- --repo xbmc/kodiai --review-output-key <mention-format-suggestions key> --delivery-id 462ed8c0-4843-11f1-8135-1c6010084b2c --json` returned `success: true`, `status_code: "m066_s05_ok"`.
+- Notes: Validated without a new branch, new PR, or bot-authored commit; proof is recorded in docs/smoke/m066-formatter-suggestions.md.
+
 ### R078 — Formatter execution must be driven by a repository-configured formatter command, initially suitable for `git-clang-format`, with a seam for future formatter adapters.
 - Class: integration
 - Status: validated
@@ -870,6 +859,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M053/S03,M053/S05
 - Validation: M066/S04 verification passed: formatter orchestration and mention-handler tests prove setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed diagnostics are bounded and visible for explicit formatter requests, and combined-mode tests prove formatter failure diagnostics do not suppress normal review fallback while review executor failures still attempt formatter suggestions when setup is available. Fresh slice verification passed the full S04 regression suite (293 pass, 0 fail) plus TypeScript and targeted ESLint checks.
 - Notes: Formatter failure must not block normal review; normal review failure must not block formatter suggestions when they can run safely.
+
+### R085 — Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
+- Class: quality-attribute
+- Status: validated
+- Description: Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
+- Why it matters: GitHub suggestion acceptance has edge cases that fixture tests alone cannot fully prove.
+- Source: user
+- Primary owning slice: M053/S05
+- Supporting slices: none
+- Validation: M066/S07/T05 accepted live GitHub smoke proof on xbmc/kodiai PR #134 captured trigger comment 4376745698, delivery 462ed8c0-4843-11f1-8135-1c6010084b2c, formatter reviewOutputKey with action `mention-format-suggestions`, COMMENTED review 4225484818, fenced suggestion comment 3186219778, structured ACA logs with formatterStatus=posted/commandStatus=success/publisherStatus=posted, and verifier status `m066_s05_ok`.
+- Notes: Validated by docs/smoke/m066-formatter-suggestions.md, which records bounded public URLs, log correlation, and verifier JSON for the accepted same-PR suggestion.
 
 ## Deferred
 
@@ -1054,7 +1054,7 @@ This file is the explicit capability and coverage contract for the project.
 | R074 | operational | validated | M064/S03 | M064/S02 | M064/S03 reran `bun test src/knowledge/continuation-operator-evidence.test.ts && bun test scripts/verify-m064-s03.test.ts && bun run verify:m064:s03 -- --json && bun run verify:m064:s03 && bun test scripts/verify-m064-s01.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s01 -- --json && bun run verify:m064:s02 -- --json`; the operator-evidence surface now resolves continuation lifecycle truth directly from canonical continuation-family state and renders degraded/pending `projectionStatus` explicitly. |
 | R075 | correctness | validated | M064/S02 | none | M064/S02 reran `bun test src/execution/mcp/checkpoint-server.test.ts && bun test src/handlers/review.test.ts && bun test scripts/verify-m064-s02.test.ts && bun run verify:m064:s02 -- --json`; checkpoint acknowledgements now wait for durable save completion and never report `saved: true` on rejected writes. |
 | R076 | functional | validated | M053/S01 | M053/S04 | M066/S01 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts --timeout 30000` (245 pass, 0 fail). Parser and full mention-handler tests prove `@kodiai format suggestions` and `@kodiai suggest formatting fixes` route as explicit formatter-suggestion requests. |
-| R077 | functional | active | M053/S03 | M053/S02,M053/S04,M053/S05 | Batched review publisher tests and live smoke proof show GitHub renders Kodiai output as same-PR committable suggestions. |
+| R077 | functional | validated | M053/S03 | M053/S02,M053/S04,M053/S05 | M066/S07/T05 live smoke proof on xbmc/kodiai PR #134 posted a same-PR COMMENTED Kodiai Pull Request Review with review id 4225484818 and fenced suggestion comment 3186219778; `bun run verify:m066:s05 -- --repo xbmc/kodiai --review-output-key <mention-format-suggestions key> --delivery-id 462ed8c0-4843-11f1-8135-1c6010084b2c --json` returned `success: true`, `status_code: "m066_s05_ok"`. |
 | R078 | integration | validated | M053/S01 | M053/S02 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Command-runner fixture tests prove repository-configured formatter commands use only allowlisted placeholders, return structured no-command/no-op/success/failed/timed-out statuses, and produce bounded/redacted diagnostics without relying on Jenkins artifacts. |
 | R079 | constraint | validated | M053/S01 | M053/S04 | M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off. |
 | R080 | functional | validated | M053/S04 | M053/S01,M053/S02,M053/S03 | M066/S04 verification passed: combined-mode mention tests in `src/handlers/mention.test.ts` prove `@kodiai review & format suggestions` preserves normal explicit review routing while invoking the formatter suggestion subflow, attempts formatter suggestions when executor returns error or throws after setup, and keeps formatter diagnostics independent. Fresh slice verification passed `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (293 pass, 0 fail). |
@@ -1062,7 +1062,7 @@ This file is the explicit capability and coverage contract for the project.
 | R082 | quality-attribute | validated | M053/S02 | M053/S03,M053/S05 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Formatter parser/mapper tests prove git unified diffs become deterministic RIGHT-side GitHub suggestion payloads only when every target line maps to the PR diff index; malformed, unsupported, pure insertion/deletion, path-mismatch, and off-diff hunks are skipped rather than guessed. |
 | R083 | operability | validated | M053/S02 | M053/S03,M053/S04 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging. |
 | R084 | failure-visibility | validated | M053/S04 | M053/S03,M053/S05 | M066/S04 verification passed: formatter orchestration and mention-handler tests prove setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed diagnostics are bounded and visible for explicit formatter requests, and combined-mode tests prove formatter failure diagnostics do not suppress normal review fallback while review executor failures still attempt formatter suggestions when setup is available. Fresh slice verification passed the full S04 regression suite (293 pass, 0 fail) plus TypeScript and targeted ESLint checks. |
-| R085 | quality-attribute | active | M053/S05 | none | Live smoke artifact links to a GitHub PR review suggestion plus logs showing success and no old review regression. |
+| R085 | quality-attribute | validated | M053/S05 | none | M066/S07/T05 accepted live GitHub smoke proof on xbmc/kodiai PR #134 captured trigger comment 4376745698, delivery 462ed8c0-4843-11f1-8135-1c6010084b2c, formatter reviewOutputKey with action `mention-format-suggestions`, COMMENTED review 4225484818, fenced suggestion comment 3186219778, structured ACA logs with formatterStatus=posted/commandStatus=success/publisherStatus=posted, and verifier status `m066_s05_ok`. |
 | R086 | functional | deferred | later | M053/S01,M053/S04 | Unmapped until a later milestone or explicit repo opt-in exercises automatic behavior. |
 | R087 | integration | deferred | later | M053/S01,M053/S02 | Unmapped; future formatter adapters can reuse the command/diff parser seam. |
 | R088 | admin/support | deferred | later | none | Unmapped. |
@@ -1072,7 +1072,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 11
-- Mapped to slices: 11
-- Validated: 71 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R078, R079, R080, R081, R082, R083, R084)
+- Active requirements: 9
+- Mapped to slices: 9
+- Validated: 73 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085)
 - Unmapped active requirements: 0

@@ -383,3 +383,5 @@
 {"id":"c5907f03-054a-492c-a74b-375d171dcf16","ts":"2026-05-05T05:12:01.632Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"cf2ebdae-2ff4-4152-9475-12f62641afe5","ts":"2026-05-05T05:15:16.973Z","severity":"info","message":"Committed: feat: Added formatter mention completion evidence for delivery id and r…","source":"notify","read":false}
 {"id":"9dc0961e-f295-44e1-bdce-481996c8d8a4","ts":"2026-05-05T05:15:25.709Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"bb242876-a451-4d83-8786-ca86d317a385","ts":"2026-05-05T05:27:25.815Z","severity":"info","message":"Committed: fix: Deployed the formatter-routing fix to ACA revision ca-kodiai--depl…","source":"notify","read":false}
+{"id":"e267b57b-d2c6-4ca0-b6f5-fd934e23b917","ts":"2026-05-05T05:27:32.289Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

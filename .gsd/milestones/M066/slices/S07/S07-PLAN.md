@@ -46,7 +46,7 @@ The slice is complete only when a fresh authenticated/deployed smoke run capture
   - Files: `docs/smoke/m066-formatter-suggestions.md`, `deploy.sh`, `docs/runbooks/formatter-suggestions.md`
   - Verify: Use the project deploy/runbook command appropriate for this repo and record active ACA revision plus `/healthz` and `/readiness` success, or record a plan-invalidating blocker if deployment access is unavailable.
 
-- [ ] **T05: Capture accepted same-PR formatter suggestion proof** `est:1 context`
+- [x] **T05: Capture accepted same-PR formatter suggestion proof** `est:1 context`
   Rerun the controlled formatter smoke against PR #134 or create a fresh controlled PR if needed. Ensure the PR head carries a formatter command when `main` does not. Post `@kodiai format suggestions`, capture the trigger comment id/url, delivery id, formatter reviewOutputKey, Kodiai Pull Request Review id/url, associated fenced suggestion review comment id/url, posted/skipped/capped/publisher status fields, active revision, and bounded logs. Update `docs/smoke/m066-formatter-suggestions.md` from bounded decline to accepted proof only if all required fields exist.
   - Files: `docs/smoke/m066-formatter-suggestions.md`, `scripts/verify-m066-s05.ts`, `scripts/verify-m066-s05.test.ts`, `.gsd/REQUIREMENTS.md`
   - Verify: `bun run verify:m066:s05 -- --repo "$M066_S05_REPO" --review-output-key "$M066_S05_REVIEW_OUTPUT_KEY" --delivery-id "$M066_S05_DELIVERY_ID" --json` must return `success: true` and `status_code: "m066_s05_ok"`. Then rerun the deterministic M066 regression bundle from T03.
