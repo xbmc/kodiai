@@ -21,6 +21,7 @@ describe("detectFormatterSuggestionRequest", () => {
     "review and format suggestions",
     "review + format suggestions",
     "review with format suggestions",
+    "review format suggestions",
   ])("detects combined review-and-format phrase '%s'", (phrase) => {
     expect(detectFormatterSuggestionRequest(phrase)).toEqual({
       requested: true,

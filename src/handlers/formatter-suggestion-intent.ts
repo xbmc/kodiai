@@ -7,7 +7,7 @@ export interface FormatterSuggestionRequest {
   normalizedRequest: string;
 }
 
-const REVIEW_AND_FORMAT_PATTERN = /^(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?review\s*(?:&|\+|and|with)\s*format\s+suggestions\b/;
+const REVIEW_AND_FORMAT_PATTERN = /^(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?review\s*(?:(?:&|\+|and|with)\s*)?format\s+suggestions\b/;
 
 const FORMAT_ONLY_PATTERNS = [
   /^format\s+suggestions\b/,
