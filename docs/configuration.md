@@ -193,7 +193,7 @@ Controls formatter-generated GitHub suggestion reviews for explicit mention requ
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `automatic` | `boolean` | `false` | Reserved for future automatic-review inclusion. Keep `false` for current deployed behavior. |
-| `command` | `string` | *(none)* | Optional shell command Kodiai runs in the checked-out PR workspace. It must emit a git unified diff to stdout. |
+| `command` | `string` | `git clang-format --diff origin/{baseRef} HEAD` | Shell command Kodiai runs in the checked-out PR workspace. It must emit a git unified diff to stdout. Repositories may override it for non-clang-format tooling. |
 | `maxSuggestions` | `number` | `10` | Maximum formatter suggestions to publish for a request. Valid range: `1–100`. |
 
 Supported command placeholders:
@@ -210,9 +210,11 @@ Example:
 review:
   formatterSuggestions:
     automatic: false
-    command: "bun run format:diff -- --base {baseRef} --head {headRef}"
+    command: "git clang-format --diff origin/{baseRef} HEAD"
     maxSuggestions: 10
 ```
+
+Override `command` only when the repository needs different formatter tooling. The default command runs `git-clang-format` in diff mode against the PR head.
 
 Operational notes:
 

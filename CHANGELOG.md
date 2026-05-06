@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.37 (2026-05-05)
+
+Same-PR formatter suggestions.
+
+### Added
+
+- Explicit formatter suggestions now run by default for `@kodiai format suggestions`, `@kodiai suggest formatting fixes`, and combined `@kodiai review format suggestions` / `@kodiai review & format suggestions` requests.
+- The default formatter command is `git clang-format --diff origin/{baseRef} HEAD`; repositories may override `review.formatterSuggestions.command` for other formatter tooling while `review.formatterSuggestions.automatic` remains `false` by default.
+- Container images now include `clang-format`, providing `git-clang-format` for the default explicit formatter-suggestion path.
+- Live proof on `xbmc/xbmc#28259` passed `verify:m066:s05` with `status_code: "m066_s05_ok"` and GitHub accepted same-PR fenced suggestion comments.
+
+### Fixed
+
+- Natural trigger wording `@kodiai review format suggestions` now routes to the combined review-and-format path.
+- Diff-style formatter commands that emit valid unified diff stdout with a nonzero exit code are treated as successful formatter output instead of command failures.
+
 ## v0.32 (2026-04-25)
 
 Release/docs pass for bounded review flow and production secret contract clarification.

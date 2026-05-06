@@ -1,10 +1,10 @@
 # Formatter Suggestions Runbook
 
-Use this runbook to configure, smoke test, verify, and troubleshoot explicit formatter-suggestion requests on pull requests.
+Use this runbook to smoke test, verify, and troubleshoot explicit formatter-suggestion requests on pull requests.
 
 ## Reader and outcome
 
-This runbook is for maintainers and operators who need to prove that Kodiai can publish formatter-generated GitHub suggestions on the same PR that triggered the request. After reading it, you should be able to configure a repo formatter command, trigger a safe smoke request, capture the proof identifiers, run the verifier, and interpret failures without exposing secrets or raw formatter output.
+This runbook is for maintainers and operators who need to prove that Kodiai can publish formatter-generated GitHub suggestions on the same PR that triggered the request. After reading it, you should be able to trigger a safe smoke request, capture the proof identifiers, run the verifier, and interpret failures without exposing secrets or raw formatter output.
 
 ## Current support boundary
 
@@ -17,13 +17,13 @@ Do not treat `review.formatterSuggestions.automatic` as live automatic-review be
 
 ## Configure a repository
 
-Add `review.formatterSuggestions.command` to the repository configuration. Keep `automatic: false` unless a later release explicitly documents automatic-review support.
+Explicit formatter suggestions work by default with `git clang-format --diff origin/{baseRef} HEAD`. Keep `automatic: false` unless a later release explicitly documents automatic-review support. Override `review.formatterSuggestions.command` only when a repository needs different formatter tooling.
 
 ```yaml
 review:
   formatterSuggestions:
     automatic: false
-    command: "bun run format:diff -- --base {baseRef} --head {headRef}"
+    command: "git clang-format --diff origin/{baseRef} HEAD"
     maxSuggestions: 10
 ```
 
@@ -32,7 +32,7 @@ Fields:
 | Field | Default | Notes |
 |---|---:|---|
 | `automatic` | `false` | Reserved for later automatic-review inclusion. |
-| `command` | none | Optional shell command. Explicit formatter requests require it to be set. |
+| `command` | `git clang-format --diff origin/{baseRef} HEAD` | Default shell command. Override for non-clang-format tooling. |
 | `maxSuggestions` | `10` | Bounded from `1` to `100`. Additional applicable hunks are capped. |
 
 Command requirements:
@@ -161,7 +161,7 @@ Important fields:
 
 Interpretation guidance:
 
-- `setup-needed` or `commandStatus=no-command` means the repo has not configured `review.formatterSuggestions.command`.
+- `failed` with `commandStatus=failed` means the formatter command itself failed without usable diff stdout. Inspect the bounded visible diagnostic and relevant logs; do not paste raw stderr containing secrets into proof records.
 - `suggestions=0` with `skipped>0` usually means the formatter produced changes outside reviewable PR hunks.
 - `capped>0` means proof can still pass if at least one suggestion was posted; raise `maxSuggestions` only if maintainers need broader coverage.
 - `publisherFailed>0` means inspect GitHub API failures and permissions before retrying.
