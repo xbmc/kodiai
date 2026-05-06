@@ -1,6 +1,6 @@
 # M066 Formatter Suggestions Smoke Proof
 
-Status: **Accepted.** T05 reran the controlled formatter smoke on PR #134 after deployment of Azure Container Apps revision `ca-kodiai--deploy-20260504-222417`. The fresh `@kodiai format suggestions` trigger produced a formatter `mention-format-suggestions` reviewOutputKey, a same-PR COMMENTED Kodiai Pull Request Review, one fenced GitHub `suggestion` review comment, delivery/log correlation, and `bun run verify:m066:s05` returned `success: true` with `status_code: "m066_s05_ok"`.
+Status: **Accepted.** The final post-release smoke on `xbmc/xbmc#28259` validated the exact combined trigger `@kodiai review format suggestions` against Azure Container Apps revision `ca-kodiai--deploy-20260505-013150`. The run produced a formatter `mention-format-suggestions` reviewOutputKey, a same-PR COMMENTED Kodiai Pull Request Review, two fenced GitHub `suggestion` review comments, delivery/log correlation, and `bun run verify:m066:s05` returned `success: true` with `status_code: "m066_s05_ok"`.
 
 This file is the bounded operator record for M066/S05. Do not paste GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr here.
 
@@ -9,13 +9,43 @@ This file is the bounded operator record for M066/S05. Do not paste GitHub App p
 - Feature: Explicit formatter suggestions on PR mentions
 - Supported triggers:
   - `@kodiai format suggestions`
+  - `@kodiai review format suggestions`
   - `@kodiai review & format suggestions`
+- Default formatter command: `git clang-format --diff origin/{baseRef} HEAD`
 - Required visible surface: same-PR Pull Request Review with at least one fenced `suggestion` block
 - Not claimed: formatter suggestions in normal automatic PR reviews
 
-## Current smoke status
+## Final post-release validation — default command and exact combined trigger
 
-T05 posted a fresh explicit formatter trigger from an authenticated operator path against the controlled PR #134. The deployed app classified the request as formatter intent, ran the formatter-suggestion subflow, published one same-PR Kodiai Pull Request Review with one committable fenced suggestion, and emitted bounded structured logs for the same delivery id and formatter reviewOutputKey.
+After the default formatter command and exact trigger wording fixes were deployed, the final live smoke ran against `xbmc/xbmc#28259` using `@kodiai review format suggestions`. This validated the intended operator path without requiring a repo-specific formatter command in `.kodiai.yml`.
+
+Accepted proof fields:
+
+| Surface | Accepted value |
+|---|---|
+| Repository | `xbmc/xbmc` |
+| PR URL | `https://github.com/xbmc/xbmc/pull/28259` |
+| PR number | `28259` |
+| Trigger comment body | `@kodiai review format suggestions` |
+| Trigger comment URL | `https://github.com/xbmc/xbmc/pull/28259#issuecomment-4377687860` |
+| Captured GitHub `deliveryId` | `febb39b0-485c-11f1-8ae6-ceef51a675f1` |
+| Formatter `reviewOutputKey` | `kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28259:action-mention-format-suggestions:delivery-febb39b0-485c-11f1-8ae6-ceef51a675f1:head-0be61fc701a277c11991f6a8c5cff2bf9e4c35e2` |
+| Active deployed revision | `ca-kodiai--deploy-20260505-013150` |
+| Formatter Pull Request Review URL | `https://github.com/xbmc/xbmc/pull/28259#pullrequestreview-4226451923` |
+| Formatter Pull Request Review ID | `4226451923` |
+| Suggestion comment URLs | `https://github.com/xbmc/xbmc/pull/28259#discussion_r3187061715`, `https://github.com/xbmc/xbmc/pull/28259#discussion_r3187061725` |
+| Number of posted suggestions | `2` |
+| Verifier status | `success: true`, `status_code: "m066_s05_ok"` |
+
+Verifier command:
+
+```sh
+bun run verify:m066:s05 -- --repo xbmc/xbmc --review-output-key "kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28259:action-mention-format-suggestions:delivery-febb39b0-485c-11f1-8ae6-ceef51a675f1:head-0be61fc701a277c11991f6a8c5cff2bf9e4c35e2" --delivery-id "febb39b0-485c-11f1-8ae6-ceef51a675f1" --json
+```
+
+## Earlier controlled smoke proof
+
+T05 reran the controlled formatter smoke on PR #134 after deployment of Azure Container Apps revision `ca-kodiai--deploy-20260504-222417`. The fresh `@kodiai format suggestions` trigger produced a formatter `mention-format-suggestions` reviewOutputKey, a same-PR COMMENTED Kodiai Pull Request Review, one fenced GitHub `suggestion` review comment, delivery/log correlation, and `bun run verify:m066:s05` returned `success: true` with `status_code: "m066_s05_ok"`.
 
 Accepted proof fields:
 
@@ -63,7 +93,7 @@ T02 established a credentialed operator path and a controlled PR without exposin
 | Base branch / SHA | `main` / `a270c47f8029e6b2e802c645589720ae43c63905` |
 | Head branch / SHA | `smoke/m066-formatter-suggestions-1777950652` / `df017da6b6959038a288f8eae070b7a384ef0fa4` |
 | Controlled formatting diff | `README.md` has one intentional double-space in the first paragraph; the smoke formatter fixes it back to a single space |
-| Formatter config source | PR-head `.kodiai.yml` adds `review.formatterSuggestions.command` because `main` does not configure formatter suggestions |
+| Formatter config source | PR-head `.kodiai.yml` added `review.formatterSuggestions.command` because, at the time of this controlled smoke, `main` did not yet provide a default formatter command |
 | Formatter command | `python3 scripts/m066-formatter-smoke.py` |
 | Trigger mode for accepted proof | `@kodiai format suggestions` |
 | Accepted proof trigger status | Posted by T05 and accepted by deployed formatter subflow |

@@ -17,10 +17,10 @@ review:
   # Default is false: clean reviews publish as comments unless you opt in to GitHub approvals.
   autoApprove: false
   formatterSuggestions:
-    # Explicit @kodiai format suggestions requests are supported when command is set.
+    # Explicit @kodiai format suggestions requests work by default with git-clang-format.
     # automatic is reserved for later automatic-review inclusion and defaults to false.
     automatic: false
-    command: "bun run format:diff -- --base {baseRef} --head {headRef}"
+    command: "git clang-format --diff origin/{baseRef} HEAD"
     maxSuggestions: 10
   triggers:
     onOpened: true
@@ -219,7 +219,7 @@ Override `command` only when the repository needs different formatter tooling. T
 Operational notes:
 
 - The command must write a git unified diff to stdout; no suggestions are published when stdout has no applicable PR diff hunks.
-- Explicit PR mentions can request formatter suggestions with `@kodiai format suggestions` or combine review and formatting with `@kodiai review & format suggestions`.
+- Explicit PR mentions can request formatter suggestions with `@kodiai format suggestions` or combine review and formatting with `@kodiai review format suggestions` / `@kodiai review & format suggestions`.
 - The published proof surface is a same-PR Pull Request Review containing `suggestion` blocks, not a branch push or automatic commit.
 - See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, verifier usage, and failure interpretation.
 

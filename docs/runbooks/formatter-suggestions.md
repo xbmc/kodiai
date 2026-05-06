@@ -11,6 +11,7 @@ This runbook is for maintainers and operators who need to prove that Kodiai can 
 Formatter suggestions currently run for explicit PR mentions:
 
 - `@kodiai format suggestions`
+- `@kodiai review format suggestions`
 - `@kodiai review & format suggestions`
 
 Do not treat `review.formatterSuggestions.automatic` as live automatic-review behavior. The field is parsed and defaults to `false`, but normal automatic PR reviews do not include formatter suggestions until future runtime wiring enables that path.
@@ -40,11 +41,12 @@ Command requirements:
 - Emit a git unified diff to stdout.
 - Use only repository-local tooling and dependencies available in the Kodiai workspace.
 - May use `{baseRef}`, `{headRef}`, and `{diffRange}` placeholders.
+- The default `git clang-format --diff origin/{baseRef} HEAD` command uses `git-clang-format` from the runtime image. If the repository language or formatter differs, override `command` with a tool-specific diff command.
 - Must not print secrets. Raw formatter stdout and unbounded stderr must not be copied into proof records.
 
 ## Prepare a safe smoke PR
 
-Use a small PR with one intentional formatting-only issue that the configured formatter can fix. Keep the PR narrow:
+Use a small PR with one intentional formatting-only issue that the default formatter command, or the repository's configured override, can fix. Keep the PR narrow:
 
 - One or two changed files.
 - A formatting issue that produces a tiny unified diff.
@@ -68,11 +70,15 @@ Expected behavior:
 - Kodiai acknowledges the mention best-effort with an eyes reaction.
 - The formatter subflow runs without running a normal review.
 - When suggestions are available and publish succeeds, Kodiai posts a Pull Request Review containing committable formatter suggestions.
-- If setup is missing, Kodiai replies with a bounded diagnostic telling maintainers to configure `review.formatterSuggestions.command`.
+- If the formatter command fails, Kodiai replies with a bounded diagnostic summarizing the command failure without exposing raw unbounded formatter output.
 
 ### Combined review and format request
 
-Comment on the PR:
+Comment on the PR with either accepted spelling:
+
+```text
+@kodiai review format suggestions
+```
 
 ```text
 @kodiai review & format suggestions
@@ -148,7 +154,7 @@ Important fields:
 | Field | Meaning |
 |---|---|
 | `formatterStatus` | Overall formatter subflow status. |
-| `commandStatus` | Formatter command status, including missing command or command failure states. |
+| `commandStatus` | Formatter command status, including no-op, success, timeout, or command failure states. |
 | `publisherStatus` | Pull Request Review publication status. |
 | `suggestions` | Applicable suggestions produced from the formatter diff. |
 | `skipped` | Formatter diff hunks that could not be mapped to reviewable PR locations. |
@@ -161,6 +167,7 @@ Important fields:
 
 Interpretation guidance:
 
+- `no-op` with `suggestions=0` and `skipped=0` usually means the default formatter found nothing to change.
 - `failed` with `commandStatus=failed` means the formatter command itself failed without usable diff stdout. Inspect the bounded visible diagnostic and relevant logs; do not paste raw stderr containing secrets into proof records.
 - `suggestions=0` with `skipped>0` usually means the formatter produced changes outside reviewable PR hunks.
 - `capped>0` means proof can still pass if at least one suggestion was posted; raise `maxSuggestions` only if maintainers need broader coverage.

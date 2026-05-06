@@ -18,6 +18,93 @@ Same-PR formatter suggestions.
 - Natural trigger wording `@kodiai review format suggestions` now routes to the combined review-and-format path.
 - Diff-style formatter commands that emit valid unified diff stdout with a nonzero exit code are treated as successful formatter output instead of command failures.
 
+## v0.36 (2026-04-30)
+
+Production log failure cleanup and operational hardening.
+
+### Changed
+
+- Migrated `learning_memories.finding_id` to `BIGINT` so GitHub review comment IDs above the 32-bit integer range can be stored safely.
+- Added rollback protection for the `finding_id` down migration so operators get a clear failure before unsafe downcasting.
+- Normalized learning-memory ID fields returned from PostgreSQL as `number`, `string`, or `bigint`, with safe-integer guards to avoid precision loss.
+- Downgraded Slack `users.list` `missing_scope` identity-suggestion failures into token-scoped info-level disabled diagnostics.
+- Bounded the Slack disabled-token cache to avoid unbounded process growth during token rotation or multi-token operation.
+- Downgraded GitHub reaction-read permission denials into info-level skipped diagnostics.
+
+### Verification
+
+- CI passed on PR #121.
+- Kodiai current-head review approved with no findings.
+- Deployed revision `ca-kodiai--deploy-20260429-205210` passed `/healthz` and `/readiness`.
+
+## v0.35 (2026-04-29)
+
+Small-diff review fast path and agent runtime diagnostics.
+
+### Fixed
+
+- Routed tiny PR reviews through a dedicated `review.small-diff` fast path for both automatic reviews and explicit `@kodiai review` mentions.
+- Capped small-diff reviews at 8 turns with a constrained diff-focused tool surface to avoid max-turn exhaustion on trivial PRs.
+- Added a small-diff prompt scope contract that tells the reviewer to inspect the diff first and avoid broad repository exploration.
+- Added per-turn tool target diagnostics to agent runtime logs for future max-turn/tool-loop debugging.
+- Hardened routing line-count fallback so automatic and explicit review paths use consistent diff-vs-PR API line totals.
+- Cleaned tiny-diff max-turn fallback messaging so users are not told to narrow an already tiny review.
+
+### Verification
+
+- Deployed to Azure Container Apps revision `ca-kodiai--deploy-20260429-174526`.
+- `/healthz` returned `{"status":"ok","db":"connected"}` and `/readiness` returned `{"status":"ready"}`.
+- PR #120 CI passed.
+
+## v0.34 (2026-04-28)
+
+Slack webhook replay safety rails and approval visibility.
+
+### Changed
+
+- Queued Slack webhook replay now routes through the same Slack v1 safety rails as live Slack events before invoking the assistant.
+- Startup replay shares Slack thread-session state across queued entries so a replayed bootstrap can authorize a later queued thread follow-up.
+- Queued GitHub and Slack replay bodies now fail closed on malformed JSON instead of crashing the startup replay loop.
+- Startup replay validates queue entry IDs before marking completion/failure and avoids duplicate ignored-replay logging.
+- Replay-time GitHub installation IDs are normalized before dispatch so malformed values fall back to the existing legacy sentinel.
+- Approval review output now shows `Decision: APPROVE` above the collapsed `Kodiai response` details block for future deployed approvals.
+
+### Verification
+
+- PR #119 CI passed on head `4d43ad58651140d7eea4981194dd3b04e21dcb6d`.
+- Local focused verification passed for webhook replay, Slack/webhook/comment/idempotency/prompt suites, typecheck, diff check, and lint.
+- Deployed revision `ca-kodiai--deploy-20260428-004129` passed `/healthz` and `/readiness`.
+
+## v0.33 (2026-04-27)
+
+Review reliability, canonical Review Details publication, planning-artifact repair, and deployment hardening.
+
+### Added
+
+- First-pass changed-file triage guidance now asks review agents to rank files by risk before deep inspection so bounded runs preserve the most important coverage.
+- Early review checkpoint instructions now require a planning checkpoint before deep inspection and periodic checkpoint updates during long reviews.
+- M065 verifier coverage now rejects malformed nested verifier report contracts instead of silently accepting bad scalar shapes.
+
+### Fixed
+
+- Max-turn review exhaustion now flows through bounded first-pass / reduced-scope continuation handling instead of posting terminal manual-rerun fallback text.
+- Review Details now merge into the canonical visible surface, including approval reviews, instead of creating stale standalone details comments when a pull-review surface already exists.
+- Comment-cap Review Details now distinguish analysis scope from publication caps and report omitted lower-priority findings with correct singular/plural wording.
+- Wiki cleanup tooling now targets only unmarked `kodiai[bot]` comments and treats missing/null GitHub authors as non-bot comments.
+- Cluster scheduler tests no longer leak Bun module mocks into cluster-store tests.
+
+### Changed
+
+- M054 planning artifacts were repaired and queued milestone state was reduced to current, supported surfaces.
+- M065 malformed nested-report test seams now accept `unknown` and let production validators reject bad payloads rather than using misleading `as never` fixtures.
+- Deployment YAML quoting is hardened so generated Container Apps YAML preserves env values safely.
+
+### Operational proof
+
+- Deployed `main` at `c9de0f3f9265b6c272abda249c31d0e525f0a4d7` to Azure Container Apps.
+- Post-deploy health returned `{"status":"ok","db":"connected"}` and readiness returned `{"status":"ready"}`.
+- Live `@kodiai review` smoke on `xbmc/xbmc#28172` completed on `lane=interactive-review`, `taskType=review.full`, `publishResolution=executor`, `stopReason=end_turn`, and published review output.
+
 ## v0.32 (2026-04-25)
 
 Release/docs pass for bounded review flow and production secret contract clarification.

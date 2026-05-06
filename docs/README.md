@@ -23,7 +23,7 @@ Kodiai is a GitHub App that provides AI-powered code reviews, issue triage, ment
 Troubleshooting and operations guides in [`runbooks/`](runbooks/):
 
 - **[Mentions Debug](runbooks/mentions.md)** — Debug `@kodiai` / `@claude` mentions that don't produce replies
-- **[Formatter Suggestions](runbooks/formatter-suggestions.md)** — Configure and verify explicit `@kodiai format suggestions` same-PR review suggestions
+- **[Formatter Suggestions](runbooks/formatter-suggestions.md)** — Verify explicit same-PR formatter suggestions through the default `git-clang-format` path or a repo override
 - **[Review Requested Debug](runbooks/review-requested-debug.md)** — Debug manual re-request flows that don't trigger reviews
 - **[Scale](runbooks/scale.md)** — Handle large PRs, long threads, and timeout issues
 - **[Slack Integration](runbooks/slack-integration.md)** — Deploy and operate Slack integration
@@ -40,7 +40,7 @@ Test evidence and verification records in [`smoke/`](smoke/):
 - **[Phase 74: Reliability Regression Gate](smoke/phase74-reliability-regression-gate.md)** — Pre-release reliability gate for issue write-mode
 - **[Phase 75: Live OPS Verification Closure](smoke/phase75-live-ops-verification-closure.md)** — Release candidate OPS closure procedure
 - **[Phase 80: Slack Operator Hardening](smoke/phase80-slack-operator-hardening.md)** — Slack v1 channel gating and operator verification
-- **[M066 Formatter Suggestions Smoke Proof](smoke/m066-formatter-suggestions.md)** — Fillable proof record for same-PR formatter suggestions
+- **[M066 Formatter Suggestions Smoke Proof](smoke/m066-formatter-suggestions.md)** — Accepted proof record for same-PR formatter suggestions, including the default-command xbmc/xbmc validation
 - **[Slack Webhook Relay](smoke/slack-webhook-relay.md)** — Accepted, suppressed, and failed-delivery smoke path for webhook relay
 - **[xbmc/kodiai Write Flow](smoke/xbmc-kodiai-write-flow.md)** — End-to-end write-mode smoke test for xbmc/kodiai
 - **[xbmc/xbmc Write Flow](smoke/xbmc-xbmc-write-flow.md)** — End-to-end write-mode smoke test for xbmc/xbmc

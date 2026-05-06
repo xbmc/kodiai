@@ -294,7 +294,7 @@ Operator quick map:
 
 Explicit formatter-suggestion mentions have a dedicated operator runbook: [Formatter Suggestions](formatter-suggestions.md).
 
-Use it when a PR-scoped `@kodiai format suggestions` or `@kodiai review & format suggestions` request should publish same-PR Pull Request Review suggestions. The formatter path is explicit only: `review.formatterSuggestions.automatic` defaults to `false` and is reserved for later automatic-review inclusion.
+Use it when a PR-scoped `@kodiai format suggestions`, `@kodiai review format suggestions`, or `@kodiai review & format suggestions` request should publish same-PR Pull Request Review suggestions. The formatter path is explicit only: `review.formatterSuggestions.automatic` defaults to `false` and is reserved for later automatic-review inclusion. Explicit formatter requests use the default `git clang-format --diff origin/{baseRef} HEAD` command unless the repository overrides `review.formatterSuggestions.command`.
 
 Key proof fields to capture alongside the normal mention evidence:
 
