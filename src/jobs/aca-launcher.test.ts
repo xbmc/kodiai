@@ -241,6 +241,64 @@ describe("launchAcaJob", () => {
       }
     }
   });
+
+  test("retries a transient managed identity HTTP failure before starting the job", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+    const originalSleep = Bun.sleep;
+
+    const calls: string[] = [];
+    const logger = makeLogger();
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+    Bun.sleep = (async () => undefined) as typeof Bun.sleep;
+
+    globalThis.fetch = (async (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      calls.push(url);
+      if (url.startsWith("https://identity.example/token")) {
+        if (calls.filter((call) => call.startsWith("https://identity.example/token")).length === 1) {
+          return jsonResponse({ error: "transient identity failure" }, 503);
+        }
+        return jsonResponse({ access_token: "test-access-token" });
+      }
+      return jsonResponse({ name: "caj-kodiai-agent-abc123" });
+    }) as typeof fetch;
+
+    try {
+      const result = await launchAcaJob({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        spec: buildAcaJobSpec({
+          jobName: "caj-kodiai-agent",
+          image: "kodiairegistry.azurecr.io/kodiai-agent:latest",
+          workspaceDir: "/mnt/kodiai-workspaces/test-job",
+          mcpBearerToken: "test-token",
+          mcpBaseUrl: "http://ca-kodiai",
+        }),
+        logger: logger as unknown as Logger,
+      });
+
+      expect(result).toEqual({ executionName: "caj-kodiai-agent-abc123" });
+      expect(calls.filter((call) => call.startsWith("https://identity.example/token")).length).toBe(2);
+      expect(calls.some((call) => call.includes("/jobs/caj-kodiai-agent/start"))).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.sleep = originalSleep;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

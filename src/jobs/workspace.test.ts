@@ -236,12 +236,14 @@ describe("fetchAndCheckoutPullRequestHeadRef", () => {
       const featureSha = (await $`git -C ${headWorkDir} rev-parse HEAD`.quiet()).text().trim();
       await $`git -C ${headWorkDir} remote add head file://${headBareDir}`.quiet();
       await $`git -C ${headWorkDir} push head feature:feature`.quiet();
+      await $`git -C ${cloneDir} config url.file://${headBareDir}.insteadOf https://x-access-token:test-token@github.com/acme/head.git`.quiet();
 
       const result = await fetchAndCheckoutPullRequestHeadRef({
         dir: cloneDir,
         prNumber: 28271,
         localBranch: "pr-review",
-        fallbackRemoteUrl: `file://${headBareDir}`,
+        token: "test-token",
+        fallbackRemoteUrl: "https://github.com/acme/head.git",
         fallbackRef: "feature",
       });
 

@@ -116,12 +116,19 @@ async function fetchManagedIdentityToken(url: string, identityHeader: string): P
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await fetch(url, { headers: { "X-IDENTITY-HEADER": identityHeader } });
+      const response = await fetch(url, { headers: { "X-IDENTITY-HEADER": identityHeader } });
+      if (response.ok || response.status < 500 || response.status >= 600) {
+        return response;
+      }
+
+      const body = await response.text();
+      lastErr = new Error(`getAzureAccessToken: MSI endpoint returned ${response.status}: ${body.slice(0, 300)}`);
     } catch (err) {
       lastErr = err;
-      if (attempt === maxAttempts) break;
-      await Bun.sleep(100 * attempt);
     }
+
+    if (attempt === maxAttempts) break;
+    await Bun.sleep(100 * attempt);
   }
 
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));

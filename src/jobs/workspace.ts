@@ -588,7 +588,8 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
       throw err;
     }
 
-    await $`git -C ${dir} fetch ${fallbackRemoteUrl} ${fallbackRef}:${localBranch}`.quiet();
+    const fallbackFetchUrl = makeAuthUrl(fallbackRemoteUrl, token);
+    await $`git -C ${dir} fetch ${fallbackFetchUrl} ${fallbackRef}:${localBranch}`.quiet();
     await $`git -C ${dir} checkout ${localBranch}`.quiet();
     return { localBranch, source: "head-ref-fallback" };
   } catch (err) {
