@@ -28,11 +28,15 @@ test("createJobQueue passes structured run metadata to queued review callbacks",
   const releaseFirst = Promise.withResolvers<void>();
   let secondJobMetadata: JobQueueRunMetadata | undefined;
 
-  const firstJob = queue.enqueue(42, async () => {
-    firstStarted.resolve();
-    await releaseFirst.promise;
-    return "first";
-  });
+  const firstJob = queue.enqueue(
+    42,
+    async () => {
+      firstStarted.resolve();
+      await releaseFirst.promise;
+      return "first";
+    },
+    { lane: "review", key: "pr-42" },
+  );
 
   await firstStarted.promise;
 
@@ -96,6 +100,78 @@ test("createJobQueue lets interactive-review start while a review lane job is st
   await Promise.all([reviewJob, interactiveJob]);
 
   expect(interactiveStartedWhileReviewWasRunning).toBeTrue();
+});
+
+test("createJobQueue lets interactive-review jobs for different PR keys run concurrently", async () => {
+  const queue = createJobQueue(createNoopLogger());
+  const firstStarted = Promise.withResolvers<void>();
+  const releaseFirst = Promise.withResolvers<void>();
+  let secondStartedBeforeFirstRelease = false;
+
+  const firstJob = queue.enqueue(
+    42,
+    async () => {
+      firstStarted.resolve();
+      await releaseFirst.promise;
+      return "first";
+    },
+    { lane: "interactive-review", key: "acme/repo#1" },
+  );
+
+  await firstStarted.promise;
+
+  const secondJob = queue.enqueue(
+    42,
+    async () => {
+      secondStartedBeforeFirstRelease = true;
+      return "second";
+    },
+    { lane: "interactive-review", key: "acme/repo#2" },
+  );
+
+  await Bun.sleep(20);
+  const secondStartedWhileFirstWasRunning = secondStartedBeforeFirstRelease;
+  releaseFirst.resolve();
+
+  await Promise.all([firstJob, secondJob]);
+
+  expect(secondStartedWhileFirstWasRunning).toBeTrue();
+});
+
+test("createJobQueue still serializes interactive-review jobs for the same PR key", async () => {
+  const queue = createJobQueue(createNoopLogger());
+  const firstStarted = Promise.withResolvers<void>();
+  const releaseFirst = Promise.withResolvers<void>();
+  let secondStartedBeforeFirstRelease = false;
+
+  const firstJob = queue.enqueue(
+    42,
+    async () => {
+      firstStarted.resolve();
+      await releaseFirst.promise;
+      return "first";
+    },
+    { lane: "interactive-review", key: "acme/repo#1" },
+  );
+
+  await firstStarted.promise;
+
+  const secondJob = queue.enqueue(
+    42,
+    async () => {
+      secondStartedBeforeFirstRelease = true;
+      return "second";
+    },
+    { lane: "interactive-review", key: "acme/repo#1" },
+  );
+
+  await Bun.sleep(20);
+  const secondStartedWhileFirstWasRunning = secondStartedBeforeFirstRelease;
+  releaseFirst.resolve();
+
+  await Promise.all([firstJob, secondJob]);
+
+  expect(secondStartedWhileFirstWasRunning).toBeFalse();
 });
 
 test("createJobQueue updates active job snapshots when setPhase is called", async () => {
