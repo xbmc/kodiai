@@ -7,10 +7,36 @@ interface HealthRouteDeps {
   githubApp: GitHubApp;
   logger: Logger;
   sql: Sql;
+  readinessDependencyTimeoutMs?: number;
+}
+
+type GitHubConnectivityResult =
+  | { kind: "connected" }
+  | { kind: "unreachable" }
+  | { kind: "timeout" }
+  | { kind: "error"; err: unknown };
+
+async function checkGitHubConnectivityWithTimeout(
+  githubApp: GitHubApp,
+  timeoutMs: number,
+): Promise<GitHubConnectivityResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      githubApp.checkConnectivity()
+        .then((connected) => connected ? { kind: "connected" as const } : { kind: "unreachable" as const })
+        .catch((err) => ({ kind: "error" as const, err })),
+      new Promise<GitHubConnectivityResult>((resolve) => {
+        timeout = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 export function createHealthRoutes(deps: HealthRouteDeps): Hono {
-  const { githubApp, logger } = deps;
+  const { githubApp, logger, readinessDependencyTimeoutMs = 1_000 } = deps;
   const app = new Hono();
 
   // Liveness probe: process-only. Dependency checks belong in readiness/deep health
@@ -20,18 +46,49 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
   // Backward-compatible alias for /healthz during deploy transition.
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  // Readiness probe: checks GitHub API connectivity
+  // Readiness probe: process is ready to receive traffic. External dependency
+  // checks are bounded and fail open as degraded so transient GitHub latency does
+  // not remove healthy replicas from service.
   app.get("/readiness", async (c) => {
-    const connected = await githubApp.checkConnectivity();
-    if (connected) {
-      return c.json({ status: "ready" });
-    }
-
-    logger.warn("Readiness check failed: GitHub API unreachable");
-    return c.json(
-      { status: "not ready", reason: "GitHub API unreachable" },
-      503,
+    const githubConnectivity = await checkGitHubConnectivityWithTimeout(
+      githubApp,
+      readinessDependencyTimeoutMs,
     );
+
+    switch (githubConnectivity.kind) {
+      case "connected":
+        return c.json({ status: "ready" });
+      case "unreachable":
+        logger.warn(
+          { githubConnectivity: "degraded" },
+          "Readiness dependency degraded: GitHub API unreachable",
+        );
+        return c.json({
+          status: "ready",
+          github: "degraded",
+          reason: "GitHub API unreachable",
+        });
+      case "timeout":
+        logger.warn(
+          { githubConnectivity: "timeout", timeoutMs: readinessDependencyTimeoutMs },
+          "Readiness dependency degraded: GitHub API connectivity check timed out",
+        );
+        return c.json({
+          status: "ready",
+          github: "degraded",
+          reason: "GitHub API connectivity check timed out",
+        });
+      case "error":
+        logger.warn(
+          { err: githubConnectivity.err, githubConnectivity: "error" },
+          "Readiness dependency degraded: GitHub API connectivity check failed",
+        );
+        return c.json({
+          status: "ready",
+          github: "degraded",
+          reason: "GitHub API connectivity check failed",
+        });
+    }
   });
 
   return app;

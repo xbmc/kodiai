@@ -231,6 +231,6 @@ On the next startup, queued webhooks are replayed from the database, ensuring no
 | `POST /webhooks/github` | GitHub webhook receiver |
 | `POST /webhooks/slack/events` | Slack event receiver |
 | `POST /webhooks/slack/commands/*` | Slack slash command handlers |
-| `GET /healthz` | Health check (verifies DB connectivity) |
+| `GET /healthz` | Process-only liveness probe |
 | `GET /health` | Alias for `/healthz` |
-| `GET /readiness` | Readiness probe (verifies GitHub API access) |
+| `GET /readiness` | Readiness probe; GitHub connectivity is bounded and reported as degraded, not replica-fatal |

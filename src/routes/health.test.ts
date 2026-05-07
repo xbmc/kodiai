@@ -33,4 +33,53 @@ describe("createHealthRoutes", () => {
     expect(sql).not.toHaveBeenCalled();
     expect((githubApp.checkConnectivity as ReturnType<typeof mock>)).not.toHaveBeenCalled();
   });
+
+  test("/readiness stays ready when GitHub connectivity is transiently unavailable", async () => {
+    const logger = createMockLogger();
+    const sql = mock(async () => []) as unknown as Sql;
+    const githubApp = {
+      checkConnectivity: mock(async () => false),
+    } as unknown as GitHubApp;
+
+    const app = createHealthRoutes({ sql, githubApp, logger });
+    const response = await app.request("/readiness");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "ready",
+      github: "degraded",
+      reason: "GitHub API unreachable",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { githubConnectivity: "degraded" },
+      "Readiness dependency degraded: GitHub API unreachable",
+    );
+  });
+
+  test("/readiness has a bounded GitHub connectivity check", async () => {
+    const logger = createMockLogger();
+    const sql = mock(async () => []) as unknown as Sql;
+    const githubApp = {
+      checkConnectivity: mock(() => new Promise<boolean>(() => undefined)),
+    } as unknown as GitHubApp;
+
+    const app = createHealthRoutes({
+      sql,
+      githubApp,
+      logger,
+      readinessDependencyTimeoutMs: 1,
+    });
+    const response = await app.request("/readiness");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "ready",
+      github: "degraded",
+      reason: "GitHub API connectivity check timed out",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { githubConnectivity: "timeout", timeoutMs: 1 },
+      "Readiness dependency degraded: GitHub API connectivity check timed out",
+    );
+  });
 });
