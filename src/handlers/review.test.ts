@@ -10770,6 +10770,213 @@ describe("createReviewHandler timeout resilience", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("max-turns continuation publishes one final completed review instead of a bounded first-pass", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const checkpointState = new Map<string, {
+      partialCommentId?: number;
+      findingCount?: number;
+      filesReviewed?: string[];
+      summaryDraft?: string;
+      totalFiles?: number;
+    }>();
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const retryReviewOutputKey = `${reviewOutputKey}-retry-1`;
+    checkpointState.set(reviewOutputKey, {
+      findingCount: 0,
+      filesReviewed: ["README.md"],
+      summaryDraft: "Reviewed README before max-turns.",
+      totalFiles: 3,
+    });
+    checkpointState.set(retryReviewOutputKey, {
+      findingCount: 0,
+      filesReviewed: ["src/a.ts", "src/b.ts"],
+      summaryDraft: "Completed the remaining files without findings.",
+      totalFiles: 3,
+    });
+
+    let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
+    let nextCommentId = 610;
+    const issueComments = new Map<number, string>();
+    const { logger, entries } = createCaptureLogger();
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+          context?: { action?: string },
+        ) => {
+          if (context?.action === "review-retry") {
+            queuedRetryJob = fn as (metadata: JobQueueRunMetadata) => Promise<unknown>;
+            return undefined as T;
+          }
+          return fn(createQueueRunMetadata());
+        },
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+            },
+            issues: {
+              listComments: async () => ({
+                data: Array.from(issueComments.entries()).map(([id, body]) => ({ id, body })),
+              }),
+              createComment: async (params: { body: string }) => {
+                const id = nextCommentId++;
+                issueComments.set(id, params.body);
+                return { data: { id } };
+              },
+              updateComment: async (params: { comment_id: number; body: string }) => {
+                issueComments.set(params.comment_id, params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { eventType: string }) => {
+          if (context.eventType === "pull_request.review-retry") {
+            return {
+              conclusion: "success",
+              published: false,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-max-turns-retry-complete",
+              model: "test-model",
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              stopReason: "end_turn",
+            };
+          }
+          return {
+            conclusion: "failure",
+            published: false,
+            stopReason: "max_turns",
+            failureSubtype: "error_max_turns",
+            costUsd: 0,
+            numTurns: 25,
+            durationMs: 1,
+            sessionId: "session-max-turns-root-complete",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async (key: string) => {
+          const checkpoint = checkpointState.get(key);
+          if (!checkpoint || !checkpoint.filesReviewed || !checkpoint.summaryDraft || !checkpoint.totalFiles) {
+            return null;
+          }
+          return {
+            reviewOutputKey: key,
+            repo: "acme/repo",
+            prNumber: 101,
+            filesReviewed: checkpoint.filesReviewed,
+            findingCount: checkpoint.findingCount ?? 0,
+            summaryDraft: checkpoint.summaryDraft,
+            totalFiles: checkpoint.totalFiles,
+            partialCommentId: checkpoint.partialCommentId,
+          };
+        },
+        saveCheckpoint: async (checkpoint: {
+          reviewOutputKey: string;
+          partialCommentId?: number;
+          findingCount?: number;
+          filesReviewed?: string[];
+          summaryDraft?: string;
+          totalFiles?: number;
+        }) => {
+          checkpointState.set(checkpoint.reviewOutputKey, {
+            partialCommentId: checkpoint.partialCommentId,
+            findingCount: checkpoint.findingCount,
+            filesReviewed: checkpoint.filesReviewed,
+            summaryDraft: checkpoint.summaryDraft,
+            totalFiles: checkpoint.totalFiles,
+          });
+        },
+        deleteCheckpoint: (key: string) => {
+          checkpointState.delete(key);
+        },
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger,
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    expect(queuedRetryJob).toBeDefined();
+    expect(Array.from(issueComments.values()).join("\n")).not.toContain("Bounded first-pass review");
+    expect(Array.from(issueComments.values()).join("\n")).not.toContain("follow-up review is pending");
+
+    await queuedRetryJob!(createQueueRunMetadata());
+
+    expect(entries.some((entry) => entry.message === "Retry complete -- published final review comment with merged results")).toBeTrue();
+    const finalComment = Array.from(issueComments.values()).join("\n");
+    expect(finalComment).toContain("**Review complete**");
+    expect(finalComment).toContain("Coverage: 3 of 3 changed files reviewed.");
+    expect(finalComment).not.toContain("Bounded first-pass review");
+    expect(finalComment).not.toContain("follow-up review is pending");
+    expect(finalComment).not.toContain("- Bounded first-pass:");
+    expect(finalComment).toContain(buildReviewOutputMarker(reviewOutputKey));
+
+    await workspaceFixture.cleanup();
+  });
+
   test("retry merge updates the bounded comment and Review Details with merged coverage", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -16272,7 +16479,7 @@ describe("createReviewHandler bounded review disclosure", () => {
 
 
 describe("createReviewHandler failure fallback publication", () => {
-  test("publishes bounded first-pass output for max-turns when checkpoint evidence exists", async () => {
+  test("defers max-turns checkpoint evidence publicly while continuation is scheduled", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
@@ -16377,10 +16584,10 @@ describe("createReviewHandler failure fallback publication", () => {
       }),
     );
 
-    const boundedComment = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
-    expect(boundedComment).toBeDefined();
-    expect(boundedComment).toContain("stopped at max-turns after covering 1 of 3 files from checkpoint evidence");
-    expect(boundedComment).toContain("Found two issues before max-turns.");
+    const combinedBodies = createdCommentBodies.join("\n");
+    expect(combinedBodies).not.toContain("**Bounded first-pass review**");
+    expect(combinedBodies).not.toContain("stopped at max-turns");
+    expect(combinedBodies).not.toContain("follow-up review is pending");
 
     await workspaceFixture.cleanup();
   });
@@ -16596,9 +16803,9 @@ describe("createReviewHandler failure fallback publication", () => {
       }),
     );
 
-    const boundedComment = createdCommentBodies.find((body) => body.includes("**Bounded first-pass review**"));
-    expect(boundedComment).toBeDefined();
-    expect(boundedComment).toContain("Scheduling a reduced-scope retry.");
+    const combinedBodies = createdCommentBodies.join("\n");
+    expect(combinedBodies).not.toContain("**Bounded first-pass review**");
+    expect(combinedBodies).not.toContain("Scheduling a reduced-scope retry.");
     expect(queuedRetryJob).toBeDefined();
 
     const retryLog = entries.find((entry) => entry.message === "Enqueueing retry with reduced scope");
@@ -16608,7 +16815,7 @@ describe("createReviewHandler failure fallback publication", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("merges bounded first-pass Review Details into the max-turns fallback comment when checkpoint evidence exists", async () => {
+  test("does not publish bounded Review Details for max-turns while continuation is scheduled", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
@@ -16717,24 +16924,16 @@ describe("createReviewHandler failure fallback publication", () => {
       }),
     );
 
-    const boundedComment = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
-    const standaloneReviewDetails = Array.from(issueComments.values()).find((body) =>
-      body.includes("<summary>Review Details</summary>") && body !== boundedComment
-    );
-
-    expect(boundedComment).toBeDefined();
-    expect(boundedComment).toContain("stopped at max-turns after covering 1 of 3 files from checkpoint evidence");
-    expect(boundedComment).toContain("<summary>Review Details</summary>");
-    expect(boundedComment).toContain("- Bounded first-pass: max-turns via checkpoint evidence");
-    expect(boundedComment).toContain("- Covered scope: 1/3 changed files");
-    expect(boundedComment).toContain("- Remaining scope: 2/3 changed files");
-    expect(boundedComment).toContain("- Continuation state: follow-up review pending for remaining scope");
-    expect(standaloneReviewDetails).toBeUndefined();
+    const combinedBodies = Array.from(issueComments.values()).join("\n");
+    expect(combinedBodies).not.toContain("**Bounded first-pass review**");
+    expect(combinedBodies).not.toContain("stopped at max-turns");
+    expect(combinedBodies).not.toContain("<summary>Review Details</summary>");
+    expect(combinedBodies).not.toContain("- Bounded first-pass:");
 
     await workspaceFixture.cleanup();
   });
 
-  test("falls back to standalone Review Details when max-turns canonical comment rebuild fails", async () => {
+  test("does not fall back to standalone bounded Review Details while max-turns continuation is scheduled", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
@@ -16849,18 +17048,12 @@ describe("createReviewHandler failure fallback publication", () => {
       }),
     );
 
-    const boundedComment = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
-    const standaloneReviewDetails = Array.from(issueComments.values()).find((body) =>
-      body.includes("<summary>Review Details</summary>") && body !== boundedComment
-    );
-
-    expect(boundedComment).toBeDefined();
-    expect(boundedComment).not.toContain("<summary>Review Details</summary>");
-    expect(standaloneReviewDetails).toBeDefined();
-    expect(standaloneReviewDetails).toContain("<summary>Review Details</summary>");
+    const combinedBodies = Array.from(issueComments.values()).join("\n");
+    expect(combinedBodies).not.toContain("**Bounded first-pass review**");
+    expect(combinedBodies).not.toContain("<summary>Review Details</summary>");
     expect(
       entries.some((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "degraded-fallback"),
-    ).toBeTrue();
+    ).toBeFalse();
 
     await workspaceFixture.cleanup();
   });

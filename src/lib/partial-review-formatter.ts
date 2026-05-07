@@ -39,6 +39,37 @@ export function formatContinuationRevisionSummary(params: {
   return `Continuation revisions: ${formatFindingCount(counts.new, "new finding")}, ${formatFindingCount(counts.stillOpen, "still-open finding")}, and ${formatFindingCount(counts.resolved, "resolved or revised finding")}.`;
 }
 
+export function formatCompletedContinuationReviewComment(params: {
+  summaryDraft: string;
+  reviewOutputKey?: string;
+  totalFiles: number;
+  continuationRevisionCounts?: ContinuationRevisionCounts | null;
+}): string {
+  const lines: string[] = [];
+
+  lines.push(`> **Review complete** -- initial review reached the turn limit, then Kodiai automatically completed the remaining scope before publishing this summary.`);
+  lines.push("> ");
+  lines.push(`> Coverage: ${params.totalFiles} of ${params.totalFiles} changed files reviewed.`);
+
+  const continuationRevisionSummary = params.continuationRevisionCounts
+    ? formatContinuationRevisionSummary({ counts: params.continuationRevisionCounts })
+    : null;
+  if (continuationRevisionSummary) {
+    lines.push("> ");
+    lines.push(`> ${continuationRevisionSummary}`);
+  }
+
+  lines.push("");
+  lines.push(params.summaryDraft);
+
+  if (params.reviewOutputKey) {
+    lines.push("");
+    lines.push(buildReviewOutputMarker(params.reviewOutputKey));
+  }
+
+  return lines.join("\n");
+}
+
 export function formatPartialReviewComment(params: PartialReviewParams): string {
   const {
     summaryDraft,
