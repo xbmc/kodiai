@@ -280,6 +280,45 @@ function createCanonicalStateStore() {
   };
 }
 
+function createCheckpointBackedStore(
+  canonical: ReturnType<typeof createCanonicalStateStore>,
+  overrides: Record<string, unknown> = {},
+): KnowledgeStore {
+  const checkpoints = new Map<string, Record<string, unknown>>();
+  const defaultCheckpoint = (key: string) => ({
+    reviewOutputKey: key,
+    repo: `${FIXTURE_OWNER}/${FIXTURE_REPO}`,
+    prNumber: FIXTURE_PR_NUMBER,
+    filesReviewed: ["README.md"],
+    inspectedFiles: ["README.md"],
+    findingCount: 1,
+    summaryDraft: "Found one issue before timeout.",
+    totalFiles: 2,
+  });
+
+  return createKnowledgeStoreStub({
+    ...canonical.store,
+    getCheckpoint: async (key: string) => checkpoints.get(key) ?? defaultCheckpoint(key),
+    saveCheckpoint: async (checkpoint: Record<string, unknown>) => {
+      const key = String(checkpoint.reviewOutputKey ?? "");
+      if (key) {
+        checkpoints.set(key, { ...checkpoint });
+      }
+    },
+    updateCheckpointCommentId: async (key: string, partialCommentId: number) => {
+      checkpoints.set(key, {
+        ...defaultCheckpoint(key),
+        ...(checkpoints.get(key) ?? {}),
+        partialCommentId,
+      });
+    },
+    deleteCheckpoint: async (key: string) => {
+      checkpoints.delete(key);
+    },
+    ...overrides,
+  }) as KnowledgeStore;
+}
+
 function createDiffContext() {
   return {
     changedFiles: ["README.md", "src/a.ts"],
@@ -399,7 +438,7 @@ async function runRetryEnqueueFailureScenario(): Promise<ScenarioHarnessResult> 
       handlers,
       jobQueue,
       workspaceDir: workspaceFixture.dir,
-      knowledgeStore: canonical.store,
+      knowledgeStore: createCheckpointBackedStore(canonical),
       executor: {
         execute: async () => ({
           conclusion: "error",
@@ -466,7 +505,7 @@ async function runRetryExecutionFailureScenario(): Promise<ScenarioHarnessResult
       handlers,
       jobQueue,
       workspaceDir: workspaceFixture.dir,
-      knowledgeStore: canonical.store,
+      knowledgeStore: createCheckpointBackedStore(canonical),
       executor: {
         execute: async (context) => {
           if (context.eventType === "pull_request.review-retry") {
@@ -624,7 +663,7 @@ async function runSupersededStaleRetryScenario(): Promise<ScenarioHarnessResult>
       handlers,
       jobQueue,
       workspaceDir: workspaceFixture.dir,
-      knowledgeStore: canonical.store,
+      knowledgeStore: createCheckpointBackedStore(canonical),
       reviewWorkCoordinator: coordinator,
       executor: {
         execute: async (context) => {

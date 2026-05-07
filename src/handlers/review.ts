@@ -83,7 +83,7 @@ import {
   resolveReviewBoundedness,
   type ReviewBoundednessContract,
 } from "../lib/review-boundedness.ts";
-import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
+import { formatPartialReviewComment, formatCompletedContinuationReviewComment } from "../lib/partial-review-formatter.ts";
 import {
   normalizeReviewFirstPass,
   type ReviewFirstPassPayload,
@@ -1237,7 +1237,7 @@ type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffComm
 type DiffFallbackFile = PullRequestFileMetadata;
 
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
-const DIFF_COMMAND_TIMEOUT_MS = 15_000;
+const DIFF_COMMAND_TIMEOUT_MS = 30_000;
 const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
@@ -2484,6 +2484,8 @@ export function createReviewHandler(deps: {
             prNumber: pr.number,
             localBranch: "pr-review",
             token: workspace.token,
+            fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
+            fallbackRef: pr.head.ref,
           });
         }
 
@@ -5234,6 +5236,7 @@ export function createReviewHandler(deps: {
           let publishedPartialReview = false;
           let partialCommentId: number | undefined;
           let fallbackRetryState: string | undefined;
+          let deferredPublicOutputForContinuation = false;
 
           if (result.isTimeout || exhaustedTurnBudget) {
             // Step 1: Read checkpoint/progress data
@@ -5349,6 +5352,11 @@ export function createReviewHandler(deps: {
                       break;
                     case "zero-evidence-failure": {
                       retryState = "not scheduled (zero-evidence timeout)";
+                      if (knowledgeStore?.upsertContinuationFamilyState && !knowledgeStore.saveCheckpoint) {
+                        retrySummaryNote = "Retry not scheduled because the first pass produced no trustworthy evidence and checkpoint persistence is unavailable.";
+                        break;
+                      }
+
                       const retryRemoteRuntimeBudgetSeconds = Math.max(30, Math.floor(timeoutDuration / 2));
                       const retryScope = computeRetryScope({
                         allFiles: riskScores,
@@ -5414,7 +5422,14 @@ export function createReviewHandler(deps: {
             };
 
             const octokit = extractionOctokit;
-            if (timeoutFirstPass?.state === "bounded-first-pass" && canPublishVisibleOutput("bounded first-pass review")) {
+            deferredPublicOutputForContinuation = exhaustedTurnBudget
+              && retryPlan?.decision === "schedule-continuation"
+              && !hasPublishedInlines;
+            if (
+              timeoutFirstPass?.state === "bounded-first-pass"
+              && !deferredPublicOutputForContinuation
+              && canPublishVisibleOutput("bounded first-pass review")
+            ) {
               setReviewWorkPhase("publish");
               const partialBody = formatPartialReviewComment({
                 summaryDraft,
@@ -5679,6 +5694,20 @@ export function createReviewHandler(deps: {
                 "Enqueueing retry with reduced scope",
               );
 
+              if (timeoutFirstPass?.zeroEvidenceFailure && knowledgeStore?.saveCheckpoint) {
+                await knowledgeStore.saveCheckpoint({
+                  reviewOutputKey,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  filesReviewed: timeoutReviewedFiles,
+                  filesInspected: timeoutInspectedFiles,
+                  findingCount: timeoutFindingCount,
+                  summaryDraft,
+                  totalFiles: timeoutTotalFiles,
+                  partialCommentId,
+                });
+              }
+
               await persistContinuationFamilyState({
                 authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
                 authoritativeOutcome: "continuation-pending",
@@ -5708,6 +5737,8 @@ export function createReviewHandler(deps: {
                         prNumber: pr.number,
                         localBranch: "pr-review-retry-1",
                         token: retryWorkspace.token,
+                        fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
+                        fallbackRef: pr.head.ref,
                       });
                     }
 
@@ -6037,34 +6068,36 @@ export function createReviewHandler(deps: {
                           return;
                         }
 
-                        const mergedBody = formatPartialReviewComment({
-                          summaryDraft:
-                            settlementDecision.mergedCheckpoint.summaryDraft ||
-                            retryCheckpoint?.summaryDraft ||
-                            checkpoint?.summaryDraft ||
-                            "Review completed with reduced scope.",
-                          firstPass: mergedFirstPass,
-                          reviewOutputKey,
-                          timedOutAfterSeconds: timeoutDuration,
-                          isRetryResult: true,
-                          retryFilesReviewed,
-                          continuationRevisionCounts,
-                        });
+                        const summaryDraftForMerge =
+                          settlementDecision.mergedCheckpoint.summaryDraft ||
+                          retryCheckpoint?.summaryDraft ||
+                          checkpoint?.summaryDraft ||
+                          "Review completed with reduced scope.";
+                        const mergedReviewedFiles = settlementDecision.mergedCheckpoint.filesReviewed.length;
+                        const mergedTotalFiles = settlementDecision.mergedCheckpoint.totalFiles;
+                        const maxTurnsContinuationCompleted = timeoutFirstPass?.boundedReason === "max-turns"
+                          && mergedTotalFiles > 0
+                          && mergedReviewedFiles >= mergedTotalFiles;
+                        const mergedBody = maxTurnsContinuationCompleted
+                          ? formatCompletedContinuationReviewComment({
+                              summaryDraft: summaryDraftForMerge,
+                              reviewOutputKey,
+                              totalFiles: mergedTotalFiles,
+                              continuationRevisionCounts,
+                            })
+                          : formatPartialReviewComment({
+                              summaryDraft: summaryDraftForMerge,
+                              firstPass: mergedFirstPass,
+                              reviewOutputKey,
+                              timedOutAfterSeconds: timeoutDuration,
+                              isRetryResult: true,
+                              retryFilesReviewed,
+                              continuationRevisionCounts,
+                            });
 
                         const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
                         const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
                         const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
-
-                        if (!commentIdToUpdate) {
-                          await settleRetryWithoutCanonicalUpdate({
-                            attemptId: retryReviewWorkAttempt.attemptId,
-                            reviewOutputKey: retryReviewOutputKey,
-                            deliveryId: retryDeliveryId,
-                            reason: "missing-partial-comment-id",
-                            logMessage: "Retry settlement skipped because no partial comment ID was available",
-                          });
-                          return;
-                        }
 
                         if (canPublishReviewWorkOutput(
                           retryReviewWorkAttempt.attemptId,
@@ -6074,7 +6107,9 @@ export function createReviewHandler(deps: {
                           setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
 
                           let retryMergeProjectionStatus: ContinuationFamilyProjectionStatus = "canonical";
-                          let retryMergeLogMessage = "Retry complete -- updated partial review comment with merged results";
+                          let retryMergeLogMessage = commentIdToUpdate
+                            ? "Retry complete -- updated partial review comment with merged results"
+                            : "Retry complete -- published final review comment with merged results";
 
                           try {
                             const mergedBodyWithDetails = await upsertCanonicalReviewSurface({
@@ -6084,14 +6119,16 @@ export function createReviewHandler(deps: {
                               prNumber: pr.number,
                               reviewOutputKey,
                               preferredKind: "issue_comment",
-                              canonicalSurface: {
-                                kind: "issue_comment",
-                                commentId: commentIdToUpdate,
-                                body: mergedBody,
-                              },
+                              canonicalSurface: commentIdToUpdate
+                                ? {
+                                    kind: "issue_comment",
+                                    commentId: commentIdToUpdate,
+                                    body: mergedBody,
+                                  }
+                                : undefined,
                               summaryBody: mergedBody,
                               reviewDetailsBlock: buildReviewDetailsBody({
-                                reviewFirstPass: mergedFirstPass,
+                                reviewFirstPass: maxTurnsContinuationCompleted ? null : mergedFirstPass,
                               }),
                               botHandles: [githubApp.getAppSlug(), "claude"],
                               requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
@@ -6127,7 +6164,9 @@ export function createReviewHandler(deps: {
                             );
 
                             retryMergeProjectionStatus = "degraded";
-                            retryMergeLogMessage = "Retry complete -- updated partial review comment with merged results; Review Details published via degraded fallback comment";
+                            retryMergeLogMessage = commentIdToUpdate
+                              ? "Retry complete -- updated partial review comment with merged results; Review Details published via degraded fallback comment"
+                              : "Retry complete -- published final review comment with merged results; Review Details published via degraded fallback comment";
 
                             if (
                               canPublishReviewWorkOutput(
@@ -6144,7 +6183,7 @@ export function createReviewHandler(deps: {
                                   prNumber: pr.number,
                                   reviewOutputKey,
                                   body: buildReviewDetailsBody({
-                                    reviewFirstPass: mergedFirstPass,
+                                    reviewFirstPass: maxTurnsContinuationCompleted ? null : mergedFirstPass,
                                   }),
                                   botHandles: [githubApp.getAppSlug(), "claude"],
                                   recheckCanPublish: () =>
@@ -6325,7 +6364,7 @@ export function createReviewHandler(deps: {
           }
 
           let errorBody: string;
-          if (!publishedPartialReview) {
+          if (!publishedPartialReview && !deferredPublicOutputForContinuation) {
             if (exhaustedTurnBudget) {
               errorBody = [
                 "> **Kodiai ran out of steps while reviewing this PR**",

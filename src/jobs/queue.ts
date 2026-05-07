@@ -12,7 +12,7 @@ const DEFAULT_JOB_LANE: JobLane = "review";
 const QUEUED_PHASE = "queued";
 const RUNNING_PHASE = "running";
 
-type InstallationLaneQueues = Map<JobLane, PQueue>;
+type InstallationQueueScopes = Map<string, PQueue>;
 type InstallationActiveJobs = Map<string, JobSnapshot>;
 
 /**
@@ -24,28 +24,33 @@ type InstallationActiveJobs = Map<string, JobSnapshot>;
  * through completion so callers can inspect machine-readable queue state.
  */
 export function createJobQueue(logger: Logger): JobQueue {
-  const laneQueues = new Map<number, InstallationLaneQueues>();
+  const queueScopes = new Map<number, InstallationQueueScopes>();
   const activeJobs = new Map<number, InstallationActiveJobs>();
   let nextJobId = 1;
 
-  function getOrCreateInstallationQueues(installationId: number): InstallationLaneQueues {
-    let queues = laneQueues.get(installationId);
+  function getQueueScopeKey(lane: JobLane, key: string): string {
+    return `${lane}::${key}`;
+  }
+
+  function getOrCreateInstallationQueues(installationId: number): InstallationQueueScopes {
+    let queues = queueScopes.get(installationId);
     if (!queues) {
-      queues = new Map<JobLane, PQueue>();
-      laneQueues.set(installationId, queues);
+      queues = new Map<string, PQueue>();
+      queueScopes.set(installationId, queues);
     }
     return queues;
   }
 
-  function getOrCreateQueue(installationId: number, lane: JobLane): PQueue {
+  function getOrCreateQueue(installationId: number, lane: JobLane, key: string): PQueue {
     const queues = getOrCreateInstallationQueues(installationId);
-    let queue = queues.get(lane);
+    const queueScopeKey = getQueueScopeKey(lane, key);
+    let queue = queues.get(queueScopeKey);
     if (!queue) {
       queue = new PQueue({ concurrency: 1 });
-      queues.set(lane, queue);
+      queues.set(queueScopeKey, queue);
       logger.debug(
-        { installationId, lane },
-        "Created new job queue lane for installation",
+        { installationId, lane, key, queueScopeKey },
+        "Created new job queue scope for installation",
       );
     }
     return queue;
@@ -64,7 +69,7 @@ export function createJobQueue(logger: Logger): JobQueue {
     installationId: number,
     selector: (queue: PQueue) => number,
   ): number {
-    const queues = laneQueues.get(installationId);
+    const queues = queueScopes.get(installationId);
     if (!queues) {
       return 0;
     }
@@ -76,23 +81,24 @@ export function createJobQueue(logger: Logger): JobQueue {
     return total;
   }
 
-  function pruneLaneQueue(installationId: number, lane: JobLane): void {
-    const queues = laneQueues.get(installationId);
-    const queue = queues?.get(lane);
+  function pruneQueueScope(installationId: number, lane: JobLane, key: string): void {
+    const queues = queueScopes.get(installationId);
+    const queueScopeKey = getQueueScopeKey(lane, key);
+    const queue = queues?.get(queueScopeKey);
     if (!queues || !queue) {
       return;
     }
 
     if (queue.size === 0 && queue.pending === 0) {
-      queues.delete(lane);
+      queues.delete(queueScopeKey);
       logger.debug(
-        { installationId, lane },
-        "Pruned idle job queue lane for installation",
+        { installationId, lane, key, queueScopeKey },
+        "Pruned idle job queue scope for installation",
       );
     }
 
     if (queues.size === 0) {
-      laneQueues.delete(installationId);
+      queueScopes.delete(installationId);
     }
   }
 
@@ -137,9 +143,9 @@ export function createJobQueue(logger: Logger): JobQueue {
       context?: JobQueueContext,
     ): Promise<T> {
       const lane = context?.lane ?? DEFAULT_JOB_LANE;
-      const queue = getOrCreateQueue(installationId, lane);
       const jobId = `${installationId}-${nextJobId++}`;
       const key = context?.key ?? jobId;
+      const queue = getOrCreateQueue(installationId, lane, key);
       const queuedAtMs = Date.now();
       const snapshot = createSnapshot(
         installationId,
@@ -267,7 +273,7 @@ export function createJobQueue(logger: Logger): JobQueue {
         });
       } finally {
         deleteActiveJob(installationId, jobId);
-        pruneLaneQueue(installationId, lane);
+        pruneQueueScope(installationId, lane, key);
       }
     },
 

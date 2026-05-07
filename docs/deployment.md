@@ -152,12 +152,14 @@ This avoids webhook timeouts from cold starts and reduces concurrency surprises.
 
 Configured in the container app template:
 
-- Liveness: `GET /healthz`
-- Readiness: `GET /readiness`
-- Startup: `GET /healthz`
+- Liveness: `GET /healthz` (process-only)
+- Readiness: `GET /readiness` (fail-open degraded GitHub connectivity sample)
+- Startup: `GET /healthz` (process-only)
 
 Important:
 
+- Do not make liveness depend on PostgreSQL, GitHub, or any other external service. ACA uses liveness failures to restart replicas.
+- Readiness may report `github: "degraded"` while still returning HTTP 200; treat that as an operator warning, not an instruction to remove the replica from service.
 - Existing app updates must render the full container app template in one YAML payload.
 - Partial YAML updates that only add a volume mount can wipe env vars or probes from the next revision.
 - In single-revision mode, a stripped revision can become active immediately and fail startup with missing env vars.

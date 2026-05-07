@@ -63,7 +63,15 @@ Webhooks arriving during the drain period are queued to PostgreSQL and replayed 
 
 ```bash
 curl -s https://<FQDN>/healthz | jq .
-# Expected: { "status": "ok", "db": "connected" }
+# Expected: { "status": "ok" }
+```
+
+Optional dependency sample:
+
+```bash
+curl -s https://<FQDN>/readiness | jq .
+# Expected when dependencies are healthy: { "status": "ready" }
+# GitHub transients may return: { "status": "ready", "github": "degraded", "reason": "..." }
 ```
 
 2. Check container logs for the startup summary:
@@ -107,15 +115,25 @@ UPDATE webhook_queue SET status = 'pending' WHERE status = 'processing';
 
 ### Health check failing after deploy
 
-**Symptom:** `/healthz` returns 503 with `{ "status": "unhealthy", "db": "unreachable" }`.
+**Symptom:** `/healthz` fails to return HTTP 200 with `{ "status": "ok" }`.
 
-**Cause:** PostgreSQL connection is not working.
+**Cause:** The app process is not accepting HTTP requests. `/healthz` is intentionally process-only; PostgreSQL and GitHub dependency latency should not make ACA restart a healthy process.
 
 **Resolution:**
-- Verify the production `DATABASE_URL` secret ref resolves correctly for the running app revision
-- Check PostgreSQL server is running and accessible from the container network
-- Check connection pool limits (max 10 connections configured)
-- Review container logs for PostgreSQL connection errors at startup
+- Check the active revision and replica status in Azure Container Apps
+- Review container logs for startup crashes, port binding failures, or process exits
+- If `/healthz` is healthy but review processing fails, inspect runtime logs and dependency-specific errors instead of treating liveness as a database probe
+
+### Readiness dependency degradation
+
+**Symptom:** `/readiness` returns HTTP 200 with `{ "status": "ready", "github": "degraded", ... }`.
+
+**Cause:** The process is ready to receive traffic, but the bounded GitHub connectivity sample failed or timed out.
+
+**Resolution:**
+- Treat this as an operational warning, not an ACA replica-fatal readiness failure
+- Check GitHub API reachability and app-auth logs if review handling also reports GitHub errors
+- Re-check `/readiness`; transient dependency degradation should clear without restarting the process
 
 ### Rollback to previous revision
 
@@ -157,7 +175,8 @@ See the deployment guide for the full production secret contract and the app sec
 | `Webhook queued to PostgreSQL for drain-time replay` | Webhook saved during shutdown |
 | `Dequeued pending webhooks for replay` | Startup found queued webhooks |
 | `Startup webhook queue replay complete` | All queued webhooks processed |
-| `Health check failed: PostgreSQL unreachable` | DB connection issue on liveness probe |
+| `Readiness dependency degraded: GitHub API unreachable` | GitHub connectivity sample failed but readiness stayed fail-open |
+| `Readiness dependency degraded: GitHub API connectivity check timed out` | GitHub connectivity sample exceeded the readiness dependency timeout |
 
 ### Exit Codes
 
@@ -170,6 +189,6 @@ See the deployment guide for the full production secret contract and the app sec
 
 | Endpoint | Type | What it checks |
 |----------|------|----------------|
-| `/healthz` | Liveness | Process up + PostgreSQL `SELECT 1` |
-| `/readiness` | Readiness | GitHub API connectivity |
+| `/healthz` | Liveness | Process is accepting HTTP requests |
+| `/readiness` | Readiness | Process is ready; bounded GitHub sample may be reported as degraded without failing readiness |
 | `/health` | Alias | Same as `/healthz` (backward compatibility) |

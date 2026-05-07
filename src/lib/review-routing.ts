@@ -2,7 +2,6 @@ import { TASK_TYPES } from "../llm/task-types.ts";
 
 export const SMALL_DIFF_MAX_FILES = 2;
 export const SMALL_DIFF_MAX_LINES = 20;
-export const SMALL_DIFF_MAX_TURNS = 8;
 export const MEDIUM_RISK_REVIEW_MAX_TURNS = 50;
 export const HIGH_RISK_REVIEW_MAX_TURNS = 75;
 export const SEMANTIC_FANOUT_REVIEW_MAX_TURNS = MEDIUM_RISK_REVIEW_MAX_TURNS;
@@ -65,7 +64,6 @@ export function resolveReviewTaskRouting(params: {
     return {
       taskType: TASK_TYPES.REVIEW_SMALL_DIFF,
       routingReason: "tiny-diff",
-      maxTurnsOverride: SMALL_DIFF_MAX_TURNS,
     };
   }
 

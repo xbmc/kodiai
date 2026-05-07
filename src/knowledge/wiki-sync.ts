@@ -46,13 +46,17 @@ type RecentChangesResponse = {
 };
 
 type ParseResponse = {
-  parse: {
-    title: string;
-    pageid: number;
-    revid: number;
-    text: {
-      "*": string;
+  parse?: {
+    title?: string;
+    pageid?: number;
+    revid?: number;
+    text?: {
+      "*"?: string;
     };
+  };
+  error?: {
+    code?: string;
+    info?: string;
   };
 };
 
@@ -186,6 +190,24 @@ async function runSync(opts: {
           parseData = (await parseResponse.json()) as ParseResponse;
         } catch (err) {
           logger.warn({ pageId: change.pageid, err }, "Wiki sync parse network error, skipping page");
+          await sleep(delayMs);
+          continue;
+        }
+
+        if (
+          typeof parseData.parse?.title !== "string"
+          || typeof parseData.parse?.revid !== "number"
+          || typeof parseData.parse?.text?.["*"] !== "string"
+        ) {
+          logger.warn(
+            {
+              pageId: change.pageid,
+              reason: "malformed-parse-response",
+              errorCode: parseData.error?.code,
+              errorInfo: parseData.error?.info,
+            },
+            "Wiki sync parse response malformed, skipping page",
+          );
           await sleep(delayMs);
           continue;
         }
