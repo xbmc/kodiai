@@ -4954,6 +4954,36 @@ describe("createReviewHandler diff collection resilience", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("uses a production-safe default timeout for merge-base recovery fetches", async () => {
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
+    const { logger } = createCaptureLogger();
+    const observedTimeouts: number[] = [];
+
+    try {
+      await collectDiffContext({
+        workspaceDir: workspaceFixture.dir,
+        baseRef: "main",
+        maxFilesForFullDiff: 200,
+        logger,
+        baseLog: { deliveryId: "delivery-123", prNumber: 101 },
+        runGitCommand: async (_args, timeoutMs) => {
+          observedTimeouts.push(timeoutMs);
+          return {
+            exitCode: 124,
+            stdout: "",
+            stderr: "timed out",
+            timedOut: true,
+          };
+        },
+        fallbackFileProvider: async () => ["src/api/phase27-uat-example.ts"],
+      });
+
+      expect(observedTimeouts.at(0)).toBe(30_000);
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  });
+
   test("degrades to GitHub file list when merge-base recovery times out", async () => {
     const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
     const { logger, entries } = createCaptureLogger();

@@ -1237,7 +1237,7 @@ type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffComm
 type DiffFallbackFile = PullRequestFileMetadata;
 
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
-const DIFF_COMMAND_TIMEOUT_MS = 15_000;
+const DIFF_COMMAND_TIMEOUT_MS = 30_000;
 const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
