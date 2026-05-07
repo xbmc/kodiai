@@ -709,6 +709,7 @@ ${BOT_USER_ENV_YAML}
             httpGet:
               path: /healthz
               port: 3000
+            timeoutSeconds: 3
             initialDelaySeconds: 5
             periodSeconds: 30
             failureThreshold: 3
@@ -716,6 +717,7 @@ ${BOT_USER_ENV_YAML}
             httpGet:
               path: /readiness
               port: 3000
+            timeoutSeconds: 5
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
@@ -723,6 +725,7 @@ ${BOT_USER_ENV_YAML}
             httpGet:
               path: /healthz
               port: 3000
+            timeoutSeconds: 3
             initialDelaySeconds: 3
             periodSeconds: 5
             failureThreshold: 40
@@ -826,6 +829,7 @@ ${BOT_USER_ENV_YAML}
             httpGet:
               path: /healthz
               port: 3000
+            timeoutSeconds: 3
             initialDelaySeconds: 5
             periodSeconds: 30
             failureThreshold: 3
@@ -833,6 +837,7 @@ ${BOT_USER_ENV_YAML}
             httpGet:
               path: /readiness
               port: 3000
+            timeoutSeconds: 5
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
@@ -840,6 +845,7 @@ ${BOT_USER_ENV_YAML}
             httpGet:
               path: /healthz
               port: 3000
+            timeoutSeconds: 3
             initialDelaySeconds: 3
             periodSeconds: 5
             failureThreshold: 40

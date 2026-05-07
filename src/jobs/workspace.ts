@@ -560,24 +560,41 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
   remote?: string;
   localBranch?: string;
   token?: string;
-}): Promise<{ localBranch: string }> {
-  const { dir, prNumber, remote = "origin", localBranch = "pr-review", token } = options;
+  fallbackRemoteUrl?: string;
+  fallbackRef?: string;
+}): Promise<{ localBranch: string; source: "pull-ref" | "head-ref-fallback" }> {
+  const { dir, prNumber, remote = "origin", localBranch = "pr-review", token, fallbackRemoteUrl, fallbackRef } = options;
 
   validatePullRequestNumber(prNumber);
   validateBranchName(localBranch);
+  if (fallbackRef) validateBranchName(fallbackRef);
 
   try {
     // Construct the auth URL inline; never stored — used for this fetch only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const fetchUrl = makeAuthUrl(strippedUrl, token);
-    await $`git -C ${dir} fetch ${fetchUrl} pull/${prNumber}/head:${localBranch}`.quiet();
+    const primaryFetch = await $`git -C ${dir} fetch ${fetchUrl} pull/${prNumber}/head:${localBranch}`.quiet().nothrow();
+    if (primaryFetch.exitCode === 0) {
+      await $`git -C ${dir} checkout ${localBranch}`.quiet();
+      return { localBranch, source: "pull-ref" };
+    }
+
+    const stderr = primaryFetch.stderr.toString();
+    const missingPullRef = stderr.includes(`couldn't find remote ref pull/${prNumber}/head`)
+      || stderr.includes(`couldn't find remote ref refs/pull/${prNumber}/head`);
+    if (!missingPullRef || !fallbackRemoteUrl || !fallbackRef) {
+      const err = new Error(`git fetch pull/${prNumber}/head failed: ${stderr.trim()}`);
+      redactTokenFromError(err, token);
+      throw err;
+    }
+
+    await $`git -C ${dir} fetch ${fallbackRemoteUrl} ${fallbackRef}:${localBranch}`.quiet();
     await $`git -C ${dir} checkout ${localBranch}`.quiet();
+    return { localBranch, source: "head-ref-fallback" };
   } catch (err) {
     redactTokenFromError(err, token);
     throw err;
   }
-
-  return { localBranch };
 }
 
 const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour

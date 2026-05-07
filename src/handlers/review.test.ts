@@ -17209,6 +17209,7 @@ describe("createReviewHandler canonical continuation-family state", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: createKnowledgeStoreStub({
+        saveCheckpoint: async () => undefined,
         upsertContinuationFamilyState: async (record: Record<string, unknown>) => {
           canonicalWrites.push(record);
         },
@@ -17246,7 +17247,7 @@ describe("createReviewHandler canonical continuation-family state", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("settles retry canonical state when the base checkpoint is missing during retry completion", async () => {
+  test("does not enqueue a retry when the base run has no checkpoint or evidence", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const canonicalWrites: Array<Record<string, unknown>> = [];
@@ -17368,15 +17369,14 @@ describe("createReviewHandler canonical continuation-family state", () => {
       }),
     );
 
-    expect(queuedRetryJob).toBeDefined();
-    await queuedRetryJob!(createQueueRunMetadata());
+    expect(queuedRetryJob).toBeUndefined();
 
     expect(canonicalWrites.at(-1)).toMatchObject({
       familyKey: buildReviewFamilyKey("acme", "repo", 101),
-      authoritativeAttemptId: "review-work-2",
-      authoritativeAttemptOrdinal: 2,
-      authoritativeOutcome: "quiet-settled",
-      finalStopReason: "settled-without-update",
+      authoritativeAttemptId: "review-work-1",
+      authoritativeAttemptOrdinal: 1,
+      authoritativeOutcome: "blocked",
+      finalStopReason: "no-follow-up",
       projectionStatus: "canonical",
       supersededByAttemptId: null,
     });
@@ -17958,6 +17958,7 @@ describe("createReviewHandler canonical continuation-family state", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: createKnowledgeStoreStub({
+        saveCheckpoint: async () => undefined,
         upsertContinuationFamilyState: async (record: Record<string, unknown>) => {
           canonicalWrites.push(record);
         },
@@ -18212,6 +18213,7 @@ describe("createReviewHandler canonical continuation-family state", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: createKnowledgeStoreStub({
+        saveCheckpoint: async () => undefined,
         upsertContinuationFamilyState: async (record: Record<string, unknown>) => {
           canonicalWrites.push(record);
         },

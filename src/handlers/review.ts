@@ -2484,6 +2484,8 @@ export function createReviewHandler(deps: {
             prNumber: pr.number,
             localBranch: "pr-review",
             token: workspace.token,
+            fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
+            fallbackRef: pr.head.ref,
           });
         }
 
@@ -5349,6 +5351,11 @@ export function createReviewHandler(deps: {
                       break;
                     case "zero-evidence-failure": {
                       retryState = "not scheduled (zero-evidence timeout)";
+                      if (knowledgeStore?.upsertContinuationFamilyState && !knowledgeStore.saveCheckpoint) {
+                        retrySummaryNote = "Retry not scheduled because the first pass produced no trustworthy evidence and checkpoint persistence is unavailable.";
+                        break;
+                      }
+
                       const retryRemoteRuntimeBudgetSeconds = Math.max(30, Math.floor(timeoutDuration / 2));
                       const retryScope = computeRetryScope({
                         allFiles: riskScores,
@@ -5679,6 +5686,20 @@ export function createReviewHandler(deps: {
                 "Enqueueing retry with reduced scope",
               );
 
+              if (timeoutFirstPass?.zeroEvidenceFailure && knowledgeStore?.saveCheckpoint) {
+                await knowledgeStore.saveCheckpoint({
+                  reviewOutputKey,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  filesReviewed: timeoutReviewedFiles,
+                  filesInspected: timeoutInspectedFiles,
+                  findingCount: timeoutFindingCount,
+                  summaryDraft,
+                  totalFiles: timeoutTotalFiles,
+                  partialCommentId,
+                });
+              }
+
               await persistContinuationFamilyState({
                 authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
                 authoritativeOutcome: "continuation-pending",
@@ -5708,6 +5729,8 @@ export function createReviewHandler(deps: {
                         prNumber: pr.number,
                         localBranch: "pr-review-retry-1",
                         token: retryWorkspace.token,
+                        fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
+                        fallbackRef: pr.head.ref,
                       });
                     }
 

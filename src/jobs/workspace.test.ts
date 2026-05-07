@@ -10,6 +10,7 @@ import {
   buildAuthFetchUrl,
   createWorkspaceManager,
   fetchRemoteTrackingBranch,
+  fetchAndCheckoutPullRequestHeadRef,
 } from "./workspace.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 
@@ -212,6 +213,46 @@ async function setupBareAndClone(bareDir: string, cloneDir: string): Promise<str
     await rm(srcDir, { recursive: true, force: true });
   }
 }
+
+describe("fetchAndCheckoutPullRequestHeadRef", () => {
+  test("falls back to the PR head repository ref when the base pull ref is missing", async () => {
+    const tmpBase = await mkdtemp(join(tmpdir(), "kodiai-workspace-test-"));
+    const baseBareDir = join(tmpBase, "base.git");
+    const headBareDir = join(tmpBase, "head.git");
+    const cloneDir = join(tmpBase, "clone");
+
+    try {
+      await setupBareAndClone(baseBareDir, cloneDir);
+      await $`git init --bare ${headBareDir}`.quiet();
+
+      const headWorkDir = join(tmpBase, "head-work");
+      await $`git clone file://${baseBareDir} ${headWorkDir}`.quiet();
+      await $`git -C ${headWorkDir} checkout -B feature`.quiet();
+      await $`git -C ${headWorkDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${headWorkDir} config user.name "Test"`.quiet();
+      await writeFile(join(headWorkDir, "README.md"), "fallback head ref\n");
+      await $`git -C ${headWorkDir} add README.md`.quiet();
+      await $`git -C ${headWorkDir} commit -m "feature"`.quiet();
+      const featureSha = (await $`git -C ${headWorkDir} rev-parse HEAD`.quiet()).text().trim();
+      await $`git -C ${headWorkDir} remote add head file://${headBareDir}`.quiet();
+      await $`git -C ${headWorkDir} push head feature:feature`.quiet();
+
+      const result = await fetchAndCheckoutPullRequestHeadRef({
+        dir: cloneDir,
+        prNumber: 28271,
+        localBranch: "pr-review",
+        fallbackRemoteUrl: `file://${headBareDir}`,
+        fallbackRef: "feature",
+      });
+
+      expect(result).toEqual({ localBranch: "pr-review", source: "head-ref-fallback" });
+      const checkedOutSha = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+      expect(checkedOutSha).toBe(featureSha);
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // buildAuthFetchUrl tests

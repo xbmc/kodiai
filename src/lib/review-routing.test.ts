@@ -7,7 +7,6 @@ import {
   resolveReviewTaskRouting,
   resolveReviewMaxTurnsOverride,
   SEMANTIC_FANOUT_REVIEW_MAX_TURNS,
-  SMALL_DIFF_MAX_TURNS,
   HIGH_RISK_REVIEW_MAX_TURNS,
   MEDIUM_RISK_REVIEW_MAX_TURNS,
 } from "./review-routing.ts";
@@ -47,11 +46,10 @@ describe("review-routing", () => {
     })).toBe(false);
   });
 
-  test("resolves tiny diffs to review.small-diff with an eight-turn override", () => {
+  test("resolves tiny diffs to review.small-diff without lowering the repo turn budget", () => {
     expect(resolveReviewTaskRouting({ changedFileCount: 1, linesChanged: 2 })).toEqual({
       taskType: TASK_TYPES.REVIEW_SMALL_DIFF,
       routingReason: "tiny-diff",
-      maxTurnsOverride: SMALL_DIFF_MAX_TURNS,
     });
   });
 
@@ -62,13 +60,12 @@ describe("review-routing", () => {
     });
   });
 
-  test("keeps small-diff turn override ahead of risk scaling", () => {
+  test("does not apply risk scaling to small-diff reviews without an explicit routing override", () => {
     expect(resolveReviewMaxTurnsOverride({
       taskType: TASK_TYPES.REVIEW_SMALL_DIFF,
-      routingMaxTurnsOverride: SMALL_DIFF_MAX_TURNS,
       timeoutRiskLevel: "high",
       baseMaxTurns: 25,
-    })).toBe(SMALL_DIFF_MAX_TURNS);
+    })).toBeUndefined();
   });
 
   test("raises standard full-review turn budget for medium and high timeout risk", () => {

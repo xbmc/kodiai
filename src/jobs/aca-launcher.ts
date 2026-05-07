@@ -110,6 +110,23 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
 // Job dispatch
 // ---------------------------------------------------------------------------
 
+async function fetchManagedIdentityToken(url: string, identityHeader: string): Promise<Response> {
+  const maxAttempts = 3;
+  let lastErr: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fetch(url, { headers: { "X-IDENTITY-HEADER": identityHeader } });
+    } catch (err) {
+      lastErr = err;
+      if (attempt === maxAttempts) break;
+      await Bun.sleep(100 * attempt);
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
 /**
  * Get an Azure management API access token.
  *
@@ -129,7 +146,7 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
 
   if (identityEndpoint && identityHeader) {
     const url = `${identityEndpoint}?resource=https://management.azure.com/&api-version=2019-08-01&client_id=${clientId}`;
-    const resp = await fetch(url, { headers: { "X-IDENTITY-HEADER": identityHeader } });
+    const resp = await fetchManagedIdentityToken(url, identityHeader);
     const body = await resp.text();
     if (!resp.ok) {
       throw new Error(`getAzureAccessToken: MSI endpoint returned ${resp.status}: ${body.slice(0, 300)}`);

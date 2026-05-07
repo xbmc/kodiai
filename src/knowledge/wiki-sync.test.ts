@@ -141,6 +141,43 @@ describe("createWikiSyncScheduler", () => {
     expect(store.updateSyncState).toHaveBeenCalled();
   });
 
+  test("skips malformed successful parse payloads without treating them as updated pages", async () => {
+    const store = createMockStore();
+    const logger = createMockLogger();
+
+    const fetchFn = mockFetch(async (url: string) => {
+      if (url.includes("list=recentchanges")) {
+        return new Response(JSON.stringify(buildRCResponse([
+          { pageid: 0, title: "BadPage", revid: 200 },
+        ])));
+      }
+      if (url.includes("action=parse")) {
+        return new Response(JSON.stringify({ error: { code: "missingtitle", info: "Bad title" } }));
+      }
+      return new Response("", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const scheduler = createWikiSyncScheduler({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "kodi.wiki",
+      delayMs: 0,
+      logger,
+      fetchFn,
+    });
+
+    const result = await scheduler.syncNow();
+
+    expect(result.pagesChecked).toBe(1);
+    expect(result.pagesUpdated).toBe(0);
+    expect(result.pagesDeleted).toBe(0);
+    expect(store.replacePageChunks).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ pageId: 0, reason: "malformed-parse-response" }),
+      "Wiki sync parse response malformed, skipping page",
+    );
+  });
+
   test("soft-deletes pages that become redirects", async () => {
     const store = createMockStore();
     // Page existed before (has a revision)

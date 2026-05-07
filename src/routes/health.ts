@@ -10,30 +10,15 @@ interface HealthRouteDeps {
 }
 
 export function createHealthRoutes(deps: HealthRouteDeps): Hono {
-  const { githubApp, logger, sql } = deps;
+  const { githubApp, logger } = deps;
   const app = new Hono();
 
-  // Liveness probe: checks process is up AND PostgreSQL connection pool is healthy
-  app.get("/healthz", async (c) => {
-    try {
-      await sql`SELECT 1`;
-      return c.json({ status: "ok", db: "connected" });
-    } catch (err) {
-      logger.warn({ err }, "Health check failed: PostgreSQL unreachable");
-      return c.json({ status: "unhealthy", db: "unreachable" }, 503);
-    }
-  });
+  // Liveness probe: process-only. Dependency checks belong in readiness/deep health
+  // so transient PostgreSQL or GitHub latency does not make ACA restart a healthy process.
+  app.get("/healthz", (c) => c.json({ status: "ok" }));
 
-  // Backward-compatible alias for /healthz during deploy transition
-  app.get("/health", async (c) => {
-    try {
-      await sql`SELECT 1`;
-      return c.json({ status: "ok", db: "connected" });
-    } catch (err) {
-      logger.warn({ err }, "Health check failed: PostgreSQL unreachable");
-      return c.json({ status: "unhealthy", db: "unreachable" }, 503);
-    }
-  });
+  // Backward-compatible alias for /healthz during deploy transition.
+  app.get("/health", (c) => c.json({ status: "ok" }));
 
   // Readiness probe: checks GitHub API connectivity
   app.get("/readiness", async (c) => {
