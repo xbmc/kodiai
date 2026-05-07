@@ -10669,7 +10669,7 @@ describe("createMentionHandler review command", () => {
     expect(capturedPrompt).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
     expect(capturedPrompt).toContain("## Tiny-diff scope contract");
     expect(capturedPrompt).not.toContain("You MUST post a reply when you are mentioned.");
-    expect(capturedMaxTurnsOverride).toBe(8);
+    expect(capturedMaxTurnsOverride).toBeUndefined();
     expect(capturedEnableInlineTools).toBe(true);
 
     await workspaceFixture.cleanup();
@@ -11054,7 +11054,7 @@ describe("createMentionHandler review command", () => {
     expect(capturedReviewOutputKey).toBeDefined();
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedTriggerBody).toBe("please retry review");
-    expect(capturedMaxTurnsOverride).toBe(8);
+    expect(capturedMaxTurnsOverride).toBeUndefined();
 
     await workspaceFixture.cleanup();
   });
