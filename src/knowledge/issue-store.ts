@@ -22,6 +22,18 @@ function float32ArrayToVectorString(arr: Float32Array): string {
   return `[${parts.join(",")}]`;
 }
 
+export function sanitizePostgresText(value: string): string {
+  return value.includes("\u0000") ? value.replace(/\u0000/g, "") : value;
+}
+
+function sanitizeNullablePostgresText(value: string | null): string | null {
+  return value === null ? null : sanitizePostgresText(value);
+}
+
+function sanitizePostgresTextArray(values: string[]): string[] {
+  return values.map((value) => sanitizePostgresText(value));
+}
+
 type IssueRow = {
   id: number;
   created_at: string;
@@ -186,6 +198,7 @@ export function createIssueStore(opts: {
         ? float32ArrayToVectorString(issue.embedding)
         : null;
       const embeddingModel = issue.embedding ? "voyage-4" : null;
+      const assigneesJson = sanitizePostgresText(JSON.stringify(issue.assignees));
 
       await sql`
         INSERT INTO issues (
@@ -197,10 +210,10 @@ export function createIssueStore(opts: {
           embedding, embedding_model,
           github_created_at, github_updated_at, closed_at
         ) VALUES (
-          ${issue.repo}, ${issue.owner}, ${issue.issueNumber}, ${issue.title}, ${issue.body},
-          ${issue.state}, ${issue.authorLogin}, ${issue.authorAssociation ?? null},
-          ${issue.labelNames}, ${issue.templateSlug ?? null}, ${issue.commentCount},
-          ${JSON.stringify(issue.assignees)}, ${issue.milestone ?? null}, ${issue.reactionCount},
+          ${sanitizePostgresText(issue.repo)}, ${sanitizePostgresText(issue.owner)}, ${issue.issueNumber}, ${sanitizePostgresText(issue.title)}, ${sanitizeNullablePostgresText(issue.body)},
+          ${sanitizePostgresText(issue.state)}, ${sanitizePostgresText(issue.authorLogin)}, ${sanitizeNullablePostgresText(issue.authorAssociation)},
+          ${sanitizePostgresTextArray(issue.labelNames)}, ${sanitizeNullablePostgresText(issue.templateSlug)}, ${issue.commentCount},
+          ${assigneesJson}, ${sanitizeNullablePostgresText(issue.milestone)}, ${issue.reactionCount},
           ${issue.isPullRequest}, ${issue.locked},
           ${embeddingValue}::vector, ${embeddingModel},
           ${issue.githubCreatedAt}, ${issue.githubUpdatedAt ?? null}, ${issue.closedAt ?? null}
@@ -351,8 +364,8 @@ export function createIssueStore(opts: {
           embedding, embedding_model,
           github_created_at, github_updated_at
         ) VALUES (
-          ${comment.repo}, ${comment.issueNumber}, ${comment.commentGithubId},
-          ${comment.authorLogin}, ${comment.authorAssociation ?? null}, ${comment.body},
+          ${sanitizePostgresText(comment.repo)}, ${comment.issueNumber}, ${comment.commentGithubId},
+          ${sanitizePostgresText(comment.authorLogin)}, ${sanitizeNullablePostgresText(comment.authorAssociation)}, ${sanitizeNullablePostgresText(comment.body)},
           ${embeddingValue}::vector, ${embeddingModel},
           ${comment.githubCreatedAt}, ${comment.githubUpdatedAt ?? null}
         )

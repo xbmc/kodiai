@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { createIssueStore } from "./issue-store.ts";
+import { createIssueStore, sanitizePostgresText } from "./issue-store.ts";
 import { createDbClient, type Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import type { IssueStore, IssueInput, IssueCommentInput } from "./issue-types.ts";
@@ -69,6 +69,16 @@ function makeEmbedding(seed: number = 42): Float32Array {
 }
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
+
+describe("sanitizePostgresText", () => {
+  test("removes NUL bytes while preserving surrounding content", () => {
+    expect(sanitizePostgresText("before\u0000middle\u0000after")).toBe("beforemiddleafter");
+  });
+
+  test("returns unchanged text when no NUL byte is present", () => {
+    expect(sanitizePostgresText("plain issue body")).toBe("plain issue body");
+  });
+});
 
 describe.skipIf(!TEST_DB_URL)("IssueStore (pgvector)", () => {
   let sql: Sql;
