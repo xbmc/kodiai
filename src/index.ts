@@ -673,9 +673,12 @@ if (queuedWebhooksProcessed > 0 || queuedWebhooksFailed > 0) {
   );
 }
 
-logger.info({ port: config.port }, "Kodiai server started");
+const SERVER_IDLE_TIMEOUT_SECONDS = 60;
+
+logger.info({ port: config.port, idleTimeoutSeconds: SERVER_IDLE_TIMEOUT_SECONDS }, "Kodiai server started");
 
 export default {
   port: config.port,
+  idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
   fetch: app.fetch,
 };

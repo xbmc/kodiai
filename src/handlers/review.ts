@@ -1236,6 +1236,7 @@ type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffComm
 
 type DiffFallbackFile = PullRequestFileMetadata;
 
+export const REVIEW_WORKSPACE_FETCH_DEPTH = 50;
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
 const DIFF_COMMAND_TIMEOUT_MS = 30_000;
 const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -1859,6 +1860,8 @@ export function createReviewHandler(deps: {
   reviewWorkCoordinator?: ReviewWorkCoordinator;
   /** Optional cluster model store for thematic finding scoring (M037/S02). */
   clusterModelStore?: SuggestionClusterStore;
+  /** Optional base-branch fetch override for deterministic tests. */
+  fetchRemoteTrackingBranchFn?: typeof fetchRemoteTrackingBranch;
   /** Optional diff context collector for deterministic tests and bounded fallback behavior. */
   diffContextCollector?: typeof collectDiffContext;
   logger: Logger;
@@ -1889,6 +1892,7 @@ export function createReviewHandler(deps: {
     sql,
     reviewWorkCoordinator: injectedReviewWorkCoordinator,
     clusterModelStore,
+    fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
     diffContextCollector = collectDiffContext,
     logger,
   } = deps;
@@ -2469,12 +2473,12 @@ export function createReviewHandler(deps: {
       try {
         setReviewWorkPhase("workspace-create");
         workspacePhaseStartedAt = Date.now();
-        // Create workspace with depth 50 for diff context
+        // Create workspace with enough shallow history to usually include the base merge point.
         workspace = await workspaceManager.create(event.installationId, {
           owner: cloneOwner,
           repo: cloneRepo,
           ref: cloneRef,
-          depth: 50,
+          depth: REVIEW_WORKSPACE_FETCH_DEPTH,
         });
 
         // Fork PR / deleted fork: fetch PR head ref from base repo
@@ -2491,11 +2495,11 @@ export function createReviewHandler(deps: {
 
         // Fetch base branch so git diff origin/BASE...HEAD works.
         // Explicit refspec needed because --single-branch clones don't track other branches.
-        await fetchRemoteTrackingBranch({
+        await fetchRemoteTrackingBranchFn({
           dir: workspace.dir,
           branch: pr.base.ref,
           token: workspace.token,
-          depth: 1,
+          depth: REVIEW_WORKSPACE_FETCH_DEPTH,
         });
 
         setReviewWorkPhase("load-config");
@@ -5728,7 +5732,7 @@ export function createReviewHandler(deps: {
                       owner: cloneOwner,
                       repo: cloneRepo,
                       ref: cloneRef,
-                      depth: 50,
+                      depth: REVIEW_WORKSPACE_FETCH_DEPTH,
                     });
 
                     if (usesPrRef) {
@@ -5742,11 +5746,11 @@ export function createReviewHandler(deps: {
                       });
                     }
 
-                    await fetchRemoteTrackingBranch({
+                    await fetchRemoteTrackingBranchFn({
                       dir: retryWorkspace.dir,
                       branch: pr.base.ref,
                       token: retryWorkspace.token,
-                      depth: 1,
+                      depth: REVIEW_WORKSPACE_FETCH_DEPTH,
                     });
 
                     const retryInstruction = [

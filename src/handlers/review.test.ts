@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources } from "./review.ts";
+import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, REVIEW_WORKSPACE_FETCH_DEPTH } from "./review.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
@@ -16,6 +16,7 @@ import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "../contributor/profile
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, JobQueueContext, JobQueueRunMetadata, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
+import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import { createSearchCache } from "../lib/search-cache.ts";
 import {
@@ -3310,6 +3311,7 @@ describe("createReviewHandler fork PR workspace strategy", () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const createCalls: CloneOptions[] = [];
+    const baseFetchCalls: Parameters<typeof fetchRemoteTrackingBranch>[0][] = [];
 
     // Expose a PR head ref on the "remote" (origin points to this same repo path)
     const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet()).text().trim();
@@ -3378,6 +3380,10 @@ describe("createReviewHandler fork PR workspace strategy", () => {
         },
       } as never,
       telemetryStore: noopTelemetryStore,
+      fetchRemoteTrackingBranchFn: async (options) => {
+        baseFetchCalls.push(options);
+        await fetchRemoteTrackingBranch(options);
+      },
       logger: createNoopLogger(),
     });
 
@@ -3413,6 +3419,11 @@ describe("createReviewHandler fork PR workspace strategy", () => {
     expect(createCalls[0]?.owner).toBe("acme");
     expect(createCalls[0]?.repo).toBe("repo");
     expect(createCalls[0]?.ref).toBe("main");
+    expect(createCalls[0]?.depth).toBe(REVIEW_WORKSPACE_FETCH_DEPTH);
+
+    expect(baseFetchCalls).toHaveLength(1);
+    expect(baseFetchCalls[0]?.branch).toBe("main");
+    expect(baseFetchCalls[0]?.depth).toBe(REVIEW_WORKSPACE_FETCH_DEPTH);
 
     const branch = (await $`git -C ${workspaceFixture.dir} rev-parse --abbrev-ref HEAD`.quiet())
       .text()
@@ -4860,6 +4871,10 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
 });
 
 describe("createReviewHandler diff collection resilience", () => {
+  test("keeps base branch fetch depth aligned with PR workspace depth", () => {
+    expect(REVIEW_WORKSPACE_FETCH_DEPTH).toBe(50);
+  });
+
   test("continues review flow when merge-base is unavailable and applies path instructions", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
