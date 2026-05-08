@@ -11,6 +11,62 @@ import {
 
 const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
+type InlineCommentLocation = {
+  path: string;
+  line?: number;
+  startLine?: number;
+  side?: "LEFT" | "RIGHT";
+};
+
+type GitHubApiErrorDetails = {
+  status?: number;
+  requestId?: string;
+  responseMessage?: string;
+  responseErrors?: unknown;
+};
+
+function formatInlineCommentLocation(location: InlineCommentLocation): string {
+  const side = location.side ?? "RIGHT";
+  if (location.startLine !== undefined) {
+    return `path "${location.path}" at ${side} lines ${location.startLine}-${location.line ?? "?"}`;
+  }
+  return `path "${location.path}" at ${side} line ${location.line ?? "?"}`;
+}
+
+function extractGitHubApiErrorDetails(error: unknown): GitHubApiErrorDetails {
+  const candidate = error as {
+    status?: unknown;
+    response?: {
+      data?: { message?: unknown; errors?: unknown };
+      headers?: Record<string, unknown>;
+    };
+  };
+
+  const headers = candidate.response?.headers;
+  const requestId = typeof headers?.["x-github-request-id"] === "string"
+    ? headers["x-github-request-id"]
+    : undefined;
+
+  return {
+    status: typeof candidate.status === "number" ? candidate.status : undefined,
+    requestId,
+    responseMessage: typeof candidate.response?.data?.message === "string"
+      ? candidate.response.data.message
+      : undefined,
+    responseErrors: candidate.response?.data?.errors,
+  };
+}
+
+function formatGitHubValidationDetails(details: GitHubApiErrorDetails): string {
+  const parts: string[] = [];
+  if (details.status !== undefined) parts.push(`status ${details.status}`);
+  if (details.responseMessage) parts.push(details.responseMessage);
+  if (details.responseErrors !== undefined) {
+    parts.push(`errors: ${JSON.stringify(details.responseErrors)}`);
+  }
+  return parts.length > 0 ? ` GitHub response: ${parts.join("; ")}.` : "";
+}
+
 export function createInlineReviewServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
@@ -96,10 +152,24 @@ export function createInlineReviewServer(
         },
         async ({ path, body, line, startLine, side }) => {
           try {
-            if (!line && !startLine) {
+            if (line === undefined && startLine === undefined) {
               throw new Error(
                 "Either 'line' for single-line comments or 'startLine' (with 'line') for multi-line comments must be provided",
               );
+            }
+            if (startLine !== undefined && line === undefined) {
+              throw new Error(
+                "Multi-line comments require both 'startLine' and 'line' so GitHub can identify the diff range",
+              );
+            }
+            if (line !== undefined && line < 1) {
+              throw new Error("Inline comment 'line' must be a 1-based GitHub diff line number");
+            }
+            if (startLine !== undefined && startLine < 1) {
+              throw new Error("Inline comment 'startLine' must be a 1-based GitHub diff line number");
+            }
+            if (startLine !== undefined && line !== undefined && startLine > line) {
+              throw new Error("Inline comment 'startLine' must be less than or equal to 'line'");
             }
 
             const octokit = await getOctokit();
@@ -192,6 +262,8 @@ export function createInlineReviewServer(
           } catch (error) {
             const errorMessage =
               error instanceof Error ? error.message : String(error);
+            const location = formatInlineCommentLocation({ path, line, startLine, side });
+            const githubErrorDetails = extractGitHubApiErrorDetails(error);
 
             let helpMessage = "";
             if (errorMessage.includes("Validation Failed")) {
@@ -202,11 +274,31 @@ export function createInlineReviewServer(
                 " This usually means the PR number, repository, or file path is incorrect.";
             }
 
+            logger?.warn(
+              {
+                deliveryId,
+                reviewOutputKey,
+                owner,
+                repo,
+                prNumber,
+                tool: "create_inline_comment",
+                path,
+                line,
+                startLine,
+                side: side || "RIGHT",
+                githubStatus: githubErrorDetails.status,
+                githubRequestId: githubErrorDetails.requestId,
+                githubResponseMessage: githubErrorDetails.responseMessage,
+                githubResponseErrors: githubErrorDetails.responseErrors,
+              },
+              "Inline review comment publication failed",
+            );
+
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: `Error creating inline comment: ${errorMessage}${helpMessage}`,
+                  text: `Error creating inline comment for ${location}: ${errorMessage}.${formatGitHubValidationDetails(githubErrorDetails)}${helpMessage}`,
                 },
               ],
               isError: true,

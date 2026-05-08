@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 
+function createMockLogger() {
+  const warnCalls: unknown[][] = [];
+  const logger = {
+    warn: (...args: unknown[]) => warnCalls.push(args),
+    info: () => {},
+    child: () => logger,
+  };
+  return { logger, warnCalls };
+}
+
 function getToolHandler(server: ReturnType<typeof createInlineReviewServer>) {
   const instance = server.instance as unknown as {
     _registeredTools?: Record<
       string,
-      { handler: (input: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }> }
+      { handler: (input: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> }
     >;
   };
   const tool = instance._registeredTools?.create_inline_comment;
@@ -147,5 +157,123 @@ describe("mention sanitization", () => {
     expect(calledBody).toBeDefined();
     expect(calledBody!).not.toContain("@kodiai");
     expect(calledBody!).toContain("kodiai should fix this");
+  });
+});
+
+describe("createInlineReviewServer validation diagnostics", () => {
+  test("rejects startLine without line before calling GitHub", async () => {
+    let createReviewCommentCalls = 0;
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async () => {
+            createReviewCommentCalls++;
+            return { data: { id: 1, html_url: "https://example.test/comment", path: "src/file.ts", line: 10 } };
+          },
+        },
+        issues: { listComments: async () => ({ data: [] }) },
+      },
+    };
+
+    const { logger, warnCalls } = createMockLogger();
+    const server = createInlineReviewServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      undefined,
+      "delivery-123",
+      logger as never,
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      path: "src/file.ts",
+      body: "range comment",
+      startLine: 10,
+      side: "RIGHT",
+    });
+
+    expect(createReviewCommentCalls).toBe(0);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Multi-line comments require both 'startLine' and 'line'");
+    expect(result.content[0]?.text).toContain("src/file.ts");
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.[0]).toMatchObject({
+      tool: "create_inline_comment",
+      path: "src/file.ts",
+      startLine: 10,
+      side: "RIGHT",
+    });
+  });
+
+  test("returns and logs structured GitHub validation details", async () => {
+    const githubError = Object.assign(new Error("Validation Failed"), {
+      status: 422,
+      response: {
+        data: {
+          message: "Validation Failed",
+          errors: [
+            { resource: "PullRequestReviewComment", field: "line", code: "invalid" },
+          ],
+        },
+        headers: { "x-github-request-id": "REQ123" },
+      },
+    });
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async () => {
+            throw githubError;
+          },
+        },
+        issues: { listComments: async () => ({ data: [] }) },
+      },
+    };
+
+    const { logger, warnCalls } = createMockLogger();
+    const server = createInlineReviewServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      "review-key",
+      "delivery-123",
+      logger as never,
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      path: "src/file.ts",
+      body: "line comment",
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("path \"src/file.ts\" at RIGHT line 10");
+    expect(result.content[0]?.text).toContain("status 422");
+    expect(result.content[0]?.text).toContain("PullRequestReviewComment");
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.[0]).toMatchObject({
+      deliveryId: "delivery-123",
+      reviewOutputKey: "review-key",
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      path: "src/file.ts",
+      line: 10,
+      githubStatus: 422,
+      githubRequestId: "REQ123",
+      githubResponseMessage: "Validation Failed",
+    });
   });
 });

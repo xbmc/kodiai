@@ -19,6 +19,6 @@ jobs:
         run: bun scripts/backfill-issues.ts --sync
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_PRIVATE_KEY: ${{ secrets.GITHUB_PRIVATE_KEY }}
+          GITHUB_APP_ID: ${{ secrets.KODIAI_GITHUB_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.KODIAI_GITHUB_PRIVATE_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}

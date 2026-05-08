@@ -19,5 +19,5 @@ jobs:
         run: bun scripts/sync-triage-reactions.ts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_PRIVATE_KEY: ${{ secrets.GITHUB_PRIVATE_KEY }}
+          GITHUB_APP_ID: ${{ secrets.KODIAI_GITHUB_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.KODIAI_GITHUB_PRIVATE_KEY }}
