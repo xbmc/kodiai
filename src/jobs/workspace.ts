@@ -90,10 +90,12 @@ export function validateBranchName(branchName: string): void {
     );
   }
 
-  // After first character, allow alphanumeric, underscore, slash, dot, dash
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_/.\-]*$/.test(branchName)) {
+  // After first character, allow alphanumeric, underscore, slash, dot, dash, and @.
+  // GitHub branch refs can legitimately contain @ (for example addon@matrix),
+  // while the explicit '@{' guard below still rejects reflog syntax.
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_/.\-@]*$/.test(branchName)) {
     throw new Error(
-      `Branch name contains invalid characters (allowed: alphanumeric, _, /, ., -): ${branchName}`,
+      `Branch name contains invalid characters (allowed: alphanumeric, _, /, ., -, @): ${branchName}`,
     );
   }
 

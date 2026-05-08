@@ -227,7 +227,8 @@ describe("fetchAndCheckoutPullRequestHeadRef", () => {
 
       const headWorkDir = join(tmpBase, "head-work");
       await $`git clone file://${baseBareDir} ${headWorkDir}`.quiet();
-      await $`git -C ${headWorkDir} checkout -B feature`.quiet();
+      const fallbackRef = "plugin.video.youtube@matrix";
+      await $`git -C ${headWorkDir} checkout -B ${fallbackRef}`.quiet();
       await $`git -C ${headWorkDir} config user.email "test@example.com"`.quiet();
       await $`git -C ${headWorkDir} config user.name "Test"`.quiet();
       await writeFile(join(headWorkDir, "README.md"), "fallback head ref\n");
@@ -235,7 +236,7 @@ describe("fetchAndCheckoutPullRequestHeadRef", () => {
       await $`git -C ${headWorkDir} commit -m "feature"`.quiet();
       const featureSha = (await $`git -C ${headWorkDir} rev-parse HEAD`.quiet()).text().trim();
       await $`git -C ${headWorkDir} remote add head file://${headBareDir}`.quiet();
-      await $`git -C ${headWorkDir} push head feature:feature`.quiet();
+      await $`git -C ${headWorkDir} push head ${fallbackRef}:${fallbackRef}`.quiet();
       await $`git -C ${cloneDir} config url.file://${headBareDir}.insteadOf https://x-access-token:test-token@github.com/acme/head.git`.quiet();
 
       const result = await fetchAndCheckoutPullRequestHeadRef({
@@ -244,7 +245,7 @@ describe("fetchAndCheckoutPullRequestHeadRef", () => {
         localBranch: "pr-review",
         token: "test-token",
         fallbackRemoteUrl: "https://github.com/acme/head.git",
-        fallbackRef: "feature",
+        fallbackRef,
       });
 
       expect(result).toEqual({ localBranch: "pr-review", source: "head-ref-fallback" });
