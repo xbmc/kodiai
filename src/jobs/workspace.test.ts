@@ -246,11 +246,14 @@ describe("fetchAndCheckoutPullRequestHeadRef", () => {
         token: "test-token",
         fallbackRemoteUrl: "https://github.com/acme/head.git",
         fallbackRef,
+        depth: 1,
       });
 
       expect(result).toEqual({ localBranch: "pr-review", source: "head-ref-fallback" });
       const checkedOutSha = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
       expect(checkedOutSha).toBe(featureSha);
+      const fetchedCommitCount = Number((await $`git -C ${cloneDir} rev-list --count HEAD`.quiet()).text().trim());
+      expect(fetchedCommitCount).toBe(1);
     } finally {
       await rm(tmpBase, { recursive: true, force: true });
     }

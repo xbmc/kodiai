@@ -479,6 +479,7 @@ export function createExecutor(deps: {
           knowledgeStore: context.knowledgeStore,
           totalFiles: context.totalFiles,
           enableCheckpointTool: context.enableCheckpointTool,
+          prDiffForCommentValidation: context.prDiffForCommentValidation,
           enableIssueTools,
           triageConfig,
         };

@@ -83,6 +83,9 @@ export type ExecutionContext = {
   enableInlineTools?: boolean;
   enableCommentTools?: boolean;
 
+  /** Optional PR diff used by MCP inline-comment tools to reject non-commentable full-file line numbers before GitHub does. */
+  prDiffForCommentValidation?: string;
+
   /** Task type for LLM routing and cost tracking (e.g., "review.full", "mention.response"). */
   taskType?: string;
 

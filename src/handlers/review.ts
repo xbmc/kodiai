@@ -2490,6 +2490,7 @@ export function createReviewHandler(deps: {
             token: workspace.token,
             fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
             fallbackRef: pr.head.ref,
+            depth: REVIEW_WORKSPACE_FETCH_DEPTH,
           });
         }
 
@@ -3959,6 +3960,7 @@ export function createReviewHandler(deps: {
           suppressions: config.review.suppressions,
           minConfidence: config.review.minConfidence,
           diffAnalysis,
+          diffContent,
           matchedPathInstructions,
           // Incremental re-review context (REV-01)
           incrementalContext: incrementalResult?.mode === "incremental" ? {
@@ -4090,6 +4092,7 @@ export function createReviewHandler(deps: {
           knowledgeStore,
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
+          prDiffForCommentValidation: diffContext.diffContent,
           // TMO-04: total timeout = infra overhead cushion + complexity-scaled remote runtime budget
           dynamicTimeoutSeconds: appliedTimeoutBudget
             ? appliedTimeoutBudget.totalTimeoutSeconds
@@ -5743,6 +5746,7 @@ export function createReviewHandler(deps: {
                         token: retryWorkspace.token,
                         fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
                         fallbackRef: pr.head.ref,
+                        depth: REVIEW_WORKSPACE_FETCH_DEPTH,
                       });
                     }
 
@@ -5793,6 +5797,7 @@ export function createReviewHandler(deps: {
                       suppressions: config.review.suppressions,
                       minConfidence: config.review.minConfidence,
                       diffAnalysis,
+                      diffContent: diffContext.diffContent,
                       matchedPathInstructions,
                       incrementalContext: incrementalResult?.mode === "incremental" ? {
                         lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
@@ -5901,6 +5906,7 @@ export function createReviewHandler(deps: {
                       knowledgeStore,
                       totalFiles: timeoutTotalFiles,
                       enableCheckpointTool: retryCheckpointEnabled,
+                      prDiffForCommentValidation: diffContext.diffContent,
                       enableCommentTools: false,
                     });
 

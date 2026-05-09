@@ -1709,6 +1709,7 @@ export function buildReviewPromptDetails(context: {
   reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
   gitDiffInstructionsAvailable?: boolean;
+  diffContent?: string;
 }): PromptBuildResult {
   const sectionBlocks: Array<{ sectionName: string; text: string; truncated?: boolean }> = [];
   const scaleNotes: string[] = [];
@@ -1718,6 +1719,7 @@ export function buildReviewPromptDetails(context: {
     sizeContext: 3_200,
     graphContext: 4_000,
     knowledgeContext: 3_600,
+    diffContext: 12_000,
     instructions: 16_000,
   } as const;
 
@@ -1801,6 +1803,25 @@ export function buildReviewPromptDetails(context: {
     changeContextLines.push("", diffAnalysisSection);
   }
   pushBudgetedSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);
+
+  const diffContentSanitized = sanitizeContent((context.diffContent ?? "").trim());
+  if (diffContentSanitized.length > 0) {
+    pushBudgetedSection(
+      "review-diff-context",
+      [
+        "## PR Diff Context",
+        "",
+        "Only call `mcp__github_inline_comment__create_inline_comment` on lines visible in these diff hunks.",
+        "Do not use full-file `Read` line numbers for inline comments unless that line is also visible in the diff context.",
+        "If a finding concerns unchanged code outside the shown hunk, comment on the nearest visible changed/context line and mention the exact full-file line in the body.",
+        "",
+        "```diff",
+        diffContentSanitized,
+        "```",
+      ],
+      REVIEW_SECTION_BUDGETS.diffContext,
+    );
+  }
 
   const sizeContextLines: string[] = [];
   if (context.largePRContext) {
@@ -2406,6 +2427,7 @@ export function buildReviewPrompt(context: {
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
+  diffContent?: string;
   publishToolNames?: string[];
 }): string {
   return buildReviewPromptDetails(context).text;

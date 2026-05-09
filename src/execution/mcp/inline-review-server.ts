@@ -4,6 +4,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
+import { buildPrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import {
   createReviewOutputPublicationGate,
   type ReviewOutputPublicationGate,
@@ -78,7 +79,11 @@ export function createInlineReviewServer(
   logger?: Logger,
   onPublish?: () => void,
   publicationGate?: ReviewOutputPublicationGate,
+  prDiffForCommentValidation?: string,
 ) {
+  const rightCommentableLines = prDiffForCommentValidation
+    ? buildPrDiffCommentabilityIndex(prDiffForCommentValidation)
+    : undefined;
   const reviewOutputPublicationGate = publicationGate
     ?? (
       reviewOutputKey
@@ -170,6 +175,16 @@ export function createInlineReviewServer(
             }
             if (startLine !== undefined && line !== undefined && startLine > line) {
               throw new Error("Inline comment 'startLine' must be less than or equal to 'line'");
+            }
+            if (rightCommentableLines && (side ?? "RIGHT") === "RIGHT") {
+              const commentableLinesForPath = rightCommentableLines.get(path);
+              const targetLines = startLine !== undefined && line !== undefined
+                ? Array.from({ length: line - startLine + 1 }, (_, index) => startLine + index)
+                : [line].filter((value): value is number => value !== undefined);
+              const missingLine = targetLines.find((targetLine) => !commentableLinesForPath?.has(targetLine));
+              if (missingLine !== undefined) {
+                throw new Error(`RIGHT line ${missingLine} is not commentable in the PR diff for ${path}`);
+              }
             }
 
             const octokit = await getOctokit();
@@ -290,6 +305,9 @@ export function createInlineReviewServer(
                 githubRequestId: githubErrorDetails.requestId,
                 githubResponseMessage: githubErrorDetails.responseMessage,
                 githubResponseErrors: githubErrorDetails.responseErrors,
+                reason: errorMessage.includes("is not commentable in the PR diff")
+                  ? "line-not-commentable-in-pr-diff"
+                  : undefined,
               },
               "Inline review comment publication failed",
             );
