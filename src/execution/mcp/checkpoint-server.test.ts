@@ -106,7 +106,7 @@ describe("createCheckpointServer", () => {
     });
   });
 
-  test("rejects checkpoints where fully reviewed files are missing from inspected files", async () => {
+  test("normalizes inspected files to include fully reviewed files", async () => {
     const calls: unknown[] = [];
     const warnings: unknown[] = [];
     const knowledgeStore = {
@@ -135,13 +135,20 @@ describe("createCheckpointServer", () => {
       summaryDraft: "Partially inconsistent checkpoint",
     });
 
-    expect(result.isError).toBe(true);
-    expect(calls).toHaveLength(0);
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
-      saved: false,
-      reason: "filesInspected must include every filesReviewed path",
+    expect(result.isError).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      filesReviewed: ["src/a.ts", "src/b.ts"],
+      filesInspected: ["src/a.ts", "src/b.ts"],
+      findingCount: 1,
+      totalFiles: 12,
     });
-    expect(warnings).toHaveLength(1);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      saved: true,
+      filesReviewed: 2,
+      totalFiles: 12,
+    });
+    expect(warnings).toHaveLength(0);
   });
 
   test("waits for checkpoint persistence before reporting success", async () => {

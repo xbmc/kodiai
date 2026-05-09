@@ -53,6 +53,26 @@ describe("small-diff review prompt scope", () => {
     expect(result.text).not.toContain("Bash(git diff origin/main...HEAD)");
     expect(result.text).not.toContain("Bash(git log origin/main..HEAD --stat)");
   });
+  test("embeds PR diff context and warns against full-file line numbers when supplied", () => {
+    const result = buildReviewPromptDetails(baseContext({
+      gitDiffInstructionsAvailable: false,
+      diffContent: [
+        "diff --git a/src/index.ts b/src/index.ts",
+        "--- a/src/index.ts",
+        "+++ b/src/index.ts",
+        "@@ -10,3 +10,4 @@ function f()",
+        " context",
+        "+changed",
+        " context",
+      ].join("\n"),
+    }));
+
+    expect(result.text).toContain("## PR Diff Context");
+    expect(result.text).toContain("@@ -10,3 +10,4 @@ function f()");
+    expect(result.text).toContain("Only call `mcp__github_inline_comment__create_inline_comment` on lines visible in these diff hunks");
+    expect(result.text).toContain("Do not use full-file `Read` line numbers for inline comments unless that line is also visible in the diff context");
+    expect(result.sections.some((section) => section.sectionName === "review-diff-context")).toBe(true);
+  });
 });
 
 function baseContext(overrides: Record<string, unknown> = {}) {

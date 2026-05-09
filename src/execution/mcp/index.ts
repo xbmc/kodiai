@@ -43,6 +43,7 @@ export function buildMcpServers(deps: {
   knowledgeStore?: KnowledgeStore;
   totalFiles?: number;
   enableCheckpointTool?: boolean;
+  prDiffForCommentValidation?: string;
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
 }): Record<string, McpServerConfig> {
@@ -97,6 +98,7 @@ export function buildMcpServers(deps: {
       deps.logger,
       deps.onPublish,
       reviewOutputPublicationGate,
+      deps.prDiffForCommentValidation,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
@@ -256,6 +258,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.logger,
         deps.onPublish,
         reviewOutputPublicationGate,
+        deps.prDiffForCommentValidation,
       ) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>

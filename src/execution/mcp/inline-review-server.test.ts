@@ -211,6 +211,73 @@ describe("createInlineReviewServer validation diagnostics", () => {
     });
   });
 
+  test("rejects RIGHT-side lines that are not commentable in the PR diff before calling GitHub", async () => {
+    let createReviewCommentCalls = 0;
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async () => {
+            createReviewCommentCalls++;
+            return { data: { id: 1, html_url: "https://example.test/comment", path: "src/file.ts", line: 10 } };
+          },
+        },
+        issues: { listComments: async () => ({ data: [] }) },
+      },
+    };
+    const prDiffForCommentValidation = [
+      "diff --git a/src/file.ts b/src/file.ts",
+      "--- a/src/file.ts",
+      "+++ b/src/file.ts",
+      "@@ -700,18 +789,12 @@ void f()",
+      " context",
+      "+added",
+      " context",
+    ].join("\n");
+
+    const { logger, warnCalls } = createMockLogger();
+    const server = createInlineReviewServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      "review-key",
+      "delivery-123",
+      logger as never,
+      undefined,
+      undefined,
+      prDiffForCommentValidation,
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      path: "src/file.ts",
+      body: "line comment",
+      line: 810,
+      side: "RIGHT",
+    });
+
+    expect(createReviewCommentCalls).toBe(0);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("src/file.ts");
+    expect(result.content[0]?.text).toContain("RIGHT line 810 is not commentable");
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.[0]).toMatchObject({
+      deliveryId: "delivery-123",
+      reviewOutputKey: "review-key",
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      path: "src/file.ts",
+      line: 810,
+      side: "RIGHT",
+      reason: "line-not-commentable-in-pr-diff",
+    });
+  });
+
   test("returns and logs structured GitHub validation details", async () => {
     const githubError = Object.assign(new Error("Validation Failed"), {
       status: 422,

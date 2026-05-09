@@ -37,28 +37,9 @@ export function createCheckpointServer(
         },
         async ({ filesReviewed, filesInspected, findingCount, summaryDraft }) => {
           try {
-            if (filesInspected !== undefined) {
-              const inspectedSet = new Set(filesInspected);
-              const missingReviewedFiles = filesReviewed.filter((filePath) => !inspectedSet.has(filePath));
-              if (missingReviewedFiles.length > 0) {
-                logger?.warn(
-                  { reviewOutputKey, repo, prNumber, missingReviewedFiles },
-                  "Invalid review checkpoint: filesInspected missing reviewed files",
-                );
-                return {
-                  content: [
-                    {
-                      type: "text" as const,
-                      text: JSON.stringify({
-                        saved: false,
-                        reason: "filesInspected must include every filesReviewed path",
-                      }),
-                    },
-                  ],
-                  isError: true,
-                };
-              }
-            }
+            const normalizedFilesInspected = filesInspected === undefined
+              ? undefined
+              : Array.from(new Set([...filesInspected, ...filesReviewed]));
 
             if (!knowledgeStore.saveCheckpoint) {
               logger?.warn(
@@ -83,13 +64,13 @@ export function createCheckpointServer(
               repo,
               prNumber,
               filesReviewed,
-              filesInspected,
+              filesInspected: normalizedFilesInspected,
               findingCount,
               summaryDraft,
               totalFiles,
             });
 
-            logger?.debug(
+            logger?.debug?.(
               {
                 reviewOutputKey,
                 repo,

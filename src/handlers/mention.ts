@@ -1011,6 +1011,7 @@ export function createMentionHandler(deps: {
     changedFiles: string[];
     numstatLines: string[];
     diffRange: string;
+    diffContent?: string;
   }> {
     const diffContext = await collectDiffContext({
       workspaceDir: input.workspaceDir,
@@ -1032,6 +1033,7 @@ export function createMentionHandler(deps: {
       changedFiles: diffContext.changedFiles,
       numstatLines: diffContext.numstatLines,
       diffRange: diffContext.diffRange,
+      diffContent: diffContext.diffContent,
     };
   }
 
@@ -2633,6 +2635,7 @@ export function createMentionHandler(deps: {
         let explicitReviewPromptFileCount: number | undefined;
         let explicitReviewDynamicTimeoutSeconds: number | undefined;
         let explicitReviewMaxTurnsOverride: number | undefined;
+        let explicitReviewPrDiffForCommentValidation: string | undefined;
         let explicitReviewRouting: ReviewTaskRouting = {
           taskType: TASK_TYPES.REVIEW_FULL,
           routingReason: "standard",
@@ -2663,6 +2666,7 @@ export function createMentionHandler(deps: {
               })
             : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
           const promptChangedFiles = promptDiffContext.changedFiles;
+          explicitReviewPrDiffForCommentValidation = promptDiffContext.diffContent;
           explicitReviewPromptFileCount = promptChangedFiles.length;
 
           const diffAnalysis = analyzeDiff({
@@ -2768,6 +2772,7 @@ export function createMentionHandler(deps: {
             suppressions: config.review.suppressions,
             minConfidence: config.review.minConfidence,
             diffAnalysis,
+            diffContent: promptDiffContext.diffContent,
             matchedPathInstructions,
             retrievalContext,
             reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
@@ -2892,6 +2897,7 @@ export function createMentionHandler(deps: {
             formatterSuggestionRequest,
             totalFiles: explicitReviewPromptFileCount,
             enableInlineTools: explicitReviewRequest ? true : undefined,
+            prDiffForCommentValidation: explicitReviewRequest ? explicitReviewPrDiffForCommentValidation : undefined,
           });
         } catch (err) {
           if (isCombinedFormatterSuggestionRequest) {
