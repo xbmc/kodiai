@@ -564,8 +564,9 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
   token?: string;
   fallbackRemoteUrl?: string;
   fallbackRef?: string;
+  depth?: number;
 }): Promise<{ localBranch: string; source: "pull-ref" | "head-ref-fallback" }> {
-  const { dir, prNumber, remote = "origin", localBranch = "pr-review", token, fallbackRemoteUrl, fallbackRef } = options;
+  const { dir, prNumber, remote = "origin", localBranch = "pr-review", token, fallbackRemoteUrl, fallbackRef, depth } = options;
 
   validatePullRequestNumber(prNumber);
   validateBranchName(localBranch);
@@ -575,7 +576,10 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     // Construct the auth URL inline; never stored — used for this fetch only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const fetchUrl = makeAuthUrl(strippedUrl, token);
-    const primaryFetch = await $`git -C ${dir} fetch ${fetchUrl} pull/${prNumber}/head:${localBranch}`.quiet().nothrow();
+    const primaryFetchArgs = depth === undefined
+      ? ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`]
+      : ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`, `--depth=${depth}`];
+    const primaryFetch = await $`git -C ${dir} ${primaryFetchArgs}`.quiet().nothrow();
     if (primaryFetch.exitCode === 0) {
       await $`git -C ${dir} checkout ${localBranch}`.quiet();
       return { localBranch, source: "pull-ref" };
@@ -591,7 +595,10 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     }
 
     const fallbackFetchUrl = makeAuthUrl(fallbackRemoteUrl, token);
-    await $`git -C ${dir} fetch ${fallbackFetchUrl} ${fallbackRef}:${localBranch}`.quiet();
+    const fallbackFetchArgs = depth === undefined
+      ? ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`]
+      : ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`, `--depth=${depth}`];
+    await $`git -C ${dir} ${fallbackFetchArgs}`.quiet();
     await $`git -C ${dir} checkout ${localBranch}`.quiet();
     return { localBranch, source: "head-ref-fallback" };
   } catch (err) {

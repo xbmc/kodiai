@@ -2490,6 +2490,7 @@ export function createReviewHandler(deps: {
             token: workspace.token,
             fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
             fallbackRef: pr.head.ref,
+            depth: REVIEW_WORKSPACE_FETCH_DEPTH,
           });
         }
 
@@ -5745,6 +5746,7 @@ export function createReviewHandler(deps: {
                         token: retryWorkspace.token,
                         fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
                         fallbackRef: pr.head.ref,
+                        depth: REVIEW_WORKSPACE_FETCH_DEPTH,
                       });
                     }
 

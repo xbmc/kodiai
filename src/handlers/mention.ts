@@ -1668,6 +1668,7 @@ export function createMentionHandler(deps: {
             prNumber: mention.prNumber,
             localBranch: "pr-mention",
             token: workspace.token,
+            depth: cloneDepth,
           });
 
           // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
@@ -1677,7 +1678,7 @@ export function createMentionHandler(deps: {
               dir: workspace.dir,
               branch: mention.baseRef,
               token: workspace.token,
-              depth: 1,
+              depth: cloneDepth,
             });
           }
         }
