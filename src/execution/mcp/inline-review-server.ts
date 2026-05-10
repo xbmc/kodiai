@@ -58,6 +58,20 @@ function extractGitHubApiErrorDetails(error: unknown): GitHubApiErrorDetails {
   };
 }
 
+function isGitHubLineResolutionFailure(details: GitHubApiErrorDetails): boolean {
+  if (details.status !== 422 || details.responseErrors == null) {
+    return false;
+  }
+  const errors = Array.isArray(details.responseErrors) ? details.responseErrors : [details.responseErrors];
+  return errors.some((entry) => {
+    if (entry == null) return false;
+    const candidate = entry as { field?: unknown; message?: unknown };
+    return candidate.field === "pull_request_review_thread.line"
+      && typeof candidate.message === "string"
+      && candidate.message.includes("could not be resolved");
+  });
+}
+
 function formatGitHubValidationDetails(details: GitHubApiErrorDetails): string {
   const parts: string[] = [];
   if (details.status !== undefined) parts.push(`status ${details.status}`);
@@ -289,7 +303,10 @@ export function createInlineReviewServer(
                 " This usually means the PR number, repository, or file path is incorrect.";
             }
 
-            logger?.warn(
+            const localNonCommentableReason = errorMessage.includes("is not commentable in the PR diff");
+            const threadLineNotResolvedReason = isGitHubLineResolutionFailure(githubErrorDetails);
+            const logMethod = localNonCommentableReason || threadLineNotResolvedReason ? "info" : "warn";
+            logger?.[logMethod](
               {
                 deliveryId,
                 reviewOutputKey,
@@ -305,9 +322,11 @@ export function createInlineReviewServer(
                 githubRequestId: githubErrorDetails.requestId,
                 githubResponseMessage: githubErrorDetails.responseMessage,
                 githubResponseErrors: githubErrorDetails.responseErrors,
-                reason: errorMessage.includes("is not commentable in the PR diff")
+                reason: localNonCommentableReason
                   ? "line-not-commentable-in-pr-diff"
-                  : undefined,
+                  : threadLineNotResolvedReason
+                    ? "review-thread-line-not-resolved"
+                    : undefined,
               },
               "Inline review comment publication failed",
             );

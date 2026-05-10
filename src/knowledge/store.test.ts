@@ -21,6 +21,41 @@ const mockLogger = {
 let sql: Sql;
 let store: KnowledgeStore;
 
+describe("KnowledgeStore recordFindings unit guards", () => {
+  test("skips malformed findings instead of passing undefined values to postgres", async () => {
+    const insertedValues: unknown[][] = [];
+    const warnCalls: unknown[][] = [];
+    const tx = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      insertedValues.push(values);
+      return Promise.resolve([]);
+    }) as unknown as Sql;
+    const sqlStub = {
+      begin: async (fn: (tx: Sql) => Promise<void>) => fn(tx),
+    } as unknown as Sql;
+    const logger = {
+      ...mockLogger,
+      warn: (...args: unknown[]) => warnCalls.push(args),
+    } as unknown as import("pino").Logger;
+    const unitStore = createKnowledgeStore({ sql: sqlStub, logger });
+
+    await unitStore.recordFindings([
+      {
+        reviewId: 1,
+        filePath: "src/example.ts",
+        severity: "major",
+        category: undefined,
+        confidence: 80,
+        title: "Missing category should not reach postgres",
+        suppressed: false,
+      } as unknown as Parameters<KnowledgeStore["recordFindings"]>[0][number],
+    ]);
+
+    expect(insertedValues).toHaveLength(0);
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.[0]).toMatchObject({ skipped: 1 });
+  });
+});
+
 /** Truncate all knowledge-related tables for test isolation. */
 async function truncateAll(): Promise<void> {
   await sql`TRUNCATE

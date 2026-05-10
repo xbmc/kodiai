@@ -59,6 +59,20 @@ function _normalizeDbNumber(value: unknown): number | null {
   return Number.isFinite(normalized) ? normalized : null;
 }
 
+function _isValidFindingRecord(finding: FindingRecord): boolean {
+  return Number.isFinite(finding.reviewId)
+    && typeof finding.filePath === "string"
+    && finding.filePath.trim().length > 0
+    && typeof finding.severity === "string"
+    && finding.severity.trim().length > 0
+    && typeof finding.category === "string"
+    && finding.category.trim().length > 0
+    && Number.isFinite(finding.confidence)
+    && typeof finding.title === "string"
+    && finding.title.trim().length > 0
+    && typeof finding.suppressed === "boolean";
+}
+
 export function createKnowledgeStore(opts: {
   sql: Sql;
   logger: Logger;
@@ -88,8 +102,14 @@ export function createKnowledgeStore(opts: {
 
     async recordFindings(findings: FindingRecord[]): Promise<void> {
       if (findings.length === 0) return;
+      const validFindings = findings.filter(_isValidFindingRecord);
+      const skipped = findings.length - validFindings.length;
+      if (skipped > 0) {
+        logger.warn({ skipped, total: findings.length }, "Knowledge store skipped malformed finding records");
+      }
+      if (validFindings.length === 0) return;
       await sql.begin(async (tx) => {
-        for (const finding of findings) {
+        for (const finding of validFindings) {
           await (tx as unknown as Sql)`
             INSERT INTO findings (
               review_id, file_path, start_line, end_line,
