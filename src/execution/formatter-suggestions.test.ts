@@ -421,6 +421,35 @@ describe("mapFormatterDiffToSuggestions", () => {
     expect(result.counts).toMatchObject({ suggestions: 1, skipped: 2, capped: 2 });
   });
 
+  test("applies maxSuggestions only after validation while preserving earlier skip diagnostics", () => {
+    const formatterDiff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-off pr",
+      "+off pr fixed",
+      "@@ -2 +2 @@",
+      "-first safe",
+      "+first safe fixed",
+      "@@ -3 +3 @@",
+      "-second safe",
+      "+second safe fixed",
+      "",
+    ].join("\n");
+    const prDiffIndex = new Map([["src/a.ts", new Set([2, 3])]]);
+
+    const result = mapFormatterDiffToSuggestions({ formatterDiff, prDiffIndex, maxSuggestions: 1 });
+
+    expect(result.suggestions.map((suggestion) => suggestion.line)).toEqual([2]);
+    expect(result.skipped).toEqual([
+      { reason: "target-range-not-in-pr-diff", detail: "src/a.ts:1-1 is not fully commentable on the PR RIGHT side", oldPath: "src/a.ts", newPath: "src/a.ts" },
+      { reason: "max-suggestions-exceeded", detail: "src/a.ts:3-3 exceeded maxSuggestions=1", oldPath: "src/a.ts", newPath: "src/a.ts" },
+    ]);
+    expect(result.counts).toMatchObject({ suggestions: 1, skipped: 2, capped: 1, candidateGroups: 3 });
+    expect(result.capped).toBe(true);
+  });
+
   test("propagates parser skips into mapper diagnostics", () => {
     const formatterDiff = [
       "diff --git a/src/added.ts b/src/added.ts",
