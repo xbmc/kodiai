@@ -332,6 +332,82 @@ describe("runFormatterSuggestionSubflow", () => {
     expect(thrown.visibleMessage).toContain("formatter suggestions could not be published");
   });
 
+  test("returns pr-diff-unavailable when full PR diff collection throws", async () => {
+    let publishCalls = 0;
+    const result = await runFormatterSuggestionSubflow(
+      makeOptions(),
+      makeDeps({
+        collectDiffContext: async () => { throw new Error("full diff fetch failed for ghp_secretTokenValue"); },
+        publishFormatterSuggestionReview: async () => { publishCalls += 1; return makePublisherResult(); },
+      }),
+    );
+
+    expect(publishCalls).toBe(0);
+    expect(result).toMatchObject({
+      status: "pr-diff-unavailable",
+      commandStatus: "success",
+      suggestions: 0,
+      skipped: 0,
+      capped: 0,
+      diffRange: "origin/main...HEAD",
+    });
+    expect(result.reason).toContain("full diff fetch failed");
+    expect(result.reason).not.toContain("ghp_secretTokenValue");
+    expect(result.visibleMessage).toContain("full PR diff was unavailable");
+  });
+
+  test("fails visibly without publisher handoff when head sha cannot be resolved", async () => {
+    let publishCalls = 0;
+    const result = await runFormatterSuggestionSubflow(
+      makeOptions(),
+      makeDeps({
+        resolveHeadSha: async () => { throw new Error("HEAD is unavailable"); },
+        publishFormatterSuggestionReview: async () => { publishCalls += 1; return makePublisherResult(); },
+      }),
+    );
+
+    expect(publishCalls).toBe(0);
+    expect(result).toMatchObject({
+      status: "failed",
+      commandStatus: "success",
+      suggestions: 1,
+      skipped: 0,
+      capped: 0,
+      reason: "HEAD is unavailable",
+      diffRange: "origin/main...HEAD",
+    });
+    expect(result.reviewOutputKey).toBeUndefined();
+    expect(result.headSha).toBeUndefined();
+    expect(result.mapperCounts?.suggestions).toBe(1);
+    expect(result.visibleMessage).toContain("PR head commit could not be resolved");
+  });
+
+  test("preserves publisher no-suggestions status without inferring success", async () => {
+    const result = await runFormatterSuggestionSubflow(
+      makeOptions(),
+      makeDeps({
+        publishFormatterSuggestionReview: async () => makePublisherResult({
+          status: "no-suggestions",
+          posted: 0,
+          skipped: 1,
+          review: undefined,
+          reviewOutput: { key: "formatter-output-key", markerIncluded: false },
+        }),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: "mapped-no-suggestions",
+      publisherStatus: "no-suggestions",
+      suggestions: 1,
+      posted: 0,
+      publisherSkipped: 1,
+      headSha: "abc123def456",
+    });
+    expect(result.reviewOutputKey).toContain("action-mention-format-suggestions");
+    expect(result.visibleMessage).toContain("No formatter suggestions could be published");
+  });
+
   test("reports capped mapped suggestions without bypassing S02 cap semantics", async () => {
     const result = await runFormatterSuggestionSubflow(
       makeOptions({ maxSuggestions: 1 }),
