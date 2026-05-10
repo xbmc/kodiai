@@ -1643,7 +1643,7 @@ test("prepareAgentWorkspace writes a review bundle transport for repos with trac
   }
 });
 
-test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing", async () => {
+test("prepareAgentWorkspace uses archive transport for shallow PR workspaces without unshallowing", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "kodiai-shallow-bundle-"));
   const bareRepoDir = join(tempRoot, "origin.git");
   const seedRepoDir = join(tempRoot, "seed");
@@ -1688,19 +1688,23 @@ test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing
 
     expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
     expect(result.repoBundlePath).toBeUndefined();
-    expect(result.repoCwd).toBe(join(workspaceDir, "repo"));
+    expect(result.repoCwd).toBeUndefined();
 
     const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
     const agentConfig = JSON.parse(rawAgentConfig) as {
       repoCwd?: string;
-      repoTransport?: unknown;
+      repoTransport?: { kind?: string; archivePath?: string };
+      allowedTools?: string[];
     };
 
-    expect(agentConfig.repoTransport).toBeUndefined();
-    expect(agentConfig.repoCwd).toBe(join(workspaceDir, "repo"));
-    expect((agentConfig as { allowedTools?: string[] }).allowedTools).toEqual(["Read", "Grep", "Glob"]);
-    expect(await readFile(join(workspaceDir, "repo", "feature.txt"), "utf-8")).toBe("one\ntwo\npr\n");
-    await expect(stat(join(workspaceDir, "repo", ".git"))).rejects.toThrow();
+    expect(agentConfig.repoCwd).toBeUndefined();
+    expect(agentConfig.repoTransport).toEqual({
+      kind: "working-tree-archive",
+      archivePath: join(workspaceDir, "repo.tar"),
+    });
+    expect(agentConfig.allowedTools).toEqual(["Read", "Grep", "Glob"]);
+    expect((await lstat(join(workspaceDir, "repo.tar"))).isFile()).toBe(true);
+    await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
   } finally {
     await Promise.all(cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })));
   }
