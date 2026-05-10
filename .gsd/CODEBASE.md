@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-05T05:27:32Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-05T05:27:32Z","fingerprint":"ff6e2f8fb79e3af9e98c708081dd5b25ff203d08","fileCount":500,"truncated":true} -->
+Generated: 2026-05-10T23:41:00Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-10T23:41:00Z","fingerprint":"8d2fa9076502e5228f577b8820c59d02e07263e6","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -84,7 +84,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(211 files: 207 .ts, 3 .sh, 1 .md)*
+- *(212 files: 207 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### src/
 - `src/config.test.ts`
@@ -173,4 +173,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### src/knowledge/
 - `src/knowledge/active-rules.test.ts`
-- `src/knowledge/active-rules.ts`

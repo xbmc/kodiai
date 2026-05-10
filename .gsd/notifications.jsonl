@@ -387,3 +387,12 @@
 {"id":"e267b57b-d2c6-4ca0-b6f5-fd934e23b917","ts":"2026-05-05T05:27:32.289Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"0dba7b42-8236-4220-af6e-2337019ad006","ts":"2026-05-05T05:34:15.157Z","severity":"info","message":"Committed: feat: Captured accepted same-PR formatter suggestion proof for PR #134…","source":"notify","read":false}
 {"id":"af8c7b9c-367c-4cac-804d-ad4a980bc1c8","ts":"2026-05-05T05:34:21.823Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"133320dd-3410-4016-9887-294121e160d2","ts":"2026-05-10T23:41:50.319Z","severity":"warning","message":"Previous auto-mode session was interrupted.\n  Was executing: complete-slice (M068/S09)\n  Started at: 2026-05-10T07:46:38.183Z\n  PID: 1728205\nSlice/milestone completion was interrupted. Run /gsd auto to finish.\nResuming from disk state.","source":"notify","read":false}
+{"id":"7146973f-99f2-4351-89d2-0b84d27577de","ts":"2026-05-10T23:41:50.520Z","severity":"info","message":"Auto-mode started. Will loop through 4 milestones.","source":"notify","read":false}
+{"id":"6ea1be49-c9f0-47a0-96b2-50b76734ae59","ts":"2026-05-10T23:41:50.523Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
+{"id":"21a2d0fb-354c-41be-afa3-1a53ebfebb80","ts":"2026-05-10T23:41:50.526Z","severity":"info","message":"Pre-flight: 58 milestones queued. All have full context.","source":"notify","read":false}
+{"id":"671add59-8a04-4980-97a8-1c92162ada5c","ts":"2026-05-10T23:41:51.240Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"dfd3c06a-c835-490d-a212-ba28275a4612","ts":"2026-05-10T23:51:52.647Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"886ea2f0-c6e9-4c32-a8f9-1ebc34cfa75e","ts":"2026-05-10T23:53:20.767Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"0d96e64c-b9c0-469e-b2af-39a2ca092916","ts":"2026-05-10T23:54:13.527Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"37114a35-8e6c-4c31-84ab-e0875021e712","ts":"2026-05-10T23:54:13.946Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}

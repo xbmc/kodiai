@@ -185,6 +185,25 @@ describe("parseFormatterUnifiedDiff", () => {
       { reason: "malformed-diff", detail: "file has diff body but no valid hunks", oldPath: "src/a.ts", newPath: "src/a.ts" },
     ]);
   });
+
+  test("skips malformed hunk bodies instead of keeping partial parsed hunks", () => {
+    const result = parseFormatterUnifiedDiff([
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,2 +1,2 @@",
+      " keep",
+      "this line has no unified-diff prefix",
+      "-old",
+      "+new",
+      "",
+    ].join("\n"));
+
+    expect(result.files).toEqual([]);
+    expect(result.skipped).toEqual([
+      { reason: "malformed-diff", detail: "file has diff body but no valid hunks", oldPath: "src/a.ts", newPath: "src/a.ts" },
+    ]);
+  });
 });
 
 describe("buildPrDiffCommentabilityIndex", () => {
