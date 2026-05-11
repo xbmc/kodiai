@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M053",
-      "label": "M053: Same-PR Formatter Suggestions",
+      "id": "milestone:M068",
+      "label": "M068: Candidate Findings Before Publication",
       "type": "milestone",
-      "description": "Active milestone: M053",
+      "description": "Active milestone: M068",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:blocked",
+      "label": "Phase: blocked",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4501,6 +4501,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M053",
+      "label": "M053: M053: Same-PR Formatter Suggestions",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-ROADMAP.md"
+    },
+    {
       "id": "slice:M053:S01",
       "label": "S01: Formatter suggestion config and mention intent",
       "type": "slice",
@@ -4856,13 +4863,6 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M068",
-      "label": "M068: Candidate Findings Before Publication",
-      "type": "milestone",
-      "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M068/M068-ROADMAP.md"
-    },
-    {
       "id": "slice:M068:S01",
       "label": "S01: S01",
       "type": "slice",
@@ -5179,18 +5179,313 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M068:S11",
+      "label": "S11: Remediate direct-fallback production proof",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S11/S11-PLAN.md"
+    },
+    {
+      "id": "task:M068:S11:T01",
+      "label": "T01: Record fresh direct-fallback production evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S11:T02",
+      "label": "T02: Root-cause candidate publisher skipped direct fallback",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S11:T03",
+      "label": "T03: Fix or harden candidate publication acceptance path",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S11:T04",
+      "label": "T04: Reverify exact-key proof or preserve blocker",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "milestone:M069",
-      "label": "M069: Specialist Lane Pilot",
+      "label": "M069: M069: Specialist Lane Pilot",
       "type": "milestone",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M069/M069-ROADMAP.md"
     },
     {
       "id": "milestone:M070",
-      "label": "M070: Candidate Verification + Disagreement Handling",
+      "label": "M070: M070: Candidate Verification + Disagreement Handling",
       "type": "milestone",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M070/M070-ROADMAP.md"
+    },
+    {
+      "id": "decision:M053:1",
+      "label": "Deliver formatter fixes as GitHub fenced `suggestion` blocks in inline review comments on the existing PR, not as a separate formatting PR or bot-pushed branch.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:2",
+      "label": "Compute formatter output independently from the PR workspace via a configured formatter command and deterministic unified-diff mapping rather than consuming Jenkins artifacts or asking the agent to invent hunks.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:3",
+      "label": "Keep explicit formatter-suggestion requests available while `review.formatterSuggestions.automatic` defaults off and remains deferred until a later opt-in milestone wires automatic review inclusion.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:4",
+      "label": "Publish accepted formatter suggestions as one batched same-PR Pull Request Review with multiple inline suggestion comments and idempotency markers.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:5",
+      "label": "Treat unsafe, unmappable, malformed, off-diff, and excessive formatter hunks as visible structured skips/caps instead of guessing target ranges.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:6",
+      "label": "A non-pass validation artifact can still contain useful authoritative evidence, but closeout must independently resolve whether flagged items are completion blockers; here the Boundary Map defect is an artifact-quality deviation and R086 is intentionally deferred rather than required for explicit-mode success.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:7",
+      "label": "Exact test paths matter for Bun: `src/execution/verify-m066-s05.test.ts` was stale in prior notes, while the actual verifier test lives at `scripts/verify-m066-s05.test.ts`.",
+      "type": "decision",
+      "description": "Source: M053 closeout verification/S05 live-proof docs and verifier checks",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:8",
+      "label": "Automatic formatter suggestions need a separate runtime proof milestone; default-off config and documentation are insufficient to claim automatic normal-review inclusion.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:9",
+      "label": "Roadmap Boundary Map drift can be recovered for validation from slice SUMMARY `provides`/`requires`, but an empty duplicated roadmap section weakens closeout evidence and should be fixed in planning/rendering before future milestones rely on it.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:10",
+      "label": "For exact same-PR suggestion proof, combine deterministic local contract tests with a bounded live proof record that includes trigger action, delivery/reviewOutputKey correlation, review state, and fenced suggestion comments.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Verification Classes",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:11",
+      "label": "Keep formatter suggestion generation as three composable seams: command execution, conservative unified-diff-to-PR-line mapping, and same-PR review publication.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:12",
+      "label": "In combined review-and-format orchestration, preserve independent subflow outcomes: formatter diagnostics stay visible without suppressing review behavior, and review failures should not prevent an available formatter subflow from running.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:13",
+      "label": "Caps should be applied after safety validation so skip/cap counts remain truthful and downstream diagnostics can distinguish unsafe hunks from accepted-but-excess suggestions.",
+      "type": "decision",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:14",
+      "label": "The milestone ID and project history contain stale cross-references to M066 for the same formatter-suggestion capability, so closeout had to reconcile M053 artifacts with existing M066 requirement and project-state evidence.",
+      "type": "decision",
+      "description": "Source: .gsd/PROJECT.md/Current State",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M053:15",
+      "label": "The roadmap has two empty `## Boundary Map` headings even though the slice summaries carry enough producer/consumer contracts to prove integration.",
+      "type": "decision",
+      "description": "Source: M053-ROADMAP.md/Boundary Map",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:1",
+      "label": "A non-pass validation artifact can still contain useful authoritative evidence, but closeout must independently resolve whether flagged items are completion blockers; here the Boundary Map defect is an artifact-quality deviation and R086 is intentionally deferred rather than required for explicit-mode success.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:2",
+      "label": "Exact test paths matter for Bun: `src/execution/verify-m066-s05.test.ts` was stale in prior notes, while the actual verifier test lives at `scripts/verify-m066-s05.test.ts`.",
+      "type": "lesson",
+      "description": "Source: M053 closeout verification/S05 live-proof docs and verifier checks",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:3",
+      "label": "Automatic formatter suggestions need a separate runtime proof milestone; default-off config and documentation are insufficient to claim automatic normal-review inclusion.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:4",
+      "label": "Roadmap Boundary Map drift can be recovered for validation from slice SUMMARY `provides`/`requires`, but an empty duplicated roadmap section weakens closeout evidence and should be fixed in planning/rendering before future milestones rely on it.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:5",
+      "label": "For exact same-PR suggestion proof, combine deterministic local contract tests with a bounded live proof record that includes trigger action, delivery/reviewOutputKey correlation, review state, and fenced suggestion comments.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Verification Classes",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:6",
+      "label": "Keep formatter suggestion generation as three composable seams: command execution, conservative unified-diff-to-PR-line mapping, and same-PR review publication.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:7",
+      "label": "In combined review-and-format orchestration, preserve independent subflow outcomes: formatter diagnostics stay visible without suppressing review behavior, and review failures should not prevent an available formatter subflow from running.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:8",
+      "label": "Caps should be applied after safety validation so skip/cap counts remain truthful and downstream diagnostics can distinguish unsafe hunks from accepted-but-excess suggestions.",
+      "type": "lesson",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:9",
+      "label": "The milestone ID and project history contain stale cross-references to M066 for the same formatter-suggestion capability, so closeout had to reconcile M053 artifacts with existing M066 requirement and project-state evidence.",
+      "type": "lesson",
+      "description": "Source: .gsd/PROJECT.md/Current State",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M053:10",
+      "label": "The roadmap has two empty `## Boundary Map` headings even though the slice summaries carry enough producer/consumer contracts to prove integration.",
+      "type": "lesson",
+      "description": "Source: M053-ROADMAP.md/Boundary Map",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M053:1",
+      "label": "For exact same-PR suggestion proof, combine deterministic local contract tests with a bounded live proof record that includes trigger action, delivery/reviewOutputKey correlation, review state, and fenced suggestion comments.",
+      "type": "pattern",
+      "description": "Source: M053-VALIDATION.md/Verification Classes",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M053:2",
+      "label": "Keep formatter suggestion generation as three composable seams: command execution, conservative unified-diff-to-PR-line mapping, and same-PR review publication.",
+      "type": "pattern",
+      "description": "Source: M053-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M053:3",
+      "label": "In combined review-and-format orchestration, preserve independent subflow outcomes: formatter diagnostics stay visible without suppressing review behavior, and review failures should not prevent an available formatter subflow from running.",
+      "type": "pattern",
+      "description": "Source: M053-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M053:4",
+      "label": "Caps should be applied after safety validation so skip/cap counts remain truthful and downstream diagnostics can distinguish unsafe hunks from accepted-but-excess suggestions.",
+      "type": "pattern",
+      "description": "Source: M053-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M053:5",
+      "label": "The milestone ID and project history contain stale cross-references to M066 for the same formatter-suggestion capability, so closeout had to reconcile M053 artifacts with existing M066 requirement and project-state evidence.",
+      "type": "pattern",
+      "description": "Source: .gsd/PROJECT.md/Current State",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M053:6",
+      "label": "The roadmap has two empty `## Boundary Map` headings even though the slice summaries carry enough producer/consumer contracts to prove integration.",
+      "type": "pattern",
+      "description": "Source: M053-ROADMAP.md/Boundary Map",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M053:1",
+      "label": "The milestone ID and project history contain stale cross-references to M066 for the same formatter-suggestion capability, so closeout had to reconcile M053 artifacts with existing M066 requirement and project-state evidence.",
+      "type": "lesson",
+      "description": "Source: .gsd/PROJECT.md/Current State",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M053:2",
+      "label": "The roadmap has two empty `## Boundary Map` headings even though the slice summaries carry enough producer/consumer contracts to prove integration.",
+      "type": "lesson",
+      "description": "Source: M053-ROADMAP.md/Boundary Map",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/M053-LEARNINGS.md"
     },
     {
       "id": "decision:M066:1",
@@ -10485,6 +10780,234 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M068",
+      "to": "slice:M068:S11",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S11",
+      "to": "task:M068:S11:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S11",
+      "to": "task:M068:S11:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S11",
+      "to": "task:M068:S11:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S11",
+      "to": "task:M068:S11:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "decision:M053:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "lesson:M053:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "pattern:M053:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "pattern:M053:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "pattern:M053:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "pattern:M053:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "pattern:M053:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "pattern:M053:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "surprise:M053:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "surprise:M053:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M066",
       "to": "decision:M066:1",
       "type": "relates_to",
@@ -11019,5 +11542,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-11T00:23:57.078Z"
+  "builtAt": "2026-05-11T16:28:07.934Z"
 }

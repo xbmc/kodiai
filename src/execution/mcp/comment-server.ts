@@ -614,6 +614,43 @@ export function createCommentServer(
           }
           try {
             const octokit = await getOctokit();
+            const inlinePublicationState = reviewOutputPublicationGate?.getInlinePublicationState();
+            if (
+              inlinePublicationState?.status === "failed" ||
+              inlinePublicationState?.status === "skipped" ||
+              inlinePublicationState?.status === "published"
+            ) {
+              const fallbackReason = inlinePublicationState.status === "published"
+                ? "candidate-already-published"
+                : inlinePublicationState.reason;
+              logger?.info(
+                {
+                  reviewOutputKey,
+                  idempotencyOutcome: "direct-fallback-blocked",
+                  candidatePublicationState: inlinePublicationState.status,
+                  candidatePublicationReason: fallbackReason,
+                },
+                "Blocking direct comment fallback after inline candidate publication state was recorded",
+              );
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify({
+                      success: false,
+                      skipped: true,
+                      fallback_blocked: true,
+                      reason: "candidate-publication-state-blocks-direct-fallback",
+                      candidate_publication_state: inlinePublicationState.status,
+                      candidate_publication_reason: fallbackReason,
+                      review_output_key: reviewOutputKey,
+                      marker_prefix: "kodiai:review-output-key",
+                    }),
+                  },
+                ],
+                isError: true,
+              };
+            }
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
             if (publicationStatus && !publicationStatus.shouldPublish) {
               logger?.info(

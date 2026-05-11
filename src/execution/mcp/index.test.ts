@@ -218,6 +218,88 @@ describe("buildMcpServers", () => {
       expect(persistedReviewBodies[0]).toContain(marker);
     });
 
+    it("blocks direct fallback after candidate inline publication succeeds", async () => {
+      const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-candidate-success:head-abcdef1234";
+      const marker = `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;
+      const persistedIssueBodies: string[] = [];
+      const persistedReviewBodies: string[] = [];
+      let createCommentCalls = 0;
+      let createReviewCommentCalls = 0;
+
+      const octokit = {
+        rest: {
+          issues: {
+            listComments: async () => ({
+              data: persistedIssueBodies.map((body, index) => ({ id: index + 1, body })),
+            }),
+            createComment: async ({ body }: { body: string }) => {
+              createCommentCalls++;
+              persistedIssueBodies.push(body);
+              return { data: { id: createCommentCalls, html_url: "https://example.test/comment" } };
+            },
+            updateComment: async () => ({ data: {} }),
+          },
+          pulls: {
+            listReviewComments: async () => ({
+              data: persistedReviewBodies.map((body, index) => ({ id: index + 1, body })),
+            }),
+            listReviews: async () => ({ data: [] }),
+            get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+            createReviewComment: async ({ body }: { body: string }) => {
+              createReviewCommentCalls++;
+              persistedReviewBodies.push(body);
+              return {
+                data: {
+                  id: createReviewCommentCalls,
+                  html_url: "https://example.test/review-comment",
+                  path: "src/file.ts",
+                  line: 10,
+                  original_line: 10,
+                },
+              };
+            },
+          },
+        },
+      };
+
+      const servers = buildMcpServers({
+        getOctokit: async () => octokit as never,
+        owner: "acme",
+        repo: "repo",
+        prNumber: 101,
+        botHandles: [],
+        reviewOutputKey,
+        deliveryId: "delivery-candidate-success",
+        enableInlineTools: true,
+        enableCommentTools: true,
+      });
+
+      const createInlineComment = getToolHandler(servers.github_inline_comment, "create_inline_comment");
+      const inlineResult = await createInlineComment({
+        path: "src/file.ts",
+        body: "Consider: Candidate-approved inline publication.",
+        line: 10,
+        side: "RIGHT",
+      });
+
+      expect(inlineResult.isError).toBeUndefined();
+      expect(createReviewCommentCalls).toBe(1);
+      expect(persistedReviewBodies[0]).toContain(marker);
+
+      const createSummaryComment = getToolHandler(servers.github_comment, "create_comment");
+      const directFallbackResult = await createSummaryComment({
+        issueNumber: 101,
+        body: buildDraftSummaryBody(),
+      });
+
+      expect(directFallbackResult.isError).toBe(true);
+      expect(directFallbackResult.content[0]?.text).toContain("\"fallback_blocked\":true");
+      expect(directFallbackResult.content[0]?.text).toContain("\"candidate_publication_state\":\"published\"");
+      expect(directFallbackResult.content[0]?.text).toContain("\"candidate_publication_reason\":\"candidate-already-published\"");
+      expect(createCommentCalls).toBe(0);
+      expect(persistedIssueBodies).toHaveLength(0);
+    });
+
     it("still skips inline publication on a later execution when the summary comment already published the reviewOutputKey", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-456:head-abcdef1234";
       const persistedIssueBodies: string[] = [];
@@ -299,9 +381,8 @@ describe("buildMcpServers", () => {
       expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
     });
 
-    it("reproduces direct fallback acceptance after candidate inline publication is skipped", async () => {
+    it("blocks direct fallback acceptance after candidate inline publication is skipped", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-synchronize:delivery-delivery-direct-fallback:head-abcdef1234";
-      const marker = `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;
       const persistedIssueBodies: string[] = [];
       const persistedReviewBodies: string[] = [];
       let createCommentCalls = 0;
@@ -382,9 +463,12 @@ describe("buildMcpServers", () => {
         body: buildDraftSummaryBody(),
       });
 
-      expect(directFallbackResult.isError).toBeUndefined();
-      expect(createCommentCalls).toBe(1);
-      expect(persistedIssueBodies[0]).toContain(marker);
+      expect(directFallbackResult.isError).toBe(true);
+      expect(directFallbackResult.content[0]?.text).toContain("\"fallback_blocked\":true");
+      expect(directFallbackResult.content[0]?.text).toContain("\"candidate_publication_state\":\"failed\"");
+      expect(directFallbackResult.content[0]?.text).toContain("\"candidate_publication_reason\":\"line-not-commentable-in-pr-diff\"");
+      expect(createCommentCalls).toBe(0);
+      expect(persistedIssueBodies).toHaveLength(0);
     });
   });
 });

@@ -122,6 +122,7 @@ export function createInlineReviewServer(
         },
         "Skipping inline review publication because output key already exists",
       );
+      reviewOutputPublicationGate.recordInlinePublicationSkipped("already-published");
       return "already-published";
     }
 
@@ -261,6 +262,11 @@ export function createInlineReviewServer(
 
             onPublish?.();
 
+            reviewOutputPublicationGate?.recordInlinePublicationPublished({
+              commentId: result.data.id,
+              path: result.data.path,
+            });
+
             if (reviewOutputKey) {
               logger?.info(
                 {
@@ -305,6 +311,12 @@ export function createInlineReviewServer(
 
             const localNonCommentableReason = errorMessage.includes("is not commentable in the PR diff");
             const threadLineNotResolvedReason = isGitHubLineResolutionFailure(githubErrorDetails);
+            const boundedFailureReason = localNonCommentableReason
+              ? "line-not-commentable-in-pr-diff"
+              : threadLineNotResolvedReason
+                ? "review-thread-line-not-resolved"
+                : "inline-publication-failed";
+            reviewOutputPublicationGate?.recordInlinePublicationFailed(boundedFailureReason);
             const logMethod = localNonCommentableReason || threadLineNotResolvedReason ? "info" : "warn";
             logger?.[logMethod](
               {
@@ -322,11 +334,7 @@ export function createInlineReviewServer(
                 githubRequestId: githubErrorDetails.requestId,
                 githubResponseMessage: githubErrorDetails.responseMessage,
                 githubResponseErrors: githubErrorDetails.responseErrors,
-                reason: localNonCommentableReason
-                  ? "line-not-commentable-in-pr-diff"
-                  : threadLineNotResolvedReason
-                    ? "review-thread-line-not-resolved"
-                    : undefined,
+                reason: boundedFailureReason,
               },
               "Inline review comment publication failed",
             );
