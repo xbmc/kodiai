@@ -9,8 +9,8 @@
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:blocked",
-      "label": "Phase: blocked",
+      "id": "concept:phase:validating-milestone",
+      "label": "Phase: validating-milestone",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5206,6 +5206,37 @@
     {
       "id": "task:M068:S11:T04",
       "label": "T04: Reverify exact-key proof or preserve blocker",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S12",
+      "label": "S12: Fix candidate publication fallback coordination",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S12/S12-PLAN.md"
+    },
+    {
+      "id": "task:M068:S12:T01",
+      "label": "T01: Pin down direct-fallback coordination failure",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S12:T02",
+      "label": "T02: Fix candidate/direct-fallback publication coordination",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S12:T03",
+      "label": "T03: Reverify M068 candidate-publication acceptance gate",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S12:T04",
+      "label": "T04: Update validation and close or preserve blocker truthfully",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -10810,6 +10841,36 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M068",
+      "to": "slice:M068:S12",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S12",
+      "to": "task:M068:S12:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S12",
+      "to": "task:M068:S12:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S12",
+      "to": "task:M068:S12:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S12",
+      "to": "task:M068:S12:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -11542,5 +11603,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-11T16:28:07.934Z"
+  "builtAt": "2026-05-11T18:04:17.892Z"
 }

@@ -128,8 +128,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S03,M068/S04
-- Validation: Advanced by S11 direct-fallback rejection: exact-key fallback-shaped evidence is explicitly rejected as M068 success by targeted tests and verify:m068:candidate-publication status_code=m068_direct_fallback.
-- Notes: Fallback remains an audited rollout safety path, not acceptance proof. S11 confirmed the direct-fallback Review Details artifact cannot masquerade as candidate-approved publication.
+- Validation: Advanced after S12: targeted MCP tests block same-execution direct create_comment fallback after candidate inline publication succeeds or fails, and the tracked bounded fixture is rejected by `verify:m068:candidate-publication --expect-status m068_direct_fallback` rather than counted as `m068_ok`. Full validation still requires a fresh exact-key candidate-approved proof.
+- Notes: S12 strengthens fallback rejection with an in-execution publication gate and automation-safe direct-fallback fixture. Fallback-only evidence remains blocked/partial evidence, not milestone acceptance.
 
 ### R116 — M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
 - Class: constraint
@@ -140,7 +140,7 @@ This file is the explicit capability and coverage contract for the project.
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S02,M068/S03
 - Validation: Blocked after S12: visible output remains bounded to one exact-key Review Details issue comment for the known blocked run, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1.
-- Notes: S12 preserved bounded/redaction-clean evidence and did not create an M068 summary. A later eligible proof must show candidate-approved publication with zero direct fallback and bounded visible volume.
+- Notes: S12 preserved bounded/redaction-clean evidence and did not create an M068 summary. The local create_comment direct-fallback path is blocked after candidate inline published/skipped/failed state, but fresh security review identified follow-up hardening for repeated inline publication and update_comment marker stamping before a later eligible proof should be trusted for completion.
 
 ## Validated
 
@@ -1443,9 +1443,9 @@ This file is the explicit capability and coverage contract for the project.
 | R111 | integration | validated | M068/S02 | M068/S03,M068/S05 | M068/S02 verified approved-candidate publication adapter via `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts`, shared MCP/idempotency regression suite, `bun run verify:m068:s01 --json`, `bun run verify:m068:s02 --json`, and `bun run lint` in gsd_exec 24ddedec-2081-42f2-b2e3-6414287cafc7. S02 verifier passed stable checks for adapter mapping, no parallel publisher, idempotency, commentability, secret-scan blocking, bounded evidence, and processed-finding compatibility. |
 | R112 | failure-visibility | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified that direct GitHub publication remains audited fallback and is distinguishable from candidate-approved publication via runtime metadata, Review Details, safe config snapshots, logs, and `bun run verify:m068:s03 --json`. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948, including handler tests and S03 verifier checks that fallback-only output cannot satisfy candidate-approved success. |
 | R113 | operability | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified bounded candidate lifecycle observability for recorded/rejected/deduped/rewritten/approved/suppressed/published/fallback counts and reasons without raw prompts, diffs, candidates, evidence payloads, or secrets. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948; `bun run verify:m068:s03 --json` passed and reports redaction leak count 0 plus bounded Review Details/snapshot checks. |
-| R114 | launchability | active | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Blocked by S11 direct-fallback proof: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but candidate-approved publication is absent and the M068 candidate-publication verifier returns status_code=m068_direct_fallback. |
-| R115 | constraint | active | M068/S05 | M068/S03,M068/S04 | Advanced by S11 direct-fallback rejection: exact-key fallback-shaped evidence is explicitly rejected as M068 success by targeted tests and verify:m068:candidate-publication status_code=m068_direct_fallback. |
-| R116 | constraint | active | M068/S05 | M068/S02,M068/S03 | Blocked by S11 direct-fallback proof: visible output is bounded to one exact-key Review Details issue comment, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1. |
+| R114 | launchability | active | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Blocked after S12: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but candidate-approved publication is absent and the tracked bounded verifier fixture returns status_code=m068_direct_fallback. |
+| R115 | constraint | active | M068/S05 | M068/S03,M068/S04 | Advanced after S12: targeted MCP tests block same-execution direct create_comment fallback after candidate inline publication succeeds or fails, and the tracked bounded fixture is rejected by `verify:m068:candidate-publication --expect-status m068_direct_fallback` rather than counted as `m068_ok`. Full validation still requires a fresh exact-key candidate-approved proof. |
+| R116 | constraint | active | M068/S05 | M068/S02,M068/S03 | Blocked after S12: visible output remains bounded to one exact-key Review Details issue comment for the known blocked run, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1. |
 | R117 | core-capability | deferred | none | none | unmapped |
 | R118 | core-capability | deferred | none | none | unmapped |
 | R119 | failure-visibility | deferred | none | none | unmapped |
