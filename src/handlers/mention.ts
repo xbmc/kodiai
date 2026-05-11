@@ -2007,6 +2007,7 @@ export function createMentionHandler(deps: {
               posted: formatterResult.posted,
               publisherSkipped: formatterResult.publisherSkipped,
               publisherFailed: formatterResult.publisherFailed,
+              reason: formatterResult.reason,
               partialFailure: formatterResult.partialFailure ?? false,
               visibleReplyPosted,
               visibleReplyFailed,

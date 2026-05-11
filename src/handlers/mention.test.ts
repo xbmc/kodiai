@@ -12888,6 +12888,46 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     });
   });
 
+  test("@kodiai format suggestions posts formatter visible diagnostics without dispatching review", async () => {
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai format suggestions",
+      formatterSubflowResult: {
+        status: "setup-needed",
+        commandStatus: "no-command",
+        suggestions: 0,
+        skipped: 0,
+        capped: 0,
+        reason: "formatter suggestions command is not configured",
+        visibleMessage: "Formatter suggestions are not configured. Add review.formatterSuggestions.command to enable this request.",
+      },
+    });
+
+    expect(result.executorCalls).toHaveLength(0);
+    expect(result.capturedContext).toBeUndefined();
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.commentBodies).toHaveLength(1);
+    expect(result.commentBodies[0]).toContain("Formatter suggestions are not configured");
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Format-only formatter suggestion request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      formatterSuggestionRequest: true,
+      formatterMode: "format-only",
+      formatterStatus: "setup-needed",
+      commandStatus: "no-command",
+      suggestions: 0,
+      skipped: 0,
+      capped: 0,
+      reason: "formatter suggestions command is not configured",
+      visibleReplyPosted: true,
+      visibleReplyFailed: false,
+    });
+    expect(
+      result.infoCalls.some((entry) => entry.message === "Mention execution completed"),
+    ).toBe(false);
+  });
+
   test("live PR issue-comment formatter trigger logs delivery id and formatter review output key", async () => {
     const deliveryId = "9961ce70-4830-11f1-86fa-c01e4dffd5b0";
     const reviewOutputKey = buildReviewOutputKey({
