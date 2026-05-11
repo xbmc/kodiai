@@ -476,3 +476,6 @@
 {"id":"ed7f3edb-c0b0-4c65-a46f-aab6ad417f84","ts":"2026-05-11T00:58:26.462Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
 {"id":"24aa819d-8f6f-486d-a25d-1228e381d583","ts":"2026-05-11T00:58:26.465Z","severity":"info","message":"Pre-flight: 58 milestones queued. All have full context.","source":"notify","read":false}
 {"id":"47293e36-3421-496c-86d4-ee2536e4c422","ts":"2026-05-11T00:58:27.305Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"dc99a301-8f46-4dbb-bda4-a3959fa48a31","ts":"2026-05-11T00:59:02.784Z","severity":"info","message":"Committed: chore: auto-commit after complete-milestone","source":"notify","read":false}
+{"id":"31d806b5-695f-457c-85ff-da8b2b9b7c13","ts":"2026-05-11T00:59:04.295Z","severity":"warning","message":"Artifact verification failed: .gsd/milestones/M068/M068-SUMMARY.md exists but did not satisfy the complete-milestone completion contract (.gsd/milestones/M068/M068-SUMMARY.md (milestone summary)). Retrying (attempt 1/3).","source":"notify","read":false}
+{"id":"eeb0ad74-b044-4068-9106-a7b67a691075","ts":"2026-05-11T00:59:04.688Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
