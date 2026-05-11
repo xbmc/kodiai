@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   classifyDocsConfigTruthTrigger,
   DOCS_CONFIG_TRUTH_LANE_ID,
+  normalizeShadowSpecialistOutput,
   type ShadowSpecialistTriggerResult,
 } from "./shadow-specialist.ts";
 
@@ -168,5 +169,283 @@ describe("classifyDocsConfigTruthTrigger", () => {
     expect(result.errorKind).toBe("invalid-path-input");
     expect(result.matchedPaths).toEqual(["docs/operator-guide.md"]);
     expectShadowOnlyContract(result);
+  });
+});
+
+describe("normalizeShadowSpecialistOutput", () => {
+  test("normalizes candidate-shaped private records and metric availability", () => {
+    const result = normalizeShadowSpecialistOutput({
+      status: "ok",
+      deliveryId: " delivery-123 ",
+      reviewOutputKey: " review-output-456 ",
+      correlationKey: " corr-789 ",
+      candidates: [
+        { fingerprint: "candidate-a", decision: "candidate" },
+        { fingerprint: "candidate-b", decision: "dismissed" },
+        {
+          fingerprint: "candidate-c",
+          decision: "disagreement",
+          disagreementCategory: "operator-runbook-gap",
+        },
+      ],
+      metrics: {
+        tokenCount: 100,
+        costUsd: 0.42,
+        latencyMs: 1200,
+      },
+    });
+
+    expect(result).toMatchObject({
+      laneId: DOCS_CONFIG_TRUTH_LANE_ID,
+      status: "ok",
+      skipReason: null,
+      degradedReasons: [],
+      errorKind: null,
+      candidateCount: 3,
+      truncatedCandidateCount: 0,
+      decisionCounts: {
+        candidate: 1,
+        duplicate: 0,
+        disagreement: 1,
+        dismissed: 1,
+        unclassifiable: 0,
+      },
+      duplicateCount: 0,
+      disagreementCount: 1,
+      metricAvailability: {
+        tokenCount: "available",
+        costUsd: "available",
+        latencyMs: "available",
+      },
+      metrics: {
+        decisionCount: 3,
+        duplicateCount: 0,
+        disagreementCount: 1,
+        tokenCountAvailable: true,
+        costAvailable: true,
+        latencyMsAvailable: true,
+      },
+      deliveryId: "delivery-123",
+      reviewOutputKey: "review-output-456",
+      correlationKey: "corr-789",
+      redactionFlags: {
+        unsafeFieldCount: 0,
+        discardedRawPayload: false,
+        discardedPublicationFields: false,
+        discardedApprovalFields: false,
+      },
+      shadowOnly: true,
+      publishesFindings: false,
+    });
+    expect(result.candidates).toEqual([
+      {
+        fingerprint: "candidate-a",
+        decision: "candidate",
+        disagreementCategory: null,
+        duplicate: false,
+        privateOnly: true,
+      },
+      {
+        fingerprint: "candidate-b",
+        decision: "dismissed",
+        disagreementCategory: null,
+        duplicate: false,
+        privateOnly: true,
+      },
+      {
+        fingerprint: "candidate-c",
+        decision: "disagreement",
+        disagreementCategory: "operator-runbook-gap",
+        duplicate: false,
+        privateOnly: true,
+      },
+    ]);
+  });
+
+  test("maps malformed status and numeric metrics to bounded unavailable diagnostics", () => {
+    const result = normalizeShadowSpecialistOutput({
+      status: "ship-it",
+      candidates: [
+        { fingerprint: "a", decision: "candidate" },
+        { fingerprint: "b", decision: "mystery" },
+      ],
+      metrics: {
+        tokenCount: -1,
+        costUsd: Number.NaN,
+        latencyMs: 1.5,
+      },
+    });
+
+    expect(result.status).toBe("unclassifiable");
+    expect(result.degradedReasons).toEqual(["invalid-status"]);
+    expect(result.errorKind).toBeNull();
+    expect(result.decisionCounts).toEqual({
+      candidate: 1,
+      duplicate: 0,
+      disagreement: 0,
+      dismissed: 0,
+      unclassifiable: 1,
+    });
+    expect(result.metricAvailability).toEqual({
+      tokenCount: "unavailable",
+      costUsd: "unavailable",
+      latencyMs: "unavailable",
+    });
+    expect(result.metrics).toMatchObject({
+      tokenCountAvailable: false,
+      costAvailable: false,
+      latencyMsAvailable: false,
+    });
+  });
+
+  test("bounds oversized candidate arrays and counts duplicate fingerprints deterministically", () => {
+    const candidates = Array.from({ length: 30 }, (_, index) => ({
+      fingerprint: index === 1 ? "fp-0" : `fp-${index}`,
+      decision: "candidate",
+    }));
+
+    const result = normalizeShadowSpecialistOutput({
+      status: "ok",
+      candidates,
+    });
+
+    expect(result.status).toBe("degraded");
+    expect(result.degradedReasons).toEqual(["candidates-truncated"]);
+    expect(result.candidateCount).toBe(25);
+    expect(result.truncatedCandidateCount).toBe(5);
+    expect(result.duplicateCount).toBe(1);
+    expect(result.decisionCounts).toEqual({
+      candidate: 24,
+      duplicate: 1,
+      disagreement: 0,
+      dismissed: 0,
+      unclassifiable: 0,
+    });
+    expect(result.candidates[1]).toMatchObject({
+      fingerprint: "fp-0",
+      decision: "duplicate",
+      duplicate: true,
+      privateOnly: true,
+    });
+  });
+
+  test("normalizes disagreement categories without raw model text", () => {
+    const result = normalizeShadowSpecialistOutput({
+      status: "ok",
+      candidates: [
+        {
+          fingerprint: "known",
+          decision: "disagreement",
+          disagreementCategory: "docs-config-conflict",
+          modelText: "raw specialist prose must not escape",
+        },
+        {
+          fingerprint: "unknown",
+          decision: "disagreement",
+          disagreementCategory: "novel-category",
+        },
+      ],
+    });
+
+    expect(result.status).toBe("degraded");
+    expect(result.degradedReasons).toEqual(["unsafe-fields-discarded"]);
+    expect(result.disagreementCount).toBe(2);
+    expect(result.candidates).toEqual([
+      {
+        fingerprint: "known",
+        decision: "disagreement",
+        disagreementCategory: "docs-config-conflict",
+        duplicate: false,
+        privateOnly: true,
+      },
+      {
+        fingerprint: "unknown",
+        decision: "disagreement",
+        disagreementCategory: "unclassifiable",
+        duplicate: false,
+        privateOnly: true,
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("raw specialist prose");
+    expect(result.redactionFlags).toMatchObject({
+      unsafeFieldCount: 1,
+      discardedRawPayload: true,
+      discardedPublicationFields: false,
+      discardedApprovalFields: false,
+    });
+  });
+
+  test("discards raw payload and publication-looking fields into private redaction flags", () => {
+    const result = normalizeShadowSpecialistOutput({
+      status: "ok",
+      prompt: "raw prompt",
+      toolPayload: { secret: "tool output" },
+      candidates: [
+        {
+          fingerprint: "unsafe",
+          decision: "candidate",
+          commentBody: "GitHub-visible body",
+          approved: true,
+          inlineComment: "publication shaped text",
+        },
+      ],
+    });
+
+    expect(result.status).toBe("degraded");
+    expect(result.errorKind).toBe("unsafe-publication-field");
+    expect(result.degradedReasons).toEqual(["unsafe-fields-discarded"]);
+    expect(result.redactionFlags).toEqual({
+      unsafeFieldCount: 5,
+      discardedRawPayload: true,
+      discardedPublicationFields: true,
+      discardedApprovalFields: true,
+    });
+    expect(result.candidates).toEqual([
+      {
+        fingerprint: "unsafe",
+        decision: "candidate",
+        disagreementCategory: null,
+        duplicate: false,
+        privateOnly: true,
+      },
+    ]);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("raw prompt");
+    expect(serialized).not.toContain("tool output");
+    expect(serialized).not.toContain("GitHub-visible body");
+    expect(serialized).not.toContain("publication shaped text");
+    expect(serialized).not.toContain("approved");
+  });
+
+  test("invalid candidate shape and skipped outputs become bounded private diagnostics", () => {
+    const invalidCandidates = normalizeShadowSpecialistOutput({
+      status: "ok",
+      candidates: { fingerprint: "not-an-array" },
+    });
+
+    expect(invalidCandidates).toMatchObject({
+      status: "degraded",
+      degradedReasons: ["invalid-candidates"],
+      errorKind: "invalid-output-shape",
+      candidateCount: 0,
+      duplicateCount: 0,
+      disagreementCount: 0,
+      shadowOnly: true,
+      publishesFindings: false,
+    });
+
+    const skipped = normalizeShadowSpecialistOutput({
+      status: "skipped",
+      candidates: [],
+    });
+
+    expect(skipped).toMatchObject({
+      status: "skipped",
+      skipReason: "missing-output",
+      candidateCount: 0,
+      errorKind: null,
+      shadowOnly: true,
+      publishesFindings: false,
+    });
   });
 });
