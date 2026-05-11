@@ -298,6 +298,94 @@ describe("buildMcpServers", () => {
       expect(secondResult.content[0]?.text).toContain("\"skipped\":true");
       expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
     });
+
+    it("reproduces direct fallback acceptance after candidate inline publication is skipped", async () => {
+      const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-synchronize:delivery-delivery-direct-fallback:head-abcdef1234";
+      const marker = `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;
+      const persistedIssueBodies: string[] = [];
+      const persistedReviewBodies: string[] = [];
+      let createCommentCalls = 0;
+      let createReviewCommentCalls = 0;
+
+      const octokit = {
+        rest: {
+          issues: {
+            listComments: async () => ({
+              data: persistedIssueBodies.map((body, index) => ({ id: index + 1, body })),
+            }),
+            createComment: async ({ body }: { body: string }) => {
+              createCommentCalls++;
+              persistedIssueBodies.push(body);
+              return { data: { id: createCommentCalls, html_url: "https://example.test/comment" } };
+            },
+            updateComment: async () => ({ data: {} }),
+          },
+          pulls: {
+            listReviewComments: async () => ({
+              data: persistedReviewBodies.map((body, index) => ({ id: index + 1, body })),
+            }),
+            listReviews: async () => ({ data: [] }),
+            get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+            createReviewComment: async ({ body }: { body: string }) => {
+              createReviewCommentCalls++;
+              persistedReviewBodies.push(body);
+              return {
+                data: {
+                  id: createReviewCommentCalls,
+                  html_url: "https://example.test/review-comment",
+                  path: "src/file.ts",
+                  line: 10,
+                  original_line: 10,
+                },
+              };
+            },
+          },
+        },
+      };
+
+      const servers = buildMcpServers({
+        getOctokit: async () => octokit as never,
+        owner: "acme",
+        repo: "repo",
+        prNumber: 101,
+        botHandles: [],
+        reviewOutputKey,
+        deliveryId: "delivery-direct-fallback",
+        enableInlineTools: true,
+        enableCommentTools: true,
+        prDiffForCommentValidation: [
+          "diff --git a/src/file.ts b/src/file.ts",
+          "--- a/src/file.ts",
+          "+++ b/src/file.ts",
+          "@@ -700,18 +789,12 @@ void f()",
+          " context",
+          "+added",
+          " context",
+        ].join("\n"),
+      });
+
+      const createInlineComment = getToolHandler(servers.github_inline_comment, "create_inline_comment");
+      const skippedInlineResult = await createInlineComment({
+        path: "src/file.ts",
+        body: "Consider: This candidate targets a stale/non-commentable line.",
+        line: 810,
+        side: "RIGHT",
+      });
+
+      expect(skippedInlineResult.isError).toBe(true);
+      expect(createReviewCommentCalls).toBe(0);
+      expect(persistedReviewBodies).toHaveLength(0);
+
+      const createSummaryComment = getToolHandler(servers.github_comment, "create_comment");
+      const directFallbackResult = await createSummaryComment({
+        issueNumber: 101,
+        body: buildDraftSummaryBody(),
+      });
+
+      expect(directFallbackResult.isError).toBeUndefined();
+      expect(createCommentCalls).toBe(1);
+      expect(persistedIssueBodies[0]).toContain(marker);
+    });
   });
 });
 
