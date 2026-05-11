@@ -1,3 +1,5 @@
+import { runShadowSpecialistSubflow } from "../src/specialists/shadow-specialist-subflow.ts";
+
 export const COMMAND_NAME = "verify:m069:s02" as const;
 export const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m069-s02.ts" as const;
 
@@ -38,8 +40,19 @@ export type M069S02Check = {
 export type M069S02Report = {
   readonly command: typeof COMMAND_NAME;
   readonly generated_at: string;
+  readonly proofMode: "local-fixture-static";
+  readonly proofScope: "non-live-operational-proof";
   readonly success: boolean;
   readonly status_code: M069S02StatusCode;
+  readonly selectedLaneCount: number;
+  readonly skippedLaneCount: number;
+  readonly normalExecutorCompletedOnSuccess: boolean;
+  readonly normalExecutorCompletedOnTimeout: boolean;
+  readonly normalExecutorCompletedOnError: boolean;
+  readonly normalExecutorCompletedOnMalformed: boolean;
+  readonly readOnlyBoundaryPassed: boolean;
+  readonly visiblePublicationFieldCount: number;
+  readonly unsafeFieldCount: number;
   readonly check_ids: readonly M069S02CheckId[];
   readonly checks: readonly M069S02Check[];
   readonly failing_check_id: M069S02CheckId | null;
@@ -109,9 +122,9 @@ const HANDLER_PATH = "src/handlers/review.ts";
 const SUBFLOW_PATH = "src/specialists/shadow-specialist-subflow.ts";
 
 const TARGETED_TEST_COMMANDS = [
-  "bun test src/specialists/shadow-specialist-subflow.test.ts",
-  "bun test src/handlers/review.test.ts",
   "bun test scripts/verify-m069-s02.test.ts",
+  "bun test src/specialists/shadow-specialist-runner.test.ts",
+  "bun test src/handlers/review-shadow-specialist.test.ts",
 ] as const;
 
 const FORBIDDEN_PUBLICATION_PATTERNS = [
@@ -166,6 +179,7 @@ export async function evaluateM069S02Contract(options: EvaluateM069S02Options = 
   const readOnlyCheck = buildReadOnlyBoundaryCheck(subflowText);
   const failOpenCheck = buildFailOpenStatusesCheck(handlerText, subflowText);
   const publicationCheck = buildPublicationSafetyCheck(subflowText);
+  const syntheticProof = await buildSyntheticSubflowProof();
   const checks = [packageCheck, ...handlerChecks, readOnlyCheck, failOpenCheck, publicationCheck];
   const issues = checks.filter((check) => !check.passed).map((check) => check.detail);
   const failingCheck = checks.find((check) => !check.passed) ?? null;
@@ -173,12 +187,26 @@ export async function evaluateM069S02Contract(options: EvaluateM069S02Options = 
   const handlerSummary = summarizeHandlerWiring(handlerText);
   const readOnlySummary = summarizeReadOnlyBoundary(subflowText);
   const failOpenSummary = summarizeFailOpen(handlerText, subflowText);
+  const normalExecutorCompletionCanBeProven = handlerSummary.handlerInvokesSubflow
+    && handlerSummary.invocationBeforeReviewExecution
+    && handlerSummary.handlerFailOpenCatch;
 
   return {
     command: COMMAND_NAME,
     generated_at: options.generatedAt ?? new Date().toISOString(),
+    proofMode: "local-fixture-static",
+    proofScope: "non-live-operational-proof",
     success: issues.length === 0,
     status_code: issues.length === 0 ? "m069_s02_ok" : "m069_s02_contract_failed",
+    selectedLaneCount: syntheticProof.selectedLaneCount,
+    skippedLaneCount: syntheticProof.skippedLaneCount,
+    normalExecutorCompletedOnSuccess: normalExecutorCompletionCanBeProven,
+    normalExecutorCompletedOnTimeout: normalExecutorCompletionCanBeProven && failOpenSummary.timeoutReasonPresent,
+    normalExecutorCompletedOnError: normalExecutorCompletionCanBeProven && failOpenSummary.errorReasonPresent,
+    normalExecutorCompletedOnMalformed: normalExecutorCompletionCanBeProven && failOpenSummary.malformedReasonPresent,
+    readOnlyBoundaryPassed: readOnlyCheck.passed,
+    visiblePublicationFieldCount: readOnlySummary.forbiddenPublicationMatches.length,
+    unsafeFieldCount: syntheticProof.unsafeFieldCount,
     check_ids: [...M069_S02_CHECK_IDS],
     checks,
     failing_check_id: failingCheck?.id ?? null,
@@ -200,6 +228,53 @@ export async function evaluateM069S02Contract(options: EvaluateM069S02Options = 
     failOpen: failOpenSummary,
     targetedTests: [...TARGETED_TEST_COMMANDS],
     issues,
+  };
+}
+
+
+type SyntheticSubflowProof = {
+  readonly selectedLaneCount: number;
+  readonly skippedLaneCount: number;
+  readonly unsafeFieldCount: number;
+};
+
+async function buildSyntheticSubflowProof(): Promise<SyntheticSubflowProof> {
+  const success = await runShadowSpecialistSubflow({
+    changedPaths: ["docs/operators/review-details.md", "src/index.ts"],
+    diffText: "diff --git a/docs/operators/review-details.md b/docs/operators/review-details.md",
+    diffSnippet: "bounded fixture diff",
+    deliveryId: "m069-s02-fixture-delivery",
+    reviewOutputKey: "m069-s02-fixture-review-output",
+    correlationKey: "m069-s02-fixture-correlation",
+    runner: () => ({
+      status: "ok",
+      candidates: [{ fingerprint: "m069-s02-fixture-candidate", decision: "candidate" }],
+      metrics: { tokenCount: 16, costUsd: 0.001, latencyMs: 4 },
+    }),
+  });
+  const skipped = await runShadowSpecialistSubflow({
+    changedPaths: ["src/handlers/review.ts"],
+    deliveryId: "m069-s02-fixture-skip-delivery",
+    reviewOutputKey: "m069-s02-fixture-skip-review-output",
+  });
+  const redacted = await runShadowSpecialistSubflow({
+    changedPaths: ["docs/operators/review-details.md"],
+    deliveryId: "m069-s02-fixture-redacted-delivery",
+    reviewOutputKey: "m069-s02-fixture-redacted-review-output",
+    runner: () => ({
+      status: "ok",
+      prompt: "raw prompt must be discarded",
+      toolPayload: { secret: "tool payload must be discarded" },
+      commentBody: "visible comment must be discarded",
+      inlineComment: "inline comment must be discarded",
+      approval: true,
+    }),
+  });
+
+  return {
+    selectedLaneCount: success.trigger.selectedLaneCount,
+    skippedLaneCount: skipped.triggerStatus === "skipped" ? 1 : 0,
+    unsafeFieldCount: redacted.redactionFlags.unsafeFieldCount,
   };
 }
 
@@ -515,8 +590,19 @@ function buildInvalidArgReport(issue: string): M069S02Report {
   return {
     command: COMMAND_NAME,
     generated_at: new Date().toISOString(),
+    proofMode: "local-fixture-static",
+    proofScope: "non-live-operational-proof",
     success: false,
     status_code: "m069_s02_invalid_arg",
+    selectedLaneCount: 0,
+    skippedLaneCount: 0,
+    normalExecutorCompletedOnSuccess: false,
+    normalExecutorCompletedOnTimeout: false,
+    normalExecutorCompletedOnError: false,
+    normalExecutorCompletedOnMalformed: false,
+    readOnlyBoundaryPassed: false,
+    visiblePublicationFieldCount: 0,
+    unsafeFieldCount: 0,
     check_ids: [...M069_S02_CHECK_IDS],
     checks: [],
     failing_check_id: null,

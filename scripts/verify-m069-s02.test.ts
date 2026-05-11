@@ -130,8 +130,19 @@ describe("verify-m069-s02", () => {
     expect(report).toMatchObject({
       command: "verify:m069:s02",
       generated_at: "2026-05-10T23:00:00.000Z",
+      proofMode: "local-fixture-static",
+      proofScope: "non-live-operational-proof",
       success: true,
       status_code: "m069_s02_ok",
+      selectedLaneCount: 1,
+      skippedLaneCount: 1,
+      normalExecutorCompletedOnSuccess: true,
+      normalExecutorCompletedOnTimeout: true,
+      normalExecutorCompletedOnError: true,
+      normalExecutorCompletedOnMalformed: true,
+      readOnlyBoundaryPassed: true,
+      visiblePublicationFieldCount: 0,
+      unsafeFieldCount: 5,
       failing_check_id: null,
       issues: [],
       summary: {
@@ -175,9 +186,9 @@ describe("verify-m069-s02", () => {
     expect(report.check_ids).toEqual(M069_S02_CHECK_IDS);
     expect(report.checks.every((check) => check.passed)).toBe(true);
     expect(report.targetedTests).toEqual([
-      "bun test src/specialists/shadow-specialist-subflow.test.ts",
-      "bun test src/handlers/review.test.ts",
       "bun test scripts/verify-m069-s02.test.ts",
+      "bun test src/specialists/shadow-specialist-runner.test.ts",
+      "bun test src/handlers/review-shadow-specialist.test.ts",
     ]);
 
     const serialized = JSON.stringify(report);
@@ -185,6 +196,7 @@ describe("verify-m069-s02", () => {
     expect(serialized).not.toContain("tool payload");
     expect(serialized).not.toContain("secret");
     expect(serialized).not.toContain("comment body");
+    expect(serialized).not.toContain("visible comment");
   });
 
   test("fails with bounded issue when package script wiring drifts", async () => {
