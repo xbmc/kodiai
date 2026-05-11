@@ -248,9 +248,10 @@ describe("runFormatterSuggestionSubflow", () => {
   });
 
   test("publishes mapped suggestions with formatter-specific review output key and resolved head sha", async () => {
+    const { entries, logger } = createLogger();
     const publishCalls: unknown[] = [];
     const result = await runFormatterSuggestionSubflow(
-      makeOptions(),
+      makeOptions({ logger }),
       makeDeps({
         publishFormatterSuggestionReview: async (payload) => {
           publishCalls.push(payload);
@@ -263,12 +264,45 @@ describe("runFormatterSuggestionSubflow", () => {
       status: "posted",
       publisherStatus: "posted",
       suggestions: 1,
+      skipped: 0,
+      capped: 0,
       posted: 1,
       reviewUrl: "https://github.com/acme/widgets/pull/42#pullrequestreview-987",
+      reviewId: 987,
       headSha: "abc123def456",
     });
     expect(publishCalls).toHaveLength(1);
-    expect(publishCalls[0]).toMatchObject({ commitId: "abc123def456", reviewOutputKey: expect.stringContaining("action-mention-format-suggestions") });
+    expect(publishCalls[0]).toMatchObject({
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      commitId: "abc123def456",
+      suggestions: [expect.objectContaining({
+        path: "src/example.ts",
+        line: 2,
+        side: "RIGHT",
+        suggestionBody: "```suggestion\nconst value = 1;\n```",
+      })],
+      skipped: [],
+      reviewOutputKey: "kodiai-review-output:v1:inst-123:acme/widgets:pr-42:action-mention-format-suggestions:delivery-delivery-abc:head-abc123def456",
+      botHandles: ["kodiai"],
+      logger,
+    });
+    expect(result.reviewOutputKey).toBe("kodiai-review-output:v1:inst-123:acme/widgets:pr-42:action-mention-format-suggestions:delivery-delivery-abc:head-abc123def456");
+    expect(entries.at(-1)).toMatchObject({
+      level: "info",
+      fields: expect.objectContaining({
+        status: "posted",
+        publisherStatus: "posted",
+        suggestions: 1,
+        skipped: 0,
+        capped: 0,
+        posted: 1,
+        reviewUrl: "https://github.com/acme/widgets/pull/42#pullrequestreview-987",
+        reviewId: 987,
+      }),
+      message: "Formatter suggestion subflow completed",
+    });
   });
 
   test("maps publisher skipped output to duplicate status", async () => {
@@ -409,6 +443,7 @@ describe("runFormatterSuggestionSubflow", () => {
   });
 
   test("reports capped mapped suggestions without bypassing S02 cap semantics", async () => {
+    const publishCalls: unknown[] = [];
     const result = await runFormatterSuggestionSubflow(
       makeOptions({ maxSuggestions: 1 }),
       makeDeps({
@@ -423,11 +458,14 @@ describe("runFormatterSuggestionSubflow", () => {
           unshallowAttempted: false,
           diffRange: "origin/main...HEAD",
         }),
-        publishFormatterSuggestionReview: async () => makePublisherResult({
-          status: "posted",
-          posted: 1,
-          skipped: 1,
-        }),
+        publishFormatterSuggestionReview: async (payload) => {
+          publishCalls.push(payload);
+          return makePublisherResult({
+            status: "posted",
+            posted: 1,
+            skipped: 1,
+          });
+        },
       }),
     );
 
@@ -436,5 +474,10 @@ describe("runFormatterSuggestionSubflow", () => {
     expect(result.skipped).toBe(1);
     expect(result.capped).toBe(1);
     expect(result.mapperCounts?.capped).toBe(1);
+    expect(publishCalls).toHaveLength(1);
+    expect(publishCalls[0]).toMatchObject({
+      suggestions: [expect.objectContaining({ path: "src/example.ts" })],
+      skipped: [expect.objectContaining({ reason: "max-suggestions-exceeded" })],
+    });
   });
 });
