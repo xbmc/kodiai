@@ -2,7 +2,7 @@
   "version": 1,
   "projectName": "kodiai",
   "projectPath": "/home/keith/src/kodiai",
-  "gsdVersion": "2.67.0",
+  "gsdVersion": "2.81.0",
   "entries": [
     {
       "filename": "M030-2026-03-28T16-28-40.html",
@@ -51,6 +51,22 @@
       "doneMilestones": 38,
       "totalMilestones": 39,
       "phase": "pre-planning"
+    },
+    {
+      "filename": "M053-2026-05-11T00-29-05.html",
+      "generatedAt": "2026-05-11T00:29:05.268Z",
+      "milestoneId": "M053",
+      "milestoneTitle": "Same-PR Formatter Suggestions",
+      "label": "M053: Same-PR Formatter Suggestions",
+      "kind": "milestone",
+      "totalCost": 1123.695483299999,
+      "totalTokens": 2117706218,
+      "totalDuration": 313035821,
+      "doneSlices": 213,
+      "totalSlices": 213,
+      "doneMilestones": 55,
+      "totalMilestones": 58,
+      "phase": "completing-milestone"
     }
   ]
 }
