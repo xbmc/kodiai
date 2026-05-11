@@ -1,6 +1,3 @@
-{"id":"ae910fe5-af3f-445f-b7ae-99d15550ba4c","ts":"2026-04-09T09:10:20.032Z","severity":"info","message":"Auto-mode started. Will loop through 3 milestones.","source":"notify","read":true}
-{"id":"23b32790-b3a9-4c4a-a5f6-a2e615aa1440","ts":"2026-04-09T09:10:20.036Z","severity":"info","message":"Pre-flight: 39 milestones queued. All have full context.","source":"notify","read":true}
-{"id":"0ec975b4-4a7e-4d0e-bf4b-48db89539cfe","ts":"2026-04-09T09:10:20.737Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 597m of uncommitted changes","source":"notify","read":true}
 {"id":"f7eb1b93-663a-48ea-809b-5455c083b941","ts":"2026-04-09T09:10:51.287Z","severity":"warning","message":"Session creation timed out or was cancelled for research-milestone M045. Will retry.","source":"notify","read":true}
 {"id":"e5b7d655-2eaa-4418-9586-75f6e9617656","ts":"2026-04-09T09:10:51.308Z","severity":"info","message":"Auto-mode stopped — Session creation failed. Session: $432.30 · 918.29M tokens · 1310 units","source":"notify","read":true}
 {"id":"f0355d7f-761e-4bce-8f28-5d5a045496d5","ts":"2026-04-09T09:10:51.308Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":true}
@@ -498,3 +495,6 @@
 {"id":"511412cb-d04e-4917-a200-9757f03b77e6","ts":"2026-05-11T04:26:14.408Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
 {"id":"211eeb63-c8bf-4ec7-9233-9285bd8c9587","ts":"2026-05-11T04:26:14.412Z","severity":"info","message":"Pre-flight: 58 milestones queued. All have full context.","source":"notify","read":false}
 {"id":"2a620f82-f60e-43a8-874d-6716fa56bb7c","ts":"2026-05-11T04:26:15.354Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"8aa02a15-97a7-4599-ad79-8527adbc0429","ts":"2026-05-11T04:26:47.372Z","severity":"info","message":"Committed: chore: auto-commit after complete-milestone","source":"notify","read":false}
+{"id":"c5ea544c-93f2-46f4-9423-f585f803e60a","ts":"2026-05-11T04:26:48.885Z","severity":"warning","message":"Artifact verification failed: .gsd/milestones/M068/M068-SUMMARY.md exists but did not satisfy the complete-milestone completion contract (.gsd/milestones/M068/M068-SUMMARY.md (milestone summary)). Retrying (attempt 1/3).","source":"notify","read":false}
+{"id":"1856c14e-6ae9-436b-92a1-3d15e7592a6c","ts":"2026-05-11T04:26:49.285Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
