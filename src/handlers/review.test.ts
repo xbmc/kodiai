@@ -7,6 +7,7 @@ import type { Logger } from "pino";
 import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, REVIEW_WORKSPACE_FETCH_DEPTH } from "./review.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
+import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
   ContributorProfile,
@@ -5275,6 +5276,382 @@ describe("createReviewHandler diff collection resilience", () => {
     expect(capturedPrompt).not.toContain("Path-Specific Review Instructions");
 
     await workspaceFixture.cleanup();
+  });
+});
+
+describe("createReviewHandler shadow specialist", () => {
+  async function runShadowSpecialistReviewFlow(params: {
+    changedFiles: readonly unknown[];
+    diffContent?: string;
+    shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+  }) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+    const calls: string[] = [];
+    const shadowInputs: ShadowSpecialistSubflowInput[] = [];
+    let executeCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const defaultShadowResult = (input: ShadowSpecialistSubflowInput): ShadowSpecialistSubflowResult => ({
+      trigger: {
+        status: "triggered",
+        laneId: "docs-config-truth",
+        skipReason: null,
+        degradedReason: null,
+        errorKind: null,
+        matchedPaths: ["docs/runbook.md"],
+        candidateCount: 1,
+        selectedLaneCount: 1,
+        shadowOnly: true,
+        publishesFindings: false,
+        correlationKey: input.correlationKey ?? null,
+        metrics: {
+          decisionCount: 1,
+          duplicateCount: 0,
+          disagreementCount: 1,
+          tokenCountAvailable: false,
+          costAvailable: false,
+          latencyMsAvailable: true,
+        },
+      },
+      output: {
+        laneId: "docs-config-truth",
+        status: "ok",
+        skipReason: null,
+        degradedReasons: [],
+        errorKind: null,
+        candidates: [{ fingerprint: "candidate-1", decision: "disagreement", disagreementCategory: "operator-runbook-gap", duplicate: false, privateOnly: true }],
+        candidateCount: 1,
+        truncatedCandidateCount: 0,
+        decisionCounts: { candidate: 0, duplicate: 0, disagreement: 1, dismissed: 0, unclassifiable: 0 },
+        duplicateCount: 0,
+        disagreementCount: 1,
+        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "available" },
+        metrics: {
+          decisionCount: 1,
+          duplicateCount: 0,
+          disagreementCount: 1,
+          tokenCountAvailable: false,
+          costAvailable: false,
+          latencyMsAvailable: true,
+        },
+        deliveryId: input.deliveryId ?? null,
+        reviewOutputKey: input.reviewOutputKey ?? null,
+        correlationKey: input.correlationKey ?? null,
+        redactionFlags: {
+          unsafeFieldCount: 0,
+          discardedRawPayload: false,
+          discardedPublicationFields: false,
+          discardedApprovalFields: false,
+        },
+        shadowOnly: true,
+        publishesFindings: false,
+      },
+      durationMs: 7,
+      laneId: "docs-config-truth",
+      triggerStatus: "triggered",
+      skipReason: null,
+      degradedReason: null,
+      errorKind: null,
+      timeoutReason: null,
+      errorReason: null,
+      unclassifiableReason: null,
+      deliveryId: input.deliveryId ?? null,
+      reviewOutputKey: input.reviewOutputKey ?? null,
+      correlationKey: input.correlationKey ?? null,
+      candidateCount: 1,
+      decisionCount: 1,
+      duplicateCount: 0,
+      disagreementCount: 1,
+      metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "available" },
+      redactionFlags: {
+        unsafeFieldCount: 0,
+        discardedRawPayload: false,
+        discardedPublicationFields: false,
+        discardedApprovalFields: false,
+      },
+      shadowOnly: true,
+      publishesFindings: false,
+    });
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          calls.push("executor");
+          executeCount++;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-shadow-specialist",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      diffContextCollector: async () => ({
+        changedFiles: params.changedFiles as string[],
+        numstatLines: [],
+        diffContent: params.diffContent,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      shadowSpecialistSubflow: async (input: ShadowSpecialistSubflowInput) => {
+        calls.push("shadow");
+        shadowInputs.push(input);
+        return params.shadowSpecialistSubflow
+          ? params.shadowSpecialistSubflow(input)
+          : defaultShadowResult(input);
+      },
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+      return { calls, executeCount, shadowInputs, entries };
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  }
+
+  test("invokes a docs/config shadow specialist once after diff context and before executor", async () => {
+    const result = await runShadowSpecialistReviewFlow({
+      changedFiles: ["docs/runbook.md", ".github/workflows/ci.yml"],
+      diffContent: "diff --git a/docs/runbook.md b/docs/runbook.md\n+operator truth\n",
+    });
+
+    expect(result.calls).toEqual(["shadow", "executor"]);
+    expect(result.executeCount).toBe(1);
+    expect(result.shadowInputs).toHaveLength(1);
+    expect(result.shadowInputs[0]?.changedPaths).toEqual(["docs/runbook.md", ".github/workflows/ci.yml"]);
+    expect(result.shadowInputs[0]?.diffText).toContain("operator truth");
+    expect(result.shadowInputs[0]?.workspaceDir).toContain("kodiai-review-handler-");
+    expect(result.shadowInputs[0]?.deliveryId).toBe("delivery-123");
+    expect(result.shadowInputs[0]?.reviewOutputKey).toContain("delivery-123");
+    expect(typeof result.shadowInputs[0]?.correlationKey).toBe("string");
+
+    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
+    expect(log?.data?.laneId).toBe("docs-config-truth");
+    expect(log?.data?.status).toBe("triggered");
+    expect(log?.data?.candidateCount).toBe(1);
+    expect(log?.data?.disagreementCount).toBe(1);
+    expect(JSON.stringify(log?.data)).not.toContain("operator truth");
+  });
+
+  test("records skipped status for source-only changes and still executes normal review", async () => {
+    const result = await runShadowSpecialistReviewFlow({
+      changedFiles: ["src/app.ts"],
+      shadowSpecialistSubflow: async (input) => ({
+        trigger: {
+          status: "skipped",
+          laneId: null,
+          skipReason: "no-operator-truth-paths",
+          degradedReason: null,
+          errorKind: null,
+          matchedPaths: [],
+          candidateCount: 0,
+          selectedLaneCount: 0,
+          shadowOnly: true,
+          publishesFindings: false,
+          correlationKey: input.correlationKey ?? null,
+          metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+        },
+        output: {
+          laneId: "docs-config-truth",
+          status: "skipped",
+          skipReason: "not-applicable",
+          degradedReasons: [],
+          errorKind: null,
+          candidates: [],
+          candidateCount: 0,
+          truncatedCandidateCount: 0,
+          decisionCounts: { candidate: 0, duplicate: 0, disagreement: 0, dismissed: 0, unclassifiable: 0 },
+          duplicateCount: 0,
+          disagreementCount: 0,
+          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+          metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+          deliveryId: input.deliveryId ?? null,
+          reviewOutputKey: input.reviewOutputKey ?? null,
+          correlationKey: input.correlationKey ?? null,
+          redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+          shadowOnly: true,
+          publishesFindings: false,
+        },
+        durationMs: 2,
+        laneId: null,
+        triggerStatus: "skipped",
+        skipReason: "no-operator-truth-paths",
+        degradedReason: null,
+        errorKind: null,
+        timeoutReason: null,
+        errorReason: null,
+        unclassifiableReason: null,
+        deliveryId: input.deliveryId ?? null,
+        reviewOutputKey: input.reviewOutputKey ?? null,
+        correlationKey: input.correlationKey ?? null,
+        candidateCount: 0,
+        decisionCount: 0,
+        duplicateCount: 0,
+        disagreementCount: 0,
+        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+        redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+        shadowOnly: true,
+        publishesFindings: false,
+      }),
+    });
+
+    expect(result.calls).toEqual(["shadow", "executor"]);
+    expect(result.executeCount).toBe(1);
+    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
+    expect(log?.data?.status).toBe("skipped");
+    expect(log?.data?.reason).toBe("no-operator-truth-paths");
+  });
+
+  test("keeps executor authoritative when the shadow specialist degrades, errors, times out, or returns malformed output", async () => {
+    const outcomes: Array<{ name: string; result: Partial<ShadowSpecialistSubflowResult> }> = [
+      { name: "degraded", result: { triggerStatus: "triggered", degradedReason: "runner-timeout", timeoutReason: "runner-timeout" } },
+      { name: "error", result: { triggerStatus: "triggered", errorKind: "runner-error", errorReason: "runner-error" } },
+      { name: "malformed", result: { triggerStatus: "triggered", degradedReason: "malformed-output", unclassifiableReason: "malformed-output" } },
+    ];
+
+    for (const outcome of outcomes) {
+      const result = await runShadowSpecialistReviewFlow({
+        changedFiles: ["docs/runbook.md"],
+        shadowSpecialistSubflow: async (input) => ({
+          trigger: {
+            status: "triggered",
+            laneId: "docs-config-truth",
+            skipReason: null,
+            degradedReason: null,
+            errorKind: null,
+            matchedPaths: ["docs/runbook.md"],
+            candidateCount: 0,
+            selectedLaneCount: 1,
+            shadowOnly: true,
+            publishesFindings: false,
+            correlationKey: input.correlationKey ?? null,
+            metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+          },
+          output: {
+            laneId: "docs-config-truth",
+            status: outcome.name === "error" ? "error" : "degraded",
+            skipReason: "missing-output",
+            degradedReasons: [],
+            errorKind: null,
+            candidates: [],
+            candidateCount: 0,
+            truncatedCandidateCount: 0,
+            decisionCounts: { candidate: 0, duplicate: 0, disagreement: 0, dismissed: 0, unclassifiable: 0 },
+            duplicateCount: 0,
+            disagreementCount: 0,
+            metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+            metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+            deliveryId: input.deliveryId ?? null,
+            reviewOutputKey: input.reviewOutputKey ?? null,
+            correlationKey: input.correlationKey ?? null,
+            redactionFlags: { unsafeFieldCount: 1, discardedRawPayload: true, discardedPublicationFields: true, discardedApprovalFields: true },
+            shadowOnly: true,
+            publishesFindings: false,
+          },
+          durationMs: 3,
+          laneId: "docs-config-truth",
+          triggerStatus: "triggered",
+          skipReason: null,
+          degradedReason: null,
+          errorKind: null,
+          timeoutReason: null,
+          errorReason: null,
+          unclassifiableReason: null,
+          deliveryId: input.deliveryId ?? null,
+          reviewOutputKey: input.reviewOutputKey ?? null,
+          correlationKey: input.correlationKey ?? null,
+          candidateCount: 0,
+          decisionCount: 0,
+          duplicateCount: 0,
+          disagreementCount: 0,
+          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+          redactionFlags: { unsafeFieldCount: 1, discardedRawPayload: true, discardedPublicationFields: true, discardedApprovalFields: true },
+          shadowOnly: true,
+          publishesFindings: false,
+          ...outcome.result,
+        } as ShadowSpecialistSubflowResult),
+      });
+
+      expect(result.calls).toEqual(["shadow", "executor"]);
+      expect(result.executeCount).toBe(1);
+      const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
+      expect(log?.data?.status).toBe(outcome.result.triggerStatus);
+      expect(log?.data?.unsafeFieldCount).toBe(1);
+      expect(log?.data).not.toHaveProperty("candidates");
+      expect(log?.data).not.toHaveProperty("output");
+    }
+  });
+
+  test("continues normal review when injected shadow specialist throws", async () => {
+    const result = await runShadowSpecialistReviewFlow({
+      changedFiles: ["docs/runbook.md"],
+      shadowSpecialistSubflow: async () => {
+        throw new Error("private specialist unavailable");
+      },
+    });
+
+    expect(result.calls).toEqual(["shadow", "executor"]);
+    expect(result.executeCount).toBe(1);
+    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
+    expect(log?.data?.status).toBe("error");
+    expect(log?.data?.reason).toBe("handler-subflow-error");
+    expect(JSON.stringify(log?.data)).not.toContain("private specialist unavailable");
   });
 });
 

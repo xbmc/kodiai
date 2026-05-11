@@ -202,6 +202,11 @@ import { createTaskRouter } from "../llm/task-router.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { linkPRToIssues, type LinkResult } from "../knowledge/issue-linker.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
+import {
+  runShadowSpecialistSubflow,
+  type ShadowSpecialistSubflowInput,
+  type ShadowSpecialistSubflowResult,
+} from "../specialists/shadow-specialist-subflow.ts";
 
 
 
@@ -267,6 +272,51 @@ function hashPromptString(value: string | null | undefined): string | null {
   }
 
   return sha256Hex(value);
+}
+
+function buildShadowSpecialistCorrelationKey(params: {
+  deliveryId?: string | null;
+  reviewOutputKey?: string | null;
+  prNumber: number;
+}): string {
+  return sha256Hex(`${params.deliveryId ?? "unknown-delivery"}:${params.reviewOutputKey ?? "unknown-output"}:${params.prNumber}`).slice(0, 16);
+}
+
+function resolveShadowSpecialistReason(result: ShadowSpecialistSubflowResult): string | null {
+  return result.timeoutReason
+    ?? result.errorReason
+    ?? result.unclassifiableReason
+    ?? result.skipReason
+    ?? result.degradedReason
+    ?? result.errorKind
+    ?? null;
+}
+
+function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): Record<string, unknown> {
+  return {
+    gate: "shadow-specialist",
+    laneId: result.laneId,
+    status: result.triggerStatus,
+    outputStatus: result.output.status,
+    reason: resolveShadowSpecialistReason(result),
+    candidateCount: result.candidateCount,
+    decisionCount: result.decisionCount,
+    duplicateCount: result.duplicateCount,
+    disagreementCount: result.disagreementCount,
+    durationMs: result.durationMs,
+    deliveryId: result.deliveryId,
+    reviewOutputKey: result.reviewOutputKey,
+    correlationKey: result.correlationKey,
+    tokenCountAvailable: result.metricAvailability.tokenCount,
+    costAvailable: result.metricAvailability.costUsd,
+    latencyMsAvailable: result.metricAvailability.latencyMs,
+    unsafeFieldCount: result.redactionFlags.unsafeFieldCount,
+    discardedRawPayload: result.redactionFlags.discardedRawPayload,
+    discardedPublicationFields: result.redactionFlags.discardedPublicationFields,
+    discardedApprovalFields: result.redactionFlags.discardedApprovalFields,
+    shadowOnly: result.shadowOnly,
+    publishesFindings: result.publishesFindings,
+  };
 }
 
 function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
@@ -1864,6 +1914,8 @@ export function createReviewHandler(deps: {
   fetchRemoteTrackingBranchFn?: typeof fetchRemoteTrackingBranch;
   /** Optional diff context collector for deterministic tests and bounded fallback behavior. */
   diffContextCollector?: typeof collectDiffContext;
+  /** Optional same-job read-only shadow specialist subflow; fail-open and private by contract. */
+  shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
   logger: Logger;
 }): void {
   const {
@@ -1894,6 +1946,7 @@ export function createReviewHandler(deps: {
     clusterModelStore,
     fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
     diffContextCollector = collectDiffContext,
+    shadowSpecialistSubflow = runShadowSpecialistSubflow,
     logger,
   } = deps;
 
@@ -3315,6 +3368,54 @@ export function createReviewHandler(deps: {
           );
           return;
         }
+
+        let shadowSpecialistResult: ShadowSpecialistSubflowResult | undefined;
+        try {
+          shadowSpecialistResult = await shadowSpecialistSubflow({
+            changedPaths: changedFiles,
+            diffText: diffContext.diffContent,
+            diffSnippet: diffContext.diffContent,
+            workspaceDir: workspace.dir,
+            deliveryId: event.id,
+            reviewOutputKey,
+            correlationKey: buildShadowSpecialistCorrelationKey({
+              deliveryId: event.id,
+              reviewOutputKey,
+              prNumber: pr.number,
+            }),
+          });
+
+          const shadowLogFields = {
+            ...baseLog,
+            ...buildShadowSpecialistLogFields(shadowSpecialistResult),
+          };
+          const shadowMessage = "Shadow specialist subflow completed";
+          if (shadowSpecialistResult.timeoutReason || shadowSpecialistResult.errorReason || shadowSpecialistResult.unclassifiableReason) {
+            logger.warn(shadowLogFields, shadowMessage);
+          } else {
+            logger.info(shadowLogFields, shadowMessage);
+          }
+        } catch (err) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "shadow-specialist",
+              laneId: "docs-config-truth",
+              status: "error",
+              reason: "handler-subflow-error",
+              deliveryId: event.id,
+              reviewOutputKey,
+              correlationKey: buildShadowSpecialistCorrelationKey({
+                deliveryId: event.id,
+                reviewOutputKey,
+                prNumber: pr.number,
+              }),
+              err,
+            },
+            "Shadow specialist subflow failed before normal review; continuing fail-open",
+          );
+        }
+        void shadowSpecialistResult;
 
         // In incremental mode, further filter to only files that changed since last review
         let reviewFiles = changedFiles;
