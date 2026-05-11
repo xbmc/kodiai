@@ -40,6 +40,7 @@ Test evidence and verification records in [`smoke/`](smoke/):
 - **[Phase 74: Reliability Regression Gate](smoke/phase74-reliability-regression-gate.md)** — Pre-release reliability gate for issue write-mode
 - **[Phase 75: Live OPS Verification Closure](smoke/phase75-live-ops-verification-closure.md)** — Release candidate OPS closure procedure
 - **[Phase 80: Slack Operator Hardening](smoke/phase80-slack-operator-hardening.md)** — Slack v1 channel gating and operator verification
+- **[M053 Formatter Suggestions Proof Alignment](smoke/m053-formatter-suggestions.md)** — M053/S05/R085 alignment note that maps accepted M066 live proof to the milestone closure criteria
 - **[M066 Formatter Suggestions Smoke Proof](smoke/m066-formatter-suggestions.md)** — Accepted proof record for same-PR formatter suggestions, including the default-command xbmc/xbmc validation
 - **[Slack Webhook Relay](smoke/slack-webhook-relay.md)** — Accepted, suppressed, and failed-delivery smoke path for webhook relay
 - **[xbmc/kodiai Write Flow](smoke/xbmc-kodiai-write-flow.md)** — End-to-end write-mode smoke test for xbmc/kodiai

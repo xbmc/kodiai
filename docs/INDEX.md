@@ -25,6 +25,7 @@
 - [docs/runbooks/slack-webhook-relay.md](runbooks/slack-webhook-relay.md)
 - [docs/runbooks/xbmc-cutover.md](runbooks/xbmc-cutover.md)
 - [docs/runbooks/xbmc-ops.md](runbooks/xbmc-ops.md)
+- [docs/smoke/m053-formatter-suggestions.md](smoke/m053-formatter-suggestions.md)
 - [docs/smoke/m066-formatter-suggestions.md](smoke/m066-formatter-suggestions.md)
 - [docs/smoke/phase27-uat-notes.md](smoke/phase27-uat-notes.md)
 - [docs/smoke/phase72-telemetry-follow-through.md](smoke/phase72-telemetry-follow-through.md)
