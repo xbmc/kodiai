@@ -49,7 +49,28 @@ describe("M068 candidate publication proof verifier", () => {
     expect(report.issues).toContain("Direct fallback evidence is present and cannot count as candidate-approved publication.");
   });
 
-  test("rejects candidate-approved-looking evidence with extra exact-key visible artifacts", () => {
+  test("accepts live candidate-approved proof with one Review Details comment and multiple inline candidate comments", () => {
+    const report = evaluateM068CandidatePublicationProof({
+      ...baseInput,
+      mode: "candidate-approved",
+      candidatePublished: 4,
+      directFallback: 0,
+      artifactCounts: { reviews: 0, reviewComments: 4, issueComments: 1 },
+      url: "https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241",
+    });
+
+    expect(report).toMatchObject({
+      success: true,
+      status_code: "m068_ok",
+      mode: "candidate-approved",
+      candidatePublished: 4,
+      directFallback: 0,
+      exactKeyArtifactCount: 5,
+      issues: [],
+    });
+  });
+
+  test("rejects candidate-approved-looking evidence with extra Review Details artifacts", () => {
     const report = evaluateM068CandidatePublicationProof({
       ...baseInput,
       mode: "candidate-approved",
@@ -60,7 +81,7 @@ describe("M068 candidate publication proof verifier", () => {
 
     expect(report.success).toBe(false);
     expect(report.status_code).toBe("m068_malformed_evidence");
-    expect(report.issues).toContain("Expected exactly one bounded exact-key visible artifact; found 3.");
+    expect(report.issues).toContain("Expected exactly one bounded Review Details artifact; found 2.");
   });
 
   test("parses bounded GitHub-visible candidate publication lines", () => {

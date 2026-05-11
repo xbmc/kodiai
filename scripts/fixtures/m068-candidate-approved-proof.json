@@ -1,0 +1,13 @@
+{
+  "reviewOutputKey": "kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28172:action-mention-review:delivery-e15d3ee0-4d6b-11f1-9d31-9ef027295c6d:head-kodiai-review-validation-20260411",
+  "deliveryId": "e15d3ee0-4d6b-11f1-9d31-9ef027295c6d",
+  "mode": "candidate-approved",
+  "candidatePublished": 4,
+  "directFallback": 0,
+  "artifactCounts": {
+    "reviews": 0,
+    "reviewComments": 4,
+    "issueComments": 1
+  },
+  "url": "https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241"
+}

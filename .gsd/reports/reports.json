@@ -67,6 +67,22 @@
       "doneMilestones": 55,
       "totalMilestones": 58,
       "phase": "completing-milestone"
+    },
+    {
+      "filename": "M068-2026-05-11T21-03-32.html",
+      "generatedAt": "2026-05-11T21:03:32.624Z",
+      "milestoneId": "M068",
+      "milestoneTitle": "Candidate Findings Before Publication",
+      "label": "M068: Candidate Findings Before Publication",
+      "kind": "milestone",
+      "totalCost": 1144.4597192999995,
+      "totalTokens": 2135893567,
+      "totalDuration": 316358917,
+      "doneSlices": 215,
+      "totalSlices": 215,
+      "doneMilestones": 56,
+      "totalMilestones": 58,
+      "phase": "pre-planning"
     }
   ]
 }

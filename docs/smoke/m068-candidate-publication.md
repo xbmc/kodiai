@@ -2,9 +2,46 @@
 
 ## Scope
 
-Bounded evidence for the fresh production run on `xbmc/xbmc#28172`. This file intentionally records only delivery IDs, review output keys, counts, status/mode fields, reason codes, and public GitHub artifact URLs.
+Bounded evidence for live production runs on `xbmc/xbmc#28172`. This file intentionally records only delivery IDs, review output keys, counts, status/mode fields, reason codes, and public GitHub artifact URLs.
 
-## Exact-key run
+## Accepted exact-key candidate-approved run
+
+- Trigger comment: `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423917332`
+- Repository / PR: `xbmc/xbmc#28172`
+- Event/action: `issue_comment.created` explicit `@kodiai review`
+- Delivery ID: `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d`
+- Review output key: `kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28172:action-mention-review:delivery-e15d3ee0-4d6b-11f1-9d31-9ef027295c6d:head-kodiai-review-validation-20260411`
+- Review Details issue comment: `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241`
+- Inline candidate comments:
+  - `https://github.com/xbmc/xbmc/pull/28172#discussion_r3221441431`
+  - `https://github.com/xbmc/xbmc/pull/28172#discussion_r3221441565`
+  - `https://github.com/xbmc/xbmc/pull/28172#discussion_r3221441869`
+  - `https://github.com/xbmc/xbmc/pull/28172#discussion_r3221442017`
+
+## Accepted proof counters
+
+| Field | Value |
+|---|---:|
+| mode | candidate-approved |
+| candidatePublished | 4 |
+| directFallback | 0 |
+| Review Details artifacts | 1 |
+| Inline candidate review comments | 4 |
+| Pull Request Review artifacts | 0 |
+
+## Accepted verifier result
+
+Bounded fixture: `scripts/fixtures/m068-candidate-approved-proof.json`
+
+Verification command:
+
+```bash
+bun run verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json
+```
+
+Result: `success=true`, `status_code=m068_ok`, `candidatePublished=4`, `directFallback=0`, and `exactKeyArtifactCount=5`. The verifier now treats this as valid because the milestone contract requires exactly one bounded Review Details artifact plus candidate-approved inline publication; inline candidate comments are expected candidate publication artifacts, not duplicate Review Details artifacts.
+
+## Prior blocked direct-fallback run
 
 - Source log extraction: `.gsd/exec/f576783f-db47-4b96-bd71-59b6a2e9fa6e.stdout`
 - Detailed gate-key extraction: `.gsd/exec/54de0fff-b5b4-43c5-a497-b2a72d4b5c6f.stdout`
@@ -16,7 +53,7 @@ Bounded evidence for the fresh production run on `xbmc/xbmc#28172`. This file in
 - Runtime conclusion: `success`
 - Review Details publication: `publicationMode=canonical`, `reviewDetailsPublished=true`, `hasCommentId=true`
 
-## Runtime candidate-publication counters
+### Runtime candidate-publication counters
 
 | Field | Value |
 |---|---:|
@@ -41,7 +78,7 @@ Bounded evidence for the fresh production run on `xbmc/xbmc#28172`. This file in
 - Candidate publication result sample count: `5`
 - Adapter payload fingerprint count: `5`
 
-## GitHub-visible artifact counters
+### GitHub-visible artifact counters
 
 | Artifact class | Total checked | Matching exact key |
 |---|---:|---:|
@@ -55,6 +92,6 @@ Bounded evidence for the fresh production run on `xbmc/xbmc#28172`. This file in
 - Review Details marker present: `true`
 - GitHub-visible candidate line: `mode=direct-fallback approved=1 rewritten=4 published=0 directFallback=1 reasons=candidate-publisher-skipped,direct-fallback-attempted,direct-fallback-published,direct-fallback-disallowed`
 
-## Acceptance verdict
+### Prior blocked verdict
 
-This is valid blocked/remediation evidence, not M068 completion evidence. The run reached candidate capture, reducer, adapter, candidate publication, and canonical Review Details publication gates, but the exact-key visible artifact reports `published=0` candidate-approved outputs and `directFallback=1`. S12/T03 re-ran the bounded exact-key candidate-publication verifier against delivery `3a63ea30-4cee-11f1-951a-db5e2665bb61` / issue comment `4417527175`; the fresh bounded assertion is recorded at `.gsd/exec/81a7093f-973c-4530-bd18-cc33e996c833.stdout`, and the verifier returned `status_code=m068_direct_fallback`, `candidatePublished=0`, `directFallback=1`, and `exactKeyArtifactCount=1`. S12/T04 moved the bounded input into tracked fixture `scripts/fixtures/m068-direct-fallback-proof.json` and verified the explicit blocked-status command `bun run verify:m068:candidate-publication --expect-status m068_direct_fallback scripts/fixtures/m068-direct-fallback-proof.json`; that assertion is recorded at `.gsd/exec/4fdcce09-7bed-4677-b61c-5807ab633340.stdout`. The verifier and milestone validation must continue to reject this as `m068_ok` until a fresh exact-key run proves candidate-approved publication with zero direct fallback.
+This remains valid blocked/remediation evidence, not M068 completion evidence. The run reached candidate capture, reducer, adapter, candidate publication, and canonical Review Details publication gates, but the exact-key visible artifact reports `published=0` candidate-approved outputs and `directFallback=1`. The verifier must continue to reject this fixture as `m068_direct_fallback`.

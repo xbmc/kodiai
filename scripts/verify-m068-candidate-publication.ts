@@ -37,9 +37,10 @@ export function evaluateM068CandidatePublicationProof(
   const mode = normalizeToken(input.mode) ?? parsedLine.mode;
   const candidatePublished = normalizeCount(input.candidatePublished ?? parsedLine.published);
   const directFallback = normalizeCount(input.directFallback ?? input.directPublished ?? parsedLine.directFallback);
-  const exactKeyArtifactCount = normalizeCount(input.artifactCounts?.reviews)
-    + normalizeCount(input.artifactCounts?.reviewComments)
+  const reviewArtifactCount = normalizeCount(input.artifactCounts?.reviews)
     + normalizeCount(input.artifactCounts?.issueComments);
+  const exactKeyArtifactCount = reviewArtifactCount
+    + normalizeCount(input.artifactCounts?.reviewComments);
   const url = normalizeUrl(input.url);
 
   if (!reviewOutputKey?.startsWith("kodiai-review-output:v1:")) {
@@ -51,8 +52,8 @@ export function evaluateM068CandidatePublicationProof(
   if (!mode) {
     issues.push("Missing candidate publication mode.");
   }
-  if (exactKeyArtifactCount !== 1) {
-    issues.push(`Expected exactly one bounded exact-key visible artifact; found ${exactKeyArtifactCount}.`);
+  if (reviewArtifactCount !== 1) {
+    issues.push(`Expected exactly one bounded Review Details artifact; found ${reviewArtifactCount}.`);
   }
   if (directFallback > 0 || mode === "direct-fallback") {
     issues.push("Direct fallback evidence is present and cannot count as candidate-approved publication.");
@@ -146,6 +147,9 @@ function parseCliArgs(args: string[]): { expectStatus: M068CandidatePublicationP
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === undefined) {
+      continue;
+    }
     if (arg === "--expect-status") {
       const value = args[index + 1];
       if (!isM068StatusCode(value)) {

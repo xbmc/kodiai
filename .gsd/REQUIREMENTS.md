@@ -98,50 +98,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
-### R110 — Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
-- Class: core-capability
-- Status: active
-- Description: Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
-- Why it matters: Issue #131 depends on moving from direct agent publishing toward explicit orchestration where findings pass through a controlled reducer/coordinator gate before reaching GitHub.
-- Source: user
-- Primary owning slice: M068/S01
-- Supporting slices: M068/S02,M068/S03,M068/S05
-- Validation: mapped
-- Notes: Direct publish fallback remains available during M068, but candidate-approved publication is the primary success path.
-
-### R114 — M068 must produce a live exact-key proof on xbmc/xbmc#28172 where Review Details are published and show candidate-approved publication evidence.
-- Class: launchability
-- Status: active
-- Description: M068 must produce a live exact-key proof on xbmc/xbmc#28172 where Review Details are published and show candidate-approved publication evidence.
-- Why it matters: The architecture changes the review publication contract and must be proven against the real target PR, not only fixtures.
-- Source: user
-- Primary owning slice: M068/S05
-- Supporting slices: M068/S01,M068/S02,M068/S03,M068/S04
-- Validation: Blocked after S12: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but candidate-approved publication is absent and the tracked bounded verifier fixture returns status_code=m068_direct_fallback.
-- Notes: S12 fixed the local candidate/direct-fallback coordination path and added `scripts/fixtures/m068-direct-fallback-proof.json` for bounded status verification. A later fresh eligible exact-key run must prove candidate-approved publication before M068 can complete.
-
-### R115 — Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
-- Class: constraint
-- Status: active
-- Description: Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
-- Why it matters: Without this constraint, the milestone could pass by exercising the old direct-publish architecture and fail to advance issue #131.
-- Source: user
-- Primary owning slice: M068/S05
-- Supporting slices: M068/S03,M068/S04
-- Validation: Advanced after S12: targeted MCP tests block same-execution direct create_comment fallback after candidate inline publication succeeds or fails, and the tracked bounded fixture is rejected by `verify:m068:candidate-publication --expect-status m068_direct_fallback` rather than counted as `m068_ok`. Full validation still requires a fresh exact-key candidate-approved proof.
-- Notes: S12 strengthens fallback rejection with an in-execution publication gate and automation-safe direct-fallback fixture. Fallback-only evidence remains blocked/partial evidence, not milestone acceptance.
-
-### R116 — M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
-- Class: constraint
-- Status: active
-- Description: M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
-- Why it matters: The candidate-before-publication path should reduce noise and improve traceability, not create duplicate or expanded visible comments.
-- Source: inferred
-- Primary owning slice: M068/S05
-- Supporting slices: M068/S02,M068/S03
-- Validation: Blocked after S12: visible output remains bounded to one exact-key Review Details issue comment for the known blocked run, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1.
-- Notes: S12 preserved bounded/redaction-clean evidence and did not create an M068 summary. The local create_comment direct-fallback path is blocked after candidate inline published/skipped/failed state, but fresh security review identified follow-up hardening for repeated inline publication and update_comment marker stamping before a later eligible proof should be trusted for completion.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -1003,6 +959,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key.
 - Notes: This preserves the production-safety boundary while foundational contracts are introduced.
 
+### R110 — Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
+- Class: core-capability
+- Status: validated
+- Description: Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
+- Why it matters: Issue #131 depends on moving from direct agent publishing toward explicit orchestration where findings pass through a controlled reducer/coordinator gate before reaching GitHub.
+- Source: user
+- Primary owning slice: M068/S01
+- Supporting slices: M068/S02,M068/S03,M068/S05
+- Validation: M068 live exact-key proof on xbmc/xbmc#28172 used explicit `@kodiai review` delivery `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d` and reviewOutputKey `kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28172:action-mention-review:delivery-e15d3ee0-4d6b-11f1-9d31-9ef027295c6d:head-kodiai-review-validation-20260411`; `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed with candidatePublished=4 and directFallback=0.
+- Notes: Candidate-approved publication is now proven for the target PR; prior direct-fallback evidence remains tracked as blocked evidence only.
+
 ### R111 — Approved candidates are adapted into the existing processed-finding/publication shape so current GitHub publication, idempotency, commentability, and secret-scan machinery remains the final writer.
 - Class: integration
 - Status: validated
@@ -1035,6 +1002,39 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M068/S04,M068/S05
 - Validation: M068/S03 verified bounded candidate lifecycle observability for recorded/rejected/deduped/rewritten/approved/suppressed/published/fallback counts and reasons without raw prompts, diffs, candidates, evidence payloads, or secrets. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948; `bun run verify:m068:s03 --json` passed and reports redaction leak count 0 plus bounded Review Details/snapshot checks.
 - Notes: Public Review Details stays compact; deeper state belongs in logs, snapshots, verifier JSON, and bounded smoke artifacts.
+
+### R114 — M068 must produce a live exact-key proof on xbmc/xbmc#28172 where Review Details are published and show candidate-approved publication evidence.
+- Class: launchability
+- Status: validated
+- Description: M068 must produce a live exact-key proof on xbmc/xbmc#28172 where Review Details are published and show candidate-approved publication evidence.
+- Why it matters: The architecture changes the review publication contract and must be proven against the real target PR, not only fixtures.
+- Source: user
+- Primary owning slice: M068/S05
+- Supporting slices: M068/S01,M068/S02,M068/S03,M068/S04
+- Validation: Accepted live exact-key proof on xbmc/xbmc#28172: trigger `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423917332`, Review Details `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241`, four inline candidate comments, delivery `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d`, verifier status `m068_ok`.
+- Notes: Validated by bounded fixture `scripts/fixtures/m068-candidate-approved-proof.json` and smoke note `docs/smoke/m068-candidate-publication.md`.
+
+### R115 — Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
+- Class: constraint
+- Status: validated
+- Description: Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
+- Why it matters: Without this constraint, the milestone could pass by exercising the old direct-publish architecture and fail to advance issue #131.
+- Source: user
+- Primary owning slice: M068/S05
+- Supporting slices: M068/S03,M068/S04
+- Validation: Both sides of the fallback contract are proven: `scripts/fixtures/m068-candidate-approved-proof.json` passes only as `m068_ok`, while `scripts/fixtures/m068-direct-fallback-proof.json` passes only with `--expect-status m068_direct_fallback` and remains rejected as success.
+- Notes: The verifier now distinguishes one Review Details artifact from expected inline candidate comments so candidate-approved publication is not misclassified as duplicate Review Details evidence.
+
+### R116 — M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
+- Class: constraint
+- Status: validated
+- Description: M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
+- Why it matters: The candidate-before-publication path should reduce noise and improve traceability, not create duplicate or expanded visible comments.
+- Source: inferred
+- Primary owning slice: M068/S05
+- Supporting slices: M068/S02,M068/S03
+- Validation: The accepted live proof has one bounded Review Details issue comment plus four inline candidate review comments, directFallback=0, and no issue-comment fallback. `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed.
+- Notes: Visible output is bounded and explicit: one Review Details artifact plus candidate-approved inline publication artifacts for the exact key.
 
 ## Deferred
 
@@ -1121,10 +1121,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
 - Why it matters: Specialists can improve signal only after the plan, reducer, and candidate contracts exist.
 - Source: issue #131
-- Primary owning slice: M069 provisional
-- Supporting slices: none
+- Primary owning slice: M069/S02
+- Supporting slices: M069/S01,M069/S03,M069/S04,M069/S05
 - Validation: unmapped
-- Notes: Deferred to M069 and beyond. Do not add specialist lanes in M067.
+- Notes: Mapped for M069 planning: docs/config/runbook truthfulness pilot starts as shadow-only same-job specialist lane; correctness/security lanes remain out of scope.
 
 ### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
 - Class: quality-attribute
@@ -1133,9 +1133,9 @@ This file is the explicit capability and coverage contract for the project.
 - Why it matters: Specialist outputs need stronger verification than generation before they can safely affect publication policy.
 - Source: issue #131
 - Primary owning slice: M070 provisional
-- Supporting slices: none
+- Supporting slices: M069/S03,M069/S04
 - Validation: unmapped
-- Notes: Deferred to M070. M067's reducer extraction stays behavior-preserving.
+- Notes: M069 maps only measurement inputs for future conflict policy: duplicate/disagreement counts and candidate decision counts are recorded, but verified/partially verified/unverified/disproven publication semantics remain deferred to M070+.
 
 ### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Class: integration
@@ -1154,10 +1154,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
 - Why it matters: Review tiers and specialist orchestration should be backed by production evidence, not labels.
 - Source: issue #131
-- Primary owning slice: M072 provisional
-- Supporting slices: none
+- Primary owning slice: M069/S04
+- Supporting slices: M069/S02,M069/S03,M069/S05
 - Validation: unmapped
-- Notes: Deferred to M072. Do not introduce default increased concurrency/cost in M067.
+- Notes: Mapped for M069 planning: specialist lane status, candidate counts, decision counts, duplicate/disagreement counts, correlation key, and bounded cost/latency/signal metric fields become machine-checkable shadow rollout evidence; hard tier thresholds remain deferred.
 
 ### R117 — Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
 - Class: core-capability
@@ -1165,10 +1165,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
 - Why it matters: Specialists need a safe candidate/reducer publication path before multiple lanes can publish without noise or contradiction.
 - Source: user
-- Primary owning slice: none
-- Supporting slices: none
+- Primary owning slice: M069/S03
+- Supporting slices: M069/S01,M069/S02,M069/S04,M069/S05
 - Validation: unmapped
-- Notes: Likely M069. M068 creates the substrate specialists will submit findings into.
+- Notes: Mapped for M069 planning as a safety constraint: the specialist pilot remains shadow-only and must not publish specialist findings, approvals, or standalone comments. Current requirements record M068 as validated, but M069 still does not introduce specialist-visible publication.
 
 ### R118 — Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
 - Class: core-capability
@@ -1431,22 +1431,22 @@ This file is the explicit capability and coverage contract for the project.
 | R099 | operability | blocked | M067/S05 | M067/S01, M067/S02, M067/S03, M067/S04 | M067/S06/T03 re-ran the exact-key publication-readiness preflight and read-only full S05 verifier for the captured automatic synchronize key. Both returned M067-S05-PUBLICATION-READINESS / review_details_not_published; GitHub artifact counts remained reviewComments=0, issueComments=0, reviews=0, total=0, and no additional GitHub write or live trigger was performed. |
 | R100 | constraint | validated | M067/S03 | M067/S04, M067/S05 | M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key. |
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
-| R102 | core-capability | deferred | M069 provisional | none | unmapped |
-| R103 | quality-attribute | deferred | M070 provisional | none | unmapped |
+| R102 | core-capability | deferred | M069/S02 | M069/S01,M069/S03,M069/S04,M069/S05 | unmapped |
+| R103 | quality-attribute | deferred | M070 provisional | M069/S03,M069/S04 | unmapped |
 | R104 | integration | deferred | M071 provisional | none | unmapped |
-| R105 | operability | deferred | M072 provisional | none | unmapped |
+| R105 | operability | deferred | M069/S04 | M069/S02,M069/S03,M069/S05 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
 | R108 | anti-feature | out-of-scope | none | none | n/a |
 | R109 | anti-feature | out-of-scope | none | none | n/a |
-| R110 | core-capability | active | M068/S01 | M068/S02,M068/S03,M068/S05 | mapped |
+| R110 | core-capability | validated | M068/S01 | M068/S02,M068/S03,M068/S05 | M068 live exact-key proof on xbmc/xbmc#28172 used explicit `@kodiai review` delivery `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d` and reviewOutputKey `kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28172:action-mention-review:delivery-e15d3ee0-4d6b-11f1-9d31-9ef027295c6d:head-kodiai-review-validation-20260411`; `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed with candidatePublished=4 and directFallback=0. |
 | R111 | integration | validated | M068/S02 | M068/S03,M068/S05 | M068/S02 verified approved-candidate publication adapter via `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts`, shared MCP/idempotency regression suite, `bun run verify:m068:s01 --json`, `bun run verify:m068:s02 --json`, and `bun run lint` in gsd_exec 24ddedec-2081-42f2-b2e3-6414287cafc7. S02 verifier passed stable checks for adapter mapping, no parallel publisher, idempotency, commentability, secret-scan blocking, bounded evidence, and processed-finding compatibility. |
 | R112 | failure-visibility | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified that direct GitHub publication remains audited fallback and is distinguishable from candidate-approved publication via runtime metadata, Review Details, safe config snapshots, logs, and `bun run verify:m068:s03 --json`. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948, including handler tests and S03 verifier checks that fallback-only output cannot satisfy candidate-approved success. |
 | R113 | operability | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified bounded candidate lifecycle observability for recorded/rejected/deduped/rewritten/approved/suppressed/published/fallback counts and reasons without raw prompts, diffs, candidates, evidence payloads, or secrets. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948; `bun run verify:m068:s03 --json` passed and reports redaction leak count 0 plus bounded Review Details/snapshot checks. |
-| R114 | launchability | active | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Blocked after S12: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but candidate-approved publication is absent and the tracked bounded verifier fixture returns status_code=m068_direct_fallback. |
-| R115 | constraint | active | M068/S05 | M068/S03,M068/S04 | Advanced after S12: targeted MCP tests block same-execution direct create_comment fallback after candidate inline publication succeeds or fails, and the tracked bounded fixture is rejected by `verify:m068:candidate-publication --expect-status m068_direct_fallback` rather than counted as `m068_ok`. Full validation still requires a fresh exact-key candidate-approved proof. |
-| R116 | constraint | active | M068/S05 | M068/S02,M068/S03 | Blocked after S12: visible output remains bounded to one exact-key Review Details issue comment for the known blocked run, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1. |
-| R117 | core-capability | deferred | none | none | unmapped |
+| R114 | launchability | validated | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Accepted live exact-key proof on xbmc/xbmc#28172: trigger `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423917332`, Review Details `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241`, four inline candidate comments, delivery `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d`, verifier status `m068_ok`. |
+| R115 | constraint | validated | M068/S05 | M068/S03,M068/S04 | Both sides of the fallback contract are proven: `scripts/fixtures/m068-candidate-approved-proof.json` passes only as `m068_ok`, while `scripts/fixtures/m068-direct-fallback-proof.json` passes only with `--expect-status m068_direct_fallback` and remains rejected as success. |
+| R116 | constraint | validated | M068/S05 | M068/S02,M068/S03 | The accepted live proof has one bounded Review Details issue comment plus four inline candidate review comments, directFallback=0, and no issue-comment fallback. `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed. |
+| R117 | core-capability | deferred | M069/S03 | M069/S01,M069/S02,M069/S04,M069/S05 | unmapped |
 | R118 | core-capability | deferred | none | none | unmapped |
 | R119 | failure-visibility | deferred | none | none | unmapped |
 | R120 | failure-visibility | deferred | none | none | unmapped |
@@ -1457,7 +1457,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 13
-- Mapped to slices: 13
-- Validated: 84 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R111, R112, R113)
+- Active requirements: 9
+- Mapped to slices: 9
+- Validated: 88 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R110, R111, R112, R113, R114, R115, R116)
 - Unmapped active requirements: 0
