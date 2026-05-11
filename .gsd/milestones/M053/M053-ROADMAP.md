@@ -16,16 +16,16 @@
 - [x] **S01: S01** `risk:medium` `depends:[]`
   > After this: `@kodiai format suggestions` and `@kodiai review & format suggestions` are recognized, and config shows automatic suggestions default off while explicit requests stay allowed.
 
-- [ ] **S02: S02** `risk:high` `depends:[]`
+- [x] **S02: S02** `risk:high` `depends:[]`
   > After this: Fixture tests prove formatter unified diffs become safe GitHub suggestion payloads, with unmappable hunks skipped and capped.
 
-- [ ] **S03: Batched same-PR suggestion review publisher** `risk:high` `depends:[S02]`
+- [x] **S03: S03** `risk:high` `depends:[]`
   > After this: A publisher can create one GitHub PR review containing multiple inline suggestion blocks, with markers/idempotency and rejection handling.
 
-- [ ] **S04: Explicit and combined request orchestration** `risk:medium` `depends:[S01,S02,S03]`
+- [x] **S04: S04** `risk:medium` `depends:[]`
   > After this: `@kodiai format suggestions` runs only formatter suggestions, while `@kodiai review & format suggestions` runs normal review plus formatter suggestions without either subflow blocking the other.
 
-- [ ] **S05: Live smoke proof and operator docs** `risk:medium` `depends:[S04]`
+- [ ] **S05: S05** `risk:medium` `depends:[]`
   > After this: A deployed run posts at least one committable formatter suggestion on a real/test PR and documents how maintainers enable automatic mode later.
 
 ## Boundary Map

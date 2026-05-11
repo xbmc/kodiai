@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M066",
-      "label": "M066: Same-PR Formatter Suggestions",
+      "id": "milestone:M053",
+      "label": "M053: Same-PR Formatter Suggestions",
       "type": "milestone",
-      "description": "Active milestone: M066",
+      "description": "Active milestone: M053",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:planning",
+      "label": "Phase: planning",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4501,17 +4501,117 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M053",
-      "label": "M053: Same-PR Formatter Suggestions",
-      "type": "milestone",
+      "id": "slice:M053:S01",
+      "label": "S01: Formatter suggestion config and mention intent",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M053/M053-ROADMAP.md"
+      "sourceFile": "milestones/M053/slices/S01/S01-PLAN.md"
     },
     {
-      "id": "slice:M053:S01",
-      "label": "M053/S01",
-      "type": "slice",
+      "id": "task:M053:S01:T01",
+      "label": "T01: Verify config defaults and formatter mention intent contract",
+      "type": "task",
       "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S01:T02",
+      "label": "T02: Verify mention router handoff with automatic mode off",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S01:T03",
+      "label": "T03: Run S01 final targeted proof and record completion evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M053:S02",
+      "label": "S02: Formatter command and diff-to-suggestion mapper",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M053:S02:T01",
+      "label": "T01: Prove formatter command execution seam",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S02:T02",
+      "label": "T02: Prove unified diff parser safety",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S02:T03",
+      "label": "T03: Prove PR commentability mapper and caps",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S02:T04",
+      "label": "T04: Prove formatter subflow integration closeout",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M053:S03",
+      "label": "S03: Batched same-PR suggestion review publisher",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M053:S03:T01",
+      "label": "T01: Re-prove batched Pull Request Review publisher contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S03:T02",
+      "label": "T02: Re-prove formatter orchestration handoff and status mapping",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S03:T03",
+      "label": "T03: Run S03 closeout verification with S02 mapper regression coverage",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M053:S04",
+      "label": "S04: Explicit and combined request orchestration",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M053/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M053:S04:T01",
+      "label": "T01: Harden format-only formatter mention diagnostics",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S04:T02",
+      "label": "T02: Prove combined review and formatter status independence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M053:S04:T03",
+      "label": "T03: Run S04 and milestone formatter closeout verification",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M066",
+      "label": "M066: Same-PR Formatter Suggestions",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-ROADMAP.md"
     },
     {
       "id": "slice:M066:S01",
@@ -4723,6 +4823,1061 @@
       "label": "T05: Capture accepted same-PR formatter suggestion proof",
       "type": "task",
       "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M067",
+      "label": "M067",
+      "type": "milestone",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M068",
+      "label": "M068: Candidate Findings Before Publication",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/M068-ROADMAP.md"
+    },
+    {
+      "id": "slice:M068:S01",
+      "label": "S01: S01",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M068:S01:T01",
+      "label": "T01: Added the pure review candidate approval coordinator contract with lifecycle classification and bounded approval summaries.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S01:T02",
+      "label": "T02: Added the M068 S01 candidate approval verifier with bounded text/JSON output and a package script.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S01:T03",
+      "label": "T03: Remediate bounded candidate approval evidence contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S02",
+      "label": "S02: Approved-candidate publication adapter",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M068:S02:T01",
+      "label": "T01: Extract shared inline review publication primitive",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S02:T02",
+      "label": "T02: Adapt approved candidates to publishable payloads and processed findings",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S02:T03",
+      "label": "T03: Add S02 boundary verifier for shared publication machinery",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S03",
+      "label": "S03: Handler orchestration and audited fallback",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M068:S03:T01",
+      "label": "T01: Add bounded candidate publication runtime classifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S03:T02",
+      "label": "T02: Switch review prompt and plan to candidate-preferred mode",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S03:T03",
+      "label": "T03: Render candidate publication mode in Review Details",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S03:T04",
+      "label": "T04: Wire handler orchestration through approval, adapter, and shared publisher",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S03:T05",
+      "label": "T05: Add S03 verifier and closure script coverage",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S04",
+      "label": "S04: M068 verifier and operator evidence",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M068:S04:T01",
+      "label": "T01: Create the milestone verifier shell and nested prerequisite contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S04:T02",
+      "label": "T02: Classify exact-key Review Details and visible GitHub artifacts",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S04:T03",
+      "label": "T03: Add exact-target preflight and runtime log evidence checks",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S04:T04",
+      "label": "T04: Harden bounded output and run the full S04 verifier guardrail",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S05",
+      "label": "S05: S05",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S05/S05-PLAN.md"
+    },
+    {
+      "id": "task:M068:S05:T01",
+      "label": "T01: Wired verify:m068 keyed CLI runs to the live GitHub review-output artifact collector with bounded unavailable states.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S05:T02",
+      "label": "T02: Wired verify:m068 full keyed proof to bounded Azure Log Analytics runtime evidence.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S05:T03",
+      "label": "T03: Hardened the candidate-finding MCP tool wording to present candidate capture as the preferred pre-publication approval path while preserving safe fallback behavior.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S05:T04",
+      "label": "T04: Added the bounded M068 S05 live proof runbook for xbmc/xbmc#28172 candidate-approved Review Details publication.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S05:T05",
+      "label": "T05: Recorded the live M068 exact-key proof attempt: local regression and ACA deploy passed, but the single ready_for_review trigger was filtered before dispatch and the exact-key verifier failed closed with no Review Details or candidate publication.",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S05:T06",
+      "label": "T06: Remediate exact-key live proof failure and produce passing S05 verification",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S06",
+      "label": "S06: S06: Remediate live proof and placeholder evidence",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S06/S06-PLAN.md"
+    },
+    {
+      "id": "task:M068:S06:T01",
+      "label": "T01: Remove raw candidates from S01 approval outcomes and harden redaction proof",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S06:T02",
+      "label": "T02: Document the bot-filter root cause and current safe trigger strategy",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S06:T03",
+      "label": "T03: Run one bounded non-self live proof attempt and classify exact-key evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S06:T04",
+      "label": "T04: Reconcile S01/S05 placeholder summaries and requirement evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S07",
+      "label": "S07: Eligible live trigger remediation proof",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S07/S07-PLAN.md"
+    },
+    {
+      "id": "task:M068:S07:T01",
+      "label": "T01: Run no-mutation readiness and regression gate",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S07:T02",
+      "label": "T02: Execute one eligible live trigger or record a fresh blocker",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S07:T03",
+      "label": "T03: Run exact-key verifier and classify live proof",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S07:T04",
+      "label": "T04: Update requirements and close or preserve milestone state",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S08",
+      "label": "S08: Remediate exact-key live proof gap",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S08/S08-PLAN.md"
+    },
+    {
+      "id": "task:M068:S08:T01",
+      "label": "T01: Harden Review Details and runtime evidence contracts",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S08:T02",
+      "label": "T02: Refresh read-only xbmc/xbmc#28172 eligibility and readiness",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S08:T03",
+      "label": "T03: Collect exact-key proof or refreshed fail-closed blocker",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S08:T04",
+      "label": "T04: Reconcile requirements and final S08 verification",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S09",
+      "label": "S09: Remediate live exact-key candidate-approved proof",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S09/S09-PLAN.md"
+    },
+    {
+      "id": "task:M068:S09:T01",
+      "label": "T01: Reconcile S08 artifact and requirement state",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S09:T02",
+      "label": "T02: Refresh target eligibility and deployed readiness",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S09:T03",
+      "label": "T03: Collect exact-key proof or fail-closed blocker",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S09:T04",
+      "label": "T04: Finalize requirement state and validation gate",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M068:S10",
+      "label": "S10: S10",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/slices/S10/S10-PLAN.md"
+    },
+    {
+      "id": "task:M068:S10:T01",
+      "label": "T01: Refresh target eligibility and deployment readiness without mutation",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S10:T02",
+      "label": "T02: Execute exact-key proof branch or park the external blocker",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S10:T03",
+      "label": "T03: Reconcile requirements and milestone validation truthfully",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M068:S10:T04",
+      "label": "T04: Run closure verification and summarize S10 outcome",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M069",
+      "label": "M069: Specialist Lane Pilot",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-ROADMAP.md"
+    },
+    {
+      "id": "milestone:M070",
+      "label": "M070: Candidate Verification + Disagreement Handling",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-ROADMAP.md"
+    },
+    {
+      "id": "decision:M066:1",
+      "label": "Deliver formatter fixes as GitHub suggestion blocks in inline Pull Request Review comments on the existing PR, not as a separate PR, branch push, bot-authored commit, issue comment, or standalone comment loop.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D195",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:2",
+      "label": "Generate formatter suggestion content with a deterministic repository-configured formatter command and unified-diff mapping pipeline instead of relying on Jenkins artifacts or Claude-authored hunks.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D196-D198",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:3",
+      "label": "Keep explicit formatter-suggestion requests always available while `review.formatterSuggestions.automatic` defaults false and remains reserved for future automatic-review inclusion.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D197",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:4",
+      "label": "Publish formatter suggestions as one batched same-PR Pull Request Review with multiple inline comments, idempotency markers, and all-or-nothing publisher outcomes.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D199",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:5",
+      "label": "Use one shared `mention-format-suggestions` action identity from mention routing through formatter subflow key generation, completion logs, smoke artifact, and verifier proof.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Key decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:6",
+      "label": "Live proof can fail before GitHub suggestion acceptance: S06 showed the deployed app acknowledged `@kodiai format suggestions` but handled it as generic conversation without formatter subflow fields or review-output identity.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:7",
+      "label": "PR-head formatter configuration is required for controlled smokes when `main` does not contain `review.formatterSuggestions.command`, because Kodiai loads config from the checked-out PR head.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Key decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:8",
+      "label": "The inbound sanitize pipeline strips HTML comments, so formatter publication must preserve idempotency markers with raw secret scanning plus targeted outgoing mention sanitization instead.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Key decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:9",
+      "label": "Verification-first smoke artifacts prevent false greens: S05 and S06 recorded blocked/negative proof rather than fabricating `m066_s05_ok`, and R077/R085 only moved after S07's live verifier passed.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:10",
+      "label": "The local GSD memory store was malformed/unwritable during the milestone, so reusable decisions and gotchas had to be preserved in slice summaries, PROJECT.md, and this LEARNINGS artifact when `capture_thought` failed.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:11",
+      "label": "Use a verifier-first operational proof gate for external platform claims: `verify:m066:s05` accepts only a formatter review-output key, exactly one COMMENTED same-PR Pull Request Review, and an associated fenced suggestion review comment.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:12",
+      "label": "Split formatter suggestions into composable seams: mention-intent parsing, command execution, diff parsing, PR diff commentability indexing, suggestion mapping, orchestration, and publisher each have bounded contracts and targeted tests.",
+      "type": "decision",
+      "description": "Source: M066-SUMMARY.md/Narrative",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:13",
+      "label": "Treat invalid formatter diff states as structured skip diagnostics instead of partial guesses, and enforce caps after safety validation so generated/skipped/capped counts stay truthful.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:14",
+      "label": "Keep format-only formatter suggestions read-only and Claude-free while combined review-and-format requests run normal review and formatter subflows independently with separate failure surfaces.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:15",
+      "label": "Bounded deployed-smoke diagnostics should report trigger classification, formatter command, mapper, publisher, GitHub acceptance, delivery id, and reviewOutputKey separately so the next remediation starts at the first failing boundary.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:16",
+      "label": "The initial authenticated live trigger reached the deployed app and received a bot acknowledgement, but the deployed runtime still handled it as a generic conversational formatting request rather than explicit formatter intent.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:17",
+      "label": "Current source already handled the plain trigger; the actionable regression target was missing formatter completion evidence (`deliveryId`, `reviewOutputKey`, `reviewOutputAction`) rather than pure phrase classification.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M066:18",
+      "label": "The Azure Container Apps deploy path hit a transient Azure CLI connection reset during secret-reference update, but the documented idempotent retry completed and produced the active proof revision.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:1",
+      "label": "Live proof can fail before GitHub suggestion acceptance: S06 showed the deployed app acknowledged `@kodiai format suggestions` but handled it as generic conversation without formatter subflow fields or review-output identity.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:2",
+      "label": "PR-head formatter configuration is required for controlled smokes when `main` does not contain `review.formatterSuggestions.command`, because Kodiai loads config from the checked-out PR head.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Key decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:3",
+      "label": "The inbound sanitize pipeline strips HTML comments, so formatter publication must preserve idempotency markers with raw secret scanning plus targeted outgoing mention sanitization instead.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Key decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:4",
+      "label": "Verification-first smoke artifacts prevent false greens: S05 and S06 recorded blocked/negative proof rather than fabricating `m066_s05_ok`, and R077/R085 only moved after S07's live verifier passed.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:5",
+      "label": "The local GSD memory store was malformed/unwritable during the milestone, so reusable decisions and gotchas had to be preserved in slice summaries, PROJECT.md, and this LEARNINGS artifact when `capture_thought` failed.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:6",
+      "label": "Use a verifier-first operational proof gate for external platform claims: `verify:m066:s05` accepts only a formatter review-output key, exactly one COMMENTED same-PR Pull Request Review, and an associated fenced suggestion review comment.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:7",
+      "label": "Split formatter suggestions into composable seams: mention-intent parsing, command execution, diff parsing, PR diff commentability indexing, suggestion mapping, orchestration, and publisher each have bounded contracts and targeted tests.",
+      "type": "lesson",
+      "description": "Source: M066-SUMMARY.md/Narrative",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:8",
+      "label": "Treat invalid formatter diff states as structured skip diagnostics instead of partial guesses, and enforce caps after safety validation so generated/skipped/capped counts stay truthful.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:9",
+      "label": "Keep format-only formatter suggestions read-only and Claude-free while combined review-and-format requests run normal review and formatter subflows independently with separate failure surfaces.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:10",
+      "label": "Bounded deployed-smoke diagnostics should report trigger classification, formatter command, mapper, publisher, GitHub acceptance, delivery id, and reviewOutputKey separately so the next remediation starts at the first failing boundary.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:11",
+      "label": "The initial authenticated live trigger reached the deployed app and received a bot acknowledgement, but the deployed runtime still handled it as a generic conversational formatting request rather than explicit formatter intent.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:12",
+      "label": "Current source already handled the plain trigger; the actionable regression target was missing formatter completion evidence (`deliveryId`, `reviewOutputKey`, `reviewOutputAction`) rather than pure phrase classification.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M066:13",
+      "label": "The Azure Container Apps deploy path hit a transient Azure CLI connection reset during secret-reference update, but the documented idempotent retry completed and produced the active proof revision.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:1",
+      "label": "Use a verifier-first operational proof gate for external platform claims: `verify:m066:s05` accepts only a formatter review-output key, exactly one COMMENTED same-PR Pull Request Review, and an associated fenced suggestion review comment.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:2",
+      "label": "Split formatter suggestions into composable seams: mention-intent parsing, command execution, diff parsing, PR diff commentability indexing, suggestion mapping, orchestration, and publisher each have bounded contracts and targeted tests.",
+      "type": "pattern",
+      "description": "Source: M066-SUMMARY.md/Narrative",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:3",
+      "label": "Treat invalid formatter diff states as structured skip diagnostics instead of partial guesses, and enforce caps after safety validation so generated/skipped/capped counts stay truthful.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:4",
+      "label": "Keep format-only formatter suggestions read-only and Claude-free while combined review-and-format requests run normal review and formatter subflows independently with separate failure surfaces.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:5",
+      "label": "Bounded deployed-smoke diagnostics should report trigger classification, formatter command, mapper, publisher, GitHub acceptance, delivery id, and reviewOutputKey separately so the next remediation starts at the first failing boundary.",
+      "type": "pattern",
+      "description": "Source: S07-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:6",
+      "label": "The initial authenticated live trigger reached the deployed app and received a bot acknowledgement, but the deployed runtime still handled it as a generic conversational formatting request rather than explicit formatter intent.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:7",
+      "label": "Current source already handled the plain trigger; the actionable regression target was missing formatter completion evidence (`deliveryId`, `reviewOutputKey`, `reviewOutputAction`) rather than pure phrase classification.",
+      "type": "pattern",
+      "description": "Source: S07-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M066:8",
+      "label": "The Azure Container Apps deploy path hit a transient Azure CLI connection reset during secret-reference update, but the documented idempotent retry completed and produced the active proof revision.",
+      "type": "pattern",
+      "description": "Source: S07-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M066:1",
+      "label": "The initial authenticated live trigger reached the deployed app and received a bot acknowledgement, but the deployed runtime still handled it as a generic conversational formatting request rather than explicit formatter intent.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M066:2",
+      "label": "Current source already handled the plain trigger; the actionable regression target was missing formatter completion evidence (`deliveryId`, `reviewOutputKey`, `reviewOutputAction`) rather than pure phrase classification.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M066:3",
+      "label": "The Azure Container Apps deploy path hit a transient Azure CLI connection reset during secret-reference update, but the documented idempotent retry completed and produced the active proof revision.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M066/M066-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:1",
+      "label": "Keep review orchestration contracts in `src/review-orchestration/` while `src/handlers/review.ts` remains the production coordinator and owner of side effects. This preserves the current production spine while making plan, reducer, and candidate contracts testable.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D200",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:2",
+      "label": "Start `ReviewPlan` as a typed projection of existing review decisions rather than a new routing owner. This avoided hidden behavior changes while creating a future seam for routing/policy ownership.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D201",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:3",
+      "label": "Add candidate finding as a shadow-only MCP/tool/artifact seam in M067 while leaving inline GitHub publication as the production-visible path. This lets later milestones prove candidate schemas before changing publication behavior.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D202",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:4",
+      "label": "Extract current post-processing gates into `ReviewReducerResult` first and keep reducer uncertainty fail-open with no destructive inline cleanup. This made reducer behavior observable without combining refactor risk with publication-policy changes.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D203",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:5",
+      "label": "Use `xbmc/xbmc#28172` as the production-shaped proof target, but treat its missing Review Details publication as blocked evidence rather than green acceptance. The target choice remains documented but should be revisited for future live proof because repo trigger config disabled synchronize publication.",
+      "type": "decision",
+      "description": "Source: M067-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:6",
+      "label": "Restrict S05 acceptance proof to automatic review-handler keys and reject mention-review keys by default. This remains the right proof lane because M067 wiring lives in the automatic review handler path.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D205",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:7",
+      "label": "Live proof target configuration can invalidate an otherwise valid production-shaped key. The captured `xbmc/xbmc#28172` synchronize key was structurally valid, but checked-out repo config did not enable synchronize-triggered reviews, so no Review Details artifact was published.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:8",
+      "label": "A blocked live acceptance requirement must not be collapsed into a validated safety constraint. R099 remains blocked while R100 is validated by zero visible artifacts and no additional GitHub write.",
+      "type": "decision",
+      "description": "Source: M067-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:9",
+      "label": "Verifier failures can be useful acceptance evidence only when classified as a documented fail-closed blocker, not as green proof. `M067-S05-PUBLICATION-READINESS` / `review_details_not_published` now means stop before retrying visible GitHub output.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:10",
+      "label": "Credential-free verifiers kept S01-S04 contract proof repeatable even when live GitHub/Azure proof was blocked. Fresh closeout reran S01-S04 JSON verifiers and the S05 unit suite without needing to publish anything.",
+      "type": "decision",
+      "description": "Source: M067-SUMMARY.md/Definition of Done Results",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:11",
+      "label": "The local GSD memory store was unhealthy during multiple slices, so reusable knowledge had to be preserved in slice summaries and milestone learnings instead of durable memory rows. Future sessions should repair the malformed memory database if memory persistence is needed.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:12",
+      "label": "Introduce orchestration changes as bounded projections before moving production authority. ReviewPlan, graph-validation state, reducer results, and candidate metadata all expose typed observability while preserving current routing/publication behavior.",
+      "type": "decision",
+      "description": "Source: M067-SUMMARY.md/Narrative",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:13",
+      "label": "Public Review Details should use one compact line per subsystem and keep deeper state in logs, snapshots, verifier output, or private artifacts. M067 applied this to plan, reducer, and candidate surfaces.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:14",
+      "label": "Fail open for diagnostic/shadow seams, but fail closed for safety-sensitive publication retries. Builder/reducer/candidate failures preserve review execution, while missing exact-key Review Details publication blocks further GitHub writes.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Operational Readiness",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:15",
+      "label": "Use exact-key publication-readiness preflight before repeating live proof attempts. The preflight checks normalized repo/PR/action/head identity and visible artifact state before any new trigger is considered.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:16",
+      "label": "Keep shadow MCP collector state executor-owned when stateless per-request server factories need per-review accumulation. S04 used executor-owned candidate collector state and attached bounded metadata to every executor return branch.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:17",
+      "label": "The final proof target skipped review publication even after deployment and valid automatic key capture because target repo configuration did not enable synchronize reviews.",
+      "type": "decision",
+      "description": "Source: docs/smoke/m067-review-orchestration.md/Root Cause",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:18",
+      "label": "The milestone could validate no visible-output expansion while failing the live Review Details publication criterion. Zero exact-key artifacts proved safety, not observability.",
+      "type": "decision",
+      "description": "Source: M067-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:19",
+      "label": "`slog` and the github-bot secret helper were unavailable during S05 execution, so GitHub write evidence had to be recorded in the bounded smoke artifact using the existing authenticated `gh` path.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M067:20",
+      "label": "Multiple attempts to persist reusable memories failed with malformed/failed GSD memory-store errors, making `M067-LEARNINGS.md` the practical audit trail for this closeout.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Memory/knowledge note",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:1",
+      "label": "Live proof target configuration can invalidate an otherwise valid production-shaped key. The captured `xbmc/xbmc#28172` synchronize key was structurally valid, but checked-out repo config did not enable synchronize-triggered reviews, so no Review Details artifact was published.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:2",
+      "label": "A blocked live acceptance requirement must not be collapsed into a validated safety constraint. R099 remains blocked while R100 is validated by zero visible artifacts and no additional GitHub write.",
+      "type": "lesson",
+      "description": "Source: M067-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:3",
+      "label": "Verifier failures can be useful acceptance evidence only when classified as a documented fail-closed blocker, not as green proof. `M067-S05-PUBLICATION-READINESS` / `review_details_not_published` now means stop before retrying visible GitHub output.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:4",
+      "label": "Credential-free verifiers kept S01-S04 contract proof repeatable even when live GitHub/Azure proof was blocked. Fresh closeout reran S01-S04 JSON verifiers and the S05 unit suite without needing to publish anything.",
+      "type": "lesson",
+      "description": "Source: M067-SUMMARY.md/Definition of Done Results",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:5",
+      "label": "The local GSD memory store was unhealthy during multiple slices, so reusable knowledge had to be preserved in slice summaries and milestone learnings instead of durable memory rows. Future sessions should repair the malformed memory database if memory persistence is needed.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:6",
+      "label": "Introduce orchestration changes as bounded projections before moving production authority. ReviewPlan, graph-validation state, reducer results, and candidate metadata all expose typed observability while preserving current routing/publication behavior.",
+      "type": "lesson",
+      "description": "Source: M067-SUMMARY.md/Narrative",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:7",
+      "label": "Public Review Details should use one compact line per subsystem and keep deeper state in logs, snapshots, verifier output, or private artifacts. M067 applied this to plan, reducer, and candidate surfaces.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:8",
+      "label": "Fail open for diagnostic/shadow seams, but fail closed for safety-sensitive publication retries. Builder/reducer/candidate failures preserve review execution, while missing exact-key Review Details publication blocks further GitHub writes.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Operational Readiness",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:9",
+      "label": "Use exact-key publication-readiness preflight before repeating live proof attempts. The preflight checks normalized repo/PR/action/head identity and visible artifact state before any new trigger is considered.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:10",
+      "label": "Keep shadow MCP collector state executor-owned when stateless per-request server factories need per-review accumulation. S04 used executor-owned candidate collector state and attached bounded metadata to every executor return branch.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:11",
+      "label": "The final proof target skipped review publication even after deployment and valid automatic key capture because target repo configuration did not enable synchronize reviews.",
+      "type": "lesson",
+      "description": "Source: docs/smoke/m067-review-orchestration.md/Root Cause",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:12",
+      "label": "The milestone could validate no visible-output expansion while failing the live Review Details publication criterion. Zero exact-key artifacts proved safety, not observability.",
+      "type": "lesson",
+      "description": "Source: M067-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:13",
+      "label": "`slog` and the github-bot secret helper were unavailable during S05 execution, so GitHub write evidence had to be recorded in the bounded smoke artifact using the existing authenticated `gh` path.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M067:14",
+      "label": "Multiple attempts to persist reusable memories failed with malformed/failed GSD memory-store errors, making `M067-LEARNINGS.md` the practical audit trail for this closeout.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Memory/knowledge note",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:1",
+      "label": "Introduce orchestration changes as bounded projections before moving production authority. ReviewPlan, graph-validation state, reducer results, and candidate metadata all expose typed observability while preserving current routing/publication behavior.",
+      "type": "pattern",
+      "description": "Source: M067-SUMMARY.md/Narrative",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:2",
+      "label": "Public Review Details should use one compact line per subsystem and keep deeper state in logs, snapshots, verifier output, or private artifacts. M067 applied this to plan, reducer, and candidate surfaces.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:3",
+      "label": "Fail open for diagnostic/shadow seams, but fail closed for safety-sensitive publication retries. Builder/reducer/candidate failures preserve review execution, while missing exact-key Review Details publication blocks further GitHub writes.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Operational Readiness",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:4",
+      "label": "Use exact-key publication-readiness preflight before repeating live proof attempts. The preflight checks normalized repo/PR/action/head identity and visible artifact state before any new trigger is considered.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:5",
+      "label": "Keep shadow MCP collector state executor-owned when stateless per-request server factories need per-review accumulation. S04 used executor-owned candidate collector state and attached bounded metadata to every executor return branch.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:6",
+      "label": "The final proof target skipped review publication even after deployment and valid automatic key capture because target repo configuration did not enable synchronize reviews.",
+      "type": "pattern",
+      "description": "Source: docs/smoke/m067-review-orchestration.md/Root Cause",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:7",
+      "label": "The milestone could validate no visible-output expansion while failing the live Review Details publication criterion. Zero exact-key artifacts proved safety, not observability.",
+      "type": "pattern",
+      "description": "Source: M067-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:8",
+      "label": "`slog` and the github-bot secret helper were unavailable during S05 execution, so GitHub write evidence had to be recorded in the bounded smoke artifact using the existing authenticated `gh` path.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M067:9",
+      "label": "Multiple attempts to persist reusable memories failed with malformed/failed GSD memory-store errors, making `M067-LEARNINGS.md` the practical audit trail for this closeout.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Memory/knowledge note",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M067:1",
+      "label": "The final proof target skipped review publication even after deployment and valid automatic key capture because target repo configuration did not enable synchronize reviews.",
+      "type": "lesson",
+      "description": "Source: docs/smoke/m067-review-orchestration.md/Root Cause",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M067:2",
+      "label": "The milestone could validate no visible-output expansion while failing the live Review Details publication criterion. Zero exact-key artifacts proved safety, not observability.",
+      "type": "lesson",
+      "description": "Source: M067-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M067:3",
+      "label": "`slog` and the github-bot secret helper were unavailable during S05 execution, so GitHub write evidence had to be recorded in the bounded smoke artifact using the existing authenticated `gh` path.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M067:4",
+      "label": "Multiple attempts to persist reusable memories failed with malformed/failed GSD memory-store errors, making `M067-LEARNINGS.md` the practical audit trail for this closeout.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Memory/knowledge note",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M067/M067-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -8675,6 +9830,102 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "slice:M053:S01",
+      "to": "task:M053:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S01",
+      "to": "task:M053:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S01",
+      "to": "task:M053:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "slice:M053:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S02",
+      "to": "task:M053:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S02",
+      "to": "task:M053:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S02",
+      "to": "task:M053:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S02",
+      "to": "task:M053:S02:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "slice:M053:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S03",
+      "to": "task:M053:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S03",
+      "to": "task:M053:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S03",
+      "to": "task:M053:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M053",
+      "to": "slice:M053:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S04",
+      "to": "task:M053:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S04",
+      "to": "task:M053:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M053:S04",
+      "to": "task:M053:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M066",
       "to": "slice:M066:S01",
       "type": "contains",
@@ -8877,7 +10128,847 @@
       "to": "task:M066:S07:T05",
       "type": "contains",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S01",
+      "to": "task:M068:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S01",
+      "to": "task:M068:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S01",
+      "to": "task:M068:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S02",
+      "to": "task:M068:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S02",
+      "to": "task:M068:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S02",
+      "to": "task:M068:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S03",
+      "to": "task:M068:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S03",
+      "to": "task:M068:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S03",
+      "to": "task:M068:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S03",
+      "to": "task:M068:S03:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S03",
+      "to": "task:M068:S03:T05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S04",
+      "to": "task:M068:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S04",
+      "to": "task:M068:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S04",
+      "to": "task:M068:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S04",
+      "to": "task:M068:S04:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S05",
+      "to": "task:M068:S05:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S05",
+      "to": "task:M068:S05:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S05",
+      "to": "task:M068:S05:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S05",
+      "to": "task:M068:S05:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S05",
+      "to": "task:M068:S05:T05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S05",
+      "to": "task:M068:S05:T06",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S06",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S06",
+      "to": "task:M068:S06:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S06",
+      "to": "task:M068:S06:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S06",
+      "to": "task:M068:S06:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S06",
+      "to": "task:M068:S06:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S07",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S07",
+      "to": "task:M068:S07:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S07",
+      "to": "task:M068:S07:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S07",
+      "to": "task:M068:S07:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S07",
+      "to": "task:M068:S07:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S08",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S08",
+      "to": "task:M068:S08:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S08",
+      "to": "task:M068:S08:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S08",
+      "to": "task:M068:S08:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S08",
+      "to": "task:M068:S08:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S09",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S09",
+      "to": "task:M068:S09:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S09",
+      "to": "task:M068:S09:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S09",
+      "to": "task:M068:S09:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S09",
+      "to": "task:M068:S09:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M068",
+      "to": "slice:M068:S10",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S10",
+      "to": "task:M068:S10:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S10",
+      "to": "task:M068:S10:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S10",
+      "to": "task:M068:S10:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M068:S10",
+      "to": "task:M068:S10:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:16",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:17",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "decision:M066:18",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "lesson:M066:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "pattern:M066:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "surprise:M066:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "surprise:M066:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M066",
+      "to": "surprise:M066:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:16",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:17",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:18",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:19",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "decision:M067:20",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "lesson:M067:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "pattern:M067:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "surprise:M067:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "surprise:M067:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "surprise:M067:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M067",
+      "to": "surprise:M067:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-05T05:37:21.018Z"
+  "builtAt": "2026-05-11T00:15:45.442Z"
 }

@@ -396,3 +396,44 @@
 {"id":"886ea2f0-c6e9-4c32-a8f9-1ebc34cfa75e","ts":"2026-05-10T23:53:20.767Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"0d96e64c-b9c0-469e-b2af-39a2ca092916","ts":"2026-05-10T23:54:13.527Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"37114a35-8e6c-4c31-84ab-e0875021e712","ts":"2026-05-10T23:54:13.946Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"34dde454-7091-45d5-b39d-3988dae10d4f","ts":"2026-05-10T23:55:07.508Z","severity":"info","message":"Committed: feat: Added an explicit malformed formatter hunk-body fixture so unifie…","source":"notify","read":false}
+{"id":"8781ff59-016a-42d8-ae04-172e823b6093","ts":"2026-05-10T23:55:07.620Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"ac5a8fd8-4f95-4821-82e3-8fe884f65e00","ts":"2026-05-10T23:55:08.011Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"35aa8f22-cbc7-4195-a152-4b9e24973d4f","ts":"2026-05-10T23:55:58.218Z","severity":"info","message":"Committed: test: Added mapper fixture coverage proving maxSuggestions caps only va…","source":"notify","read":false}
+{"id":"51a1e980-6fde-41a7-8fa3-06e5d8d49cc9","ts":"2026-05-10T23:55:58.355Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"17f43351-f164-41d1-9b5d-851a18b9517c","ts":"2026-05-10T23:55:58.784Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"8f9418a5-6d5d-4ec5-b75d-788ca3f9fd06","ts":"2026-05-10T23:56:48.411Z","severity":"info","message":"Committed: test: Added closeout orchestration tests proving formatter subflow fail…","source":"notify","read":false}
+{"id":"c8075972-9b89-4c40-be28-00c7951cf016","ts":"2026-05-10T23:56:48.713Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"764d5314-48bd-4f86-8ac0-5f662aa90fcb","ts":"2026-05-10T23:56:49.148Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"34a24eee-eb6d-426d-bf61-aa74ab3ac38f","ts":"2026-05-10T23:57:37.107Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"29bfd3fc-ffe9-42b2-ab52-29ea262a7ff8","ts":"2026-05-10T23:59:36.863Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"0a95d132-566b-4bea-83d2-e29a3b28a427","ts":"2026-05-11T00:00:40.073Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"7bc2d71c-3952-4d84-a81c-63015b1ac68a","ts":"2026-05-11T00:01:29.045Z","severity":"warning","message":"[safety] file-change: src/handlers/formatter-suggestion-orchestration.test.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"df6ed6ec-3d11-4c6b-903f-6bd9312b9445","ts":"2026-05-11T00:01:29.047Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"65af5847-88d4-40ba-ade7-0dcaaaa2e60c","ts":"2026-05-11T00:01:29.196Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"6f6ca661-2cb0-4c7f-a504-833b2ecff35e","ts":"2026-05-11T00:01:29.209Z","severity":"warning","message":"[safety] file-change: src/handlers/formatter-suggestion-orchestration.test.ts — Modified but not in task plan's expected output","source":"notify","read":false}
+{"id":"ba0bfe5d-a159-4eff-b830-2484d8956dce","ts":"2026-05-11T00:01:29.581Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"0c8b638b-d73d-453e-8bed-1065bb3a0bdb","ts":"2026-05-11T00:02:16.850Z","severity":"info","message":"Committed: feat: Tightened formatter orchestration fixture proof for publisher han…","source":"notify","read":false}
+{"id":"d2fce0bf-22ec-445c-b5c6-8e59ffa442c0","ts":"2026-05-11T00:02:17.146Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"d3338ce3-03bf-44f6-8131-9bee271ffbb5","ts":"2026-05-11T00:02:17.516Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"832c2722-4291-462e-abda-3c9886a10497","ts":"2026-05-11T00:05:56.659Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"ce13705f-ddb7-4bbc-b2de-ff945b7f715c","ts":"2026-05-11T00:08:27.361Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"71e1ce88-ca2f-43bd-aaf8-9482c10e5b92","ts":"2026-05-11T00:09:31.517Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"3779b1fe-5f89-429c-9a1b-e2b0394017fc","ts":"2026-05-11T00:10:38.829Z","severity":"info","message":"Committed: test: Added format-only visible-diagnostic regression coverage and pres…","source":"notify","read":false}
+{"id":"b83605fc-d4d4-49fc-8e9d-4446bbdfe52c","ts":"2026-05-11T00:10:48.145Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"c5433c37-e575-4660-ad47-110a4cc386d0","ts":"2026-05-11T00:10:48.545Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"5eec50e2-3558-409d-8785-468435b8ab64","ts":"2026-05-11T00:13:13.599Z","severity":"info","message":"Committed: feat: Added combined review-and-format mention-boundary regressions pro…","source":"notify","read":false}
+{"id":"4b6e4d60-1c2a-437d-86bb-ea9a4983a41e","ts":"2026-05-11T00:13:22.283Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"49c78746-f4df-4c3f-b570-6b4d3cf39327","ts":"2026-05-11T00:13:22.676Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"d4b91ffa-450f-4b3c-885b-9e33119c3362","ts":"2026-05-11T00:14:25.981Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"557e9dc6-c16c-495e-9d5b-08cf5cbf0462","ts":"2026-05-11T00:14:26.398Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"2edf4b01-2cb1-40cb-a568-9548f8efe5ab","ts":"2026-05-11T00:15:47.970Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"9ae5912f-a5c5-4463-aa49-d5794c841c3b","ts":"2026-05-11T00:18:00.730Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"589e20f2-dd09-4c43-935d-9b4ae6a00d88","ts":"2026-05-11T00:19:27.670Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"4138d0ec-69a6-4e30-84dc-24ed894f0fda","ts":"2026-05-11T00:20:10.398Z","severity":"info","message":"Committed: docs: Added a bounded M053/S05/R085 proof-alignment note that maps acce…","source":"notify","read":false}
+{"id":"d150c495-a192-4aed-87b5-d10552851ec1","ts":"2026-05-11T00:20:10.429Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"a2e80500-04e8-4122-b939-c5e83f5a4500","ts":"2026-05-11T00:20:10.802Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"9e78231b-438f-4a4b-85ce-49b0c648112d","ts":"2026-05-11T00:21:24.921Z","severity":"info","message":"Committed: docs: Refreshed formatter-suggestion operator docs to tie explicit trig…","source":"notify","read":false}
+{"id":"54e02076-3396-4512-85a2-ef8cf309a045","ts":"2026-05-11T00:21:37.131Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"68a43da8-9980-480f-ae18-947e4c09e1b2","ts":"2026-05-11T00:21:37.524Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"10a2618f-a1a4-4662-b964-be7a949fa2e0","ts":"2026-05-11T00:22:33.122Z","severity":"warning","message":"[engine] scoped stage: dropping 1 non-existent keyFile(s) from task commit: (none)","source":"workflow-logger","read":false}

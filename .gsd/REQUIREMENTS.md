@@ -98,6 +98,50 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
+### R110 — Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
+- Class: core-capability
+- Status: active
+- Description: Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
+- Why it matters: Issue #131 depends on moving from direct agent publishing toward explicit orchestration where findings pass through a controlled reducer/coordinator gate before reaching GitHub.
+- Source: user
+- Primary owning slice: M068/S01
+- Supporting slices: M068/S02,M068/S03,M068/S05
+- Validation: mapped
+- Notes: Direct publish fallback remains available during M068, but candidate-approved publication is the primary success path.
+
+### R114 — M068 must produce a live exact-key proof on xbmc/xbmc#28172 where Review Details are published and show candidate-approved publication evidence.
+- Class: launchability
+- Status: active
+- Description: M068 must produce a live exact-key proof on xbmc/xbmc#28172 where Review Details are published and show candidate-approved publication evidence.
+- Why it matters: The architecture changes the review publication contract and must be proven against the real target PR, not only fixtures.
+- Source: user
+- Primary owning slice: M068/S05
+- Supporting slices: M068/S01,M068/S02,M068/S03,M068/S04
+- Validation: S09/T04 blocked evidence only: targeted regressions pass and aggregate verifier exits 0 with status_code=m068_skipped_missing_review_output_key, but S09 has delivery_id=none, review_output_key=none, no exact-key m068_ok result, zero Review Details artifacts, zero candidate-approved publication, and missing runtime publication gates. This is fail-closed blocker evidence, not final acceptance.
+- Notes: M068/S09/T04 keeps this requirement active/blocked with short reason no_go_wait_for_new_head. Final validation still requires a future eligible normal-handler exact-key run on xbmc/xbmc#28172 that records status_code=m068_ok with exactly one Review Details artifact, candidate-approved publication evidence, zero direct fallback, bounded visible volume, and leak_marker_count=0.
+
+### R115 — Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
+- Class: constraint
+- Status: active
+- Description: Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
+- Why it matters: Without this constraint, the milestone could pass by exercising the old direct-publish architecture and fail to advance issue #131.
+- Source: user
+- Primary owning slice: M068/S05
+- Supporting slices: M068/S03,M068/S04
+- Validation: S09/T04 advances the constraint by proving blocked/no-key evidence is not accepted as success: aggregate verifier status_code=m068_skipped_missing_review_output_key, delivery_id=none, review_output_key=none, zero candidate-approved publication, zero Review Details artifacts, directFallback=0, and no exact-key m068_ok proof. Not validated as final acceptance because no candidate-approved live publication exists.
+- Notes: M068/S09/T04 keeps fallback-only, no-artifact, no-key, disabled-trigger, duplicate/self, and missing-review-output-key outcomes fail-closed. The current S09 branch has no fallback output and no candidate output; it is safety-preserving blocked evidence only.
+
+### R116 — M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
+- Class: constraint
+- Status: active
+- Description: M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
+- Why it matters: The candidate-before-publication path should reduce noise and improve traceability, not create duplicate or expanded visible comments.
+- Source: inferred
+- Primary owning slice: M068/S05
+- Supporting slices: M068/S02,M068/S03
+- Validation: S09/T04 blocked evidence shows candidate_inline_count=0, directFallback=0, leak_marker_count=0, no Review Details artifacts, and no runtime publication gates because no fresh exact-key identifiers exist. This prevents unexpected visible-volume increase in the blocked branch but does not validate final M068 visible-volume success.
+- Notes: M068/S09/T04 preserves visible-volume and redaction bounds as blocked-proof evidence only. Final R116 validation remains blocked until a future exact-key m068_ok proof produces exactly one Review Details artifact, candidate-approved publication within the visible-volume cap, directFallback=0, and leak_marker_count=0.
+
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -813,7 +857,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M053/S04
 - Supporting slices: M053/S01,M053/S02,M053/S03
-- Validation: M066/S04 verification passed: combined-mode mention tests in `src/handlers/mention.test.ts` prove `@kodiai review & format suggestions` preserves normal explicit review routing while invoking the formatter suggestion subflow, attempts formatter suggestions when executor returns error or throws after setup, and keeps formatter diagnostics independent. Fresh slice verification passed `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (293 pass, 0 fail).
+- Validation: M053/S04 verification passed: `bun test src/handlers/mention.test.ts src/handlers/formatter-suggestion-orchestration.test.ts --timeout 30000` (157 pass, 0 fail, 925 assertions) and full formatter bundle `bun test src/execution/config.test.ts src/handlers/formatter-suggestion-intent.test.ts src/handlers/mention.test.ts src/execution/formatter-suggestions.test.ts src/execution/formatter-suggestion-publisher.test.ts src/handlers/formatter-suggestion-orchestration.test.ts --timeout 30000` (306 pass, 0 fail, 1419 assertions). Combined-mode mention tests prove `@kodiai review & format suggestions` preserves normal review routing while invoking formatter suggestions after returned-error and thrown-error review executor cases.
 - Notes: The semantic review and formatter suggestion subflows should remain independent under the combined intent.
 
 ### R081 — Formatter suggestions should publish as one batched PR review containing multiple inline suggestion comments where GitHub accepts the batch.
@@ -857,7 +901,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M053/S04
 - Supporting slices: M053/S03,M053/S05
-- Validation: M066/S04 verification passed: formatter orchestration and mention-handler tests prove setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed diagnostics are bounded and visible for explicit formatter requests, and combined-mode tests prove formatter failure diagnostics do not suppress normal review fallback while review executor failures still attempt formatter suggestions when setup is available. Fresh slice verification passed the full S04 regression suite (293 pass, 0 fail) plus TypeScript and targeted ESLint checks.
+- Validation: M053/S04 verification passed: formatter-orchestration and mention-handler tests prove visible bounded diagnostics for setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed outcomes, and combined-mode mention tests prove formatter failures do not block successful review paths while review executor failures still attempt formatter suggestions when setup is available. Fresh full bundle passed with 306 pass, 0 fail, 1419 assertions.
 - Notes: Formatter failure must not block normal review; normal review failure must not block formatter suggestions when they can run safely.
 
 ### R085 — Formatter suggestion support must include a live GitHub smoke proof that at least one Kodiai-generated suggestion is accepted as a committable same-PR suggestion.
@@ -870,6 +914,127 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: M066/S07/T05 accepted live GitHub smoke proof on xbmc/kodiai PR #134 captured trigger comment 4376745698, delivery 462ed8c0-4843-11f1-8135-1c6010084b2c, formatter reviewOutputKey with action `mention-format-suggestions`, COMMENTED review 4225484818, fenced suggestion comment 3186219778, structured ACA logs with formatterStatus=posted/commandStatus=success/publisherStatus=posted, and verifier status `m066_s05_ok`.
 - Notes: Validated by docs/smoke/m066-formatter-suggestions.md, which records bounded public URLs, log correlation, and verifier JSON for the accepted same-PR suggestion.
+
+### R092 — First-class review plan contract: every review run must be able to produce a typed ReviewPlan capturing task type, routing reason, changed-file scope, context sources, budgets, enabled gates, publish/tool policy, retry/publish policy, and a stable plan hash.
+- Class: continuity
+- Status: validated
+- Description: First-class review plan contract: every review run must be able to produce a typed ReviewPlan capturing task type, routing reason, changed-file scope, context sources, budgets, enabled gates, publish/tool policy, retry/publish policy, and a stable plan hash.
+- Why it matters: Kodiai's review behavior is currently spread across review.ts, routing, config, prompt, timeout, MCP, and reducer-like gates. Operators need to know what the run intended to do before diagnosing what happened.
+- Source: user + issue #131
+- Primary owning slice: M067/S01
+- Supporting slices: M067/S02, M067/S03, M067/S04, M067/S05
+- Validation: M067/S01 implemented and verified a first-class ReviewPlan contract in src/review-orchestration/review-plan.ts, wired it into src/handlers/review.ts before executor dispatch, and passed slice verification: bun test src/review-orchestration/review-plan.test.ts, bun test src/handlers/review.test.ts --timeout 30000, bun run verify:m067:s01, bun run verify:m067:s01 -- --json, bun run tsc --noEmit, and git diff --check.
+- Notes: M067 behavior-preserving foundation from issue #131. The plan may begin owning some routing decisions over time, but the first milestone must not silently change production routing behavior.
+
+### R093 — Compact review-plan visibility: Review Details must expose a short operator-facing plan summary while deeper plan structure remains available in telemetry, structured logs, config snapshots, or artifacts.
+- Class: failure-visibility
+- Status: validated
+- Description: Compact review-plan visibility: Review Details must expose a short operator-facing plan summary while deeper plan structure remains available in telemetry, structured logs, config snapshots, or artifacts.
+- Why it matters: Plan visibility must help operators debug production reviews without making PR author-facing output noisy.
+- Source: user
+- Primary owning slice: M067/S01
+- Supporting slices: M067/S03, M067/S04, M067/S05
+- Validation: M067 S04 verification passed: review-utils tests and verifier CANDIDATE-DETAILS-COMPACT prove exactly one compact Review candidates line, count-only/correlation-only metadata, and no raw title/body/diff/prompt/token/secret leakage.
+- Notes: User requested compact operator summary only, with more detail allowed in details/telemetry surfaces.
+
+### R094 — Review graph-validation config reachability: `.kodiai.yml` must be able to preserve and enable `review.graphValidation.enabled`, documentation must describe it, and plan/details surfaces must truthfully report enabled, unavailable, skipped, or applied states.
+- Class: integration
+- Status: validated
+- Description: Review graph-validation config reachability: `.kodiai.yml` must be able to preserve and enable `review.graphValidation.enabled`, documentation must describe it, and plan/details surfaces must truthfully report enabled, unavailable, skipped, or applied states.
+- Why it matters: This is a concrete example of prompt/config/tool drift. A typed review plan should prevent unreachable review gates.
+- Source: issue #131 + codebase
+- Primary owning slice: M067/S02
+- Supporting slices: M067/S01, M067/S03, M067/S05
+- Validation: M067 S03 reducer input consumes typed `config.review.graphValidation.enabled` and graph-validation status/count metadata without mutating hashed ReviewPlan state; reducer tests, handler graph-validation coverage, and `verify:m067:s03` GRAPH-VALIDATION-CONSUMED passed.
+- Notes: Code currently checks `config.review.graphValidation?.enabled`, but config schema inspection showed the field is not exposed in the review schema.
+
+### R095 — Behavior-preserving reducer extraction: current post-processing gates must be wrapped in a structured reducer result without intentionally changing which findings are kept, suppressed, rewritten, deprioritized, deleted, or published.
+- Class: continuity
+- Status: validated
+- Description: Behavior-preserving reducer extraction: current post-processing gates must be wrapped in a structured reducer result without intentionally changing which findings are kept, suppressed, rewritten, deprioritized, deleted, or published.
+- Why it matters: The current reducer exists only as inline review-handler logic. Extracting it improves observability/testability, but the live daily-use review tool must remain functional during migration.
+- Source: user + issue #131
+- Primary owning slice: M067/S03
+- Supporting slices: M067/S01, M067/S02, M067/S05
+- Validation: M067 S03 extracted current post-review gates into `ReviewReducerResult` / `reduceReviewFindings()` with behavior-preserving unit, handler, verifier, S01/S02 regression, typecheck, and whitespace checks passing on 2026-05-09.
+- Notes: Reducer output should include kept, suppressed, rewritten, deprioritized, low-confidence, and audit counts/reasons. If uncertain about already-published comments, leave them alone rather than performing destructive cleanup.
+
+### R096 — Shadow-only candidate finding seam: the agent can optionally record typed draft findings through a candidate-finding tool/artifact path, but current inline publication remains the production-visible path during M067.
+- Class: core-capability
+- Status: validated
+- Description: Shadow-only candidate finding seam: the agent can optionally record typed draft findings through a candidate-finding tool/artifact path, but current inline publication remains the production-visible path during M067.
+- Why it matters: Specialist lanes and pre-publication verification need a candidate-finding contract, but introducing it must not increase production risk or visible comment volume.
+- Source: user
+- Primary owning slice: M067/S04
+- Supporting slices: M067/S01, M067/S03, M067/S05
+- Validation: M067 S04 verification passed: candidate MCP server exposes optional shadow-only mcp__review_candidate_finding__record_candidate_finding, verifier CANDIDATE-MCP-TOOL-CAPTURE passed, and prompt tests confirm it is excluded from GitHub publish tools.
+- Notes: Candidate failures must never block current inline publication in M067. Candidate findings become the primary publication source in a later milestone.
+
+### R097 — Production-safe fail-open degradation: plan construction and candidate capture failures must degrade to current review behavior with structured diagnostics; reducer uncertainty must avoid destructive cleanup of already-published comments.
+- Class: failure-visibility
+- Status: validated
+- Description: Production-safe fail-open degradation: plan construction and candidate capture failures must degrade to current review behavior with structured diagnostics; reducer uncertainty must avoid destructive cleanup of already-published comments.
+- Why it matters: Kodiai is a live tool used every day. New orchestration contracts must not turn observability or shadow-path failures into review outages.
+- Source: user
+- Primary owning slice: M067/S01
+- Supporting slices: M067/S03, M067/S04, M067/S05
+- Validation: M067 S04 verification passed: fail-open contract covered by candidate normalization tests, MCP degraded responses, executor metadata on success/timeout/failure/error branches, handler degraded/missing metadata tests, and verifier CANDIDATE-FAIL-OPEN.
+- Notes: Fail open for observability-only surfaces. Fail safe only for unsafe publication/security paths. Prefer no-op over destructive cleanup when uncertain.
+
+### R098 — Per-slice orchestration verifier: every M067 slice must include a verifier that exercises its orchestration surface end-to-end enough to catch wiring drift, not just isolated unit tests.
+- Class: quality-attribute
+- Status: validated
+- Description: Per-slice orchestration verifier: every M067 slice must include a verifier that exercises its orchestration surface end-to-end enough to catch wiring drift, not just isolated unit tests.
+- Why it matters: The work crosses handler, config, MCP, Review Details, telemetry, and live review behavior. A verifier is needed to catch integration drift that local unit tests can miss.
+- Source: user
+- Primary owning slice: M067/S01
+- Supporting slices: M067/S02, M067/S03, M067/S04, M067/S05
+- Validation: M067 S04 verification passed: scripts/verify-m067-s04.ts, scripts/verify-m067-s04.test.ts, and package script verify:m067:s04 exist and passed in text and JSON modes with schema/MCP/fail-open/plan/prompt/details/sidecar checks.
+- Notes: User explicitly requested a verifier to make sure end-to-end works every time.
+
+### R100 — No production-visible behavior expansion by default: M067 must not introduce new specialist lanes, delayed publication, merge-blocking policy, increased visible comment volume, or default concurrency/cost increases.
+- Class: constraint
+- Status: validated
+- Description: No production-visible behavior expansion by default: M067 must not introduce new specialist lanes, delayed publication, merge-blocking policy, increased visible comment volume, or default concurrency/cost increases.
+- Why it matters: The architecture is being rewritten while the daily-use review tool remains live. Scope creep into new behavior would increase production risk before the contracts are proven.
+- Source: user
+- Primary owning slice: M067/S03
+- Supporting slices: M067/S04, M067/S05
+- Validation: M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key.
+- Notes: This preserves the production-safety boundary while foundational contracts are introduced.
+
+### R111 — Approved candidates are adapted into the existing processed-finding/publication shape so current GitHub publication, idempotency, commentability, and secret-scan machinery remains the final writer.
+- Class: integration
+- Status: validated
+- Description: Approved candidates are adapted into the existing processed-finding/publication shape so current GitHub publication, idempotency, commentability, and secret-scan machinery remains the final writer.
+- Why it matters: Reusing the existing GitHub writer lowers blast radius and preserves operational behavior while the candidate path is proven.
+- Source: user
+- Primary owning slice: M068/S02
+- Supporting slices: M068/S03,M068/S05
+- Validation: M068/S02 verified approved-candidate publication adapter via `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts`, shared MCP/idempotency regression suite, `bun run verify:m068:s01 --json`, `bun run verify:m068:s02 --json`, and `bun run lint` in gsd_exec 24ddedec-2081-42f2-b2e3-6414287cafc7. S02 verifier passed stable checks for adapter mapping, no parallel publisher, idempotency, commentability, secret-scan blocking, bounded evidence, and processed-finding compatibility.
+- Notes: M068 explicitly avoids building a parallel candidate GitHub publisher.
+
+### R112 — Direct GitHub publication remains available only as audited fallback during rollout, and every fallback use is distinguishable from candidate-approved publication in logs, Review Details, and verifier evidence.
+- Class: failure-visibility
+- Status: validated
+- Description: Direct GitHub publication remains available only as audited fallback during rollout, and every fallback use is distinguishable from candidate-approved publication in logs, Review Details, and verifier evidence.
+- Why it matters: Kodiai is a daily-use review bot, so the new candidate path must not create silent outages, but fallback must not mask whether the new architecture actually worked.
+- Source: user
+- Primary owning slice: M068/S03
+- Supporting slices: M068/S04,M068/S05
+- Validation: M068/S03 verified that direct GitHub publication remains audited fallback and is distinguishable from candidate-approved publication via runtime metadata, Review Details, safe config snapshots, logs, and `bun run verify:m068:s03 --json`. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948, including handler tests and S03 verifier checks that fallback-only output cannot satisfy candidate-approved success.
+- Notes: Fallback is operational safety, not M068 acceptance proof.
+
+### R113 — Candidate lifecycle observability reports recorded, rejected, deduped, rewritten, approved, suppressed, published, and fallback counts/reasons without leaking raw prompts, diffs, candidates, or secrets.
+- Class: operability
+- Status: validated
+- Description: Candidate lifecycle observability reports recorded, rejected, deduped, rewritten, approved, suppressed, published, and fallback counts/reasons without leaking raw prompts, diffs, candidates, or secrets.
+- Why it matters: Operators need to understand why review output was kept, dropped, or published without exposing unsafe or noisy raw model/tool payloads.
+- Source: user
+- Primary owning slice: M068/S03
+- Supporting slices: M068/S04,M068/S05
+- Validation: M068/S03 verified bounded candidate lifecycle observability for recorded/rejected/deduped/rewritten/approved/suppressed/published/fallback counts and reasons without raw prompts, diffs, candidates, evidence payloads, or secrets. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948; `bun run verify:m068:s03 --json` passed and reports redaction leak count 0 plus bounded Review Details/snapshot checks.
+- Notes: Public Review Details stays compact; deeper state belongs in logs, snapshots, verifier JSON, and bounded smoke artifacts.
 
 ## Deferred
 
@@ -939,6 +1104,105 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Unmapped.
 - Notes: The user chose direct publish on request; preview mode may be useful later if maintainers want extra review before posting suggestions.
 
+### R101 — Candidate findings become the publication source: future review flow should publish reducer-approved candidate findings instead of recovering findings from already-published GitHub comments.
+- Class: core-capability
+- Status: deferred
+- Description: Candidate findings become the publication source: future review flow should publish reducer-approved candidate findings instead of recovering findings from already-published GitHub comments.
+- Why it matters: Verification, dedupe, confidence filtering, and prioritization should eventually happen before GitHub-visible publication.
+- Source: issue #131
+- Primary owning slice: M068 provisional
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred to M068. M067 only creates a shadow-capable seam.
+
+### R102 — Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
+- Class: core-capability
+- Status: deferred
+- Description: Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
+- Why it matters: Specialists can improve signal only after the plan, reducer, and candidate contracts exist.
+- Source: issue #131
+- Primary owning slice: M069 provisional
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred to M069 and beyond. Do not add specialist lanes in M067.
+
+### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
+- Class: quality-attribute
+- Status: deferred
+- Description: Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
+- Why it matters: Specialist outputs need stronger verification than generation before they can safely affect publication policy.
+- Source: issue #131
+- Primary owning slice: M070 provisional
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred to M070. M067's reducer extraction stays behavior-preserving.
+
+### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
+- Class: integration
+- Status: deferred
+- Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
+- Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
+- Source: issue #131
+- Primary owning slice: M071 provisional
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred to M071. It depends on ReviewPlan/reducer contracts and candidate verification surfaces.
+
+### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
+- Class: operability
+- Status: deferred
+- Description: Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
+- Why it matters: Review tiers and specialist orchestration should be backed by production evidence, not labels.
+- Source: issue #131
+- Primary owning slice: M072 provisional
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred to M072. Do not introduce default increased concurrency/cost in M067.
+
+### R117 — Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
+- Class: core-capability
+- Status: deferred
+- Description: Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
+- Why it matters: Specialists need a safe candidate/reducer publication path before multiple lanes can publish without noise or contradiction.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Likely M069. M068 creates the substrate specialists will submit findings into.
+
+### R118 — Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
+- Class: core-capability
+- Status: deferred
+- Description: Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
+- Why it matters: Conflict policy is important, but premature before M068 proves candidate-approved publication and M069 introduces specialist lanes.
+- Source: inferred
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Likely M070 or later, after M069 specialist-lane pilot produces real disagreement scenarios.
+
+### R119 — Provider/model failback and circuit-breaker policy are deferred outside M068.
+- Class: failure-visibility
+- Status: deferred
+- Description: Provider/model failback and circuit-breaker policy are deferred outside M068.
+- Why it matters: Provider failback matters for reliability but would broaden M068 beyond the candidate publication contract.
+- Source: research
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Tracked from issue #131 candidate improvements; not required for candidate-before-publication proof.
+
+### R120 — Long-review progress or heartbeat surfaces are deferred outside M068.
+- Class: failure-visibility
+- Status: deferred
+- Description: Long-review progress or heartbeat surfaces are deferred outside M068.
+- Why it matters: Heartbeat/progress is useful for long reviews but not necessary to prove candidate-approved publication.
+- Source: research
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Tracked from issue #131 candidate improvements; can build on phase timing and Review Details later.
+
 ## Out of Scope
 
 ### R089 — Kodiai must not depend on or consume `jenkins4kodi` formatting diff artifacts for this capability.
@@ -973,6 +1237,94 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: n/a
 - Notes: Humans apply suggestions through GitHub if desired.
+
+### R106 — Seven concurrent reviewers by default are explicitly out of scope for this phase of Kodiai's review orchestration evolution.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Seven concurrent reviewers by default are explicitly out of scope for this phase of Kodiai's review orchestration evolution.
+- Why it matters: Copying Cloudflare's seven-agent shape would add cost/concurrency/noise before Kodiai proves the orchestration contracts.
+- Source: user + issue #131
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: M067 starts with explicit contracts. Later lanes must be risk-triggered and measured before broad rollout.
+
+### R107 — Merge blocking from the new orchestration architecture is out of scope until signal/noise and verification contracts are proven.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Merge blocking from the new orchestration architecture is out of scope until signal/noise and verification contracts are proven.
+- Why it matters: A new architecture should not gain blocking authority before production metrics prove better signal.
+- Source: user + issue #131
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Existing review comments/approvals continue, but M067 must not add new auto-blocking behavior.
+
+### R108 — Increased visible comment volume in M067 is out of scope.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Increased visible comment volume in M067 is out of scope.
+- Why it matters: The rewrite should improve observability without making PRs noisier.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Candidate findings are shadow-only/optional. Review Details additions must stay compact.
+
+### R109 — Delayed-publication migration in M067 is out of scope; current inline publication remains the production-visible path during this milestone.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Delayed-publication migration in M067 is out of scope; current inline publication remains the production-visible path during this milestone.
+- Why it matters: Moving publication later is a behavior change and should happen only after the plan/reducer/candidate contracts are proven.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: M068 owns moving to reducer-approved candidate publication.
+
+### R121 — M068 must not introduce seven concurrent reviewers by default.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: M068 must not introduce seven concurrent reviewers by default.
+- Why it matters: The issue explicitly warns against copying a broad multi-agent setup before signal/noise and cost controls are proven.
+- Source: research
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Specialist lanes remain future, targeted, and risk/path-triggered.
+
+### R122 — M068 must not block merges based on candidate/reducer output.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: M068 must not block merges based on candidate/reducer output.
+- Why it matters: Merge blocking requires a proven signal/noise contract and explicit product decision beyond this milestone.
+- Source: research
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Candidate/reducer output may inform review comments only; merge-blocking policy is out of scope.
+
+### R123 — M068 must not hard-remove direct GitHub publish tools; direct publishing remains available as audited fallback during rollout.
+- Class: constraint
+- Status: out-of-scope
+- Description: M068 must not hard-remove direct GitHub publish tools; direct publishing remains available as audited fallback during rollout.
+- Why it matters: Hard removal increases production outage risk before the candidate path has live proof.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: A later milestone may remove direct publishing after candidate-approved publication is proven.
+
+### R124 — M068 must not build a separate candidate GitHub publisher parallel to the existing publication machinery.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: M068 must not build a separate candidate GitHub publisher parallel to the existing publication machinery.
+- Why it matters: A parallel publisher would duplicate idempotency, commentability, and secret-scan behavior and increase regression risk.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Approved candidates should adapt into the existing processed-finding/publication shape instead.
 
 ## Traceability
 
@@ -1057,11 +1409,11 @@ This file is the explicit capability and coverage contract for the project.
 | R077 | functional | validated | M053/S03 | M053/S02,M053/S04,M053/S05 | M066/S07/T05 live smoke proof on xbmc/kodiai PR #134 posted a same-PR COMMENTED Kodiai Pull Request Review with review id 4225484818 and fenced suggestion comment 3186219778; `bun run verify:m066:s05 -- --repo xbmc/kodiai --review-output-key <mention-format-suggestions key> --delivery-id 462ed8c0-4843-11f1-8135-1c6010084b2c --json` returned `success: true`, `status_code: "m066_s05_ok"`. |
 | R078 | integration | validated | M053/S01 | M053/S02 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Command-runner fixture tests prove repository-configured formatter commands use only allowlisted placeholders, return structured no-command/no-op/success/failed/timed-out statuses, and produce bounded/redacted diagnostics without relying on Jenkins artifacts. |
 | R079 | constraint | validated | M053/S01 | M053/S04 | M066/S01 verification passed: config tests prove `review.formatterSuggestions.automatic` defaults false with optional command and bounded `maxSuggestions`, and mention-handler fixtures prove explicit formatter requests still carry `formatterSuggestionRequest` when automatic mode is off. |
-| R080 | functional | validated | M053/S04 | M053/S01,M053/S02,M053/S03 | M066/S04 verification passed: combined-mode mention tests in `src/handlers/mention.test.ts` prove `@kodiai review & format suggestions` preserves normal explicit review routing while invoking the formatter suggestion subflow, attempts formatter suggestions when executor returns error or throws after setup, and keeps formatter diagnostics independent. Fresh slice verification passed `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/handlers/formatter-suggestion-orchestration.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (293 pass, 0 fail). |
+| R080 | functional | validated | M053/S04 | M053/S01,M053/S02,M053/S03 | M053/S04 verification passed: `bun test src/handlers/mention.test.ts src/handlers/formatter-suggestion-orchestration.test.ts --timeout 30000` (157 pass, 0 fail, 925 assertions) and full formatter bundle `bun test src/execution/config.test.ts src/handlers/formatter-suggestion-intent.test.ts src/handlers/mention.test.ts src/execution/formatter-suggestions.test.ts src/execution/formatter-suggestion-publisher.test.ts src/handlers/formatter-suggestion-orchestration.test.ts --timeout 30000` (306 pass, 0 fail, 1419 assertions). Combined-mode mention tests prove `@kodiai review & format suggestions` preserves normal review routing while invoking formatter suggestions after returned-error and thrown-error review executor cases. |
 | R081 | functional | validated | M053/S03 | M053/S04 | M066/S03 publisher tests passed in current slice verification: `bun test ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (34 pass, 117 assertions) and regression bundle `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts ./src/execution/formatter-suggestion-publisher.test.ts --timeout 30000` (279 pass, 1289 assertions). Tests prove one `pulls.createReview` call carries multiple inline suggestion comments plus review-output idempotency markers, with no standalone comment fallback. |
 | R082 | quality-attribute | validated | M053/S02 | M053/S03,M053/S05 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Formatter parser/mapper tests prove git unified diffs become deterministic RIGHT-side GitHub suggestion payloads only when every target line maps to the PR diff index; malformed, unsupported, pure insertion/deletion, path-mismatch, and off-diff hunks are skipped rather than guessed. |
 | R083 | operability | validated | M053/S02 | M053/S03,M053/S04 | M066/S02 verification passed: `bun test ./src/execution/config.test.ts ./src/handlers/formatter-suggestion-intent.test.ts ./src/handlers/mention.test.ts ./src/execution/formatter-suggestions.test.ts --timeout 30000` (269 pass, 0 fail). Mapper tests prove safe candidates are capped by maxSuggestions after validation, capped candidates receive `max-suggestions-exceeded`, and skipped/unsafe/parser diagnostics are returned with counts for downstream publication and logging. |
-| R084 | failure-visibility | validated | M053/S04 | M053/S03,M053/S05 | M066/S04 verification passed: formatter orchestration and mention-handler tests prove setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed diagnostics are bounded and visible for explicit formatter requests, and combined-mode tests prove formatter failure diagnostics do not suppress normal review fallback while review executor failures still attempt formatter suggestions when setup is available. Fresh slice verification passed the full S04 regression suite (293 pass, 0 fail) plus TypeScript and targeted ESLint checks. |
+| R084 | failure-visibility | validated | M053/S04 | M053/S03,M053/S05 | M053/S04 verification passed: formatter-orchestration and mention-handler tests prove visible bounded diagnostics for setup-needed/no-op/command failure/timeout/PR-diff-unavailable/mapped-no-suggestions/duplicate/blocked/publisher-failed outcomes, and combined-mode mention tests prove formatter failures do not block successful review paths while review executor failures still attempt formatter suggestions when setup is available. Fresh full bundle passed with 306 pass, 0 fail, 1419 assertions. |
 | R085 | quality-attribute | validated | M053/S05 | none | M066/S07/T05 accepted live GitHub smoke proof on xbmc/kodiai PR #134 captured trigger comment 4376745698, delivery 462ed8c0-4843-11f1-8135-1c6010084b2c, formatter reviewOutputKey with action `mention-format-suggestions`, COMMENTED review 4225484818, fenced suggestion comment 3186219778, structured ACA logs with formatterStatus=posted/commandStatus=success/publisherStatus=posted, and verifier status `m066_s05_ok`. |
 | R086 | functional | deferred | later | M053/S01,M053/S04 | Unmapped until a later milestone or explicit repo opt-in exercises automatic behavior. |
 | R087 | integration | deferred | later | M053/S01,M053/S02 | Unmapped; future formatter adapters can reuse the command/diff parser seam. |
@@ -1069,10 +1421,43 @@ This file is the explicit capability and coverage contract for the project.
 | R089 | anti-feature | out-of-scope | none | none | n/a |
 | R090 | anti-feature | out-of-scope | none | none | n/a |
 | R091 | anti-feature | out-of-scope | none | none | n/a |
+| R092 | continuity | validated | M067/S01 | M067/S02, M067/S03, M067/S04, M067/S05 | M067/S01 implemented and verified a first-class ReviewPlan contract in src/review-orchestration/review-plan.ts, wired it into src/handlers/review.ts before executor dispatch, and passed slice verification: bun test src/review-orchestration/review-plan.test.ts, bun test src/handlers/review.test.ts --timeout 30000, bun run verify:m067:s01, bun run verify:m067:s01 -- --json, bun run tsc --noEmit, and git diff --check. |
+| R093 | failure-visibility | validated | M067/S01 | M067/S03, M067/S04, M067/S05 | M067 S04 verification passed: review-utils tests and verifier CANDIDATE-DETAILS-COMPACT prove exactly one compact Review candidates line, count-only/correlation-only metadata, and no raw title/body/diff/prompt/token/secret leakage. |
+| R094 | integration | validated | M067/S02 | M067/S01, M067/S03, M067/S05 | M067 S03 reducer input consumes typed `config.review.graphValidation.enabled` and graph-validation status/count metadata without mutating hashed ReviewPlan state; reducer tests, handler graph-validation coverage, and `verify:m067:s03` GRAPH-VALIDATION-CONSUMED passed. |
+| R095 | continuity | validated | M067/S03 | M067/S01, M067/S02, M067/S05 | M067 S03 extracted current post-review gates into `ReviewReducerResult` / `reduceReviewFindings()` with behavior-preserving unit, handler, verifier, S01/S02 regression, typecheck, and whitespace checks passing on 2026-05-09. |
+| R096 | core-capability | validated | M067/S04 | M067/S01, M067/S03, M067/S05 | M067 S04 verification passed: candidate MCP server exposes optional shadow-only mcp__review_candidate_finding__record_candidate_finding, verifier CANDIDATE-MCP-TOOL-CAPTURE passed, and prompt tests confirm it is excluded from GitHub publish tools. |
+| R097 | failure-visibility | validated | M067/S01 | M067/S03, M067/S04, M067/S05 | M067 S04 verification passed: fail-open contract covered by candidate normalization tests, MCP degraded responses, executor metadata on success/timeout/failure/error branches, handler degraded/missing metadata tests, and verifier CANDIDATE-FAIL-OPEN. |
+| R098 | quality-attribute | validated | M067/S01 | M067/S02, M067/S03, M067/S04, M067/S05 | M067 S04 verification passed: scripts/verify-m067-s04.ts, scripts/verify-m067-s04.test.ts, and package script verify:m067:s04 exist and passed in text and JSON modes with schema/MCP/fail-open/plan/prompt/details/sidecar checks. |
+| R099 | operability | blocked | M067/S05 | M067/S01, M067/S02, M067/S03, M067/S04 | M067/S06/T03 re-ran the exact-key publication-readiness preflight and read-only full S05 verifier for the captured automatic synchronize key. Both returned M067-S05-PUBLICATION-READINESS / review_details_not_published; GitHub artifact counts remained reviewComments=0, issueComments=0, reviews=0, total=0, and no additional GitHub write or live trigger was performed. |
+| R100 | constraint | validated | M067/S03 | M067/S04, M067/S05 | M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key. |
+| R101 | core-capability | deferred | M068 provisional | none | unmapped |
+| R102 | core-capability | deferred | M069 provisional | none | unmapped |
+| R103 | quality-attribute | deferred | M070 provisional | none | unmapped |
+| R104 | integration | deferred | M071 provisional | none | unmapped |
+| R105 | operability | deferred | M072 provisional | none | unmapped |
+| R106 | anti-feature | out-of-scope | none | none | n/a |
+| R107 | anti-feature | out-of-scope | none | none | n/a |
+| R108 | anti-feature | out-of-scope | none | none | n/a |
+| R109 | anti-feature | out-of-scope | none | none | n/a |
+| R110 | core-capability | active | M068/S01 | M068/S02,M068/S03,M068/S05 | mapped |
+| R111 | integration | validated | M068/S02 | M068/S03,M068/S05 | M068/S02 verified approved-candidate publication adapter via `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts`, shared MCP/idempotency regression suite, `bun run verify:m068:s01 --json`, `bun run verify:m068:s02 --json`, and `bun run lint` in gsd_exec 24ddedec-2081-42f2-b2e3-6414287cafc7. S02 verifier passed stable checks for adapter mapping, no parallel publisher, idempotency, commentability, secret-scan blocking, bounded evidence, and processed-finding compatibility. |
+| R112 | failure-visibility | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified that direct GitHub publication remains audited fallback and is distinguishable from candidate-approved publication via runtime metadata, Review Details, safe config snapshots, logs, and `bun run verify:m068:s03 --json`. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948, including handler tests and S03 verifier checks that fallback-only output cannot satisfy candidate-approved success. |
+| R113 | operability | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified bounded candidate lifecycle observability for recorded/rejected/deduped/rewritten/approved/suppressed/published/fallback counts and reasons without raw prompts, diffs, candidates, evidence payloads, or secrets. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948; `bun run verify:m068:s03 --json` passed and reports redaction leak count 0 plus bounded Review Details/snapshot checks. |
+| R114 | launchability | active | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | S09/T04 blocked evidence only: targeted regressions pass and aggregate verifier exits 0 with status_code=m068_skipped_missing_review_output_key, but S09 has delivery_id=none, review_output_key=none, no exact-key m068_ok result, zero Review Details artifacts, zero candidate-approved publication, and missing runtime publication gates. This is fail-closed blocker evidence, not final acceptance. |
+| R115 | constraint | active | M068/S05 | M068/S03,M068/S04 | S09/T04 advances the constraint by proving blocked/no-key evidence is not accepted as success: aggregate verifier status_code=m068_skipped_missing_review_output_key, delivery_id=none, review_output_key=none, zero candidate-approved publication, zero Review Details artifacts, directFallback=0, and no exact-key m068_ok proof. Not validated as final acceptance because no candidate-approved live publication exists. |
+| R116 | constraint | active | M068/S05 | M068/S02,M068/S03 | S09/T04 blocked evidence shows candidate_inline_count=0, directFallback=0, leak_marker_count=0, no Review Details artifacts, and no runtime publication gates because no fresh exact-key identifiers exist. This prevents unexpected visible-volume increase in the blocked branch but does not validate final M068 visible-volume success. |
+| R117 | core-capability | deferred | none | none | unmapped |
+| R118 | core-capability | deferred | none | none | unmapped |
+| R119 | failure-visibility | deferred | none | none | unmapped |
+| R120 | failure-visibility | deferred | none | none | unmapped |
+| R121 | anti-feature | out-of-scope | none | none | n/a |
+| R122 | anti-feature | out-of-scope | none | none | n/a |
+| R123 | constraint | out-of-scope | none | none | n/a |
+| R124 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 9
-- Mapped to slices: 9
-- Validated: 73 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085)
+- Active requirements: 13
+- Mapped to slices: 13
+- Validated: 84 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R111, R112, R113)
 - Unmapped active requirements: 0

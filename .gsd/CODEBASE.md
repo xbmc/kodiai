@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-10T23:41:00Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-10T23:41:00Z","fingerprint":"8d2fa9076502e5228f577b8820c59d02e07263e6","fileCount":500,"truncated":true} -->
+Generated: 2026-05-11T00:20:10Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-11T00:20:10Z","fingerprint":"8b582d024980f56ce52f26f76a3c1215f07793dd","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -58,6 +58,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/xbmc-ops.md`
 
 ### docs/smoke/
+- `docs/smoke/m053-formatter-suggestions.md`
 - `docs/smoke/m066-formatter-suggestions.md`
 - `docs/smoke/phase27-uat-notes.md`
 - `docs/smoke/phase72-telemetry-follow-through.md`
@@ -170,6 +171,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/types.ts`
 - `src/jobs/workspace.test.ts`
 - `src/jobs/workspace.ts`
-
-### src/knowledge/
-- `src/knowledge/active-rules.test.ts`
