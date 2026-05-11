@@ -117,8 +117,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S01,M068/S02,M068/S03,M068/S04
-- Validation: S09/T04 blocked evidence only: targeted regressions pass and aggregate verifier exits 0 with status_code=m068_skipped_missing_review_output_key, but S09 has delivery_id=none, review_output_key=none, no exact-key m068_ok result, zero Review Details artifacts, zero candidate-approved publication, and missing runtime publication gates. This is fail-closed blocker evidence, not final acceptance.
-- Notes: M068/S09/T04 keeps this requirement active/blocked with short reason no_go_wait_for_new_head. Final validation still requires a future eligible normal-handler exact-key run on xbmc/xbmc#28172 that records status_code=m068_ok with exactly one Review Details artifact, candidate-approved publication evidence, zero direct fallback, bounded visible volume, and leak_marker_count=0.
+- Validation: Blocked by fresh direct-fallback proof: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but not candidate-approved publication.
+- Notes: M068/S11 remediation planned after fresh production evidence disproved the prior no-run assumption. Exact-key delivery `3a63ea30-4cee-11f1-951a-db5e2665bb61` and reviewOutputKey `kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28172:action-synchronize:delivery-3a63ea30-4cee-11f1-951a-db5e2665bb61:head-1972551b75bfcabecd45d61ae3a75223f9988865` exist, and Review Details were published, but GitHub-visible evidence says `mode=direct-fallback published=0 directFallback=1`. Final validation still requires candidate-approved publication with `published > 0` and directFallback=0.
 
 ### R115 — Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
 - Class: constraint
@@ -128,8 +128,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S03,M068/S04
-- Validation: S09/T04 advances the constraint by proving blocked/no-key evidence is not accepted as success: aggregate verifier status_code=m068_skipped_missing_review_output_key, delivery_id=none, review_output_key=none, zero candidate-approved publication, zero Review Details artifacts, directFallback=0, and no exact-key m068_ok proof. Not validated as final acceptance because no candidate-approved live publication exists.
-- Notes: M068/S09/T04 keeps fallback-only, no-artifact, no-key, disabled-trigger, duplicate/self, and missing-review-output-key outcomes fail-closed. The current S09 branch has no fallback output and no candidate output; it is safety-preserving blocked evidence only.
+- Validation: Advanced by fresh direct-fallback rejection: fallback-shaped exact-key evidence is not accepted as M068 success.
+- Notes: Fresh production evidence reinforces this constraint: exact-key Review Details exist for delivery `3a63ea30-4cee-11f1-951a-db5e2665bb61`, but the line `mode=direct-fallback published=0 directFallback=1` is rejected as M068 success and now drives S11 remediation rather than milestone completion.
 
 ### R116 — M068 must not unexpectedly increase visible GitHub comment volume while moving publication behind candidate approval.
 - Class: constraint
@@ -139,8 +139,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: inferred
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S02,M068/S03
-- Validation: S09/T04 blocked evidence shows candidate_inline_count=0, directFallback=0, leak_marker_count=0, no Review Details artifacts, and no runtime publication gates because no fresh exact-key identifiers exist. This prevents unexpected visible-volume increase in the blocked branch but does not validate final M068 visible-volume success.
-- Notes: M068/S09/T04 preserves visible-volume and redaction bounds as blocked-proof evidence only. Final R116 validation remains blocked until a future exact-key m068_ok proof produces exactly one Review Details artifact, candidate-approved publication within the visible-volume cap, directFallback=0, and leak_marker_count=0.
+- Validation: Blocked by fresh direct-fallback proof: visible output remained bounded, but candidate-approved visible-volume success is unproven because candidate publication count is zero and direct fallback count is one.
+- Notes: Fresh exact-key proof is bounded but not successful: GitHub-visible output for delivery `3a63ea30-4cee-11f1-951a-db5e2665bb61` is one Review Details issue comment and zero matching candidate inline artifacts, but the candidate-publication line is `mode=direct-fallback published=0 directFallback=1`. Visible-volume success remains blocked until candidate-approved publication is proven without direct fallback.
 
 ## Validated
 
@@ -1443,9 +1443,9 @@ This file is the explicit capability and coverage contract for the project.
 | R111 | integration | validated | M068/S02 | M068/S03,M068/S05 | M068/S02 verified approved-candidate publication adapter via `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts`, shared MCP/idempotency regression suite, `bun run verify:m068:s01 --json`, `bun run verify:m068:s02 --json`, and `bun run lint` in gsd_exec 24ddedec-2081-42f2-b2e3-6414287cafc7. S02 verifier passed stable checks for adapter mapping, no parallel publisher, idempotency, commentability, secret-scan blocking, bounded evidence, and processed-finding compatibility. |
 | R112 | failure-visibility | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified that direct GitHub publication remains audited fallback and is distinguishable from candidate-approved publication via runtime metadata, Review Details, safe config snapshots, logs, and `bun run verify:m068:s03 --json`. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948, including handler tests and S03 verifier checks that fallback-only output cannot satisfy candidate-approved success. |
 | R113 | operability | validated | M068/S03 | M068/S04,M068/S05 | M068/S03 verified bounded candidate lifecycle observability for recorded/rejected/deduped/rewritten/approved/suppressed/published/fallback counts and reasons without raw prompts, diffs, candidates, evidence payloads, or secrets. Fresh slice closure verification passed in gsd_exec 79936ce7-aeba-44cf-acd8-0edc8d389948; `bun run verify:m068:s03 --json` passed and reports redaction leak count 0 plus bounded Review Details/snapshot checks. |
-| R114 | launchability | active | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | S09/T04 blocked evidence only: targeted regressions pass and aggregate verifier exits 0 with status_code=m068_skipped_missing_review_output_key, but S09 has delivery_id=none, review_output_key=none, no exact-key m068_ok result, zero Review Details artifacts, zero candidate-approved publication, and missing runtime publication gates. This is fail-closed blocker evidence, not final acceptance. |
-| R115 | constraint | active | M068/S05 | M068/S03,M068/S04 | S09/T04 advances the constraint by proving blocked/no-key evidence is not accepted as success: aggregate verifier status_code=m068_skipped_missing_review_output_key, delivery_id=none, review_output_key=none, zero candidate-approved publication, zero Review Details artifacts, directFallback=0, and no exact-key m068_ok proof. Not validated as final acceptance because no candidate-approved live publication exists. |
-| R116 | constraint | active | M068/S05 | M068/S02,M068/S03 | S09/T04 blocked evidence shows candidate_inline_count=0, directFallback=0, leak_marker_count=0, no Review Details artifacts, and no runtime publication gates because no fresh exact-key identifiers exist. This prevents unexpected visible-volume increase in the blocked branch but does not validate final M068 visible-volume success. |
+| R114 | launchability | active | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Blocked by fresh direct-fallback proof: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but not candidate-approved publication. |
+| R115 | constraint | active | M068/S05 | M068/S03,M068/S04 | Advanced by fresh direct-fallback rejection: fallback-shaped exact-key evidence is not accepted as M068 success. |
+| R116 | constraint | active | M068/S05 | M068/S02,M068/S03 | Blocked by fresh direct-fallback proof: visible output remained bounded, but candidate-approved visible-volume success is unproven because candidate publication count is zero and direct fallback count is one. |
 | R117 | core-capability | deferred | none | none | unmapped |
 | R118 | core-capability | deferred | none | none | unmapped |
 | R119 | failure-visibility | deferred | none | none | unmapped |
