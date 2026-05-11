@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-11T15:45:22Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-11T15:45:22Z","fingerprint":"8b582d024980f56ce52f26f76a3c1215f07793dd","fileCount":500,"truncated":true} -->
+Generated: 2026-05-11T16:21:36Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-11T16:21:36Z","fingerprint":"f4c082c1061331a4b82c3ec65dd343ac44d54c68","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -60,6 +60,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 ### docs/smoke/
 - `docs/smoke/m053-formatter-suggestions.md`
 - `docs/smoke/m066-formatter-suggestions.md`
+- `docs/smoke/m068-candidate-publication.md`
 - `docs/smoke/phase27-uat-notes.md`
 - `docs/smoke/phase72-telemetry-follow-through.md`
 - `docs/smoke/phase74-reliability-regression-gate.md`
@@ -85,7 +86,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(212 files: 207 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(214 files: 209 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### src/
 - `src/config.test.ts`
@@ -168,6 +169,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/queue.ts`
 - `src/jobs/review-work-coordinator.test.ts`
 - `src/jobs/review-work-coordinator.ts`
-- `src/jobs/types.ts`
-- `src/jobs/workspace.test.ts`
-- `src/jobs/workspace.ts`
