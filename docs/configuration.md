@@ -216,12 +216,15 @@ review:
 
 Override `command` only when the repository needs different formatter tooling. The default command runs `git-clang-format` in diff mode against the PR head.
 
+Repository-local smoke override note: this repository's `.kodiai.yml` intentionally overrides the product default with `command: "python3 scripts/m066-formatter-smoke.py"` and `maxSuggestions: 1` for the controlled formatter-suggestion smoke. That override keeps repo-local proof deterministic and bounded; it should not be copied as the general default and should not be removed by documentation-only cleanup.
+
 Operational notes:
 
 - The command must write a git unified diff to stdout; no suggestions are published when stdout has no applicable PR diff hunks.
 - Explicit PR mentions can request formatter suggestions with `@kodiai format suggestions` or combine review and formatting with `@kodiai review format suggestions` / `@kodiai review & format suggestions`.
 - The published proof surface is a same-PR Pull Request Review containing `suggestion` blocks, not a branch push or automatic commit.
-- See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, verifier usage, and failure interpretation.
+- See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, `bun run verify:m066:s05`, failure interpretation, and bounded proof capture.
+- See [M066 Formatter Suggestions Smoke Proof](smoke/m066-formatter-suggestions.md) for the accepted live same-PR evidence and [M053 Formatter Suggestions Proof Alignment](smoke/m053-formatter-suggestions.md) for how M053/S05/R085 reuses that evidence without claiming automatic-review formatter suggestions are live.
 
 ### `review.prompt`
 
