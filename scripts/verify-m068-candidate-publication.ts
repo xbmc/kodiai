@@ -120,8 +120,52 @@ function normalizeUrl(value: unknown): string | null {
 }
 
 if (import.meta.main) {
-  const input = await new Response(Bun.stdin.stream()).json() as M068CandidatePublicationProofInput;
+  const { expectStatus, inputPath } = parseCliArgs(Bun.argv.slice(2));
+  const inputText = inputPath
+    ? await Bun.file(inputPath).text()
+    : await new Response(Bun.stdin.stream()).text();
+
+  if (!inputText.trim()) {
+    console.error("Usage: bun scripts/verify-m068-candidate-publication.ts [--expect-status <status_code>] [bounded-proof.json]");
+    process.exit(2);
+  }
+
+  const input = JSON.parse(inputText) as M068CandidatePublicationProofInput;
   const report = evaluateM068CandidatePublicationProof(input);
   console.log(JSON.stringify(report, null, 2));
+
+  if (expectStatus) {
+    process.exit(report.status_code === expectStatus ? 0 : 1);
+  }
   process.exit(report.success ? 0 : 1);
+}
+
+function parseCliArgs(args: string[]): { expectStatus: M068CandidatePublicationProofReport["status_code"] | null; inputPath: string | null } {
+  let expectStatus: M068CandidatePublicationProofReport["status_code"] | null = null;
+  let inputPath: string | null = null;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--expect-status") {
+      const value = args[index + 1];
+      if (!isM068StatusCode(value)) {
+        throw new Error(`Invalid --expect-status value: ${value ?? "<missing>"}`);
+      }
+      expectStatus = value;
+      index += 1;
+    } else if (!arg.startsWith("--")) {
+      inputPath = arg;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  return { expectStatus, inputPath };
+}
+
+function isM068StatusCode(value: unknown): value is M068CandidatePublicationProofReport["status_code"] {
+  return value === "m068_ok"
+    || value === "m068_direct_fallback"
+    || value === "m068_missing_candidate_publication"
+    || value === "m068_malformed_evidence";
 }

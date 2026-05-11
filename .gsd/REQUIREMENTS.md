@@ -117,8 +117,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S01,M068/S02,M068/S03,M068/S04
-- Validation: Blocked by S11 direct-fallback proof: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but candidate-approved publication is absent and the M068 candidate-publication verifier returns status_code=m068_direct_fallback.
-- Notes: S11 recorded bounded delivery 3a63ea30-4cee-11f1-951a-db5e2665bb61, identified marker-only publication coordination as the failure shape, and hardened verification. A later fresh eligible exact-key run must prove candidate-approved publication before M068 can complete.
+- Validation: Blocked after S12: production logs and GitHub artifact show exact-key Review Details for xbmc/xbmc#28172, but candidate-approved publication is absent and the tracked bounded verifier fixture returns status_code=m068_direct_fallback.
+- Notes: S12 fixed the local candidate/direct-fallback coordination path and added `scripts/fixtures/m068-direct-fallback-proof.json` for bounded status verification. A later fresh eligible exact-key run must prove candidate-approved publication before M068 can complete.
 
 ### R115 — Fallback-only publication cannot satisfy M068 success; the final acceptance proof must show candidate-approved publication, while fallback-only runs are reported as blocked or partial.
 - Class: constraint
@@ -139,8 +139,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: inferred
 - Primary owning slice: M068/S05
 - Supporting slices: M068/S02,M068/S03
-- Validation: Blocked by S11 direct-fallback proof: visible output is bounded to one exact-key Review Details issue comment, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1.
-- Notes: S11 preserved bounded/redaction-clean evidence and no M068-SUMMARY.md. A later eligible proof must show candidate-approved publication with zero direct fallback and bounded visible volume.
+- Validation: Blocked after S12: visible output remains bounded to one exact-key Review Details issue comment for the known blocked run, but candidate-approved visible-volume success remains unproven because candidatePublished=0 and directFallback=1.
+- Notes: S12 preserved bounded/redaction-clean evidence and did not create an M068 summary. A later eligible proof must show candidate-approved publication with zero direct fallback and bounded visible volume.
 
 ## Validated
 

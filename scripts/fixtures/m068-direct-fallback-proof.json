@@ -1,0 +1,11 @@
+{
+  "reviewOutputKey": "kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28172:action-synchronize:delivery-3a63ea30-4cee-11f1-951a-db5e2665bb61:head-1972551b75bfcabecd45d61ae3a75223f9988865",
+  "deliveryId": "3a63ea30-4cee-11f1-951a-db5e2665bb61",
+  "candidateLine": "- Review candidate publication: mode=direct-fallback approved=1 rewritten=4 published=0 directFallback=1 reasons=candidate-publisher-skipped,direct-fallback-attempted,direct-fallback-published,direct-fallback-disallowed",
+  "artifactCounts": {
+    "reviews": 0,
+    "reviewComments": 0,
+    "issueComments": 1
+  },
+  "url": "https://github.com/xbmc/xbmc/pull/28172#issuecomment-4417527175"
+}
