@@ -593,6 +593,9 @@ export function formatReviewDetailsSummary(params: {
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
   contributorExperience: ContributorExperienceReviewDetailsProjection;
+  shadowSpecialistReviewDetails?: {
+    readonly reviewDetailsLine: string;
+  } | null;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -631,6 +634,7 @@ export function formatReviewDetailsSummary(params: {
     keywordParsing,
     profileSelection,
     contributorExperience,
+    shadowSpecialistReviewDetails,
     prioritization,
     usageLimit,
     tokenUsage,
@@ -712,6 +716,9 @@ export function formatReviewDetailsSummary(params: {
         ]
       : [profileLine]),
     `- Contributor experience: ${contributorExperience.text}`,
+    ...(shadowSpecialistReviewDetails?.reviewDetailsLine
+      ? [`- ${shadowSpecialistReviewDetails.reviewDetailsLine}`]
+      : []),
     `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
   ];
 

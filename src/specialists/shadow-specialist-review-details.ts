@@ -174,10 +174,10 @@ export function formatShadowSpecialistReviewDetailsLine(
     `approvalPublicationDenied=${projection.approvalPublicationDenied}`,
     `privateOnly=${projection.privateOnly}`,
     `shadowOnly=${projection.shadowOnly}`,
-    `redacted=raw:${yesNo(projection.redactionFlags.discardedRawPayload)},publication:${yesNo(projection.redactionFlags.discardedPublicationFields)},approval:${yesNo(projection.redactionFlags.discardedApprovalFields)},unsafe:${projection.redactionFlags.unsafeFieldCount}`,
-    `reviewOutputKey=${reviewOutputKey}`,
-    `deliveryId=${deliveryId}`,
     `correlationKey=${correlationKey}`,
+    `deliveryId=${deliveryId}`,
+    `reviewOutputKey=${reviewOutputKey}`,
+    `redacted=raw:${yesNo(projection.redactionFlags.discardedRawPayload)},publication:${yesNo(projection.redactionFlags.discardedPublicationFields)},approval:${yesNo(projection.redactionFlags.discardedApprovalFields)},unsafe:${projection.redactionFlags.unsafeFieldCount}`,
   ];
 
   return capLine(parts.join(" "));

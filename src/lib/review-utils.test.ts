@@ -160,6 +160,30 @@ describe("formatReviewDetailsSummary", () => {
     }
   });
 
+  it("renders compact shadow specialist aggregate evidence without raw payload surfaces", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      shadowSpecialistReviewDetails: {
+        reviewDetailsLine: "Shadow specialist: lane=docs-config-truth status=degraded reason=unsafe-publication-field candidateCount=4 decisionCount=4 decisionCounts=candidate:1,duplicate:1,disagreement:1,dismissed:1,unclassifiable:0 duplicateCount=1 disagreementCount=1 metricAvailability=token:y,cost:y,latency:y visiblePublicationDenied=true approvalPublicationDenied=true privateOnly=true shadowOnly=true reviewOutputKey=test-key-001 deliveryId=delivery-shadow-metrics correlationKey=abc123",
+      },
+    });
+
+    expect(result).toContain("- Shadow specialist: lane=docs-config-truth status=degraded");
+    expect(result).toContain("candidateCount=4");
+    expect(result).toContain("decisionCount=4");
+    expect(result).toContain("duplicateCount=1");
+    expect(result).toContain("disagreementCount=1");
+    expect(result).toContain("metricAvailability=token:y,cost:y,latency:y");
+    expect(result).toContain("visiblePublicationDenied=true");
+    expect(result).toContain("approvalPublicationDenied=true");
+    expect(result).toContain("privateOnly=true");
+    expect(result).toContain("shadowOnly=true");
+    expect(result).toContain("correlationKey=abc123");
+    expect(result).not.toContain("SPECIALIST_SHOULD_NEVER_PUBLISH");
+    expect(result).not.toContain("candidate-a");
+    expect(result).not.toContain("raw prompt");
+  });
+
   it("renders usage line when usageLimit is present", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,

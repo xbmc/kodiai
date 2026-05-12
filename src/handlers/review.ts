@@ -208,6 +208,10 @@ import {
   type ShadowSpecialistSubflowResult,
 } from "../specialists/shadow-specialist-subflow.ts";
 import { projectShadowSpecialistMetrics } from "../specialists/shadow-specialist-metrics.ts";
+import {
+  buildShadowSpecialistReviewDetailsProjection,
+  type ShadowSpecialistReviewDetailsProjection,
+} from "../specialists/shadow-specialist-review-details.ts";
 
 
 
@@ -285,50 +289,62 @@ function buildShadowSpecialistCorrelationKey(params: {
 
 function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): Record<string, unknown> {
   try {
-    const projection = projectShadowSpecialistMetrics(result);
+    const metricsProjection = projectShadowSpecialistMetrics(result);
+    const reviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(metricsProjection);
 
     return {
       gate: "shadow-specialist",
-      laneId: projection.laneId,
+      laneId: reviewDetailsProjection.laneId,
       status: result.triggerStatus,
-      outputStatus: projection.status,
-      reason: projection.reason,
-      candidateCount: projection.candidateCount,
-      decisionCount: projection.decisionCount,
-      decisionCounts: projection.decisionCounts,
-      duplicateCount: projection.duplicateCount,
-      disagreementCount: projection.disagreementCount,
-      dismissedCount: projection.dismissedCount,
-      unclassifiableCount: projection.unclassifiableCount,
-      truncatedCandidateCount: projection.truncatedCandidateCount,
+      outputStatus: reviewDetailsProjection.status,
+      reason: reviewDetailsProjection.reason,
+      candidateCount: reviewDetailsProjection.candidateCount,
+      decisionCount: reviewDetailsProjection.decisionCount,
+      decisionCounts: reviewDetailsProjection.decisionCounts,
+      duplicateCount: reviewDetailsProjection.duplicateCount,
+      disagreementCount: reviewDetailsProjection.disagreementCount,
+      dismissedCount: reviewDetailsProjection.dismissedCount,
+      unclassifiableCount: reviewDetailsProjection.unclassifiableCount,
+      truncatedCandidateCount: reviewDetailsProjection.truncatedCandidateCount,
       durationMs: result.durationMs,
-      deliveryId: projection.deliveryId,
-      reviewOutputKey: projection.reviewOutputKey,
-      correlationKey: projection.correlationKey,
-      metricAvailability: projection.metricAvailability,
-      tokenCountAvailable: projection.tokenCountAvailable,
-      costAvailable: projection.costAvailable,
-      latencyMsAvailable: projection.latencyMsAvailable,
-      unsafeFieldCount: projection.redactionFlags.unsafeFieldCount,
-      discardedRawPayload: projection.redactionFlags.discardedRawPayload,
-      discardedPublicationFields: projection.redactionFlags.discardedPublicationFields,
-      discardedApprovalFields: projection.redactionFlags.discardedApprovalFields,
-      privateOnly: projection.privateOnly,
-      shadowOnly: projection.shadowOnly,
-      publishesFindings: projection.publishesFindings,
-      visiblePublicationDenied: projection.visiblePublicationDenied,
-      approvalPublicationDenied: projection.approvalPublicationDenied,
-      rawContentFieldCount: projection.rawContentFieldCount,
-      candidateBodyFieldCount: projection.candidateBodyFieldCount,
-      githubPublicationFieldCount: projection.githubPublicationFieldCount,
-      approvalFieldCount: projection.approvalFieldCount,
-      specialistContentIncluded: projection.specialistContentIncluded,
-      candidateFingerprintsIncluded: projection.candidateFingerprintsIncluded,
-      candidateBodiesIncluded: projection.candidateBodiesIncluded,
-      rawModelOutputIncluded: projection.rawModelOutputIncluded,
-      toolPayloadIncluded: projection.toolPayloadIncluded,
-      approvalFieldsIncluded: projection.approvalFieldsIncluded,
-      tierModeIncluded: projection.tierModeIncluded,
+      deliveryId: reviewDetailsProjection.deliveryId,
+      reviewOutputKey: reviewDetailsProjection.reviewOutputKey,
+      correlationKey: reviewDetailsProjection.correlationKey,
+      metricAvailability: reviewDetailsProjection.metricAvailability,
+      tokenCountAvailable: reviewDetailsProjection.tokenCountAvailable,
+      costAvailable: reviewDetailsProjection.costAvailable,
+      latencyMsAvailable: reviewDetailsProjection.latencyMsAvailable,
+      unsafeFieldCount: reviewDetailsProjection.redactionFlags.unsafeFieldCount,
+      discardedRawPayload: reviewDetailsProjection.redactionFlags.discardedRawPayload,
+      discardedPublicationFields: reviewDetailsProjection.redactionFlags.discardedPublicationFields,
+      discardedApprovalFields: reviewDetailsProjection.redactionFlags.discardedApprovalFields,
+      privateOnly: reviewDetailsProjection.privateOnly,
+      shadowOnly: reviewDetailsProjection.shadowOnly,
+      publishesFindings: reviewDetailsProjection.publishesFindings,
+      visiblePublicationDenied: reviewDetailsProjection.visiblePublicationDenied,
+      approvalPublicationDenied: reviewDetailsProjection.approvalPublicationDenied,
+      rawContentFieldCount: reviewDetailsProjection.rawContentFieldCount,
+      candidateBodyFieldCount: reviewDetailsProjection.candidateBodyFieldCount,
+      githubPublicationFieldCount: reviewDetailsProjection.githubPublicationFieldCount,
+      approvalFieldCount: reviewDetailsProjection.approvalFieldCount,
+      specialistContentIncluded: reviewDetailsProjection.specialistContentIncluded,
+      candidateFingerprintsIncluded: reviewDetailsProjection.candidateFingerprintsIncluded,
+      candidateBodiesIncluded: reviewDetailsProjection.candidateBodiesIncluded,
+      rawModelOutputIncluded: reviewDetailsProjection.rawModelOutputIncluded,
+      toolPayloadIncluded: reviewDetailsProjection.toolPayloadIncluded,
+      approvalFieldsIncluded: reviewDetailsProjection.approvalFieldsIncluded,
+      tierModeIncluded: reviewDetailsProjection.tierModeIncluded,
+      s04EvidenceAvailable: true,
+      reviewDetailsProjectionAvailable: true,
+      reviewDetailsProjectionStatus: reviewDetailsProjection.status,
+      reviewDetailsLineAvailable: reviewDetailsProjection.reviewDetailsLine.length > 0,
+      metricBoundedness: "bounded-aggregate-only",
+      metricBoundednessAvailable: true,
+      metricProjectionDegraded: false,
+      compactReviewDetailsPrivateOnly: reviewDetailsProjection.privateOnly,
+      compactReviewDetailsShadowOnly: reviewDetailsProjection.shadowOnly,
+      compactReviewDetailsVisiblePublicationDenied: reviewDetailsProjection.visiblePublicationDenied,
+      compactReviewDetailsApprovalPublicationDenied: reviewDetailsProjection.approvalPublicationDenied,
     };
   } catch {
     return {
@@ -353,6 +369,12 @@ function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): 
       toolPayloadIncluded: false,
       approvalFieldsIncluded: false,
       tierModeIncluded: false,
+      s04EvidenceAvailable: false,
+      reviewDetailsProjectionAvailable: false,
+      reviewDetailsProjectionStatus: "degraded",
+      reviewDetailsLineAvailable: false,
+      metricBoundedness: "bounded-aggregate-only",
+      metricBoundednessAvailable: false,
       metricProjectionDegraded: true,
     };
   }
@@ -3409,6 +3431,7 @@ export function createReviewHandler(deps: {
         }
 
         let shadowSpecialistResult: ShadowSpecialistSubflowResult | undefined;
+        let shadowSpecialistReviewDetailsProjection: ShadowSpecialistReviewDetailsProjection | null = null;
         try {
           shadowSpecialistResult = await shadowSpecialistSubflow({
             changedPaths: changedFiles,
@@ -3423,6 +3446,9 @@ export function createReviewHandler(deps: {
               prNumber: pr.number,
             }),
           });
+          shadowSpecialistReviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(
+            projectShadowSpecialistMetrics(shadowSpecialistResult),
+          );
 
           const shadowLogFields = {
             ...baseLog,
@@ -3435,6 +3461,7 @@ export function createReviewHandler(deps: {
             logger.info(shadowLogFields, shadowMessage);
           }
         } catch (err) {
+          shadowSpecialistReviewDetailsProjection = null;
           logger.warn(
             {
               ...baseLog,
@@ -4827,6 +4854,7 @@ export function createReviewHandler(deps: {
             keywordParsing: parsedIntent,
             profileSelection,
             contributorExperience: authorClassification.contract.reviewDetails,
+            shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
             prioritization: prioritizationStats,
             usageLimit: result.usageLimit,
             tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },

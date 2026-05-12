@@ -31,6 +31,16 @@ describe("review handler shadow specialist publication boundary", () => {
     expect(visibleBody).toContain("Issues: none");
     expect(visibleBody).toContain("Review prompt covered 1 changed file.");
     expect(visibleBody).toContain("<summary>Review Details</summary>");
+    const shadowLog = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
+    expect(visibleBody).toContain("- Shadow specialist: lane=docs-config-truth status=degraded");
+    expect(visibleBody).toContain("candidateCount=4");
+    expect(visibleBody).toContain("decisionCount=4");
+    expect(visibleBody).toContain("duplicateCount=1");
+    expect(visibleBody).toContain("disagreementCount=1");
+    expect(visibleBody).toContain("metricAvailability=token:y,cost:y,latency:y");
+    expect(visibleBody).toContain("visiblePublicationDenied=true");
+    expect(visibleBody).toContain("approvalPublicationDenied=true");
+    expect(visibleBody).toContain(`correlationKey=${shadowLog?.data?.correlationKey}`);
     expect(visibleBody).not.toContain(specialistCanary);
     expect(visibleBody).not.toContain(specialistInlineCanary);
     expect(visibleBody).not.toContain("candidate-a");
