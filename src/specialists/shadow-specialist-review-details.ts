@@ -72,6 +72,7 @@ const DECISIONS: readonly ShadowSpecialistDecision[] = [
 ];
 
 const LINE_MAX_LENGTH = 640;
+const LINE_FIELD_MAX_LENGTH = 32;
 const FIELD_MAX_LENGTH = 128;
 const REASON_MAX_LENGTH = 96;
 
@@ -152,11 +153,11 @@ export function buildShadowSpecialistReviewDetailsProjection(
 export function formatShadowSpecialistReviewDetailsLine(
   projection: Omit<ShadowSpecialistReviewDetailsProjection, "reviewDetailsLine"> | ShadowSpecialistReviewDetailsProjection,
 ): string {
-  const reason = projection.reason ?? "none";
-  const reviewOutputKey = projection.reviewOutputKey ?? "none";
-  const deliveryId = projection.deliveryId ?? "none";
-  const correlationKey = projection.correlationKey ?? "none";
-  const laneId = projection.laneId ?? "none";
+  const reason = compactLineField(projection.reason);
+  const reviewOutputKey = compactLineField(projection.reviewOutputKey);
+  const deliveryId = compactLineField(projection.deliveryId);
+  const correlationKey = compactLineField(projection.correlationKey);
+  const laneId = compactLineField(projection.laneId);
   const parts = [
     `Shadow specialist: lane=${laneId}`,
     `status=${projection.status}`,
@@ -174,10 +175,10 @@ export function formatShadowSpecialistReviewDetailsLine(
     `approvalPublicationDenied=${projection.approvalPublicationDenied}`,
     `privateOnly=${projection.privateOnly}`,
     `shadowOnly=${projection.shadowOnly}`,
+    `redacted=raw:${yesNo(projection.redactionFlags.discardedRawPayload)},publication:${yesNo(projection.redactionFlags.discardedPublicationFields)},approval:${yesNo(projection.redactionFlags.discardedApprovalFields)},unsafe:${projection.redactionFlags.unsafeFieldCount}`,
     `correlationKey=${correlationKey}`,
     `deliveryId=${deliveryId}`,
     `reviewOutputKey=${reviewOutputKey}`,
-    `redacted=raw:${yesNo(projection.redactionFlags.discardedRawPayload)},publication:${yesNo(projection.redactionFlags.discardedPublicationFields)},approval:${yesNo(projection.redactionFlags.discardedApprovalFields)},unsafe:${projection.redactionFlags.unsafeFieldCount}`,
   ];
 
   return capLine(parts.join(" "));
@@ -274,6 +275,16 @@ function normalizeRedactionFlags(value: unknown): ShadowSpecialistReviewDetailsP
     discardedPublicationFields: value.discardedPublicationFields === true,
     discardedApprovalFields: value.discardedApprovalFields === true,
   };
+}
+
+function compactLineField(value: string | null): string {
+  if (value === null) {
+    return "none";
+  }
+
+  return value.length > LINE_FIELD_MAX_LENGTH
+    ? `${value.slice(0, LINE_FIELD_MAX_LENGTH - 1)}…`
+    : value;
 }
 
 function formatDecisionCounts(counts: ShadowSpecialistDecisionCounts): string {

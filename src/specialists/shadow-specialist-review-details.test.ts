@@ -194,6 +194,9 @@ describe("buildShadowSpecialistReviewDetailsProjection", () => {
     expect(projection.reviewDetailsLine).not.toContain("\n");
     expect(projection.reviewDetailsLine).not.toContain("\r");
     expect(projection.reviewDetailsLine).not.toContain("\t");
+    expect(projection.reviewDetailsLine).toContain("correlationKey=corr");
+    expect(projection.reviewDetailsLine).toContain("deliveryId=delivery");
+    expect(projection.reviewDetailsLine).toContain("reviewOutputKey=review");
     expect(projection.reviewDetailsLine).toContain("redacted=raw:y,publication:y,approval:y,unsafe:4");
     expectNoLeak(projection);
   });
