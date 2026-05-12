@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-11T21:25:08Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-11T21:25:08Z","fingerprint":"e71290f945310a9dc5ac32b06cf38dbcb60f02b5","fileCount":500,"truncated":true} -->
+Generated: 2026-05-11T22:44:41Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-11T22:44:41Z","fingerprint":"c8cbeff8ee0f06b4dc100ae6722786675029ddd3","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -86,9 +86,10 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(214 files: 209 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(218 files: 213 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
+- `scripts/fixtures/m068-candidate-approved-proof.json`
 - `scripts/fixtures/m068-direct-fallback-proof.json`
 
 ### src/
@@ -158,16 +159,10 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(32 files: 32 .ts)*
+- *(33 files: 33 .ts)*
 
 ### src/jobs/
 - `src/jobs/aca-launcher.test.ts`
 - `src/jobs/aca-launcher.ts`
 - `src/jobs/fork-manager.test.ts`
 - `src/jobs/fork-manager.ts`
-- `src/jobs/gist-publisher.test.ts`
-- `src/jobs/gist-publisher.ts`
-- `src/jobs/queue.test-helpers.ts`
-- `src/jobs/queue.test.ts`
-- `src/jobs/queue.ts`
-- `src/jobs/review-work-coordinator.test.ts`

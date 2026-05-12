@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M068",
-      "label": "M068: Candidate Findings Before Publication",
+      "id": "milestone:M069",
+      "label": "M069: Specialist Lane Pilot",
       "type": "milestone",
-      "description": "Active milestone: M068",
+      "description": "Active milestone: M069",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:refining",
+      "label": "Phase: refining",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -4863,6 +4863,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M068",
+      "label": "M068: M068: Candidate Findings Before Publication",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M068/M068-ROADMAP.md"
+    },
+    {
       "id": "slice:M068:S01",
       "label": "S01: S01",
       "type": "slice",
@@ -5241,11 +5248,60 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M069",
-      "label": "M069: M069: Specialist Lane Pilot",
-      "type": "milestone",
+      "id": "slice:M069:S01",
+      "label": "S01: Shadow specialist contract and operator-truth trigger",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M069/M069-ROADMAP.md"
+      "sourceFile": "milestones/M069/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M069:S01:T01",
+      "label": "T01: Define the docs-config-truth trigger contract and path classifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S01:T02",
+      "label": "T02: Normalize shadow specialist outputs into bounded private candidate metrics",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S01:T03",
+      "label": "T03: Add a pure verifier for the S01 contract and package script",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M069:S02",
+      "label": "S02: Same-job read-only specialist subflow",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M069:S02:T01",
+      "label": "T01: Add bounded read-only shadow specialist subflow helper",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S02:T02",
+      "label": "T02: Invoke the specialist subflow from the real review handler fail-open",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S02:T03",
+      "label": "T03: Add S02 verifier script for handler wiring and publication safety",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S02:T04",
+      "label": "T04: Add S02 verifier and package script",
+      "type": "task",
+      "confidence": "EXTRACTED"
     },
     {
       "id": "milestone:M070",
@@ -10871,6 +10927,60 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M069",
+      "to": "slice:M069:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S01",
+      "to": "task:M069:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S01",
+      "to": "task:M069:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S01",
+      "to": "task:M069:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "slice:M069:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S02",
+      "to": "task:M069:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S02",
+      "to": "task:M069:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S02",
+      "to": "task:M069:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S02",
+      "to": "task:M069:S02:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -11603,5 +11713,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-11T18:04:17.892Z"
+  "builtAt": "2026-05-11T22:06:29.697Z"
 }
