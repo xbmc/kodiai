@@ -50,8 +50,8 @@ export function projectShadowSpecialistMetrics() {
 `;
 
 const PASSING_HANDLER = `
-import { projectShadowSpecialistMetrics } from "../specialists/shadow-specialist-metrics.ts";
-import { buildApprovedReviewBody, ensureReviewOutputNotPublished } from "./review-idempotency.ts";
+const shadowMetricReducerModule = "../specialists/shadow-specialist-metrics.ts";
+const normalPublicationHelpers = ["buildApprovedReviewBody", "ensureReviewOutputNotPublished"];
 function buildShadowSpecialistLogFields(result) {
   try {
     const projection = projectShadowSpecialistMetrics(result);
@@ -130,6 +130,10 @@ describe("verify-m069-s03", () => {
     expect(parseM069S03Args(["--json"])).toEqual({ json: true, help: false });
     expect(parseM069S03Args(["--help"])).toEqual({ json: false, help: true });
     expect(() => parseM069S03Args(["--fixture", ".gsd/secret.json"])).toThrow(/invalid_cli_args/);
+  });
+
+  test("keeps synthetic handler fixture from looking like unresolved source imports", () => {
+    expect(PASSING_HANDLER).not.toMatch(/^import .*from "\.\.?\//m);
   });
 
   test("passes representative package, reducer, handler metric wiring, and publication boundary checks", async () => {
