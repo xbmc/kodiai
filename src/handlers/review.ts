@@ -207,6 +207,7 @@ import {
   type ShadowSpecialistSubflowInput,
   type ShadowSpecialistSubflowResult,
 } from "../specialists/shadow-specialist-subflow.ts";
+import { projectShadowSpecialistMetrics } from "../specialists/shadow-specialist-metrics.ts";
 
 
 
@@ -282,41 +283,79 @@ function buildShadowSpecialistCorrelationKey(params: {
   return sha256Hex(`${params.deliveryId ?? "unknown-delivery"}:${params.reviewOutputKey ?? "unknown-output"}:${params.prNumber}`).slice(0, 16);
 }
 
-function resolveShadowSpecialistReason(result: ShadowSpecialistSubflowResult): string | null {
-  return result.timeoutReason
-    ?? result.errorReason
-    ?? result.unclassifiableReason
-    ?? result.skipReason
-    ?? result.degradedReason
-    ?? result.errorKind
-    ?? null;
-}
-
 function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): Record<string, unknown> {
-  return {
-    gate: "shadow-specialist",
-    laneId: result.laneId,
-    status: result.triggerStatus,
-    outputStatus: result.output.status,
-    reason: resolveShadowSpecialistReason(result),
-    candidateCount: result.candidateCount,
-    decisionCount: result.decisionCount,
-    duplicateCount: result.duplicateCount,
-    disagreementCount: result.disagreementCount,
-    durationMs: result.durationMs,
-    deliveryId: result.deliveryId,
-    reviewOutputKey: result.reviewOutputKey,
-    correlationKey: result.correlationKey,
-    tokenCountAvailable: result.metricAvailability.tokenCount,
-    costAvailable: result.metricAvailability.costUsd,
-    latencyMsAvailable: result.metricAvailability.latencyMs,
-    unsafeFieldCount: result.redactionFlags.unsafeFieldCount,
-    discardedRawPayload: result.redactionFlags.discardedRawPayload,
-    discardedPublicationFields: result.redactionFlags.discardedPublicationFields,
-    discardedApprovalFields: result.redactionFlags.discardedApprovalFields,
-    shadowOnly: result.shadowOnly,
-    publishesFindings: result.publishesFindings,
-  };
+  try {
+    const projection = projectShadowSpecialistMetrics(result);
+
+    return {
+      gate: "shadow-specialist",
+      laneId: projection.laneId,
+      status: result.triggerStatus,
+      outputStatus: projection.status,
+      reason: projection.reason,
+      candidateCount: projection.candidateCount,
+      decisionCount: projection.decisionCount,
+      decisionCounts: projection.decisionCounts,
+      duplicateCount: projection.duplicateCount,
+      disagreementCount: projection.disagreementCount,
+      dismissedCount: projection.dismissedCount,
+      unclassifiableCount: projection.unclassifiableCount,
+      truncatedCandidateCount: projection.truncatedCandidateCount,
+      durationMs: result.durationMs,
+      deliveryId: projection.deliveryId,
+      reviewOutputKey: projection.reviewOutputKey,
+      correlationKey: projection.correlationKey,
+      metricAvailability: projection.metricAvailability,
+      tokenCountAvailable: projection.tokenCountAvailable,
+      costAvailable: projection.costAvailable,
+      latencyMsAvailable: projection.latencyMsAvailable,
+      unsafeFieldCount: projection.redactionFlags.unsafeFieldCount,
+      discardedRawPayload: projection.redactionFlags.discardedRawPayload,
+      discardedPublicationFields: projection.redactionFlags.discardedPublicationFields,
+      discardedApprovalFields: projection.redactionFlags.discardedApprovalFields,
+      privateOnly: projection.privateOnly,
+      shadowOnly: projection.shadowOnly,
+      publishesFindings: projection.publishesFindings,
+      visiblePublicationDenied: projection.visiblePublicationDenied,
+      approvalPublicationDenied: projection.approvalPublicationDenied,
+      rawContentFieldCount: projection.rawContentFieldCount,
+      candidateBodyFieldCount: projection.candidateBodyFieldCount,
+      githubPublicationFieldCount: projection.githubPublicationFieldCount,
+      approvalFieldCount: projection.approvalFieldCount,
+      specialistContentIncluded: projection.specialistContentIncluded,
+      candidateFingerprintsIncluded: projection.candidateFingerprintsIncluded,
+      candidateBodiesIncluded: projection.candidateBodiesIncluded,
+      rawModelOutputIncluded: projection.rawModelOutputIncluded,
+      toolPayloadIncluded: projection.toolPayloadIncluded,
+      approvalFieldsIncluded: projection.approvalFieldsIncluded,
+      tierModeIncluded: projection.tierModeIncluded,
+    };
+  } catch {
+    return {
+      gate: "shadow-specialist",
+      laneId: result.laneId ?? "docs-config-truth",
+      status: "degraded",
+      outputStatus: "degraded",
+      reason: "metrics-projection-error",
+      durationMs: result.durationMs,
+      deliveryId: result.deliveryId,
+      reviewOutputKey: result.reviewOutputKey,
+      correlationKey: result.correlationKey,
+      privateOnly: true,
+      shadowOnly: true,
+      publishesFindings: false,
+      visiblePublicationDenied: true,
+      approvalPublicationDenied: true,
+      specialistContentIncluded: false,
+      candidateFingerprintsIncluded: false,
+      candidateBodiesIncluded: false,
+      rawModelOutputIncluded: false,
+      toolPayloadIncluded: false,
+      approvalFieldsIncluded: false,
+      tierModeIncluded: false,
+      metricProjectionDegraded: true,
+    };
+  }
 }
 
 function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
