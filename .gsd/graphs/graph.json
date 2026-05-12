@@ -9,8 +9,8 @@
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:refining",
-      "label": "Phase: refining",
+      "id": "concept:phase:validating-milestone",
+      "label": "Phase: validating-milestone",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5331,6 +5331,68 @@
     {
       "id": "task:M069:S03:T04",
       "label": "T04: Run full S03 regression gate and preserve S02 fail-open proof",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M069:S04",
+      "label": "S04: Compact Review Details, structured logs, and verifier contract",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M069:S04:T01",
+      "label": "T01: Create bounded shadow specialist Review Details projection",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S04:T02",
+      "label": "T02: Wire compact projection into Review Details and handler logs",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S04:T03",
+      "label": "T03: Add S04 verifier contract and package script",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S04:T04",
+      "label": "T04: Run integrated S04 regression gate and repair contract gaps",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M069:S05",
+      "label": "S05: Production-like specialist proof on xbmc/xbmc#28172 or truthful blocker",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/slices/S05/S05-PLAN.md"
+    },
+    {
+      "id": "task:M069:S05:T01",
+      "label": "T01: Add S05 proof evaluator contract and negative tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S05:T02",
+      "label": "T02: Wire live GitHub and Log Analytics collectors into the S05 verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S05:T03",
+      "label": "T03: Run the S05 closeout gate and preserve truthful proof classification",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M069:S05:T04",
+      "label": "T04: Run integrated S05 gate and classify live proof or blocker",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -11042,6 +11104,66 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M069",
+      "to": "slice:M069:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S04",
+      "to": "task:M069:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S04",
+      "to": "task:M069:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S04",
+      "to": "task:M069:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S04",
+      "to": "task:M069:S04:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "slice:M069:S05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S05",
+      "to": "task:M069:S05:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S05",
+      "to": "task:M069:S05:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S05",
+      "to": "task:M069:S05:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M069:S05",
+      "to": "task:M069:S05:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -11774,5 +11896,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-12T02:18:29.096Z"
+  "builtAt": "2026-05-12T16:50:04.572Z"
 }
