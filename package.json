@@ -112,7 +112,8 @@
     "verify:m054:s03": "bun scripts/verify-m054-s03.ts",
     "verify:m054:s04": "bun scripts/verify-m054-s04.ts",
     "check:migrations-have-downs": "bun scripts/check-migrations-have-downs.ts",
-    "check:orphaned-tests": "bun scripts/check-orphaned-tests.ts"
+    "check:orphaned-tests": "bun scripts/check-orphaned-tests.ts",
+    "verify:m069:s05": "bun scripts/verify-m069-s05.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",

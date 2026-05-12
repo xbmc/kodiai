@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  COMMAND_NAME,
+  EXPECTED_PACKAGE_SCRIPT,
   M069_S05_CHECK_IDS,
   buildBlockedM069S05Evidence,
   buildSyntheticPassingM069S05Evidence,
+  collectM069S05LiveEvidence,
   evaluateM069S05Proof,
   main,
   parseM069S05Args,
@@ -30,6 +33,21 @@ function cloneEvidence(overrides: Partial<M069S05Evidence> = {}): M069S05Evidenc
 
 function evaluate(evidence: M069S05Evidence = buildSyntheticPassingM069S05Evidence()) {
   return evaluateM069S05Proof({ generatedAt: "2026-05-11T00:00:00.000Z", evidence });
+}
+
+const LIVE_REVIEW_OUTPUT_KEY = "kodiai-review-output:v1:inst-123:xbmc/xbmc:pr-28172:action-synchronize:delivery-delivery-123:head-abcdef";
+const LIVE_DELIVERY_ID = "delivery-123";
+const LIVE_CORRELATION_KEY = "correlation-123";
+
+function liveReviewDetailsBody(extra = ""): string {
+  return [
+    "<details>",
+    "<summary>Review Details</summary>",
+    `<!-- kodiai:review-details:${LIVE_REVIEW_OUTPUT_KEY} -->`,
+    `shadow-specialist lane=docs-config-truth status=ok candidateCount=4 decisionCount=4 duplicateCount=1 disagreementCount=1 metricAvailability=token:y,cost:y,latency:y visiblePublicationDenied=true approvalPublicationDenied=true correlationKey=${LIVE_CORRELATION_KEY} deliveryId=${LIVE_DELIVERY_ID} reviewOutputKey=${LIVE_REVIEW_OUTPUT_KEY} redacted=raw:y,publication:y,approval:y,unsafe:0`,
+    extra,
+    "</details>",
+  ].join("\n");
 }
 
 describe("verify-m069-s05", () => {
@@ -241,6 +259,150 @@ describe("verify-m069-s05", () => {
     expect(serialized).not.toContain("issue comment visible");
     expect(serialized).not.toContain("approval visible");
   });
+
+
+  test("package.json wires verify:m069:s05 and verifier avoids gitignored evidence inputs", async () => {
+    const packageJson = JSON.parse(await Bun.file("package.json").text());
+    expect(packageJson.scripts[COMMAND_NAME]).toBe(EXPECTED_PACKAGE_SCRIPT);
+
+    const verifierSource = await Bun.file("scripts/verify-m069-s05.ts").text();
+    expect(verifierSource).not.toMatch(/Bun\.file\(["'`](?:\.gsd|\.planning|\.audits)\//);
+    expect(verifierSource).not.toMatch(/readFile[^\n]+(?:\.gsd|\.planning|\.audits)\//);
+  });
+
+  test("injected live collectors extract bounded Review Details and correlated runtime rows", async () => {
+    const requestedArgs = parseM069S05Args(["--owner", "xbmc", "--repo", "xbmc", "--pr", "28172"]);
+    const runtimeKeys: Array<{ reviewOutputKey: string | null; deliveryId: string | null }> = [];
+    const evidence = await collectM069S05LiveEvidence(requestedArgs, {
+      collectGitHubArtifacts: async (args) => {
+        expect(args).toMatchObject({ owner: "xbmc", repo: "xbmc", pr: 28172 });
+        return {
+          artifacts: [
+            { source: "issue-comment", body: "ordinary public review text" },
+            { source: "review", body: liveReviewDetailsBody("candidate-body-visible"), state: "COMMENTED" },
+            { source: "review-comment", body: liveReviewDetailsBody(), state: null },
+          ],
+          sourceAvailability: {
+            githubReviewDetailsAvailable: true,
+            githubAccessAvailable: true,
+            githubDependency: "available",
+            liveAccessBlocked: false,
+            blockerReason: null,
+          },
+        };
+      },
+      collectRuntimeLogs: async (_args, keys) => {
+        runtimeKeys.push(keys);
+        return {
+          runtimeLog: {
+            present: true,
+            laneId: "docs-config-truth",
+            status: "ok",
+            reviewOutputKey: keys.reviewOutputKey,
+            deliveryId: keys.deliveryId,
+            correlationKey: LIVE_CORRELATION_KEY,
+            tokenCountAvailable: true,
+            costAvailable: true,
+            latencyMsAvailable: true,
+          },
+          sourceAvailability: {
+            logAnalyticsAvailable: true,
+            azureLogs: "available",
+            liveAccessBlocked: false,
+            blockerReason: null,
+          },
+        };
+      },
+    });
+
+    expect(runtimeKeys).toEqual([{ reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY, deliveryId: LIVE_DELIVERY_ID }]);
+    const report = evaluateM069S05Proof({ generatedAt: "2026-05-11T00:00:00.000Z", evidence });
+    expect(report).toMatchObject({ success: true, status_code: "m069_ok", reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY, deliveryId: LIVE_DELIVERY_ID });
+    expect(JSON.stringify(report)).not.toContain("candidate-body-visible");
+  });
+
+  test("injected collectors classify GitHub access failures and Azure missing logs as blocked", async () => {
+    const evidence = await collectM069S05LiveEvidence(parseM069S05Args([]), {
+      collectGitHubArtifacts: async () => ({
+        artifacts: [],
+        sourceAvailability: {
+          githubReviewDetailsAvailable: false,
+          githubAccessAvailable: false,
+          githubDependency: "unavailable",
+          liveAccessBlocked: true,
+          blockerReason: "github_access_403",
+        },
+      }),
+      collectRuntimeLogs: async (_args, keys) => {
+        expect(keys).toEqual({ reviewOutputKey: null, deliveryId: null });
+        return {
+          runtimeLog: null,
+          sourceAvailability: {
+            logAnalyticsAvailable: false,
+            azureLogs: "unavailable",
+            liveAccessBlocked: true,
+            blockerReason: "missing_correlation_key",
+          },
+        };
+      },
+    });
+
+    const report = evaluateM069S05Proof({ generatedAt: "2026-05-11T00:00:00.000Z", evidence });
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m069_blocked_live_access");
+    expect(report.sourceAvailability).toMatchObject({
+      githubDependency: "unavailable",
+      azureLogs: "unavailable",
+      liveAccessBlocked: true,
+    });
+    expect(report.sourceAvailability.blockerReason).toContain("github_access_403");
+    expect(report.sourceAvailability.blockerReason).toContain("missing_correlation_key");
+  });
+
+  test("collector evidence reports visible specialist publication violations", async () => {
+    const evidence = await collectM069S05LiveEvidence(parseM069S05Args([]), {
+      collectGitHubArtifacts: async () => ({
+        artifacts: [
+          { source: "review", body: liveReviewDetailsBody(), state: "COMMENTED" },
+          { source: "review", body: "Visible docs-config-truth specialist finding should never publish", state: "APPROVED" },
+        ],
+        sourceAvailability: {
+          githubReviewDetailsAvailable: true,
+          githubAccessAvailable: true,
+          githubDependency: "available",
+          liveAccessBlocked: false,
+          blockerReason: null,
+        },
+      }),
+      collectRuntimeLogs: async (_args, keys) => ({
+        runtimeLog: {
+          present: true,
+          laneId: "docs-config-truth",
+          status: "ok",
+          reviewOutputKey: keys.reviewOutputKey,
+          deliveryId: keys.deliveryId,
+          correlationKey: LIVE_CORRELATION_KEY,
+          tokenCountAvailable: true,
+          costAvailable: true,
+          latencyMsAvailable: true,
+        },
+        sourceAvailability: {
+          logAnalyticsAvailable: true,
+          azureLogs: "available",
+          liveAccessBlocked: false,
+          blockerReason: null,
+        },
+      }),
+    });
+
+    const report = evaluateM069S05Proof({ generatedAt: "2026-05-11T00:00:00.000Z", evidence });
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m069_visible_publication_violation");
+    expect(report.publicationDenials.visibleSpecialistCommentPublished).toBe(true);
+    expect(report.publicationDenials.visibleSpecialistApprovalPublished).toBe(true);
+    expect(JSON.stringify(report)).not.toContain("Visible docs-config-truth specialist finding should never publish");
+  });
+
 
   test("main emits JSON and allow-blocked only changes exit code, not success", async () => {
     const passStdout: string[] = [];

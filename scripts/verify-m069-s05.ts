@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 
+import { Octokit } from "@octokit/rest";
+import { createAppAuth } from "@octokit/auth-app";
+import { extractReviewOutputKey, parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { discoverLogAnalyticsWorkspaceIds, queryReviewAuditLogs, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
+
 export const M069_S05_DEFAULT_TARGET = {
   owner: "xbmc",
   repo: "xbmc",
@@ -7,6 +12,12 @@ export const M069_S05_DEFAULT_TARGET = {
 } as const;
 
 export const M069_S05_LANE_ID = "docs-config-truth" as const;
+
+export const COMMAND_NAME = "verify:m069:s05" as const;
+export const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m069-s05.ts" as const;
+const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_ARTIFACT_TEXT_LENGTH = 32_000;
+
 
 export const M069_S05_CHECK_IDS = [
   "M069-S05-LIVE-SOURCE-AVAILABILITY",
@@ -93,7 +104,10 @@ export type M069S05BoundedRuntimeLogEvidence = Partial<M069S05Counts & M069S05Me
 
 export type M069S05SourceAvailability = {
   readonly githubReviewDetailsAvailable: boolean;
+  readonly githubAccessAvailable?: boolean;
+  readonly githubDependency?: "available" | "unavailable";
   readonly logAnalyticsAvailable: boolean;
+  readonly azureLogs?: "available" | "unavailable";
   readonly liveAccessBlocked: boolean;
   readonly blockerReason: string | null;
 };
@@ -108,6 +122,7 @@ export type M069S05Evidence = {
 
 export type M069S05EvaluateOptions = {
   readonly generatedAt?: string;
+  readonly proofMode?: "live-required" | "injected-evidence";
   readonly target?: Partial<M069S05Target>;
   readonly reviewOutputKey?: string | null;
   readonly deliveryId?: string | null;
@@ -125,6 +140,32 @@ export type M069S05CliArgs = {
   readonly deliveryId: string | null;
 };
 
+export type M069S05VerifierEnv = Record<string, string | undefined>;
+
+export type M069S05ArtifactSource = "review" | "review-comment" | "issue-comment";
+
+export type M069S05GitHubArtifact = {
+  readonly source: M069S05ArtifactSource;
+  readonly body: string | null;
+  readonly state?: string | null;
+  readonly updatedAt?: string | null;
+};
+
+export type M069S05GitHubCollectorResult = {
+  readonly artifacts: readonly M069S05GitHubArtifact[];
+  readonly sourceAvailability: Pick<M069S05SourceAvailability, "githubReviewDetailsAvailable" | "githubAccessAvailable" | "githubDependency" | "liveAccessBlocked" | "blockerReason">;
+};
+
+export type M069S05RuntimeLogCollectorResult = {
+  readonly runtimeLog: M069S05BoundedRuntimeLogEvidence | null;
+  readonly sourceAvailability: Pick<M069S05SourceAvailability, "logAnalyticsAvailable" | "azureLogs" | "liveAccessBlocked" | "blockerReason">;
+};
+
+export type M069S05Collectors = {
+  readonly collectGitHubArtifacts?: (args: M069S05CliArgs) => Promise<M069S05GitHubCollectorResult>;
+  readonly collectRuntimeLogs?: (args: M069S05CliArgs, keys: { reviewOutputKey: string | null; deliveryId: string | null }) => Promise<M069S05RuntimeLogCollectorResult>;
+};
+
 export type M069S05LeakSummary = {
   readonly rawPayloadLeakCount: number;
   readonly visiblePublicationFieldCount: number;
@@ -133,7 +174,7 @@ export type M069S05LeakSummary = {
 };
 
 export type M069S05ProofReport = {
-  readonly command: "verify:m069:s05";
+  readonly command: typeof COMMAND_NAME;
   readonly generated_at: string;
   readonly proofMode: "live-required" | "injected-evidence";
   readonly proofScope: "production-like-specialist-shadow-proof";
@@ -180,7 +221,10 @@ const DEFAULT_PUBLICATION_DENIALS: M069S05PublicationDenials = {
 
 const BLOCKED_SOURCE_AVAILABILITY: M069S05SourceAvailability = {
   githubReviewDetailsAvailable: false,
+  githubAccessAvailable: false,
+  githubDependency: "unavailable",
   logAnalyticsAvailable: false,
+  azureLogs: "unavailable",
   liveAccessBlocked: true,
   blockerReason: "live GitHub/Log Analytics collectors are not configured for this pure evaluator",
 };
@@ -248,7 +292,10 @@ export function buildSyntheticPassingM069S05Evidence(): M069S05Evidence {
     target: M069_S05_DEFAULT_TARGET,
     sourceAvailability: {
       githubReviewDetailsAvailable: true,
+      githubAccessAvailable: true,
+      githubDependency: "available",
       logAnalyticsAvailable: true,
+      azureLogs: "available",
       liveAccessBlocked: false,
       blockerReason: null,
     },
@@ -422,9 +469,9 @@ export function evaluateM069S05Proof(options: M069S05EvaluateOptions = {}): M069
   const status_code = classifyStatus(sourceAvailability, checkFailures, reviewDetails?.status, runtimeLog?.status);
   const success = status_code === "m069_ok";
   return {
-    command: "verify:m069:s05",
+    command: COMMAND_NAME,
     generated_at: options.generatedAt ?? new Date().toISOString(),
-    proofMode: options.evidence ? "injected-evidence" : "live-required",
+    proofMode: options.proofMode ?? (options.evidence ? "injected-evidence" : "live-required"),
     proofScope: "production-like-specialist-shadow-proof",
     success,
     status_code,
@@ -450,6 +497,7 @@ export async function main(argv = Bun.argv.slice(2), io: {
   readonly stdout?: Pick<typeof Bun.stdout, "write">;
   readonly stderr?: Pick<typeof Bun.stderr, "write">;
   readonly evaluate?: (args: M069S05CliArgs) => M069S05ProofReport | Promise<M069S05ProofReport>;
+  readonly collectors?: M069S05Collectors;
 } = {}): Promise<number> {
   const stdout = io.stdout ?? Bun.stdout;
   const stderr = io.stderr ?? Bun.stderr;
@@ -472,6 +520,8 @@ export async function main(argv = Bun.argv.slice(2), io: {
       target: { owner: args.owner, repo: args.repo, pr: args.pr },
       reviewOutputKey: args.reviewOutputKey,
       deliveryId: args.deliveryId,
+      evidence: await collectM069S05LiveEvidence(args, io.collectors),
+      proofMode: "live-required",
     }));
     if (args.json) {
       stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -486,6 +536,384 @@ export async function main(argv = Bun.argv.slice(2), io: {
     stderr.write(`verify:m069:s05 failed: ${error instanceof Error ? error.message : String(error)}\n`);
     return 2;
   }
+}
+
+
+export async function collectM069S05LiveEvidence(args: M069S05CliArgs, collectors: M069S05Collectors = {}): Promise<M069S05Evidence> {
+  const target = { owner: args.owner, repo: args.repo, pr: args.pr };
+  const githubResult = await (collectors.collectGitHubArtifacts?.(args) ?? collectGitHubArtifactsFromLiveGitHub(args));
+  const reviewDetails = extractBoundedReviewDetailsFromArtifacts(githubResult.artifacts, {
+    owner: args.owner,
+    repo: args.repo,
+    pr: args.pr,
+    requestedReviewOutputKey: args.reviewOutputKey,
+  });
+  const effectiveReviewOutputKey = reviewDetails?.reviewOutputKey ?? args.reviewOutputKey;
+  const effectiveDeliveryId = reviewDetails?.deliveryId ?? args.deliveryId;
+  const runtimeResult = await (collectors.collectRuntimeLogs?.(args, {
+    reviewOutputKey: effectiveReviewOutputKey,
+    deliveryId: effectiveDeliveryId,
+  }) ?? collectRuntimeLogsFromLogAnalytics(args, {
+    reviewOutputKey: effectiveReviewOutputKey,
+    deliveryId: effectiveDeliveryId,
+  }));
+  const visiblePublication = detectVisiblePublication(githubResult.artifacts);
+  return {
+    target,
+    sourceAvailability: mergeSourceAvailability(
+      githubResult.sourceAvailability,
+      runtimeResult.sourceAvailability,
+      reviewDetails,
+      runtimeResult.runtimeLog,
+    ),
+    reviewDetails,
+    runtimeLog: runtimeResult.runtimeLog,
+    visiblePublication,
+  };
+}
+
+async function collectGitHubArtifactsFromLiveGitHub(args: M069S05CliArgs): Promise<M069S05GitHubCollectorResult> {
+  const config = await readGitHubVerifierConfig(process.env);
+  if (!config.ok) return blockedGitHubResult(config.reason);
+  try {
+    const appOctokit = new Octokit({
+      authStrategy: createAppAuth,
+      auth: { appId: config.appId, privateKey: config.privateKey },
+      request: { timeout: REQUEST_TIMEOUT_MS },
+    });
+    const installation = await appOctokit.request("GET /repos/{owner}/{repo}/installation", {
+      owner: args.owner,
+      repo: args.repo,
+      request: { timeout: REQUEST_TIMEOUT_MS },
+    });
+    const installationOctokit = new Octokit({
+      authStrategy: createAppAuth,
+      auth: { appId: config.appId, privateKey: config.privateKey, installationId: installation.data.id },
+      request: { timeout: REQUEST_TIMEOUT_MS },
+    });
+    const [reviews, reviewComments, issueComments] = await Promise.all([
+      installationOctokit.rest.pulls.listReviews({ owner: args.owner, repo: args.repo, pull_number: args.pr, per_page: 100, page: 1 }),
+      installationOctokit.rest.pulls.listReviewComments({ owner: args.owner, repo: args.repo, pull_number: args.pr, per_page: 100, page: 1, sort: "created", direction: "desc" }),
+      installationOctokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.pr, per_page: 100, page: 1, sort: "created", direction: "desc" }),
+    ]);
+    const artifacts: M069S05GitHubArtifact[] = [
+      ...reviews.data.map((item) => ({ source: "review" as const, body: boundArtifactText(item.body), state: item.state ?? null, updatedAt: item.submitted_at ?? null })),
+      ...reviewComments.data.map((item) => ({ source: "review-comment" as const, body: boundArtifactText(item.body), updatedAt: item.updated_at ?? null })),
+      ...issueComments.data.map((item) => ({ source: "issue-comment" as const, body: boundArtifactText(item.body), updatedAt: item.updated_at ?? null })),
+    ];
+    return {
+      artifacts,
+      sourceAvailability: {
+        githubReviewDetailsAvailable: artifacts.some((artifact) => Boolean(extractReviewOutputKey(artifact.body))),
+        githubAccessAvailable: true,
+        githubDependency: "available",
+        liveAccessBlocked: false,
+        blockerReason: null,
+      },
+    };
+  } catch (error) {
+    return blockedGitHubResult(`github_${classifyExternalError(error)}`);
+  }
+}
+
+async function readGitHubVerifierConfig(env: M069S05VerifierEnv): Promise<{ ok: true; appId: string; privateKey: string } | { ok: false; reason: string }> {
+  const appId = env.GITHUB_APP_ID;
+  const keyEnv = env.GITHUB_PRIVATE_KEY ?? env.GITHUB_PRIVATE_KEY_BASE64;
+  if (!appId || !keyEnv) return { ok: false, reason: "missing_github_app_config" };
+  if (keyEnv.startsWith("-----BEGIN")) return { ok: true, appId, privateKey: keyEnv };
+  if (keyEnv.startsWith("/") || keyEnv.startsWith("./")) {
+    try {
+      return { ok: true, appId, privateKey: await Bun.file(keyEnv).text() };
+    } catch {
+      return { ok: false, reason: "github_private_key_unreadable" };
+    }
+  }
+  try {
+    return { ok: true, appId, privateKey: atob(keyEnv) };
+  } catch {
+    return { ok: false, reason: "github_private_key_unparseable" };
+  }
+}
+
+function blockedGitHubResult(reason: string): M069S05GitHubCollectorResult {
+  return {
+    artifacts: [],
+    sourceAvailability: {
+      githubReviewDetailsAvailable: false,
+      githubAccessAvailable: false,
+      githubDependency: "unavailable",
+      liveAccessBlocked: true,
+      blockerReason: reason,
+    },
+  };
+}
+
+async function collectRuntimeLogsFromLogAnalytics(_args: M069S05CliArgs, keys: { reviewOutputKey: string | null; deliveryId: string | null }): Promise<M069S05RuntimeLogCollectorResult> {
+  if (!keys.reviewOutputKey && !keys.deliveryId) return blockedRuntimeResult("missing_correlation_key");
+  const workspaceIds = parseWorkspaceIds(process.env.AZURE_LOG_ANALYTICS_WORKSPACE_IDS ?? process.env.AZURE_LOG_ANALYTICS_WORKSPACE_ID ?? process.env.LOG_ANALYTICS_WORKSPACE_IDS ?? process.env.LOG_ANALYTICS_WORKSPACE_ID);
+  const resourceGroup = process.env.AZURE_RESOURCE_GROUP ?? process.env.ACA_RESOURCE_GROUP;
+  if (workspaceIds.length === 0 && !resourceGroup) return blockedRuntimeResult("missing_log_analytics_config");
+  try {
+    const discoveredWorkspaceIds = await discoverLogAnalyticsWorkspaceIds({ resourceGroup: resourceGroup ?? "", explicitWorkspaceIds: workspaceIds });
+    if (discoveredWorkspaceIds.length === 0) return blockedRuntimeResult("missing_log_analytics_workspace");
+    const result = await queryReviewAuditLogs({
+      workspaceIds: discoveredWorkspaceIds,
+      reviewOutputKey: keys.reviewOutputKey ?? undefined,
+      deliveryId: keys.deliveryId ?? undefined,
+      messageContains: M069_S05_LANE_ID,
+      timespan: process.env.M069_S05_LOG_TIMESPAN ?? "P14D",
+      limit: 100,
+    });
+    const runtimeLog = extractRuntimeLogEvidence(result.rows, keys);
+    return {
+      runtimeLog,
+      sourceAvailability: {
+        logAnalyticsAvailable: runtimeLog?.present === true,
+        azureLogs: runtimeLog?.present === true ? "available" : "unavailable",
+        liveAccessBlocked: runtimeLog?.present !== true,
+        blockerReason: runtimeLog?.present === true ? null : "runtime_log_correlation_missing",
+      },
+    };
+  } catch (error) {
+    return blockedRuntimeResult(`azure_${classifyExternalError(error)}`);
+  }
+}
+
+function blockedRuntimeResult(reason: string): M069S05RuntimeLogCollectorResult {
+  return {
+    runtimeLog: null,
+    sourceAvailability: {
+      logAnalyticsAvailable: false,
+      azureLogs: "unavailable",
+      liveAccessBlocked: true,
+      blockerReason: reason,
+    },
+  };
+}
+
+function parseWorkspaceIds(value: string | undefined): string[] {
+  return (value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function boundArtifactText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  return value.slice(0, MAX_ARTIFACT_TEXT_LENGTH);
+}
+
+function extractBoundedReviewDetailsFromArtifacts(artifacts: readonly M069S05GitHubArtifact[], params: { owner: string; repo: string; pr: number; requestedReviewOutputKey: string | null }): M069S05BoundedReviewDetailsEvidence | null {
+  for (const artifact of artifacts) {
+    const body = artifact.body ?? "";
+    const reviewOutputKey = extractReviewOutputKey(body);
+    if (!reviewOutputKey) continue;
+    if (params.requestedReviewOutputKey && reviewOutputKey !== params.requestedReviewOutputKey) continue;
+    const parsed = parseReviewOutputKey(reviewOutputKey);
+    if (parsed && (parsed.owner !== params.owner.toLowerCase() || parsed.repo !== params.repo.toLowerCase() || parsed.prNumber !== params.pr)) continue;
+    const line = findReviewDetailsLine(body);
+    const fields = parseReviewDetailsLine(line);
+    return {
+      present: Boolean(line),
+      laneId: fields.lane,
+      status: fields.status,
+      reason: fields.reason,
+      reviewOutputKey: fields.reviewOutputKey ?? reviewOutputKey,
+      deliveryId: fields.deliveryId ?? parsed?.effectiveDeliveryId ?? parsed?.deliveryId ?? null,
+      correlationKey: fields.correlationKey,
+      candidateCount: fields.candidateCount ?? Number.NaN,
+      decisionCount: fields.decisionCount ?? Number.NaN,
+      duplicateCount: fields.duplicateCount ?? Number.NaN,
+      disagreementCount: fields.disagreementCount ?? Number.NaN,
+      tokenCountAvailable: fields.tokenCountAvailable ?? false,
+      costAvailable: fields.costAvailable ?? false,
+      latencyMsAvailable: fields.latencyMsAvailable ?? false,
+      redacted: true,
+      redactionFlags: {
+        unsafeFieldCount: fields.unsafeFieldCount ?? Number.NaN,
+        discardedRawPayload: fields.discardedRawPayload === true,
+        discardedPublicationFields: fields.discardedPublicationFields === true,
+        discardedApprovalFields: fields.discardedApprovalFields === true,
+      },
+      publicationDenials: {
+        ...DEFAULT_PUBLICATION_DENIALS,
+        visiblePublicationDenied: fields.visiblePublicationDenied === true,
+        approvalPublicationDenied: fields.approvalPublicationDenied === true,
+      },
+    };
+  }
+  return null;
+}
+
+type ReviewDetailsLineFields = {
+  readonly lane: string | null;
+  readonly status: string | null;
+  readonly reason: string | null;
+  readonly candidateCount: number | null;
+  readonly decisionCount: number | null;
+  readonly duplicateCount: number | null;
+  readonly disagreementCount: number | null;
+  readonly tokenCountAvailable: boolean | null;
+  readonly costAvailable: boolean | null;
+  readonly latencyMsAvailable: boolean | null;
+  readonly visiblePublicationDenied: boolean | null;
+  readonly approvalPublicationDenied: boolean | null;
+  readonly correlationKey: string | null;
+  readonly deliveryId: string | null;
+  readonly reviewOutputKey: string | null;
+  readonly discardedRawPayload: boolean | null;
+  readonly discardedPublicationFields: boolean | null;
+  readonly discardedApprovalFields: boolean | null;
+  readonly unsafeFieldCount: number | null;
+};
+
+function findReviewDetailsLine(body: string): string | null {
+  const lines = body.split(/\r?\n/);
+  return lines.find((line) => line.includes(`lane=${M069_S05_LANE_ID}`) && line.includes("reviewOutputKey=")) ?? null;
+}
+
+function parseReviewDetailsLine(line: string | null): ReviewDetailsLineFields {
+  const text = line ?? "";
+  const metric = /metricAvailability=token:(y|n),cost:(y|n),latency:(y|n)/.exec(text);
+  const redacted = /redacted=raw:(y|n),publication:(y|n),approval:(y|n),unsafe:(\d+)/.exec(text);
+  return {
+    lane: capture(text, /lane=([^\s]+)/),
+    status: capture(text, /status=([^\s]+)/),
+    reason: capture(text, /reason=([^\s]+)/),
+    candidateCount: captureNumber(text, /candidateCount=(\d+)/),
+    decisionCount: captureNumber(text, /decisionCount=(\d+)/),
+    duplicateCount: captureNumber(text, /duplicateCount=(\d+)/),
+    disagreementCount: captureNumber(text, /disagreementCount=(\d+)/),
+    tokenCountAvailable: metric ? metric[1] === "y" : null,
+    costAvailable: metric ? metric[2] === "y" : null,
+    latencyMsAvailable: metric ? metric[3] === "y" : null,
+    visiblePublicationDenied: captureBoolean(text, /visiblePublicationDenied=(true|false)/),
+    approvalPublicationDenied: captureBoolean(text, /approvalPublicationDenied=(true|false)/),
+    correlationKey: capture(text, /correlationKey=([^\s]+)/),
+    deliveryId: capture(text, /deliveryId=([^\s]+)/),
+    reviewOutputKey: capture(text, /reviewOutputKey=([^\s]+)/),
+    discardedRawPayload: redacted ? redacted[1] === "y" : null,
+    discardedPublicationFields: redacted ? redacted[2] === "y" : null,
+    discardedApprovalFields: redacted ? redacted[3] === "y" : null,
+    unsafeFieldCount: redacted ? Number(redacted[4]) : null,
+  };
+}
+
+function extractRuntimeLogEvidence(rows: readonly NormalizedLogAnalyticsRow[], keys: { reviewOutputKey: string | null; deliveryId: string | null }): M069S05BoundedRuntimeLogEvidence | null {
+  for (const row of rows) {
+    const parsed = row.parsedLog;
+    if (!parsed || row.malformed) continue;
+    const reviewOutputKey = getBoundedString(parsed.reviewOutputKey) ?? row.reviewOutputKey;
+    const deliveryId = getBoundedString(parsed.deliveryId) ?? row.deliveryId;
+    if (keys.reviewOutputKey && reviewOutputKey !== keys.reviewOutputKey) continue;
+    if (keys.deliveryId && deliveryId !== keys.deliveryId) continue;
+    const laneId = getBoundedString(parsed.laneId) ?? getBoundedString(parsed.lane) ?? (row.rawLog?.includes(M069_S05_LANE_ID) ? M069_S05_LANE_ID : null);
+    if (laneId !== M069_S05_LANE_ID) continue;
+    return {
+      present: true,
+      laneId,
+      status: getBoundedString(parsed.status) ?? getBoundedString(parsed.shadowSpecialistStatus) ?? "ok",
+      reviewOutputKey,
+      deliveryId,
+      correlationKey: getBoundedString(parsed.correlationKey),
+      candidateCount: getBoundedNumber(parsed.candidateCount),
+      decisionCount: getBoundedNumber(parsed.decisionCount),
+      duplicateCount: getBoundedNumber(parsed.duplicateCount),
+      disagreementCount: getBoundedNumber(parsed.disagreementCount),
+      tokenCountAvailable: getBoolean(parsed.tokenCountAvailable),
+      costAvailable: getBoolean(parsed.costAvailable),
+      latencyMsAvailable: getBoolean(parsed.latencyMsAvailable),
+      publicationDenials: {
+        publishesFindings: getBoolean(parsed.publishesFindings),
+        visibleSpecialistFindingPublished: getBoolean(parsed.visibleSpecialistFindingPublished),
+        visibleSpecialistCommentPublished: getBoolean(parsed.visibleSpecialistCommentPublished),
+        visibleSpecialistApprovalPublished: getBoolean(parsed.visibleSpecialistApprovalPublished),
+      },
+    };
+  }
+  return null;
+}
+
+function detectVisiblePublication(artifacts: readonly M069S05GitHubArtifact[]): M069S05PublicationDenials {
+  let visibleSpecialistCommentPublished = false;
+  let visibleSpecialistApprovalPublished = false;
+  for (const artifact of artifacts) {
+    const body = artifact.body ?? "";
+    const hasLane = body.includes(M069_S05_LANE_ID);
+    const isReviewDetailsOnly = Boolean(extractReviewOutputKey(body)) && body.includes("<summary>Review Details</summary>");
+    if (hasLane && !isReviewDetailsOnly) {
+      visibleSpecialistCommentPublished = true;
+      if (artifact.source === "review" && artifact.state?.toUpperCase() === "APPROVED") visibleSpecialistApprovalPublished = true;
+    }
+  }
+  return {
+    ...DEFAULT_PUBLICATION_DENIALS,
+    visibleSpecialistCommentPublished,
+    visibleSpecialistApprovalPublished,
+    visibleSpecialistFindingPublished: visibleSpecialistCommentPublished,
+    publishesFindings: visibleSpecialistCommentPublished || visibleSpecialistApprovalPublished,
+  };
+}
+
+function mergeSourceAvailability(
+  github: M069S05GitHubCollectorResult["sourceAvailability"],
+  runtime: M069S05RuntimeLogCollectorResult["sourceAvailability"],
+  reviewDetails: M069S05BoundedReviewDetailsEvidence | null,
+  runtimeLog: M069S05BoundedRuntimeLogEvidence | null,
+): M069S05SourceAvailability {
+  const githubReviewDetailsAvailable = github.githubAccessAvailable === true && reviewDetails?.present === true;
+  const logAnalyticsAvailable = runtime.azureLogs === "available" && runtimeLog?.present === true;
+  const blockerReason = [
+    github.blockerReason,
+    !githubReviewDetailsAvailable && github.githubAccessAvailable === true ? "github_review_details_missing" : null,
+    runtime.blockerReason,
+  ].filter(Boolean).join(";") || null;
+  return {
+    githubReviewDetailsAvailable,
+    githubAccessAvailable: github.githubAccessAvailable,
+    githubDependency: github.githubDependency,
+    logAnalyticsAvailable,
+    azureLogs: runtime.azureLogs,
+    liveAccessBlocked: github.liveAccessBlocked || runtime.liveAccessBlocked || !githubReviewDetailsAvailable || !logAnalyticsAvailable,
+    blockerReason,
+  };
+}
+
+function classifyExternalError(error: unknown): string {
+  if (typeof error === "object" && error !== null && "status" in error) {
+    const status = Number((error as { status?: unknown }).status);
+    if (status === 403 || status === 404) return `access_${status}`;
+    if (Number.isInteger(status)) return `http_${status}`;
+  }
+  if (error instanceof SyntaxError) return "malformed_json";
+  if (error instanceof Error && /ENOENT|not found|executable file not found|az/.test(error.message)) return "cli_unavailable";
+  return "unavailable";
+}
+
+function getBoundedString(value: unknown): string | null {
+  return isNonEmptyBoundedString(value) ? value : null;
+}
+
+function getBoundedNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10_000 ? value : undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function capture(text: string, regex: RegExp): string | null {
+  const match = regex.exec(text);
+  return match?.[1] && isNonEmptyBoundedString(match[1]) ? match[1] : null;
+}
+
+function captureNumber(text: string, regex: RegExp): number | null {
+  const match = regex.exec(text);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  return Number.isInteger(value) ? value : null;
+}
+
+function captureBoolean(text: string, regex: RegExp): boolean | null {
+  const match = regex.exec(text);
+  return match?.[1] === "true" ? true : match?.[1] === "false" ? false : null;
 }
 
 function normalizeTarget(target: Partial<M069S05Target> | undefined): M069S05Target {
@@ -660,7 +1088,7 @@ function parsePositiveInt(value: string, flag: string): number {
 
 function malformedCliReport(error: unknown): M069S05ProofReport {
   return {
-    command: "verify:m069:s05",
+    command: COMMAND_NAME,
     generated_at: new Date().toISOString(),
     proofMode: "live-required",
     proofScope: "production-like-specialist-shadow-proof",
