@@ -99,6 +99,119 @@ export type TimeoutBudgetDetails = {
 
 export type ReviewDetailsLineCountSource = "local-diff" | "github-pr-api-fallback";
 
+export type CandidateVerificationPublicationEvidenceReviewDetails = {
+  aggregateStatus?: unknown;
+  counts?: unknown;
+  publicationDenialCounts?: unknown;
+  reasonCategories?: unknown;
+  verificationStateCounts?: unknown;
+  candidateVerificationCounts?: unknown;
+  metadata?: unknown;
+  redactionFlags?: unknown;
+};
+
+function boundedReviewDetailsValue(value: unknown, maxLength = 160): string | null {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  return text.replace(/[\r\n|]/g, " ").slice(0, maxLength);
+}
+
+function readNonNegativeCount(record: Record<string, unknown>, key: string): number {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
+}
+
+function formatCountFields(value: unknown, keys: readonly string[]): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  return keys.map((key) => `${key}:${readNonNegativeCount(record, key)}`).join(",");
+}
+
+function formatStringArray(value: unknown, maxItems = 8): string {
+  if (!Array.isArray(value)) return "none";
+  const entries = value
+    .map((entry) => boundedReviewDetailsValue(entry, 64))
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, maxItems);
+  return entries.length > 0 ? entries.join(",") : "none";
+}
+
+function formatReasonCountFields(value: unknown, maxItems = 8): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "none";
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, count]) => {
+      const boundedKey = boundedReviewDetailsValue(key, 64);
+      if (!boundedKey || typeof count !== "number" || !Number.isFinite(count) || count < 0) return null;
+      return `${boundedKey}:${Math.trunc(count)}`;
+    })
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, maxItems);
+  return entries.length > 0 ? entries.join(",") : "none";
+}
+
+function formatCandidateVerificationMetadata(value: unknown): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "deliveryId:n,reviewOutputKey:n,correlationKey:n";
+  }
+  const metadata = value as Record<string, unknown>;
+  const parts = [
+    `deliveryId:${metadata.hasDeliveryId === true ? "y" : "n"}`,
+    `reviewOutputKey:${metadata.hasReviewOutputKey === true ? "y" : "n"}`,
+    `correlationKey:${metadata.hasCorrelationKey === true ? "y" : "n"}`,
+  ];
+  const deliveryId = boundedReviewDetailsValue(metadata.deliveryId);
+  const reviewOutputKey = boundedReviewDetailsValue(metadata.reviewOutputKey);
+  const correlationKey = boundedReviewDetailsValue(metadata.correlationKey);
+  if (deliveryId) parts.push(`deliveryIdValue:${deliveryId}`);
+  if (reviewOutputKey) parts.push(`reviewOutputKeyValue:${reviewOutputKey}`);
+  if (correlationKey) parts.push(`correlationKeyValue:${correlationKey}`);
+  return parts.join(",");
+}
+
+function formatRedactionFlags(value: unknown): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "privateOnly:y,raw:n,evidencePayloads:n,publicationEvidence:n";
+  }
+  const flags = value as Record<string, unknown>;
+  return [
+    `privateOnly:${flags.privateOnly === false ? "n" : "y"}`,
+    `candidateBodies:${flags.candidateBodiesIncluded === true ? "y" : "n"}`,
+    `specialistProse:${flags.specialistProseIncluded === true ? "y" : "n"}`,
+    `rawPrompts:${flags.rawPromptsIncluded === true ? "y" : "n"}`,
+    `rawModelOutput:${flags.rawModelOutputIncluded === true ? "y" : "n"}`,
+    `diffs:${flags.diffsIncluded === true ? "y" : "n"}`,
+    `evidencePayloads:${flags.evidencePayloadsIncluded === true ? "y" : "n"}`,
+    `rawFingerprints:${flags.rawFingerprintsIncluded === true ? "y" : "n"}`,
+    `publicationEvidence:${flags.publicationEvidenceIncluded === true ? "y" : "n"}`,
+    `unsafeFields:${readNonNegativeCount(flags, "unsafeInputFieldCount")}`,
+  ].join(",");
+}
+
+function formatCandidateVerificationPublicationEvidenceLine(
+  evidence?: CandidateVerificationPublicationEvidenceReviewDetails | null,
+): string | null {
+  if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
+    return null;
+  }
+
+  const status = boundedReviewDetailsValue(evidence.aggregateStatus, 32) ?? "unavailable";
+  const counts = formatCountFields(evidence.counts, ["attempted", "allowed", "denied", "published", "skipped", "failed"]);
+  if (!counts) return null;
+  const verification = formatCountFields(evidence.verificationStateCounts, ["verified", "partially_verified", "unverified", "disproven", "unavailable"])
+    ?? "verified:0,partially_verified:0,unverified:0,disproven:0,unavailable:0";
+  const candidateCounts = formatCountFields(evidence.candidateVerificationCounts, ["candidateCount", "evidenceCount", "verifiedCount", "partiallyVerifiedCount", "unverifiedCount", "disprovenCount", "publicationEligibleCount"])
+    ?? "candidateCount:0,evidenceCount:0,verifiedCount:0,partiallyVerifiedCount:0,unverifiedCount:0,disprovenCount:0,publicationEligibleCount:0";
+
+  return `- M070 candidate verification publication: status=${status}; counts=${counts}; verification=${verification}; candidateVerification=${candidateCounts}; denialCounts=${formatReasonCountFields(evidence.publicationDenialCounts)}; reasons=${formatStringArray(evidence.reasonCategories)}; metadata=${formatCandidateVerificationMetadata(evidence.metadata)}; redaction=${formatRedactionFlags(evidence.redactionFlags)}`;
+}
+
 export type ReviewRetryFailureClassification = {
   category: "retry-infra-failure" | "retry-execution-failure";
   reason: "workspace-prep-terminated" | "unknown";
@@ -596,6 +709,7 @@ export function formatReviewDetailsSummary(params: {
   shadowSpecialistReviewDetails?: {
     readonly reviewDetailsLine: string;
   } | null;
+  candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceReviewDetails | null;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -635,6 +749,7 @@ export function formatReviewDetailsSummary(params: {
     profileSelection,
     contributorExperience,
     shadowSpecialistReviewDetails,
+    candidateVerificationPublicationEvidence,
     prioritization,
     usageLimit,
     tokenUsage,
@@ -690,6 +805,16 @@ export function formatReviewDetailsSummary(params: {
     ? `- Lines changed: +${linesAdded} -${linesRemoved} (GitHub PR API fallback; local diff stats unavailable)`
     : `- Lines changed: +${linesAdded} -${linesRemoved}`;
 
+  const candidateVerificationPublicationEvidenceLines: string[] = [];
+  try {
+    const line = formatCandidateVerificationPublicationEvidenceLine(candidateVerificationPublicationEvidence);
+    if (line) {
+      candidateVerificationPublicationEvidenceLines.push(line);
+    }
+  } catch {
+    // Keep Review Details fail-open; malformed diagnostic projections must not block publication.
+  }
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
@@ -719,6 +844,7 @@ export function formatReviewDetailsSummary(params: {
     ...(shadowSpecialistReviewDetails?.reviewDetailsLine
       ? [`- ${shadowSpecialistReviewDetails.reviewDetailsLine}`]
       : []),
+    ...candidateVerificationPublicationEvidenceLines,
     `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
   ];
 

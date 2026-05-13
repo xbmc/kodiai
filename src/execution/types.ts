@@ -4,6 +4,7 @@ import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { FormatterSuggestionRequest } from "../handlers/formatter-suggestion-intent.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 import type { CandidateVerificationContext } from "./mcp/review-output-publication-gate.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 
 export type ExecutionPublishEvent = {
   type: "comment";
@@ -147,6 +148,12 @@ export type ExecutionResult = {
   usedRepoInspectionTools?: boolean;
   /** Structured GitHub publish metadata emitted by MCP tools during execution. */
   publishEvents?: ExecutionPublishEvent[];
+  /**
+   * Aggregate-only M070 candidate-verification publication evidence captured by MCP tools.
+   * Contains bounded counts, reason categories, metadata presence/values, and redaction flags only;
+   * never raw candidates, specialist prose, prompts, diffs, fingerprints, tool payloads, or evidence payloads.
+   */
+  candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceSummary;
   /** Normalized executor-only timing phases captured around ACA handoff/runtime. */
   executorPhaseTimings?: ExecutorPhaseTiming[];
   /** Claude Code usage limit data from the last SDKRateLimitEvent seen during the run. */

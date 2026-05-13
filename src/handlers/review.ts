@@ -213,6 +213,7 @@ import {
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
 import type { CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 
 
 
@@ -379,6 +380,47 @@ function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): 
       metricProjectionDegraded: true,
     };
   }
+}
+
+function buildCandidateVerificationPublicationEvidenceLogFields(
+  evidence: CandidateVerificationPublicationEvidenceSummary,
+): Record<string, unknown> {
+  return {
+    gate: "m070-candidate-verification-evidence",
+    aggregateStatus: evidence.aggregateStatus,
+    attemptedCount: evidence.counts.attempted,
+    allowedCount: evidence.counts.allowed,
+    deniedCount: evidence.counts.denied,
+    publishedCount: evidence.counts.published,
+    skippedCount: evidence.counts.skipped,
+    failedCount: evidence.counts.failed,
+    publicationDenialCounts: evidence.publicationDenialCounts,
+    reasonCategories: evidence.reasonCategories,
+    verificationStateCounts: evidence.verificationStateCounts,
+    candidateVerificationCounts: evidence.candidateVerificationCounts,
+    hasDeliveryId: evidence.metadata.hasDeliveryId,
+    hasReviewOutputKey: evidence.metadata.hasReviewOutputKey,
+    hasCorrelationKey: evidence.metadata.hasCorrelationKey,
+    deliveryId: evidence.metadata.deliveryId,
+    reviewOutputKey: evidence.metadata.reviewOutputKey,
+    correlationKey: evidence.metadata.correlationKey,
+    privateOnly: evidence.redactionFlags.privateOnly,
+    candidateBodiesIncluded: evidence.redactionFlags.candidateBodiesIncluded,
+    specialistProseIncluded: evidence.redactionFlags.specialistProseIncluded,
+    rawPromptsIncluded: evidence.redactionFlags.rawPromptsIncluded,
+    rawModelOutputIncluded: evidence.redactionFlags.rawModelOutputIncluded,
+    diffsIncluded: evidence.redactionFlags.diffsIncluded,
+    evidencePayloadsIncluded: evidence.redactionFlags.evidencePayloadsIncluded,
+    rawFingerprintsIncluded: evidence.redactionFlags.rawFingerprintsIncluded,
+    publicationEvidenceIncluded: evidence.redactionFlags.publicationEvidenceIncluded,
+    unsafeInputFieldCount: evidence.redactionFlags.unsafeInputFieldCount,
+    discardedRawPayload: evidence.redactionFlags.discardedRawPayload,
+    discardedPublicationFields: evidence.redactionFlags.discardedPublicationFields,
+    discardedEvidencePayloads: evidence.redactionFlags.discardedEvidencePayloads,
+    candidateAttemptIncluded: evidence.redactionFlags.candidateAttemptIncluded,
+    candidateKeyIncluded: evidence.redactionFlags.candidateKeyIncluded,
+    boundedness: "aggregate-only",
+  };
 }
 
 function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
@@ -4309,6 +4351,16 @@ export function createReviewHandler(deps: {
           "Review execution completed",
         );
 
+        if (result.candidateVerificationPublicationEvidence) {
+          logger.info(
+            {
+              ...baseLog,
+              ...buildCandidateVerificationPublicationEvidenceLogFields(result.candidateVerificationPublicationEvidence),
+            },
+            "Captured aggregate M070 candidate-verification publication evidence",
+          );
+        }
+
         const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
         const shouldProcessReviewOutput = result.conclusion === "success";
         const extractedFindings = shouldProcessReviewOutput
@@ -4867,6 +4919,7 @@ export function createReviewHandler(deps: {
             profileSelection,
             contributorExperience: authorClassification.contract.reviewDetails,
             shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
+            candidateVerificationPublicationEvidence: result.candidateVerificationPublicationEvidence,
             prioritization: prioritizationStats,
             usageLimit: result.usageLimit,
             tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },

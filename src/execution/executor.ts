@@ -30,6 +30,7 @@ import {
   createAzureFilesWorkspaceDir,
 } from "../jobs/workspace.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { SMALL_DIFF_REVIEW_BASE_TOOLS } from "../lib/review-routing.ts";
 
@@ -148,6 +149,34 @@ function normalizeExecutorPhaseTimingsFromResult(params: {
   }
 
   return fallback.map((phase) => normalizedByName.get(phase.name) ?? phase);
+}
+
+function hasCandidateVerificationPublicationEvidence(
+  summary: CandidateVerificationPublicationEvidenceSummary | undefined,
+): summary is CandidateVerificationPublicationEvidenceSummary {
+  if (!summary) return false;
+  const counts = summary.counts;
+  return Boolean(counts && (
+    counts.attempted > 0 ||
+    counts.allowed > 0 ||
+    counts.denied > 0 ||
+    counts.published > 0 ||
+    counts.skipped > 0 ||
+    counts.failed > 0
+  ));
+}
+
+function withCandidateVerificationPublicationEvidence<T extends ExecutionResult>(
+  result: T,
+  evidence: CandidateVerificationPublicationEvidenceSummary | undefined,
+): T {
+  if (!hasCandidateVerificationPublicationEvidence(evidence)) {
+    return result;
+  }
+  return {
+    ...result,
+    candidateVerificationPublicationEvidence: evidence,
+  };
 }
 
 async function hasGitWorkspace(repoDir: string): Promise<boolean> {
@@ -350,6 +379,7 @@ export function createExecutor(deps: {
       let executorHandoffDurationMs: number | undefined;
       let remoteRuntimeDurationMs: number | undefined;
       let registeredMcpBearerToken: string | undefined;
+      let candidateVerificationPublicationEvidence: CandidateVerificationPublicationEvidenceSummary | undefined;
 
       try {
         // Load repo config (.kodiai.yml) with defaults
@@ -441,6 +471,9 @@ export function createExecutor(deps: {
           reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
           candidateVerificationContext: context.candidateVerificationContext,
+          candidateVerificationPublicationEvidenceSink: (summary: CandidateVerificationPublicationEvidenceSummary) => {
+            candidateVerificationPublicationEvidence = summary;
+          },
           logger,
           onPublish: () => {
             published = true;
@@ -614,7 +647,7 @@ export function createExecutor(deps: {
           });
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
-          return {
+          return withCandidateVerificationPublicationEvidence({
             conclusion: "error",
             costUsd: undefined,
             numTurns: undefined,
@@ -633,7 +666,7 @@ export function createExecutor(deps: {
             stopReason: undefined,
             publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
             executorPhaseTimings,
-          };
+          }, candidateVerificationPublicationEvidence);
         }
 
         // Handle job failure
@@ -653,6 +686,9 @@ export function createExecutor(deps: {
             const failedResult = rawResult as Partial<ExecutionResult> & {
               executorPhaseTimings?: unknown;
             };
+            if (hasCandidateVerificationPublicationEvidence(failedResult.candidateVerificationPublicationEvidence)) {
+              candidateVerificationPublicationEvidence = failedResult.candidateVerificationPublicationEvidence;
+            }
             if (typeof failedResult.errorMessage === "string" && failedResult.errorMessage.trim().length > 0) {
               resultErrorMessage = failedResult.errorMessage;
             }
@@ -674,7 +710,7 @@ export function createExecutor(deps: {
           }
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
-          return {
+          return withCandidateVerificationPublicationEvidence({
             conclusion: "error",
             costUsd: undefined,
             numTurns: undefined,
@@ -693,7 +729,7 @@ export function createExecutor(deps: {
             stopReason: undefined,
             publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
             executorPhaseTimings,
-          };
+          }, candidateVerificationPublicationEvidence);
         }
 
         // succeeded — read result from workspace
@@ -701,6 +737,9 @@ export function createExecutor(deps: {
         const jobResult = rawResult as ExecutionResult & {
           executorPhaseTimings?: unknown;
         };
+        if (hasCandidateVerificationPublicationEvidence(jobResult.candidateVerificationPublicationEvidence)) {
+          candidateVerificationPublicationEvidence = jobResult.candidateVerificationPublicationEvidence;
+        }
         const executorPhaseTimings = normalizeExecutorPhaseTimingsFromResult({
           candidate: jobResult.executorPhaseTimings,
           fallback: buildExecutorPhaseTimings({
@@ -717,7 +756,7 @@ export function createExecutor(deps: {
         registeredMcpBearerToken = undefined;
 
         // Merge published / publishEvents from MCP callbacks (fired during pollUntilComplete)
-        return {
+        return withCandidateVerificationPublicationEvidence({
           ...jobResult,
           durationMs: jobResult.durationMs ?? durationMs,
           published: jobResult.published || published,
@@ -729,7 +768,7 @@ export function createExecutor(deps: {
                 ]
               : jobResult.publishEvents,
           executorPhaseTimings,
-        };
+        }, candidateVerificationPublicationEvidence);
       } catch (err) {
         const durationMs = Date.now() - startTime;
         const errorMessage =
@@ -753,7 +792,7 @@ export function createExecutor(deps: {
             : "remote runtime finished but result processing failed",
         });
 
-        return {
+        return withCandidateVerificationPublicationEvidence({
           conclusion: "error",
           costUsd: undefined,
           numTurns: undefined,
@@ -769,7 +808,7 @@ export function createExecutor(deps: {
           stopReason: undefined,
           publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
           executorPhaseTimings,
-        };
+        }, candidateVerificationPublicationEvidence);
       }
     },
   };

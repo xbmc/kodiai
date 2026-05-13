@@ -164,7 +164,7 @@ describe("formatReviewDetailsSummary", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
       shadowSpecialistReviewDetails: {
-        reviewDetailsLine: "Shadow specialist: lane=docs-config-truth status=degraded reason=unsafe-publication-field candidateCount=4 decisionCount=4 decisionCounts=candidate:1,duplicate:1,disagreement:1,dismissed:1,unclassifiable:0 duplicateCount=1 disagreementCount=1 metricAvailability=token:y,cost:y,latency:y visiblePublicationDenied=true approvalPublicationDenied=true privateOnly=true shadowOnly=true reviewOutputKey=test-key-001 deliveryId=delivery-shadow-metrics correlationKey=abc123",
+        reviewDetailsLine: "Shadow specialist: lane=docs-config-truth status=degraded reason=unsafe-publication-field candidateCount=4 decisionCount=4 decisionCounts=candidate:1,duplicate:1,evidence-conflict:1,dismissed:1,unclassifiable:0 duplicateCount=1 disagreementCount=1 metricAvailability=token:y,cost:y,latency:y visiblePublicationDenied=true approvalPublicationDenied=true privateOnly=true shadowOnly=true reviewOutputKey=test-key-001 deliveryId=delivery-shadow-metrics correlationKey=abc123",
       },
     });
 
@@ -503,5 +503,89 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("- Requested profile:");
     expect(result).not.toContain("- Effective profile:");
     expect(result).not.toContain("- Bounded review:");
+  });
+
+  it("renders compact M070 candidate-verification publication evidence without raw payload content", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      candidateVerificationPublicationEvidence: {
+        aggregateStatus: "mixed",
+        counts: { attempted: 2, allowed: 1, denied: 1, published: 1, skipped: 1, failed: 0 },
+        publicationDenialCounts: { "publication-ineligible": 1 },
+        reasonCategories: ["publication-ineligible", "evidence-conflict"],
+        verificationStateCounts: { verified: 1, partially_verified: 0, unverified: 1, disproven: 0, unavailable: 0 },
+        candidateVerificationCounts: {
+          candidateCount: 2,
+          evidenceCount: 2,
+          verifiedCount: 1,
+          partiallyVerifiedCount: 0,
+          unverifiedCount: 1,
+          disprovenCount: 0,
+          publicationEligibleCount: 1,
+        },
+        metadata: {
+          hasDeliveryId: true,
+          hasReviewOutputKey: true,
+          hasCorrelationKey: true,
+          deliveryId: "delivery-m070",
+          reviewOutputKey: "review-output-m070",
+          correlationKey: "corr-m070",
+        },
+        redactionFlags: {
+          privateOnly: true,
+          candidateBodiesIncluded: false,
+          specialistProseIncluded: false,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: false,
+          diffsIncluded: false,
+          evidencePayloadsIncluded: false,
+          rawFingerprintsIncluded: false,
+          publicationEvidenceIncluded: false,
+          unsafeInputFieldCount: 3,
+        },
+        candidate: "M070_RAW_CANDIDATE_SHOULD_NOT_LEAK",
+        specialistProse: "M070_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
+        prompt: "M070_PROMPT_SHOULD_NOT_LEAK",
+        diff: "M070_DIFF_SHOULD_NOT_LEAK",
+        fingerprint: "M070_FINGERPRINT_SHOULD_NOT_LEAK",
+        toolPayload: "M070_TOOL_PAYLOAD_SHOULD_NOT_LEAK",
+        evidencePayload: "M070_EVIDENCE_PAYLOAD_SHOULD_NOT_LEAK",
+      } as never,
+    });
+
+    expect(result).toContain("- M070 candidate verification publication: status=mixed");
+    expect(result).toContain("counts=attempted:2,allowed:1,denied:1,published:1,skipped:1,failed:0");
+    expect(result).toContain("denialCounts=publication-ineligible:1");
+    expect(result).toContain("reasons=publication-ineligible,evidence-conflict");
+    expect(result).toContain("deliveryIdValue:delivery-m070");
+    expect(result).toContain("reviewOutputKeyValue:review-output-m070");
+    expect(result).toContain("correlationKeyValue:corr-m070");
+    expect(result).toContain("redaction=privateOnly:y,candidateBodies:n,specialistProse:n,rawPrompts:n,rawModelOutput:n,diffs:n,evidencePayloads:n,rawFingerprints:n,publicationEvidence:n,unsafeFields:3");
+    for (const forbidden of [
+      "M070_RAW_CANDIDATE_SHOULD_NOT_LEAK",
+      "M070_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
+      "M070_PROMPT_SHOULD_NOT_LEAK",
+      "M070_DIFF_SHOULD_NOT_LEAK",
+      "M070_FINGERPRINT_SHOULD_NOT_LEAK",
+      "M070_TOOL_PAYLOAD_SHOULD_NOT_LEAK",
+      "M070_EVIDENCE_PAYLOAD_SHOULD_NOT_LEAK",
+    ]) {
+      expect(result).not.toContain(forbidden);
+    }
+  });
+
+  it("drops malformed M070 candidate-verification publication evidence fail-open", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      candidateVerificationPublicationEvidence: {
+        aggregateStatus: "mixed",
+        counts: "not-counts",
+        candidate: "M070_MALFORMED_RAW_CANDIDATE_SHOULD_NOT_LEAK",
+      } as never,
+    });
+
+    expect(result).toContain("<summary>Review Details</summary>");
+    expect(result).not.toContain("M070 candidate verification publication");
+    expect(result).not.toContain("M070_MALFORMED_RAW_CANDIDATE_SHOULD_NOT_LEAK");
   });
 });
