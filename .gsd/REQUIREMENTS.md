@@ -98,6 +98,61 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
+### R102 — Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
+- Class: core-capability
+- Status: active
+- Description: Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
+- Why it matters: Specialists can improve signal only after the plan, reducer, and candidate contracts exist.
+- Source: issue #131
+- Primary owning slice: M070/S05
+- Supporting slices: M070/S01,M070/S02,M070/S03
+- Validation: unmapped
+- Notes: Mapped for M070 planning: existing docs/config truth specialist lane gains actionable verification/disagreement semantics without adding new lanes.
+
+### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
+- Class: quality-attribute
+- Status: active
+- Description: Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
+- Why it matters: Specialist outputs need stronger verification than generation before they can safely affect publication policy.
+- Source: issue #131
+- Primary owning slice: M070/S01
+- Supporting slices: M070/S02,M070/S03,M070/S04,M070/S05,M070/S06
+- Validation: unmapped
+- Notes: Mapped for M070 planning: four-state verification taxonomy, disagreement handling, publication blocking, aggregate evidence, verifier, and exact-key proof.
+
+### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
+- Class: operability
+- Status: active
+- Description: Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
+- Why it matters: Review tiers and specialist orchestration should be backed by production evidence, not labels.
+- Source: issue #131
+- Primary owning slice: M070/S03
+- Supporting slices: M070/S01,M070/S04,M070/S06
+- Validation: unmapped
+- Notes: Mapped for M070 planning: duplicate/disagreement/status counts become bounded policy and proof evidence for the existing specialist rollout.
+
+### R117 — Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
+- Class: core-capability
+- Status: active
+- Description: Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
+- Why it matters: Specialists need a safe candidate/reducer publication path before multiple lanes can publish without noise or contradiction.
+- Source: user
+- Primary owning slice: M070/S02
+- Supporting slices: M070/S01,M070/S05
+- Validation: unmapped
+- Notes: Mapped for M070 planning: specialist output is constrained to candidate verification/disagreement inputs and cannot bypass existing candidate-approved publication gates.
+
+### R118 — Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
+- Class: core-capability
+- Status: active
+- Description: Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
+- Why it matters: Conflict policy is important, but premature before M068 proves candidate-approved publication and M069 introduces specialist lanes.
+- Source: inferred
+- Primary owning slice: M070/S04
+- Supporting slices: M070/S01,M070/S02,M070/S03,M070/S05,M070/S06
+- Validation: unmapped
+- Notes: Mapped for M070 planning: deferred candidate disagreement/multi-lane conflict handling is retired for the first docs/config truth specialist lane.
+
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -1115,28 +1170,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Deferred to M068. M067 only creates a shadow-capable seam.
 
-### R102 — Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
-- Class: core-capability
-- Status: deferred
-- Description: Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
-- Why it matters: Specialists can improve signal only after the plan, reducer, and candidate contracts exist.
-- Source: issue #131
-- Primary owning slice: M069/S02
-- Supporting slices: M069/S01,M069/S03,M069/S04,M069/S05
-- Validation: unmapped
-- Notes: Mapped for M069 planning: docs/config/runbook truthfulness pilot starts as shadow-only same-job specialist lane; correctness/security lanes remain out of scope.
-
-### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
-- Class: quality-attribute
-- Status: deferred
-- Description: Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
-- Why it matters: Specialist outputs need stronger verification than generation before they can safely affect publication policy.
-- Source: issue #131
-- Primary owning slice: M070 provisional
-- Supporting slices: M069/S03,M069/S04
-- Validation: unmapped
-- Notes: M069 maps only measurement inputs for future conflict policy: duplicate/disagreement counts and candidate decision counts are recorded, but verified/partially verified/unverified/disproven publication semantics remain deferred to M070+.
-
 ### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Class: integration
 - Status: deferred
@@ -1147,39 +1180,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: unmapped
 - Notes: Deferred to M071. It depends on ReviewPlan/reducer contracts and candidate verification surfaces.
-
-### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
-- Class: operability
-- Status: deferred
-- Description: Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
-- Why it matters: Review tiers and specialist orchestration should be backed by production evidence, not labels.
-- Source: issue #131
-- Primary owning slice: M069/S04
-- Supporting slices: M069/S02,M069/S03,M069/S05
-- Validation: unmapped
-- Notes: Mapped for M069 planning: specialist lane status, candidate counts, decision counts, duplicate/disagreement counts, correlation key, and bounded cost/latency/signal metric fields become machine-checkable shadow rollout evidence; hard tier thresholds remain deferred.
-
-### R117 — Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
-- Class: core-capability
-- Status: deferred
-- Description: Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
-- Why it matters: Specialists need a safe candidate/reducer publication path before multiple lanes can publish without noise or contradiction.
-- Source: user
-- Primary owning slice: M069/S03
-- Supporting slices: M069/S01,M069/S02,M069/S04,M069/S05
-- Validation: unmapped
-- Notes: Mapped for M069 planning as a safety constraint: the specialist pilot remains shadow-only and must not publish specialist findings, approvals, or standalone comments. Current requirements record M068 as validated, but M069 still does not introduce specialist-visible publication.
-
-### R118 — Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
-- Class: core-capability
-- Status: deferred
-- Description: Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
-- Why it matters: Conflict policy is important, but premature before M068 proves candidate-approved publication and M069 introduces specialist lanes.
-- Source: inferred
-- Primary owning slice: none
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Likely M070 or later, after M069 specialist-lane pilot produces real disagreement scenarios.
 
 ### R119 — Provider/model failback and circuit-breaker policy are deferred outside M068.
 - Class: failure-visibility
@@ -1431,10 +1431,10 @@ This file is the explicit capability and coverage contract for the project.
 | R099 | operability | blocked | M067/S05 | M067/S01, M067/S02, M067/S03, M067/S04 | M067/S06/T03 re-ran the exact-key publication-readiness preflight and read-only full S05 verifier for the captured automatic synchronize key. Both returned M067-S05-PUBLICATION-READINESS / review_details_not_published; GitHub artifact counts remained reviewComments=0, issueComments=0, reviews=0, total=0, and no additional GitHub write or live trigger was performed. |
 | R100 | constraint | validated | M067/S03 | M067/S04, M067/S05 | M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key. |
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
-| R102 | core-capability | deferred | M069/S02 | M069/S01,M069/S03,M069/S04,M069/S05 | unmapped |
-| R103 | quality-attribute | deferred | M070 provisional | M069/S03,M069/S04 | unmapped |
+| R102 | core-capability | active | M070/S05 | M070/S01,M070/S02,M070/S03 | unmapped |
+| R103 | quality-attribute | active | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | unmapped |
 | R104 | integration | deferred | M071 provisional | none | unmapped |
-| R105 | operability | deferred | M069/S04 | M069/S02,M069/S03,M069/S05 | unmapped |
+| R105 | operability | active | M070/S03 | M070/S01,M070/S04,M070/S06 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
 | R108 | anti-feature | out-of-scope | none | none | n/a |
@@ -1446,8 +1446,8 @@ This file is the explicit capability and coverage contract for the project.
 | R114 | launchability | validated | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Accepted live exact-key proof on xbmc/xbmc#28172: trigger `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423917332`, Review Details `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241`, four inline candidate comments, delivery `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d`, verifier status `m068_ok`. |
 | R115 | constraint | validated | M068/S05 | M068/S03,M068/S04 | Both sides of the fallback contract are proven: `scripts/fixtures/m068-candidate-approved-proof.json` passes only as `m068_ok`, while `scripts/fixtures/m068-direct-fallback-proof.json` passes only with `--expect-status m068_direct_fallback` and remains rejected as success. |
 | R116 | constraint | validated | M068/S05 | M068/S02,M068/S03 | The accepted live proof has one bounded Review Details issue comment plus four inline candidate review comments, directFallback=0, and no issue-comment fallback. `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed. |
-| R117 | core-capability | deferred | M069/S03 | M069/S01,M069/S02,M069/S04,M069/S05 | unmapped |
-| R118 | core-capability | deferred | none | none | unmapped |
+| R117 | core-capability | active | M070/S02 | M070/S01,M070/S05 | unmapped |
+| R118 | core-capability | active | M070/S04 | M070/S01,M070/S02,M070/S03,M070/S05,M070/S06 | unmapped |
 | R119 | failure-visibility | deferred | none | none | unmapped |
 | R120 | failure-visibility | deferred | none | none | unmapped |
 | R121 | anti-feature | out-of-scope | none | none | n/a |
@@ -1457,7 +1457,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 9
-- Mapped to slices: 9
+- Active requirements: 14
+- Mapped to slices: 14
 - Validated: 88 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R110, R111, R112, R113, R114, R115, R116)
 - Unmapped active requirements: 0

@@ -2,7 +2,7 @@
   "version": 1,
   "projectName": "kodiai",
   "projectPath": "/home/keith/src/kodiai",
-  "gsdVersion": "2.81.0",
+  "gsdVersion": "2.82.0",
   "entries": [
     {
       "filename": "M030-2026-03-28T16-28-40.html",
@@ -81,6 +81,22 @@
       "doneSlices": 215,
       "totalSlices": 215,
       "doneMilestones": 56,
+      "totalMilestones": 58,
+      "phase": "pre-planning"
+    },
+    {
+      "filename": "M069-2026-05-12T17-04-31.html",
+      "generatedAt": "2026-05-12T17:04:31.646Z",
+      "milestoneId": "M069",
+      "milestoneTitle": "Specialist Lane Pilot",
+      "label": "M069: Specialist Lane Pilot",
+      "kind": "milestone",
+      "totalCost": 1197.7880719500017,
+      "totalTokens": 2079343884,
+      "totalDuration": 310673586,
+      "doneSlices": 220,
+      "totalSlices": 220,
+      "doneMilestones": 57,
       "totalMilestones": 58,
       "phase": "pre-planning"
     }
