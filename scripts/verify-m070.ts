@@ -12,14 +12,21 @@ import type {
 
 export const COMMAND_NAME = "verify:m070" as const;
 
+export const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m070.ts" as const;
+
 export const M070_CHECK_IDS = [
+  "M070-FIXTURE-CONTRACT",
   "M070-CANDIDATE-APPROVED-PUBLICATION",
   "M070-CORRELATION-METADATA",
   "M070-SAFETY-BLOCKERS",
   "M070-REDACTION-BOUNDARY",
+  "M070-PACKAGE-WIRING",
 ] as const;
 
 export const M070_STATUS_CODES = [
+  "m070_fixture_contract_ok",
+  "m070_contract_failed",
+  "m070_invalid_arg",
   "m070_candidate_approved_verified_ok",
   "m070_candidate_approved_partial_ok",
   "m070_dispute_blocked",
@@ -27,6 +34,13 @@ export const M070_STATUS_CODES = [
   "m070_missing_correlation_blocked",
   "m070_malformed_evidence_blocked",
   "m070_direct_fallback_only_rejected",
+] as const;
+
+const M070_SCENARIO_CHECK_IDS = [
+  "M070-CANDIDATE-APPROVED-PUBLICATION",
+  "M070-CORRELATION-METADATA",
+  "M070-SAFETY-BLOCKERS",
+  "M070-REDACTION-BOUNDARY",
 ] as const;
 
 export const M070_SCENARIO_NAMES = [
@@ -83,7 +97,7 @@ export type M070VerifierScenarioInput = {
 export type M070Args = {
   readonly json: boolean;
   readonly help: boolean;
-  readonly scenario: M070ScenarioName;
+  readonly scenario: M070ScenarioName | null;
 };
 
 export type M070VerifierCheck = {
@@ -152,6 +166,37 @@ export type M070VerifierReport = {
   };
   readonly issue_categories: readonly string[];
   readonly issues: readonly string[];
+};
+
+export type M070VerifierContractReport = {
+  readonly command: typeof COMMAND_NAME;
+  readonly generated_at: string;
+  readonly proofMode: "local-fixture-contract";
+  readonly proofScope: "s04-verifier-success-semantics";
+  readonly success: boolean;
+  readonly status_code: M070StatusCode;
+  readonly check_ids: readonly M070CheckId[];
+  readonly checks: readonly M070VerifierCheck[];
+  readonly failing_check_id: M070CheckId | null;
+  readonly scenarioReports: readonly M070VerifierReport[];
+  readonly expectedScenarioStatuses: Readonly<Record<M070ScenarioName, M070StatusCode>>;
+  readonly packageWiring: {
+    readonly scriptName: typeof COMMAND_NAME;
+    readonly expected: typeof EXPECTED_PACKAGE_SCRIPT;
+    readonly present: boolean;
+    readonly matches: boolean;
+  };
+  readonly targetedTests: readonly string[];
+  readonly issue_categories: readonly string[];
+  readonly issues: readonly string[];
+};
+
+export type M070CliReport = M070VerifierReport | M070VerifierContractReport;
+
+export type EvaluateM070VerifierContractOptions = {
+  readonly generatedAt?: string;
+  readonly readPackageJsonText?: () => Promise<string>;
+  readonly evaluate?: typeof evaluateM070VerifierScenario;
 };
 
 export type EvaluateM070VerifierScenarioOptions = {
@@ -306,7 +351,7 @@ function parseRedactionFlags(value: unknown): CandidateVerificationPublicationEv
 export function parseM070Args(argv: readonly string[]): M070Args {
   let json = false;
   let help = false;
-  let scenario: M070ScenarioName = "candidate_approved_verified";
+  let scenario: M070ScenarioName | null = null;
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -482,7 +527,7 @@ export function evaluateM070VerifierScenario(
     scenario: input.scenario,
     success,
     status_code: statusCode,
-    check_ids: M070_CHECK_IDS,
+    check_ids: M070_SCENARIO_CHECK_IDS,
     checks,
     failing_check_id: failingCheck?.id ?? null,
     publicationMode: { ...input.publicationMode },
@@ -648,65 +693,197 @@ export function buildM070FixtureScenario(name: M070ScenarioName): M070VerifierSc
   }
 }
 
+const EXPECTED_SCENARIO_STATUSES: Readonly<Record<M070ScenarioName, M070StatusCode>> = {
+  candidate_approved_verified: "m070_candidate_approved_verified_ok",
+  candidate_approved_partial_undisputed: "m070_candidate_approved_partial_ok",
+  dispute_blocked: "m070_dispute_blocked",
+  unclassifiable_blocked: "m070_unclassifiable_blocked",
+  missing_correlation: "m070_missing_correlation_blocked",
+  malformed_evidence: "m070_malformed_evidence_blocked",
+  direct_fallback_only: "m070_direct_fallback_only_rejected",
+};
+
+const TARGETED_TEST_COMMANDS = [
+  "bun test ./scripts/verify-m070.test.ts && bun run verify:m070 --json",
+  "bun test ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts",
+] as const;
+
 export type M070MainDeps = {
   readonly stdout?: Pick<WritableStreamDefaultWriter<string>, "write"> | { write(chunk: string): void };
   readonly stderr?: Pick<WritableStreamDefaultWriter<string>, "write"> | { write(chunk: string): void };
-  readonly evaluate?: typeof evaluateM070VerifierScenario;
+  readonly evaluateScenario?: typeof evaluateM070VerifierScenario;
+  readonly evaluateContract?: typeof evaluateM070VerifierContract;
+  readonly readPackageJsonText?: () => Promise<string>;
 };
 
 function writeLine(writer: { write(chunk: string): void } | undefined, chunk: string): void {
   writer?.write(chunk);
 }
 
+function boundedIssue(message: string): string {
+  if (message.startsWith("invalid_cli_args:")) return message;
+  if (message.includes("package.json")) return message.slice(0, 240);
+  return "m070 verifier contract dependency failed.";
+}
+
+function parsePackageWiring(packageJsonText: string): M070VerifierContractReport["packageWiring"] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(packageJsonText);
+  } catch {
+    return { scriptName: COMMAND_NAME, expected: EXPECTED_PACKAGE_SCRIPT, present: false, matches: false };
+  }
+  const scripts = isRecord(parsed) && isRecord(parsed.scripts) ? parsed.scripts : {};
+  const script = scripts[COMMAND_NAME];
+  return {
+    scriptName: COMMAND_NAME,
+    expected: EXPECTED_PACKAGE_SCRIPT,
+    present: typeof script === "string",
+    matches: script === EXPECTED_PACKAGE_SCRIPT,
+  };
+}
+
+export async function evaluateM070VerifierContract(options: EvaluateM070VerifierContractOptions = {}): Promise<M070VerifierContractReport> {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const evaluate = options.evaluate ?? evaluateM070VerifierScenario;
+  const readPackageJsonText = options.readPackageJsonText ?? (() => Bun.file("package.json").text());
+  const scenarioReports = M070_SCENARIO_NAMES.map((name) => evaluate(buildM070FixtureScenario(name), { generatedAt }));
+  const packageWiring = parsePackageWiring(await readPackageJsonText());
+  const issues: string[] = [];
+  const issueCategories: string[] = [];
+
+  for (const report of scenarioReports) {
+    const expected = EXPECTED_SCENARIO_STATUSES[report.scenario];
+    if (report.status_code !== expected) {
+      issues.push(`${report.scenario} expected ${expected} but got ${report.status_code}.`);
+      issueCategories.push("scenario-status-drift");
+    }
+  }
+
+  const positiveReports = scenarioReports.filter((report) => report.scenario === "candidate_approved_verified" || report.scenario === "candidate_approved_partial_undisputed");
+  const negativeReports = scenarioReports.filter((report) => !positiveReports.includes(report));
+  if (!positiveReports.every((report) => report.success)) {
+    issues.push("Candidate-approved verified and undisputed partial scenarios must be successful.");
+    issueCategories.push("positive-scenario-drift");
+  }
+  if (!negativeReports.every((report) => !report.success)) {
+    issues.push("Expected negative scenarios must be rejected with success:false.");
+    issueCategories.push("negative-scenario-drift");
+  }
+  if (!packageWiring.matches) {
+    issues.push(`package.json scripts.${COMMAND_NAME} must equal ${EXPECTED_PACKAGE_SCRIPT}.`);
+    issueCategories.push("package-wiring");
+  }
+
+  const scenarioMatrixPassed = issues.filter((issue) => !issue.includes("package.json scripts.")).length === 0;
+  const checks: M070VerifierCheck[] = [
+    makeCheck("M070-FIXTURE-CONTRACT", scenarioMatrixPassed, scenarioMatrixPassed ? "m070_fixture_contract_ok" : "m070_contract_failed", scenarioMatrixPassed ? "All required M070 fixture scenarios have expected success/status semantics." : "Fixture scenario contract drift detected."),
+    makeCheck("M070-CANDIDATE-APPROVED-PUBLICATION", positiveReports.every((report) => report.success) && negativeReports.every((report) => !report.success), scenarioMatrixPassed ? "m070_fixture_contract_ok" : "m070_contract_failed", "Candidate-approved success states and fallback/blocker rejection states are distinguished."),
+    makeCheck("M070-CORRELATION-METADATA", scenarioReports.find((report) => report.scenario === "missing_correlation")?.status_code === "m070_missing_correlation_blocked", scenarioMatrixPassed ? "m070_fixture_contract_ok" : "m070_contract_failed", "Missing correlation metadata is rejected explicitly."),
+    makeCheck("M070-SAFETY-BLOCKERS", ["dispute_blocked", "unclassifiable_blocked", "malformed_evidence"].every((name) => scenarioReports.find((report) => report.scenario === name)?.success === false), scenarioMatrixPassed ? "m070_fixture_contract_ok" : "m070_contract_failed", "Dispute, unclassifiable, and malformed safety blockers fail closed."),
+    makeCheck("M070-REDACTION-BOUNDARY", scenarioReports.every((report) => !report.redaction.candidateBodiesIncluded && !report.redaction.specialistProseIncluded && !report.redaction.rawPromptsIncluded && !report.redaction.rawModelOutputIncluded && !report.redaction.diffsIncluded && !report.redaction.evidencePayloadsIncluded && !report.redaction.rawFingerprintsIncluded && !report.redaction.publicationEvidenceIncluded && !report.redaction.candidateAttemptIncluded && !report.redaction.candidateKeyIncluded), scenarioMatrixPassed ? "m070_fixture_contract_ok" : "m070_contract_failed", "Scenario reports remain aggregate-only redaction-boolean output."),
+    makeCheck("M070-PACKAGE-WIRING", packageWiring.matches, packageWiring.matches ? "m070_fixture_contract_ok" : "m070_contract_failed", packageWiring.matches ? "package.json exposes verify:m070 as the local fixture verifier." : `package.json scripts.${COMMAND_NAME} must equal ${EXPECTED_PACKAGE_SCRIPT}.`),
+  ];
+  const failingCheck = checks.find((check) => !check.passed) ?? null;
+  const success = failingCheck === null;
+
+  return {
+    command: COMMAND_NAME,
+    generated_at: generatedAt,
+    proofMode: "local-fixture-contract",
+    proofScope: "s04-verifier-success-semantics",
+    success,
+    status_code: success ? "m070_fixture_contract_ok" : "m070_contract_failed",
+    check_ids: M070_CHECK_IDS,
+    checks,
+    failing_check_id: failingCheck?.id ?? null,
+    scenarioReports,
+    expectedScenarioStatuses: EXPECTED_SCENARIO_STATUSES,
+    packageWiring,
+    targetedTests: TARGETED_TEST_COMMANDS,
+    issue_categories: [...new Set(issueCategories)],
+    issues,
+  };
+}
+
 function helpText(): string {
   return `Usage: bun run verify:m070 [--json] [--scenario ${M070_SCENARIO_NAMES.join("|")}]
 
-Runs the local M070 verifier fixture evaluator. Output is aggregate-only.
+Runs the deterministic local M070 fixture contract by default.
+Use --scenario to inspect one scenario. Output is aggregate-only and never reads private evidence paths.
 `;
+}
+
+function renderHuman(report: M070CliReport): string {
+  if ("scenarioReports" in report) {
+    return [
+      `${COMMAND_NAME} ${report.status_code} success=${report.success}`,
+      "scenarios:",
+      ...report.scenarioReports.map((scenario) => `- ${scenario.scenario}: ${scenario.status_code} success=${scenario.success}`),
+      "targeted tests:",
+      ...report.targetedTests.map((command) => `- ${command}`),
+      ...(report.issues.length > 0 ? ["issues:", ...report.issues.map((issue) => `- ${issue}`)] : []),
+      "",
+    ].join("\n");
+  }
+  return `${COMMAND_NAME} ${report.scenario} ${report.status_code} success=${report.success}\n`;
+}
+
+function buildInvalidArgReport(issue: string): M070VerifierContractReport {
+  const detail = boundedIssue(issue);
+  const check = makeCheck("M070-FIXTURE-CONTRACT", false, "m070_invalid_arg", "CLI argument parsing failed.");
+  return {
+    command: COMMAND_NAME,
+    generated_at: new Date().toISOString(),
+    proofMode: "local-fixture-contract",
+    proofScope: "s04-verifier-success-semantics",
+    success: false,
+    status_code: "m070_invalid_arg",
+    check_ids: M070_CHECK_IDS,
+    checks: [check],
+    failing_check_id: "M070-FIXTURE-CONTRACT",
+    scenarioReports: [],
+    expectedScenarioStatuses: EXPECTED_SCENARIO_STATUSES,
+    packageWiring: { scriptName: COMMAND_NAME, expected: EXPECTED_PACKAGE_SCRIPT, present: false, matches: false },
+    targetedTests: TARGETED_TEST_COMMANDS,
+    issue_categories: ["invalid-arg"],
+    issues: [detail],
+  };
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2), deps: M070MainDeps = {}): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
+  let args: M070Args;
   try {
-    const args = parseM070Args(argv);
-    if (args.help) {
-      writeLine(stdout, helpText());
-      return 0;
-    }
-    const evaluate = deps.evaluate ?? evaluateM070VerifierScenario;
-    const report = evaluate(buildM070FixtureScenario(args.scenario));
-    if (args.json) {
-      writeLine(stdout, `${JSON.stringify(report, null, 2)}\n`);
-    } else {
-      writeLine(stdout, `${COMMAND_NAME} ${report.status_code} success=${report.success}\n`);
-    }
-    return report.success ? 0 : 1;
+    args = parseM070Args(argv);
   } catch (error) {
-    const issue = error instanceof Error ? error.message : String(error);
-    const report: M070VerifierReport = {
-      command: COMMAND_NAME,
-      generated_at: new Date().toISOString(),
-      proofMode: "local-fixture-pure-evaluator",
-      proofScope: "s04-verifier-success-semantics",
-      scenario: "malformed_evidence",
-      success: false,
-      status_code: "m070_malformed_evidence_blocked",
-      check_ids: M070_CHECK_IDS,
-      checks: [makeCheck("M070-CANDIDATE-APPROVED-PUBLICATION", false, "m070_malformed_evidence_blocked", "CLI argument parsing failed.")],
-      failing_check_id: "M070-CANDIDATE-APPROVED-PUBLICATION",
-      publicationMode: { candidateApprovedNonFallback: false, directFallbackEvidence: false },
-      aggregateEvidence: zeroBoundedAggregate(),
-      correlationMetadata: { hasDeliveryId: false, hasReviewOutputKey: false, hasCorrelationKey: false, deliveryIdAvailable: false, reviewOutputKeyAvailable: false, correlationKeyAvailable: false },
-      safety: { disputed: false, unclassifiableOrBlocked: false, malformed: true, missingCorrelation: true, directFallbackOnly: false, undisputedPartial: false },
-      redaction: { privateOnly: true, candidateBodiesIncluded: false, specialistProseIncluded: false, rawPromptsIncluded: false, rawModelOutputIncluded: false, diffsIncluded: false, evidencePayloadsIncluded: false, rawFingerprintsIncluded: false, publicationEvidenceIncluded: false, candidateAttemptIncluded: false, candidateKeyIncluded: false, unsafeInputFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedEvidencePayloads: false, forbiddenInputFieldPresent: false },
-      issue_categories: ["malformed-evidence"],
-      issues: [issue],
-    };
+    const report = buildInvalidArgReport(error instanceof Error ? error.message : String(error));
     writeLine(stdout, `${JSON.stringify(report, null, 2)}\n`);
-    writeLine(stderr, `${issue}\n`);
+    writeLine(stderr, `${report.issues[0]}\n`);
     return 2;
   }
+
+  if (args.help) {
+    writeLine(stdout, helpText());
+    return 0;
+  }
+
+  const evaluateScenario = deps.evaluateScenario ?? evaluateM070VerifierScenario;
+  const report: M070CliReport = args.scenario === null
+    ? await (deps.evaluateContract ?? evaluateM070VerifierContract)({ evaluate: evaluateScenario, readPackageJsonText: deps.readPackageJsonText })
+    : evaluateScenario(buildM070FixtureScenario(args.scenario));
+
+  if (args.json) {
+    writeLine(stdout, `${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    writeLine(stdout, renderHuman(report));
+  }
+
+  if (!report.success) {
+    writeLine(stderr, `${COMMAND_NAME} failed: ${report.failing_check_id ?? "unknown"}\n`);
+  }
+  return report.success ? 0 : 1;
 }
 
 if (import.meta.main) {

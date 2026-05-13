@@ -4,6 +4,7 @@ import {
   M070_CHECK_IDS,
   M070_SCENARIO_NAMES,
   buildM070FixtureScenario,
+  evaluateM070VerifierContract,
   evaluateM070VerifierScenario,
   main,
   parseM070Args,
@@ -23,10 +24,12 @@ function scenario(name: Parameters<typeof buildM070FixtureScenario>[0]) {
 describe("verify-m070 pure evaluator", () => {
   test("exports stable check ids, scenario names, and bounded CLI parse helpers", () => {
     expect(M070_CHECK_IDS).toEqual([
+      "M070-FIXTURE-CONTRACT",
       "M070-CANDIDATE-APPROVED-PUBLICATION",
       "M070-CORRELATION-METADATA",
       "M070-SAFETY-BLOCKERS",
       "M070-REDACTION-BOUNDARY",
+      "M070-PACKAGE-WIRING",
     ]);
     expect(M070_SCENARIO_NAMES).toEqual([
       "candidate_approved_verified",
@@ -37,9 +40,9 @@ describe("verify-m070 pure evaluator", () => {
       "malformed_evidence",
       "direct_fallback_only",
     ]);
-    expect(parseM070Args([])).toEqual({ json: false, help: false, scenario: "candidate_approved_verified" });
+    expect(parseM070Args([])).toEqual({ json: false, help: false, scenario: null });
     expect(parseM070Args(["--json", "--scenario", "direct_fallback_only"])).toEqual({ json: true, help: false, scenario: "direct_fallback_only" });
-    expect(parseM070Args(["--help"])).toEqual({ json: false, help: true, scenario: "candidate_approved_verified" });
+    expect(parseM070Args(["--help"])).toEqual({ json: false, help: true, scenario: null });
     expect(() => parseM070Args(["--fixture", ".gsd/private.json"])).toThrow(/invalid_cli_args/);
     expect(() => parseM070Args(["--scenario", "unknown"])).toThrow(/invalid_cli_args/);
   });
@@ -74,7 +77,12 @@ describe("verify-m070 pure evaluator", () => {
       },
       issues: [],
     });
-    expect(report.check_ids).toEqual(M070_CHECK_IDS);
+    expect(report.check_ids).toEqual([
+      "M070-CANDIDATE-APPROVED-PUBLICATION",
+      "M070-CORRELATION-METADATA",
+      "M070-SAFETY-BLOCKERS",
+      "M070-REDACTION-BOUNDARY",
+    ]);
     expect(report.checks.every((check) => check.passed)).toBe(true);
     expect(report.aggregateEvidence.counts).toMatchObject({ allowed: 1, published: 1 });
     expect(report.aggregateEvidence.candidateVerificationCounts).toMatchObject({ verifiedCount: 1, publicationEligibleCount: 1 });
@@ -230,7 +238,64 @@ describe("verify-m070 pure evaluator", () => {
     }
   });
 
-  test("main emits parseable JSON for passing, failing, invalid args, and help paths", async () => {
+  test("default fixture contract accepts only expected positive scenarios and rejects required negatives", async () => {
+    const report = await evaluateM070VerifierContract({
+      generatedAt: GENERATED_AT,
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070": "bun scripts/verify-m070.ts" } }),
+    });
+
+    expect(report).toMatchObject({
+      command: "verify:m070",
+      generated_at: GENERATED_AT,
+      proofMode: "local-fixture-contract",
+      success: true,
+      status_code: "m070_fixture_contract_ok",
+      packageWiring: { present: true, matches: true },
+    });
+    expect(report.check_ids).toEqual(M070_CHECK_IDS);
+    expect(report.targetedTests).toContain("bun test ./scripts/verify-m070.test.ts && bun run verify:m070 --json");
+    expect(report.scenarioReports.map((entry) => [entry.scenario, entry.success, entry.status_code])).toEqual([
+      ["candidate_approved_verified", true, "m070_candidate_approved_verified_ok"],
+      ["candidate_approved_partial_undisputed", true, "m070_candidate_approved_partial_ok"],
+      ["dispute_blocked", false, "m070_dispute_blocked"],
+      ["unclassifiable_blocked", false, "m070_unclassifiable_blocked"],
+      ["missing_correlation", false, "m070_missing_correlation_blocked"],
+      ["malformed_evidence", false, "m070_malformed_evidence_blocked"],
+      ["direct_fallback_only", false, "m070_direct_fallback_only_rejected"],
+    ]);
+  });
+
+  test("fixture contract fails boundedly on package wiring drift and malformed package JSON", async () => {
+    const drift = await evaluateM070VerifierContract({
+      generatedAt: GENERATED_AT,
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070": "bun wrong.ts" } }),
+    });
+    expect(drift.success).toBe(false);
+    expect(drift.status_code).toBe("m070_contract_failed");
+    expect(drift.failing_check_id).toBe("M070-PACKAGE-WIRING");
+    expect(drift.issues.join("\n")).toContain("package.json scripts.verify:m070 must equal bun scripts/verify-m070.ts");
+
+    const malformed = await evaluateM070VerifierContract({
+      generatedAt: GENERATED_AT,
+      readPackageJsonText: async () => "{not-json",
+    });
+    expect(malformed.success).toBe(false);
+    expect(malformed.packageWiring).toMatchObject({ present: false, matches: false });
+    expect(JSON.stringify(malformed)).not.toContain("{not-json");
+  });
+
+  test("main emits parseable JSON for default contract, single-scenario passing/failing, invalid args, and help paths", async () => {
+    const contractStdout: string[] = [];
+    const contractExitCode = await main(["--json"], {
+      stdout: { write: (chunk: string) => void contractStdout.push(chunk) },
+      stderr: { write: () => undefined },
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070": "bun scripts/verify-m070.ts" } }),
+    });
+    expect(contractExitCode).toBe(0);
+    const contractReport = JSON.parse(contractStdout.join(""));
+    expect(contractReport).toMatchObject({ success: true, status_code: "m070_fixture_contract_ok" });
+    expect(contractReport.scenarioReports).toHaveLength(M070_SCENARIO_NAMES.length);
+
     const passingStdout: string[] = [];
     const passExitCode = await main(["--json", "--scenario", "candidate_approved_verified"], {
       stdout: { write: (chunk: string) => void passingStdout.push(chunk) },
@@ -253,7 +318,8 @@ describe("verify-m070 pure evaluator", () => {
       stderr: { write: () => undefined },
     });
     expect(invalidExitCode).toBe(2);
-    expect(JSON.parse(invalidStdout.join(""))).toMatchObject({ success: false, status_code: "m070_malformed_evidence_blocked" });
+    expect(JSON.parse(invalidStdout.join(""))).toMatchObject({ success: false, status_code: "m070_invalid_arg", issue_categories: ["invalid-arg"] });
+    expect(invalidStdout.join("")).not.toContain("private.json content");
 
     const helpStdout: string[] = [];
     const helpExitCode = await main(["--help"], {
