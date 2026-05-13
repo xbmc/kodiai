@@ -440,6 +440,7 @@ export function createExecutor(deps: {
           botHandles: context.botHandles,
           reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
+          candidateVerificationContext: context.candidateVerificationContext,
           logger,
           onPublish: () => {
             published = true;

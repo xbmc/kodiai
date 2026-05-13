@@ -8,6 +8,7 @@ import type { Logger } from "pino";
 import { createReviewHandler } from "./review.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
+import type { ExecutionResult } from "../execution/types.ts";
 import type { JobQueue, JobQueueRunMetadata, WorkspaceManager } from "../jobs/types.ts";
 import { getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
@@ -166,7 +167,20 @@ function createMaliciousShadowResult(input: ShadowSpecialistSubflowInput): Shado
   };
 }
 
-export async function runReviewWithShadowMetrics(options: { autoApprove: boolean }) {
+export async function runReviewWithShadowMetrics(options: {
+  autoApprove: boolean;
+  shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+  executorExecute?: (params: {
+    input: Parameters<ReturnType<typeof createExecutor>["execute"]>[0];
+    octokit: unknown;
+    logger: Logger;
+    issueCreatePayloads: Array<Record<string, unknown>>;
+    issueUpdatePayloads: Array<Record<string, unknown>>;
+    reviewCreatePayloads: Array<Record<string, unknown>>;
+    reviewUpdatePayloads: Array<Record<string, unknown>>;
+    reviewCommentPayloads: Array<Record<string, unknown>>;
+  }) => Promise<ExecutionResult>;
+}) {
   const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
   const workspace = await createWorkspaceFixture({ autoApprove: options.autoApprove });
   const cleanups = [workspace.cleanup];
@@ -176,12 +190,18 @@ export async function runReviewWithShadowMetrics(options: { autoApprove: boolean
   const issueUpdatePayloads: Array<Record<string, unknown>> = [];
   const reviewCreatePayloads: Array<Record<string, unknown>> = [];
   const reviewUpdatePayloads: Array<Record<string, unknown>> = [];
+  const reviewCommentPayloads: Array<Record<string, unknown>> = [];
 
   const octokit = {
     rest: {
       pulls: {
         listReviewComments: async () => ({ data: [] }),
         listReviews: async () => ({ data: [] }),
+        get: async () => ({ data: { head: { sha: "abcdef1234567890" } } }),
+        createReviewComment: async (payload: Record<string, unknown>) => {
+          reviewCommentPayloads.push(payload);
+          return { data: { id: 7001 + reviewCommentPayloads.length, html_url: "https://example.invalid/review-comment", path: payload.path, line: payload.line, original_line: payload.line } };
+        },
         createReview: async (payload: Record<string, unknown>) => {
           reviewCreatePayloads.push(payload);
           return { data: { id: 9001, body: payload.body } };
@@ -228,7 +248,19 @@ export async function runReviewWithShadowMetrics(options: { autoApprove: boolean
     executor: {
       execute: async (input: Parameters<ReturnType<typeof createExecutor>["execute"]>[0]) => {
         executorInputs.push(input);
-        return { conclusion: "success", published: false, costUsd: 0, numTurns: 1, durationMs: 1, sessionId: "session-shadow-metrics" };
+        if (options.executorExecute) {
+          return await options.executorExecute({
+            input,
+            octokit,
+            logger,
+            issueCreatePayloads,
+            issueUpdatePayloads,
+            reviewCreatePayloads,
+            reviewUpdatePayloads,
+            reviewCommentPayloads,
+          });
+        }
+        return { conclusion: "success", published: false, costUsd: 0, numTurns: 1, durationMs: 1, sessionId: "session-shadow-metrics", errorMessage: undefined, model: undefined, inputTokens: undefined, outputTokens: undefined, cacheReadTokens: undefined, cacheCreationTokens: undefined, stopReason: undefined };
       },
     } as never,
     telemetryStore: noopTelemetryStore,
@@ -242,7 +274,7 @@ export async function runReviewWithShadowMetrics(options: { autoApprove: boolean
       unshallowAttempted: false,
       diffRange: "github-api:file-list",
     }),
-    shadowSpecialistSubflow: async (input) => createMaliciousShadowResult(input),
+    shadowSpecialistSubflow: options.shadowSpecialistSubflow ?? (async (input) => createMaliciousShadowResult(input)),
     logger,
   });
 
@@ -255,7 +287,7 @@ export async function runReviewWithShadowMetrics(options: { autoApprove: boolean
     for (const cleanup of cleanups.reverse()) await cleanup();
   }
 
-  return { entries, executorInputs, issueCreatePayloads, issueUpdatePayloads, reviewCreatePayloads, reviewUpdatePayloads };
+  return { entries, executorInputs, issueCreatePayloads, issueUpdatePayloads, reviewCreatePayloads, reviewUpdatePayloads, reviewCommentPayloads };
 }
 
 describe("review handler shadow specialist reducer metrics", () => {

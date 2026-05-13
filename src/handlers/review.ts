@@ -212,6 +212,7 @@ import {
   buildShadowSpecialistReviewDetailsProjection,
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
+import type { CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
 
 
 
@@ -3432,6 +3433,12 @@ export function createReviewHandler(deps: {
 
         let shadowSpecialistResult: ShadowSpecialistSubflowResult | undefined;
         let shadowSpecialistReviewDetailsProjection: ShadowSpecialistReviewDetailsProjection | null = null;
+        let candidateVerificationContext: CandidateVerificationContext;
+        const shadowSpecialistCorrelationKey = buildShadowSpecialistCorrelationKey({
+          deliveryId: event.id,
+          reviewOutputKey,
+          prNumber: pr.number,
+        });
         try {
           shadowSpecialistResult = await shadowSpecialistSubflow({
             changedPaths: changedFiles,
@@ -3440,12 +3447,14 @@ export function createReviewHandler(deps: {
             workspaceDir: workspace.dir,
             deliveryId: event.id,
             reviewOutputKey,
-            correlationKey: buildShadowSpecialistCorrelationKey({
-              deliveryId: event.id,
-              reviewOutputKey,
-              prNumber: pr.number,
-            }),
+            correlationKey: shadowSpecialistCorrelationKey,
           });
+          candidateVerificationContext = {
+            docsConfigTruth: shadowSpecialistResult.output,
+            deliveryId: event.id,
+            reviewOutputKey,
+            correlationKey: shadowSpecialistResult.correlationKey ?? shadowSpecialistCorrelationKey,
+          };
           shadowSpecialistReviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(
             projectShadowSpecialistMetrics(shadowSpecialistResult),
           );
@@ -3461,6 +3470,12 @@ export function createReviewHandler(deps: {
             logger.info(shadowLogFields, shadowMessage);
           }
         } catch (err) {
+          candidateVerificationContext = {
+            docsConfigTruth: null,
+            deliveryId: event.id,
+            reviewOutputKey,
+            correlationKey: shadowSpecialistCorrelationKey,
+          };
           shadowSpecialistReviewDetailsProjection = null;
           logger.warn(
             {
@@ -3471,11 +3486,7 @@ export function createReviewHandler(deps: {
               reason: "handler-subflow-error",
               deliveryId: event.id,
               reviewOutputKey,
-              correlationKey: buildShadowSpecialistCorrelationKey({
-                deliveryId: event.id,
-                reviewOutputKey,
-                prNumber: pr.number,
-              }),
+              correlationKey: shadowSpecialistCorrelationKey,
               err,
             },
             "Shadow specialist subflow failed before normal review; continuing fail-open",
@@ -4256,6 +4267,7 @@ export function createReviewHandler(deps: {
           promptSections: reviewPromptSections,
           reviewOutputKey,
           deliveryId: event.id,
+          candidateVerificationContext,
           knowledgeStore,
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
@@ -6069,6 +6081,16 @@ export function createReviewHandler(deps: {
                       promptSections: retryPromptSections,
                       reviewOutputKey: retryReviewOutputKey,
                       deliveryId: retryDeliveryId,
+                      candidateVerificationContext: {
+                        docsConfigTruth: null,
+                        deliveryId: retryDeliveryId,
+                        reviewOutputKey: retryReviewOutputKey,
+                        correlationKey: buildShadowSpecialistCorrelationKey({
+                          deliveryId: retryDeliveryId,
+                          reviewOutputKey: retryReviewOutputKey,
+                          prNumber: pr.number,
+                        }),
+                      },
                       dynamicTimeoutSeconds: retryTimeout,
                       maxTurnsOverride: reviewMaxTurnsOverride,
                       knowledgeStore,

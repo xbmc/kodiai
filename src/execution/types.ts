@@ -3,6 +3,7 @@ export type { RepoConfig } from "./config.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { FormatterSuggestionRequest } from "../handlers/formatter-suggestion-intent.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
+import type { CandidateVerificationContext } from "./mcp/review-output-publication-gate.ts";
 
 export type ExecutionPublishEvent = {
   type: "comment";
@@ -52,6 +53,13 @@ export type ExecutionContext = {
   reviewOutputKey?: string;
   /** Webhook delivery identifier for correlation logging. */
   deliveryId?: string;
+
+  /**
+   * Optional bounded M070 candidate-verification context for inline review publication.
+   * Contains only private aggregate verification state and correlation identifiers;
+   * never raw specialist prose, prompts, model output, tool payloads, diffs, or candidate bodies.
+   */
+  candidateVerificationContext?: CandidateVerificationContext;
 
   /** Optional dynamic timeout override (seconds). When set, overrides config.timeoutSeconds. */
   dynamicTimeoutSeconds?: number;
