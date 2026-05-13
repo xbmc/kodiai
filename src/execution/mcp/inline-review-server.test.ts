@@ -1,5 +1,9 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import { createInlineReviewServer } from "./inline-review-server.ts";
+import { createCommentServer } from "./comment-server.ts";
+import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
+import type { CandidatePublicationPolicyAttempt } from "../../specialists/candidate-publication-policy.ts";
 
 function createMockLogger() {
   const warnCalls: unknown[][] = [];
@@ -25,6 +29,375 @@ function getToolHandler(server: ReturnType<typeof createInlineReviewServer>) {
   }
   return tool.handler;
 }
+
+function getCommentToolHandler(server: ReturnType<typeof createCommentServer>) {
+  const instance = server.instance as unknown as {
+    _registeredTools?: Record<
+      string,
+      { handler: (input: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> }
+    >;
+  };
+  const tool = instance._registeredTools?.create_comment;
+  if (!tool) {
+    throw new Error("create_comment tool is not registered");
+  }
+  return tool.handler;
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function candidateKey(candidate: CandidatePublicationPolicyAttempt): string {
+  const material = {
+    path: String(candidate.path ?? "").trim().slice(0, 256),
+    side: String(candidate.side ?? "").trim().slice(0, 32),
+    line: Number(candidate.line),
+    startLine: candidate.startLine === undefined ? null : Number(candidate.startLine),
+    reviewOutputKey: String(candidate.reviewOutputKey ?? "").trim().slice(0, 256),
+    deliveryId: String(candidate.deliveryId ?? "").trim().slice(0, 256),
+    bodySignal: sha256(String(candidate.body ?? "").slice(0, 4096)),
+  };
+  return `m070-publication:${sha256(JSON.stringify(material))}`;
+}
+
+function m070Evidence(decision: string, candidate: CandidatePublicationPolicyAttempt) {
+  return [{ candidateKey: candidateKey(candidate), decision, evidenceId: `${decision}-1` }];
+}
+
+function collectSerialized(values: unknown[]): string {
+  return values.map((value) => JSON.stringify(value)).join("\n");
+}
+
+describe("createInlineReviewServer M070 candidate publication gate", () => {
+  const reviewOutputKey = "review-output-m070";
+  const deliveryId = "delivery-m070";
+  const baseCandidate = {
+    path: "src/file.ts",
+    body: "CANARY-ALLOWED-CANDIDATE-BODY",
+    line: 10,
+    side: "RIGHT" as const,
+    reviewOutputKey,
+    deliveryId,
+  };
+
+  function createOctokit() {
+    let pullsGetCalls = 0;
+    let createReviewCommentCalls = 0;
+    const reviewBodies: string[] = [];
+    const issueBodies: string[] = [];
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({
+            data: reviewBodies.map((body, index) => ({ id: index + 1, body })),
+          }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => {
+            pullsGetCalls++;
+            return { data: { head: { sha: "abcdef1234" } } };
+          },
+          createReviewComment: async ({ body }: { body: string }) => {
+            createReviewCommentCalls++;
+            reviewBodies.push(body);
+            return {
+              data: {
+                id: createReviewCommentCalls,
+                html_url: "https://example.test/review-comment",
+                path: "src/file.ts",
+                line: 10,
+                original_line: 10,
+              },
+            };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueBodies.push(body);
+            return { data: { id: issueBodies.length, html_url: "https://example.test/comment" } };
+          },
+        },
+      },
+    };
+    return {
+      octokit,
+      reviewBodies,
+      issueBodies,
+      get pullsGetCalls() { return pullsGetCalls; },
+      get createReviewCommentCalls() { return createReviewCommentCalls; },
+    };
+  }
+
+  async function publishWithDecision(decision: string, candidateOverrides: Partial<typeof baseCandidate> = {}) {
+    const candidate = { ...baseCandidate, ...candidateOverrides };
+    const state = createOctokit();
+    const { logger, infoCalls, warnCalls } = createMockLogger();
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      logger as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { docsConfigTruth: { evidence: m070Evidence(decision, candidate) }, deliveryId, reviewOutputKey, correlationKey: "correlation-m070" },
+    );
+    const result = await getToolHandler(server)(candidate);
+    return { ...state, result, infoCalls, warnCalls };
+  }
+
+  test("verified allowed candidate reaches the existing inline adapter", async () => {
+    const { result, createReviewCommentCalls, reviewBodies } = await publishWithDecision("verified");
+
+    expect(result.isError).toBeUndefined();
+    expect(createReviewCommentCalls).toBe(1);
+    expect(reviewBodies[0]).toContain("CANARY-ALLOWED-CANDIDATE-BODY");
+    expect(result.content[0]?.text).toContain("\"success\":true");
+  });
+
+  test("undisputed partial allowed candidate reaches the existing inline adapter", async () => {
+    const { result, createReviewCommentCalls } = await publishWithDecision("partially_verified", {
+      body: "CANARY-PARTIAL-CANDIDATE-BODY",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(createReviewCommentCalls).toBe(1);
+  });
+
+  test("disputed, unverified, disproven, unclassifiable, and malformed candidates do not call GitHub publication", async () => {
+    const cases = [
+      {
+        name: "disputed",
+        evidence: (candidate: CandidatePublicationPolicyAttempt) => [
+          { candidateKey: candidateKey(candidate), decision: "verified", evidenceId: "support" },
+          { candidateKey: candidateKey(candidate), decision: "disproven", evidenceId: "deny" },
+        ],
+      },
+      { name: "unverified", evidence: () => [] },
+      { name: "disproven", evidence: (candidate: CandidatePublicationPolicyAttempt) => m070Evidence("disproven", candidate) },
+      { name: "unclassifiable", evidence: (candidate: CandidatePublicationPolicyAttempt) => m070Evidence("invented-status", candidate) },
+      { name: "malformed", evidence: () => "not-an-array" },
+    ];
+
+    for (const entry of cases) {
+      const candidate = { ...baseCandidate, body: `CANARY-${entry.name.toUpperCase()}-BODY` };
+      const state = createOctokit();
+      const { logger, infoCalls } = createMockLogger();
+      const server = createInlineReviewServer(
+        async () => state.octokit as never,
+        "acme",
+        "repo",
+        101,
+        [],
+        reviewOutputKey,
+        deliveryId,
+        logger as never,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { docsConfigTruth: { evidence: entry.evidence(candidate) }, deliveryId, reviewOutputKey, correlationKey: "correlation-m070" },
+      );
+
+      const result = await getToolHandler(server)(candidate);
+      const responseText = result.content[0]?.text ?? "";
+      const logs = collectSerialized(infoCalls);
+
+      expect(result.isError).toBe(true);
+      expect(responseText).toContain("\"reason\":\"m070-candidate-verification-denied\"");
+      expect(state.createReviewCommentCalls).toBe(0);
+      expect(state.pullsGetCalls).toBe(0);
+      expect(responseText).not.toContain(candidate.body);
+      expect(logs).not.toContain(candidate.body);
+      expect(logs).toContain("m070-candidate-publication-policy");
+    }
+  });
+
+  test("denied candidate then create_comment returns fallback blocked JSON", async () => {
+    const candidate = { ...baseCandidate, body: "CANARY-DENIED-FALLBACK-BODY" };
+    const state = createOctokit();
+    const gate = createReviewOutputPublicationGate({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+      candidateVerificationContext: { docsConfigTruth: { evidence: [] }, deliveryId, reviewOutputKey, correlationKey: "correlation-m070" },
+    });
+    const inlineServer = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      undefined,
+      undefined,
+      gate,
+    );
+    const denied = await getToolHandler(inlineServer)(candidate);
+    expect(denied.isError).toBe(true);
+    expect(state.createReviewCommentCalls).toBe(0);
+
+    const commentServer = createCommentServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      [],
+      reviewOutputKey,
+      undefined,
+      101,
+      undefined,
+      undefined,
+      gate,
+    );
+    const fallback = await getCommentToolHandler(commentServer)({ issueNumber: 101, body: "fallback body" });
+
+    expect(fallback.isError).toBe(true);
+    expect(fallback.content[0]?.text).toContain("\"fallback_blocked\":true");
+    expect(fallback.content[0]?.text).toContain("\"candidate_publication_state\":\"skipped\"");
+    expect(fallback.content[0]?.text).toContain("\"candidate_publication_reason\":\"m070-candidate-verification-denied\"");
+    expect(state.issueBodies).toHaveLength(0);
+  });
+
+  test("allowed secret-bearing body is still blocked by outgoing secret scan", async () => {
+    const secretBody = "Token ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ should not publish";
+    const { result, createReviewCommentCalls } = await publishWithDecision("verified", { body: secretBody });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("[SECURITY: response blocked");
+    expect(createReviewCommentCalls).toBe(0);
+  });
+
+  test("non-commentable line remains commentability-blocked before policy evaluation", async () => {
+    let policyCalls = 0;
+    const state = createOctokit();
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      undefined,
+      undefined,
+      undefined,
+      [
+        "diff --git a/src/file.ts b/src/file.ts",
+        "--- a/src/file.ts",
+        "+++ b/src/file.ts",
+        "@@ -1,1 +10,1 @@ void f()",
+        "+added",
+      ].join("\n"),
+      () => {
+        policyCalls++;
+        throw new Error("policy should not be called");
+      },
+      { docsConfigTruth: { evidence: [] }, deliveryId, reviewOutputKey },
+    );
+
+    const result = await getToolHandler(server)({ ...baseCandidate, line: 99 });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("RIGHT line 99 is not commentable");
+    expect(policyCalls).toBe(0);
+    expect(state.createReviewCommentCalls).toBe(0);
+  });
+
+  test("already-published marker remains idempotency skipped before M070 denial", async () => {
+    const marker = `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;
+    const state = createOctokit();
+    state.reviewBodies.push(marker);
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => {
+        throw new Error("policy should not run after idempotency skip");
+      },
+      { docsConfigTruth: { evidence: [] }, deliveryId, reviewOutputKey },
+    );
+
+    const result = await getToolHandler(server)(baseCandidate);
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("\"reason\":\"already-published\"");
+    expect(state.createReviewCommentCalls).toBe(0);
+  });
+
+  test("M070 response and logs omit raw canaries and unsafe payload fields", async () => {
+    const candidate = {
+      ...baseCandidate,
+      body: "RAW-CANDIDATE-BODY-CANARY",
+      prompt: "RAW-PROMPT-CANARY",
+      modelOutput: "RAW-MODEL-OUTPUT-CANARY",
+      rawFingerprint: "RAW-FINGERPRINT-CANARY",
+    };
+    const state = createOctokit();
+    const { logger, infoCalls } = createMockLogger();
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      logger as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        docsConfigTruth: {
+          evidence: [{
+            candidateKey: candidateKey(candidate),
+            decision: "disproven",
+            specialistProse: "RAW-SPECIALIST-PROSE-CANARY",
+            diff: "RAW-DIFF-CANARY",
+            payload: "RAW-EVIDENCE-PAYLOAD-CANARY",
+          }],
+        },
+        deliveryId,
+        reviewOutputKey,
+        correlationKey: "correlation-m070",
+      },
+    );
+
+    const result = await getToolHandler(server)(candidate);
+    const serialized = `${result.content[0]?.text ?? ""}\n${collectSerialized(infoCalls)}`;
+
+    for (const forbidden of [
+      "RAW-CANDIDATE-BODY-CANARY",
+      "RAW-SPECIALIST-PROSE-CANARY",
+      "RAW-PROMPT-CANARY",
+      "RAW-MODEL-OUTPUT-CANARY",
+      "RAW-DIFF-CANARY",
+      "RAW-EVIDENCE-PAYLOAD-CANARY",
+      "RAW-FINGERPRINT-CANARY",
+      candidateKey(candidate),
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    expect(serialized).toContain("candidate-");
+    expect(state.createReviewCommentCalls).toBe(0);
+  });
+});
 
 describe("createInlineReviewServer output idempotency", () => {
   test("second publication attempt with same reviewOutputKey skips create", async () => {
@@ -398,7 +771,7 @@ describe("createInlineReviewServer validation diagnostics", () => {
     expect(warnCalls[0]?.[0]).toMatchObject({
       githubStatus: 422,
       githubRequestId: "REQ-NULL",
-      reason: undefined,
+      reason: "inline-publication-failed",
     });
   });
 
@@ -453,7 +826,7 @@ describe("createInlineReviewServer validation diagnostics", () => {
     expect(warnCalls[0]?.[0]).toMatchObject({
       githubStatus: 422,
       githubRequestId: "REQ-NULL-OBJECT",
-      reason: undefined,
+      reason: "inline-publication-failed",
     });
   });
 

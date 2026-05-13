@@ -8,6 +8,8 @@ import { wrapInDetails } from "../../lib/formatting.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 import {
   createReviewOutputPublicationGate,
+  type CandidatePublicationPolicy,
+  type CandidateVerificationContext,
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
 
@@ -22,12 +24,21 @@ export function createCommentServer(
   onPublishEvent?: (event: ExecutionPublishEvent) => void,
   logger?: Logger,
   publicationGate?: ReviewOutputPublicationGate,
+  candidatePublicationPolicy?: CandidatePublicationPolicy,
+  candidateVerificationContext?: CandidateVerificationContext,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
   const reviewOutputPublicationGate = publicationGate
     ?? (
       reviewOutputKey && prNumber !== undefined
-        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        ? createReviewOutputPublicationGate({
+            owner,
+            repo,
+            prNumber,
+            reviewOutputKey,
+            candidatePublicationPolicy,
+            candidateVerificationContext,
+          })
         : undefined
     );
 

@@ -7,6 +7,8 @@ import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sani
 import { buildPrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import {
   createReviewOutputPublicationGate,
+  type CandidatePublicationPolicy,
+  type CandidateVerificationContext,
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
 
@@ -94,6 +96,8 @@ export function createInlineReviewServer(
   onPublish?: () => void,
   publicationGate?: ReviewOutputPublicationGate,
   prDiffForCommentValidation?: string,
+  candidatePublicationPolicy?: CandidatePublicationPolicy,
+  candidateVerificationContext?: CandidateVerificationContext,
 ) {
   const rightCommentableLines = prDiffForCommentValidation
     ? buildPrDiffCommentabilityIndex(prDiffForCommentValidation)
@@ -101,7 +105,14 @@ export function createInlineReviewServer(
   const reviewOutputPublicationGate = publicationGate
     ?? (
       reviewOutputKey
-        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        ? createReviewOutputPublicationGate({
+            owner,
+            repo,
+            prNumber,
+            reviewOutputKey,
+            candidatePublicationPolicy,
+            candidateVerificationContext,
+          })
         : undefined
     );
 
@@ -127,6 +138,25 @@ export function createInlineReviewServer(
     }
 
     return "allowed";
+  }
+
+  function buildM070CandidateDenialPayload(policyResult: NonNullable<ReturnType<ReviewOutputPublicationGate["evaluateInlineCandidatePublication"]>>) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "m070-candidate-verification-denied",
+      gate: "m070-candidate-publication-policy",
+      gate_result: policyResult.status,
+      candidate_ref: policyResult.candidateRef,
+      verification_state: policyResult.verificationState,
+      reason_categories: policyResult.reasonCategories,
+      counts: policyResult.counts,
+      review_output_key: reviewOutputKey,
+      has_delivery_id: policyResult.hasDeliveryId,
+      has_review_output_key: policyResult.hasReviewOutputKey,
+      has_correlation_key: policyResult.hasCorrelationKey,
+      redaction_flags: policyResult.redactionFlags,
+    };
   }
 
   return createSdkMcpServer({
@@ -219,6 +249,45 @@ export function createInlineReviewServer(
                     }),
                   },
                 ],
+              };
+            }
+
+            const policyResult = reviewOutputPublicationGate?.evaluateInlineCandidatePublication({
+              path,
+              body,
+              line,
+              startLine,
+              side: side || "RIGHT",
+              reviewOutputKey,
+              deliveryId,
+            });
+            if (policyResult && !policyResult.allowed) {
+              reviewOutputPublicationGate.recordInlinePublicationSkipped("m070-candidate-verification-denied");
+              const payload = buildM070CandidateDenialPayload(policyResult);
+              logger?.info(
+                {
+                  deliveryId,
+                  reviewOutputKey,
+                  owner,
+                  repo,
+                  prNumber,
+                  tool: "create_inline_comment",
+                  gate: payload.gate,
+                  gateResult: payload.gate_result,
+                  candidateRef: payload.candidate_ref,
+                  verificationState: payload.verification_state,
+                  reasonCategories: payload.reason_categories,
+                  counts: payload.counts,
+                  hasDeliveryId: payload.has_delivery_id,
+                  hasReviewOutputKey: payload.has_review_output_key,
+                  hasCorrelationKey: payload.has_correlation_key,
+                  redactionFlags: payload.redaction_flags,
+                },
+                "M070 candidate verification denied inline review publication",
+              );
+              return {
+                content: [{ type: "text" as const, text: JSON.stringify(payload) }],
+                isError: true,
               };
             }
 

@@ -10,7 +10,11 @@ import { createIssueLabelServer } from "./issue-label-server.ts";
 import { createIssueCommentServer } from "./issue-comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
-import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
+import {
+  createReviewOutputPublicationGate,
+  type CandidatePublicationPolicy,
+  type CandidateVerificationContext,
+} from "./review-output-publication-gate.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
@@ -44,6 +48,8 @@ export function buildMcpServers(deps: {
   totalFiles?: number;
   enableCheckpointTool?: boolean;
   prDiffForCommentValidation?: string;
+  candidatePublicationPolicy?: CandidatePublicationPolicy;
+  candidateVerificationContext?: CandidateVerificationContext;
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
 }): Record<string, McpServerConfig> {
@@ -55,6 +61,8 @@ export function buildMcpServers(deps: {
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
+          candidatePublicationPolicy: deps.candidatePublicationPolicy,
+          candidateVerificationContext: deps.candidateVerificationContext,
         })
       : undefined;
 
@@ -71,6 +79,8 @@ export function buildMcpServers(deps: {
       deps.onPublishEvent,
       deps.logger,
       reviewOutputPublicationGate,
+      deps.candidatePublicationPolicy,
+      deps.candidateVerificationContext,
     );
   }
 
@@ -99,6 +109,8 @@ export function buildMcpServers(deps: {
       deps.onPublish,
       reviewOutputPublicationGate,
       deps.prDiffForCommentValidation,
+      deps.candidatePublicationPolicy,
+      deps.candidateVerificationContext,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
@@ -213,6 +225,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
+          candidatePublicationPolicy: deps.candidatePublicationPolicy,
+          candidateVerificationContext: deps.candidateVerificationContext,
         })
       : undefined;
 
@@ -231,6 +245,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublishEvent,
         deps.logger,
         reviewOutputPublicationGate,
+        deps.candidatePublicationPolicy,
+        deps.candidateVerificationContext,
       ) as McpSdkServerConfigWithInstance;
   }
 
@@ -259,6 +275,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublish,
         reviewOutputPublicationGate,
         deps.prDiffForCommentValidation,
+        deps.candidatePublicationPolicy,
+        deps.candidateVerificationContext,
       ) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>
