@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M069",
-      "label": "M069: Specialist Lane Pilot",
+      "id": "milestone:M070",
+      "label": "M070: Candidate Verification + Disagreement Handling",
       "type": "milestone",
-      "description": "Active milestone: M069",
+      "description": "Active milestone: M070",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:refining",
+      "label": "Phase: refining",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5248,6 +5248,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M069",
+      "label": "M069: Specialist Lane Pilot",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-ROADMAP.md"
+    },
+    {
       "id": "slice:M069:S01",
       "label": "S01: Shadow specialist contract and operator-truth trigger",
       "type": "slice",
@@ -5397,11 +5404,23 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M070",
-      "label": "M070: M070: Candidate Verification + Disagreement Handling",
-      "type": "milestone",
+      "id": "slice:M070:S01",
+      "label": "S01: Verification taxonomy and conflict classifier",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M070/M070-ROADMAP.md"
+      "sourceFile": "milestones/M070/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M070:S01:T01",
+      "label": "T01: Implement pure verification taxonomy and conflict classifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M070:S01:T02",
+      "label": "T02: Add M070 S01 verifier CLI and package wiring",
+      "type": "task",
+      "confidence": "EXTRACTED"
     },
     {
       "id": "decision:M053:1",
@@ -6378,6 +6397,342 @@
       "description": "Source: S06-SUMMARY.md/Memory/knowledge note",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M067/M067-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:1",
+      "label": "Chose to establish the first specialist lane as a pure local `docs-config-truth` contract before wiring runtime handler behavior, because the active checkout lacked the previously referenced review-orchestration/candidate modules and needed a trustworthy local seam first.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:2",
+      "label": "Chose same-job, read-only, injectable shadow specialist execution in `createReviewHandler` rather than a separate ACA specialist job or visible GitHub publication path.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:3",
+      "label": "Chose a private aggregate metric reducer for specialist candidate evidence, exposing bounded counts/availability/correlation/denial fields while excluding candidate bodies, prompts, model output, tool payloads, approval fields, and publication fields.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:4",
+      "label": "Chose aggregate-only compact Review Details/log/verifier projection, with line-only caps and critical redaction/publication-denial fields ordered before long correlation values.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:5",
+      "label": "Chose a separate live-required `verify:m069:s05` proof gate where `--allow-blocked` changes only process exit behavior; blocked evidence remains `success:false` and cannot count as operational success.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:6",
+      "label": "Local fixture/static proof is necessary but not sufficient for operational acceptance; S04 can return `m069_ok` for bounded contract evidence while S05 remains blocked on exact live GitHub/Log Analytics correlation.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:7",
+      "label": "Fail-open specialist integration needs tests for success, skipped, timeout, thrown error, and malformed/unclassifiable outputs so normal review completion stays authoritative.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:8",
+      "label": "Publication-boundary proof must include negative tests with malicious specialist-shaped output, not only absence of required publication wiring, because safety depends on forbidding raw candidate leakage and visible specialist comments/approvals.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:9",
+      "label": "Compact evidence can accidentally hide safety fields when long correlation values consume the line budget; critical redaction and publication-denial fields must be ordered before long identifiers and protected by regression tests.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:10",
+      "label": "Live-access blockers must be reported as blockers with explicit reason strings such as `github_access_404;missing_correlation_key`, not silently downgraded into fixture success or milestone operational success.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:11",
+      "label": "Use pure typed contract modules plus synthetic JSON verifiers for the first slice of a risky integration milestone, then consume that contract from handler, reducer, evidence, and live-proof slices.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:12",
+      "label": "Keep shadow subflows injectable and read-only, and normalize every timeout/error/malformed result into bounded private status before the main review executor proceeds.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:13",
+      "label": "Project untrusted specialist output into aggregate metrics at a single reducer boundary, then feed only that projection to logs, Review Details, and verifiers.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:14",
+      "label": "Separate local verifier status vocabulary from live-required proof vocabulary so fixture success cannot be mislabeled as production proof.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:15",
+      "label": "For production-like proof gates, provide deterministic injected collectors for tests while the default CLI path collects real GitHub/runtime evidence and classifies access/config gaps explicitly.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:16",
+      "label": "The active checkout lacked some earlier milestone module names, so the safest path was to reconcile with a new local `src/specialists/` contract before integration.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:17",
+      "label": "Planned `src/review-audit/*` paths were absent during S05 closeout, but the authoritative command still exited 0 using the available focused S05 verifier tests and guard suites.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M069:18",
+      "label": "The validation artifact marked operational acceptance as needs-attention because the live-required proof returned blocked evidence, even though the roadmap criterion explicitly permits recording credential/config/live-access blockers as blocked evidence rather than success.",
+      "type": "decision",
+      "description": "Source: M069-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:1",
+      "label": "Local fixture/static proof is necessary but not sufficient for operational acceptance; S04 can return `m069_ok` for bounded contract evidence while S05 remains blocked on exact live GitHub/Log Analytics correlation.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:2",
+      "label": "Fail-open specialist integration needs tests for success, skipped, timeout, thrown error, and malformed/unclassifiable outputs so normal review completion stays authoritative.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:3",
+      "label": "Publication-boundary proof must include negative tests with malicious specialist-shaped output, not only absence of required publication wiring, because safety depends on forbidding raw candidate leakage and visible specialist comments/approvals.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:4",
+      "label": "Compact evidence can accidentally hide safety fields when long correlation values consume the line budget; critical redaction and publication-denial fields must be ordered before long identifiers and protected by regression tests.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:5",
+      "label": "Live-access blockers must be reported as blockers with explicit reason strings such as `github_access_404;missing_correlation_key`, not silently downgraded into fixture success or milestone operational success.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Known Limitations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:6",
+      "label": "Use pure typed contract modules plus synthetic JSON verifiers for the first slice of a risky integration milestone, then consume that contract from handler, reducer, evidence, and live-proof slices.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:7",
+      "label": "Keep shadow subflows injectable and read-only, and normalize every timeout/error/malformed result into bounded private status before the main review executor proceeds.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:8",
+      "label": "Project untrusted specialist output into aggregate metrics at a single reducer boundary, then feed only that projection to logs, Review Details, and verifiers.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:9",
+      "label": "Separate local verifier status vocabulary from live-required proof vocabulary so fixture success cannot be mislabeled as production proof.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:10",
+      "label": "For production-like proof gates, provide deterministic injected collectors for tests while the default CLI path collects real GitHub/runtime evidence and classifies access/config gaps explicitly.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:11",
+      "label": "The active checkout lacked some earlier milestone module names, so the safest path was to reconcile with a new local `src/specialists/` contract before integration.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:12",
+      "label": "Planned `src/review-audit/*` paths were absent during S05 closeout, but the authoritative command still exited 0 using the available focused S05 verifier tests and guard suites.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M069:13",
+      "label": "The validation artifact marked operational acceptance as needs-attention because the live-required proof returned blocked evidence, even though the roadmap criterion explicitly permits recording credential/config/live-access blockers as blocked evidence rather than success.",
+      "type": "lesson",
+      "description": "Source: M069-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:1",
+      "label": "Use pure typed contract modules plus synthetic JSON verifiers for the first slice of a risky integration milestone, then consume that contract from handler, reducer, evidence, and live-proof slices.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:2",
+      "label": "Keep shadow subflows injectable and read-only, and normalize every timeout/error/malformed result into bounded private status before the main review executor proceeds.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:3",
+      "label": "Project untrusted specialist output into aggregate metrics at a single reducer boundary, then feed only that projection to logs, Review Details, and verifiers.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:4",
+      "label": "Separate local verifier status vocabulary from live-required proof vocabulary so fixture success cannot be mislabeled as production proof.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:5",
+      "label": "For production-like proof gates, provide deterministic injected collectors for tests while the default CLI path collects real GitHub/runtime evidence and classifies access/config gaps explicitly.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:6",
+      "label": "The active checkout lacked some earlier milestone module names, so the safest path was to reconcile with a new local `src/specialists/` contract before integration.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:7",
+      "label": "Planned `src/review-audit/*` paths were absent during S05 closeout, but the authoritative command still exited 0 using the available focused S05 verifier tests and guard suites.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M069:8",
+      "label": "The validation artifact marked operational acceptance as needs-attention because the live-required proof returned blocked evidence, even though the roadmap criterion explicitly permits recording credential/config/live-access blockers as blocked evidence rather than success.",
+      "type": "pattern",
+      "description": "Source: M069-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M069:1",
+      "label": "The active checkout lacked some earlier milestone module names, so the safest path was to reconcile with a new local `src/specialists/` contract before integration.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M069:2",
+      "label": "Planned `src/review-audit/*` paths were absent during S05 closeout, but the authoritative command still exited 0 using the available focused S05 verifier tests and guard suites.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M069:3",
+      "label": "The validation artifact marked operational acceptance as needs-attention because the live-required proof returned blocked evidence, even though the roadmap criterion explicitly permits recording credential/config/live-access blockers as blocked evidence rather than success.",
+      "type": "lesson",
+      "description": "Source: M069-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M069/M069-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -11164,6 +11519,24 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M070",
+      "to": "slice:M070:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M070:S01",
+      "to": "task:M070:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M070:S01",
+      "to": "task:M070:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -11894,7 +12267,259 @@
       "to": "surprise:M067:4",
       "type": "relates_to",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:16",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:17",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "decision:M069:18",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "lesson:M069:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "pattern:M069:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "surprise:M069:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "surprise:M069:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M069",
+      "to": "surprise:M069:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-12T16:50:04.572Z"
+  "builtAt": "2026-05-13T00:41:55.050Z"
 }

@@ -109,17 +109,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Mapped for M070 planning: existing docs/config truth specialist lane gains actionable verification/disagreement semantics without adding new lanes.
 
-### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
-- Class: quality-attribute
-- Status: active
-- Description: Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
-- Why it matters: Specialist outputs need stronger verification than generation before they can safely affect publication policy.
-- Source: issue #131
-- Primary owning slice: M070/S01
-- Supporting slices: M070/S02,M070/S03,M070/S04,M070/S05,M070/S06
-- Validation: unmapped
-- Notes: Mapped for M070 planning: four-state verification taxonomy, disagreement handling, publication blocking, aggregate evidence, verifier, and exact-key proof.
-
 ### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
 - Class: operability
 - Status: active
@@ -1014,6 +1003,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key.
 - Notes: This preserves the production-safety boundary while foundational contracts are introduced.
 
+### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
+- Class: quality-attribute
+- Status: validated
+- Description: Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
+- Why it matters: Specialist outputs need stronger verification than generation before they can safely affect publication policy.
+- Source: issue #131
+- Primary owning slice: M070/S01
+- Supporting slices: M070/S02,M070/S03,M070/S04,M070/S05,M070/S06
+- Validation: M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3).
+- Notes: S01 validates the pure classification contract. Publication gating/integration remain owned by later M070 slices.
+
 ### R110 — Candidate findings become the preferred pre-publication finding source: review agents record structured draft findings, reducer/coordinator approval decides what can be published, and approved candidates feed publication.
 - Class: core-capability
 - Status: validated
@@ -1432,7 +1432,7 @@ This file is the explicit capability and coverage contract for the project.
 | R100 | constraint | validated | M067/S03 | M067/S04, M067/S05 | M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key. |
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
 | R102 | core-capability | active | M070/S05 | M070/S01,M070/S02,M070/S03 | unmapped |
-| R103 | quality-attribute | active | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | unmapped |
+| R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
 | R104 | integration | deferred | M071 provisional | none | unmapped |
 | R105 | operability | active | M070/S03 | M070/S01,M070/S04,M070/S06 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
@@ -1457,7 +1457,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 14
-- Mapped to slices: 14
-- Validated: 88 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R110, R111, R112, R113, R114, R115, R116)
+- Active requirements: 13
+- Mapped to slices: 13
+- Validated: 89 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R103, R110, R111, R112, R113, R114, R115, R116)
 - Unmapped active requirements: 0
