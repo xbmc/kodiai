@@ -120,17 +120,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Mapped for M070 planning: duplicate/disagreement/status counts become bounded policy and proof evidence for the existing specialist rollout.
 
-### R117 — Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
-- Class: core-capability
-- Status: active
-- Description: Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
-- Why it matters: Specialists need a safe candidate/reducer publication path before multiple lanes can publish without noise or contradiction.
-- Source: user
-- Primary owning slice: M070/S02
-- Supporting slices: M070/S01,M070/S05
-- Validation: unmapped
-- Notes: Mapped for M070 planning: specialist output is constrained to candidate verification/disagreement inputs and cannot bypass existing candidate-approved publication gates.
-
 ### R118 — Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
 - Class: core-capability
 - Status: active
@@ -1091,6 +1080,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: The accepted live proof has one bounded Review Details issue comment plus four inline candidate review comments, directFallback=0, and no issue-comment fallback. `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed.
 - Notes: Visible output is bounded and explicit: one Review Details artifact plus candidate-approved inline publication artifacts for the exact key.
 
+### R117 — Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
+- Class: core-capability
+- Status: validated
+- Description: Specialist reviewer lanes are deferred until the candidate-approved publication contract is proven.
+- Why it matters: Specialists need a safe candidate/reducer publication path before multiple lanes can publish without noise or contradiction.
+- Source: user
+- Primary owning slice: M070/S02
+- Supporting slices: M070/S01,M070/S05
+- Validation: M070/S02 wired docs/config truth candidate verification into the normal review publication path and proved safe publication gating with fresh closeout evidence: policy unit tests `bun test ./src/specialists/candidate-publication-policy.test.ts` exit 0 (gsd_exec 3ec5b9dd-2c26-49dd-88c1-f3d5878b6e75); MCP publication gate tests `bun test ./src/execution/mcp/inline-review-server.test.ts ./src/execution/mcp/index.test.ts` exit 0 (gsd_exec 3f96a8f3-8e0e-489f-ac8d-1f6d103f0b9d); handler fixture `bun test ./src/handlers/review-candidate-verification-publication.test.ts` exit 0 (gsd_exec 797e7cb5-5c4d-44af-a9d0-9af072cedc92); closeout regression `bun test ./src/specialists/candidate-verification.test.ts ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exit 0 with success:true/status_code:m070_s01_ok (gsd_exec 29c8874b-0a4b-45a1-bf46-605f99fac500).
+- Notes: S02 proves a safe candidate-approved publication contract for the first specialist lane: verified and undisputed safe partial candidates may reach the existing inline adapter, while disputed, unverified, disproven, duplicate, malformed, stale, oversized, missing, and unclassifiable candidates are denied before GitHub-visible publication and cannot satisfy direct fallback.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -1446,7 +1446,7 @@ This file is the explicit capability and coverage contract for the project.
 | R114 | launchability | validated | M068/S05 | M068/S01,M068/S02,M068/S03,M068/S04 | Accepted live exact-key proof on xbmc/xbmc#28172: trigger `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423917332`, Review Details `https://github.com/xbmc/xbmc/pull/28172#issuecomment-4423943241`, four inline candidate comments, delivery `e15d3ee0-4d6b-11f1-9d31-9ef027295c6d`, verifier status `m068_ok`. |
 | R115 | constraint | validated | M068/S05 | M068/S03,M068/S04 | Both sides of the fallback contract are proven: `scripts/fixtures/m068-candidate-approved-proof.json` passes only as `m068_ok`, while `scripts/fixtures/m068-direct-fallback-proof.json` passes only with `--expect-status m068_direct_fallback` and remains rejected as success. |
 | R116 | constraint | validated | M068/S05 | M068/S02,M068/S03 | The accepted live proof has one bounded Review Details issue comment plus four inline candidate review comments, directFallback=0, and no issue-comment fallback. `verify:m068:candidate-publication --expect-status m068_ok scripts/fixtures/m068-candidate-approved-proof.json` passed. |
-| R117 | core-capability | active | M070/S02 | M070/S01,M070/S05 | unmapped |
+| R117 | core-capability | validated | M070/S02 | M070/S01,M070/S05 | M070/S02 wired docs/config truth candidate verification into the normal review publication path and proved safe publication gating with fresh closeout evidence: policy unit tests `bun test ./src/specialists/candidate-publication-policy.test.ts` exit 0 (gsd_exec 3ec5b9dd-2c26-49dd-88c1-f3d5878b6e75); MCP publication gate tests `bun test ./src/execution/mcp/inline-review-server.test.ts ./src/execution/mcp/index.test.ts` exit 0 (gsd_exec 3f96a8f3-8e0e-489f-ac8d-1f6d103f0b9d); handler fixture `bun test ./src/handlers/review-candidate-verification-publication.test.ts` exit 0 (gsd_exec 797e7cb5-5c4d-44af-a9d0-9af072cedc92); closeout regression `bun test ./src/specialists/candidate-verification.test.ts ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exit 0 with success:true/status_code:m070_s01_ok (gsd_exec 29c8874b-0a4b-45a1-bf46-605f99fac500). |
 | R118 | core-capability | active | M070/S04 | M070/S01,M070/S02,M070/S03,M070/S05,M070/S06 | unmapped |
 | R119 | failure-visibility | deferred | none | none | unmapped |
 | R120 | failure-visibility | deferred | none | none | unmapped |
@@ -1457,7 +1457,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 13
-- Mapped to slices: 13
-- Validated: 89 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R103, R110, R111, R112, R113, R114, R115, R116)
+- Active requirements: 12
+- Mapped to slices: 12
+- Validated: 90 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R103, R110, R111, R112, R113, R114, R115, R116, R117)
 - Unmapped active requirements: 0

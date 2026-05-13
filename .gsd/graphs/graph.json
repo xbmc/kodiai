@@ -5423,6 +5423,37 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M070:S02",
+      "label": "S02: Publication gate for disputed and partial candidates",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M070:S02:T01",
+      "label": "T01: Add pure M070 candidate publication policy",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M070:S02:T02",
+      "label": "T02: Enforce M070 policy in shared MCP publication gate",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M070:S02:T03",
+      "label": "T03: Wire review handler docs/config truth aggregate into executor publication context",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M070:S02:T04",
+      "label": "T04: Run S02 closeout and S01 regression verification",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "decision:M053:1",
       "label": "Deliver formatter fixes as GitHub fenced `suggestion` blocks in inline review comments on the existing PR, not as a separate formatting PR or bot-pushed branch.",
       "type": "decision",
@@ -11537,6 +11568,36 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M070",
+      "to": "slice:M070:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M070:S02",
+      "to": "task:M070:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M070:S02",
+      "to": "task:M070:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M070:S02",
+      "to": "task:M070:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M070:S02",
+      "to": "task:M070:S02:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -12521,5 +12582,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-13T00:41:55.050Z"
+  "builtAt": "2026-05-13T04:16:19.127Z"
 }
