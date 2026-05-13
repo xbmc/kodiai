@@ -15,6 +15,7 @@ import {
   type CandidatePublicationPolicy,
   type CandidateVerificationContext,
 } from "./review-output-publication-gate.ts";
+import type { CandidateVerificationPublicationEvidenceSink } from "../../specialists/candidate-verification-publication-evidence.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
@@ -50,6 +51,7 @@ export function buildMcpServers(deps: {
   prDiffForCommentValidation?: string;
   candidatePublicationPolicy?: CandidatePublicationPolicy;
   candidateVerificationContext?: CandidateVerificationContext;
+  candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
 }): Record<string, McpServerConfig> {
@@ -63,6 +65,7 @@ export function buildMcpServers(deps: {
           reviewOutputKey: deps.reviewOutputKey,
           candidatePublicationPolicy: deps.candidatePublicationPolicy,
           candidateVerificationContext: deps.candidateVerificationContext,
+          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
       : undefined;
 
@@ -111,6 +114,7 @@ export function buildMcpServers(deps: {
       deps.prDiffForCommentValidation,
       deps.candidatePublicationPolicy,
       deps.candidateVerificationContext,
+      deps.candidateVerificationPublicationEvidenceSink,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
@@ -227,6 +231,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
           reviewOutputKey: deps.reviewOutputKey,
           candidatePublicationPolicy: deps.candidatePublicationPolicy,
           candidateVerificationContext: deps.candidateVerificationContext,
+          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
       : undefined;
 
@@ -277,6 +282,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.prDiffForCommentValidation,
         deps.candidatePublicationPolicy,
         deps.candidateVerificationContext,
+        deps.candidateVerificationPublicationEvidenceSink,
       ) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>

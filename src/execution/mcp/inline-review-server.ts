@@ -11,6 +11,7 @@ import {
   type CandidateVerificationContext,
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
+import type { CandidateVerificationPublicationEvidenceSink } from "../../specialists/candidate-verification-publication-evidence.ts";
 
 const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
@@ -98,6 +99,7 @@ export function createInlineReviewServer(
   prDiffForCommentValidation?: string,
   candidatePublicationPolicy?: CandidatePublicationPolicy,
   candidateVerificationContext?: CandidateVerificationContext,
+  candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink,
 ) {
   const rightCommentableLines = prDiffForCommentValidation
     ? buildPrDiffCommentabilityIndex(prDiffForCommentValidation)
@@ -112,6 +114,7 @@ export function createInlineReviewServer(
             reviewOutputKey,
             candidatePublicationPolicy,
             candidateVerificationContext,
+            candidateVerificationPublicationEvidenceSink,
           })
         : undefined
     );
@@ -262,7 +265,7 @@ export function createInlineReviewServer(
               deliveryId,
             });
             if (policyResult && !policyResult.allowed) {
-              reviewOutputPublicationGate.recordInlinePublicationSkipped("m070-candidate-verification-denied");
+              reviewOutputPublicationGate?.recordInlinePublicationSkipped("m070-candidate-verification-denied");
               const payload = buildM070CandidateDenialPayload(policyResult);
               logger?.info(
                 {

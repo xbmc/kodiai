@@ -397,6 +397,53 @@ describe("createInlineReviewServer M070 candidate publication gate", () => {
     expect(serialized).toContain("candidate-");
     expect(state.createReviewCommentCalls).toBe(0);
   });
+
+  test("M070 evidence sink receives bounded denied and skipped summaries without affecting denial", async () => {
+    const candidate = {
+      ...baseCandidate,
+      body: "RAW-EVIDENCE-SINK-DENIED-BODY",
+      prompt: "RAW-EVIDENCE-SINK-PROMPT",
+    };
+    const emitted: unknown[] = [];
+    const state = createOctokit();
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        docsConfigTruth: { evidence: [] },
+        deliveryId,
+        reviewOutputKey,
+        correlationKey: "correlation-m070",
+      },
+      (summary) => {
+        emitted.push(summary);
+        throw new Error("diagnostic sink unavailable");
+      },
+    );
+
+    const result = await getToolHandler(server)(candidate);
+    const serialized = JSON.stringify(emitted);
+
+    expect(result.isError).toBe(true);
+    expect(state.createReviewCommentCalls).toBe(0);
+    expect(emitted).toHaveLength(2);
+    expect(serialized).toContain("\"denied\":1");
+    expect(serialized).toContain("\"skipped\":1");
+    expect(serialized).toContain("\"no-evidence\"");
+    expect(serialized).toContain("correlation-m070");
+    expect(serialized).not.toContain("RAW-EVIDENCE-SINK-DENIED-BODY");
+    expect(serialized).not.toContain("RAW-EVIDENCE-SINK-PROMPT");
+  });
 });
 
 describe("createInlineReviewServer output idempotency", () => {

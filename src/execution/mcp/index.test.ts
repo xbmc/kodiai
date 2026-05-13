@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { buildMcpServers, buildMcpServerFactories, buildAllowedMcpTools } from "./index.ts";
+import type { CandidatePublicationPolicyResult } from "../../specialists/candidate-publication-policy.ts";
 
 function getToolHandler(server: unknown, toolName: string) {
   const instance = server as {
@@ -22,7 +23,7 @@ function getToolHandler(server: unknown, toolName: string) {
   return tool.handler;
 }
 
-function buildDeniedPolicyResult() {
+function buildDeniedPolicyResult(): CandidatePublicationPolicyResult {
   return {
     allowed: false,
     status: "deny" as const,
@@ -517,6 +518,7 @@ describe("buildMcpServers", () => {
     });
     it("threads M070 candidate policy through shared buildMcpServers gate and blocks direct fallback after denial", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-m070-deny:head-abcdef1234";
+      const emittedEvidence: unknown[] = [];
       let createReviewCommentCalls = 0;
       let createCommentCalls = 0;
       let pullsGetCalls = 0;
@@ -561,6 +563,7 @@ describe("buildMcpServers", () => {
           return buildDeniedPolicyResult();
         },
         candidateVerificationContext: { docsConfigTruth: { evidence: [] }, deliveryId: "delivery-m070-deny", reviewOutputKey, correlationKey: "correlation-m070" },
+        candidateVerificationPublicationEvidenceSink: (summary) => emittedEvidence.push(summary),
       });
 
       const createInlineComment = getToolHandler(servers.github_inline_comment, "create_inline_comment");
@@ -584,10 +587,17 @@ describe("buildMcpServers", () => {
       expect(fallback.content[0]?.text).toContain("\"fallback_blocked\":true");
       expect(fallback.content[0]?.text).toContain("\"candidate_publication_reason\":\"m070-candidate-verification-denied\"");
       expect(createCommentCalls).toBe(0);
+      const evidenceJson = JSON.stringify(emittedEvidence);
+      expect(emittedEvidence).toHaveLength(2);
+      expect(evidenceJson).toContain("\"denied\":1");
+      expect(evidenceJson).toContain("\"skipped\":1");
+      expect(evidenceJson).toContain("correlation-m070");
+      expect(evidenceJson).not.toContain("RAW-BUILDER-DENIED-CANDIDATE-BODY");
     });
 
     it("threads M070 candidate policy through buildMcpServerFactories", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-m070-factory-deny:head-abcdef1234";
+      const emittedEvidence: unknown[] = [];
       let createReviewCommentCalls = 0;
       let pullsGetCalls = 0;
       let policyCalls = 0;
@@ -628,6 +638,7 @@ describe("buildMcpServers", () => {
           return buildDeniedPolicyResult();
         },
         candidateVerificationContext: { docsConfigTruth: { evidence: [] }, deliveryId: "delivery-m070-factory-deny", reviewOutputKey, correlationKey: "correlation-m070" },
+        candidateVerificationPublicationEvidenceSink: (summary) => emittedEvidence.push(summary),
       });
 
       const createInlineComment = getToolHandler(factories.github_inline_comment!(), "create_inline_comment");
@@ -644,6 +655,12 @@ describe("buildMcpServers", () => {
       expect(policyCalls).toBe(1);
       expect(pullsGetCalls).toBe(0);
       expect(createReviewCommentCalls).toBe(0);
+      const evidenceJson = JSON.stringify(emittedEvidence);
+      expect(emittedEvidence).toHaveLength(2);
+      expect(evidenceJson).toContain("\"denied\":1");
+      expect(evidenceJson).toContain("\"skipped\":1");
+      expect(evidenceJson).toContain("correlation-m070");
+      expect(evidenceJson).not.toContain("RAW-FACTORY-DENIED-CANDIDATE-BODY");
     });
   });
 });

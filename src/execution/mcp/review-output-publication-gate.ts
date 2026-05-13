@@ -9,6 +9,11 @@ import {
   type CandidatePublicationPolicyInput,
   type CandidatePublicationPolicyResult,
 } from "../../specialists/candidate-publication-policy.ts";
+import {
+  createCandidateVerificationPublicationEvidenceCollector,
+  type CandidateVerificationPublicationEvidenceSink,
+  type CandidateVerificationPublicationEvidenceSummary,
+} from "../../specialists/candidate-verification-publication-evidence.ts";
 
 export type ReviewOutputInlinePublicationState =
   | { status: "none" }
@@ -31,6 +36,7 @@ export interface ReviewOutputPublicationGate {
   resolve(octokit: Octokit): Promise<ReviewOutputPublicationStatus>;
   evaluateInlineCandidatePublication(candidate: CandidatePublicationPolicyAttempt): CandidatePublicationPolicyResult | null;
   getInlinePublicationState(): ReviewOutputInlinePublicationState;
+  getCandidateVerificationPublicationEvidenceSummary(): CandidateVerificationPublicationEvidenceSummary;
   recordInlinePublicationSkipped(reason: string): void;
   recordInlinePublicationFailed(reason: string): void;
   recordInlinePublicationPublished(details?: { commentId?: number; path?: string }): void;
@@ -88,6 +94,7 @@ export function createReviewOutputPublicationGate(params: {
   reviewOutputKey: string;
   candidatePublicationPolicy?: CandidatePublicationPolicy;
   candidateVerificationContext?: CandidateVerificationContext;
+  candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
 }): ReviewOutputPublicationGate {
   let cachedStatus: ReviewOutputPublicationStatus | null = null;
   let inFlight: Promise<ReviewOutputPublicationStatus> | null = null;
@@ -96,10 +103,24 @@ export function createReviewOutputPublicationGate(params: {
 
   const policy = params.candidatePublicationPolicy ?? evaluateCandidatePublicationPolicy;
   const hasCandidateVerificationContext = params.candidateVerificationContext !== undefined;
+  const evidenceCollector = createCandidateVerificationPublicationEvidenceCollector(
+    params.candidateVerificationPublicationEvidenceSink,
+  );
+  let lastInlinePolicyResult: CandidatePublicationPolicyResult | null = null;
+
+  const evidenceMetadata = () => ({
+    deliveryId: params.candidateVerificationContext?.deliveryId,
+    reviewOutputKey: params.candidateVerificationContext?.reviewOutputKey ?? params.reviewOutputKey,
+    correlationKey: params.candidateVerificationContext?.correlationKey,
+  });
 
   return {
     getInlinePublicationState(): ReviewOutputInlinePublicationState {
       return inlinePublicationState;
+    },
+
+    getCandidateVerificationPublicationEvidenceSummary(): CandidateVerificationPublicationEvidenceSummary {
+      return evidenceCollector.getSummary();
     },
 
     evaluateInlineCandidatePublication(candidate: CandidatePublicationPolicyAttempt): CandidatePublicationPolicyResult | null {
@@ -108,7 +129,7 @@ export function createReviewOutputPublicationGate(params: {
       }
 
       try {
-        return policy({
+        const result = policy({
           candidate: {
             ...candidate,
             reviewOutputKey: candidate.reviewOutputKey ?? params.candidateVerificationContext?.reviewOutputKey ?? params.reviewOutputKey,
@@ -117,21 +138,52 @@ export function createReviewOutputPublicationGate(params: {
           },
           docsConfigTruth: params.candidateVerificationContext?.docsConfigTruth ?? null,
         });
+        lastInlinePolicyResult = result;
+        evidenceCollector.record({
+          outcome: result.allowed ? "allowed" : "denied",
+          policyResult: result,
+          metadata: evidenceMetadata(),
+        });
+        return result;
       } catch {
-        return failClosedCandidatePublicationResult();
+        const result = failClosedCandidatePublicationResult();
+        lastInlinePolicyResult = result;
+        evidenceCollector.record({
+          outcome: "denied",
+          policyResult: result,
+          metadata: evidenceMetadata(),
+        });
+        return result;
       }
     },
 
     recordInlinePublicationSkipped(reason: string): void {
       inlinePublicationState = { status: "skipped", reason };
+      evidenceCollector.record({
+        outcome: "skipped",
+        reason,
+        policyResult: lastInlinePolicyResult,
+        metadata: evidenceMetadata(),
+      });
     },
 
     recordInlinePublicationFailed(reason: string): void {
       inlinePublicationState = { status: "failed", reason };
+      evidenceCollector.record({
+        outcome: "failed",
+        reason,
+        policyResult: lastInlinePolicyResult,
+        metadata: evidenceMetadata(),
+      });
     },
 
     recordInlinePublicationPublished(details?: { commentId?: number; path?: string }): void {
       inlinePublicationState = { status: "published", ...details };
+      evidenceCollector.record({
+        outcome: "published",
+        policyResult: lastInlinePolicyResult,
+        metadata: evidenceMetadata(),
+      });
     },
 
     async resolve(octokit: Octokit): Promise<ReviewOutputPublicationStatus> {
