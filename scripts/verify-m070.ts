@@ -33,7 +33,7 @@ export const M070_STATUS_CODES = [
   "m070_unclassifiable_blocked",
   "m070_missing_correlation_blocked",
   "m070_malformed_evidence_blocked",
-  "m070_direct_fallback_only_rejected",
+  "m070_direct_fallback_rejected",
 ] as const;
 
 const M070_SCENARIO_CHECK_IDS = [
@@ -98,6 +98,7 @@ export type M070Args = {
   readonly json: boolean;
   readonly help: boolean;
   readonly scenario: M070ScenarioName | null;
+  readonly expectStatus: M070StatusCode | null;
 };
 
 export type M070VerifierCheck = {
@@ -352,6 +353,7 @@ export function parseM070Args(argv: readonly string[]): M070Args {
   let json = false;
   let help = false;
   let scenario: M070ScenarioName | null = null;
+  let expectStatus: M070StatusCode | null = null;
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -359,19 +361,26 @@ export function parseM070Args(argv: readonly string[]): M070Args {
       json = true;
     } else if (arg === "--help" || arg === "-h") {
       help = true;
-    } else if (arg === "--scenario") {
+    } else if (arg === "--scenario" || arg === "--fixture") {
       const value = argv[index + 1];
       if (!M070_SCENARIO_NAMES.includes(value as M070ScenarioName)) {
-        throw new Error(`invalid_cli_args: --scenario must be one of ${M070_SCENARIO_NAMES.join(",")}`);
+        throw new Error(`invalid_cli_args: ${arg} must be one of ${M070_SCENARIO_NAMES.join(",")}`);
       }
       scenario = value as M070ScenarioName;
+      index++;
+    } else if (arg === "--expect-status") {
+      const value = argv[index + 1];
+      if (!M070_STATUS_CODES.includes(value as M070StatusCode)) {
+        throw new Error(`invalid_cli_args: --expect-status must be one of ${M070_STATUS_CODES.join(",")}`);
+      }
+      expectStatus = value as M070StatusCode;
       index++;
     } else {
       throw new Error(`invalid_cli_args: unsupported argument ${arg}`);
     }
   }
 
-  return { json, help, scenario };
+  return { json, help, scenario, expectStatus };
 }
 
 function makeCheck(id: M070CheckId, passed: boolean, statusCode: M070StatusCode, detail: string): M070VerifierCheck {
@@ -469,7 +478,7 @@ export function evaluateM070VerifierScenario(
     issues.push("Required deliveryId, reviewOutputKey, and correlationKey metadata booleans must all be present.");
     issueCategories.push("missing-correlation");
   } else if (directFallbackOnly) {
-    statusCode = "m070_direct_fallback_only_rejected";
+    statusCode = "m070_direct_fallback_rejected";
     issues.push("Direct fallback-only evidence is safety behavior, not verifier success proof.");
     issueCategories.push("direct-fallback-only");
   } else if (disputed) {
@@ -494,7 +503,7 @@ export function evaluateM070VerifierScenario(
   const checks: M070VerifierCheck[] = [
     makeCheck(
       "M070-CANDIDATE-APPROVED-PUBLICATION",
-      success || statusCode !== "m070_direct_fallback_only_rejected",
+      success || statusCode !== "m070_direct_fallback_rejected",
       statusCode,
       success ? "Candidate-approved non-fallback publication evidence accepted." : "Publication proof is not an accepted success state.",
     ),
@@ -700,7 +709,7 @@ const EXPECTED_SCENARIO_STATUSES: Readonly<Record<M070ScenarioName, M070StatusCo
   unclassifiable_blocked: "m070_unclassifiable_blocked",
   missing_correlation: "m070_missing_correlation_blocked",
   malformed_evidence: "m070_malformed_evidence_blocked",
-  direct_fallback_only: "m070_direct_fallback_only_rejected",
+  direct_fallback_only: "m070_direct_fallback_rejected",
 };
 
 const TARGETED_TEST_COMMANDS = [
@@ -807,10 +816,10 @@ export async function evaluateM070VerifierContract(options: EvaluateM070Verifier
 }
 
 function helpText(): string {
-  return `Usage: bun run verify:m070 [--json] [--scenario ${M070_SCENARIO_NAMES.join("|")}]
+  return `Usage: bun run verify:m070 [--json] [--scenario ${M070_SCENARIO_NAMES.join("|")}] [--fixture ${M070_SCENARIO_NAMES.join("|")}] [--expect-status ${M070_STATUS_CODES.join("|")}]
 
 Runs the deterministic local M070 fixture contract by default.
-Use --scenario to inspect one scenario. Output is aggregate-only and never reads private evidence paths.
+Use --scenario or --fixture to inspect one scenario. Use --expect-status for negative fixture probes that should exit 0 when the bounded status matches. Output is aggregate-only and never reads private evidence paths.
 `;
 }
 
@@ -880,8 +889,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2), deps
     writeLine(stdout, renderHuman(report));
   }
 
-  if (!report.success) {
+  const expectedStatusMatched = args.expectStatus !== null && report.status_code === args.expectStatus;
+  if (!report.success && !expectedStatusMatched) {
     writeLine(stderr, `${COMMAND_NAME} failed: ${report.failing_check_id ?? "unknown"}\n`);
+  }
+  if (args.expectStatus !== null) {
+    if (!expectedStatusMatched) {
+      writeLine(stderr, `${COMMAND_NAME} expected status ${args.expectStatus} but got ${report.status_code}\n`);
+    }
+    return expectedStatusMatched ? 0 : 1;
   }
   return report.success ? 0 : 1;
 }

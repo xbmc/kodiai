@@ -40,11 +40,13 @@ describe("verify-m070 pure evaluator", () => {
       "malformed_evidence",
       "direct_fallback_only",
     ]);
-    expect(parseM070Args([])).toEqual({ json: false, help: false, scenario: null });
-    expect(parseM070Args(["--json", "--scenario", "direct_fallback_only"])).toEqual({ json: true, help: false, scenario: "direct_fallback_only" });
-    expect(parseM070Args(["--help"])).toEqual({ json: false, help: true, scenario: null });
+    expect(parseM070Args([])).toEqual({ json: false, help: false, scenario: null, expectStatus: null });
+    expect(parseM070Args(["--json", "--scenario", "direct_fallback_only"])).toEqual({ json: true, help: false, scenario: "direct_fallback_only", expectStatus: null });
+    expect(parseM070Args(["--json", "--fixture", "direct_fallback_only", "--expect-status", "m070_direct_fallback_rejected"])).toEqual({ json: true, help: false, scenario: "direct_fallback_only", expectStatus: "m070_direct_fallback_rejected" });
+    expect(parseM070Args(["--help"])).toEqual({ json: false, help: true, scenario: null, expectStatus: null });
     expect(() => parseM070Args(["--fixture", ".gsd/private.json"])).toThrow(/invalid_cli_args/);
     expect(() => parseM070Args(["--scenario", "unknown"])).toThrow(/invalid_cli_args/);
+    expect(() => parseM070Args(["--expect-status", "unknown"])).toThrow(/invalid_cli_args/);
   });
 
   test("accepts verified candidate-approved non-fallback publication evidence with required correlation", () => {
@@ -147,7 +149,7 @@ describe("verify-m070 pure evaluator", () => {
     const report = evaluate(scenario("direct_fallback_only"));
 
     expect(report.success).toBe(false);
-    expect(report.status_code).toBe("m070_direct_fallback_only_rejected");
+    expect(report.status_code).toBe("m070_direct_fallback_rejected");
     expect(report.failing_check_id).toBe("M070-CANDIDATE-APPROVED-PUBLICATION");
     expect(report.safety.directFallbackOnly).toBe(true);
   });
@@ -261,7 +263,7 @@ describe("verify-m070 pure evaluator", () => {
       ["unclassifiable_blocked", false, "m070_unclassifiable_blocked"],
       ["missing_correlation", false, "m070_missing_correlation_blocked"],
       ["malformed_evidence", false, "m070_malformed_evidence_blocked"],
-      ["direct_fallback_only", false, "m070_direct_fallback_only_rejected"],
+      ["direct_fallback_only", false, "m070_direct_fallback_rejected"],
     ]);
   });
 
@@ -310,7 +312,23 @@ describe("verify-m070 pure evaluator", () => {
       stderr: { write: () => undefined },
     });
     expect(failExitCode).toBe(1);
-    expect(JSON.parse(failingStdout.join(""))).toMatchObject({ success: false, status_code: "m070_direct_fallback_only_rejected" });
+    expect(JSON.parse(failingStdout.join(""))).toMatchObject({ success: false, status_code: "m070_direct_fallback_rejected" });
+
+    const fixtureStdout: string[] = [];
+    const fixtureExitCode = await main(["--json", "--fixture", "direct_fallback_only", "--expect-status", "m070_direct_fallback_rejected"], {
+      stdout: { write: (chunk: string) => void fixtureStdout.push(chunk) },
+      stderr: { write: () => undefined },
+    });
+    expect(fixtureExitCode).toBe(0);
+    expect(JSON.parse(fixtureStdout.join(""))).toMatchObject({ success: false, status_code: "m070_direct_fallback_rejected" });
+
+    const mismatchedExpectedStatusStdout: string[] = [];
+    const mismatchedExpectedStatusExitCode = await main(["--json", "--fixture", "direct_fallback_only", "--expect-status", "m070_candidate_approved_verified_ok"], {
+      stdout: { write: (chunk: string) => void mismatchedExpectedStatusStdout.push(chunk) },
+      stderr: { write: () => undefined },
+    });
+    expect(mismatchedExpectedStatusExitCode).toBe(1);
+    expect(JSON.parse(mismatchedExpectedStatusStdout.join(""))).toMatchObject({ success: false, status_code: "m070_direct_fallback_rejected" });
 
     const invalidStdout: string[] = [];
     const invalidExitCode = await main(["--fixture", ".gsd/private.json"], {
