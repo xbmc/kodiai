@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-13T14:59:44Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-13T14:59:44Z","fingerprint":"05998590b430eec488208f219e5917dadd668cfc","fileCount":500,"truncated":true} -->
+Generated: 2026-05-13T17:04:49Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-13T17:04:49Z","fingerprint":"a906c347f08a3adc4da32bebb7d132e9716d5acd","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -86,7 +86,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(226 files: 221 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(228 files: 223 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -158,4 +158,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(30 files: 30 .ts)*
+- *(28 files: 28 .ts)*

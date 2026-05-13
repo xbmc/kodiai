@@ -116,9 +116,9 @@ This file is the explicit capability and coverage contract for the project.
 - Why it matters: Review tiers and specialist orchestration should be backed by production evidence, not labels.
 - Source: issue #131
 - Primary owning slice: M070/S03
-- Supporting slices: M070/S01,M070/S04,M070/S06
+- Supporting slices: M070/S03
 - Validation: unmapped
-- Notes: Mapped for M070 planning: duplicate/disagreement/status counts become bounded policy and proof evidence for the existing specialist rollout.
+- Notes: M070/S03 advanced this requirement by adding aggregate-only candidate-verification publication evidence to the shared MCP publication gate, ExecutionResult, Review Details, and structured runtime logs. Full validation remains pending later review-tier/live rollout evidence in S04-S06 and beyond.
 
 ### R118 — Candidate disagreement and multi-lane conflict handling are deferred until at least one specialist lane exists.
 - Class: core-capability
@@ -1434,7 +1434,7 @@ This file is the explicit capability and coverage contract for the project.
 | R102 | core-capability | active | M070/S05 | M070/S01,M070/S02,M070/S03 | unmapped |
 | R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
 | R104 | integration | deferred | M071 provisional | none | unmapped |
-| R105 | operability | active | M070/S03 | M070/S01,M070/S04,M070/S06 | unmapped |
+| R105 | operability | active | M070/S03 | M070/S03 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
 | R108 | anti-feature | out-of-scope | none | none | n/a |
