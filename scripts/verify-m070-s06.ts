@@ -154,6 +154,20 @@ export type M070S06Report = {
     readonly failing_check_id: M070VerifierReport["failing_check_id"] | null;
     readonly check_ids: readonly M070VerifierReport["check_ids"][number][];
   };
+  readonly m070: {
+    readonly status_code: M070StatusCode | null;
+    readonly success: boolean;
+    readonly failing_check_id: M070VerifierReport["failing_check_id"] | null;
+    readonly check_ids: readonly M070VerifierReport["check_ids"][number][];
+  };
+  readonly correlationMetadata: {
+    readonly reviewOutputKeyPresent: boolean;
+    readonly deliveryIdPresent: boolean;
+    readonly correlationKeyPresent: boolean;
+    readonly aggregateCorrelationKeyPresent: boolean;
+    readonly runtimeLogRowsAvailable: boolean;
+    readonly matchingRuntimeRows: number;
+  };
   readonly runtimeCorrelation: {
     readonly correlationKeyPresent: boolean;
     readonly runtimeLogRowsAvailable: boolean;
@@ -688,6 +702,15 @@ export async function evaluateM070S06(input: EvaluateM070S06Input): Promise<M070
     aggregateOnly: !s04.redaction.candidateBodiesIncluded && !s04.redaction.specialistProseIncluded && !s04.redaction.rawPromptsIncluded && !s04.redaction.rawModelOutputIncluded && !s04.redaction.diffsIncluded && !s04.redaction.evidencePayloadsIncluded && !s04.redaction.rawFingerprintsIncluded && !s04.redaction.candidateAttemptIncluded && !s04.redaction.candidateKeyIncluded,
   };
   const { categories, issues } = issueFor(statusCode);
+  const s04Summary = { status_code: s04?.status_code ?? null, success: s04?.success ?? false, failing_check_id: s04?.failing_check_id ?? null, check_ids: s04?.check_ids ?? [] };
+  const correlationMetadata = {
+    reviewOutputKeyPresent: reviewOutputKey !== null,
+    deliveryIdPresent: deliveryId !== null,
+    correlationKeyPresent: effectiveCorrelationKey !== null,
+    aggregateCorrelationKeyPresent: aggregateCorrelationKey !== null,
+    runtimeLogRowsAvailable: runtimeMatches.length > 0,
+    matchingRuntimeRows: runtimeMatches.length,
+  };
 
   const checks: M070S06Check[] = [
     makeCheck("M070-S06-CLI-ARGS", reviewOutputKey !== null && exactKeyValid, statusCode, reviewOutputKey !== null && exactKeyValid ? "Exact reviewOutputKey input is present and bounded." : "Exact reviewOutputKey input is missing or invalid."),
@@ -715,7 +738,9 @@ export async function evaluateM070S06(input: EvaluateM070S06Input): Promise<M070
     artifactCounts: { totalReviewDetails, matchingReviewDetails: matching.length, duplicateReviewDetails, wrongKeyReviewDetails, staleReviewDetails },
     artifactIds: matching.slice(0, 5).map((artifact) => artifact.id.slice(0, 96)),
     shortUrls: matching.map((artifact) => artifact.shortUrl).filter((url): url is string => typeof url === "string" && url.length > 0).slice(0, 5).map((url) => url.slice(0, 160)),
-    s04: { status_code: s04?.status_code ?? null, success: s04?.success ?? false, failing_check_id: s04?.failing_check_id ?? null, check_ids: s04?.check_ids ?? [] },
+    s04: s04Summary,
+    m070: s04Summary,
+    correlationMetadata,
     runtimeCorrelation: { correlationKeyPresent: effectiveCorrelationKey !== null, runtimeLogRowsAvailable: runtimeMatches.length > 0, matchingRuntimeRows: runtimeMatches.length },
     publicationMode: selected?.publicationMode ?? { candidateApprovedNonFallback: false, directFallbackEvidence: false },
     redaction,
@@ -743,6 +768,8 @@ function buildInvalidArgReport(issue: string, generatedAt = new Date().toISOStri
     artifactIds: [],
     shortUrls: [],
     s04: { status_code: null, success: false, failing_check_id: null, check_ids: [] },
+    m070: { status_code: null, success: false, failing_check_id: null, check_ids: [] },
+    correlationMetadata: { reviewOutputKeyPresent: false, deliveryIdPresent: false, correlationKeyPresent: false, aggregateCorrelationKeyPresent: false, runtimeLogRowsAvailable: false, matchingRuntimeRows: 0 },
     runtimeCorrelation: { correlationKeyPresent: false, runtimeLogRowsAvailable: false, matchingRuntimeRows: 0 },
     publicationMode: { candidateApprovedNonFallback: false, directFallbackEvidence: false },
     redaction: emptyRedaction,
@@ -753,7 +780,32 @@ function buildInvalidArgReport(issue: string, generatedAt = new Date().toISOStri
 }
 
 function usage(): string {
-  return `Usage: bun run verify:m070:s06 --review-output-key <key> [--delivery-id <id>] [--repo owner/name] [--correlation-key <key>] [--target owner/name#pr] [--json] [--expect-status <status>] [--allow-blocked]\n\nRuns the bounded M070 S06 exact-key wrapper over GitHub Review Details/runtime aggregate evidence and the S04 evaluator.\n`;
+  return [
+    "Usage: bun run verify:m070:s06 --review-output-key <key> [--delivery-id <id>] [--repo owner/name] [--correlation-key <key>] [--target owner/name#pr] [--json] [--expect-status <status>] [--allow-blocked]",
+    "",
+    "Runs the bounded M070 S06 exact-key wrapper over GitHub Review Details/runtime aggregate evidence and the S04 evaluator.",
+    "",
+    "Required for live success:",
+    "  --review-output-key <key>   Exact kodiai-review-output key for the GitHub Review Details artifact.",
+    "",
+    "Optional args:",
+    "  --delivery-id <id>          Delivery id that must match the exact key when supplied.",
+    `  --repo owner/name          Repository scope. Defaults to ${DEFAULT_REPO} for the xbmc/xbmc#28172 live target.`,
+    "  --correlation-key <key>     Runtime correlation key; omitted values may be recovered from aggregate metadata.",
+    `  --target owner/name#pr      Pull request target. Defaults to ${DEFAULT_TARGET}.`,
+    "  --expect-status <status>    Exit 0 only when the bounded status_code matches.",
+    "  --allow-blocked            Exit 0 for blocked/rejected reports without treating them as success.",
+    "  --json                     Emit the machine-checkable aggregate-only JSON report.",
+    "",
+    "Environment key names only (values are never emitted):",
+    "  GitHub: GITHUB_APP_ID, GITHUB_PRIVATE_KEY or GITHUB_PRIVATE_KEY_BASE64.",
+    "  Optional Azure/runtime: AZURE_LOG_ANALYTICS_WORKSPACE_ID(S), LOG_ANALYTICS_WORKSPACE_ID(S), AZURE_RESOURCE_GROUP, ACA_RESOURCE_GROUP, RESOURCE_GROUP, M070_S06_LOG_TIMESPAN.",
+    "",
+    "Blocked-state semantics:",
+    "  success:false with status_code ending in _blocked/_rejected/_violation/_drift is a truthful non-success report, not fallback success.",
+    "  Missing keys default to m070_s06_missing_exact_key_blocked; direct fallback-only evidence is m070_s06_direct_fallback_rejected.",
+    "",
+  ].join("\n");
 }
 
 export async function collectM070S06Sources(args: M070S06Args, deps: M070S06CollectorDeps = {}): Promise<M070S06SourceSnapshot> {

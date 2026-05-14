@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { buildM070FixtureScenario } from "./verify-m070.ts";
 import { buildApprovedReviewBody } from "../src/handlers/review-idempotency.ts";
 import {
+  DEFAULT_TARGET,
+  EXPECTED_PACKAGE_SCRIPT,
   M070_S06_CHECK_IDS,
   M070_S06_STATUS_CODES,
   buildM070S06FixtureSources,
@@ -88,7 +90,7 @@ function evaluate(overrides: Partial<Parameters<typeof evaluateM070S06>[0]> = {}
     repo: REPO,
     target: TARGET,
     sources: baseSources(),
-    readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": "bun scripts/verify-m070-s06.ts" } }),
+    readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": EXPECTED_PACKAGE_SCRIPT } }),
     generatedAt: GENERATED_AT,
     ...overrides,
   });
@@ -128,6 +130,11 @@ describe("verify-m070-s06 exact-key wrapper", () => {
     expect(() => parseM070S06Args(["--expect-status", "wrong"])).toThrow(/invalid_cli_args/);
   });
 
+  test("package script is pinned to the S06 verifier command", async () => {
+    const packageJson = await Bun.file(new URL("../package.json", import.meta.url)).json() as { scripts?: Record<string, string> };
+    expect(packageJson.scripts?.["verify:m070:s06"]).toBe(EXPECTED_PACKAGE_SCRIPT);
+  });
+
   test("accepts exact-key verified candidate-approved non-fallback S04 success", async () => {
     const report = await evaluate();
 
@@ -142,9 +149,29 @@ describe("verify-m070-s06 exact-key wrapper", () => {
       sourceAvailability: { githubReviewDetailsAvailable: true, githubAccessPresent: true, githubUnavailable: false },
       artifactCounts: { matchingReviewDetails: 1, totalReviewDetails: 1, duplicateReviewDetails: 0, wrongKeyReviewDetails: 0 },
       s04: { status_code: "m070_candidate_approved_verified_ok", success: true },
+      m070: { status_code: "m070_candidate_approved_verified_ok", success: true },
+      correlationMetadata: { reviewOutputKeyPresent: true, deliveryIdPresent: true, correlationKeyPresent: true, runtimeLogRowsAvailable: true, matchingRuntimeRows: 1 },
       runtimeCorrelation: { correlationKeyPresent: true, runtimeLogRowsAvailable: true, matchingRuntimeRows: 1 },
+      packageWiring: { scriptName: "verify:m070:s06", expected: EXPECTED_PACKAGE_SCRIPT, present: true, matches: true },
       publicationMode: { candidateApprovedNonFallback: true, directFallbackEvidence: false },
     });
+    expect(Object.keys(report)).toEqual(expect.arrayContaining([
+      "command",
+      "proofMode",
+      "proofScope",
+      "success",
+      "status_code",
+      "check_ids",
+      "checks",
+      "failing_check_id",
+      "m070",
+      "sourceAvailability",
+      "artifactCounts",
+      "correlationMetadata",
+      "redaction",
+      "issue_categories",
+      "issues",
+    ]));
     expect(report.check_ids).toEqual(M070_S06_CHECK_IDS);
     expect(report.checks.every((check) => check.passed)).toBe(true);
     expect(report.issues).toEqual([]);
@@ -224,6 +251,14 @@ describe("verify-m070-s06 exact-key wrapper", () => {
     expect(drift.success).toBe(false);
     expect(drift.status_code).toBe("m070_s06_package_wiring_drift");
     expect(drift.failing_check_id).toBe("M070-S06-PACKAGE-WIRING");
+    expect(drift.packageWiring).toMatchObject({ present: true, matches: false });
+
+    const malformedPackage = await evaluate({ readPackageJsonText: async () => "{not json" });
+    expect(malformedPackage.success).toBe(false);
+    expect(malformedPackage.status_code).toBe("m070_s06_package_wiring_drift");
+    expect(malformedPackage.failing_check_id).toBe("M070-S06-PACKAGE-WIRING");
+    expect(malformedPackage.packageWiring).toMatchObject({ present: false, matches: false });
+    expect(JSON.stringify(malformedPackage)).not.toContain("{not json");
   });
 
   test("extracts bounded aggregate evidence from Review Details without leaking raw body canaries", () => {
@@ -306,13 +341,33 @@ describe("verify-m070-s06 exact-key wrapper", () => {
     expect(runtimeMissing.status_code).toBe("m070_s06_missing_runtime_correlation_blocked");
   });
 
+  test("help text documents operator args, default target, env key names, and blocked semantics", async () => {
+    const stdout: string[] = [];
+    const exitCode = await main(["--help"], { stdout: { write: (chunk: string) => void stdout.push(chunk) }, stderr: { write: () => undefined } });
+    const help = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(help).toContain("--review-output-key <key>");
+    expect(help).toContain("--delivery-id <id>");
+    expect(help).toContain("--correlation-key <key>");
+    expect(help).toContain("--expect-status <status>");
+    expect(help).toContain(DEFAULT_TARGET);
+    expect(help).toContain("GITHUB_APP_ID");
+    expect(help).toContain("GITHUB_PRIVATE_KEY_BASE64");
+    expect(help).toContain("AZURE_LOG_ANALYTICS_WORKSPACE_ID");
+    expect(help).toContain("ACA_RESOURCE_GROUP");
+    expect(help).toContain("success:false");
+    expect(help).toContain("m070_s06_missing_exact_key_blocked");
+    expect(help).toContain("m070_s06_direct_fallback_rejected");
+  });
+
   test("main emits parseable JSON; expect-status and allow-blocked control blocked exits", async () => {
     const okStdout: string[] = [];
     const okExit = await main(["--json", "--review-output-key", REVIEW_OUTPUT_KEY, "--delivery-id", DELIVERY_ID, "--correlation-key", CORRELATION_KEY, "--repo", REPO, "--target", TARGET], {
       stdout: { write: (chunk: string) => void okStdout.push(chunk) },
       stderr: { write: () => undefined },
       collectSources: async () => baseSources(),
-      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": "bun scripts/verify-m070-s06.ts" } }),
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": EXPECTED_PACKAGE_SCRIPT } }),
       generatedAt: GENERATED_AT,
     });
     expect(okExit).toBe(0);
@@ -323,7 +378,7 @@ describe("verify-m070-s06 exact-key wrapper", () => {
       stdout: { write: (chunk: string) => void blockedStdout.push(chunk) },
       stderr: { write: () => undefined },
       collectSources: async () => baseSources(),
-      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": "bun scripts/verify-m070-s06.ts" } }),
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": EXPECTED_PACKAGE_SCRIPT } }),
       generatedAt: GENERATED_AT,
     });
     expect(blockedExit).toBe(0);
@@ -334,7 +389,7 @@ describe("verify-m070-s06 exact-key wrapper", () => {
       stdout: { write: (chunk: string) => void defaultBlockedStdout.push(chunk) },
       stderr: { write: () => undefined },
       collectSources: async () => baseSources(),
-      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": "bun scripts/verify-m070-s06.ts" } }),
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": EXPECTED_PACKAGE_SCRIPT } }),
       generatedAt: GENERATED_AT,
     });
     expect(defaultBlockedExit).toBe(1);
@@ -344,7 +399,7 @@ describe("verify-m070-s06 exact-key wrapper", () => {
       stdout: { write: (chunk: string) => void allowBlockedStdout.push(chunk) },
       stderr: { write: () => undefined },
       collectSources: async () => baseSources(),
-      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": "bun scripts/verify-m070-s06.ts" } }),
+      readPackageJsonText: async () => JSON.stringify({ scripts: { "verify:m070:s06": EXPECTED_PACKAGE_SCRIPT } }),
       generatedAt: GENERATED_AT,
     });
     expect(allowBlockedExit).toBe(0);
