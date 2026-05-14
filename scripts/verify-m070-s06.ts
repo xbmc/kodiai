@@ -1,5 +1,21 @@
 import { readFile } from "node:fs/promises";
 
+import pino from "pino";
+import { createGitHubApp } from "../src/auth/github-app.ts";
+import { parseReviewOutputKey, type ParsedReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import {
+  collectReviewOutputArtifacts,
+  evaluateExactReviewOutputProof,
+  type ReviewOutputArtifact,
+  type ReviewOutputArtifactCollection,
+  type ReviewOutputArtifactsOctokit,
+} from "../src/review-audit/review-output-artifacts.ts";
+import {
+  discoverLogAnalyticsWorkspaceIds,
+  queryReviewAuditLogs,
+  type NormalizedLogAnalyticsRow,
+} from "../src/review-audit/log-analytics.ts";
+
 import {
   buildM070FixtureScenario,
   evaluateM070VerifierScenario,
@@ -180,10 +196,18 @@ export type EvaluateM070S06Input = {
   readonly evaluateS04?: typeof evaluateM070VerifierScenario;
 };
 
+export type M070S06CollectorDeps = {
+  readonly env?: Record<string, string | undefined>;
+  readonly collectReviewOutputArtifacts?: typeof collectReviewOutputArtifacts;
+  readonly createInstallationOctokit?: (parsed: ParsedReviewOutputKey, repo: string) => Promise<ReviewOutputArtifactsOctokit>;
+  readonly queryRuntimeLogs?: (params: { reviewOutputKey: string; deliveryId: string | null; correlationKey: string | null; env: Record<string, string | undefined> }) => Promise<{ unavailable: boolean; rows: readonly M070S06RuntimeLogRow[] }>;
+};
+
 export type M070S06MainDeps = {
   readonly stdout?: { write(chunk: string): void };
   readonly stderr?: { write(chunk: string): void };
   readonly collectSources?: (args: M070S06Args) => Promise<M070S06SourceSnapshot>;
+  readonly collectorDeps?: M070S06CollectorDeps;
   readonly readPackageJsonText?: () => Promise<string>;
   readonly generatedAt?: string;
 };
@@ -248,12 +272,247 @@ function compactId(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  return trimmed.slice(0, 96);
+  return trimmed.slice(0, 256);
 }
 
 function validExactKey(value: string | null | undefined): boolean {
   const trimmed = compactId(value);
-  return trimmed !== null && /^[A-Za-z0-9][A-Za-z0-9._:@/+\-=#]{2,160}$/.test(trimmed) && !trimmed.includes("..");
+  return trimmed !== null && parseReviewOutputKey(trimmed) !== null;
+}
+
+function boundedText(value: unknown, maxLength = 180): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}…` : trimmed;
+}
+
+function boundedErrorText(error: unknown): string {
+  return boundedText(error instanceof Error ? error.message : String(error), 180) ?? "unavailable";
+}
+
+function hasGitHubEnv(env: Record<string, string | undefined>): boolean {
+  return Boolean(env.GITHUB_APP_ID && (env.GITHUB_PRIVATE_KEY || env.GITHUB_PRIVATE_KEY_BASE64));
+}
+
+async function loadPrivateKeyFromEnv(env: Record<string, string | undefined>): Promise<string> {
+  const keyEnv = env.GITHUB_PRIVATE_KEY ?? env.GITHUB_PRIVATE_KEY_BASE64;
+  if (!keyEnv) throw new Error("Missing GitHub App private key environment variable.");
+  if (keyEnv.startsWith("-----BEGIN")) return keyEnv;
+  if (keyEnv.startsWith("/") || keyEnv.startsWith("./")) return await Bun.file(keyEnv).text();
+  return atob(keyEnv);
+}
+
+function buildGitHubAppConfig(repo: string, githubPrivateKey: string, env: Record<string, string | undefined>) {
+  return {
+    githubAppId: env.GITHUB_APP_ID!,
+    githubPrivateKey,
+    webhookSecret: "unused",
+    slackSigningSecret: "unused",
+    slackBotToken: "unused",
+    slackBotUserId: "unused",
+    slackKodiaiChannelId: "unused",
+    slackDefaultRepo: repo,
+    slackAssistantModel: "unused",
+    port: 0,
+    logLevel: "silent",
+    botAllowList: [],
+    slackWikiChannelId: "",
+    wikiStalenessThresholdDays: 30,
+    wikiGithubOwner: "",
+    wikiGithubRepo: "",
+    botUserPat: "",
+    botUserLogin: "",
+    addonRepos: [],
+    mcpInternalBaseUrl: "",
+    acaJobImage: "",
+    acaResourceGroup: env.ACA_RESOURCE_GROUP ?? env.AZURE_RESOURCE_GROUP ?? "rg-kodiai",
+    acaJobName: "caj-kodiai-agent",
+  };
+}
+
+async function createDefaultInstallationOctokit(parsed: ParsedReviewOutputKey, repo: string, env: Record<string, string | undefined>): Promise<ReviewOutputArtifactsOctokit> {
+  const githubPrivateKey = await loadPrivateKeyFromEnv(env);
+  const logger = pino({ level: "silent" });
+  const githubApp = createGitHubApp(buildGitHubAppConfig(repo, githubPrivateKey, env) as never, logger);
+  await githubApp.initialize();
+  return await githubApp.getInstallationOctokit(parsed.installationId, { requestTimeoutMs: 15_000 });
+}
+
+function splitList(value: string | undefined): string[] {
+  return (value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function pickAzureWorkspaceIds(env: Record<string, string | undefined>): string[] {
+  return [
+    ...splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_ID),
+    ...splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_IDS),
+    ...splitList(env.LOG_ANALYTICS_WORKSPACE_ID),
+    ...splitList(env.LOG_ANALYTICS_WORKSPACE_IDS),
+  ];
+}
+
+function mapRuntimeRow(row: NormalizedLogAnalyticsRow, index: number): M070S06RuntimeLogRow {
+  return {
+    id: boundedText(row.timeGenerated, 80) ?? `runtime-row-${index + 1}`,
+    reviewOutputKey: boundedText(row.reviewOutputKey, 160),
+    deliveryId: boundedText(row.deliveryId, 160),
+    correlationKey: boundedText(typeof row.parsedLog?.correlationKey === "string" ? row.parsedLog.correlationKey : null, 160),
+    available: !row.malformed,
+  };
+}
+
+async function queryDefaultRuntimeLogs(params: { reviewOutputKey: string; deliveryId: string | null; correlationKey: string | null; env: Record<string, string | undefined> }): Promise<{ unavailable: boolean; rows: readonly M070S06RuntimeLogRow[] }> {
+  const explicitWorkspaceIds = pickAzureWorkspaceIds(params.env);
+  const resourceGroup = params.env.AZURE_RESOURCE_GROUP ?? params.env.ACA_RESOURCE_GROUP ?? params.env.RESOURCE_GROUP;
+  if (explicitWorkspaceIds.length === 0 && !resourceGroup) return { unavailable: false, rows: [] };
+
+  try {
+    const workspaceIds = explicitWorkspaceIds.length > 0
+      ? explicitWorkspaceIds
+      : await discoverLogAnalyticsWorkspaceIds({ resourceGroup: resourceGroup! });
+    const result = await queryReviewAuditLogs({
+      workspaceIds,
+      reviewOutputKey: params.reviewOutputKey,
+      deliveryId: params.deliveryId ?? undefined,
+      messageContains: "m070",
+      timespan: params.env.M070_S06_LOG_TIMESPAN ?? "P14D",
+      limit: 50,
+    });
+    return { unavailable: false, rows: result.rows.map(mapRuntimeRow).slice(0, 10) };
+  } catch {
+    return { unavailable: true, rows: [] };
+  }
+}
+
+function parseCountMap(value: string | undefined, keys: readonly string[]): Record<string, number> | null {
+  if (!value) return null;
+  const out: Record<string, number> = {};
+  for (const pair of value.split(",")) {
+    const [rawKey, rawValue] = pair.split(":");
+    if (!rawKey || rawValue === undefined) continue;
+    const n = Number.parseInt(rawValue, 10);
+    if (Number.isFinite(n) && n >= 0) out[rawKey] = n;
+  }
+  for (const key of keys) if (typeof out[key] !== "number") return null;
+  return out;
+}
+
+function parseReasonCounts(value: string | undefined): Record<string, number> {
+  if (!value || value === "none") return {};
+  const out: Record<string, number> = {};
+  for (const pair of value.split(",").slice(0, 8)) {
+    const [rawKey, rawValue] = pair.split(":");
+    const n = Number.parseInt(rawValue ?? "", 10);
+    if (rawKey && Number.isFinite(n) && n >= 0) out[rawKey] = n;
+  }
+  return out;
+}
+
+function parseStringList(value: string | undefined): string[] {
+  if (!value || value === "none") return [];
+  return value.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 8);
+}
+
+function parseMetadata(value: string | undefined): Record<string, unknown> {
+  const metadata: Record<string, unknown> = { hasDeliveryId: false, hasReviewOutputKey: false, hasCorrelationKey: false };
+  if (!value) return metadata;
+  for (const pair of value.split(",")) {
+    const [key, raw] = pair.split(":");
+    if (!key || raw === undefined) continue;
+    if (key === "deliveryId") metadata.hasDeliveryId = raw === "y";
+    else if (key === "reviewOutputKey") metadata.hasReviewOutputKey = raw === "y";
+    else if (key === "correlationKey") metadata.hasCorrelationKey = raw === "y";
+    else if (key === "deliveryIdValue") metadata.deliveryId = boundedText(raw, 160);
+    else if (key === "reviewOutputKeyValue") metadata.reviewOutputKey = boundedText(raw, 160);
+    else if (key === "correlationKeyValue") metadata.correlationKey = boundedText(raw, 160);
+  }
+  return metadata;
+}
+
+function parseRedaction(value: string | undefined): Record<string, unknown> {
+  const flags: Record<string, unknown> = { privateOnly: true };
+  if (!value) return flags;
+  for (const pair of value.split(",")) {
+    const [key, raw] = pair.split(":");
+    if (!key || raw === undefined) continue;
+    if (key === "privateOnly") flags.privateOnly = raw !== "n";
+    else if (key === "candidateBodies") flags.candidateBodiesIncluded = raw === "y";
+    else if (key === "specialistProse") flags.specialistProseIncluded = raw === "y";
+    else if (key === "rawPrompts") flags.rawPromptsIncluded = raw === "y";
+    else if (key === "rawModelOutput") flags.rawModelOutputIncluded = raw === "y";
+    else if (key === "diffs") flags.diffsIncluded = raw === "y";
+    else if (key === "evidencePayloads") flags.evidencePayloadsIncluded = raw === "y";
+    else if (key === "rawFingerprints") flags.rawFingerprintsIncluded = raw === "y";
+    else if (key === "publicationEvidence") flags.publicationEvidenceIncluded = raw === "y";
+    else if (key === "unsafeFields") flags.unsafeInputFieldCount = Number.parseInt(raw, 10) || 0;
+  }
+  flags.discardedRawPayload = true;
+  flags.discardedPublicationFields = true;
+  flags.discardedEvidencePayloads = true;
+  flags.candidateAttemptIncluded = false;
+  flags.candidateKeyIncluded = false;
+  return flags;
+}
+
+export function extractM070AggregateEvidenceFromArtifactBody(body: string | null | undefined): unknown {
+  if (typeof body !== "string") return null;
+  const line = body.split("\n").find((candidate) => candidate.includes("M070 candidate verification publication:"));
+  if (!line) return null;
+  const segments = Object.fromEntries(line.replace(/^\s*-\s*M070 candidate verification publication:\s*/, "").split("; ").map((part) => {
+    const index = part.indexOf("=");
+    return index === -1 ? [part, ""] : [part.slice(0, index), part.slice(index + 1)];
+  }));
+  const counts = parseCountMap(segments.counts, ["attempted", "allowed", "denied", "published", "skipped", "failed"]);
+  const verificationStateCounts = parseCountMap(segments.verification, ["verified", "partially_verified", "unverified", "disproven", "unavailable"]);
+  const candidateVerificationCounts = parseCountMap(segments.candidateVerification, ["candidateCount", "evidenceCount", "verifiedCount", "partiallyVerifiedCount", "unverifiedCount", "disprovenCount", "publicationEligibleCount"]);
+  if (!counts || !verificationStateCounts || !candidateVerificationCounts) return null;
+  return {
+    aggregateStatus: boundedText(segments.status, 32) ?? "malformed",
+    counts,
+    publicationDenialCounts: parseReasonCounts(segments.denialCounts),
+    reasonCategories: parseStringList(segments.reasons),
+    verificationStateCounts,
+    candidateVerificationCounts: {
+      duplicateCount: 0,
+      disagreementCount: 0,
+      unclassifiableCount: 0,
+      malformedRecordCount: 0,
+      truncatedCandidateCount: 0,
+      truncatedEvidenceCount: 0,
+      policyCandidateCount: candidateVerificationCounts.candidateCount ?? 0,
+      ...candidateVerificationCounts,
+    },
+    metadata: parseMetadata(segments.metadata),
+    redactionFlags: parseRedaction(segments.redaction),
+  };
+}
+
+function publicationModeFromArtifact(params: { artifact: ReviewOutputArtifact | null; proofOk: boolean; aggregateEvidence: unknown }): M070PublicationMode {
+  if (!params.artifact) return { candidateApprovedNonFallback: false, directFallbackEvidence: false };
+  if (params.artifact.source === "issue-comment") return { candidateApprovedNonFallback: false, directFallbackEvidence: true };
+  return { candidateApprovedNonFallback: params.proofOk, directFallbackEvidence: false };
+}
+
+function artifactToReviewDetails(params: { artifact: ReviewOutputArtifact; proofOk: boolean; aggregateEvidence: unknown }): M070S06ReviewDetailsArtifact {
+  return {
+    id: `${params.artifact.source}:${params.artifact.sourceUrl ?? params.artifact.updatedAt ?? params.artifact.prNumber}`.slice(0, 96),
+    reviewOutputKey: params.artifact.reviewOutputKey,
+    deliveryId: parseReviewOutputKey(params.artifact.reviewOutputKey)?.effectiveDeliveryId ?? null,
+    repo: parseReviewOutputKey(params.artifact.reviewOutputKey)?.repoFullName ?? null,
+    target: parseReviewOutputKey(params.artifact.reviewOutputKey) ? `${parseReviewOutputKey(params.artifact.reviewOutputKey)!.repoFullName}#${parseReviewOutputKey(params.artifact.reviewOutputKey)!.prNumber}` : null,
+    shortUrl: params.artifact.sourceUrl,
+    aggregateEvidence: params.aggregateEvidence,
+    publicationMode: publicationModeFromArtifact({ artifact: params.artifact, proofOk: params.proofOk, aggregateEvidence: params.aggregateEvidence }),
+  };
+}
+
+function mapCollectionToSources(collection: ReviewOutputArtifactCollection): M070S06ReviewDetailsArtifact[] {
+  const proof = evaluateExactReviewOutputProof(collection);
+  if (proof.artifact) {
+    return [artifactToReviewDetails({ artifact: proof.artifact, proofOk: proof.ok, aggregateEvidence: extractM070AggregateEvidenceFromArtifactBody(proof.artifact.body) })];
+  }
+  return collection.artifacts.slice(0, 5).map((artifact) => artifactToReviewDetails({ artifact, proofOk: false, aggregateEvidence: extractM070AggregateEvidenceFromArtifactBody(artifact.body) }));
 }
 
 function makeCheck(id: M070S06CheckId, passed: boolean, statusCode: M070S06StatusCode, detail: string): M070S06Check {
@@ -378,13 +637,23 @@ export async function evaluateM070S06(input: EvaluateM070S06Input): Promise<M070
   const sources = input.sources ?? defaultSources();
   const packageWiring = parsePackageWiring(await (input.readPackageJsonText ?? readDefaultPackageJsonText)());
   const totalReviewDetails = sources.reviewDetails.length;
-  const exactKeyValid = validExactKey(reviewOutputKey);
+  const parsedReviewOutputKey = reviewOutputKey ? parseReviewOutputKey(reviewOutputKey) : null;
+  const exactKeyValid = parsedReviewOutputKey !== null;
+  const keyInputMismatch = parsedReviewOutputKey !== null && (
+    parsedReviewOutputKey.repoFullName !== repo
+    || `${parsedReviewOutputKey.repoFullName}#${parsedReviewOutputKey.prNumber}` !== target
+    || (deliveryId !== null && parsedReviewOutputKey.effectiveDeliveryId !== deliveryId)
+  );
   const matching = exactKeyValid ? sources.reviewDetails.filter((artifact) => artifact.reviewOutputKey === reviewOutputKey && (artifact.repo == null || artifact.repo === repo) && (artifact.target == null || artifact.target === target)) : [];
   const wrongKeyReviewDetails = exactKeyValid ? sources.reviewDetails.filter((artifact) => artifact.reviewOutputKey !== reviewOutputKey || (artifact.repo != null && artifact.repo !== repo) || (artifact.target != null && artifact.target !== target)).length : totalReviewDetails;
   const staleReviewDetails = matching.filter((artifact) => artifact.stale).length;
   const duplicateReviewDetails = Math.max(0, matching.length - 1);
   const selected = matching.length === 1 && staleReviewDetails === 0 ? matching[0] ?? null : null;
-  const runtimeMatches = correlationKey === null ? [] : sources.runtime.rows.filter((row) => row.available && row.correlationKey === correlationKey && (reviewOutputKey === null || row.reviewOutputKey == null || row.reviewOutputKey === reviewOutputKey) && (deliveryId === null || row.deliveryId == null || row.deliveryId === deliveryId));
+  const selectedMetadata = isRecord(selected?.aggregateEvidence) && isRecord(selected.aggregateEvidence.metadata) ? selected.aggregateEvidence.metadata : {};
+  const aggregateCorrelationKey = boundedText(selectedMetadata.correlationKey, 160);
+  const effectiveCorrelationKey = correlationKey ?? aggregateCorrelationKey;
+  const runtimeEvidenceRequired = sources.runtime.queried && !sources.runtime.unavailable;
+  const runtimeMatches = effectiveCorrelationKey === null ? [] : sources.runtime.rows.filter((row) => row.available && row.correlationKey === effectiveCorrelationKey && (reviewOutputKey === null || row.reviewOutputKey == null || row.reviewOutputKey === reviewOutputKey) && (deliveryId === null || row.deliveryId == null || row.deliveryId === deliveryId));
 
   let s04: M070VerifierReport | null = null;
   if (selected !== null) {
@@ -393,14 +662,14 @@ export async function evaluateM070S06(input: EvaluateM070S06Input): Promise<M070
 
   let statusCode: M070S06StatusCode;
   if (reviewOutputKey === null) statusCode = "m070_s06_missing_exact_key_blocked";
-  else if (!exactKeyValid || staleReviewDetails > 0) statusCode = "m070_s06_invalid_or_stale_key_blocked";
+  else if (!exactKeyValid || keyInputMismatch || staleReviewDetails > 0) statusCode = "m070_s06_invalid_or_stale_key_blocked";
   else if (!sources.github.accessPresent) statusCode = "m070_s06_missing_github_access_blocked";
   else if (sources.github.unavailable || !sources.github.reviewDetailsAvailable) statusCode = "m070_s06_github_unavailable_blocked";
   else if (totalReviewDetails === 0) statusCode = "m070_s06_no_artifact_blocked";
   else if (matching.length === 0) statusCode = "m070_s06_wrong_artifact_blocked";
   else if (matching.length > 1) statusCode = "m070_s06_duplicate_artifact_blocked";
   else if (!packageWiring.matches) statusCode = "m070_s06_package_wiring_drift";
-  else if (correlationKey === null || runtimeMatches.length === 0) statusCode = "m070_s06_missing_runtime_correlation_blocked";
+  else if (effectiveCorrelationKey === null || (runtimeEvidenceRequired && runtimeMatches.length === 0)) statusCode = "m070_s06_missing_runtime_correlation_blocked";
   else statusCode = mapS04Status(s04);
 
   const success = isAccepted(statusCode);
@@ -425,7 +694,7 @@ export async function evaluateM070S06(input: EvaluateM070S06Input): Promise<M070
     makeCheck("M070-S06-SOURCE-AVAILABILITY", sources.github.accessPresent && sources.github.reviewDetailsAvailable && !sources.github.unavailable, statusCode, sources.github.accessPresent && sources.github.reviewDetailsAvailable && !sources.github.unavailable ? "GitHub Review Details source is available." : "GitHub Review Details source is blocked or unavailable."),
     makeCheck("M070-S06-EXACT-KEY-ARTIFACTS", selected !== null, statusCode, selected !== null ? "Exactly one non-stale Review Details artifact matched the exact key." : "Exact-key artifact cardinality is not accepted."),
     makeCheck("M070-S06-S04-EVALUATOR-STATUS", s04?.success === true && !s04.safety.directFallbackOnly && statusCode !== "m070_s06_malformed_aggregate_blocked" && statusCode !== "m070_s06_direct_fallback_rejected", statusCode, s04?.success === true ? "S04 evaluator accepted aggregate policy evidence." : "S04 evaluator did not accept aggregate policy evidence."),
-    makeCheck("M070-S06-RUNTIME-CORRELATION", correlationKey !== null && runtimeMatches.length > 0, statusCode, correlationKey !== null && runtimeMatches.length > 0 ? "Runtime correlation key has a matching bounded row." : "Runtime correlation evidence is missing."),
+    makeCheck("M070-S06-RUNTIME-CORRELATION", effectiveCorrelationKey !== null && (!runtimeEvidenceRequired || runtimeMatches.length > 0), statusCode, effectiveCorrelationKey !== null && (!runtimeEvidenceRequired || runtimeMatches.length > 0) ? "Runtime correlation key is present with optional bounded row evidence when queried." : "Runtime correlation evidence is missing."),
     makeCheck("M070-S06-REDACTION-BOUNDARY", redaction.aggregateOnly && !redaction.forbiddenInputFieldPresent, statusCode, redaction.aggregateOnly && !redaction.forbiddenInputFieldPresent ? "Report is aggregate-only with no raw canary surfaces." : "Forbidden raw/private fields were detected and omitted."),
     makeCheck("M070-S06-PACKAGE-WIRING", packageWiring.matches, statusCode, packageWiring.matches ? "package.json script is wired to the S06 verifier." : "package.json script wiring drift detected."),
   ];
@@ -441,13 +710,13 @@ export async function evaluateM070S06(input: EvaluateM070S06Input): Promise<M070
     check_ids: M070_S06_CHECK_IDS,
     checks,
     failing_check_id: failingCheck?.id ?? null,
-    inputs: { repo, target, reviewOutputKeyPresent: reviewOutputKey !== null, deliveryIdPresent: deliveryId !== null, correlationKeyPresent: correlationKey !== null },
+    inputs: { repo, target, reviewOutputKeyPresent: reviewOutputKey !== null, deliveryIdPresent: deliveryId !== null, correlationKeyPresent: effectiveCorrelationKey !== null },
     sourceAvailability: { githubReviewDetailsAvailable: sources.github.reviewDetailsAvailable, githubAccessPresent: sources.github.accessPresent, githubUnavailable: sources.github.unavailable, runtimeQueried: sources.runtime.queried, runtimeUnavailable: sources.runtime.unavailable },
     artifactCounts: { totalReviewDetails, matchingReviewDetails: matching.length, duplicateReviewDetails, wrongKeyReviewDetails, staleReviewDetails },
     artifactIds: matching.slice(0, 5).map((artifact) => artifact.id.slice(0, 96)),
     shortUrls: matching.map((artifact) => artifact.shortUrl).filter((url): url is string => typeof url === "string" && url.length > 0).slice(0, 5).map((url) => url.slice(0, 160)),
     s04: { status_code: s04?.status_code ?? null, success: s04?.success ?? false, failing_check_id: s04?.failing_check_id ?? null, check_ids: s04?.check_ids ?? [] },
-    runtimeCorrelation: { correlationKeyPresent: correlationKey !== null, runtimeLogRowsAvailable: runtimeMatches.length > 0, matchingRuntimeRows: runtimeMatches.length },
+    runtimeCorrelation: { correlationKeyPresent: effectiveCorrelationKey !== null, runtimeLogRowsAvailable: runtimeMatches.length > 0, matchingRuntimeRows: runtimeMatches.length },
     publicationMode: selected?.publicationMode ?? { candidateApprovedNonFallback: false, directFallbackEvidence: false },
     redaction,
     packageWiring,
@@ -487,6 +756,47 @@ function usage(): string {
   return `Usage: bun run verify:m070:s06 --review-output-key <key> [--delivery-id <id>] [--repo owner/name] [--correlation-key <key>] [--target owner/name#pr] [--json] [--expect-status <status>] [--allow-blocked]\n\nRuns the bounded M070 S06 exact-key wrapper over GitHub Review Details/runtime aggregate evidence and the S04 evaluator.\n`;
 }
 
+export async function collectM070S06Sources(args: M070S06Args, deps: M070S06CollectorDeps = {}): Promise<M070S06SourceSnapshot> {
+  const env = deps.env ?? process.env;
+  const reviewOutputKey = compactId(args.reviewOutputKey);
+  const parsed = reviewOutputKey ? parseReviewOutputKey(reviewOutputKey) : null;
+  if (!reviewOutputKey || !parsed) return defaultSources();
+
+  const github = { reviewDetailsAvailable: false, accessPresent: hasGitHubEnv(env), unavailable: false };
+  let reviewDetails: readonly M070S06ReviewDetailsArtifact[] = [];
+
+  if (!github.accessPresent) {
+    return { github, reviewDetails, runtime: { queried: false, unavailable: false, rows: [] } };
+  }
+
+  try {
+    const octokit = deps.createInstallationOctokit
+      ? await deps.createInstallationOctokit(parsed, args.repo)
+      : await createDefaultInstallationOctokit(parsed, args.repo, env);
+    const collection = await (deps.collectReviewOutputArtifacts ?? collectReviewOutputArtifacts)({ octokit, reviewOutputKey });
+    github.reviewDetailsAvailable = true;
+    reviewDetails = mapCollectionToSources(collection);
+  } catch (error) {
+    github.unavailable = true;
+    const issue = boundedErrorText(error);
+    void issue;
+  }
+
+  const runtimeQuery = deps.queryRuntimeLogs ?? queryDefaultRuntimeLogs;
+  const runtime = await runtimeQuery({
+    reviewOutputKey,
+    deliveryId: args.deliveryId ?? parsed.effectiveDeliveryId,
+    correlationKey: args.correlationKey,
+    env,
+  });
+
+  return {
+    github,
+    reviewDetails,
+    runtime: { queried: runtime.rows.length > 0 || runtime.unavailable || pickAzureWorkspaceIds(env).length > 0 || Boolean(env.AZURE_RESOURCE_GROUP ?? env.ACA_RESOURCE_GROUP ?? env.RESOURCE_GROUP), unavailable: runtime.unavailable, rows: runtime.rows },
+  };
+}
+
 export async function main(argv: readonly string[] = process.argv.slice(2), deps: M070S06MainDeps = {}): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
@@ -505,7 +815,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), deps
     return 0;
   }
 
-  const sources = await (deps.collectSources ?? (async () => defaultSources()))(args);
+  const sources = await (deps.collectSources ?? ((collectorArgs) => collectM070S06Sources(collectorArgs, deps.collectorDeps)))(args);
   const report = await evaluateM070S06({
     reviewOutputKey: args.reviewOutputKey,
     deliveryId: args.deliveryId,

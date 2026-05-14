@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildM070FixtureScenario } from "./verify-m070.ts";
+import { buildApprovedReviewBody } from "../src/handlers/review-idempotency.ts";
 import {
   M070_S06_CHECK_IDS,
   M070_S06_STATUS_CODES,
   buildM070S06FixtureSources,
+  collectM070S06Sources,
   evaluateM070S06,
+  extractM070AggregateEvidenceFromArtifactBody,
   main,
   parseM070S06Args,
   type M070S06SourceSnapshot,
@@ -14,9 +17,57 @@ import {
 const GENERATED_AT = "2026-05-10T00:00:00.000Z";
 const TARGET = "xbmc/xbmc#28172";
 const REPO = "xbmc/xbmc";
-const REVIEW_OUTPUT_KEY = "review-output-28172-abc123";
+const REVIEW_OUTPUT_KEY = "kodiai-review-output:v1:inst-123:xbmc/xbmc:pr-28172:action-review:delivery-delivery-28172:head-abcdef";
 const DELIVERY_ID = "delivery-28172";
 const CORRELATION_KEY = "corr-28172";
+
+function m070EvidenceLine(correlationKey = CORRELATION_KEY): string {
+  return [
+    "- M070 candidate verification publication: status=mixed",
+    "counts=attempted:1,allowed:1,denied:0,published:1,skipped:0,failed:0",
+    "verification=verified:1,partially_verified:0,unverified:0,disproven:0,unavailable:0",
+    "candidateVerification=candidateCount:1,evidenceCount:1,verifiedCount:1,partiallyVerifiedCount:0,unverifiedCount:0,disprovenCount:0,publicationEligibleCount:1",
+    "denialCounts=none",
+    "reasons=full-support",
+    `metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y,deliveryIdValue:${DELIVERY_ID},reviewOutputKeyValue:${REVIEW_OUTPUT_KEY},correlationKeyValue:${correlationKey}`,
+    "redaction=privateOnly:y,candidateBodies:n,specialistProse:n,rawPrompts:n,rawModelOutput:n,diffs:n,evidencePayloads:n,rawFingerprints:n,publicationEvidence:n,unsafeFields:0",
+  ].join("; ");
+}
+
+function approvedReviewBody(extra = ""): string {
+  return buildApprovedReviewBody({
+    reviewOutputKey: REVIEW_OUTPUT_KEY,
+    evidence: ["candidate-approved non-fallback proof"],
+    reviewDetailsBlock: [
+      "<details>",
+      "<summary>Review Details</summary>",
+      m070EvidenceLine(),
+      extra,
+      "</details>",
+    ].filter(Boolean).join("\n"),
+  });
+}
+
+function fakeCollection(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    requestedReviewOutputKey: REVIEW_OUTPUT_KEY,
+    prUrl: "https://github.com/xbmc/xbmc/pull/28172",
+    artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 1, total: 1 },
+    artifacts: [{
+      prNumber: 28172,
+      prUrl: "https://github.com/xbmc/xbmc/pull/28172",
+      source: "review",
+      sourceUrl: "https://github.com/xbmc/xbmc/pull/28172#pullrequestreview-1",
+      updatedAt: "2026-05-10T00:00:00Z",
+      reviewOutputKey: REVIEW_OUTPUT_KEY,
+      lane: null,
+      action: "review",
+      body: approvedReviewBody(),
+      reviewState: "APPROVED",
+      ...overrides,
+    }],
+  } as never;
+}
 
 function baseSources(): M070S06SourceSnapshot {
   return buildM070S06FixtureSources({
@@ -133,7 +184,7 @@ describe("verify-m070-s06 exact-key wrapper", () => {
     const duplicate = await evaluate({ sources: { ...baseSources(), reviewDetails: [...baseSources().reviewDetails, ...baseSources().reviewDetails] } });
     expect(duplicate.status_code).toBe("m070_s06_duplicate_artifact_blocked");
 
-    const wrong = await evaluate({ reviewOutputKey: "review-output-28172-missing", sources: baseSources() });
+    const wrong = await evaluate({ reviewOutputKey: "kodiai-review-output:v1:inst-123:xbmc/xbmc:pr-28172:action-review:delivery-delivery-28172:head-fedcba", sources: baseSources() });
     expect(wrong.status_code).toBe("m070_s06_wrong_artifact_blocked");
   });
 
@@ -173,6 +224,86 @@ describe("verify-m070-s06 exact-key wrapper", () => {
     expect(drift.success).toBe(false);
     expect(drift.status_code).toBe("m070_s06_package_wiring_drift");
     expect(drift.failing_check_id).toBe("M070-S06-PACKAGE-WIRING");
+  });
+
+  test("extracts bounded aggregate evidence from Review Details without leaking raw body canaries", () => {
+    const body = approvedReviewBody("M070_S06_BODY_CANARY_SHOULD_NOT_LEAK");
+    const aggregate = extractM070AggregateEvidenceFromArtifactBody(body);
+    expect(aggregate).toMatchObject({
+      aggregateStatus: "mixed",
+      counts: { attempted: 1, allowed: 1, denied: 0, published: 1 },
+      metadata: { hasDeliveryId: true, hasReviewOutputKey: true, hasCorrelationKey: true, correlationKey: CORRELATION_KEY },
+    });
+    expect(JSON.stringify(aggregate)).not.toContain("M070_S06_BODY_CANARY_SHOULD_NOT_LEAK");
+  });
+
+  test("collects GitHub artifacts through injected production-like seam and discards raw bodies", async () => {
+    const sources = await collectM070S06Sources(parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY, "--repo", REPO, "--target", TARGET]), {
+      env: { GITHUB_APP_ID: "123", GITHUB_PRIVATE_KEY: "-----BEGIN TEST KEY-----" },
+      createInstallationOctokit: async (parsed) => {
+        expect(parsed).toMatchObject({ owner: "xbmc", repo: "xbmc", prNumber: 28172, effectiveDeliveryId: DELIVERY_ID });
+        return {} as never;
+      },
+      collectReviewOutputArtifacts: async () => fakeCollection(),
+      queryRuntimeLogs: async () => ({ unavailable: false, rows: [] }),
+    });
+    const report = await evaluate({ correlationKey: null, sources });
+    expect(report.status_code).toBe("m070_s06_candidate_approved_verified_ok");
+    expect(report.runtimeCorrelation.correlationKeyPresent).toBe(true);
+    expect(JSON.stringify(report)).not.toContain("candidate-approved non-fallback proof");
+  });
+
+  test("collector reports missing GitHub credentials and GitHub collection failures as bounded blocked states", async () => {
+    const missing = await collectM070S06Sources(parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY]), { env: {} });
+    expect(missing.github).toMatchObject({ accessPresent: false, unavailable: false });
+    expect((await evaluate({ sources: missing })).status_code).toBe("m070_s06_missing_github_access_blocked");
+
+    const unavailable = await collectM070S06Sources(parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY]), {
+      env: { GITHUB_APP_ID: "123", GITHUB_PRIVATE_KEY_BASE64: "dGVzdA==" },
+      createInstallationOctokit: async () => { throw new Error("M070_S06_SECRET_CANARY_SHOULD_NOT_LEAK unavailable"); },
+      queryRuntimeLogs: async () => ({ unavailable: false, rows: [] }),
+    });
+    const report = await evaluate({ sources: unavailable });
+    expect(report.status_code).toBe("m070_s06_github_unavailable_blocked");
+    expect(JSON.stringify(report)).not.toContain("M070_S06_SECRET_CANARY_SHOULD_NOT_LEAK");
+  });
+
+  test("collector maps no artifacts, duplicate artifacts, wrong source, and wrong review state to blocked policy surfaces", async () => {
+    const args = parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY, "--correlation-key", CORRELATION_KEY]);
+    const deps = (collection: never) => ({
+      env: { GITHUB_APP_ID: "123", GITHUB_PRIVATE_KEY: "-----BEGIN TEST KEY-----" },
+      createInstallationOctokit: async () => ({} as never),
+      collectReviewOutputArtifacts: async () => collection,
+      queryRuntimeLogs: async () => ({ unavailable: false, rows: [{ id: "runtime", reviewOutputKey: REVIEW_OUTPUT_KEY, deliveryId: DELIVERY_ID, correlationKey: CORRELATION_KEY, available: true }] }),
+    });
+
+    const noArtifacts = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 0, total: 0 }, artifacts: [] } as never)) });
+    expect(noArtifacts.status_code).toBe("m070_s06_no_artifact_blocked");
+
+    const duplicate = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 2, total: 2 }, artifacts: [fakeCollection().artifacts[0], { ...fakeCollection().artifacts[0], sourceUrl: "https://github.com/xbmc/xbmc/pull/28172#pullrequestreview-2" }] } as never)) });
+    expect(duplicate.status_code).toBe("m070_s06_duplicate_artifact_blocked");
+
+    const wrongSource = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 1, reviews: 0, total: 1 }, artifacts: [{ ...fakeCollection().artifacts[0], source: "issue-comment", reviewState: null }] } as never)) });
+    expect(wrongSource.status_code).toBe("m070_s06_direct_fallback_rejected");
+
+    const wrongState = await evaluate({ sources: await collectM070S06Sources(args, deps(fakeCollection({ reviewState: "COMMENTED" }) as never)) });
+    expect(wrongState.status_code).toBe("m070_s06_malformed_aggregate_blocked");
+  });
+
+  test("distinguishes stale key input, optional Azure unavailable, runtime row present, and runtime row missing", async () => {
+    const staleDelivery = await evaluate({ deliveryId: "different-delivery" });
+    expect(staleDelivery.status_code).toBe("m070_s06_invalid_or_stale_key_blocked");
+
+    const azureUnavailable = await evaluate({ sources: { ...baseSources(), runtime: { queried: true, unavailable: true, rows: [] } } });
+    expect(azureUnavailable.status_code).toBe("m070_s06_candidate_approved_verified_ok");
+    expect(azureUnavailable.sourceAvailability.runtimeUnavailable).toBe(true);
+
+    const runtimePresent = await evaluate({ sources: { ...baseSources(), runtime: { queried: true, unavailable: false, rows: [{ id: "runtime", reviewOutputKey: REVIEW_OUTPUT_KEY, deliveryId: DELIVERY_ID, correlationKey: CORRELATION_KEY, available: true }] } } });
+    expect(runtimePresent.status_code).toBe("m070_s06_candidate_approved_verified_ok");
+    expect(runtimePresent.runtimeCorrelation.matchingRuntimeRows).toBe(1);
+
+    const runtimeMissing = await evaluate({ sources: { ...baseSources(), runtime: { queried: true, unavailable: false, rows: [] } } });
+    expect(runtimeMissing.status_code).toBe("m070_s06_missing_runtime_correlation_blocked");
   });
 
   test("main emits parseable JSON; expect-status and allow-blocked control blocked exits", async () => {
