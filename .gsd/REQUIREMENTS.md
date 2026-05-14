@@ -98,17 +98,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
-### R102 — Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
-- Class: core-capability
-- Status: active
-- Description: Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
-- Why it matters: Specialists can improve signal only after the plan, reducer, and candidate contracts exist.
-- Source: issue #131
-- Primary owning slice: M070/S05
-- Supporting slices: M070/S01,M070/S02,M070/S03
-- Validation: unmapped
-- Notes: Mapped for M070 planning: existing docs/config truth specialist lane gains actionable verification/disagreement semantics without adding new lanes.
-
 ### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
 - Class: operability
 - Status: active
@@ -992,6 +981,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key.
 - Notes: This preserves the production-safety boundary while foundational contracts are introduced.
 
+### R102 — Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
+- Class: core-capability
+- Status: validated
+- Description: Specialist reviewer lanes: add selected specialist lanes that feed the common candidate-finding schema, starting with docs/config/runbook truthfulness before correctness/security lanes.
+- Why it matters: Specialists can improve signal only after the plan, reducer, and candidate contracts exist.
+- Source: issue #131
+- Primary owning slice: M070/S05
+- Supporting slices: M070/S01,M070/S02,M070/S03
+- Validation: M070/S05 added deterministic production-like normal-review integration proof for docs/config truth specialist lanes through createReviewHandler, shadow aggregate classification, MCP publication gate, Review Details/runtime evidence projection, and M070 verifier evaluation. Fresh closeout evidence: `bun test ./src/handlers/review-candidate-verification-integration.test.ts ./scripts/verify-m070-s05.test.ts ./scripts/verify-m070.test.ts ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts ./src/handlers/review-candidate-verification-publication.test.ts ./src/handlers/review-candidate-verification-evidence.test.ts && bun run verify:m070 --json && bun run verify:m070:s05 --json` exited 0 (gsd_exec ec51400c-33f6-4522-a514-725d7b762589). The S05 verifier reported Review Details rows: 8, runtime log rows: 8, MCP evidence rows: 8, aggregateOnly:true, canaryLeakPresent:false, verifierJsonLeakPresent:false, and no issue categories.
+- Notes: Mapped for M070 planning: existing docs/config truth specialist lane gains actionable verification/disagreement semantics without adding new lanes.
+
 ### R103 — Candidate verification and disagreement handling: future reducer flow should classify candidates as verified, partially verified, unverified, or disproven and resolve duplicate/disagreeing lane outputs before publication.
 - Class: quality-attribute
 - Status: validated
@@ -1431,7 +1431,7 @@ This file is the explicit capability and coverage contract for the project.
 | R099 | operability | blocked | M067/S05 | M067/S01, M067/S02, M067/S03, M067/S04 | M067/S06/T03 re-ran the exact-key publication-readiness preflight and read-only full S05 verifier for the captured automatic synchronize key. Both returned M067-S05-PUBLICATION-READINESS / review_details_not_published; GitHub artifact counts remained reviewComments=0, issueComments=0, reviews=0, total=0, and no additional GitHub write or live trigger was performed. |
 | R100 | constraint | validated | M067/S03 | M067/S04, M067/S05 | M067 S03 kept production-visible reducer behavior equivalent; M067 S04 kept candidate capture shadow-only; M067/S06/T03 re-verified visible-volume safety during the gated live-proof retry by stopping before any additional GitHub write when publication preflight failed and preserving exact-key artifact counts of reviewComments=0, issueComments=0, reviews=0, total=0 for the captured automatic synchronize key. |
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
-| R102 | core-capability | active | M070/S05 | M070/S01,M070/S02,M070/S03 | unmapped |
+| R102 | core-capability | validated | M070/S05 | M070/S01,M070/S02,M070/S03 | M070/S05 added deterministic production-like normal-review integration proof for docs/config truth specialist lanes through createReviewHandler, shadow aggregate classification, MCP publication gate, Review Details/runtime evidence projection, and M070 verifier evaluation. Fresh closeout evidence: `bun test ./src/handlers/review-candidate-verification-integration.test.ts ./scripts/verify-m070-s05.test.ts ./scripts/verify-m070.test.ts ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts ./src/handlers/review-candidate-verification-publication.test.ts ./src/handlers/review-candidate-verification-evidence.test.ts && bun run verify:m070 --json && bun run verify:m070:s05 --json` exited 0 (gsd_exec ec51400c-33f6-4522-a514-725d7b762589). The S05 verifier reported Review Details rows: 8, runtime log rows: 8, MCP evidence rows: 8, aggregateOnly:true, canaryLeakPresent:false, verifierJsonLeakPresent:false, and no issue categories. |
 | R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
 | R104 | integration | deferred | M071 provisional | none | unmapped |
 | R105 | operability | active | M070/S03 | M070/S03 | unmapped |
@@ -1457,7 +1457,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 12
-- Mapped to slices: 12
-- Validated: 90 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R103, R110, R111, R112, R113, R114, R115, R116, R117)
+- Active requirements: 11
+- Mapped to slices: 11
+- Validated: 91 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117)
 - Unmapped active requirements: 0
