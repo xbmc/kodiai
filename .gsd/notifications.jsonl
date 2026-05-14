@@ -1,6 +1,3 @@
-{"id":"03b878c7-70d7-4cbe-a664-1a5a858ee68a","ts":"2026-05-13T03:56:18.484Z","severity":"info","message":"Resume: applied 8 fix(es) to state.","source":"notify","read":false}
-{"id":"68e22949-e5b4-4271-a4d7-f55f144f374b","ts":"2026-05-13T03:56:18.518Z","severity":"info","message":"Recovered 34 tool calls from paused session. Resuming with context.","source":"notify","read":false}
-{"id":"8b94a0d8-34d9-4d17-8a0d-5e4b172f29af","ts":"2026-05-13T03:56:18.892Z","severity":"warning","message":"[renderer] parsers-legacy.ts require failed, falling back to .js: Cannot find module './parsers-legacy.ts'\nRequire stack:\n- /home/keith/.gsd/agent/extensions/gsd/markdown-renderer.js","source":"workflow-logger","read":false}
 {"id":"ebf0f5a3-5b41-4511-b856-88af0e2d4269","ts":"2026-05-13T03:56:19.419Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"1cc6250f-2dba-4297-95e7-c2ce5907f5d3","ts":"2026-05-13T03:59:44.498Z","severity":"info","message":"Committed: feat: Added a pure M070 candidate publication policy that gates inline…","source":"notify","read":false}
 {"id":"3a9ca598-1240-4744-bcf9-fdd785002277","ts":"2026-05-13T03:59:44.585Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
@@ -498,3 +495,6 @@
 {"id":"5b17c52d-3771-40b1-bbd2-1329cf1cd482","ts":"2026-05-14T16:07:30.004Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"fe6b5bf5-6204-45eb-b2b3-c09a930c0918","ts":"2026-05-14T16:08:56.042Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"23b5b684-a23f-4e90-bc96-919276c6b75a","ts":"2026-05-14T16:11:45.761Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
+{"id":"a8f98bcb-4fd6-431a-ba95-0046e947a7f6","ts":"2026-05-14T16:15:24.326Z","severity":"info","message":"Committed: feat: Added an artifact-only dummy milestone context that defines accep…","source":"notify","read":false}
+{"id":"854e664b-6ba5-463c-bc9e-68ab54057c64","ts":"2026-05-14T16:15:24.388Z","severity":"info","message":"Verification gate: 3/3 checks passed","source":"notify","read":false}
+{"id":"4e5a8fc4-3efb-42bf-982a-704ab74038a8","ts":"2026-05-14T16:15:24.851Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
