@@ -99,6 +99,22 @@
       "doneMilestones": 57,
       "totalMilestones": 58,
       "phase": "pre-planning"
+    },
+    {
+      "filename": "M070-2026-05-14T15-59-51.html",
+      "generatedAt": "2026-05-14T15:59:51.439Z",
+      "milestoneId": "M070",
+      "milestoneTitle": "Candidate Verification + Disagreement Handling",
+      "label": "M070: Candidate Verification + Disagreement Handling",
+      "kind": "milestone",
+      "totalCost": 1445.9805199500017,
+      "totalTokens": 2318456649,
+      "totalDuration": 377494598,
+      "doneSlices": 226,
+      "totalSlices": 226,
+      "doneMilestones": 58,
+      "totalMilestones": 58,
+      "phase": "summarizing"
     }
   ]
 }

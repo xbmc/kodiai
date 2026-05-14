@@ -1,14 +1,6 @@
 {
   "nodes": [
     {
-      "id": "milestone:M070",
-      "label": "M070: Candidate Verification + Disagreement Handling",
-      "type": "milestone",
-      "description": "Active milestone: M070",
-      "confidence": "EXTRACTED",
-      "sourceFile": "STATE.md"
-    },
-    {
       "id": "concept:phase:validating-milestone",
       "label": "Phase: validating-milestone",
       "type": "concept",
@@ -5404,6 +5396,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M070",
+      "label": "M070: Candidate Verification + Disagreement Handling",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-ROADMAP.md"
+    },
+    {
       "id": "slice:M070:S01",
       "label": "S01: Verification taxonomy and conflict classifier",
       "type": "slice",
@@ -6882,6 +6881,350 @@
       "description": "Source: M069-VALIDATION.md/Verdict Rationale",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M069/M069-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:1",
+      "label": "Chose a pure specialist-side candidate verification classifier before wiring publication behavior, so taxonomy, duplicate/disagreement handling, malformed fail-closed behavior, and redaction constraints could be proven without GitHub or handler side effects.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/key_decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:2",
+      "label": "Chose to enforce M070 publication eligibility at the shared review-output publication gate instead of adding a new GitHub publisher, preserving existing candidate-approved idempotency, commentability, sanitizer, secret-scan, and fallback-blocking behavior.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/key_decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:3",
+      "label": "Chose to expose M070 Review Details and runtime diagnostics only as a bounded aggregate projection from the MCP publication gate through ExecutionResult, Review Details, structured logs, and verifier JSON.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/key_decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:4",
+      "label": "Chose verifier success semantics stricter than safety evidence: only candidate-approved non-fallback verified or safe undisputed partial evidence passes; dispute-blocked, malformed, missing-correlation, unclassifiable, and direct-fallback-only scenarios remain explicit `success:false` statuses.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/key_decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:5",
+      "label": "Chose a deterministic in-process normal-review integration harness for S05 while reserving live GitHub/Azure exact-key collection for S06.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/key_decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:6",
+      "label": "Chose to compose S06 from the S04 evaluator and S05 collection shape, treating missing exact keys or credentials as truthful blocked evidence only, never as M070 success.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/key_decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:7",
+      "label": "Public aggregate evidence is too lossy for publication policy; M070 needs a private policy contract before Review Details projection and a separate public evidence contract after the gate.",
+      "type": "decision",
+      "description": "Source: M070-RESEARCH.md/Research Summary",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:8",
+      "label": "Review execution availability and candidate publication eligibility must be separated: shadow specialist failures can fail open for the broader review while affected candidate publication fails closed through unavailable evidence context.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:9",
+      "label": "Bounded redaction booleans and canary leak tests are necessary on every public/log/verifier surface because evidence useful to operators can otherwise become a covert channel for candidate bodies, specialist prose, prompts, diffs, fingerprints, or raw tool payloads.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:10",
+      "label": "A verifier can and should distinguish safe fail-closed behavior from acceptance success; blocked/disputed/fallback-only evidence may be expected and useful while still reporting `success:false`.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:11",
+      "label": "R105 remains a broader rollout-metrics requirement: M070 advanced aggregate candidate-verification evidence, but did not validate production tier graduation based on measured cost, latency, coverage, and signal.",
+      "type": "decision",
+      "description": "Source: M070-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:12",
+      "label": "Prove policy as a pure classifier first, then wire it into runtime publication gates, then project aggregate evidence, then add verifier semantics, then run production-like/exact-key closure.",
+      "type": "decision",
+      "description": "Source: M070-ROADMAP.md/Slices",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:13",
+      "label": "Put publication safety policy at the shared MCP review-output publication gate so all candidate-approved GitHub-visible writes inherit the same allow/deny behavior without duplicating publishers.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:14",
+      "label": "Use a shared nonfatal evidence collector at the real publication boundary to produce bounded aggregate Review Details/log/verifier data without influencing allow/deny decisions.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:15",
+      "label": "Keep milestone verifier outputs aggregate-only and machine-readable with stable status codes, check IDs, failing_check_id, bounded issue categories, publication-mode booleans, correlation metadata, and redaction booleans.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/observability_surfaces",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:16",
+      "label": "For live-or-blocked proof CLIs, deterministic positive fixtures plus a no-key `success:false` blocked report can close local acceptance while preserving a truthful path for future exact-key reruns.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:17",
+      "label": "The validation artifact verdict remained `needs-attention` even though M070 acceptance criteria passed, because R105 is only partially covered and belongs to broader review-tier rollout evidence.",
+      "type": "decision",
+      "description": "Source: M070-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:18",
+      "label": "Several task plans referenced stale or absent test paths, but closeout mapped them to tracked equivalent files and reran the actual privacy/verifier suites instead of treating Bun's broad file matching as sufficient.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M070:19",
+      "label": "Exact-key live candidate-approved evidence for `xbmc/xbmc#28172` was unavailable during autonomous closeout, so S06 completed through the planned no-key blocked path rather than live success.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:1",
+      "label": "Public aggregate evidence is too lossy for publication policy; M070 needs a private policy contract before Review Details projection and a separate public evidence contract after the gate.",
+      "type": "lesson",
+      "description": "Source: M070-RESEARCH.md/Research Summary",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:2",
+      "label": "Review execution availability and candidate publication eligibility must be separated: shadow specialist failures can fail open for the broader review while affected candidate publication fails closed through unavailable evidence context.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:3",
+      "label": "Bounded redaction booleans and canary leak tests are necessary on every public/log/verifier surface because evidence useful to operators can otherwise become a covert channel for candidate bodies, specialist prose, prompts, diffs, fingerprints, or raw tool payloads.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:4",
+      "label": "A verifier can and should distinguish safe fail-closed behavior from acceptance success; blocked/disputed/fallback-only evidence may be expected and useful while still reporting `success:false`.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:5",
+      "label": "R105 remains a broader rollout-metrics requirement: M070 advanced aggregate candidate-verification evidence, but did not validate production tier graduation based on measured cost, latency, coverage, and signal.",
+      "type": "lesson",
+      "description": "Source: M070-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:6",
+      "label": "Prove policy as a pure classifier first, then wire it into runtime publication gates, then project aggregate evidence, then add verifier semantics, then run production-like/exact-key closure.",
+      "type": "lesson",
+      "description": "Source: M070-ROADMAP.md/Slices",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:7",
+      "label": "Put publication safety policy at the shared MCP review-output publication gate so all candidate-approved GitHub-visible writes inherit the same allow/deny behavior without duplicating publishers.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:8",
+      "label": "Use a shared nonfatal evidence collector at the real publication boundary to produce bounded aggregate Review Details/log/verifier data without influencing allow/deny decisions.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:9",
+      "label": "Keep milestone verifier outputs aggregate-only and machine-readable with stable status codes, check IDs, failing_check_id, bounded issue categories, publication-mode booleans, correlation metadata, and redaction booleans.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/observability_surfaces",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:10",
+      "label": "For live-or-blocked proof CLIs, deterministic positive fixtures plus a no-key `success:false` blocked report can close local acceptance while preserving a truthful path for future exact-key reruns.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:11",
+      "label": "The validation artifact verdict remained `needs-attention` even though M070 acceptance criteria passed, because R105 is only partially covered and belongs to broader review-tier rollout evidence.",
+      "type": "lesson",
+      "description": "Source: M070-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:12",
+      "label": "Several task plans referenced stale or absent test paths, but closeout mapped them to tracked equivalent files and reran the actual privacy/verifier suites instead of treating Bun's broad file matching as sufficient.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M070:13",
+      "label": "Exact-key live candidate-approved evidence for `xbmc/xbmc#28172` was unavailable during autonomous closeout, so S06 completed through the planned no-key blocked path rather than live success.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:1",
+      "label": "Prove policy as a pure classifier first, then wire it into runtime publication gates, then project aggregate evidence, then add verifier semantics, then run production-like/exact-key closure.",
+      "type": "pattern",
+      "description": "Source: M070-ROADMAP.md/Slices",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:2",
+      "label": "Put publication safety policy at the shared MCP review-output publication gate so all candidate-approved GitHub-visible writes inherit the same allow/deny behavior without duplicating publishers.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:3",
+      "label": "Use a shared nonfatal evidence collector at the real publication boundary to produce bounded aggregate Review Details/log/verifier data without influencing allow/deny decisions.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:4",
+      "label": "Keep milestone verifier outputs aggregate-only and machine-readable with stable status codes, check IDs, failing_check_id, bounded issue categories, publication-mode booleans, correlation metadata, and redaction booleans.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/observability_surfaces",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:5",
+      "label": "For live-or-blocked proof CLIs, deterministic positive fixtures plus a no-key `success:false` blocked report can close local acceptance while preserving a truthful path for future exact-key reruns.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/patterns_established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:6",
+      "label": "The validation artifact verdict remained `needs-attention` even though M070 acceptance criteria passed, because R105 is only partially covered and belongs to broader review-tier rollout evidence.",
+      "type": "pattern",
+      "description": "Source: M070-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:7",
+      "label": "Several task plans referenced stale or absent test paths, but closeout mapped them to tracked equivalent files and reran the actual privacy/verifier suites instead of treating Bun's broad file matching as sufficient.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M070:8",
+      "label": "Exact-key live candidate-approved evidence for `xbmc/xbmc#28172` was unavailable during autonomous closeout, so S06 completed through the planned no-key blocked path rather than live success.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M070:1",
+      "label": "The validation artifact verdict remained `needs-attention` even though M070 acceptance criteria passed, because R105 is only partially covered and belongs to broader review-tier rollout evidence.",
+      "type": "lesson",
+      "description": "Source: M070-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M070:2",
+      "label": "Several task plans referenced stale or absent test paths, but closeout mapped them to tracked equivalent files and reran the actual privacy/verifier suites instead of treating Bun's broad file matching as sufficient.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M070:3",
+      "label": "Exact-key live candidate-approved evidence for `xbmc/xbmc#28172` was unavailable during autonomous closeout, so S06 completed through the planned no-key blocked path rather than live success.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M070/M070-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -12812,7 +13155,265 @@
       "to": "surprise:M069:3",
       "type": "relates_to",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:16",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:17",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:18",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "decision:M070:19",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "lesson:M070:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "pattern:M070:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "surprise:M070:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "surprise:M070:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M070",
+      "to": "surprise:M070:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-14T15:37:46.539Z"
+  "builtAt": "2026-05-14T16:01:06.576Z"
 }
