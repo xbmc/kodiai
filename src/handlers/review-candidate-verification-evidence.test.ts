@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ExecutionResult } from "../execution/types.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
-import { runReviewWithShadowMetrics } from "./review-shadow-specialist-metrics.test.ts";
+import { runReviewWithShadowMetrics } from "./review-m070-integration-harness.ts";
 
 const rawCandidateCanary = "M070_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK";
 const specialistCanary = "M070_SPECIALIST_PROSE_SHOULD_NOT_LEAK";

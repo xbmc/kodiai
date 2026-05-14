@@ -4,7 +4,7 @@ import {
   runReviewWithShadowMetrics,
   specialistCanary,
   specialistInlineCanary,
-} from "./review-shadow-specialist-metrics.test.ts";
+} from "./review-m070-integration-harness.ts";
 
 describe("review handler shadow specialist publication boundary", () => {
   test("denies specialist-derived approval/comment fields while normal clean approval still publishes", async () => {

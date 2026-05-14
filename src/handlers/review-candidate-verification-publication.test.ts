@@ -6,7 +6,7 @@ import { buildMcpServers } from "../execution/mcp/index.ts";
 import type { ExecutionContext, ExecutionResult } from "../execution/types.ts";
 import type { CandidatePublicationPolicyAttempt } from "../specialists/candidate-publication-policy.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
-import { runReviewWithShadowMetrics, specialistCanary, specialistInlineCanary } from "./review-shadow-specialist-metrics.test.ts";
+import { runReviewWithShadowMetrics, specialistCanary, specialistInlineCanary } from "./review-m070-integration-harness.ts";
 
 const deniedCandidateCanary = "M070_DENIED_CANDIDATE_BODY_SHOULD_NOT_LEAK";
 const deniedSpecialistCanary = "M070_DENIED_SPECIALIST_PROSE_SHOULD_NOT_LEAK";
