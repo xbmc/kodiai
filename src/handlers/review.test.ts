@@ -15712,6 +15712,7 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
     const workspaceFixture = await createWorkspaceFixture();
     const sequence: string[] = [];
     const logEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const publishedBodies: string[] = [];
 
     const logger = {
       info: (data: unknown, message?: string) => {
@@ -15769,8 +15770,9 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
         },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async () => {
+          createComment: async (params: { body: string }) => {
             sequence.push("publish:createComment");
+            publishedBodies.push(params.body);
             return { data: { id: 1 } };
           },
           updateComment: async () => ({ data: {} }),
@@ -15873,6 +15875,15 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
     expect(JSON.stringify(planLog?.data)).not.toContain("PR body must not be logged");
     expect(JSON.stringify(planLog?.data)).not.toContain("diff --git");
     expect(JSON.stringify(planLog?.data)).not.toContain("commentBody");
+
+    const combinedBodies = publishedBodies.join("\n---\n");
+    expect(combinedBodies).toContain("<summary>Review Details</summary>");
+    expect(combinedBodies).toContain("- Review Plan: hash=review-plan:v1:");
+    expect(combinedBodies).toContain("route=pull_request/[redacted]/[redacted]");
+    expect(combinedBodies).toContain("publish=review-comment,autoApprove:n,details:y,inline:y,candidateVerification:n");
+    expect(combinedBodies).not.toContain("PR body must not be logged");
+    expect(combinedBodies).not.toContain("diff --git");
+    expect(combinedBodies).not.toContain("commentBody");
   });
 
   test("continues normal review when ReviewPlan construction fails", async () => {
@@ -16014,6 +16025,153 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
       gateResult: "degraded",
       reason: "plan-construction-failed",
     }));
+  });
+
+
+  test("publishes Review Details without Review Plan line when public projection fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const warnings: Array<Record<string, unknown>> = [];
+    const publishedBodies: string[] = [];
+
+    const logger = {
+      info: () => undefined,
+      warn: (data: Record<string, unknown>) => {
+        warnings.push(data);
+      },
+      error: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      fatal: () => undefined,
+      child: () => logger,
+    } as unknown as Logger;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+      ) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          createReview: async () => ({ data: { id: 1 } }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            publishedBodies.push(params.body);
+            return { data: { id: 1 } };
+          },
+          updateComment: async (params: { body: string }) => {
+            publishedBodies.push(params.body);
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-review-plan-details-projection-fail-open",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewPlanReviewDetailsSummarizer: () => {
+        throw new Error("projection failure with secret token that must be bounded and not visible");
+      },
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(
+        buildReviewRequestedEvent({
+          action: "opened",
+          pull_request: {
+            number: 101,
+            draft: false,
+            title: "ReviewPlan projection fail-open",
+            body: "private body",
+            commits: 0,
+            additions: 40,
+            deletions: 10,
+            user: { login: "octocat" },
+            author_association: "CONTRIBUTOR",
+            base: { ref: "main", sha: "mainsha" },
+            head: {
+              sha: "abcdef1234567890",
+              ref: "feature/review-plan-details-fail-open",
+              repo: {
+                full_name: "acme/repo",
+                name: "repo",
+                owner: { login: "acme" },
+              },
+            },
+            labels: [],
+          },
+        }),
+      );
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+
+    const combinedBodies = publishedBodies.join("\n---\n");
+    expect(combinedBodies).toContain("<summary>Review Details</summary>");
+    expect(combinedBodies).not.toContain("- Review Plan:");
+    expect(combinedBodies).not.toContain("projection failure");
+    expect(combinedBodies).not.toContain("secret token");
+    expect(warnings).toContainEqual(expect.objectContaining({
+      gate: "review-plan",
+      gateResult: "degraded",
+      reason: "review-details-projection-failed",
+      reviewDetailsSurface: "Review Details",
+    }));
+    const warning = warnings.find((entry) => entry.reason === "review-details-projection-failed");
+    expect(String(warning?.errorMessage ?? "").length).toBeLessThanOrEqual(160);
   });
 
   test("advances through pre-executor checkpoint phases before dispatching the executor", async () => {

@@ -40,6 +40,7 @@ import { loadRepoConfig } from "../execution/config.ts";
 import {
   buildReviewPlan,
   summarizeReviewPlanForDiagnostics,
+  summarizeReviewPlanForReviewDetails,
   type ReviewPlan,
 } from "../review-plan/review-plan.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
@@ -2029,6 +2030,8 @@ export function createReviewHandler(deps: {
   reviewPlanBuilder?: typeof buildReviewPlan;
   /** Optional ReviewPlan diagnostic projection override for deterministic fail-open tests. */
   reviewPlanSummarizer?: typeof summarizeReviewPlanForDiagnostics;
+  /** Optional ReviewPlan Review Details projection override for deterministic fail-open tests. */
+  reviewPlanReviewDetailsSummarizer?: typeof summarizeReviewPlanForReviewDetails;
   logger: Logger;
 }): void {
   const {
@@ -2062,6 +2065,7 @@ export function createReviewHandler(deps: {
     shadowSpecialistSubflow = runShadowSpecialistSubflow,
     reviewPlanBuilder = buildReviewPlan,
     reviewPlanSummarizer = summarizeReviewPlanForDiagnostics,
+    reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails,
     logger,
   } = deps;
 
@@ -4070,8 +4074,9 @@ export function createReviewHandler(deps: {
           );
         }
 
+        let reviewPlan: ReviewPlan | null = null;
         try {
-          const reviewPlan = reviewPlanBuilder({
+          reviewPlan = reviewPlanBuilder({
             route: {
               kind: "pull_request",
               owner: apiOwner,
@@ -5022,6 +5027,27 @@ export function createReviewHandler(deps: {
 
         const reviewCompletedAt = new Date().toISOString();
         let canonicalReviewDetailsBody: string | null = null;
+        const buildReviewPlanReviewDetailsSummary = () => {
+          if (!reviewPlan) return null;
+          try {
+            return reviewPlanReviewDetailsSummarizer(reviewPlan);
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message.replace(/[\r\n|]+/g, " ").slice(0, 160) : String(err).replace(/[\r\n|]+/g, " ").slice(0, 160);
+            logger.warn(
+              {
+                ...baseLog,
+                gate: "review-plan",
+                gateResult: "degraded",
+                reason: "review-details-projection-failed",
+                reviewDetailsSurface: "Review Details",
+                errorName: err instanceof Error ? err.name : typeof err,
+                errorMessage,
+              },
+              "ReviewPlan Review Details projection failed (fail-open, publishing without Review Plan line)",
+            );
+            return null;
+          }
+        };
         const buildReviewDetailsBody = (params?: {
           timeoutProgress?: TimeoutReviewDetailsProgress;
           reviewFirstPass?: ReviewFirstPassPayload | null;
@@ -5047,6 +5073,7 @@ export function createReviewHandler(deps: {
             contributorExperience: authorClassification.contract.reviewDetails,
             shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
             candidateVerificationPublicationEvidence: result.candidateVerificationPublicationEvidence,
+            reviewPlanSummary: buildReviewPlanReviewDetailsSummary(),
             prioritization: prioritizationStats,
             usageLimit: result.usageLimit,
             tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },

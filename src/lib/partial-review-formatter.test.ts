@@ -51,6 +51,112 @@ const REVIEW_DETAILS_BASE_PARAMS = {
   }).reviewDetails,
 };
 
+
+describe("formatReviewDetailsSummary Review Plan line", () => {
+  const baseReviewPlanSummary = {
+    gate: "review-plan-review-details",
+    planHash: "review-plan:v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    route: { kind: "pull_request", taskType: "review.small-diff", routingReason: "tiny-diff" },
+    scope: {
+      changedFileCount: 5,
+      reviewedFileCount: 3,
+      totalLinesChanged: 42,
+      representativePaths: ["src/app.ts", "src/lib.ts"],
+      omittedPathCount: 2,
+    },
+    contextSources: {
+      totalCount: 2,
+      totalItemCount: 7,
+      statusCounts: { enabled: 1, applied: 1, skipped: 0, unavailable: 0 },
+      representatives: [
+        { name: "retrieval", status: "applied", itemCount: 4, omittedPathCount: 0 },
+        { name: "config", status: "enabled", itemCount: 3, omittedPathCount: 0 },
+      ],
+      omittedSourceCount: 1,
+    },
+    gates: {
+      totalCount: 2,
+      totalFindingCount: 1,
+      statusCounts: { enabled: 1, applied: 1, skipped: 0, unavailable: 0 },
+      representatives: [
+        { name: "boundedness", status: "applied", findingCount: 1 },
+        { name: "publish-rights", status: "enabled" },
+      ],
+      omittedGateCount: 1,
+    },
+    budgets: { maxComments: 7, maxTurns: 25, timeoutSeconds: 90, tokenBudget: 12000 },
+    publishPolicy: {
+      mode: "review-comment",
+      autoApprove: false,
+      publishReviewDetails: true,
+      inlineComments: true,
+      candidateVerificationRequired: false,
+    },
+  };
+
+  test("renders a compact public Review Plan summary", () => {
+    const out = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      reviewPlanSummary: baseReviewPlanSummary,
+    });
+
+    expect(out).toContain("<summary>Review Details</summary>");
+    expect(out).toContain("- Review Plan: hash=review-plan:v1:0123456789abcdef");
+    expect(out).toContain("route=pull_request/review.small-diff/tiny-diff");
+    expect(out).toContain("scope=5 changed/3 reviewed/42 lines; paths=src/app.ts,src/lib.ts +2 omitted");
+    expect(out).toContain("contexts=2 sources/7 items/enabled:1,applied:1,skipped:0,unavailable:0");
+    expect(out).toContain("gates=2 gates/1 findings/enabled:1,applied:1,skipped:0,unavailable:0");
+    expect(out).toContain("budget=maxComments:7,maxTurns:25,timeoutSeconds:90,tokenBudget:12000");
+    expect(out).toContain("publish=review-comment,autoApprove:n,details:y,inline:y,candidateVerification:n");
+  });
+
+  test("sanitizes newlines pipes canaries and bounds list expansion", () => {
+    const out = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      reviewPlanSummary: {
+        ...baseReviewPlanSummary,
+        route: { kind: "pull_request", taskType: "review\nsmall|diff", routingReason: "contains secret token" },
+        scope: {
+          ...baseReviewPlanSummary.scope,
+          representativePaths: ["a.ts", "b.ts", "c.ts", "d.ts", "e.ts"],
+          omittedPathCount: 9,
+        },
+        contextSources: {
+          ...baseReviewPlanSummary.contextSources,
+          representatives: [
+            { name: "raw prompt payload", status: "applied", itemCount: 1, omittedPathCount: 0 },
+            { name: "two", status: "enabled", itemCount: 2, omittedPathCount: 0 },
+            { name: "three", status: "enabled", itemCount: 3, omittedPathCount: 0 },
+            { name: "four", status: "enabled", itemCount: 4, omittedPathCount: 0 },
+            { name: "five", status: "enabled", itemCount: 5, omittedPathCount: 0 },
+          ],
+          omittedSourceCount: 6,
+        },
+      },
+    });
+    const reviewPlanLine = out.split("\n").find((line) => line.startsWith("- Review Plan:"));
+    expect(reviewPlanLine).toBeDefined();
+    expect(reviewPlanLine).not.toContain("\n");
+    expect(reviewPlanLine).not.toContain("|");
+    expect(reviewPlanLine).not.toContain("secret token");
+    expect(reviewPlanLine).not.toContain("raw prompt payload");
+    expect(reviewPlanLine).toContain("route=pull_request/review small diff/[redacted]");
+    expect(reviewPlanLine).toContain("paths=a.ts,b.ts,c.ts,d.ts +9 omitted");
+    expect(reviewPlanLine).toContain("reps=[redacted]:applied:1,two:enabled:2,three:enabled:3,four:enabled:4 +6 omitted");
+    expect(reviewPlanLine).not.toContain("five:enabled:5");
+  });
+
+  test("omits malformed Review Plan summaries without throwing", () => {
+    const out = formatReviewDetailsSummary({
+      ...REVIEW_DETAILS_BASE_PARAMS,
+      reviewPlanSummary: { route: null, scope: null },
+    });
+
+    expect(out).toContain("<summary>Review Details</summary>");
+    expect(out).not.toContain("- Review Plan:");
+  });
+});
+
 describe("formatPartialReviewComment", () => {
   test("bounded timeout disclaimer shows normalized reason, evidence, coverage, and continuation state", () => {
     const out = formatPartialReviewComment({

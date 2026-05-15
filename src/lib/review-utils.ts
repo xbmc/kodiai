@@ -99,6 +99,42 @@ export type TimeoutBudgetDetails = {
 
 export type ReviewDetailsLineCountSource = "local-diff" | "github-pr-api-fallback";
 
+
+export type ReviewPlanReviewDetailsFormatterSummary = {
+  gate?: unknown;
+  planHash?: unknown;
+  route?: { kind?: unknown; taskType?: unknown; routingReason?: unknown } | null;
+  scope?: {
+    changedFileCount?: unknown;
+    reviewedFileCount?: unknown;
+    totalLinesChanged?: unknown;
+    representativePaths?: unknown;
+    omittedPathCount?: unknown;
+  } | null;
+  contextSources?: {
+    totalCount?: unknown;
+    totalItemCount?: unknown;
+    statusCounts?: unknown;
+    representatives?: unknown;
+    omittedSourceCount?: unknown;
+  } | null;
+  gates?: {
+    totalCount?: unknown;
+    totalFindingCount?: unknown;
+    statusCounts?: unknown;
+    representatives?: unknown;
+    omittedGateCount?: unknown;
+  } | null;
+  budgets?: { maxComments?: unknown; maxTurns?: unknown; timeoutSeconds?: unknown; tokenBudget?: unknown } | null;
+  publishPolicy?: {
+    mode?: unknown;
+    autoApprove?: unknown;
+    publishReviewDetails?: unknown;
+    inlineComments?: unknown;
+    candidateVerificationRequired?: unknown;
+  } | null;
+};
+
 export type CandidateVerificationPublicationEvidenceReviewDetails = {
   aggregateStatus?: unknown;
   counts?: unknown;
@@ -192,6 +228,95 @@ function formatRedactionFlags(value: unknown): string {
     `publicationEvidence:${flags.publicationEvidenceIncluded === true ? "y" : "n"}`,
     `unsafeFields:${readNonNegativeCount(flags, "unsafeInputFieldCount")}`,
   ].join(",");
+}
+
+
+const REVIEW_PLAN_DETAILS_MAX_VALUE_LENGTH = 80;
+const REVIEW_PLAN_DETAILS_MAX_LIST_ITEMS = 4;
+const REVIEW_PLAN_DETAILS_FORBIDDEN_VALUE = "[redacted]";
+
+function sanitizeReviewPlanDetailsValue(value: unknown, maxLength = REVIEW_PLAN_DETAILS_MAX_VALUE_LENGTH): string | null {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return null;
+  const normalized = String(value).replace(/[\r\n|]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  if (/prompt|model|raw[-_ ]?diff|secret|token|api[-_ ]?key|password/i.test(normalized)) {
+    return REVIEW_PLAN_DETAILS_FORBIDDEN_VALUE;
+  }
+  return normalized.slice(0, maxLength);
+}
+
+function sanitizeReviewPlanDetailsCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
+}
+
+function sanitizeReviewPlanDetailsBoolean(value: unknown): "y" | "n" {
+  return value === true ? "y" : "n";
+}
+
+function formatReviewPlanDetailsStatusCounts(value: unknown): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "none";
+  const record = value as Record<string, unknown>;
+  return ["enabled", "applied", "skipped", "unavailable"]
+    .map((status) => `${status}:${sanitizeReviewPlanDetailsCount(record[status])}`)
+    .join(",");
+}
+
+function formatReviewPlanDetailsRepresentativeList(
+  value: unknown,
+  options: { kind: "context" | "gate" | "path" },
+): string {
+  if (!Array.isArray(value)) return "none";
+  const entries = value.slice(0, REVIEW_PLAN_DETAILS_MAX_LIST_ITEMS).map((entry) => {
+    if (options.kind === "path") return sanitizeReviewPlanDetailsValue(entry, 48);
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+    const record = entry as Record<string, unknown>;
+    const name = sanitizeReviewPlanDetailsValue(record.name, 36);
+    const status = sanitizeReviewPlanDetailsValue(record.status, 20);
+    if (!name || !status) return null;
+    if (options.kind === "context") {
+      return `${name}:${status}:${sanitizeReviewPlanDetailsCount(record.itemCount)}`;
+    }
+    const findingCount = record.findingCount === undefined ? undefined : `:${sanitizeReviewPlanDetailsCount(record.findingCount)}`;
+    return `${name}:${status}${findingCount ?? ""}`;
+  }).filter((entry): entry is string => Boolean(entry));
+  return entries.length > 0 ? entries.join(",") : "none";
+}
+
+function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsFormatterSummary | null): string | null {
+  try {
+    if (typeof summary !== "object" || summary === null || Array.isArray(summary)) return null;
+    const planHash = sanitizeReviewPlanDetailsValue(summary.planHash, 96);
+    if (!planHash) return null;
+    const route = typeof summary.route === "object" && summary.route !== null && !Array.isArray(summary.route) ? summary.route : {};
+    const scope = typeof summary.scope === "object" && summary.scope !== null && !Array.isArray(summary.scope) ? summary.scope : {};
+    const contexts = typeof summary.contextSources === "object" && summary.contextSources !== null && !Array.isArray(summary.contextSources) ? summary.contextSources : {};
+    const gates = typeof summary.gates === "object" && summary.gates !== null && !Array.isArray(summary.gates) ? summary.gates : {};
+    const budgets = typeof summary.budgets === "object" && summary.budgets !== null && !Array.isArray(summary.budgets) ? summary.budgets : {};
+    const publishPolicy = typeof summary.publishPolicy === "object" && summary.publishPolicy !== null && !Array.isArray(summary.publishPolicy) ? summary.publishPolicy : {};
+
+    const routeParts = [
+      sanitizeReviewPlanDetailsValue(route.kind, 32) ?? "unknown",
+      sanitizeReviewPlanDetailsValue(route.taskType, 48),
+      sanitizeReviewPlanDetailsValue(route.routingReason, 48),
+    ].filter((part): part is string => Boolean(part));
+
+    const omittedPaths = sanitizeReviewPlanDetailsCount(scope.omittedPathCount);
+    const omittedSources = sanitizeReviewPlanDetailsCount(contexts.omittedSourceCount);
+    const omittedGates = sanitizeReviewPlanDetailsCount(gates.omittedGateCount);
+    const omittedSuffix = (count: number) => count > 0 ? ` +${count} omitted` : "";
+
+    return [
+      `- Review Plan: hash=${planHash}`,
+      `route=${routeParts.join("/")}`,
+      `scope=${sanitizeReviewPlanDetailsCount(scope.changedFileCount)} changed/${sanitizeReviewPlanDetailsCount(scope.reviewedFileCount)} reviewed/${sanitizeReviewPlanDetailsCount(scope.totalLinesChanged)} lines; paths=${formatReviewPlanDetailsRepresentativeList(scope.representativePaths, { kind: "path" })}${omittedSuffix(omittedPaths)}`,
+      `contexts=${sanitizeReviewPlanDetailsCount(contexts.totalCount)} sources/${sanitizeReviewPlanDetailsCount(contexts.totalItemCount)} items/${formatReviewPlanDetailsStatusCounts(contexts.statusCounts)}; reps=${formatReviewPlanDetailsRepresentativeList(contexts.representatives, { kind: "context" })}${omittedSuffix(omittedSources)}`,
+      `gates=${sanitizeReviewPlanDetailsCount(gates.totalCount)} gates/${sanitizeReviewPlanDetailsCount(gates.totalFindingCount)} findings/${formatReviewPlanDetailsStatusCounts(gates.statusCounts)}; reps=${formatReviewPlanDetailsRepresentativeList(gates.representatives, { kind: "gate" })}${omittedSuffix(omittedGates)}`,
+      `budget=maxComments:${sanitizeReviewPlanDetailsCount(budgets.maxComments)},maxTurns:${sanitizeReviewPlanDetailsCount(budgets.maxTurns)},timeoutSeconds:${sanitizeReviewPlanDetailsCount(budgets.timeoutSeconds)},tokenBudget:${sanitizeReviewPlanDetailsCount(budgets.tokenBudget)}`,
+      `publish=${sanitizeReviewPlanDetailsValue(publishPolicy.mode, 32) ?? "unknown"},autoApprove:${sanitizeReviewPlanDetailsBoolean(publishPolicy.autoApprove)},details:${sanitizeReviewPlanDetailsBoolean(publishPolicy.publishReviewDetails)},inline:${sanitizeReviewPlanDetailsBoolean(publishPolicy.inlineComments)},candidateVerification:${sanitizeReviewPlanDetailsBoolean(publishPolicy.candidateVerificationRequired)}`,
+    ].join("; ");
+  } catch {
+    return null;
+  }
 }
 
 function formatCandidateVerificationPublicationEvidenceLine(
@@ -710,6 +835,7 @@ export function formatReviewDetailsSummary(params: {
     readonly reviewDetailsLine: string;
   } | null;
   candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceReviewDetails | null;
+  reviewPlanSummary?: ReviewPlanReviewDetailsFormatterSummary | null;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -750,6 +876,7 @@ export function formatReviewDetailsSummary(params: {
     contributorExperience,
     shadowSpecialistReviewDetails,
     candidateVerificationPublicationEvidence,
+    reviewPlanSummary,
     prioritization,
     usageLimit,
     tokenUsage,
@@ -805,6 +932,16 @@ export function formatReviewDetailsSummary(params: {
     ? `- Lines changed: +${linesAdded} -${linesRemoved} (GitHub PR API fallback; local diff stats unavailable)`
     : `- Lines changed: +${linesAdded} -${linesRemoved}`;
 
+  const reviewPlanDetailsLines: string[] = [];
+  try {
+    const line = formatReviewPlanReviewDetailsLine(reviewPlanSummary);
+    if (line) {
+      reviewPlanDetailsLines.push(line);
+    }
+  } catch {
+    // Keep Review Details fail-open; malformed public ReviewPlan projections must not block publication.
+  }
+
   const candidateVerificationPublicationEvidenceLines: string[] = [];
   try {
     const line = formatCandidateVerificationPublicationEvidenceLine(candidateVerificationPublicationEvidence);
@@ -844,6 +981,7 @@ export function formatReviewDetailsSummary(params: {
     ...(shadowSpecialistReviewDetails?.reviewDetailsLine
       ? [`- ${shadowSpecialistReviewDetails.reviewDetailsLine}`]
       : []),
+    ...reviewPlanDetailsLines,
     ...candidateVerificationPublicationEvidenceLines,
     `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
   ];
