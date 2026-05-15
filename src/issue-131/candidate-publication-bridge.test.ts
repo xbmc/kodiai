@@ -8,6 +8,7 @@ import {
   type CandidatePublicationBridgeRecord,
 } from "./candidate-publication-bridge.ts";
 import type { CandidatePublicationPolicyResult } from "../specialists/candidate-publication-policy.ts";
+import { ISSUE_131_DEFERRED_HANDOFF_ROWS, type Issue131DeferredHandoffRow } from "./deferred-handoff.ts";
 
 const unsafeFieldNames = [
   "prompt",
@@ -82,6 +83,17 @@ function expectNoUnsafePayloadJson(value: unknown): void {
   }
 }
 
+function expectNoUnsafeReducerClaims(value: unknown): void {
+  const json = stringify(value);
+  expect(json).not.toContain("reducerApproved");
+  expect(json).not.toContain("published");
+  expect(json).not.toContain("commentBody");
+  expect(json).not.toContain("package verifier success");
+  expect(json).not.toContain(".gsd/");
+  expect(json).not.toContain(".planning/");
+  expect(json).not.toContain(".audits/");
+}
+
 describe("candidate publication bridge", () => {
   test("normalizes a verified candidate into deterministic safe bridge and reducer records", () => {
     const input: CandidatePublicationBridgeInput = {
@@ -144,6 +156,7 @@ describe("candidate publication bridge", () => {
     expect(first.correlationKey).toMatch(/^candidate-publication-bridge:[a-f0-9]{32}$/);
     expect(handoff).toEqual({
       bridgeVersion: first.bridgeVersion,
+      bridgeId: first.recordKey,
       recordKey: first.recordKey,
       correlationKey: first.correlationKey,
       sourceLabel: "normal-review",
@@ -155,9 +168,18 @@ describe("candidate publication bridge", () => {
       reasonCategories: ["full-support"],
       malformedReasonCodes: [],
       redactionFlags: first.redactionFlags,
+      downstreamHandoffOwner: {
+        rowId: "candidate-finding-mcp-publication-bridge",
+        requirementRefs: ["R130"],
+        owner: { milestone: "M072", slice: "S01" },
+        consumerOwnerLabel: "M072/S01 candidate-publication bridge owner",
+        proofRequiredBeforePromotion: "Source-owned candidate capture before public GitHub publication, reducer handoff input shape, and package verifier row proving the bridge without raw candidate payloads.",
+        reason: "M071 only proves foundation readiness; candidate publication remains deferred to the bridge implementation owner.",
+      },
     });
     expectNoUnsafePayloadJson(first);
     expectNoUnsafePayloadJson(handoff);
+    expectNoUnsafeReducerClaims(handoff);
   });
 
   test("fails closed into a denied malformed record when policy evaluation throws", () => {
@@ -282,9 +304,56 @@ describe("candidate publication bridge", () => {
     expectNoUnsafePayloadJson(projectCandidatePublicationReducerHandoffInput(record));
   });
 
-  test("rejects malformed bridge records before reducer handoff", () => {
+  test("malformed bridge records fail closed to unavailable reducer handoff", () => {
     const malformed = { ...createCandidatePublicationBridgeRecord({ policyResult: safePolicyResult() }), recordKey: "" } as CandidatePublicationBridgeRecord;
+    const handoff = projectCandidatePublicationReducerHandoffInput(malformed);
 
-    expect(() => projectCandidatePublicationReducerHandoffInput(malformed)).toThrow("candidate publication bridge record is malformed");
+    expect(handoff.status).toBe("denied");
+    expect(handoff.candidateRef).toBe("candidate-unavailable");
+    expect(handoff.reasonCategories).toEqual(["handoff-row-unavailable", "malformed-input", "publication-ineligible"]);
+    expect(handoff.downstreamHandoffOwner).toBeNull();
+    expect(handoff.redactionFlags.reducerHandoffIncludesRawPayload).toBe(false);
+    expectNoUnsafeReducerClaims(handoff);
+  });
+
+  test("missing or deformed candidate bridge handoff row fails closed without synthesizing ownership", () => {
+    const record = createCandidatePublicationBridgeRecord({ policyResult: safePolicyResult() });
+    const rowsWithoutBridge = ISSUE_131_DEFERRED_HANDOFF_ROWS.filter((row) => row.rowId !== "candidate-finding-mcp-publication-bridge");
+    const deformedRows = [
+      {
+        rowId: "candidate-finding-mcp-publication-bridge",
+        requirementRefs: [],
+        owner: { milestone: "M073", slice: "S99" },
+        consumerOwnerLabel: "bad owner",
+        proofRequiredBeforePromotion: "bad .gsd/path package verifier success claim",
+        reason: "bad",
+      },
+    ] as unknown as readonly Issue131DeferredHandoffRow[];
+
+    for (const handoff of [
+      projectCandidatePublicationReducerHandoffInput(record, rowsWithoutBridge),
+      projectCandidatePublicationReducerHandoffInput(record, deformedRows),
+    ]) {
+      expect(handoff.status).toBe("denied");
+      expect(handoff.downstreamHandoffOwner).toBeNull();
+      expect(handoff.reasonCategories).toContain("handoff-row-unavailable");
+      expectNoUnsafeReducerClaims(handoff);
+    }
+  });
+
+  test("reducer handoff projection preserves M072 S01 R130 ownership without publication claims", () => {
+    const handoff = projectCandidatePublicationReducerHandoffInput(createCandidatePublicationBridgeRecord({
+      sourceLabel: "ownership-proof",
+      policyResult: safePolicyResult({ allowed: false, status: "deny", reasonCategories: ["no-evidence"] }),
+    }));
+
+    expect(handoff.downstreamHandoffOwner).toMatchObject({
+      rowId: "candidate-finding-mcp-publication-bridge",
+      requirementRefs: ["R130"],
+      owner: { milestone: "M072", slice: "S01" },
+    });
+    expect(handoff.status).toBe("denied");
+    expect(handoff.reasonCategories).toEqual(["no-evidence", "publication-ineligible"]);
+    expectNoUnsafeReducerClaims(handoff);
   });
 });

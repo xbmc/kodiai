@@ -9,7 +9,7 @@ export const ISSUE_131_DEFERRED_HANDOFF_ROW_IDS = [
 export type Issue131DeferredHandoffRowId = typeof ISSUE_131_DEFERRED_HANDOFF_ROW_IDS[number];
 
 export type Issue131DeferredRequirementRef = "R104" | "R130" | "R131" | "R132" | "R133";
-export type Issue131DeferredOwnerMilestone = "M072" | "M073" | "M074" | "M075";
+export type Issue131DeferredOwnerMilestone = "M071" | "M072" | "M073" | "M074" | "M075";
 export type Issue131DeferredOwnerSlice = `S${string}`;
 
 export type Issue131DeferredHandoffRow = {

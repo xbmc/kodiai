@@ -9,6 +9,10 @@ import {
   type CandidatePublicationPolicyRedactionFlags,
 } from "../specialists/candidate-publication-policy.ts";
 import type { CandidateVerificationState } from "../specialists/candidate-verification.ts";
+import {
+  ISSUE_131_DEFERRED_HANDOFF_ROWS,
+  type Issue131DeferredHandoffRow,
+} from "./deferred-handoff.ts";
 
 export const CANDIDATE_PUBLICATION_BRIDGE_VERSION = "candidate-publication-bridge.v1" as const;
 
@@ -16,7 +20,8 @@ export type CandidatePublicationBridgeStatus = "allowed" | "denied" | "malformed
 
 export type CandidatePublicationBridgeReasonCategory =
   | CandidatePublicationPolicyReasonCategory
-  | "policy-evaluation-failed";
+  | "policy-evaluation-failed"
+  | "handoff-row-unavailable";
 
 export type CandidatePublicationBridgeMalformedReasonCode =
   | "missing-delivery-id"
@@ -71,7 +76,34 @@ export type CandidatePublicationBridgeRecord = {
   readonly redactionFlags: CandidatePublicationBridgeRedactionFlags;
 };
 
-export type CandidatePublicationReducerHandoffInput = Omit<CandidatePublicationBridgeRecord, "policyStatus">;
+export type CandidatePublicationReducerHandoffOwner = {
+  readonly rowId: "candidate-finding-mcp-publication-bridge";
+  readonly requirementRefs: readonly string[];
+  readonly owner: {
+    readonly milestone: "M072";
+    readonly slice: "S01";
+  };
+  readonly consumerOwnerLabel: string;
+  readonly proofRequiredBeforePromotion: string;
+  readonly reason: string;
+};
+
+export type CandidatePublicationReducerHandoffInput = {
+  readonly bridgeVersion: typeof CANDIDATE_PUBLICATION_BRIDGE_VERSION;
+  readonly bridgeId: string;
+  readonly recordKey: string;
+  readonly correlationKey: string;
+  readonly sourceLabel: string;
+  readonly status: Exclude<CandidatePublicationBridgeStatus, "allowed"> | CandidatePublicationBridgeStatus;
+  readonly candidateRef: string;
+  readonly verificationState: CandidateVerificationState | null;
+  readonly presence: CandidatePublicationBridgePresence;
+  readonly counts: CandidatePublicationBridgeCounts;
+  readonly reasonCategories: readonly CandidatePublicationBridgeReasonCategory[];
+  readonly malformedReasonCodes: readonly CandidatePublicationBridgeMalformedReasonCode[];
+  readonly redactionFlags: CandidatePublicationBridgeRedactionFlags;
+  readonly downstreamHandoffOwner: CandidatePublicationReducerHandoffOwner | null;
+};
 
 export type CandidatePublicationPolicyEvaluator = (input: CandidatePublicationPolicyInput | null | undefined) => CandidatePublicationPolicyResult;
 
@@ -403,18 +435,114 @@ export function createCandidatePublicationBridgeRecord(input: CandidatePublicati
   };
 }
 
-function assertBridgeRecord(record: CandidatePublicationBridgeRecord): void {
-  if (record.bridgeVersion !== CANDIDATE_PUBLICATION_BRIDGE_VERSION || !record.recordKey || !record.correlationKey || !record.sourceLabel) {
-    throw new Error("candidate publication bridge record is malformed");
-  }
+function isBridgeRecord(record: unknown): record is CandidatePublicationBridgeRecord {
+  return isRecord(record)
+    && record.bridgeVersion === CANDIDATE_PUBLICATION_BRIDGE_VERSION
+    && typeof record.recordKey === "string"
+    && record.recordKey.length > 0
+    && typeof record.correlationKey === "string"
+    && record.correlationKey.length > 0
+    && typeof record.sourceLabel === "string"
+    && record.sourceLabel.length > 0
+    && (record.status === "allowed" || record.status === "denied" || record.status === "malformed")
+    && typeof record.candidateRef === "string"
+    && (record.verificationState === null || record.verificationState === "verified" || record.verificationState === "partially_verified" || record.verificationState === "unverified" || record.verificationState === "disproven")
+    && isRecord(record.presence)
+    && isRecord(record.counts)
+    && Array.isArray(record.reasonCategories)
+    && Array.isArray(record.malformedReasonCodes)
+    && isRecord(record.redactionFlags);
+}
+
+function isCandidatePublicationBridgeHandoffRow(row: unknown): row is Issue131DeferredHandoffRow {
+  return isRecord(row)
+    && row.rowId === "candidate-finding-mcp-publication-bridge"
+    && Array.isArray(row.requirementRefs)
+    && row.requirementRefs.includes("R130")
+    && isRecord(row.owner)
+    && row.owner.milestone === "M072"
+    && row.owner.slice === "S01"
+    && typeof row.consumerOwnerLabel === "string"
+    && row.consumerOwnerLabel.trim().length > 0
+    && typeof row.proofRequiredBeforePromotion === "string"
+    && row.proofRequiredBeforePromotion.trim().length > 0
+    && typeof row.reason === "string"
+    && row.reason.trim().length > 0;
+}
+
+function projectHandoffOwner(row: unknown): CandidatePublicationReducerHandoffOwner | null {
+  if (!isCandidatePublicationBridgeHandoffRow(row)) return null;
+  return {
+    rowId: "candidate-finding-mcp-publication-bridge",
+    requirementRefs: row.requirementRefs,
+    owner: {
+      milestone: "M072",
+      slice: "S01",
+    },
+    consumerOwnerLabel: row.consumerOwnerLabel,
+    proofRequiredBeforePromotion: row.proofRequiredBeforePromotion,
+    reason: row.reason,
+  };
+}
+
+function unavailableReducerHandoffProjection(): CandidatePublicationReducerHandoffInput {
+  const counts = emptyCounts({ malformedRecordCount: 1 });
+  const presence: CandidatePublicationBridgePresence = {
+    hasDeliveryId: false,
+    hasReviewOutputKey: false,
+    hasUpstreamCorrelationKey: false,
+    hasPolicyCorrelationKey: false,
+  };
+  const reasonCategories: CandidatePublicationBridgeReasonCategory[] = [
+    "handoff-row-unavailable",
+    "malformed-input",
+    "publication-ineligible",
+  ];
+  const keys = buildKeys({
+    sourceLabel: "candidate-publication",
+    status: "denied",
+    candidateRef: "candidate-unavailable",
+    verificationState: null,
+    presence,
+    counts,
+    reasonCategories,
+    upstreamCorrelationKey: null,
+  });
+
+  return {
+    bridgeVersion: CANDIDATE_PUBLICATION_BRIDGE_VERSION,
+    bridgeId: keys.recordKey,
+    recordKey: keys.recordKey,
+    correlationKey: keys.correlationKey,
+    sourceLabel: "candidate-publication",
+    status: "denied",
+    candidateRef: "candidate-unavailable",
+    verificationState: null,
+    presence,
+    counts,
+    reasonCategories,
+    malformedReasonCodes: ["missing-delivery-id", "missing-review-output-key", "missing-correlation-key"],
+    redactionFlags: {
+      ...emptyPolicyRedactionFlags(),
+      githubCommentBodyIncluded: false,
+      reducerHandoffIncludesRawPayload: false,
+    },
+    downstreamHandoffOwner: null,
+  };
 }
 
 export function projectCandidatePublicationReducerHandoffInput(
-  record: CandidatePublicationBridgeRecord,
+  record: unknown,
+  deferredHandoffRows: readonly Issue131DeferredHandoffRow[] = ISSUE_131_DEFERRED_HANDOFF_ROWS,
 ): CandidatePublicationReducerHandoffInput {
-  assertBridgeRecord(record);
+  const owner = projectHandoffOwner(deferredHandoffRows.find((row) => row.rowId === "candidate-finding-mcp-publication-bridge"));
+  if (!isBridgeRecord(record) || owner === null) {
+    return unavailableReducerHandoffProjection();
+  }
+
   return {
     bridgeVersion: record.bridgeVersion,
+    bridgeId: record.recordKey,
     recordKey: record.recordKey,
     correlationKey: record.correlationKey,
     sourceLabel: record.sourceLabel,
@@ -426,5 +554,6 @@ export function projectCandidatePublicationReducerHandoffInput(
     reasonCategories: record.reasonCategories,
     malformedReasonCodes: record.malformedReasonCodes,
     redactionFlags: record.redactionFlags,
+    downstreamHandoffOwner: owner,
   };
 }
