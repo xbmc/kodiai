@@ -9,8 +9,8 @@
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:blocked",
+      "label": "Phase: blocked",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5712,6 +5712,31 @@
     {
       "id": "task:M071:S05:T03",
       "label": "T03: Run aggregate M071 closure proof",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M071:S06",
+      "label": "S06: R104 ownership resolution and downstream handoff evidence",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/slices/S06/S06-PLAN.md"
+    },
+    {
+      "id": "task:M071:S06:T01",
+      "label": "T01: Add source-owned deferred handoff contract and re-own R104 truthfully",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S06:T02",
+      "label": "T02: Wire handoff contract into verify:m071 fail-closed reporting",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S06:T03",
+      "label": "T03: Run aggregate M071 remediation proof and inspect verifier JSON",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -12457,6 +12482,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M071",
+      "to": "slice:M071:S06",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S06",
+      "to": "task:M071:S06:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S06",
+      "to": "task:M071:S06:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S06",
+      "to": "task:M071:S06:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -13699,5 +13748,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-15T02:46:56.413Z"
+  "builtAt": "2026-05-15T03:25:13.377Z"
 }
