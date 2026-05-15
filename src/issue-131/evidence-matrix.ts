@@ -406,10 +406,9 @@ function collectRowIssues(rows: readonly Issue131MatrixRow[]): string[] {
 function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string, issues: readonly string[]): Issue131Check[] {
   const invalidStatuses = rows.filter((row) => !isIssue131Status(row.status));
   const evidenceIssues = issues.filter((issue) => /evidence|path|forbidden|empty/i.test(issue));
-  const missingCurrentGaps = [
+  const currentSourceGapsFailClosed = [
     rows.find((row) => row.id === "review-plan-contract")?.status === "missing",
     rows.find((row) => row.id === "typed-graph-validation-config")?.status === "partial",
-    rows.find((row) => row.id === "package-verifier-wiring")?.status === "missing",
   ].every(Boolean);
   const deferredRows = rows.filter((row) => row.status === "deferred");
   const packageScripts = parsePackageScripts(packageJsonText);
@@ -419,7 +418,7 @@ function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string
   return [
     makeCheck("M071-ISSUE-131-STATUS-TAXONOMY", invalidStatuses.length === 0, "All rows use the exact issue #131 status taxonomy.", invalidStatuses.map((row) => row.id).join(", "), ["weak_evidence"]),
     makeCheck("M071-ISSUE-131-EVIDENCE-PATHS", evidenceIssues.length === 0, "Non-deferred claims use repo-relative non-planning evidence paths with short reasons.", evidenceIssues.join(" "), ["forbidden_evidence_path", "weak_evidence"]),
-    makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", missingCurrentGaps, "Current repo gaps remain fail-closed as missing/partial instead of complete.", "Current ReviewPlan, graph-validation, or package wiring classifications drifted.", ["weak_evidence", "schema_gap", "normal_path_gap"]),
+    makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", currentSourceGapsFailClosed, "Current repo gaps remain fail-closed as missing/partial instead of complete.", "Current ReviewPlan or graph-validation classifications drifted.", ["weak_evidence", "schema_gap", "normal_path_gap"]),
     makeCheck("M071-ISSUE-131-DEFERRED-OWNERSHIP", deferredRows.length === 4 && deferredRows.every((row) => row.deferredTo), "Deferred rows name owning follow-up milestones/slices.", "Deferred issue #131 rows are missing owner metadata.", ["deferred_owner"]),
     makeCheck("M071-ISSUE-131-PACKAGE-WIRING", packageWired, "package.json exposes verify:m071.", "verify:m071 is not yet wired in package.json.", ["unwired_package_script"]),
     makeCheck("M071-ISSUE-131-REPORT-SAFETY", safetyIssues.length === 0, "Report-shaped data excludes raw prompts, model output, comments, and diffs.", safetyIssues.join(" "), ["raw_field_leak"]),
