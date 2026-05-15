@@ -42,6 +42,11 @@ export function createCommentServer(
         : undefined
     );
 
+  function isRecoverableInlinePublicationFailure(reason: string | undefined): boolean {
+    return reason === "line-not-commentable-in-pr-diff"
+      || reason === "review-thread-line-not-resolved";
+  }
+
   // One-shot publish guard: only one create_comment call succeeds per server instance.
   // Prevents the agent from double-posting when it retries a tool call within a turn.
   let createCommentPublished = false;
@@ -627,9 +632,12 @@ export function createCommentServer(
             const octokit = await getOctokit();
             const inlinePublicationState = reviewOutputPublicationGate?.getInlinePublicationState();
             if (
-              inlinePublicationState?.status === "failed" ||
               inlinePublicationState?.status === "skipped" ||
-              inlinePublicationState?.status === "published"
+              inlinePublicationState?.status === "published" ||
+              (
+                inlinePublicationState?.status === "failed" &&
+                !isRecoverableInlinePublicationFailure(inlinePublicationState.reason)
+              )
             ) {
               const fallbackReason = inlinePublicationState.status === "published"
                 ? "candidate-already-published"
@@ -661,6 +669,20 @@ export function createCommentServer(
                 ],
                 isError: true,
               };
+            }
+            if (
+              inlinePublicationState?.status === "failed" &&
+              isRecoverableInlinePublicationFailure(inlinePublicationState.reason)
+            ) {
+              logger?.info(
+                {
+                  reviewOutputKey,
+                  idempotencyOutcome: "direct-fallback-allowed",
+                  candidatePublicationState: inlinePublicationState.status,
+                  candidatePublicationReason: inlinePublicationState.reason,
+                },
+                "Allowing direct comment fallback after recoverable inline candidate publication failure",
+              );
             }
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
             if (publicationStatus && !publicationStatus.shouldPublish) {

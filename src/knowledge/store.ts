@@ -59,6 +59,15 @@ function _normalizeDbNumber(value: unknown): number | null {
   return Number.isFinite(normalized) ? normalized : null;
 }
 
+function _normalizeDbInteger(value: unknown, fallback = 0): number {
+  const normalized = _normalizeDbNumber(value);
+  return normalized == null ? fallback : Math.trunc(normalized);
+}
+
+function _normalizeDbText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim().length > 0 ? value : fallback;
+}
+
 function _isValidFindingRecord(finding: FindingRecord): boolean {
   return Number.isFinite(finding.reviewId)
     && typeof finding.filePath === "string"
@@ -81,6 +90,19 @@ export function createKnowledgeStore(opts: {
 
   const store: KnowledgeStore = {
     async recordReview(entry: ReviewRecord): Promise<number> {
+      const repo = _normalizeDbText(entry.repo, "unknown/unknown");
+      const prNumber = _normalizeDbInteger(entry.prNumber, 0);
+      const filesAnalyzed = _normalizeDbInteger(entry.filesAnalyzed, 0);
+      const linesChanged = _normalizeDbInteger(entry.linesChanged, 0);
+      const findingsCritical = _normalizeDbInteger(entry.findingsCritical, 0);
+      const findingsMajor = _normalizeDbInteger(entry.findingsMajor, 0);
+      const findingsMedium = _normalizeDbInteger(entry.findingsMedium, 0);
+      const findingsMinor = _normalizeDbInteger(entry.findingsMinor, 0);
+      const findingsTotal = _normalizeDbInteger(entry.findingsTotal, 0);
+      const suppressionsApplied = _normalizeDbInteger(entry.suppressionsApplied, 0);
+      const durationMs = _normalizeDbNumber(entry.durationMs);
+      const conclusion = _normalizeDbText(entry.conclusion, "unknown");
+
       const [inserted] = await sql`
         INSERT INTO reviews (
           repo, pr_number, head_sha, delivery_id,
@@ -89,11 +111,11 @@ export function createKnowledgeStore(opts: {
           suppressions_applied, config_snapshot,
           duration_ms, model, conclusion
         ) VALUES (
-          ${entry.repo}, ${entry.prNumber}, ${entry.headSha ?? null}, ${entry.deliveryId ?? null},
-          ${entry.filesAnalyzed}, ${entry.linesChanged},
-          ${entry.findingsCritical}, ${entry.findingsMajor}, ${entry.findingsMedium}, ${entry.findingsMinor}, ${entry.findingsTotal},
-          ${entry.suppressionsApplied}, ${entry.configSnapshot ?? null},
-          ${entry.durationMs ?? null}, ${entry.model ?? null}, ${entry.conclusion}
+          ${repo}, ${prNumber}, ${entry.headSha ?? null}, ${entry.deliveryId ?? null},
+          ${filesAnalyzed}, ${linesChanged},
+          ${findingsCritical}, ${findingsMajor}, ${findingsMedium}, ${findingsMinor}, ${findingsTotal},
+          ${suppressionsApplied}, ${entry.configSnapshot ?? null},
+          ${durationMs}, ${entry.model ?? null}, ${conclusion}
         )
         RETURNING id
       `;

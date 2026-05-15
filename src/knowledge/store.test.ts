@@ -21,6 +21,39 @@ const mockLogger = {
 let sql: Sql;
 let store: KnowledgeStore;
 
+describe("KnowledgeStore recordReview unit guards", () => {
+  test("normalizes malformed review metrics instead of passing undefined values to postgres", async () => {
+    const insertedValues: unknown[][] = [];
+    const sqlStub = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      insertedValues.push(values);
+      if (values.some((value) => value === undefined)) {
+        throw new Error("UNDEFINED_VALUE: Undefined values are not allowed");
+      }
+      return Promise.resolve([{ id: 123 }]);
+    }) as unknown as Sql;
+    const unitStore = createKnowledgeStore({ sql: sqlStub, logger: mockLogger });
+
+    const reviewId = await unitStore.recordReview({
+      repo: "owner/repo",
+      prNumber: 42,
+      filesAnalyzed: undefined,
+      linesChanged: undefined,
+      findingsCritical: undefined,
+      findingsMajor: 1,
+      findingsMedium: undefined,
+      findingsMinor: 0,
+      findingsTotal: undefined,
+      suppressionsApplied: undefined,
+      conclusion: undefined,
+    } as unknown as Parameters<KnowledgeStore["recordReview"]>[0]);
+
+    expect(reviewId).toBe(123);
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]).not.toContain(undefined);
+    expect(insertedValues[0]).toContain("unknown");
+  });
+});
+
 describe("KnowledgeStore recordFindings unit guards", () => {
   test("skips malformed findings instead of passing undefined values to postgres", async () => {
     const insertedValues: unknown[][] = [];
