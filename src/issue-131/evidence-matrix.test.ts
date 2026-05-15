@@ -13,20 +13,28 @@ import {
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
   "import { buildReviewPlan, summarizeReviewPlanForDiagnostics, summarizeReviewPlanForReviewDetails, type ReviewPlan } from '../review-plan/review-plan.ts';",
-  "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
+  "import { graphValidationAppliedRuntimeStatus, graphValidationGateForReviewPlan, graphValidationSkippedRuntimeStatus, graphValidationThrownRuntimeStatus, resolveGraphValidationPreStatus } from '../review-graph/graph-validation-status.ts';",
+  "const graphValidationPreStatus = resolveGraphValidationPreStatus({ config, graphContextAvailable: Boolean(graphBlastRadius) });",
+  "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [graphValidationGateForReviewPlan(graphValidationPreStatus)], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
   "logger.info({ ...reviewPlanSummarizer(reviewPlan as ReviewPlan) }, 'ReviewPlan constructed before publication');",
   "const reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails;",
   "const buildReviewPlanReviewDetailsSummary = () => { try { return reviewPlanReviewDetailsSummarizer(reviewPlan); } catch (err) { logger.warn({ gate: 'review-plan', reason: 'review-details-projection-failed' }, 'ReviewPlan Review Details projection failed (fail-open, publishing without Review Plan line)'); return null; } };",
   "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlanSummary: buildReviewPlanReviewDetailsSummary() });",
   "const marker = '<summary>Review Details</summary>';",
-  "if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {",
-  "  const validationResult = await validateGraphAmplifiedFindings(input, graphBlastRadius, llm, { enabled: true }, logger);",
-  "  logger.info({ validatedCount: validationResult.validatedCount, confirmedCount: validationResult.confirmedCount, uncertainCount: validationResult.uncertainCount }, 'Graph validation applied');",
-  "  processedFindings = processedFindings.map((f) => ({ ...f, graphValidationVerdict: 'skipped' }));",
+  "const skippedGraphValidationStatus = graphValidationSkippedRuntimeStatus({ config, graphContextAvailable: Boolean(graphBlastRadius), findingCount: processedFindings.length });",
+  "if (skippedGraphValidationStatus) logger.info({ ...skippedGraphValidationStatus }, 'Graph-amplified finding validation skipped or unavailable');",
+  "else if (graphBlastRadius) {",
+  "  try {",
+  "    const validationResult = await graphValidationRunner(graphValidationInput, graphBlastRadius, graphValidationLLM, config.review.graphValidation, logger);",
+  "    const runtimeStatus = graphValidationAppliedRuntimeStatus({ result: validationResult, findingCount: processedFindings.length });",
+  "    logger.info({ ...runtimeStatus }, 'Graph-amplified finding validation completed');",
+  "    logger.warn({ ...runtimeStatus }, 'Graph-amplified finding validation failed (fail-open, continuing without validation)');",
+  "  } catch { logger.warn({ ...graphValidationThrownRuntimeStatus({ findingCount: processedFindings.length }) }, 'Graph-amplified finding validation threw unexpectedly (fail-open)'); }",
   "}",
 ].join("\n");
 
 const CURRENT_REVIEW_PLAN_TS = [
+  "const GATE_STATUSES = ['enabled', 'applied', 'skipped', 'unavailable'] as const; export type ReviewPlanGateStatus = typeof GATE_STATUSES[number];",
   "export type ReviewPlan = { version: 1; stableHash: string; route: unknown; scope: unknown; contextSources: readonly unknown[]; gates: readonly unknown[]; budgets: unknown; publishPolicy: unknown };",
   "export type ReviewPlanReviewDetailsSummary = { gate: 'review-plan-review-details'; planHash: string; route: unknown; scope: unknown; contextSources: unknown; gates: unknown; budgets: unknown; publishPolicy: unknown };",
   "export const REVIEW_PLAN_HASH_PREFIX = 'review-plan:v1:';",
@@ -50,16 +58,34 @@ const CURRENT_REVIEW_UTILS_TS = [
 ].join("\n");
 
 const CURRENT_CONFIG_TS = [
+  "const graphValidationSchema = z.object({",
+  "  enabled: z.boolean().default(false),",
+  "  maxFindingsToValidate: z.number().int().min(1).max(100).default(10),",
+  "  contextMaxChars: z.number().int().min(100).max(10000).default(1000),",
+  "}).default({ enabled: false, maxFindingsToValidate: 10, contextMaxChars: 1000 });",
   "const reviewSchema = z.object({",
   "  enabled: z.boolean().default(true),",
   "  maxComments: z.number().min(1).max(25).default(7),",
-  "});",
+  "  graphValidation: graphValidationSchema,",
+  "}).default({ enabled: true, maxComments: 7, graphValidation: { enabled: false, maxFindingsToValidate: 10, contextMaxChars: 1000 } });",
 ].join("\n");
 
 const CURRENT_VALIDATION_TS = [
   "// Fail-open validation module",
   "export type GraphValidationOptions = { enabled?: boolean; maxFindingsToValidate?: number };",
   "export type GraphValidationResult<T> = { findings: T[]; validatedCount: number; confirmedCount: number; uncertainCount: number; succeeded: boolean };",
+].join("\n");
+
+const CURRENT_GRAPH_VALIDATION_STATUS_TS = [
+  "export const GRAPH_VALIDATION_GATE = 'graph-validation' as const;",
+  "export type GraphValidationPreStatus = { gate: typeof GRAPH_VALIDATION_GATE; status: ReviewPlanGateStatus; reason: 'config-disabled' | 'graph-context-unavailable' | 'graph-context-available'; enabled: boolean; graphContextAvailable: boolean };",
+  "export type GraphValidationRuntimeStatus = { gate: typeof GRAPH_VALIDATION_GATE; gateResult: 'skipped' | 'unavailable' | 'applied' | 'failure'; reason: 'config-disabled' | 'graph-context-unavailable' | 'validation-applied' | 'no-findings-validated' | 'validation-failed' | 'validation-threw'; enabled: boolean; graphContextAvailable: boolean; findingCount?: number; validatedCount?: number; confirmedCount?: number; uncertainCount?: number };",
+  "export function resolveGraphValidationPreStatus() { return { gate: GRAPH_VALIDATION_GATE, status: 'enabled' as ReviewPlanGateStatus, reason: 'graph-context-available', enabled: true, graphContextAvailable: true }; }",
+  "export function graphValidationGateForReviewPlan(status: GraphValidationPreStatus) { return { name: GRAPH_VALIDATION_GATE, status: status.status, reason: status.reason }; }",
+  "export function graphValidationSkippedRuntimeStatus() { return { gate: GRAPH_VALIDATION_GATE, gateResult: preStatus.status === 'skipped' ? 'skipped' : 'unavailable', reason: 'config-disabled', enabled: false, graphContextAvailable: false }; }",
+  "export function graphValidationAppliedRuntimeStatus(result: { succeeded: boolean }) { return result.succeeded ? { gate: GRAPH_VALIDATION_GATE, gateResult: 'applied', reason: 'validation-applied', enabled: true, graphContextAvailable: true, findingCount: 1, validatedCount: 1, confirmedCount: 1, uncertainCount: 0 } : { gate: GRAPH_VALIDATION_GATE, gateResult: 'failure', reason: 'validation-failed', enabled: true, graphContextAvailable: true, findingCount: 1, validatedCount: 0, confirmedCount: 0, uncertainCount: 0 }; }",
+  "export function graphValidationThrownRuntimeStatus() { return { gate: GRAPH_VALIDATION_GATE, gateResult: 'failure', reason: 'validation-threw', enabled: true, graphContextAvailable: true }; }",
+  "const noFindings = 'no-findings-validated';",
 ].join("\n");
 
 const PACKAGE_WITHOUT_M071 = JSON.stringify({
@@ -75,6 +101,7 @@ function evaluateFixture(overrides: Partial<Record<Issue131SourcePath, string>> 
     "src/lib/review-utils.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
+    "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,
     "package.json": overrides.packageJson ?? PACKAGE_WITHOUT_M071,
     ...overrides,
   };
@@ -126,7 +153,7 @@ describe("issue #131 evidence matrix evaluator", () => {
     }
   });
 
-  test("classifies current S02/S03 source evidence as complete while later slices stay fail-closed and package remains unwired", () => {
+  test("classifies current S02/S04 source evidence as complete while later slices stay deferred and package remains unwired", () => {
     const report = evaluateFixture();
 
     expect(report.command).toBe("verify:m071");
@@ -143,15 +170,19 @@ describe("issue #131 evidence matrix evaluator", () => {
       "src/lib/review-utils.ts",
       "src/handlers/review.ts",
     ]);
-    expect(row(report, "typed-graph-validation-config").status).toBe("partial");
-    expect(row(report, "truthful-graph-validation-status").status).toBe("partial");
+    expect(row(report, "typed-graph-validation-config").status).toBe("complete");
+    expect(row(report, "truthful-graph-validation-status").status).toBe("complete");
     expect(row(report, "package-verifier-wiring").status).toBe("missing");
 
     expect(row(report, "typed-graph-validation-config").evidence.map((entry) => entry.path)).toEqual([
+      "src/execution/config.ts",
       "src/handlers/review.ts",
-      "src/review-graph/validation.ts",
     ]);
-    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("src/execution/config.ts does not expose typed review.graphValidation");
+    expect(row(report, "truthful-graph-validation-status").evidence.map((entry) => entry.path)).toEqual([
+      "src/review-graph/graph-validation-status.ts",
+      "src/handlers/review.ts",
+      "src/review-plan/review-plan.ts",
+    ]);
     expect(report.checks.find((check) => check.id === "M071-ISSUE-131-ROW-CLASSIFICATION")?.passed).toBe(true);
     expect(report.checks.find((check) => check.id === "M071-ISSUE-131-PACKAGE-WIRING")?.passed).toBe(false);
   });
@@ -259,11 +290,54 @@ describe("issue #131 evidence matrix evaluator", () => {
 
   test("does not upgrade graph-validation config to complete while handler uses an untyped cast", () => {
     const report = evaluateFixture({
-      "src/execution/config.ts": "const graphValidationSchema = z.object({ enabled: z.boolean().default(false) }); const reviewSchema = z.object({ graphValidation: graphValidationSchema });",
+      "src/handlers/review.ts": CURRENT_REVIEW_TS.replace(
+        "config.review.graphValidation",
+        "(config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation",
+      ),
     });
 
     expect(row(report, "typed-graph-validation-config").status).toBe("partial");
-    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("typed consumption");
+    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("old untyped graphValidation config cast");
+  });
+
+  test("keeps graph-validation config schema without typed handler consumption partial", () => {
+    const report = evaluateFixture({
+      "src/handlers/review.ts": "const unrelated = 'review handler without graph validation';",
+    });
+
+    expect(row(report, "typed-graph-validation-config").status).toBe("partial");
+    expect(row(report, "typed-graph-validation-config").evidence.map((entry) => entry.path)).toContain("src/execution/config.ts");
+    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("Review handler does not consume config.review.graphValidation directly");
+  });
+
+  test("keeps graph-validation status strings without config schema partial", () => {
+    const report = evaluateFixture({
+      "src/execution/config.ts": "const reviewSchema = z.object({ enabled: z.boolean().default(true) });",
+    });
+
+    expect(row(report, "typed-graph-validation-config").status).toBe("partial");
+    expect(row(report, "truthful-graph-validation-status").status).toBe("complete");
+    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("source-owned graphValidationSchema");
+  });
+
+  test("rejects graph-validation evidence that exists only in comments or inert strings", () => {
+    const report = evaluateFixture({
+      "src/execution/config.ts": [
+        "// const graphValidationSchema = z.object({ enabled: z.boolean().default(false) });",
+        "const note = 'graphValidation: graphValidationSchema enabled false maxFindingsToValidate contextMaxChars';",
+      ].join("\n"),
+      "src/handlers/review.ts": [
+        "// graphValidationRunner(input, graphBlastRadius, llm, config.review.graphValidation, logger)",
+        "const note = 'graphValidationSkippedRuntimeStatus graphValidationAppliedRuntimeStatus graphValidationThrownRuntimeStatus';",
+      ].join("\n"),
+      "src/review-graph/graph-validation-status.ts": [
+        "// export const GRAPH_VALIDATION_GATE = 'graph-validation' as const;",
+        "const note = 'GraphValidationRuntimeStatus skipped unavailable applied failure validatedCount confirmedCount uncertainCount';",
+      ].join("\n"),
+    });
+
+    expect(row(report, "typed-graph-validation-config").status).not.toBe("complete");
+    expect(row(report, "truthful-graph-validation-status").status).not.toBe("complete");
   });
 
   test("can classify completed package wiring only when verify:m071 points at an M071 verifier", () => {

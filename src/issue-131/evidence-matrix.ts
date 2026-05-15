@@ -74,6 +74,7 @@ export const ISSUE_131_SOURCE_PATHS = [
   "src/lib/review-utils.ts",
   "src/execution/config.ts",
   "src/review-graph/validation.ts",
+  "src/review-graph/graph-validation-status.ts",
   "package.json",
 ] as const;
 export type Issue131SourcePath = typeof ISSUE_131_SOURCE_PATHS[number];
@@ -221,6 +222,7 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
     reviewUtils: readers.readFileText("src/lib/review-utils.ts") ?? "",
     config: readers.readFileText("src/execution/config.ts") ?? "",
     validation: readers.readFileText("src/review-graph/validation.ts") ?? "",
+    graphValidationStatus: readers.readFileText("src/review-graph/graph-validation-status.ts") ?? "",
     packageJson: readers.readPackageJsonText() ?? "",
   };
 
@@ -244,7 +246,7 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
   };
 }
 
-function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; reviewUtils: string; config: string; validation: string; packageJson: string }): Issue131MatrixRow {
+function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; reviewUtils: string; config: string; validation: string; graphValidationStatus: string; packageJson: string }): Issue131MatrixRow {
   if (definition.deferredTo) {
     return makeRow(definition, "deferred", [], [], definition.deferredTo);
   }
@@ -305,36 +307,38 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
       return makeRow(definition, "missing", [], ["Review Details summary publication evidence was not found."]);
     }
     case "typed-graph-validation-config": {
-      const reviewUsesGraphValidation = source.review.includes("graphValidation") && source.review.includes("validateGraphAmplifiedFindings");
-      const usesUntypedCast = /config\.review\s+as\s+Record<string, unknown>\s*&\s*\{\s*graphValidation\?/.test(source.review);
-      const configHasTypedSchema = /graphValidationSchema|graphValidation:\s*graphValidationSchema|graphValidation:\s*z\./.test(source.config);
+      const configProbe = findTypedGraphValidationConfig(source.config);
+      const handlerProbe = findTypedGraphValidationHandlerConsumption(source.review);
       const validationTypesExist = source.validation.includes("export type GraphValidationOptions") && source.validation.includes("enabled?: boolean");
-      if (reviewUsesGraphValidation && configHasTypedSchema && !usesUntypedCast) {
+
+      if (configProbe.complete && handlerProbe.complete) {
         return makeRow(definition, "complete", [
-          { path: "src/handlers/review.ts", reason: "Review handler consumes typed graph-validation config without a local cast." },
-          { path: "src/execution/config.ts", reason: "Config schema includes review.graphValidation." },
+          { path: "src/execution/config.ts", reason: "Repo config schema preserves review.graphValidation.enabled with fail-open defaults and bounded validation budgets." },
+          { path: "src/handlers/review.ts", reason: "Normal review handler consumes config.review.graphValidation directly without the old untyped cast." },
         ]);
       }
-      if (reviewUsesGraphValidation || validationTypesExist) {
-        return makeRow(definition, "partial", [
-          { path: "src/handlers/review.ts", reason: usesUntypedCast ? "Review handler gates graph validation through an untyped cast." : "Review handler references graph validation." },
-          { path: "src/review-graph/validation.ts", reason: "Graph-validation option types exist separately from repo config parsing." },
-        ], [configHasTypedSchema ? "Review handler still does not prove typed consumption." : "src/execution/config.ts does not expose typed review.graphValidation schema support."]);
+
+      const evidence: Issue131Evidence[] = [];
+      if (configProbe.present) evidence.push({ path: "src/execution/config.ts", reason: "review.graphValidation schema/default evidence is present but incomplete." });
+      if (handlerProbe.present) evidence.push({ path: "src/handlers/review.ts", reason: handlerProbe.usesUntypedCast ? "Review handler still gates graph validation through an untyped cast." : "Review handler references typed graph-validation config but complete consumption is not proven." });
+      if (validationTypesExist) evidence.push({ path: "src/review-graph/validation.ts", reason: "Graph-validation option types exist separately from repo config parsing." });
+
+      if (evidence.length > 0) {
+        return makeRow(definition, "partial", evidence, [...configProbe.reasons, ...handlerProbe.reasons]);
       }
       return makeRow(definition, "missing", [], ["No graph-validation source evidence was found."]);
     }
     case "truthful-graph-validation-status": {
-      const validates = source.review.includes("validateGraphAmplifiedFindings");
-      const surfacesCounts = source.review.includes("validatedCount") && source.review.includes("confirmedCount") && source.review.includes("uncertainCount");
-      const failOpen = source.validation.includes("Fail-open") || source.review.includes("fail-open");
-      if (validates && surfacesCounts && failOpen && /graphValidationVerdict/.test(source.review)) {
-        return makeRow(definition, "partial", [
-          { path: "src/handlers/review.ts", reason: "Runtime logs and finding metadata expose graph-validation counts/verdicts." },
-          { path: "src/review-graph/validation.ts", reason: "Validation module documents fail-open behavior and typed result metadata." },
-        ], ["Graph-validation status is not yet tied to the issue #131 ReviewPlan acceptance surface."]);
+      const statusProbe = findTruthfulGraphValidationStatus(source.review, source.reviewPlan, source.graphValidationStatus, source.validation);
+      if (statusProbe.complete) {
+        return makeRow(definition, "complete", [
+          { path: "src/review-graph/graph-validation-status.ts", reason: "Shared status mapper owns bounded graph-validation pre/runtime states, reasons, counts, and fail-open failure status." },
+          { path: "src/handlers/review.ts", reason: "Normal review path feeds graph-validation into ReviewPlan gates and bounded skipped, unavailable, applied, and failure runtime logs." },
+          { path: "src/review-plan/review-plan.ts", reason: "ReviewPlan gate taxonomy supports enabled, applied, skipped, and unavailable graph-validation gate states." },
+        ]);
       }
-      if (validates) {
-        return makeRow(definition, "partial", [{ path: "src/handlers/review.ts", reason: "Graph validation is invoked but status surface is incomplete." }], ["Graph-validation status evidence is incomplete."]);
+      if (statusProbe.present) {
+        return makeRow(definition, "partial", statusProbe.evidence, statusProbe.reasons);
       }
       return makeRow(definition, "missing", [], ["No truthful graph-validation status surface was found."]);
     }
@@ -365,6 +369,72 @@ function makeProbe(present: boolean, checks: readonly [boolean, string][]): Sour
     complete: present && checks.every(([passed]) => passed),
     reasons: checks.filter(([passed]) => !passed).map(([, reason]) => reason),
   };
+}
+
+
+function stripTypeScriptComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1 ");
+}
+
+function findTypedGraphValidationConfig(configSource: string): SourceEvidenceProbe {
+  const source = stripTypeScriptComments(configSource);
+  const present = /graphValidationSchema|graphValidation\s*:\s*graphValidationSchema/.test(source);
+  return makeProbe(present, [
+    [/const\s+graphValidationSchema\s*=\s*z\s*\.object\s*\(/.test(source), "src/execution/config.ts does not define a source-owned graphValidationSchema object."],
+    [/enabled\s*:\s*z\.boolean\(\)\.default\(false\)/.test(source), "review.graphValidation.enabled does not default to false for fail-open opt-in behavior."],
+    [/maxFindingsToValidate\s*:\s*z\.number\(\)\.int\(\)\.min\(1\)\.max\(100\)\.default\(10\)/.test(source), "review.graphValidation.maxFindingsToValidate bounded default is missing."],
+    [/contextMaxChars\s*:\s*z\.number\(\)\.int\(\)\.min\(100\)\.max\(10000\)\.default\(1000\)/.test(source), "review.graphValidation.contextMaxChars bounded default is missing."],
+    [/graphValidation\s*:\s*graphValidationSchema/.test(source), "reviewSchema does not preserve review.graphValidation through repo config parsing."],
+    [/graphValidation\s*:\s*\{[\s\S]*?enabled\s*:\s*false[\s\S]*?maxFindingsToValidate\s*:\s*10[\s\S]*?contextMaxChars\s*:\s*1000[\s\S]*?\}/.test(source), "reviewSchema default object does not preserve graphValidation defaults."],
+  ]);
+}
+
+function findTypedGraphValidationHandlerConsumption(reviewSource: string): SourceEvidenceProbe & { usesUntypedCast: boolean } {
+  const source = stripTypeScriptComments(reviewSource);
+  const usesUntypedCast = /config\.review\s+as\s+Record<string, unknown>|as\s+Record<string, unknown>\s*&\s*\{\s*graphValidation\?/.test(source);
+  const present = /graphValidation|validateGraphAmplifiedFindings|graphValidationRunner/.test(source);
+  const probe = makeProbe(present, [
+    [/config\.review\.graphValidation/.test(source), "Review handler does not consume config.review.graphValidation directly."],
+    [/graphValidationRunner\s*\([\s\S]*?config\.review\.graphValidation/.test(source), "Review handler does not pass typed review.graphValidation into the validation runner."],
+    [/graphValidationSkippedRuntimeStatus\s*\(\s*\{[\s\S]*?config\s*,/.test(source), "Review handler does not derive skipped/unavailable runtime status from typed repo config."],
+    [/resolveGraphValidationPreStatus\s*\(\s*\{[\s\S]*?config\s*,/.test(source), "Review handler does not derive ReviewPlan pre-status from typed repo config."],
+    [!usesUntypedCast, "Review handler still contains the old untyped graphValidation config cast."],
+  ]);
+  return { ...probe, usesUntypedCast };
+}
+
+type GraphValidationStatusProbe = SourceEvidenceProbe & { evidence: Issue131Evidence[] };
+
+function findTruthfulGraphValidationStatus(reviewSource: string, reviewPlanSource: string, statusSource: string, validationSource: string): GraphValidationStatusProbe {
+  const review = stripTypeScriptComments(reviewSource);
+  const reviewPlan = stripTypeScriptComments(reviewPlanSource);
+  const status = stripTypeScriptComments(statusSource);
+  const validation = stripTypeScriptComments(validationSource);
+  const present = /graphValidation|graph-validation|GraphValidationRuntimeStatus/.test(`${review}\n${status}`);
+  const statusChecks: readonly [boolean, string][] = [
+    [/export\s+const\s+GRAPH_VALIDATION_GATE\s*=\s*["']graph-validation["']/.test(status), "No source-owned graph-validation gate constant was found."],
+    [/export\s+type\s+GraphValidationPreStatus/.test(status) && /status\s*:\s*ReviewPlanGateStatus/.test(status), "Graph-validation pre-status is not typed as a ReviewPlan gate status."],
+    [/export\s+type\s+GraphValidationRuntimeStatus/.test(status) && /gateResult\s*:\s*["']skipped["']\s*\|\s*["']unavailable["']\s*\|\s*["']applied["']\s*\|\s*["']failure["']/.test(status), "Graph-validation runtime status does not expose bounded skipped/unavailable/applied/failure states."],
+    [["enabled", "graphContextAvailable", "findingCount", "validatedCount", "confirmedCount", "uncertainCount"].every((field) => status.includes(field)), "Graph-validation runtime status does not expose enabled/context/count fields."],
+    [/resolveGraphValidationPreStatus/.test(status) && /graphValidationGateForReviewPlan/.test(status), "Graph-validation pre-status is not mapped into a ReviewPlan gate."],
+    [/graphValidationSkippedRuntimeStatus/.test(status) && /gateResult:\s*preStatus\.status === ["']skipped["'] \? ["']skipped["'] : ["']unavailable["']/.test(status), "Skipped/unavailable graph-validation runtime status is not source-owned."],
+    [/graphValidationAppliedRuntimeStatus/.test(status) && /validation-failed/.test(status) && /validation-applied/.test(status) && /no-findings-validated/.test(status), "Applied/fail-open graph-validation runtime status mapping is incomplete."],
+    [/graphValidationThrownRuntimeStatus/.test(status) && /validation-threw/.test(status), "Thrown graph-validation fail-open runtime status is missing."],
+    [/const\s+GATE_STATUSES\s*=\s*\[[^\]]*["']enabled["'][^\]]*["']applied["'][^\]]*["']skipped["'][^\]]*["']unavailable["']/.test(reviewPlan), "ReviewPlan gate taxonomy does not include enabled/applied/skipped/unavailable."],
+    [/graphValidationGateForReviewPlan\s*\(\s*graphValidationPreStatus\s*\)/.test(review), "Normal review handler does not add graph-validation to ReviewPlan gates."],
+    [/graphValidationSkippedRuntimeStatus\s*\(/.test(review) && /logger\.info\s*\([\s\S]*?skippedGraphValidationStatus/.test(review), "Normal review handler does not log skipped/unavailable graph-validation status."],
+    [/graphValidationAppliedRuntimeStatus\s*\(/.test(review) && /logger\.(?:info|warn)\s*\([\s\S]*?runtimeStatus/.test(review), "Normal review handler does not log applied/failure graph-validation status."],
+    [/graphValidationThrownRuntimeStatus\s*\(/.test(review) && /logger\.warn\s*\([\s\S]*?graphValidationThrownRuntimeStatus/.test(review), "Normal review handler does not log thrown fail-open graph-validation status."],
+    [/Fail-open/i.test(validation) || /fail-open/i.test(review), "Graph-validation failure-open behavior is not documented in source."],
+  ];
+  const probe = makeProbe(present, statusChecks);
+  const evidence: Issue131Evidence[] = [];
+  if (/GraphValidationRuntimeStatus|GRAPH_VALIDATION_GATE|graphValidationAppliedRuntimeStatus/.test(status)) evidence.push({ path: "src/review-graph/graph-validation-status.ts", reason: "Graph-validation status mapper exists but the full evidence contract is not proven." });
+  if (/graphValidationGateForReviewPlan|graphValidationSkippedRuntimeStatus|graphValidationAppliedRuntimeStatus|graphValidationThrownRuntimeStatus/.test(review)) evidence.push({ path: "src/handlers/review.ts", reason: "Review handler references graph-validation status helpers but complete ReviewPlan/runtime surfacing is not proven." });
+  if (/GATE_STATUSES|ReviewPlanGateStatus/.test(reviewPlan)) evidence.push({ path: "src/review-plan/review-plan.ts", reason: "ReviewPlan gate status taxonomy exists but graph-validation status wiring is incomplete." });
+  return { ...probe, evidence };
 }
 
 function findReviewDetailsPlanProjection(reviewPlanSource: string): SourceEvidenceProbe {
@@ -524,7 +594,8 @@ function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string
     rows.find((row) => row.id === "review-plan-contract")?.status === "complete",
     rows.find((row) => row.id === "normal-handler-plan-construction")?.status === "complete",
     rows.find((row) => row.id === "review-details-plan-summary")?.status === "complete",
-    rows.find((row) => row.id === "typed-graph-validation-config")?.status !== "complete",
+    rows.find((row) => row.id === "typed-graph-validation-config")?.status === "complete",
+    rows.find((row) => row.id === "truthful-graph-validation-status")?.status === "complete",
   ].every(Boolean);
   const deferredRows = rows.filter((row) => row.status === "deferred");
   const packageScripts = parsePackageScripts(packageJsonText);

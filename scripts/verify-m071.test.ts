@@ -13,20 +13,28 @@ import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
   "import { buildReviewPlan, summarizeReviewPlanForDiagnostics, summarizeReviewPlanForReviewDetails, type ReviewPlan } from '../review-plan/review-plan.ts';",
-  "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
+  "import { graphValidationAppliedRuntimeStatus, graphValidationGateForReviewPlan, graphValidationSkippedRuntimeStatus, graphValidationThrownRuntimeStatus, resolveGraphValidationPreStatus } from '../review-graph/graph-validation-status.ts';",
+  "const graphValidationPreStatus = resolveGraphValidationPreStatus({ config, graphContextAvailable: Boolean(graphBlastRadius) });",
+  "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [graphValidationGateForReviewPlan(graphValidationPreStatus)], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
   "logger.info({ ...reviewPlanSummarizer(reviewPlan as ReviewPlan) }, 'ReviewPlan constructed before publication');",
   "const reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails;",
   "const buildReviewPlanReviewDetailsSummary = () => { try { return reviewPlanReviewDetailsSummarizer(reviewPlan); } catch (err) { logger.warn({ gate: 'review-plan', reason: 'review-details-projection-failed' }, 'ReviewPlan Review Details projection failed (fail-open, publishing without Review Plan line)'); return null; } };",
   "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlanSummary: buildReviewPlanReviewDetailsSummary() });",
   "const marker = '<summary>Review Details</summary>';",
-  "if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {",
-  "  const validationResult = await validateGraphAmplifiedFindings(input, graphBlastRadius, llm, { enabled: true }, logger);",
-  "  logger.info({ validatedCount: validationResult.validatedCount, confirmedCount: validationResult.confirmedCount, uncertainCount: validationResult.uncertainCount }, 'Graph validation applied');",
-  "  processedFindings = processedFindings.map((f) => ({ ...f, graphValidationVerdict: 'skipped' }));",
+  "const skippedGraphValidationStatus = graphValidationSkippedRuntimeStatus({ config, graphContextAvailable: Boolean(graphBlastRadius), findingCount: processedFindings.length });",
+  "if (skippedGraphValidationStatus) logger.info({ ...skippedGraphValidationStatus }, 'Graph-amplified finding validation skipped or unavailable');",
+  "else if (graphBlastRadius) {",
+  "  try {",
+  "    const validationResult = await graphValidationRunner(graphValidationInput, graphBlastRadius, graphValidationLLM, config.review.graphValidation, logger);",
+  "    const runtimeStatus = graphValidationAppliedRuntimeStatus({ result: validationResult, findingCount: processedFindings.length });",
+  "    logger.info({ ...runtimeStatus }, 'Graph-amplified finding validation completed');",
+  "    logger.warn({ ...runtimeStatus }, 'Graph-amplified finding validation failed (fail-open, continuing without validation)');",
+  "  } catch { logger.warn({ ...graphValidationThrownRuntimeStatus({ findingCount: processedFindings.length }) }, 'Graph-amplified finding validation threw unexpectedly (fail-open)'); }",
   "}",
 ].join("\n");
 
 const CURRENT_REVIEW_PLAN_TS = [
+  "const GATE_STATUSES = ['enabled', 'applied', 'skipped', 'unavailable'] as const; export type ReviewPlanGateStatus = typeof GATE_STATUSES[number];",
   "export type ReviewPlan = { version: 1; stableHash: string; route: unknown; scope: unknown; contextSources: readonly unknown[]; gates: readonly unknown[]; budgets: unknown; publishPolicy: unknown };",
   "export type ReviewPlanReviewDetailsSummary = { gate: 'review-plan-review-details'; planHash: string; route: unknown; scope: unknown; contextSources: unknown; gates: unknown; budgets: unknown; publishPolicy: unknown };",
   "export const REVIEW_PLAN_HASH_PREFIX = 'review-plan:v1:';",
@@ -50,16 +58,34 @@ const CURRENT_REVIEW_UTILS_TS = [
 ].join("\n");
 
 const CURRENT_CONFIG_TS = [
+  "const graphValidationSchema = z.object({",
+  "  enabled: z.boolean().default(false),",
+  "  maxFindingsToValidate: z.number().int().min(1).max(100).default(10),",
+  "  contextMaxChars: z.number().int().min(100).max(10000).default(1000),",
+  "}).default({ enabled: false, maxFindingsToValidate: 10, contextMaxChars: 1000 });",
   "const reviewSchema = z.object({",
   "  enabled: z.boolean().default(true),",
   "  maxComments: z.number().min(1).max(25).default(7),",
-  "});",
+  "  graphValidation: graphValidationSchema,",
+  "}).default({ enabled: true, maxComments: 7, graphValidation: { enabled: false, maxFindingsToValidate: 10, contextMaxChars: 1000 } });",
 ].join("\n");
 
 const CURRENT_VALIDATION_TS = [
   "// Fail-open validation module",
   "export type GraphValidationOptions = { enabled?: boolean; maxFindingsToValidate?: number };",
   "export type GraphValidationResult<T> = { findings: T[]; validatedCount: number; confirmedCount: number; uncertainCount: number; succeeded: boolean };",
+].join("\n");
+
+const CURRENT_GRAPH_VALIDATION_STATUS_TS = [
+  "export const GRAPH_VALIDATION_GATE = 'graph-validation' as const;",
+  "export type GraphValidationPreStatus = { gate: typeof GRAPH_VALIDATION_GATE; status: ReviewPlanGateStatus; reason: 'config-disabled' | 'graph-context-unavailable' | 'graph-context-available'; enabled: boolean; graphContextAvailable: boolean };",
+  "export type GraphValidationRuntimeStatus = { gate: typeof GRAPH_VALIDATION_GATE; gateResult: 'skipped' | 'unavailable' | 'applied' | 'failure'; reason: 'config-disabled' | 'graph-context-unavailable' | 'validation-applied' | 'no-findings-validated' | 'validation-failed' | 'validation-threw'; enabled: boolean; graphContextAvailable: boolean; findingCount?: number; validatedCount?: number; confirmedCount?: number; uncertainCount?: number };",
+  "export function resolveGraphValidationPreStatus() { return { gate: GRAPH_VALIDATION_GATE, status: 'enabled' as ReviewPlanGateStatus, reason: 'graph-context-available', enabled: true, graphContextAvailable: true }; }",
+  "export function graphValidationGateForReviewPlan(status: GraphValidationPreStatus) { return { name: GRAPH_VALIDATION_GATE, status: status.status, reason: status.reason }; }",
+  "export function graphValidationSkippedRuntimeStatus() { return { gate: GRAPH_VALIDATION_GATE, gateResult: preStatus.status === 'skipped' ? 'skipped' : 'unavailable', reason: 'config-disabled', enabled: false, graphContextAvailable: false }; }",
+  "export function graphValidationAppliedRuntimeStatus(result: { succeeded: boolean }) { return result.succeeded ? { gate: GRAPH_VALIDATION_GATE, gateResult: 'applied', reason: 'validation-applied', enabled: true, graphContextAvailable: true, findingCount: 1, validatedCount: 1, confirmedCount: 1, uncertainCount: 0 } : { gate: GRAPH_VALIDATION_GATE, gateResult: 'failure', reason: 'validation-failed', enabled: true, graphContextAvailable: true, findingCount: 1, validatedCount: 0, confirmedCount: 0, uncertainCount: 0 }; }",
+  "export function graphValidationThrownRuntimeStatus() { return { gate: GRAPH_VALIDATION_GATE, gateResult: 'failure', reason: 'validation-threw', enabled: true, graphContextAvailable: true }; }",
+  "const noFindings = 'no-findings-validated';",
 ].join("\n");
 
 const PACKAGE_WITH_M071 = JSON.stringify({ scripts: { [COMMAND_NAME]: EXPECTED_PACKAGE_SCRIPT } });
@@ -73,6 +99,7 @@ function makeReaders(overrides: Partial<Record<Issue131SourcePath, string>> & { 
     "src/lib/review-utils.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
+    "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,
     "package.json": overrides.packageJson ?? PACKAGE_WITH_M071,
     ...overrides,
   };
@@ -148,11 +175,12 @@ describe("verify:m071 CLI", () => {
       present: true,
       matches: true,
     });
-    expect(report.counts).toMatchObject({ complete: 4, missing: 0, partial: 2, deferred: 4 });
+    expect(report.counts).toMatchObject({ complete: 6, missing: 0, partial: 0, deferred: 4 });
     expect(row(report, "review-plan-contract").status).toBe("complete");
     expect(row(report, "normal-handler-plan-construction").status).toBe("complete");
     expect(row(report, "review-details-plan-summary").status).toBe("complete");
-    expect(row(report, "typed-graph-validation-config").status).toBe("partial");
+    expect(row(report, "typed-graph-validation-config").status).toBe("complete");
+    expect(row(report, "truthful-graph-validation-status").status).toBe("complete");
     expect(row(report, "package-verifier-wiring").status).toBe("complete");
     expect(report.issues.join("\n")).not.toContain("rawPrompt");
   });
@@ -164,7 +192,7 @@ describe("verify:m071 CLI", () => {
     expect(evidencePaths.length).toBeGreaterThan(0);
     expect(evidencePaths).toContain("src/handlers/review.ts");
     expect(evidencePaths).toContain("src/review-plan/review-plan.ts");
-    expect(evidencePaths).toContain("src/review-graph/validation.ts");
+    expect(evidencePaths).toContain("src/review-graph/graph-validation-status.ts");
     expect(evidencePaths).toContain("package.json");
     expect(evidencePaths.every((path) => !path.startsWith(".gsd/") && !path.startsWith(".planning/") && !path.startsWith(".audits/"))).toBe(true);
   });
@@ -213,7 +241,7 @@ describe("verify:m071 CLI", () => {
     expect(row(report, "review-plan-contract").status).not.toBe("complete");
     expect(row(report, "normal-handler-plan-construction").status).not.toBe("complete");
     expect(row(report, "typed-graph-validation-config").status).not.toBe("complete");
-    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("src/execution/config.ts does not expose typed review.graphValidation");
+    expect(row(report, "typed-graph-validation-config").failureReasons.join("\n")).toContain("Review handler does not consume config.review.graphValidation directly");
   });
 
   test("main exits zero for valid fail-closed JSON and prints bounded JSON", async () => {
@@ -226,8 +254,9 @@ describe("verify:m071 CLI", () => {
     expect(row(parsed, "review-plan-contract").status).toBe("complete");
     expect(row(parsed, "normal-handler-plan-construction").status).toBe("complete");
     expect(row(parsed, "review-details-plan-summary").status).toBe("complete");
-    expect(row(parsed, "typed-graph-validation-config").status).not.toBe("complete");
-    expect(parsed.rows.some((entry) => entry.status === "partial")).toBe(true);
+    expect(row(parsed, "typed-graph-validation-config").status).toBe("complete");
+    expect(row(parsed, "truthful-graph-validation-status").status).toBe("complete");
+    expect(parsed.rows.some((entry) => entry.status === "partial")).toBe(false);
     expect(parsed.rows.some((entry) => entry.status === "deferred")).toBe(true);
     expect(result.stdout).not.toContain("rawPrompt");
     expect(result.stdout).not.toContain("rawModelOutput");
