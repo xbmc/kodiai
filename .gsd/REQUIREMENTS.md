@@ -120,17 +120,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Judged against the later repo-grounded issue #131 evolution plan, not the broad generic multi-agent architecture.
 
-### R126 — Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
-- Class: core-capability
-- Status: active
-- Description: Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
-- Why it matters: Issue #131's repo-grounded plan starts by making Kodiai explain what it intended to do before it reviews or publishes.
-- Source: user/inferred
-- Primary owning slice: M071/S02
-- Supporting slices: M071/S03,M071/S05
-- Validation: mapped
-- Notes: Pure/static contracts count only as partial; completion requires normal review-handler wiring.
-
 ### R127 — Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
 - Class: operability
 - Status: active
@@ -1190,6 +1179,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M070/S06 closeout verified candidate verification/disagreement handling across classifier, publication policy, Review Details/log projection, production-like integration, and exact-key/live-or-blocked verifier surfaces. Fresh evidence: gsd_exec 5b6f8886-8ae9-43a6-bf72-9e8f57c7a096 ran 86 tests across 10 files with 0 failures, `verify:m070` success:true status_code `m070_fixture_contract_ok`, `verify:m070:s05` success:true status_code `m070_s05_ok`, and `verify:m070:s06 --allow-blocked` success:false status_code `m070_s06_missing_exact_key_blocked` with bounded no-key blocked evidence rather than false success.
 - Notes: Live exact-key credentials/keys were unavailable during autonomous closeout, so S06 truthfully proved the production-like verifier and no-key blocked path rather than accepted live candidate-approved success.
 
+### R126 — Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
+- Class: core-capability
+- Status: validated
+- Description: Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
+- Why it matters: Issue #131's repo-grounded plan starts by making Kodiai explain what it intended to do before it reviews or publishes.
+- Source: user/inferred
+- Primary owning slice: M071/S02
+- Supporting slices: M071/S03,M071/S05
+- Validation: M071/S02 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 198 tests passing, `m071_issue_131_matrix_ok`, and verifier rows `review-plan-contract` plus `normal-handler-plan-construction` complete. The normal PR review handler constructs and logs a safe typed ReviewPlan before publication-side effects while fail-opening on diagnostics failures.
+- Notes: Validated by S02 closeout. S03/S04/S05 retain separate active requirements for Review Details summary, graph-validation config/status, and final closure matrix.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -1598,7 +1598,7 @@ This file is the explicit capability and coverage contract for the project.
 | R123 | constraint | out-of-scope | none | none | n/a |
 | R124 | anti-feature | out-of-scope | none | none | n/a |
 | R125 | failure-visibility | active | M071/S01 | M071/S05 | mapped |
-| R126 | core-capability | active | M071/S02 | M071/S03,M071/S05 | mapped |
+| R126 | core-capability | validated | M071/S02 | M071/S03,M071/S05 | M071/S02 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 198 tests passing, `m071_issue_131_matrix_ok`, and verifier rows `review-plan-contract` plus `normal-handler-plan-construction` complete. The normal PR review handler constructs and logs a safe typed ReviewPlan before publication-side effects while fail-opening on diagnostics failures. |
 | R127 | operability | active | M071/S03 | M071/S02,M071/S05 | mapped |
 | R128 | quality-attribute | active | M071/S04 | M071/S02,M071/S05 | mapped |
 | R129 | operability | active | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | mapped |
@@ -1613,7 +1613,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 19
-- Mapped to slices: 19
-- Validated: 92 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118)
+- Active requirements: 18
+- Mapped to slices: 18
+- Validated: 93 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R126)
 - Unmapped active requirements: 0
