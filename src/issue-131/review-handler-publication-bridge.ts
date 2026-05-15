@@ -50,9 +50,14 @@ export type ReviewHandlerPublicationBridgeLogFields = {
 };
 
 export type ReviewHandlerPublicationBridgeReviewDetails = {
-  readonly status: CandidatePublicationBridgeRecord["status"] | "unavailable";
+  readonly bridgeVersion: CandidatePublicationBridgeRecord["bridgeVersion"];
+  readonly bridgeId: string;
   readonly recordKey: string;
   readonly correlationKey: string;
+  readonly status: CandidatePublicationBridgeRecord["status"] | "unavailable";
+  readonly sourceLabel: string;
+  readonly candidateRef: string;
+  readonly verificationState: CandidatePublicationBridgeRecord["verificationState"];
   readonly reducerHandoffAvailable: boolean;
   readonly counts: Pick<
     CandidatePublicationBridgeCounts,
@@ -365,9 +370,14 @@ function logFields(record: CandidatePublicationBridgeRecord, handoff: CandidateP
 
 function reviewDetails(record: CandidatePublicationBridgeRecord, handoff: CandidatePublicationReducerHandoffInput): ReviewHandlerPublicationBridgeReviewDetails {
   return {
-    status: record.status,
+    bridgeVersion: record.bridgeVersion,
+    bridgeId: record.recordKey,
     recordKey: record.recordKey,
     correlationKey: record.correlationKey,
+    status: record.status,
+    sourceLabel: record.sourceLabel,
+    candidateRef: record.candidateRef,
+    verificationState: record.verificationState,
     reducerHandoffAvailable: handoff.downstreamHandoffOwner !== null,
     counts: {
       candidateCount: record.counts.candidateCount,

@@ -2,6 +2,8 @@ import { describe, it, expect } from "bun:test";
 import { formatReviewDetailsSummary } from "./review-utils.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
+import { projectReviewHandlerCandidatePublicationBridgeEvidence } from "../issue-131/review-handler-publication-bridge.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 
 const BOUNDED_TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
   state: "bounded-first-pass",
@@ -32,6 +34,76 @@ const BASE_PARAMS = {
     tier: "regular",
   }).reviewDetails,
 };
+
+const M072_CANARIES = [
+  "M072_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK",
+  "M072_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
+  "M072_PROMPT_SHOULD_NOT_LEAK",
+  "M072_MODEL_OUTPUT_SHOULD_NOT_LEAK",
+  "M072_DIFF_SHOULD_NOT_LEAK",
+  "M072_FINGERPRINT_SHOULD_NOT_LEAK",
+  "M072_GITHUB_COMMENT_BODY_SHOULD_NOT_LEAK",
+] as const;
+
+function candidatePublicationSummary(
+  overrides: Partial<CandidateVerificationPublicationEvidenceSummary> = {},
+): CandidateVerificationPublicationEvidenceSummary {
+  return {
+    aggregateStatus: "published",
+    counts: { attempted: 1, allowed: 1, denied: 0, published: 1, skipped: 0, failed: 0 },
+    publicationDenialCounts: {},
+    reasonCategories: ["full-support"],
+    verificationStateCounts: { verified: 1, partially_verified: 0, unverified: 0, disproven: 0, unavailable: 0 },
+    candidateVerificationCounts: {
+      candidateCount: 1,
+      evidenceCount: 2,
+      verifiedCount: 1,
+      partiallyVerifiedCount: 0,
+      unverifiedCount: 0,
+      disprovenCount: 0,
+      publicationEligibleCount: 1,
+      duplicateCount: 0,
+      disagreementCount: 0,
+      unclassifiableCount: 0,
+      malformedRecordCount: 0,
+      truncatedCandidateCount: 0,
+      truncatedEvidenceCount: 0,
+      policyCandidateCount: 1,
+    },
+    metadata: {
+      hasDeliveryId: true,
+      hasReviewOutputKey: true,
+      hasCorrelationKey: true,
+      deliveryId: "delivery-123",
+      reviewOutputKey: "review-output-456",
+      correlationKey: "correlation-789",
+    },
+    redactionFlags: {
+      privateOnly: true,
+      candidateBodiesIncluded: false,
+      specialistProseIncluded: false,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      diffsIncluded: false,
+      evidencePayloadsIncluded: false,
+      rawFingerprintsIncluded: false,
+      unsafeInputFieldCount: 0,
+      discardedRawPayload: false,
+      discardedPublicationFields: false,
+      discardedEvidencePayloads: false,
+      candidateAttemptIncluded: false,
+      candidateKeyIncluded: false,
+      publicationEvidenceIncluded: false,
+    },
+    ...overrides,
+  };
+}
+
+function expectNoM072CanaryLeak(value: string): void {
+  for (const canary of M072_CANARIES) {
+    expect(value).not.toContain(canary);
+  }
+}
 
 describe("formatReviewDetailsSummary", () => {
   it("renders bounded first-pass diagnostics from the normalized contract", () => {
@@ -587,5 +659,117 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("<summary>Review Details</summary>");
     expect(result).not.toContain("M070 candidate verification publication");
     expect(result).not.toContain("M070_MALFORMED_RAW_CANDIDATE_SHOULD_NOT_LEAK");
+  });
+
+  it("renders compact M072 allowed candidate publication bridge diagnostics", () => {
+    const bridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+      evidenceSummary: candidatePublicationSummary(),
+      deliveryId: "delivery-123",
+      reviewOutputKey: "review-output-456",
+      upstreamCorrelationKey: "upstream-correlation-789",
+    }).reviewDetails;
+
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      candidatePublicationBridge: bridge,
+    });
+
+    expect(result).toContain("- M072 candidate publication bridge: status=allowed");
+    expect(result).toContain("bridgeVersion=candidate-publication-bridge.v1");
+    expect(result).toContain("bridgeId=candidate-publication-record:");
+    expect(result).toContain("recordKey=candidate-publication-record:");
+    expect(result).toContain("correlationKey=candidate-publication-bridge:");
+    expect(result).toContain("source=review-handler-publication");
+    expect(result).toContain("candidateRef=candidate-publication-summary-");
+    expect(result).toContain("verification=verified");
+    expect(result).toContain("counts=candidateCount:1,evidenceCount:2,verifiedCount:1,partiallyVerifiedCount:0,unverifiedCount:0,disprovenCount:0,publicationEligibleCount:1,malformedRecordCount:0,unsafeInputFieldCount:0");
+    expect(result).toContain("reasons=full-support");
+    expect(result).toContain("malformed=none");
+    expect(result).toContain("presence=deliveryId:y,reviewOutputKey:y,upstreamCorrelationKey:y,policyCorrelationKey:y");
+    expect(result).toContain("handoffOwner=available");
+    expect(result).toContain("redaction=privateOnly:y,rawPayloads:n,publicationFields:n,evidencePayloads:n,githubCommentBody:n,reducerRawPayload:n");
+    expectNoM072CanaryLeak(result);
+  });
+
+  it("renders denied and malformed M072 bridge projections without raw candidate leakage", () => {
+    const deniedBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+      evidenceSummary: candidatePublicationSummary({
+        aggregateStatus: "denied",
+        counts: { attempted: 1, allowed: 0, denied: 1, published: 0, skipped: 0, failed: 0 },
+        reasonCategories: ["no-evidence", "publication-ineligible"],
+        verificationStateCounts: { verified: 0, partially_verified: 0, unverified: 1, disproven: 0, unavailable: 0 },
+        candidateVerificationCounts: {
+          ...candidatePublicationSummary().candidateVerificationCounts,
+          evidenceCount: 0,
+          verifiedCount: 0,
+          unverifiedCount: 1,
+          publicationEligibleCount: 0,
+        },
+      }),
+      deliveryId: "delivery-123",
+      reviewOutputKey: "review-output-456",
+      upstreamCorrelationKey: "upstream-correlation-789",
+    }).reviewDetails;
+    const malformedBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+      evidenceSummary: { counts: "bad", body: "M072_GITHUB_COMMENT_BODY_SHOULD_NOT_LEAK" } as never,
+      deliveryId: undefined,
+      reviewOutputKey: undefined,
+      upstreamCorrelationKey: undefined,
+    }).reviewDetails;
+
+    const denied = formatReviewDetailsSummary({ ...BASE_PARAMS, candidatePublicationBridge: deniedBridge });
+    const malformed = formatReviewDetailsSummary({ ...BASE_PARAMS, candidatePublicationBridge: malformedBridge });
+
+    expect(denied).toContain("- M072 candidate publication bridge: status=denied");
+    expect(denied).toContain("reasons=no-evidence,publication-ineligible");
+    expect(denied).toContain("handoffOwner=available");
+    expect(malformed).toContain("- M072 candidate publication bridge: status=malformed");
+    expect(malformed).toContain("malformed=missing-delivery-id,missing-review-output-key,missing-correlation-key");
+    expect(malformed).toContain("presence=deliveryId:n,reviewOutputKey:n,upstreamCorrelationKey:n,policyCorrelationKey:n");
+    expect(malformed).toContain("discardedPublicationFields:y");
+    expectNoM072CanaryLeak(denied);
+    expectNoM072CanaryLeak(malformed);
+  });
+
+  it("fails closed for unsafe or invalid M072 bridge Review Details input", () => {
+    const unsafe = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      candidatePublicationBridge: {
+        status: "allowed",
+        bridgeVersion: "M072_PROMPT_SHOULD_NOT_LEAK",
+        bridgeId: "M072_MODEL_OUTPUT_SHOULD_NOT_LEAK",
+        recordKey: "M072_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK",
+        correlationKey: "M072_DIFF_SHOULD_NOT_LEAK",
+        sourceLabel: "M072_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
+        candidateRef: "M072_FINGERPRINT_SHOULD_NOT_LEAK",
+        verificationState: "verified",
+        reasonCategories: ["M072_GITHUB_COMMENT_BODY_SHOULD_NOT_LEAK", "publication-ineligible"],
+        malformedReasonCodes: ["M072_DIFF_SHOULD_NOT_LEAK", "missing-delivery-id"],
+        counts: { candidateCount: 999_999, unsafeInputFieldCount: 3 },
+        presence: { hasDeliveryId: true },
+        reducerHandoffAvailable: true,
+        redaction: {
+          privateOnly: false,
+          rawPayloadsIncluded: true,
+          publicationFieldsIncluded: true,
+          evidencePayloadsIncluded: true,
+          githubCommentBodyIncluded: true,
+          reducerHandoffIncludesRawPayload: true,
+        },
+      },
+    });
+    const malformed = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      candidatePublicationBridge: "M072_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK" as never,
+    });
+
+    expect(unsafe).toContain("- M072 candidate publication bridge: status=unavailable");
+    expect(unsafe).toContain("reasons=unsafe-redaction-flags");
+    expect(unsafe).toContain("rawPayloads:y");
+    expect(unsafe).not.toContain("status=allowed; bridgeVersion");
+    expect(malformed).toContain("- M072 candidate publication bridge: status=unavailable");
+    expect(malformed).toContain("reasons=malformed-bridge-projection");
+    expectNoM072CanaryLeak(unsafe);
+    expectNoM072CanaryLeak(malformed);
   });
 });
