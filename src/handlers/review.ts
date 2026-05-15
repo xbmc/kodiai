@@ -53,6 +53,13 @@ import {
 } from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
+import {
+  graphValidationAppliedRuntimeStatus,
+  graphValidationGateForReviewPlan,
+  graphValidationSkippedRuntimeStatus,
+  graphValidationThrownRuntimeStatus,
+  resolveGraphValidationPreStatus,
+} from "../review-graph/graph-validation-status.ts";
 import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
@@ -2026,6 +2033,8 @@ export function createReviewHandler(deps: {
   diffContextCollector?: typeof collectDiffContext;
   /** Optional same-job read-only shadow specialist subflow; fail-open and private by contract. */
   shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+  /** Optional graph-validation runner override for deterministic fail-open tests. */
+  graphValidationRunner?: typeof validateGraphAmplifiedFindings;
   /** Optional ReviewPlan builder override for deterministic fail-open tests. */
   reviewPlanBuilder?: typeof buildReviewPlan;
   /** Optional ReviewPlan diagnostic projection override for deterministic fail-open tests. */
@@ -2063,6 +2072,7 @@ export function createReviewHandler(deps: {
     fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
     diffContextCollector = collectDiffContext,
     shadowSpecialistSubflow = runShadowSpecialistSubflow,
+    graphValidationRunner = validateGraphAmplifiedFindings,
     reviewPlanBuilder = buildReviewPlan,
     reviewPlanSummarizer = summarizeReviewPlanForDiagnostics,
     reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails,
@@ -4074,6 +4084,11 @@ export function createReviewHandler(deps: {
           );
         }
 
+        const graphValidationPreStatus = resolveGraphValidationPreStatus({
+          config,
+          graphContextAvailable: Boolean(graphBlastRadius),
+        });
+
         let reviewPlan: ReviewPlan | null = null;
         try {
           reviewPlan = reviewPlanBuilder({
@@ -4143,6 +4158,7 @@ export function createReviewHandler(deps: {
               { name: "review-output-idempotency", status: "applied", reason: acceptedCanonicalSurface ? "accepted-incomplete-canonical-surface" : "accepted-new-output-key" },
               { name: "publish-rights", status: "enabled", reason: "coordinator-present" },
               { name: "boundedness", status: reviewBoundedness ? "applied" : "skipped", findingCount: reviewBoundedness?.reasonCodes.length },
+              graphValidationGateForReviewPlan(graphValidationPreStatus),
             ],
             budgets: {
               maxComments: resolvedMaxComments,
@@ -4814,9 +4830,22 @@ export function createReviewHandler(deps: {
         }
 
         // Optional graph-amplified finding validation (M040/S03).
-        // Runs only when graphBlastRadius is available and config.review.graphValidation.enabled=true.
-        // Fail-open: errors log a warning and leave processedFindings unchanged.
-        if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {
+        // Runs only when typed config enables it and graph context is available.
+        // Fail-open: errors log a bounded warning and leave processedFindings unchanged.
+        const skippedGraphValidationStatus = graphValidationSkippedRuntimeStatus({
+          config,
+          graphContextAvailable: Boolean(graphBlastRadius),
+          findingCount: processedFindings.length,
+        });
+        if (skippedGraphValidationStatus) {
+          logger.info(
+            {
+              ...baseLog,
+              ...skippedGraphValidationStatus,
+            },
+            "Graph-amplified finding validation skipped or unavailable",
+          );
+        } else if (graphBlastRadius) {
           try {
             const graphValidationLLM = {
               generate: async (prompt: string, system: string): Promise<string> => {
@@ -4845,24 +4874,26 @@ export function createReviewHandler(deps: {
               severity: f.severity,
             } satisfies GraphValidationFinding));
 
-            const validationResult = await validateGraphAmplifiedFindings(
+            const validationResult = await graphValidationRunner(
               graphValidationInput,
               graphBlastRadius,
               graphValidationLLM,
-              { enabled: true },
+              config.review.graphValidation,
               logger,
             );
 
-            if (validationResult.succeeded && validationResult.validatedCount > 0) {
+            const runtimeStatus = graphValidationAppliedRuntimeStatus({
+              result: validationResult,
+              findingCount: processedFindings.length,
+            });
+
+            if (validationResult.succeeded) {
               logger.info(
                 {
                   ...baseLog,
-                  gate: "graph-amplified-validation",
-                  validatedCount: validationResult.validatedCount,
-                  confirmedCount: validationResult.confirmedCount,
-                  uncertainCount: validationResult.uncertainCount,
+                  ...runtimeStatus,
                 },
-                "Graph-amplified finding validation applied",
+                "Graph-amplified finding validation completed",
               );
 
               // Attach graphValidationVerdict to processedFindings for downstream telemetry.
@@ -4874,15 +4905,21 @@ export function createReviewHandler(deps: {
                 if (!v) return f;
                 return { ...f, ...v };
               });
-            } else if (!validationResult.succeeded) {
+            } else {
               logger.warn(
-                { ...baseLog, gate: "graph-amplified-validation", error: validationResult.errorMessage },
+                {
+                  ...baseLog,
+                  ...runtimeStatus,
+                },
                 "Graph-amplified finding validation failed (fail-open, continuing without validation)",
               );
             }
-          } catch (validationErr) {
+          } catch {
             logger.warn(
-              { ...baseLog, gate: "graph-amplified-validation", err: validationErr },
+              {
+                ...baseLog,
+                ...graphValidationThrownRuntimeStatus({ findingCount: processedFindings.length }),
+              },
               "Graph-amplified finding validation threw unexpectedly (fail-open)",
             );
           }
