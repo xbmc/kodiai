@@ -9,8 +9,8 @@
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:refining",
-      "label": "Phase: refining",
+      "id": "concept:phase:validating-milestone",
+      "label": "Phase: validating-milestone",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5769,6 +5769,87 @@
     {
       "id": "task:M072:S01:T03",
       "label": "T03: Run contract regression and type safety checks",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M072:S02",
+      "label": "S02: Inline MCP capture ordering",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M072:S02:T01",
+      "label": "T01: Add bridge capture state to the publication gate",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S02:T02",
+      "label": "T02: Require bridge evidence before inline GitHub publication",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S02:T03",
+      "label": "T03: Preserve factory wiring and inline regression coverage",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M072:S03",
+      "label": "S03: Review handler publication bridge",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M072:S03:T01",
+      "label": "T01: Add review handler bridge projection helper",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S03:T02",
+      "label": "T02: Format safe bridge evidence in Review Details",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S03:T03",
+      "label": "T03: Wire bridge capture before handler public publication",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S03:T04",
+      "label": "T04: Run slice regression closure",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M072:S04",
+      "label": "S04: Milestone verifier and handoff continuity",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M072:S04:T01",
+      "label": "T01: Build source evidence verifier contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S04:T02",
+      "label": "T02: Wire package script and CLI report closure",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S04:T03",
+      "label": "T03: Close with integration regression proof",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -12867,6 +12948,84 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M072",
+      "to": "slice:M072:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S02",
+      "to": "task:M072:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S02",
+      "to": "task:M072:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S02",
+      "to": "task:M072:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "slice:M072:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S03",
+      "to": "task:M072:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S03",
+      "to": "task:M072:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S03",
+      "to": "task:M072:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S03",
+      "to": "task:M072:S03:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "slice:M072:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S04",
+      "to": "task:M072:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S04",
+      "to": "task:M072:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S04",
+      "to": "task:M072:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -14343,5 +14502,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-15T06:47:59.211Z"
+  "builtAt": "2026-05-15T08:22:03.034Z"
 }

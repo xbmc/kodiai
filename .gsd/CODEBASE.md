@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-15T07:25:39Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-15T07:25:39Z","fingerprint":"f3bed55d3fcbdda54552aab6dfb6773386985ace","fileCount":500,"truncated":true} -->
+Generated: 2026-05-15T08:18:09Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-15T08:18:09Z","fingerprint":"ee1bb60f6b2f48e91afc5b95de6ca3a435c3b55d","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -87,7 +87,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(236 files: 231 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(238 files: 233 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -146,6 +146,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/execution/mcp/issue-label-server.ts`
 - `src/execution/mcp/review-comment-thread-server.test.ts`
 - `src/execution/mcp/review-comment-thread-server.ts`
+- `src/execution/mcp/review-output-publication-gate.test.ts`
 - `src/execution/mcp/review-output-publication-gate.ts`
 
 ### src/feedback/
@@ -175,6 +176,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/handlers/identity-suggest.ts`
 - `src/handlers/issue-closed.test.ts`
 - `src/handlers/issue-closed.ts`
-- `src/handlers/issue-opened.test.ts`
-- `src/handlers/issue-opened.ts`
-- `src/handlers/mention-types.test.ts`
