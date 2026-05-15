@@ -5629,6 +5629,68 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M071:S03",
+      "label": "S03: Compact Review Details Plan Summary",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M071:S03:T01",
+      "label": "T01: Define public-safe ReviewPlan summary projection",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S03:T02",
+      "label": "T02: Render and wire Review Plan into Review Details",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S03:T03",
+      "label": "T03: Teach M071 verifier to prove S03 without over-claiming later rows",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S03:T04",
+      "label": "T04: Run aggregate S03 proof and document closure evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M071:S04",
+      "label": "S04: Graph Validation Config Truthfulness",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M071:S04:T01",
+      "label": "T01: Type and document review graph-validation config",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S04:T02",
+      "label": "T02: Wire typed graph-validation status into ReviewPlan and runtime logs",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S04:T03",
+      "label": "T03: Teach M071 verifier the S04 evidence contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S04:T04",
+      "label": "T04: Run aggregate S04 proof and preserve downstream truthfulness",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "milestone:M072",
       "label": "M072: M072",
       "type": "milestone",
@@ -12286,6 +12348,66 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M071",
+      "to": "slice:M071:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S03",
+      "to": "task:M071:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S03",
+      "to": "task:M071:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S03",
+      "to": "task:M071:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S03",
+      "to": "task:M071:S03:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "slice:M071:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S04",
+      "to": "task:M071:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S04",
+      "to": "task:M071:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S04",
+      "to": "task:M071:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S04",
+      "to": "task:M071:S04:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -13528,5 +13650,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-15T01:35:08.366Z"
+  "builtAt": "2026-05-15T02:31:01.193Z"
 }

@@ -120,28 +120,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Judged against the later repo-grounded issue #131 evolution plan, not the broad generic multi-agent architecture.
 
-### R127 — Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
-- Class: operability
-- Status: active
-- Description: Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
-- Why it matters: Operators need visible orchestration truth without noisy or unsafe GitHub comments.
-- Source: user
-- Primary owning slice: M071/S03
-- Supporting slices: M071/S02,M071/S05
-- Validation: mapped
-- Notes: Must not expose raw prompts, raw model output, candidate payloads, secrets, or long identifiers that hide safety fields.
-
-### R128 — review.graphValidation.enabled must be typed, preserved by config parsing, documented, and surfaced truthfully as enabled, applied, skipped, or unavailable.
-- Class: quality-attribute
-- Status: active
-- Description: review.graphValidation.enabled must be typed, preserved by config parsing, documented, and surfaced truthfully as enabled, applied, skipped, or unavailable.
-- Why it matters: Config/prompt/tool drift is one of the failure modes issue #131 explicitly wants the orchestration layer to prevent.
-- Source: inferred
-- Primary owning slice: M071/S04
-- Supporting slices: M071/S02,M071/S05
-- Validation: mapped
-- Notes: Zod object schemas strip unknown keys by default; the current handler reads graphValidation through an untyped cast, making this a real config-drift risk.
-
 ### R129 — M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
 - Class: operability
 - Status: active
@@ -1190,6 +1168,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M071/S02 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 198 tests passing, `m071_issue_131_matrix_ok`, and verifier rows `review-plan-contract` plus `normal-handler-plan-construction` complete. The normal PR review handler constructs and logs a safe typed ReviewPlan before publication-side effects while fail-opening on diagnostics failures.
 - Notes: Validated by S02 closeout. S03/S04/S05 retain separate active requirements for Review Details summary, graph-validation config/status, and final closure matrix.
 
+### R127 — Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
+- Class: operability
+- Status: validated
+- Description: Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
+- Why it matters: Operators need visible orchestration truth without noisy or unsafe GitHub comments.
+- Source: user
+- Primary owning slice: M071/S03
+- Supporting slices: M071/S02,M071/S05
+- Validation: M071/S03 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/lib/partial-review-formatter.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 223 tests passing, 0 failures, 1223 assertions, verifier status `m071_issue_131_matrix_ok`, and `review-details-plan-summary` complete with source evidence in `src/review-plan/review-plan.ts`, `src/lib/review-utils.ts`, and `src/handlers/review.ts` while graph/deferred rows remain truthfully partial/deferred.
+- Notes: Must not expose raw prompts, raw model output, candidate payloads, secrets, or long identifiers that hide safety fields.
+
+### R128 — review.graphValidation.enabled must be typed, preserved by config parsing, documented, and surfaced truthfully as enabled, applied, skipped, or unavailable.
+- Class: quality-attribute
+- Status: validated
+- Description: review.graphValidation.enabled must be typed, preserved by config parsing, documented, and surfaced truthfully as enabled, applied, skipped, or unavailable.
+- Why it matters: Config/prompt/tool drift is one of the failure modes issue #131 explicitly wants the orchestration layer to prevent.
+- Source: inferred
+- Primary owning slice: M071/S04
+- Supporting slices: M071/S02,M071/S05
+- Validation: S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues.
+- Notes: Validated by M071/S04. S05 still owns final M071 closure/deferred ownership matrix for larger issue #131 gaps.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -1599,8 +1599,8 @@ This file is the explicit capability and coverage contract for the project.
 | R124 | anti-feature | out-of-scope | none | none | n/a |
 | R125 | failure-visibility | active | M071/S01 | M071/S05 | mapped |
 | R126 | core-capability | validated | M071/S02 | M071/S03,M071/S05 | M071/S02 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 198 tests passing, `m071_issue_131_matrix_ok`, and verifier rows `review-plan-contract` plus `normal-handler-plan-construction` complete. The normal PR review handler constructs and logs a safe typed ReviewPlan before publication-side effects while fail-opening on diagnostics failures. |
-| R127 | operability | active | M071/S03 | M071/S02,M071/S05 | mapped |
-| R128 | quality-attribute | active | M071/S04 | M071/S02,M071/S05 | mapped |
+| R127 | operability | validated | M071/S03 | M071/S02,M071/S05 | M071/S03 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/lib/partial-review-formatter.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 223 tests passing, 0 failures, 1223 assertions, verifier status `m071_issue_131_matrix_ok`, and `review-details-plan-summary` complete with source evidence in `src/review-plan/review-plan.ts`, `src/lib/review-utils.ts`, and `src/handlers/review.ts` while graph/deferred rows remain truthfully partial/deferred. |
+| R128 | quality-attribute | validated | M071/S04 | M071/S02,M071/S05 | S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues. |
 | R129 | operability | active | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | mapped |
 | R130 | core-capability | active | M072 | M073,M074 | unmapped |
 | R131 | core-capability | active | M073 | M072,M074 | unmapped |
@@ -1613,7 +1613,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 18
-- Mapped to slices: 18
-- Validated: 93 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R126)
+- Active requirements: 16
+- Mapped to slices: 16
+- Validated: 95 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R126, R127, R128)
 - Unmapped active requirements: 0
