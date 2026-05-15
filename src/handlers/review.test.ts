@@ -15707,6 +15707,315 @@ describe("createReviewHandler draft PR behavior", () => {
 });
 
 describe("createReviewHandler coordinator phase checkpoints", () => {
+  test("logs a bounded ReviewPlan before normal review publication", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const sequence: string[] = [];
+    const logEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+
+    const logger = {
+      info: (data: unknown, message?: string) => {
+        if (typeof data === "object" && data !== null && (data as Record<string, unknown>).gate === "review-plan") {
+          sequence.push("log:review-plan");
+        }
+        logEntries.push({
+          message: typeof data === "string" ? data : message ?? "",
+          data: typeof data === "object" && data !== null ? data as Record<string, unknown> : undefined,
+        });
+      },
+      warn: () => undefined,
+      error: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      fatal: () => undefined,
+      child: () => logger,
+    } as unknown as Logger;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+      ) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          createReview: async () => {
+            sequence.push("publish:createReview");
+            return { data: { id: 1 } };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            sequence.push("publish:createComment");
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          sequence.push("executor");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-review-plan",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(
+        buildReviewRequestedEvent({
+          action: "opened",
+          pull_request: {
+            number: 101,
+            draft: false,
+            title: "ReviewPlan log order",
+            body: "PR body must not be logged in review-plan diagnostics",
+            commits: 0,
+            additions: 40,
+            deletions: 10,
+            user: { login: "octocat" },
+            author_association: "CONTRIBUTOR",
+            base: { ref: "main", sha: "mainsha" },
+            head: {
+              sha: "abcdef1234567890",
+              ref: "feature/review-plan",
+              repo: {
+                full_name: "acme/repo",
+                name: "repo",
+                owner: { login: "acme" },
+              },
+            },
+            labels: [],
+          },
+        }),
+      );
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+
+    const planIndex = sequence.indexOf("log:review-plan");
+    const firstPublishIndex = sequence.findIndex((entry) => entry.startsWith("publish:"));
+    expect(planIndex).toBeGreaterThanOrEqual(0);
+    expect(firstPublishIndex).toBeGreaterThan(planIndex);
+    expect(sequence.indexOf("executor")).toBeGreaterThan(planIndex);
+
+    const planLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(planLog?.message).toBe("ReviewPlan constructed before publication");
+    expect(planLog?.data?.planHash).toMatch(/^review-plan:v1:[a-f0-9]{64}$/);
+    expect(planLog?.data?.route).toEqual({
+      kind: "pull_request",
+      taskType: "review.small-diff",
+      routingReason: "tiny-diff",
+    });
+    expect(planLog?.data?.scope).toMatchObject({
+      changedFileCount: 1,
+      reviewedFileCount: 1,
+      totalLinesChanged: 1,
+    });
+    expect(planLog?.data?.budgets).toMatchObject({ maxComments: 15, maxTurns: 25 });
+    expect(planLog?.data?.publishPolicy).toMatchObject({
+      mode: "review-comment",
+      autoApprove: false,
+      publishReviewDetails: true,
+      inlineComments: true,
+    });
+    expect(JSON.stringify(planLog?.data)).not.toContain("PR body must not be logged");
+    expect(JSON.stringify(planLog?.data)).not.toContain("diff --git");
+    expect(JSON.stringify(planLog?.data)).not.toContain("commentBody");
+  });
+
+  test("continues normal review when ReviewPlan construction fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const warnings: Array<Record<string, unknown>> = [];
+    let executorCalled = false;
+    let published = false;
+
+    const logger = {
+      info: () => undefined,
+      warn: (data: Record<string, unknown>) => {
+        warnings.push(data);
+      },
+      error: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      fatal: () => undefined,
+      child: () => logger,
+    } as unknown as Logger;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+      ) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          createReview: async () => ({ data: { id: 1 } }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            published = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-review-plan-fail-open",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewPlanBuilder: () => {
+        throw new Error("injected review-plan failure");
+      },
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(
+        buildReviewRequestedEvent({
+          action: "opened",
+          pull_request: {
+            number: 101,
+            draft: false,
+            title: "ReviewPlan fail-open",
+            body: "",
+            commits: 0,
+            additions: 40,
+            deletions: 10,
+            user: { login: "octocat" },
+            author_association: "CONTRIBUTOR",
+            base: { ref: "main", sha: "mainsha" },
+            head: {
+              sha: "abcdef1234567890",
+              ref: "feature/review-plan-fail-open",
+              repo: {
+                full_name: "acme/repo",
+                name: "repo",
+                owner: { login: "acme" },
+              },
+            },
+            labels: [],
+          },
+        }),
+      );
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+
+    expect(executorCalled).toBe(true);
+    expect(published).toBe(true);
+    expect(warnings).toContainEqual(expect.objectContaining({
+      gate: "review-plan",
+      gateResult: "degraded",
+      reason: "plan-construction-failed",
+    }));
+  });
+
   test("advances through pre-executor checkpoint phases before dispatching the executor", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();

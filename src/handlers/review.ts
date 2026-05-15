@@ -37,6 +37,11 @@ import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
+import {
+  buildReviewPlan,
+  summarizeReviewPlanForDiagnostics,
+  type ReviewPlan,
+} from "../review-plan/review-plan.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import {
   computeFileRiskScores,
@@ -2020,6 +2025,10 @@ export function createReviewHandler(deps: {
   diffContextCollector?: typeof collectDiffContext;
   /** Optional same-job read-only shadow specialist subflow; fail-open and private by contract. */
   shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+  /** Optional ReviewPlan builder override for deterministic fail-open tests. */
+  reviewPlanBuilder?: typeof buildReviewPlan;
+  /** Optional ReviewPlan diagnostic projection override for deterministic fail-open tests. */
+  reviewPlanSummarizer?: typeof summarizeReviewPlanForDiagnostics;
   logger: Logger;
 }): void {
   const {
@@ -2051,6 +2060,8 @@ export function createReviewHandler(deps: {
     fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
     diffContextCollector = collectDiffContext,
     shadowSpecialistSubflow = runShadowSpecialistSubflow,
+    reviewPlanBuilder = buildReviewPlan,
+    reviewPlanSummarizer = summarizeReviewPlanForDiagnostics,
     logger,
   } = deps;
 
@@ -4056,6 +4067,122 @@ export function createReviewHandler(deps: {
               effectiveProfile: reviewBoundedness.effectiveProfile.selectedProfile,
             },
             "Resolved bounded-review contract",
+          );
+        }
+
+        try {
+          const reviewPlan = reviewPlanBuilder({
+            route: {
+              kind: "pull_request",
+              owner: apiOwner,
+              repo: apiRepo,
+              pullNumber: pr.number,
+              eventName: `pull_request.${action}`,
+              taskType: reviewRouting.taskType,
+              routingReason: reviewRouting.routingReason,
+            },
+            scope: {
+              changedFileCount: changedFiles.length,
+              reviewedFileCount: promptFiles.length,
+              totalLinesChanged: reviewRoutingLinesChanged,
+              paths: promptFiles,
+            },
+            contextSources: [
+              {
+                name: "config",
+                status: "applied",
+                itemCount: warnings.length,
+                reason: warnings.length > 0 ? "loaded-with-warnings" : "loaded",
+              },
+              {
+                name: "retrieval",
+                status: retriever
+                  ? (retrievalCtx || reviewPrecedentsForPrompt.length > 0 || wikiKnowledgeForPrompt.length > 0 || unifiedResultsForPrompt.length > 0 ? "applied" : "enabled")
+                  : "unavailable",
+                itemCount: (retrievalCtx?.findings.length ?? 0) + reviewPrecedentsForPrompt.length + wikiKnowledgeForPrompt.length + unifiedResultsForPrompt.length,
+                representativePaths: retrievalCtx?.findings.map((finding) => finding.path) ?? [],
+              },
+              {
+                name: "knowledge-store",
+                status: knowledgeStore ? "enabled" : "unavailable",
+                itemCount: priorFindings.length,
+              },
+              {
+                name: "structural-impact",
+                status: structuralImpactForReview ? "applied" : reviewGraphQuery ? "enabled" : "unavailable",
+                itemCount: (structuralImpactForReview?.probableCallers.length ?? 0) + (structuralImpactForReview?.impactedFiles.length ?? 0) + (structuralImpactForReview?.likelyTests.length ?? 0),
+                representativePaths: [
+                  ...(structuralImpactForReview?.impactedFiles.map((file) => file.path) ?? []),
+                  ...(structuralImpactForReview?.likelyTests.map((file) => file.path) ?? []),
+                ],
+              },
+              {
+                name: "graph",
+                status: graphBlastRadius ? "applied" : reviewGraphQuery ? "enabled" : "unavailable",
+                itemCount: graphBlastRadius ? 1 : 0,
+              },
+              {
+                name: "shadow-specialist",
+                status: shadowSpecialistResult
+                  ? shadowSpecialistResult.triggerStatus === "triggered" && !shadowSpecialistResult.errorReason && !shadowSpecialistResult.timeoutReason && !shadowSpecialistResult.unclassifiableReason
+                    ? "applied"
+                    : "skipped"
+                  : "unavailable",
+                itemCount: shadowSpecialistResult?.candidateCount ?? 0,
+                reason: shadowSpecialistResult?.timeoutReason || shadowSpecialistResult?.errorReason || shadowSpecialistResult?.unclassifiableReason || shadowSpecialistResult?.skipReason || undefined,
+              },
+            ],
+            gates: [
+              { name: "review-enabled", status: config.review.enabled ? "enabled" : "skipped" },
+              { name: "review-trigger", status: isReviewTriggerEnabled(action, config.review.triggers) ? "applied" : "skipped" },
+              { name: "review-output-idempotency", status: "applied", reason: acceptedCanonicalSurface ? "accepted-incomplete-canonical-surface" : "accepted-new-output-key" },
+              { name: "publish-rights", status: "enabled", reason: "coordinator-present" },
+              { name: "boundedness", status: reviewBoundedness ? "applied" : "skipped", findingCount: reviewBoundedness?.reasonCodes.length },
+            ],
+            budgets: {
+              maxComments: resolvedMaxComments,
+              maxTurns: reviewMaxTurnsOverride ?? config.maxTurns,
+              timeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds,
+            },
+            publishPolicy: {
+              mode: config.review.autoApprove ? "approve" : "review-comment",
+              autoApprove: config.review.autoApprove,
+              publishReviewDetails: true,
+              inlineComments: true,
+              candidateVerificationRequired: false,
+            },
+          });
+
+          try {
+            logger.info(
+              {
+                ...baseLog,
+                ...reviewPlanSummarizer(reviewPlan as ReviewPlan),
+              },
+              "ReviewPlan constructed before publication",
+            );
+          } catch (err) {
+            logger.warn(
+              {
+                ...baseLog,
+                gate: "review-plan",
+                gateResult: "degraded",
+                reason: "diagnostic-projection-failed",
+                err,
+              },
+              "ReviewPlan diagnostic projection failed (fail-open, continuing review)",
+            );
+          }
+        } catch (err) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "review-plan",
+              gateResult: "degraded",
+              reason: "plan-construction-failed",
+              err,
+            },
+            "ReviewPlan construction failed (fail-open, continuing review)",
           );
         }
 
