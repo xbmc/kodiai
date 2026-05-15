@@ -288,7 +288,7 @@ describe("issue #131 evidence matrix evaluator", () => {
 
   test("fails closed when source handoff owner drifts from exact M072-M075 contract", () => {
     const rows = mutableHandoffRows();
-    rows[0] = { ...rows[0], owner: { milestone: "M073", slice: "S01" } };
+    rows[0] = { ...rows[0]!, owner: { milestone: "M073", slice: "S01" } };
     const report = evaluateFixtureWithHandoff(rows);
 
     expect(report.success).toBe(false);
@@ -298,7 +298,7 @@ describe("issue #131 evidence matrix evaluator", () => {
 
   test("fails closed when R104 remains assigned to M071", () => {
     const rows = mutableHandoffRows();
-    rows[4] = { ...rows[4], owner: { milestone: "M071" as never, slice: "S06" } };
+    rows[4] = { ...rows[4]!, owner: { milestone: "M071" as never, slice: "S06" } };
     const report = evaluateFixtureWithHandoff(rows);
 
     expect(report.success).toBe(false);
@@ -308,7 +308,7 @@ describe("issue #131 evidence matrix evaluator", () => {
 
   test("fails closed when source handoff contains unsafe report fields or empty proof text", () => {
     const unsafeRows = mutableHandoffRows() as Array<Issue131DeferredHandoffRow & { rawDiff?: string }>;
-    unsafeRows[1] = { ...unsafeRows[1], proofRequiredBeforePromotion: "   ", rawDiff: "not allowed" };
+    unsafeRows[1] = { ...unsafeRows[1]!, proofRequiredBeforePromotion: "   ", rawDiff: "not allowed" };
     const report = evaluateFixtureWithHandoff(unsafeRows);
 
     expect(report.success).toBe(false);

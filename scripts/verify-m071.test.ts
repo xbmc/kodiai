@@ -257,7 +257,7 @@ describe("verify:m071 CLI", () => {
 
   test("package verifier fails closed when handoff source ownership drifts", () => {
     const rows = mutableHandoffRows();
-    rows[2] = { ...rows[2], owner: { milestone: "M075", slice: "S01" } };
+    rows[2] = { ...rows[2]!, owner: { milestone: "M075", slice: "S01" } };
     const report = evaluateM071VerifierContract({
       generatedAt: "x",
       ...makeReaders(),
@@ -396,7 +396,7 @@ describe("verify:m071 CLI", () => {
       complete_foundation_row_ids: [],
       deferred_row_ids: [],
     });
-    expect(parsed.issues[0].length).toBeLessThanOrEqual(240);
+    expect(parsed.issues[0]?.length).toBeLessThanOrEqual(240);
     expect(result.stdout).not.toContain("rawPrompt");
     expect(result.stderr).not.toContain("rawPrompt");
   });

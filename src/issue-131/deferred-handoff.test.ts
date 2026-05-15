@@ -32,7 +32,7 @@ describe("issue #131 deferred handoff contract", () => {
       "metrics-tier-closure",
       "repo-doctrine-contract-ownership",
     ]);
-    expect(ISSUE_131_DEFERRED_HANDOFF_ROWS.map((row) => row.rowId)).toEqual(ISSUE_131_DEFERRED_HANDOFF_ROW_IDS);
+    expect(ISSUE_131_DEFERRED_HANDOFF_ROWS.map((row) => row.rowId)).toEqual([...ISSUE_131_DEFERRED_HANDOFF_ROW_IDS]);
   });
 
   test("preserves exact downstream owners for existing M072-M075 deferred rows", () => {
@@ -80,7 +80,7 @@ describe("issue #131 deferred handoff contract", () => {
 
   test("fails malformed handoff row missing owner", () => {
     const rows = mutableRows();
-    rows[0] = { ...rows[0], owner: { milestone: "" as never, slice: "" } };
+    rows[0] = { ...rows[0]!, owner: { milestone: "" as never, slice: "" as never } };
 
     const validation = validateIssue131DeferredHandoffRows(rows);
 
@@ -90,7 +90,7 @@ describe("issue #131 deferred handoff contract", () => {
 
   test("fails when an R104 handoff row points at M071", () => {
     const rows = mutableRows();
-    rows[4] = { ...rows[4], owner: { milestone: "M071" as never, slice: "S06" } };
+    rows[4] = { ...rows[4]!, owner: { milestone: "M071" as never, slice: "S06" } };
 
     const validation = validateIssue131DeferredHandoffRows(rows);
 
@@ -101,7 +101,7 @@ describe("issue #131 deferred handoff contract", () => {
 
   test("fails forbidden planning evidence paths in proof text", () => {
     const rows = mutableRows();
-    rows[4] = { ...rows[4], proofRequiredBeforePromotion: "Promote from .gsd/milestones/M071/M071-VALIDATION.md planning evidence only." };
+    rows[4] = { ...rows[4]!, proofRequiredBeforePromotion: "Promote from .gsd/milestones/M071/M071-VALIDATION.md planning evidence only." };
 
     const validation = validateIssue131DeferredHandoffRows(rows);
 

@@ -14,6 +14,12 @@ import {
   type CandidateVerificationPublicationEvidenceSink,
   type CandidateVerificationPublicationEvidenceSummary,
 } from "../../specialists/candidate-verification-publication-evidence.ts";
+import {
+  createCandidatePublicationBridgeRecord,
+  projectCandidatePublicationReducerHandoffInput,
+  type CandidatePublicationBridgeRecord,
+  type CandidatePublicationReducerHandoffInput,
+} from "../../issue-131/candidate-publication-bridge.ts";
 
 export type ReviewOutputInlinePublicationState =
   | { status: "none" }
@@ -32,11 +38,20 @@ export type CandidatePublicationPolicy = (
   input: CandidatePublicationPolicyInput,
 ) => CandidatePublicationPolicyResult;
 
+export type CandidatePublicationBridgeCaptureState =
+  | { status: "none" }
+  | {
+    status: "captured";
+    record: CandidatePublicationBridgeRecord;
+    reducerHandoffInput: CandidatePublicationReducerHandoffInput;
+  };
+
 export interface ReviewOutputPublicationGate {
   resolve(octokit: Octokit): Promise<ReviewOutputPublicationStatus>;
   evaluateInlineCandidatePublication(candidate: CandidatePublicationPolicyAttempt): CandidatePublicationPolicyResult | null;
   getInlinePublicationState(): ReviewOutputInlinePublicationState;
   getCandidateVerificationPublicationEvidenceSummary(): CandidateVerificationPublicationEvidenceSummary;
+  getCandidatePublicationBridgeCaptureState(): CandidatePublicationBridgeCaptureState;
   recordInlinePublicationSkipped(reason: string): void;
   recordInlinePublicationFailed(reason: string): void;
   recordInlinePublicationPublished(details?: { commentId?: number; path?: string }): void;
@@ -114,6 +129,41 @@ export function createReviewOutputPublicationGate(params: {
     correlationKey: params.candidateVerificationContext?.correlationKey,
   });
 
+  const upstreamCorrelationKey = (candidate: CandidatePublicationPolicyAttempt): unknown => (
+    candidate.correlationKey ?? params.candidateVerificationContext?.correlationKey
+  );
+
+  const candidatePolicyInput = (candidate: CandidatePublicationPolicyAttempt): CandidatePublicationPolicyInput => ({
+    candidate: {
+      ...candidate,
+      reviewOutputKey: candidate.reviewOutputKey ?? params.candidateVerificationContext?.reviewOutputKey ?? params.reviewOutputKey,
+      deliveryId: candidate.deliveryId ?? params.candidateVerificationContext?.deliveryId,
+      correlationKey: candidate.correlationKey ?? params.candidateVerificationContext?.correlationKey,
+    },
+    docsConfigTruth: params.candidateVerificationContext?.docsConfigTruth ?? null,
+  });
+
+  let bridgeCaptureState: CandidatePublicationBridgeCaptureState = { status: "none" };
+
+  const captureBridgeState = (
+    candidate: CandidatePublicationPolicyAttempt,
+    input: CandidatePublicationPolicyInput | null,
+    result: CandidatePublicationPolicyResult,
+  ): void => {
+    const record = createCandidatePublicationBridgeRecord({
+      sourceLabel: "inline-mcp-review-comment",
+      upstreamCorrelationKey: upstreamCorrelationKey(candidate),
+      candidateMetadata: candidate,
+      candidatePolicyInput: input,
+      policyResult: result,
+    });
+    bridgeCaptureState = {
+      status: "captured",
+      record,
+      reducerHandoffInput: projectCandidatePublicationReducerHandoffInput(record),
+    };
+  };
+
   return {
     getInlinePublicationState(): ReviewOutputInlinePublicationState {
       return inlinePublicationState;
@@ -123,22 +173,20 @@ export function createReviewOutputPublicationGate(params: {
       return evidenceCollector.getSummary();
     },
 
+    getCandidatePublicationBridgeCaptureState(): CandidatePublicationBridgeCaptureState {
+      return bridgeCaptureState;
+    },
+
     evaluateInlineCandidatePublication(candidate: CandidatePublicationPolicyAttempt): CandidatePublicationPolicyResult | null {
       if (!hasCandidateVerificationContext && !params.candidatePublicationPolicy) {
         return null;
       }
 
+      const input = candidatePolicyInput(candidate);
       try {
-        const result = policy({
-          candidate: {
-            ...candidate,
-            reviewOutputKey: candidate.reviewOutputKey ?? params.candidateVerificationContext?.reviewOutputKey ?? params.reviewOutputKey,
-            deliveryId: candidate.deliveryId ?? params.candidateVerificationContext?.deliveryId,
-            correlationKey: candidate.correlationKey ?? params.candidateVerificationContext?.correlationKey,
-          },
-          docsConfigTruth: params.candidateVerificationContext?.docsConfigTruth ?? null,
-        });
+        const result = policy(input);
         lastInlinePolicyResult = result;
+        captureBridgeState(candidate, input, result);
         evidenceCollector.record({
           outcome: result.allowed ? "allowed" : "denied",
           policyResult: result,
@@ -148,6 +196,7 @@ export function createReviewOutputPublicationGate(params: {
       } catch {
         const result = failClosedCandidatePublicationResult();
         lastInlinePolicyResult = result;
+        captureBridgeState(candidate, input, result);
         evidenceCollector.record({
           outcome: "denied",
           policyResult: result,

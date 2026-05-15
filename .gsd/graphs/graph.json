@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M071",
-      "label": "M071: Issue #131 Completion Audit and Plan Contract",
+      "id": "milestone:M072",
+      "label": "M072: Candidate Publication Bridge",
       "type": "milestone",
-      "description": "Active milestone: M071",
+      "description": "Active milestone: M072",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:blocked",
-      "label": "Phase: blocked",
+      "id": "concept:phase:refining",
+      "label": "Phase: refining",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5579,6 +5579,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M071",
+      "label": "M071: Issue #131 Completion Audit and Plan Contract",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-ROADMAP.md"
+    },
+    {
       "id": "slice:M071:S01",
       "label": "S01: Issue #131 Evidence Matrix",
       "type": "slice",
@@ -5741,11 +5748,29 @@
       "confidence": "EXTRACTED"
     },
     {
-      "id": "milestone:M072",
-      "label": "M072: M072",
-      "type": "milestone",
+      "id": "slice:M072:S01",
+      "label": "S01: Source owned bridge contract",
+      "type": "slice",
       "confidence": "EXTRACTED",
-      "sourceFile": "milestones/M072/M072-ROADMAP.md"
+      "sourceFile": "milestones/M072/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M072:S01:T01",
+      "label": "T01: Build bridge contract and normalization tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S01:T02",
+      "label": "T02: Add reducer handoff projection and continuity checks",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M072:S01:T03",
+      "label": "T03: Run contract regression and type safety checks",
+      "type": "task",
+      "confidence": "EXTRACTED"
     },
     {
       "id": "decision:M053:1",
@@ -7402,6 +7427,318 @@
       "description": "Source: S06-SUMMARY.md/Deviations",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M070/M070-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:1",
+      "label": "Judge issue #131 completion against the repo-grounded evolution plan and M071 foundation scope, not the broad generic multi-agent framing.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D238",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:2",
+      "label": "Add typed `ReviewPlan` evidence before reducer extraction, because normal-path orchestration truth is safer to establish before changing filtering or publication behavior.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D239",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:3",
+      "label": "Render only a compact Review Plan summary in GitHub Review Details while keeping detailed plan evidence in logs and verifier output.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D240",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:4",
+      "label": "Require normal review-handler wiring for M071 completion claims; pure/static contracts are only partial evidence.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D241",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:5",
+      "label": "Let runtime review-plan and Review Details diagnostics fail open, while `verify:m071` fails closed on missing, weak, unwired, or unsafe evidence.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D242",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:6",
+      "label": "Resolve R104 by re-owning repo-doctrine implementation/proof outside M071 to M074/S01 and adding a source-backed deferred handoff contract consumed by `verify:m071`.",
+      "type": "decision",
+      "description": "Source: DECISIONS.md/D244",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:7",
+      "label": "Completion matrices need source-owned evidence rather than planning-artifact reads; otherwise a milestone can accidentally prove its own plan text instead of shipped code.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:8",
+      "label": "Public Review Details additions should be separate projections from richer diagnostic structures, because formatter-safe public output and verifier/log diagnostics have different leakage and volume constraints.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:9",
+      "label": "Optional graph-validation orchestration is truthfulness work, not mandatory enforcement: disabled/skipped/unavailable/applied states must be represented without changing fail-open review behavior.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:10",
+      "label": "Package script wiring is part of the operator proof contract; a correct verifier module is insufficient if `package.json` exposes a weak or mismatched command.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:11",
+      "label": "Requirement ownership must be explicit when implementation remains deferred; R104 could not be validated by M071 and needed a bounded source-backed owner handoff instead of a provisional M071 claim.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Requirements Advanced",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:12",
+      "label": "Use a source-only evidence matrix with `complete`, `partial`, `missing`, and `deferred` classifications to make milestone claims machine-checkable and fail-closed.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:13",
+      "label": "Build orchestration evidence as a typed pure contract with stable canonical hashes and redaction-safe projections, then wire it into the normal path before any publication-side effects.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:14",
+      "label": "Keep public projections normalized, bounded, deterministic, and redacted; richer details belong in logs or verifier output.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:15",
+      "label": "Share bounded status vocabulary between plan-time and runtime surfaces so optional subsystems can report enabled/applied/skipped/unavailable/failure consistently.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:16",
+      "label": "Encode downstream handoffs as checked-in source contracts plus negative verifier tests for owner drift, unsafe fields, and planning-artifact proof dependencies.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:17",
+      "label": "The validation closeout needed an extra S06 because R104 remained provisionally associated with M071 even though source implementation evidence belonged to later repo-doctrine specialist proof work.",
+      "type": "decision",
+      "description": "Source: M071-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M071:18",
+      "label": "The task runtime initially lacked the expected requirement-update tool for part of S06, forcing later reconciliation of the rendered requirements state through GSD tooling.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:1",
+      "label": "Completion matrices need source-owned evidence rather than planning-artifact reads; otherwise a milestone can accidentally prove its own plan text instead of shipped code.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:2",
+      "label": "Public Review Details additions should be separate projections from richer diagnostic structures, because formatter-safe public output and verifier/log diagnostics have different leakage and volume constraints.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:3",
+      "label": "Optional graph-validation orchestration is truthfulness work, not mandatory enforcement: disabled/skipped/unavailable/applied states must be represented without changing fail-open review behavior.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:4",
+      "label": "Package script wiring is part of the operator proof contract; a correct verifier module is insufficient if `package.json` exposes a weak or mismatched command.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:5",
+      "label": "Requirement ownership must be explicit when implementation remains deferred; R104 could not be validated by M071 and needed a bounded source-backed owner handoff instead of a provisional M071 claim.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Requirements Advanced",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:6",
+      "label": "Use a source-only evidence matrix with `complete`, `partial`, `missing`, and `deferred` classifications to make milestone claims machine-checkable and fail-closed.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:7",
+      "label": "Build orchestration evidence as a typed pure contract with stable canonical hashes and redaction-safe projections, then wire it into the normal path before any publication-side effects.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:8",
+      "label": "Keep public projections normalized, bounded, deterministic, and redacted; richer details belong in logs or verifier output.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:9",
+      "label": "Share bounded status vocabulary between plan-time and runtime surfaces so optional subsystems can report enabled/applied/skipped/unavailable/failure consistently.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:10",
+      "label": "Encode downstream handoffs as checked-in source contracts plus negative verifier tests for owner drift, unsafe fields, and planning-artifact proof dependencies.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:11",
+      "label": "The validation closeout needed an extra S06 because R104 remained provisionally associated with M071 even though source implementation evidence belonged to later repo-doctrine specialist proof work.",
+      "type": "lesson",
+      "description": "Source: M071-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M071:12",
+      "label": "The task runtime initially lacked the expected requirement-update tool for part of S06, forcing later reconciliation of the rendered requirements state through GSD tooling.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:1",
+      "label": "Use a source-only evidence matrix with `complete`, `partial`, `missing`, and `deferred` classifications to make milestone claims machine-checkable and fail-closed.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:2",
+      "label": "Build orchestration evidence as a typed pure contract with stable canonical hashes and redaction-safe projections, then wire it into the normal path before any publication-side effects.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:3",
+      "label": "Keep public projections normalized, bounded, deterministic, and redacted; richer details belong in logs or verifier output.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:4",
+      "label": "Share bounded status vocabulary between plan-time and runtime surfaces so optional subsystems can report enabled/applied/skipped/unavailable/failure consistently.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:5",
+      "label": "Encode downstream handoffs as checked-in source contracts plus negative verifier tests for owner drift, unsafe fields, and planning-artifact proof dependencies.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Patterns established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:6",
+      "label": "The validation closeout needed an extra S06 because R104 remained provisionally associated with M071 even though source implementation evidence belonged to later repo-doctrine specialist proof work.",
+      "type": "pattern",
+      "description": "Source: M071-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M071:7",
+      "label": "The task runtime initially lacked the expected requirement-update tool for part of S06, forcing later reconciliation of the rendered requirements state through GSD tooling.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M071:1",
+      "label": "The validation closeout needed an extra S06 because R104 remained provisionally associated with M071 even though source implementation evidence belonged to later repo-doctrine specialist proof work.",
+      "type": "lesson",
+      "description": "Source: M071-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M071:2",
+      "label": "The task runtime initially lacked the expected requirement-update tool for part of S06, forcing later reconciliation of the rendered requirements state through GSD tooling.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/M071-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -12506,6 +12843,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M072",
+      "to": "slice:M072:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S01",
+      "to": "task:M072:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S01",
+      "to": "task:M072:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M072:S01",
+      "to": "task:M072:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -13746,7 +14107,241 @@
       "to": "surprise:M070:3",
       "type": "relates_to",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:16",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:17",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "decision:M071:18",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "lesson:M071:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "pattern:M071:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "surprise:M071:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M071",
+      "to": "surprise:M071:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-15T03:25:13.377Z"
+  "builtAt": "2026-05-15T06:47:59.211Z"
 }
