@@ -1,3 +1,10 @@
+import {
+  ISSUE_131_DEFERRED_HANDOFF_ROWS,
+  ISSUE_131_R104_OWNER,
+  validateIssue131DeferredHandoffRows,
+  type Issue131DeferredHandoffRow,
+} from "./deferred-handoff.ts";
+
 export const ISSUE_131_STATUSES = ["complete", "partial", "missing", "deferred"] as const;
 export type Issue131Status = typeof ISSUE_131_STATUSES[number];
 
@@ -8,6 +15,7 @@ export type Issue131IssueCategory =
   | "raw_field_leak"
   | "unwired_package_script"
   | "deferred_owner"
+  | "deferred_handoff"
   | "schema_gap"
   | "normal_path_gap";
 
@@ -40,6 +48,23 @@ export type Issue131Check = {
   detail: string;
 };
 
+export type Issue131DeferredHandoffProjection = {
+  readonly row_id: string;
+  readonly requirement_refs: readonly string[];
+  readonly owner_milestone: string;
+  readonly owner_slice: string;
+  readonly proof_required: string;
+};
+
+export type Issue131R104OwnershipResolution = {
+  readonly requirement_ref: "R104";
+  readonly row_id: string;
+  readonly owner_milestone: string;
+  readonly owner_slice: string;
+  readonly owned_by_m071: boolean;
+  readonly resolution: "deferred_outside_m071" | "unsafe_m071_owner";
+};
+
 export type Issue131EvidenceMatrixReport = {
   command: "verify:m071";
   generatedAt: string;
@@ -49,6 +74,8 @@ export type Issue131EvidenceMatrixReport = {
   checks: readonly Issue131Check[];
   rows: readonly Issue131MatrixRow[];
   counts: Record<Issue131Status, number>;
+  deferred_handoff: readonly Issue131DeferredHandoffProjection[];
+  r104_ownership: Issue131R104OwnershipResolution;
   issues: readonly string[];
 };
 
@@ -56,6 +83,7 @@ export type Issue131EvidenceReaders = {
   readFileText: (path: Issue131SourcePath) => string | undefined;
   readPackageJsonText: () => string | undefined;
   generatedAt?: string;
+  handoffRows?: readonly Issue131DeferredHandoffRow[];
 };
 
 export const ISSUE_131_CHECK_IDS = [
@@ -251,10 +279,12 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
     packageJson: readers.readPackageJsonText() ?? "",
   };
 
-  const rows = ROW_DEFINITIONS.map((definition) => classifyRow(definition, source));
+  const handoffRows = readers.handoffRows ?? ISSUE_131_DEFERRED_HANDOFF_ROWS;
+  const rows = ROW_DEFINITIONS.map((definition) => classifyRow(definition, source, handoffRows));
   const counts = countStatuses(rows);
-  const issues = collectRowIssues(rows, counts);
-  const checks = buildChecks(rows, source.packageJson, issues, counts);
+  const handoffValidation = validateMatrixHandoff(rows, handoffRows);
+  const issues = [...collectRowIssues(rows, counts), ...handoffValidation.reasons];
+  const checks = buildChecks(rows, source.packageJson, issues, counts, handoffValidation);
   const allCheckIssues = checks.flatMap((check) => check.passed ? [] : [check.detail]);
   const success = checks.every((check) => check.passed);
 
@@ -267,13 +297,21 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
     checks,
     rows,
     counts,
+    deferred_handoff: buildHandoffProjection(handoffRows),
+    r104_ownership: buildR104OwnershipResolution(handoffRows),
     issues: [...issues, ...allCheckIssues],
   };
 }
 
-function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; reviewUtils: string; config: string; validation: string; graphValidationStatus: string; packageJson: string }): Issue131MatrixRow {
+function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; reviewUtils: string; config: string; validation: string; graphValidationStatus: string; packageJson: string }, handoffRows: readonly Issue131DeferredHandoffRow[]): Issue131MatrixRow {
   if (definition.deferredTo) {
-    return makeRow(definition, "deferred", [], [], definition.deferredTo);
+    const handoff = handoffRows.find((row) => row.rowId === definition.id);
+    const deferredTo = handoff ? {
+      milestone: handoff.owner.milestone as "M072" | "M073" | "M074" | "M075",
+      slice: handoff.owner.slice,
+      reason: definition.deferredTo.reason,
+    } : definition.deferredTo;
+    return makeRow(definition, "deferred", [], [], deferredTo);
   }
 
   switch (definition.id) {
@@ -619,11 +657,60 @@ function collectRowIssues(rows: readonly Issue131MatrixRow[], counts: Record<Iss
   return issues;
 }
 
-function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string, issues: readonly string[], counts: Record<Issue131Status, number>): Issue131Check[] {
+function buildHandoffProjection(rows: readonly Issue131DeferredHandoffRow[]): Issue131DeferredHandoffProjection[] {
+  return rows.map((row) => ({
+    row_id: row.rowId,
+    requirement_refs: [...row.requirementRefs],
+    owner_milestone: row.owner.milestone,
+    owner_slice: row.owner.slice,
+    proof_required: row.proofRequiredBeforePromotion,
+  }));
+}
+
+function buildR104OwnershipResolution(rows: readonly Issue131DeferredHandoffRow[]): Issue131R104OwnershipResolution {
+  const r104 = rows.find((row) => row.rowId === "repo-doctrine-contract-ownership" && row.requirementRefs.includes("R104")) ?? ISSUE_131_R104_OWNER;
+  const ownedByM071 = r104.owner.milestone === "M071";
+  return {
+    requirement_ref: "R104",
+    row_id: r104.rowId,
+    owner_milestone: r104.owner.milestone,
+    owner_slice: r104.owner.slice,
+    owned_by_m071: ownedByM071,
+    resolution: ownedByM071 ? "unsafe_m071_owner" : "deferred_outside_m071",
+  };
+}
+
+function validateMatrixHandoff(rows: readonly Issue131MatrixRow[], handoffRows: readonly Issue131DeferredHandoffRow[]): { passed: boolean; reasons: string[] } {
+  const reasons = [...validateIssue131DeferredHandoffRows(handoffRows).reasons];
+  for (const matrixRow of rows.filter((row) => row.status === "deferred")) {
+    const handoff = handoffRows.find((row) => row.rowId === matrixRow.id);
+    if (!handoff) {
+      reasons.push(`${matrixRow.id}: matching source handoff row is missing.`);
+      continue;
+    }
+    if (matrixRow.deferredTo?.milestone !== handoff.owner.milestone || matrixRow.deferredTo?.slice !== handoff.owner.slice) {
+      reasons.push(`${matrixRow.id}: matrix owner ${matrixRow.deferredTo?.milestone ?? "missing"}/${matrixRow.deferredTo?.slice ?? "missing"} does not match source handoff owner ${handoff.owner.milestone}/${handoff.owner.slice}.`);
+    }
+    if (handoff.proofRequiredBeforePromotion.trim().length === 0) {
+      reasons.push(`${matrixRow.id}: handoff proof-required summary is empty.`);
+    }
+  }
+
+  const r104Rows = handoffRows.filter((row) => row.requirementRefs.includes("R104"));
+  if (r104Rows.length === 0) reasons.push("R104: no source handoff row owns downstream repo-doctrine proof.");
+  for (const row of r104Rows) {
+    if (row.owner.milestone === "M071") reasons.push(`${row.rowId}: R104 source handoff owner must be outside M071.`);
+  }
+
+  return { passed: reasons.length === 0, reasons };
+}
+
+function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string, issues: readonly string[], counts: Record<Issue131Status, number>, handoffValidation: { passed: boolean; reasons: readonly string[] }): Issue131Check[] {
   const invalidStatuses = rows.filter((row) => !isIssue131Status(row.status));
   const evidenceIssues = issues.filter((issue) => /evidence|path|forbidden|empty/i.test(issue));
   const finalClosure = validateFinalClosureRows(rows, counts);
   const deferredOwnership = validateDeferredOwnership(rows);
+  const deferredHandoffPassed = deferredOwnership.passed && handoffValidation.passed;
   const packageScripts = parsePackageScripts(packageJsonText);
   const packageWired = typeof packageScripts["verify:m071"] === "string";
   const safetyIssues = findForbiddenReportFields({ rows });
@@ -632,7 +719,7 @@ function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string
     makeCheck("M071-ISSUE-131-STATUS-TAXONOMY", invalidStatuses.length === 0, "All rows use the exact issue #131 status taxonomy.", invalidStatuses.map((row) => row.id).join(", "), ["weak_evidence"]),
     makeCheck("M071-ISSUE-131-EVIDENCE-PATHS", evidenceIssues.length === 0, "Non-deferred claims use repo-relative non-planning evidence paths with short reasons.", evidenceIssues.join(" "), ["forbidden_evidence_path", "weak_evidence"]),
     makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", finalClosure.passed, "Final M071 closure has six complete foundation rows, zero partial/missing rows, and four explicitly deferred future rows.", finalClosure.reasons.join(" "), ["weak_evidence", "schema_gap", "normal_path_gap", "unwired_package_script"]),
-    makeCheck("M071-ISSUE-131-DEFERRED-OWNERSHIP", deferredOwnership.passed, "Deferred rows exactly match M072-M075 owning milestones/slices.", deferredOwnership.reasons.join(" "), ["deferred_owner"]),
+    makeCheck("M071-ISSUE-131-DEFERRED-OWNERSHIP", deferredHandoffPassed, "Deferred rows exactly match source handoff owners and R104 is owned outside M071.", [...deferredOwnership.reasons, ...handoffValidation.reasons].join(" "), ["deferred_owner", "deferred_handoff"]),
     makeCheck("M071-ISSUE-131-PACKAGE-WIRING", packageWired, "package.json exposes verify:m071.", "verify:m071 is not yet wired in package.json.", ["unwired_package_script"]),
     makeCheck("M071-ISSUE-131-REPORT-SAFETY", safetyIssues.length === 0, "Report-shaped data excludes raw prompts, model output, comments, and diffs.", safetyIssues.join(" "), ["raw_field_leak"]),
   ];

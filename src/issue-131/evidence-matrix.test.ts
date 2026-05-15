@@ -9,6 +9,7 @@ import {
   validateIssue131EvidencePath,
   type Issue131SourcePath,
 } from "./evidence-matrix.ts";
+import { ISSUE_131_DEFERRED_HANDOFF_ROWS, type Issue131DeferredHandoffRow } from "./deferred-handoff.ts";
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
@@ -110,6 +111,33 @@ function evaluateFixture(overrides: Partial<Record<Issue131SourcePath, string>> 
     generatedAt: "2026-05-10T00:00:00.000Z",
     readFileText: (path) => files[path],
     readPackageJsonText: () => files["package.json"],
+  });
+}
+
+
+function mutableHandoffRows(): Issue131DeferredHandoffRow[] {
+  return ISSUE_131_DEFERRED_HANDOFF_ROWS.map((entry) => ({
+    ...entry,
+    requirementRefs: [...entry.requirementRefs],
+    owner: { ...entry.owner },
+  }));
+}
+
+function evaluateFixtureWithHandoff(handoffRows: readonly Issue131DeferredHandoffRow[]) {
+  const files: Record<Issue131SourcePath, string> = {
+    "src/handlers/review.ts": CURRENT_REVIEW_TS,
+    "src/review-plan/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
+    "src/lib/review-utils.ts": CURRENT_REVIEW_UTILS_TS,
+    "src/execution/config.ts": CURRENT_CONFIG_TS,
+    "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
+    "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,
+    "package.json": JSON.stringify({ scripts: { "verify:m071": "bun scripts/verify-m071.ts --json" } }),
+  };
+  return evaluateIssue131EvidenceMatrix({
+    generatedAt: "2026-05-10T00:00:00.000Z",
+    readFileText: (path) => files[path],
+    readPackageJsonText: () => files["package.json"],
+    handoffRows,
   });
 }
 
@@ -224,6 +252,69 @@ describe("issue #131 evidence matrix evaluator", () => {
       ["metrics-tier-closure", "M075", "S01"],
     ]);
     expect(report.checks.find((check) => check.id === "M071-ISSUE-131-DEFERRED-OWNERSHIP")?.passed).toBe(true);
+  });
+
+
+  test("projects compact source handoff and R104 ownership resolution", () => {
+    const report = evaluateFixture({
+      packageJson: JSON.stringify({ scripts: { "verify:m071": "bun scripts/verify-m071.ts --json" } }),
+    });
+
+    expect(report.deferred_handoff.map((entry) => [entry.row_id, entry.requirement_refs, entry.owner_milestone, entry.owner_slice])).toEqual([
+      ["candidate-finding-mcp-publication-bridge", ["R130"], "M072", "S01"],
+      ["reducer-extraction", ["R130", "R132"], "M073", "S01"],
+      ["specialist-lane-proof", ["R131", "R104"], "M074", "S01"],
+      ["metrics-tier-closure", ["R133"], "M075", "S01"],
+      ["repo-doctrine-contract-ownership", ["R104"], "M074", "S01"],
+    ]);
+    expect(report.deferred_handoff.every((entry) => entry.proof_required.trim().length > 20)).toBe(true);
+    expect(report.r104_ownership).toEqual({
+      requirement_ref: "R104",
+      row_id: "repo-doctrine-contract-ownership",
+      owner_milestone: "M074",
+      owner_slice: "S01",
+      owned_by_m071: false,
+      resolution: "deferred_outside_m071",
+    });
+  });
+
+  test("fails closed when a source handoff row is missing", () => {
+    const report = evaluateFixtureWithHandoff(mutableHandoffRows().filter((entry) => entry.rowId !== "metrics-tier-closure"));
+
+    expect(report.success).toBe(false);
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-DEFERRED-OWNERSHIP")?.passed).toBe(false);
+    expect(report.issues.join("\n")).toContain("metrics-tier-closure: handoff row is missing");
+  });
+
+  test("fails closed when source handoff owner drifts from exact M072-M075 contract", () => {
+    const rows = mutableHandoffRows();
+    rows[0] = { ...rows[0], owner: { milestone: "M073", slice: "S01" } };
+    const report = evaluateFixtureWithHandoff(rows);
+
+    expect(report.success).toBe(false);
+    expect(row(report, "candidate-finding-mcp-publication-bridge").deferredTo).toMatchObject({ milestone: "M073", slice: "S01" });
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-DEFERRED-OWNERSHIP")?.detail).toContain("expected deferred owner M072/S01");
+  });
+
+  test("fails closed when R104 remains assigned to M071", () => {
+    const rows = mutableHandoffRows();
+    rows[4] = { ...rows[4], owner: { milestone: "M071" as never, slice: "S06" } };
+    const report = evaluateFixtureWithHandoff(rows);
+
+    expect(report.success).toBe(false);
+    expect(report.r104_ownership).toMatchObject({ owner_milestone: "M071", owned_by_m071: true, resolution: "unsafe_m071_owner" });
+    expect(report.issues.join("\n")).toContain("R104 must not be owned by M071");
+  });
+
+  test("fails closed when source handoff contains unsafe report fields or empty proof text", () => {
+    const unsafeRows = mutableHandoffRows() as Array<Issue131DeferredHandoffRow & { rawDiff?: string }>;
+    unsafeRows[1] = { ...unsafeRows[1], proofRequiredBeforePromotion: "   ", rawDiff: "not allowed" };
+    const report = evaluateFixtureWithHandoff(unsafeRows);
+
+    expect(report.success).toBe(false);
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-DEFERRED-OWNERSHIP")?.passed).toBe(false);
+    expect(report.issues.join("\n")).toContain("proof required before promotion is required");
+    expect(report.issues.join("\n")).toContain("Forbidden raw handoff fields detected");
   });
 
   test("fails closed when ReviewPlan words appear without normal-path construction before publication", () => {

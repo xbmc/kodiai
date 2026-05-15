@@ -8,6 +8,7 @@ import {
   parseM071Args,
   type M071StatusCode,
 } from "./verify-m071.ts";
+import { ISSUE_131_DEFERRED_HANDOFF_ROWS, type Issue131DeferredHandoffRow } from "../src/issue-131/deferred-handoff.ts";
 import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 
 const CURRENT_REVIEW_TS = [
@@ -91,6 +92,15 @@ const CURRENT_GRAPH_VALIDATION_STATUS_TS = [
 const PACKAGE_WITH_M071 = JSON.stringify({ scripts: { [COMMAND_NAME]: EXPECTED_PACKAGE_SCRIPT } });
 const PACKAGE_WITHOUT_M071 = JSON.stringify({ scripts: { "verify:m070": "bun scripts/verify-m070.ts" } });
 const PACKAGE_WEAK_M071 = JSON.stringify({ scripts: { [COMMAND_NAME]: "bun --bun scripts/verify-m071.ts" } });
+
+
+function mutableHandoffRows(): Issue131DeferredHandoffRow[] {
+  return ISSUE_131_DEFERRED_HANDOFF_ROWS.map((entry) => ({
+    ...entry,
+    requirementRefs: [...entry.requirementRefs],
+    owner: { ...entry.owner },
+  }));
+}
 
 function makeReaders(overrides: Partial<Record<Issue131SourcePath, string>> & { packageJson?: string } = {}) {
   const files: Record<Issue131SourcePath, string> = {
@@ -217,6 +227,46 @@ describe("verify:m071 CLI", () => {
     expect(row(report, "truthful-graph-validation-status").status).toBe("complete");
     expect(row(report, "package-verifier-wiring").status).toBe("complete");
     expect(report.issues.join("\n")).not.toContain("rawPrompt");
+  });
+
+
+  test("emits compact handoff and R104 ownership in package verifier JSON", () => {
+    const report = evaluateM071VerifierContract({
+      generatedAt: "2026-05-10T00:00:00.000Z",
+      ...makeReaders(),
+    });
+
+    expect(report.deferred_handoff.map((entry) => [entry.row_id, entry.owner_milestone, entry.owner_slice])).toEqual([
+      ["candidate-finding-mcp-publication-bridge", "M072", "S01"],
+      ["reducer-extraction", "M073", "S01"],
+      ["specialist-lane-proof", "M074", "S01"],
+      ["metrics-tier-closure", "M075", "S01"],
+      ["repo-doctrine-contract-ownership", "M074", "S01"],
+    ]);
+    expect(report.r104_ownership).toMatchObject({
+      requirement_ref: "R104",
+      row_id: "repo-doctrine-contract-ownership",
+      owner_milestone: "M074",
+      owner_slice: "S01",
+      owned_by_m071: false,
+      resolution: "deferred_outside_m071",
+    });
+    expect(JSON.stringify(report.deferred_handoff)).not.toContain("rawPrompt");
+    expect(JSON.stringify(report.deferred_handoff)).not.toContain("commentBody");
+  });
+
+  test("package verifier fails closed when handoff source ownership drifts", () => {
+    const rows = mutableHandoffRows();
+    rows[2] = { ...rows[2], owner: { milestone: "M075", slice: "S01" } };
+    const report = evaluateM071VerifierContract({
+      generatedAt: "x",
+      ...makeReaders(),
+      handoffRows: rows,
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.failing_check_id).toBe("M071-ISSUE-131-DEFERRED-OWNERSHIP");
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-DEFERRED-OWNERSHIP")?.detail).toContain("specialist-lane-proof: expected deferred owner M074/S01");
   });
 
   test("keeps non-planning source evidence paths in row evidence", () => {

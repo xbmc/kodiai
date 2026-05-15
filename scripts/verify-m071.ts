@@ -12,6 +12,7 @@ import {
   type Issue131MatrixRow,
   type Issue131SourcePath,
 } from "../src/issue-131/evidence-matrix.ts";
+import type { Issue131DeferredHandoffRow } from "../src/issue-131/deferred-handoff.ts";
 
 export const COMMAND_NAME = "verify:m071" as const;
 export const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m071.ts" as const;
@@ -77,6 +78,8 @@ export type M071VerifierReport = {
   readonly failing_check_id: Issue131CheckId | null;
   readonly closure: M071ClosureSummary;
   readonly deferred_ownership: readonly M071DeferredOwnershipRow[];
+  readonly deferred_handoff: Issue131EvidenceMatrixReport["deferred_handoff"];
+  readonly r104_ownership: Issue131EvidenceMatrixReport["r104_ownership"];
   readonly rows: readonly Issue131MatrixRow[];
   readonly counts: Issue131EvidenceMatrixReport["counts"];
   readonly packageWiring: M071PackageWiring;
@@ -90,6 +93,7 @@ export type M071MainDeps = {
   readonly generatedAt?: string;
   readonly readFileText?: (path: Issue131SourcePath) => string | undefined;
   readonly readPackageJsonText?: () => string | undefined;
+  readonly handoffRows?: readonly Issue131DeferredHandoffRow[];
   readonly evaluate?: typeof evaluateM071VerifierContract;
 };
 
@@ -234,6 +238,7 @@ export function evaluateM071VerifierContract(options: {
   readonly generatedAt?: string;
   readonly readFileText?: (path: Issue131SourcePath) => string | undefined;
   readonly readPackageJsonText?: () => string | undefined;
+  readonly handoffRows?: readonly Issue131DeferredHandoffRow[];
 } = {}): M071VerifierReport {
   const readFileText = options.readFileText ?? readSourceFile;
   let packageJsonText: string | undefined;
@@ -247,6 +252,7 @@ export function evaluateM071VerifierContract(options: {
     generatedAt: options.generatedAt,
     readFileText: (path) => ISSUE_131_SOURCE_PATHS.includes(path) ? readFileText(path) : undefined,
     readPackageJsonText: () => packageJsonText,
+    handoffRows: options.handoffRows,
   });
   const packageWiring = parsePackageWiring(packageJsonText);
   const checks = normalizeChecks(evaluatorReport, packageWiring);
@@ -287,6 +293,8 @@ export function evaluateM071VerifierContract(options: {
     failing_check_id: failingCheckId,
     closure,
     deferred_ownership: buildDeferredOwnership(evaluatorReport.rows),
+    deferred_handoff: evaluatorReport.deferred_handoff,
+    r104_ownership: evaluatorReport.r104_ownership,
     rows: evaluatorReport.rows,
     counts: evaluatorReport.counts,
     packageWiring,
@@ -309,6 +317,7 @@ function renderHuman(report: M071VerifierReport): string {
     `closure: ${report.closure.status} (${report.closure.scope}; ${report.closure.issue_131_completion})`,
     `foundation_rows: ${report.closure.complete_foundation_row_ids.join(",") || "none"}`,
     `deferred_owners: ${report.deferred_ownership.map((row) => `${row.row_id}->${row.owner_milestone}/${row.owner_slice}`).join(",") || "none"}`,
+    `r104_owner: ${report.r104_ownership.row_id}->${report.r104_ownership.owner_milestone}/${report.r104_ownership.owner_slice} (${report.r104_ownership.resolution})`,
     `package: ${report.packageWiring.matches ? "wired" : "unwired"}`,
     "rows:",
     ...report.rows.map((row) => `- ${row.id}: ${row.status}`),
@@ -348,6 +357,8 @@ function buildInvalidArgReport(issue: string): M071VerifierReport {
       failing_check_id: check.id,
     },
     deferred_ownership: [],
+    deferred_handoff: [],
+    r104_ownership: { requirement_ref: "R104", row_id: "repo-doctrine-contract-ownership", owner_milestone: "missing", owner_slice: "missing", owned_by_m071: false, resolution: "deferred_outside_m071" },
     rows: [],
     counts: { complete: 0, partial: 0, missing: 0, deferred: 0 },
     packageWiring: { scriptName: COMMAND_NAME, expected: EXPECTED_PACKAGE_SCRIPT, present: false, matches: false },
@@ -379,6 +390,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), deps
     generatedAt: deps.generatedAt,
     readFileText: deps.readFileText,
     readPackageJsonText: deps.readPackageJsonText,
+    handoffRows: deps.handoffRows,
   });
 
   if (args.json) {
