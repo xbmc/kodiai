@@ -12,13 +12,24 @@ import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
+  "import { buildReviewPlan, summarizeReviewPlanForDiagnostics, type ReviewPlan } from '../review-plan/review-plan.ts';",
   "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1 });",
   "const marker = '<summary>Review Details</summary>';",
+  "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
+  "logger.info({ ...reviewPlanSummarizer(reviewPlan as ReviewPlan) }, 'ReviewPlan constructed before publication');",
   "if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {",
   "  const validationResult = await validateGraphAmplifiedFindings(input, graphBlastRadius, llm, { enabled: true }, logger);",
   "  logger.info({ validatedCount: validationResult.validatedCount, confirmedCount: validationResult.confirmedCount, uncertainCount: validationResult.uncertainCount }, 'Graph validation applied');",
   "  processedFindings = processedFindings.map((f) => ({ ...f, graphValidationVerdict: 'skipped' }));",
   "}",
+].join("\n");
+
+const CURRENT_REVIEW_PLAN_TS = [
+  "export type ReviewPlan = { version: 1; stableHash: string; route: unknown; scope: unknown; contextSources: readonly unknown[]; gates: readonly unknown[]; budgets: unknown; publishPolicy: unknown };",
+  "export const REVIEW_PLAN_HASH_PREFIX = 'review-plan:v1:';",
+  "export function buildReviewPlan(input: unknown): ReviewPlan { assertNoForbiddenRawFields(input); return { version: 1, stableHash: REVIEW_PLAN_HASH_PREFIX + 'abc', route: {}, scope: {}, contextSources: [], gates: [], budgets: {}, publishPolicy: {} }; }",
+  "export function summarizeReviewPlanForDiagnostics(plan: ReviewPlan) { return { gate: 'review-plan', planHash: plan.stableHash }; }",
+  "function assertNoForbiddenRawFields(value: unknown): void { void value; }",
 ].join("\n");
 
 const CURRENT_CONFIG_TS = [
@@ -41,6 +52,7 @@ const PACKAGE_WEAK_M071 = JSON.stringify({ scripts: { [COMMAND_NAME]: "bun --bun
 function makeReaders(overrides: Partial<Record<Issue131SourcePath, string>> & { packageJson?: string } = {}) {
   const files: Record<Issue131SourcePath, string> = {
     "src/handlers/review.ts": CURRENT_REVIEW_TS,
+    "src/review-plan/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
     "package.json": overrides.packageJson ?? PACKAGE_WITH_M071,
@@ -118,8 +130,10 @@ describe("verify:m071 CLI", () => {
       present: true,
       matches: true,
     });
-    expect(report.counts).toMatchObject({ missing: 2, partial: 3, deferred: 4 });
-    expect(row(report, "review-plan-contract").status).toBe("missing");
+    expect(report.counts).toMatchObject({ complete: 3, missing: 0, partial: 3, deferred: 4 });
+    expect(row(report, "review-plan-contract").status).toBe("complete");
+    expect(row(report, "normal-handler-plan-construction").status).toBe("complete");
+    expect(row(report, "review-details-plan-summary").status).not.toBe("complete");
     expect(row(report, "typed-graph-validation-config").status).toBe("partial");
     expect(row(report, "package-verifier-wiring").status).toBe("complete");
     expect(report.issues.join("\n")).not.toContain("rawPrompt");
@@ -131,6 +145,7 @@ describe("verify:m071 CLI", () => {
 
     expect(evidencePaths.length).toBeGreaterThan(0);
     expect(evidencePaths).toContain("src/handlers/review.ts");
+    expect(evidencePaths).toContain("src/review-plan/review-plan.ts");
     expect(evidencePaths).toContain("src/review-graph/validation.ts");
     expect(evidencePaths).toContain("package.json");
     expect(evidencePaths.every((path) => !path.startsWith(".gsd/") && !path.startsWith(".planning/") && !path.startsWith(".audits/"))).toBe(true);
@@ -168,8 +183,14 @@ describe("verify:m071 CLI", () => {
     expect(report.checks.find((check) => check.id === "M071-ISSUE-131-PACKAGE-WIRING")?.passed).toBe(false);
   });
 
-  test("does not mark absent ReviewPlan or untyped review.graphValidation complete", () => {
-    const report = evaluateM071VerifierContract({ generatedAt: "x", ...makeReaders() });
+  test("does not mark absent ReviewPlan module or untyped review.graphValidation complete", () => {
+    const report = evaluateM071VerifierContract({
+      generatedAt: "x",
+      ...makeReaders({
+        "src/review-plan/review-plan.ts": "",
+        "src/handlers/review.ts": "const marker = '<summary>Review Details</summary>'; const reviewDetailsBody = formatReviewDetailsSummary({});",
+      }),
+    });
 
     expect(row(report, "review-plan-contract").status).not.toBe("complete");
     expect(row(report, "normal-handler-plan-construction").status).not.toBe("complete");
@@ -184,7 +205,10 @@ describe("verify:m071 CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(parsed.status_code).toBe("m071_issue_131_matrix_ok");
-    expect(parsed.rows.some((entry) => entry.status === "missing")).toBe(true);
+    expect(row(parsed, "review-plan-contract").status).toBe("complete");
+    expect(row(parsed, "normal-handler-plan-construction").status).toBe("complete");
+    expect(row(parsed, "review-details-plan-summary").status).not.toBe("complete");
+    expect(row(parsed, "typed-graph-validation-config").status).not.toBe("complete");
     expect(parsed.rows.some((entry) => entry.status === "partial")).toBe(true);
     expect(parsed.rows.some((entry) => entry.status === "deferred")).toBe(true);
     expect(result.stdout).not.toContain("rawPrompt");

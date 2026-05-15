@@ -70,6 +70,7 @@ export type Issue131CheckId = typeof ISSUE_131_CHECK_IDS[number];
 
 export const ISSUE_131_SOURCE_PATHS = [
   "src/handlers/review.ts",
+  "src/review-plan/review-plan.ts",
   "src/execution/config.ts",
   "src/review-graph/validation.ts",
   "package.json",
@@ -215,6 +216,7 @@ export function validateIssue131EvidencePath(path: string): { valid: true } | { 
 export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders): Issue131EvidenceMatrixReport {
   const source = {
     review: readers.readFileText("src/handlers/review.ts") ?? "",
+    reviewPlan: readers.readFileText("src/review-plan/review-plan.ts") ?? "",
     config: readers.readFileText("src/execution/config.ts") ?? "",
     validation: readers.readFileText("src/review-graph/validation.ts") ?? "",
     packageJson: readers.readPackageJsonText() ?? "",
@@ -240,34 +242,43 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
   };
 }
 
-function classifyRow(definition: RowDefinition, source: { review: string; config: string; validation: string; packageJson: string }): Issue131MatrixRow {
+function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; config: string; validation: string; packageJson: string }): Issue131MatrixRow {
   if (definition.deferredTo) {
     return makeRow(definition, "deferred", [], [], definition.deferredTo);
   }
 
   switch (definition.id) {
     case "review-plan-contract": {
-      const hasTypedContract = /export\s+type\s+ReviewPlan\b|export\s+interface\s+ReviewPlan\b/.test(source.review);
-      return hasTypedContract
-        ? makeRow(definition, "complete", [{ path: "src/handlers/review.ts", reason: "Exports a typed ReviewPlan contract." }])
-        : makeRow(definition, "missing", [], ["No exported ReviewPlan type/interface was found in the review handler surface."]);
+      const hasTypedContract = /export\s+type\s+ReviewPlan\b|export\s+interface\s+ReviewPlan\b/.test(source.reviewPlan);
+      const hasBuilder = /export\s+function\s+buildReviewPlan\b/.test(source.reviewPlan);
+      const hasStableHash = /stableHash\s*:\s*string/.test(source.reviewPlan) && /REVIEW_PLAN_HASH_PREFIX|review-plan:v/.test(source.reviewPlan);
+      const hasSafeDiagnosticProjection = /export\s+function\s+summarizeReviewPlanForDiagnostics\b/.test(source.reviewPlan)
+        && /planHash/.test(source.reviewPlan)
+        && /assertNoForbiddenRawFields/.test(source.reviewPlan);
+      return hasTypedContract && hasBuilder && hasStableHash && hasSafeDiagnosticProjection
+        ? makeRow(definition, "complete", [{ path: "src/review-plan/review-plan.ts", reason: "Exports the typed ReviewPlan contract, stable hash, builder, and safe diagnostic projection." }])
+        : makeRow(definition, "missing", [], ["No exported typed ReviewPlan contract with stable hash, builder, and safe diagnostic projection was found in src/review-plan/review-plan.ts."]);
     }
     case "normal-handler-plan-construction": {
-      const hasContract = /\bReviewPlan\b/.test(source.review);
-      const constructsBeforePublication = /\b(build|create|resolve)ReviewPlan\b/.test(source.review)
-        && source.review.indexOf("ReviewPlan") >= 0
-        && source.review.indexOf("ReviewPlan") < firstPublicationIndex(source.review);
-      if (hasContract && constructsBeforePublication) {
-        return makeRow(definition, "complete", [{ path: "src/handlers/review.ts", reason: "Normal review flow constructs a ReviewPlan before publication code." }]);
+      const hasReviewPlanImport = /from\s+[\"']\.\.\/review-plan\/review-plan\.ts[\"']/.test(source.review)
+        && /\bbuildReviewPlan\b/.test(source.review)
+        && /\bsummarizeReviewPlanForDiagnostics\b/.test(source.review);
+      const construction = findReviewPlanConstruction(source.review);
+      const constructsBeforePublication = construction.found && construction.beforePublication;
+      const hasSafeStableHashProjection = /reviewPlanSummarizer\s*\(\s*reviewPlan/.test(source.review)
+        || /\bplanHash\b/.test(source.review)
+        || /\bstableHash\b/.test(source.review);
+      if (hasReviewPlanImport && constructsBeforePublication && hasSafeStableHashProjection) {
+        return makeRow(definition, "complete", [{ path: "src/handlers/review.ts", reason: "Normal review flow imports, constructs, and logs a safe ReviewPlan projection before nearby publication side effects." }]);
       }
-      if (hasContract) {
-        return makeRow(definition, "partial", [{ path: "src/handlers/review.ts", reason: "ReviewPlan is mentioned, but normal-path construction before publication is not proven." }], ["ReviewPlan naming exists without a normal-path construction seam before publication side effects."]);
+      if (hasReviewPlanImport || construction.found || /\bReviewPlan\b/.test(source.review)) {
+        return makeRow(definition, "partial", [{ path: "src/handlers/review.ts", reason: "ReviewPlan is mentioned, but normal-path construction before publication with safe hash/projection is not proven." }], ["ReviewPlan naming exists without a normal-path construction seam before publication side effects and safe stable-hash projection."]);
       }
       return makeRow(definition, "missing", [], ["No ReviewPlan construction seam was found in normal review-handler flow."]);
     }
     case "review-details-plan-summary": {
       const hasReviewDetails = source.review.includes("formatReviewDetailsSummary") && source.review.includes("<summary>Review Details</summary>");
-      const hasPlanSummary = /ReviewPlan|planSummary|reviewPlanSummary/i.test(source.review);
+      const hasPlanSummary = /reviewPlanSummary|planSummary/.test(source.review);
       if (hasReviewDetails && hasPlanSummary) {
         return makeRow(definition, "complete", [{ path: "src/handlers/review.ts", reason: "Review Details publication includes plan-summary evidence." }]);
       }
@@ -325,13 +336,33 @@ function classifyRow(definition: RowDefinition, source: { review: string; config
   }
 }
 
+function findReviewPlanConstruction(text: string): { found: boolean; beforePublication: boolean } {
+  const constructionIndex = findFirstIndex(text, [
+    "reviewPlanBuilder({",
+    "buildReviewPlan({",
+    "createReviewPlan({",
+    "resolveReviewPlan({",
+  ]);
+  if (constructionIndex < 0) return { found: false, beforePublication: false };
+
+  const precedingWindow = text.slice(Math.max(0, constructionIndex - 1800), constructionIndex);
+  return {
+    found: true,
+    beforePublication: firstPublicationIndex(precedingWindow) === Number.POSITIVE_INFINITY,
+  };
+}
+
+function findFirstIndex(text: string, needles: readonly string[]): number {
+  const indexes = needles.map((needle) => text.indexOf(needle)).filter((index) => index >= 0);
+  return indexes.length === 0 ? -1 : Math.min(...indexes);
+}
+
 function firstPublicationIndex(text: string): number {
   const indexes = [
-    text.indexOf("createReview"),
-    text.indexOf("createComment"),
-    text.indexOf("updateComment"),
-    text.indexOf("publish"),
-    text.indexOf("Review Details publication"),
+    text.indexOf(".rest.issues.createComment("),
+    text.indexOf(".rest.issues.updateComment("),
+    text.indexOf(".rest.pulls.createReview("),
+    text.indexOf("postOrUpdateErrorComment("),
   ].filter((index) => index >= 0);
   return indexes.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...indexes);
 }
@@ -406,9 +437,11 @@ function collectRowIssues(rows: readonly Issue131MatrixRow[]): string[] {
 function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string, issues: readonly string[]): Issue131Check[] {
   const invalidStatuses = rows.filter((row) => !isIssue131Status(row.status));
   const evidenceIssues = issues.filter((issue) => /evidence|path|forbidden|empty/i.test(issue));
-  const currentSourceGapsFailClosed = [
-    rows.find((row) => row.id === "review-plan-contract")?.status === "missing",
-    rows.find((row) => row.id === "typed-graph-validation-config")?.status === "partial",
+  const currentSourceClassificationsTruthful = [
+    rows.find((row) => row.id === "review-plan-contract")?.status === "complete",
+    rows.find((row) => row.id === "normal-handler-plan-construction")?.status === "complete",
+    rows.find((row) => row.id === "review-details-plan-summary")?.status !== "complete",
+    rows.find((row) => row.id === "typed-graph-validation-config")?.status !== "complete",
   ].every(Boolean);
   const deferredRows = rows.filter((row) => row.status === "deferred");
   const packageScripts = parsePackageScripts(packageJsonText);
@@ -418,7 +451,7 @@ function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string
   return [
     makeCheck("M071-ISSUE-131-STATUS-TAXONOMY", invalidStatuses.length === 0, "All rows use the exact issue #131 status taxonomy.", invalidStatuses.map((row) => row.id).join(", "), ["weak_evidence"]),
     makeCheck("M071-ISSUE-131-EVIDENCE-PATHS", evidenceIssues.length === 0, "Non-deferred claims use repo-relative non-planning evidence paths with short reasons.", evidenceIssues.join(" "), ["forbidden_evidence_path", "weak_evidence"]),
-    makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", currentSourceGapsFailClosed, "Current repo gaps remain fail-closed as missing/partial instead of complete.", "Current ReviewPlan or graph-validation classifications drifted.", ["weak_evidence", "schema_gap", "normal_path_gap"]),
+    makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", currentSourceClassificationsTruthful, "Current repo source marks S02 ReviewPlan rows complete while later-slice rows remain fail-closed.", "Current ReviewPlan or later-slice classifications drifted.", ["weak_evidence", "schema_gap", "normal_path_gap"]),
     makeCheck("M071-ISSUE-131-DEFERRED-OWNERSHIP", deferredRows.length === 4 && deferredRows.every((row) => row.deferredTo), "Deferred rows name owning follow-up milestones/slices.", "Deferred issue #131 rows are missing owner metadata.", ["deferred_owner"]),
     makeCheck("M071-ISSUE-131-PACKAGE-WIRING", packageWired, "package.json exposes verify:m071.", "verify:m071 is not yet wired in package.json.", ["unwired_package_script"]),
     makeCheck("M071-ISSUE-131-REPORT-SAFETY", safetyIssues.length === 0, "Report-shaped data excludes raw prompts, model output, comments, and diffs.", safetyIssues.join(" "), ["raw_field_leak"]),
