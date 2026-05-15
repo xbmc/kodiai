@@ -12,11 +12,13 @@ import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
-  "import { buildReviewPlan, summarizeReviewPlanForDiagnostics, type ReviewPlan } from '../review-plan/review-plan.ts';",
-  "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1 });",
-  "const marker = '<summary>Review Details</summary>';",
+  "import { buildReviewPlan, summarizeReviewPlanForDiagnostics, summarizeReviewPlanForReviewDetails, type ReviewPlan } from '../review-plan/review-plan.ts';",
   "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
   "logger.info({ ...reviewPlanSummarizer(reviewPlan as ReviewPlan) }, 'ReviewPlan constructed before publication');",
+  "const reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails;",
+  "const buildReviewPlanReviewDetailsSummary = () => { try { return reviewPlanReviewDetailsSummarizer(reviewPlan); } catch (err) { logger.warn({ gate: 'review-plan', reason: 'review-details-projection-failed' }, 'ReviewPlan Review Details projection failed (fail-open, publishing without Review Plan line)'); return null; } };",
+  "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlanSummary: buildReviewPlanReviewDetailsSummary() });",
+  "const marker = '<summary>Review Details</summary>';",
   "if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {",
   "  const validationResult = await validateGraphAmplifiedFindings(input, graphBlastRadius, llm, { enabled: true }, logger);",
   "  logger.info({ validatedCount: validationResult.validatedCount, confirmedCount: validationResult.confirmedCount, uncertainCount: validationResult.uncertainCount }, 'Graph validation applied');",
@@ -26,10 +28,25 @@ const CURRENT_REVIEW_TS = [
 
 const CURRENT_REVIEW_PLAN_TS = [
   "export type ReviewPlan = { version: 1; stableHash: string; route: unknown; scope: unknown; contextSources: readonly unknown[]; gates: readonly unknown[]; budgets: unknown; publishPolicy: unknown };",
+  "export type ReviewPlanReviewDetailsSummary = { gate: 'review-plan-review-details'; planHash: string; route: unknown; scope: unknown; contextSources: unknown; gates: unknown; budgets: unknown; publishPolicy: unknown };",
   "export const REVIEW_PLAN_HASH_PREFIX = 'review-plan:v1:';",
   "export function buildReviewPlan(input: unknown): ReviewPlan { assertNoForbiddenRawFields(input); return { version: 1, stableHash: REVIEW_PLAN_HASH_PREFIX + 'abc', route: {}, scope: {}, contextSources: [], gates: [], budgets: {}, publishPolicy: {} }; }",
   "export function summarizeReviewPlanForDiagnostics(plan: ReviewPlan) { return { gate: 'review-plan', planHash: plan.stableHash }; }",
+  "export function summarizeReviewPlanForReviewDetails(plan: ReviewPlan): ReviewPlanReviewDetailsSummary { return { gate: 'review-plan-review-details', planHash: plan.stableHash, route: plan.route, scope: { ...plan.scope, omittedPathCount: 0 }, contextSources: { totalCount: 0, totalItemCount: 0, statusCounts: {}, representatives: [], omittedSourceCount: 0 }, gates: { totalCount: 0, totalFindingCount: 0, statusCounts: {}, representatives: [], omittedGateCount: 0 }, budgets: plan.budgets, publishPolicy: plan.publishPolicy }; }",
+  "const MAX_PUBLIC_REVIEW_DETAILS = 4; function sanitizePublicReviewDetailsString(value: string) { return value.slice(0, MAX_PUBLIC_REVIEW_DETAILS); }",
   "function assertNoForbiddenRawFields(value: unknown): void { void value; }",
+].join("\n");
+
+const CURRENT_REVIEW_UTILS_TS = [
+  "export type ReviewPlanReviewDetailsFormatterSummary = { planHash?: unknown; route?: unknown; scope?: unknown; contextSources?: unknown; gates?: unknown; budgets?: unknown; publishPolicy?: unknown };",
+  "const REVIEW_PLAN_DETAILS_MAX_VALUE_LENGTH = 80;",
+  "function sanitizeReviewPlanDetailsValue(value: unknown) { return typeof value === 'string' ? value.slice(0, REVIEW_PLAN_DETAILS_MAX_VALUE_LENGTH) : String(value ?? ''); }",
+  "function formatReviewPlanDetailsRepresentativeList(value: unknown) { return Array.isArray(value) ? value.slice(0, 4).join(',') : 'none'; }",
+  "function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsFormatterSummary | null): string | null {",
+  "  if (!summary?.planHash) return null;",
+  "  return `- Review Plan: hash=${sanitizeReviewPlanDetailsValue(summary.planHash)}; route=${sanitizeReviewPlanDetailsValue('pull_request')}; scope=1 changed/1 reviewed/1 lines; paths=${formatReviewPlanDetailsRepresentativeList([])}; contexts=0 sources/0 items/enabled:0; reps=none; gates=0 gates/0 findings/enabled:0; reps=none; budget=maxComments:7; publish=review-comment,autoApprove:n,details:y,inline:y,candidateVerification:n`;",
+  "}",
+  "export function formatReviewDetailsSummary(params: { reviewPlanSummary?: ReviewPlanReviewDetailsFormatterSummary | null }) { const line = formatReviewPlanReviewDetailsLine(params.reviewPlanSummary); return `<summary>Review Details</summary>\\n${line ?? ''}`; }",
 ].join("\n");
 
 const CURRENT_CONFIG_TS = [
@@ -53,6 +70,7 @@ function makeReaders(overrides: Partial<Record<Issue131SourcePath, string>> & { 
   const files: Record<Issue131SourcePath, string> = {
     "src/handlers/review.ts": CURRENT_REVIEW_TS,
     "src/review-plan/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
+    "src/lib/review-utils.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
     "package.json": overrides.packageJson ?? PACKAGE_WITH_M071,
@@ -130,10 +148,10 @@ describe("verify:m071 CLI", () => {
       present: true,
       matches: true,
     });
-    expect(report.counts).toMatchObject({ complete: 3, missing: 0, partial: 3, deferred: 4 });
+    expect(report.counts).toMatchObject({ complete: 4, missing: 0, partial: 2, deferred: 4 });
     expect(row(report, "review-plan-contract").status).toBe("complete");
     expect(row(report, "normal-handler-plan-construction").status).toBe("complete");
-    expect(row(report, "review-details-plan-summary").status).not.toBe("complete");
+    expect(row(report, "review-details-plan-summary").status).toBe("complete");
     expect(row(report, "typed-graph-validation-config").status).toBe("partial");
     expect(row(report, "package-verifier-wiring").status).toBe("complete");
     expect(report.issues.join("\n")).not.toContain("rawPrompt");
@@ -207,7 +225,7 @@ describe("verify:m071 CLI", () => {
     expect(parsed.status_code).toBe("m071_issue_131_matrix_ok");
     expect(row(parsed, "review-plan-contract").status).toBe("complete");
     expect(row(parsed, "normal-handler-plan-construction").status).toBe("complete");
-    expect(row(parsed, "review-details-plan-summary").status).not.toBe("complete");
+    expect(row(parsed, "review-details-plan-summary").status).toBe("complete");
     expect(row(parsed, "typed-graph-validation-config").status).not.toBe("complete");
     expect(parsed.rows.some((entry) => entry.status === "partial")).toBe(true);
     expect(parsed.rows.some((entry) => entry.status === "deferred")).toBe(true);
