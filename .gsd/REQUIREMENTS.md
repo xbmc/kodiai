@@ -109,28 +109,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: M070/S03 advanced this requirement by adding aggregate-only candidate-verification publication evidence to the shared MCP publication gate, ExecutionResult, Review Details, and structured runtime logs. Full validation remains pending later review-tier/live rollout evidence in S04-S06 and beyond.
 
-### R125 — Issue #131 completion matrix must be evidence-backed and fail closed for implied, memory-only, or unwired evidence.
-- Class: failure-visibility
-- Status: active
-- Description: Issue #131 completion matrix must be evidence-backed and fail closed for implied, memory-only, or unwired evidence.
-- Why it matters: The project needs a truthful answer to whether issue #131 is complete; weak evidence must not green the closure path.
-- Source: user
-- Primary owning slice: M071/S01
-- Supporting slices: M071/S05
-- Validation: mapped
-- Notes: Judged against the later repo-grounded issue #131 evolution plan, not the broad generic multi-agent architecture.
-
-### R129 — M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
-- Class: operability
-- Status: active
-- Description: M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
-- Why it matters: The final M071 answer must be code-complete for the foundation while preserving an honest path for remaining issue #131 work.
-- Source: user
-- Primary owning slice: M071/S05
-- Supporting slices: M071/S01,M071/S02,M071/S03,M071/S04
-- Validation: mapped
-- Notes: M071 can pass with larger #131 gaps deferred only when those gaps have explicit M072-M075 ownership.
-
 ### R130 — Candidate findings must be captured before public GitHub publication and passed through an explicit reducer contract.
 - Class: core-capability
 - Status: active
@@ -1157,6 +1135,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M070/S06 closeout verified candidate verification/disagreement handling across classifier, publication policy, Review Details/log projection, production-like integration, and exact-key/live-or-blocked verifier surfaces. Fresh evidence: gsd_exec 5b6f8886-8ae9-43a6-bf72-9e8f57c7a096 ran 86 tests across 10 files with 0 failures, `verify:m070` success:true status_code `m070_fixture_contract_ok`, `verify:m070:s05` success:true status_code `m070_s05_ok`, and `verify:m070:s06 --allow-blocked` success:false status_code `m070_s06_missing_exact_key_blocked` with bounded no-key blocked evidence rather than false success.
 - Notes: Live exact-key credentials/keys were unavailable during autonomous closeout, so S06 truthfully proved the production-like verifier and no-key blocked path rather than accepted live candidate-approved success.
 
+### R125 — Issue #131 completion matrix must be evidence-backed and fail closed for implied, memory-only, or unwired evidence.
+- Class: failure-visibility
+- Status: validated
+- Description: Issue #131 completion matrix must be evidence-backed and fail closed for implied, memory-only, or unwired evidence.
+- Why it matters: The project needs a truthful answer to whether issue #131 is complete; weak evidence must not green the closure path.
+- Source: user
+- Primary owning slice: M071/S01
+- Supporting slices: M071/S05
+- Validation: M071/S05 closure proof passed: `bun test ./src/review-plan/review-plan.test.ts ./src/lib/partial-review-formatter.test.ts ./src/execution/config.test.ts ./src/review-graph/graph-validation-status.test.ts ./src/handlers/review.test.ts ./src/issue-131/evidence-matrix.test.ts ./scripts/verify-m071.test.ts` exited 0 with 335 tests, 0 failures, 1656 assertions; `bun run verify:m071 -- --json` exited 0 with status_code `m071_issue_131_matrix_ok`, all six checks passing, safe report shape, complete=6, partial=0, missing=0, deferred=4, package wiring present/matches, and no issues.
+- Notes: Final M071 foundation closure remains scoped to source-evidence proof; larger issue #131 implementation gaps are explicitly deferred to M072-M075.
+
 ### R126 — Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
 - Class: core-capability
 - Status: validated
@@ -1189,6 +1178,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M071/S02,M071/S05
 - Validation: S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues.
 - Notes: Validated by M071/S04. S05 still owns final M071 closure/deferred ownership matrix for larger issue #131 gaps.
+
+### R129 — M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
+- Class: operability
+- Status: validated
+- Description: M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
+- Why it matters: The final M071 answer must be code-complete for the foundation while preserving an honest path for remaining issue #131 work.
+- Source: user
+- Primary owning slice: M071/S05
+- Supporting slices: M071/S01,M071/S02,M071/S03,M071/S04
+- Validation: M071/S05 verified `verify:m071 -- --json` distinguishes complete, partial, missing, and deferred rows with repo-relative evidence paths and exact deferred ownership. The final report has six complete foundation rows, zero partial rows, zero missing rows, four deferred rows, and owner metadata for M072/S01 candidate publication bridge, M073/S01 reducer extraction, M074/S01 specialist lane proof, and M075/S01 metrics/tier closure.
+- Notes: Negative test coverage in `src/issue-131/evidence-matrix.test.ts` and `scripts/verify-m071.test.ts` covers weak package wiring, missing S02/S03/S04 evidence, unsafe report fields, missing concrete evidence paths, and malformed/degraded deferred ownership.
 
 ## Deferred
 
@@ -1275,10 +1275,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
 - Source: issue #131
-- Primary owning slice: M071 provisional
-- Supporting slices: none
+- Primary owning slice: M074/S01
+- Supporting slices: M071/S06
 - Validation: unmapped
-- Notes: Deferred to M071. It depends on ReviewPlan/reducer contracts and candidate verification surfaces.
+- Notes: Deferred to M074/S01 for repo-doctrine/specialist config contract implementation and proof. M071 supplies foundation-only ReviewPlan/verifier seams and a source-owned handoff contract in `src/issue-131/deferred-handoff.ts`; it does not implement or validate repo doctrine contracts.
 
 ### R119 — Provider/model failback and circuit-breaker policy are deferred outside M068.
 - Class: failure-visibility
@@ -1576,7 +1576,7 @@ This file is the explicit capability and coverage contract for the project.
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
 | R102 | core-capability | validated | M070/S05 | M070/S01,M070/S02,M070/S03 | M070/S05 added deterministic production-like normal-review integration proof for docs/config truth specialist lanes through createReviewHandler, shadow aggregate classification, MCP publication gate, Review Details/runtime evidence projection, and M070 verifier evaluation. Fresh closeout evidence: `bun test ./src/handlers/review-candidate-verification-integration.test.ts ./scripts/verify-m070-s05.test.ts ./scripts/verify-m070.test.ts ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts ./src/handlers/review-candidate-verification-publication.test.ts ./src/handlers/review-candidate-verification-evidence.test.ts && bun run verify:m070 --json && bun run verify:m070:s05 --json` exited 0 (gsd_exec ec51400c-33f6-4522-a514-725d7b762589). The S05 verifier reported Review Details rows: 8, runtime log rows: 8, MCP evidence rows: 8, aggregateOnly:true, canaryLeakPresent:false, verifierJsonLeakPresent:false, and no issue categories. |
 | R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
-| R104 | integration | deferred | M071 provisional | none | unmapped |
+| R104 | integration | deferred | M074/S01 | M071/S06 | unmapped |
 | R105 | operability | active | M070/S03 | M070/S03 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
@@ -1597,11 +1597,11 @@ This file is the explicit capability and coverage contract for the project.
 | R122 | anti-feature | out-of-scope | none | none | n/a |
 | R123 | constraint | out-of-scope | none | none | n/a |
 | R124 | anti-feature | out-of-scope | none | none | n/a |
-| R125 | failure-visibility | active | M071/S01 | M071/S05 | mapped |
+| R125 | failure-visibility | validated | M071/S01 | M071/S05 | M071/S05 closure proof passed: `bun test ./src/review-plan/review-plan.test.ts ./src/lib/partial-review-formatter.test.ts ./src/execution/config.test.ts ./src/review-graph/graph-validation-status.test.ts ./src/handlers/review.test.ts ./src/issue-131/evidence-matrix.test.ts ./scripts/verify-m071.test.ts` exited 0 with 335 tests, 0 failures, 1656 assertions; `bun run verify:m071 -- --json` exited 0 with status_code `m071_issue_131_matrix_ok`, all six checks passing, safe report shape, complete=6, partial=0, missing=0, deferred=4, package wiring present/matches, and no issues. |
 | R126 | core-capability | validated | M071/S02 | M071/S03,M071/S05 | M071/S02 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 198 tests passing, `m071_issue_131_matrix_ok`, and verifier rows `review-plan-contract` plus `normal-handler-plan-construction` complete. The normal PR review handler constructs and logs a safe typed ReviewPlan before publication-side effects while fail-opening on diagnostics failures. |
 | R127 | operability | validated | M071/S03 | M071/S02,M071/S05 | M071/S03 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/lib/partial-review-formatter.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 223 tests passing, 0 failures, 1223 assertions, verifier status `m071_issue_131_matrix_ok`, and `review-details-plan-summary` complete with source evidence in `src/review-plan/review-plan.ts`, `src/lib/review-utils.ts`, and `src/handlers/review.ts` while graph/deferred rows remain truthfully partial/deferred. |
 | R128 | quality-attribute | validated | M071/S04 | M071/S02,M071/S05 | S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues. |
-| R129 | operability | active | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | mapped |
+| R129 | operability | validated | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | M071/S05 verified `verify:m071 -- --json` distinguishes complete, partial, missing, and deferred rows with repo-relative evidence paths and exact deferred ownership. The final report has six complete foundation rows, zero partial rows, zero missing rows, four deferred rows, and owner metadata for M072/S01 candidate publication bridge, M073/S01 reducer extraction, M074/S01 specialist lane proof, and M075/S01 metrics/tier closure. |
 | R130 | core-capability | active | M072 | M073,M074 | unmapped |
 | R131 | core-capability | active | M073 | M072,M074 | unmapped |
 | R132 | core-capability | active | M074 | M072,M073,M075 | unmapped |
@@ -1613,7 +1613,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 16
-- Mapped to slices: 16
-- Validated: 95 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R126, R127, R128)
+- Active requirements: 14
+- Mapped to slices: 14
+- Validated: 97 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129)
 - Unmapped active requirements: 0
