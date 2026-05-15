@@ -5,6 +5,11 @@ export const REVIEW_PLAN_HASH_PREFIX = `review-plan:v${REVIEW_PLAN_VERSION}:` as
 
 const MAX_REPRESENTATIVE_SCOPE_PATHS = 10;
 const MAX_REPRESENTATIVE_CONTEXT_PATHS = 5;
+const MAX_PUBLIC_REVIEW_DETAILS_SCOPE_PATHS = 3;
+const MAX_PUBLIC_REVIEW_DETAILS_CONTEXT_SOURCES = 4;
+const MAX_PUBLIC_REVIEW_DETAILS_GATES = 6;
+const MAX_PUBLIC_REVIEW_DETAILS_STRING_LENGTH = 80;
+const PUBLIC_REVIEW_DETAILS_REDACTED = "[redacted]";
 
 const GATE_STATUSES = ["enabled", "applied", "skipped", "unavailable"] as const;
 export type ReviewPlanGateStatus = typeof GATE_STATUSES[number];
@@ -117,6 +122,34 @@ export type ReviewPlanDiagnosticSummary = {
   publishPolicy: ReviewPlanPublishPolicy;
 };
 
+export type ReviewPlanStatusCounts = Record<ReviewPlanGateStatus, number>;
+
+export type ReviewPlanReviewDetailsSummary = {
+  gate: "review-plan-review-details";
+  planHash: string;
+  route: Pick<ReviewPlanRoute, "kind" | "taskType" | "routingReason">;
+  scope: Pick<ReviewPlanScope, "changedFileCount" | "reviewedFileCount" | "totalLinesChanged"> & {
+    representativePaths: readonly string[];
+    omittedPathCount: number;
+  };
+  contextSources: {
+    totalCount: number;
+    totalItemCount: number;
+    statusCounts: ReviewPlanStatusCounts;
+    representatives: readonly Pick<ReviewPlanContextSource, "name" | "status" | "itemCount" | "omittedPathCount">[];
+    omittedSourceCount: number;
+  };
+  gates: {
+    totalCount: number;
+    totalFindingCount: number;
+    statusCounts: ReviewPlanStatusCounts;
+    representatives: readonly (Pick<ReviewPlanGate, "name" | "status"> & { findingCount?: number })[];
+    omittedGateCount: number;
+  };
+  budgets: ReviewPlanBudget;
+  publishPolicy: ReviewPlanPublishPolicy;
+};
+
 const FORBIDDEN_RAW_FIELD_KEYS = new Set([
   "prompt",
   "rawPrompt",
@@ -171,6 +204,75 @@ export function summarizeReviewPlanForDiagnostics(plan: ReviewPlan): ReviewPlanD
     budgets: plan.budgets,
     publishPolicy: plan.publishPolicy,
   };
+}
+
+export function summarizeReviewPlanForReviewDetails(plan: ReviewPlan): ReviewPlanReviewDetailsSummary {
+  return {
+    gate: "review-plan-review-details",
+    planHash: plan.stableHash,
+    route: withoutUndefined({
+      kind: plan.route.kind,
+      taskType: sanitizePublicReviewDetailsString(plan.route.taskType),
+      routingReason: sanitizePublicReviewDetailsString(plan.route.routingReason),
+    }),
+    scope: {
+      changedFileCount: plan.scope.changedFileCount,
+      reviewedFileCount: plan.scope.reviewedFileCount,
+      totalLinesChanged: plan.scope.totalLinesChanged,
+      representativePaths: publicRepresentativeStrings(plan.scope.representativePaths, MAX_PUBLIC_REVIEW_DETAILS_SCOPE_PATHS),
+      omittedPathCount: plan.scope.omittedPathCount + Math.max(0, plan.scope.representativePaths.length - MAX_PUBLIC_REVIEW_DETAILS_SCOPE_PATHS),
+    },
+    contextSources: {
+      totalCount: plan.contextSources.length,
+      totalItemCount: plan.contextSources.reduce((total, source) => total + source.itemCount, 0),
+      statusCounts: countStatuses(plan.contextSources),
+      representatives: plan.contextSources.slice(0, MAX_PUBLIC_REVIEW_DETAILS_CONTEXT_SOURCES).map((source) => ({
+        name: sanitizePublicReviewDetailsString(source.name) ?? PUBLIC_REVIEW_DETAILS_REDACTED,
+        status: source.status,
+        itemCount: source.itemCount,
+        omittedPathCount: source.omittedPathCount + source.representativePaths.length,
+      })),
+      omittedSourceCount: Math.max(0, plan.contextSources.length - MAX_PUBLIC_REVIEW_DETAILS_CONTEXT_SOURCES),
+    },
+    gates: {
+      totalCount: plan.gates.length,
+      totalFindingCount: plan.gates.reduce((total, gate) => total + (gate.findingCount ?? 0), 0),
+      statusCounts: countStatuses(plan.gates),
+      representatives: plan.gates.slice(0, MAX_PUBLIC_REVIEW_DETAILS_GATES).map((gate) => withoutUndefined({
+        name: sanitizePublicReviewDetailsString(gate.name) ?? PUBLIC_REVIEW_DETAILS_REDACTED,
+        status: gate.status,
+        findingCount: gate.findingCount,
+      })),
+      omittedGateCount: Math.max(0, plan.gates.length - MAX_PUBLIC_REVIEW_DETAILS_GATES),
+    },
+    budgets: plan.budgets,
+    publishPolicy: plan.publishPolicy,
+  };
+}
+
+function countStatuses(items: readonly { status: ReviewPlanGateStatus }[]): ReviewPlanStatusCounts {
+  const counts = Object.fromEntries(GATE_STATUSES.map((status) => [status, 0])) as ReviewPlanStatusCounts;
+  for (const item of items) counts[item.status] += 1;
+  return counts;
+}
+
+function publicRepresentativeStrings(values: readonly string[], limit: number): string[] {
+  return values
+    .map((value) => sanitizePublicReviewDetailsString(value))
+    .filter((value): value is string => value !== undefined)
+    .slice(0, limit);
+}
+
+function sanitizePublicReviewDetailsString(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.replace(/[\r\n|]+/g, " ").replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) return undefined;
+  if (containsForbiddenPublicCanary(normalized)) return PUBLIC_REVIEW_DETAILS_REDACTED;
+  return normalized.slice(0, MAX_PUBLIC_REVIEW_DETAILS_STRING_LENGTH);
+}
+
+function containsForbiddenPublicCanary(value: string): boolean {
+  return /prompt|model|diff|comment|candidate|secret|token|api[-_ ]?key|password/i.test(value);
 }
 
 function normalizeRoute(route: ReviewPlanRoute): ReviewPlanRoute {

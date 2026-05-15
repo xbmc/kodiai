@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildReviewPlan,
   summarizeReviewPlanForDiagnostics,
+  summarizeReviewPlanForReviewDetails,
   type ReviewPlanInput,
 } from "./review-plan.ts";
 
@@ -149,6 +150,118 @@ describe("ReviewPlan", () => {
     expect(allKeys(summary)).not.toContain("rawDiff");
     expect(allKeys(summary)).not.toContain("commentBody");
     expect(JSON.stringify(summary)).not.toContain("SECRET");
+  });
+
+
+  test("public Review Details projection is deterministic and more compact than diagnostics", () => {
+    const plan = buildReviewPlan(minimalInput({
+      scope: {
+        changedFileCount: 12,
+        reviewedFileCount: 9,
+        totalLinesChanged: 321,
+        paths: Array.from({ length: 12 }, (_, index) => `src/public-path-${index}.ts`),
+      },
+      contextSources: Array.from({ length: 6 }, (_, index) => ({
+        name: `source-${index}`,
+        status: index % 2 === 0 ? "applied" : "skipped",
+        itemCount: index + 1,
+        representativePaths: Array.from({ length: 3 }, (_, pathIndex) => `docs/source-${index}-${pathIndex}.md`),
+      })),
+      gates: Array.from({ length: 8 }, (_, index) => ({
+        name: `gate-${index}`,
+        status: index % 3 === 0 ? "unavailable" : "enabled",
+        findingCount: index,
+      })),
+    }));
+
+    const first = summarizeReviewPlanForReviewDetails(plan);
+    const second = summarizeReviewPlanForReviewDetails(plan);
+
+    expect(second).toEqual(first);
+    expect(first.gate).toBe("review-plan-review-details");
+    expect(first.planHash).toBe(plan.stableHash);
+    expect(first.route).toEqual({ kind: "pull_request", taskType: "review.full", routingReason: "standard" });
+    expect(first.scope.representativePaths).toEqual(["src/public-path-0.ts", "src/public-path-1.ts", "src/public-path-2.ts"]);
+    expect(first.scope.omittedPathCount).toBe(9);
+    expect(first.contextSources.representatives).toHaveLength(4);
+    expect(first.contextSources.omittedSourceCount).toBe(2);
+    expect(first.contextSources.representatives[0]).toEqual({ name: "source-0", status: "applied", itemCount: 1, omittedPathCount: 3 });
+    expect(first.gates.representatives).toHaveLength(6);
+    expect(first.gates.omittedGateCount).toBe(2);
+  });
+
+  test("public Review Details projection aggregates meaningful context and gate statuses/counts", () => {
+    const plan = buildReviewPlan(minimalInput({
+      contextSources: [
+        { name: "alpha", status: "applied", itemCount: 2 },
+        { name: "beta", status: "enabled", itemCount: 3 },
+        { name: "gamma", status: "skipped", itemCount: 5 },
+        { name: "delta", status: "unavailable", itemCount: 7 },
+      ],
+      gates: [
+        { name: "bounds", status: "applied", findingCount: 4 },
+        { name: "graph", status: "unavailable", findingCount: 6 },
+        { name: "publish", status: "skipped" },
+      ],
+    }));
+
+    const summary = summarizeReviewPlanForReviewDetails(plan);
+
+    expect(summary.contextSources.totalCount).toBe(4);
+    expect(summary.contextSources.totalItemCount).toBe(17);
+    expect(summary.contextSources.statusCounts).toEqual({ enabled: 1, applied: 1, skipped: 1, unavailable: 1 });
+    expect(summary.gates.totalCount).toBe(3);
+    expect(summary.gates.totalFindingCount).toBe(10);
+    expect(summary.gates.statusCounts).toEqual({ enabled: 0, applied: 1, skipped: 1, unavailable: 1 });
+    expect(summary.budgets).toEqual(plan.budgets);
+    expect(summary.publishPolicy).toEqual(plan.publishPolicy);
+  });
+
+  test("public Review Details projection strips unsafe formatting and omits forbidden raw canary values", () => {
+    const plan = buildReviewPlan(minimalInput({
+      route: {
+        ...minimalInput().route,
+        taskType: "review.full|with pipe",
+        routingReason: "standard\nwith newline",
+      },
+      scope: {
+        changedFileCount: 4,
+        reviewedFileCount: 4,
+        totalLinesChanged: 99,
+        paths: [
+          "src/safe.ts",
+          "SECRET raw prompt payload",
+          "src/with|pipe.ts",
+          "src/with\nnewline.ts",
+        ],
+      },
+      contextSources: [
+        { name: "retrieval|source", status: "applied", itemCount: 1 },
+        { name: "model output source", status: "enabled", itemCount: 2 },
+      ],
+      gates: [
+        { name: "boundedness\ncheck", status: "applied" },
+        { name: "candidate comment diff", status: "skipped" },
+      ],
+    }));
+
+    const summary = summarizeReviewPlanForReviewDetails(plan);
+    const json = JSON.stringify(summary);
+
+    expect(summary.route.taskType).toBe("review.full with pipe");
+    expect(summary.route.routingReason).toBe("standard with newline");
+    expect(summary.scope.representativePaths).toEqual(["src/safe.ts", "[redacted]", "src/with pipe.ts"]);
+    expect(summary.contextSources.representatives.map((source) => source.name)).toEqual(["[redacted]", "retrieval source"]);
+    expect(summary.gates.representatives.map((gate) => gate.name)).toEqual(["boundedness check", "[redacted]"]);
+    expect(json).not.toContain("SECRET raw prompt payload");
+    expect(json).not.toContain("model output source");
+    expect(json).not.toContain("candidate comment diff");
+    expect(json).not.toContain("|");
+    expect(json).not.toContain("\n");
+    expect(allKeys(summary)).not.toContain("prompt");
+    expect(allKeys(summary)).not.toContain("rawDiff");
+    expect(allKeys(summary)).not.toContain("commentBody");
+    expect(allKeys(summary)).not.toContain("candidatePayload");
   });
 
   test("normalizes empty path lists, disabled/unavailable context sources, and skipped gates", () => {
