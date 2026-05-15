@@ -42,6 +42,30 @@ export type M071VerifierCheck = Omit<Issue131Check, "status"> & {
   readonly status_code: M071StatusCode;
 };
 
+export type M071ClosureSummary = {
+  readonly status: "complete" | "failed";
+  readonly status_code: M071StatusCode;
+  readonly scope: "m071_foundation_only";
+  readonly issue_131_completion: "foundation_complete_followups_deferred" | "not_closed";
+  readonly complete_foundation_row_ids: readonly string[];
+  readonly deferred_row_ids: readonly string[];
+  readonly counts: Issue131EvidenceMatrixReport["counts"];
+  readonly package_wiring: {
+    readonly script_name: typeof COMMAND_NAME;
+    readonly expected: typeof EXPECTED_PACKAGE_SCRIPT;
+    readonly present: boolean;
+    readonly matches: boolean;
+  };
+  readonly failing_check_id: Issue131CheckId | null;
+};
+
+export type M071DeferredOwnershipRow = {
+  readonly row_id: string;
+  readonly status: "deferred";
+  readonly owner_milestone: "M072" | "M073" | "M074" | "M075";
+  readonly owner_slice: string;
+};
+
 export type M071VerifierReport = {
   readonly command: typeof COMMAND_NAME;
   readonly generated_at: string;
@@ -51,6 +75,8 @@ export type M071VerifierReport = {
   readonly check_ids: readonly Issue131CheckId[];
   readonly checks: readonly M071VerifierCheck[];
   readonly failing_check_id: Issue131CheckId | null;
+  readonly closure: M071ClosureSummary;
+  readonly deferred_ownership: readonly M071DeferredOwnershipRow[];
   readonly rows: readonly Issue131MatrixRow[];
   readonly counts: Issue131EvidenceMatrixReport["counts"];
   readonly packageWiring: M071PackageWiring;
@@ -153,6 +179,57 @@ function collectIssueCategories(checks: readonly M071VerifierCheck[], rows: read
   return [...new Set([...rows.flatMap((row) => row.issueCategories), ...checks.flatMap((check) => check.issueCategories)])].sort();
 }
 
+function findPrioritizedFailingCheck(checks: readonly M071VerifierCheck[], packageWiring: M071PackageWiring): M071VerifierCheck | null {
+  if (!packageWiring.matches) {
+    return checks.find((check) => check.id === "M071-ISSUE-131-PACKAGE-WIRING" && !check.passed) ?? checks.find((check) => !check.passed) ?? null;
+  }
+  return checks.find((check) => !check.passed) ?? null;
+}
+
+function buildDeferredOwnership(rows: readonly Issue131MatrixRow[]): M071DeferredOwnershipRow[] {
+  return rows.flatMap((row) => {
+    if (row.status !== "deferred" || !row.deferredTo) return [];
+    return [{
+      row_id: row.id,
+      status: "deferred" as const,
+      owner_milestone: row.deferredTo.milestone,
+      owner_slice: row.deferredTo.slice,
+    }];
+  });
+}
+
+function buildClosureSummary(options: {
+  readonly success: boolean;
+  readonly statusCode: M071StatusCode;
+  readonly failingCheckId: Issue131CheckId | null;
+  readonly rows: readonly Issue131MatrixRow[];
+  readonly counts: Issue131EvidenceMatrixReport["counts"];
+  readonly packageWiring: M071PackageWiring;
+}): M071ClosureSummary {
+  const completeFoundationRowIds = options.rows
+    .filter((row) => row.status === "complete")
+    .map((row) => row.id);
+  const deferredRowIds = options.rows
+    .filter((row) => row.status === "deferred")
+    .map((row) => row.id);
+  return {
+    status: options.success ? "complete" : "failed",
+    status_code: options.statusCode,
+    scope: "m071_foundation_only",
+    issue_131_completion: options.success ? "foundation_complete_followups_deferred" : "not_closed",
+    complete_foundation_row_ids: completeFoundationRowIds,
+    deferred_row_ids: deferredRowIds,
+    counts: options.counts,
+    package_wiring: {
+      script_name: options.packageWiring.scriptName,
+      expected: options.packageWiring.expected,
+      present: options.packageWiring.present,
+      matches: options.packageWiring.matches,
+    },
+    failing_check_id: options.failingCheckId,
+  };
+}
+
 export function evaluateM071VerifierContract(options: {
   readonly generatedAt?: string;
   readonly readFileText?: (path: Issue131SourcePath) => string | undefined;
@@ -186,18 +263,30 @@ export function evaluateM071VerifierContract(options: {
     : checks.map((check) => check.id === "M071-ISSUE-131-REPORT-SAFETY"
       ? { ...check, passed: false, status: "fail" as const, status_code: "m071_issue_131_matrix_failed" as const, detail: `Forbidden raw report fields detected: ${safetyFindings.join(", ")}.` }
       : check);
-  const failingCheck = finalChecks.find((check) => !check.passed) ?? null;
+  const failingCheck = findPrioritizedFailingCheck(finalChecks, packageWiring);
   const success = failingCheck === null;
+  const statusCode: M071StatusCode = success ? "m071_issue_131_matrix_ok" : "m071_issue_131_matrix_failed";
+  const failingCheckId = failingCheck?.id ?? null;
+  const closure = buildClosureSummary({
+    success,
+    statusCode,
+    failingCheckId,
+    rows: evaluatorReport.rows,
+    counts: evaluatorReport.counts,
+    packageWiring,
+  });
 
   return {
     command: COMMAND_NAME,
     generated_at: evaluatorReport.generatedAt,
     proofMode: "repo-source-evidence-matrix",
     success,
-    status_code: success ? "m071_issue_131_matrix_ok" : "m071_issue_131_matrix_failed",
+    status_code: statusCode,
     check_ids: ISSUE_131_CHECK_IDS,
     checks: finalChecks,
-    failing_check_id: failingCheck?.id ?? null,
+    failing_check_id: failingCheckId,
+    closure,
+    deferred_ownership: buildDeferredOwnership(evaluatorReport.rows),
     rows: evaluatorReport.rows,
     counts: evaluatorReport.counts,
     packageWiring,
@@ -210,13 +299,16 @@ function helpText(): string {
   return `Usage: bun run verify:m071 [--json] [--expect-status ${M071_STATUS_CODES.join("|")}]
 
 Builds the repo-source issue #131 evidence matrix from bounded checked-in source files.
-Success means the matrix contract is well-formed and fail-closed; rows may still be missing, partial, or deferred.
+Success means M071's issue #131 foundation is complete and the remaining larger issue #131 gaps are explicitly deferred to M072-M075 owners; it does not claim full issue #131 completion.
 `;
 }
 
 function renderHuman(report: M071VerifierReport): string {
   return [
     `${COMMAND_NAME} ${report.status_code} success=${report.success}`,
+    `closure: ${report.closure.status} (${report.closure.scope}; ${report.closure.issue_131_completion})`,
+    `foundation_rows: ${report.closure.complete_foundation_row_ids.join(",") || "none"}`,
+    `deferred_owners: ${report.deferred_ownership.map((row) => `${row.row_id}->${row.owner_milestone}/${row.owner_slice}`).join(",") || "none"}`,
     `package: ${report.packageWiring.matches ? "wired" : "unwired"}`,
     "rows:",
     ...report.rows.map((row) => `- ${row.id}: ${row.status}`),
@@ -244,6 +336,18 @@ function buildInvalidArgReport(issue: string): M071VerifierReport {
     check_ids: ISSUE_131_CHECK_IDS,
     checks: [check],
     failing_check_id: check.id,
+    closure: {
+      status: "failed",
+      status_code: "m071_invalid_arg",
+      scope: "m071_foundation_only",
+      issue_131_completion: "not_closed",
+      complete_foundation_row_ids: [],
+      deferred_row_ids: [],
+      counts: { complete: 0, partial: 0, missing: 0, deferred: 0 },
+      package_wiring: { script_name: COMMAND_NAME, expected: EXPECTED_PACKAGE_SCRIPT, present: false, matches: false },
+      failing_check_id: check.id,
+    },
+    deferred_ownership: [],
     rows: [],
     counts: { complete: 0, partial: 0, missing: 0, deferred: 0 },
     packageWiring: { scriptName: COMMAND_NAME, expected: EXPECTED_PACKAGE_SCRIPT, present: false, matches: false },

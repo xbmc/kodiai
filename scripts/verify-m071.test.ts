@@ -176,6 +176,40 @@ describe("verify:m071 CLI", () => {
       matches: true,
     });
     expect(report.counts).toMatchObject({ complete: 6, missing: 0, partial: 0, deferred: 4 });
+    expect(report.closure).toEqual({
+      status: "complete",
+      status_code: "m071_issue_131_matrix_ok",
+      scope: "m071_foundation_only",
+      issue_131_completion: "foundation_complete_followups_deferred",
+      complete_foundation_row_ids: [
+        "review-plan-contract",
+        "normal-handler-plan-construction",
+        "review-details-plan-summary",
+        "typed-graph-validation-config",
+        "truthful-graph-validation-status",
+        "package-verifier-wiring",
+      ],
+      deferred_row_ids: [
+        "candidate-finding-mcp-publication-bridge",
+        "reducer-extraction",
+        "specialist-lane-proof",
+        "metrics-tier-closure",
+      ],
+      counts: { complete: 6, missing: 0, partial: 0, deferred: 4 },
+      package_wiring: {
+        script_name: "verify:m071",
+        expected: "bun scripts/verify-m071.ts",
+        present: true,
+        matches: true,
+      },
+      failing_check_id: null,
+    });
+    expect(report.deferred_ownership).toEqual([
+      { row_id: "candidate-finding-mcp-publication-bridge", status: "deferred", owner_milestone: "M072", owner_slice: "S01" },
+      { row_id: "reducer-extraction", status: "deferred", owner_milestone: "M073", owner_slice: "S01" },
+      { row_id: "specialist-lane-proof", status: "deferred", owner_milestone: "M074", owner_slice: "S01" },
+      { row_id: "metrics-tier-closure", status: "deferred", owner_milestone: "M075", owner_slice: "S01" },
+    ]);
     expect(row(report, "review-plan-contract").status).toBe("complete");
     expect(row(report, "normal-handler-plan-construction").status).toBe("complete");
     expect(row(report, "review-details-plan-summary").status).toBe("complete");
@@ -205,6 +239,24 @@ describe("verify:m071 CLI", () => {
       ["specialist-lane-proof", "M074", "S01"],
       ["metrics-tier-closure", "M075", "S01"],
     ]);
+    expect(report.deferred_ownership.map((entry) => [entry.row_id, entry.owner_milestone, entry.owner_slice])).toEqual([
+      ["candidate-finding-mcp-publication-bridge", "M072", "S01"],
+      ["reducer-extraction", "M073", "S01"],
+      ["specialist-lane-proof", "M074", "S01"],
+      ["metrics-tier-closure", "M075", "S01"],
+    ]);
+  });
+
+  test("human help and text output frame success as M071 foundation closure only", async () => {
+    const help = await runMain(["--help"]);
+    expect(help.exitCode).toBe(0);
+    expect(help.stdout).toContain("M071's issue #131 foundation is complete");
+    expect(help.stdout).toContain("does not claim full issue #131 completion");
+
+    const human = await runMain([]);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toContain("closure: complete (m071_foundation_only; foundation_complete_followups_deferred)");
+    expect(human.stdout).toContain("candidate-finding-mcp-publication-bridge->M072/S01");
   });
 
   test("fails closed for absent package script and malformed package JSON", () => {
@@ -213,10 +265,17 @@ describe("verify:m071 CLI", () => {
     expect(missing.status_code).toBe("m071_issue_131_matrix_failed");
     expect(missing.packageWiring).toMatchObject({ present: false, matches: false });
     expect(missing.failing_check_id).toBe("M071-ISSUE-131-PACKAGE-WIRING");
+    expect(missing.closure).toMatchObject({
+      status: "failed",
+      issue_131_completion: "not_closed",
+      package_wiring: { present: false, matches: false },
+      failing_check_id: "M071-ISSUE-131-PACKAGE-WIRING",
+    });
 
     const malformed = evaluateM071VerifierContract({ generatedAt: "x", ...makeReaders({ packageJson: "{" }) });
     expect(malformed.success).toBe(false);
     expect(malformed.packageWiring).toMatchObject({ present: false, matches: false });
+    expect(malformed.closure.package_wiring).toMatchObject({ present: false, matches: false });
     expect(malformed.issues.join("\n")).toContain("package.json scripts.verify:m071 must equal bun scripts/verify-m071.ts");
   });
 
@@ -251,6 +310,15 @@ describe("verify:m071 CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(parsed.status_code).toBe("m071_issue_131_matrix_ok");
+    expect(parsed.closure.status).toBe("complete");
+    expect(parsed.closure.scope).toBe("m071_foundation_only");
+    expect(parsed.closure.issue_131_completion).toBe("foundation_complete_followups_deferred");
+    expect(parsed.deferred_ownership.map((entry) => `${entry.row_id}:${entry.owner_milestone}/${entry.owner_slice}`)).toEqual([
+      "candidate-finding-mcp-publication-bridge:M072/S01",
+      "reducer-extraction:M073/S01",
+      "specialist-lane-proof:M074/S01",
+      "metrics-tier-closure:M075/S01",
+    ]);
     expect(row(parsed, "review-plan-contract").status).toBe("complete");
     expect(row(parsed, "normal-handler-plan-construction").status).toBe("complete");
     expect(row(parsed, "review-details-plan-summary").status).toBe("complete");
@@ -262,6 +330,25 @@ describe("verify:m071 CLI", () => {
     expect(result.stdout).not.toContain("rawModelOutput");
     expect(result.stdout).not.toContain("commentBody");
     expect(result.stdout).not.toContain("rawDiff");
+  });
+
+  test("main returns bounded invalid-arg JSON without raw argument spill", async () => {
+    const unsafeArg = `--${"x".repeat(400)}rawPrompt`;
+    const result = await runMain([unsafeArg]);
+    const parsed = JSON.parse(result.stdout) as ReturnType<typeof evaluateM071VerifierContract>;
+
+    expect(result.exitCode).toBe(2);
+    expect(parsed.status_code).toBe("m071_invalid_arg");
+    expect(parsed.closure).toMatchObject({
+      status: "failed",
+      scope: "m071_foundation_only",
+      issue_131_completion: "not_closed",
+      complete_foundation_row_ids: [],
+      deferred_row_ids: [],
+    });
+    expect(parsed.issues[0].length).toBeLessThanOrEqual(240);
+    expect(result.stdout).not.toContain("rawPrompt");
+    expect(result.stderr).not.toContain("rawPrompt");
   });
 
   test("main returns non-zero for mismatched expected status and zero when failure is expected", async () => {
