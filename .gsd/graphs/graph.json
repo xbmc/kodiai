@@ -1,8 +1,16 @@
 {
   "nodes": [
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "milestone:M071",
+      "label": "M071: Issue #131 Completion Audit and Plan Contract",
+      "type": "milestone",
+      "description": "Active milestone: M071",
+      "confidence": "EXTRACTED",
+      "sourceFile": "STATE.md"
+    },
+    {
+      "id": "concept:phase:planning",
+      "label": "Phase: planning",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5569,6 +5577,32 @@
       "label": "T04: Run S06 closeout matrix and capture final proof",
       "type": "task",
       "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M071:S01",
+      "label": "S01: Issue #131 Evidence Matrix",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M071/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M071:S01:T01",
+      "label": "T01: Build fail-closed issue #131 evidence matrix evaluator",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M071:S01:T02",
+      "label": "T02: Wire `verify:m071` JSON CLI and package script",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M072",
+      "label": "M072: M072",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-ROADMAP.md"
     },
     {
       "id": "decision:M053:1",
@@ -12173,6 +12207,24 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M071",
+      "to": "slice:M071:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S01",
+      "to": "task:M071:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M071:S01",
+      "to": "task:M071:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -13415,5 +13467,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-14T16:46:18.206Z"
+  "builtAt": "2026-05-15T00:58:00.044Z"
 }

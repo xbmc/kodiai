@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-15T00:16:39Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-15T00:16:39Z","fingerprint":"c051c1d4df6134ab56204233350f5148ec00d474","fileCount":500,"truncated":true} -->
+Generated: 2026-05-15T00:58:03Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-15T00:58:03Z","fingerprint":"634980b16491e6f6c61c57a3cb0705c80d27c90f","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -86,7 +86,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(234 files: 229 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(236 files: 231 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -158,4 +158,23 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/types.ts`
 
 ### src/handlers/
-- *(22 files: 22 .ts)*
+- `src/handlers/addon-check.test.ts`
+- `src/handlers/addon-check.ts`
+- `src/handlers/ci-failure.test.ts`
+- `src/handlers/ci-failure.ts`
+- `src/handlers/dep-bump-merge-history.test.ts`
+- `src/handlers/dep-bump-merge-history.ts`
+- `src/handlers/feedback-sync.test.ts`
+- `src/handlers/feedback-sync.ts`
+- `src/handlers/formatter-suggestion-intent.test.ts`
+- `src/handlers/formatter-suggestion-intent.ts`
+- `src/handlers/formatter-suggestion-orchestration.test.ts`
+- `src/handlers/formatter-suggestion-orchestration.ts`
+- `src/handlers/identity-suggest.test.ts`
+- `src/handlers/identity-suggest.ts`
+- `src/handlers/issue-closed.test.ts`
+- `src/handlers/issue-closed.ts`
+- `src/handlers/issue-opened.test.ts`
+- `src/handlers/issue-opened.ts`
+- `src/handlers/mention-types.test.ts`
+- `src/handlers/mention-types.ts`
