@@ -2,7 +2,7 @@
   "version": 1,
   "projectName": "kodiai",
   "projectPath": "/home/keith/src/kodiai",
-  "gsdVersion": "2.82.0",
+  "gsdVersion": "3.0.0",
   "entries": [
     {
       "filename": "M030-2026-03-28T16-28-40.html",
@@ -115,6 +115,22 @@
       "doneMilestones": 58,
       "totalMilestones": 58,
       "phase": "summarizing"
+    },
+    {
+      "filename": "M071-2026-05-15T05-01-55.html",
+      "generatedAt": "2026-05-15T05:01:55.310Z",
+      "milestoneId": "M071",
+      "milestoneTitle": "Issue #131 Completion Audit and Plan Contract",
+      "label": "M071: Issue #131 Completion Audit and Plan Contract",
+      "kind": "milestone",
+      "totalCost": 1492.629849950001,
+      "totalTokens": 2361258836,
+      "totalDuration": 388613236,
+      "doneSlices": 232,
+      "totalSlices": 232,
+      "doneMilestones": 59,
+      "totalMilestones": 60,
+      "phase": "pre-planning"
     }
   ]
 }

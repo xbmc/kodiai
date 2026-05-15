@@ -115,10 +115,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Candidate findings must be captured before public GitHub publication and passed through an explicit reducer contract.
 - Why it matters: Issue #131's repo-grounded plan requires moving verification and utility scoring before visible publication rather than recovering findings from already-published comments.
 - Source: user
-- Primary owning slice: M072
-- Supporting slices: M073,M074
+- Primary owning slice: M072/S01
+- Supporting slices: M072/S02,M072/S03,M072/S04,M073,M074
 - Validation: unmapped
-- Notes: Provisional later milestone owner; not required for M071 readiness except as deferred ownership in the completion matrix.
+- Notes: M072 roadmap maps R130 to the source-owned bridge contract, inline MCP capture ordering, normal review handler capture ordering, and verifier/handoff continuity. M073 and M074 remain downstream consumers for reducer extraction and reducer-approved publication.
 
 ### R131 — Specialist lanes must start in shadow/private mode and emit bounded aggregate evidence only until reducer and verification gates prove they are safe to publish.
 - Class: core-capability
@@ -1602,7 +1602,7 @@ This file is the explicit capability and coverage contract for the project.
 | R127 | operability | validated | M071/S03 | M071/S02,M071/S05 | M071/S03 aggregate proof passed: `bun test src/review-plan/review-plan.test.ts src/lib/partial-review-formatter.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts && bun run verify:m071 -- --json` exited 0 with 223 tests passing, 0 failures, 1223 assertions, verifier status `m071_issue_131_matrix_ok`, and `review-details-plan-summary` complete with source evidence in `src/review-plan/review-plan.ts`, `src/lib/review-utils.ts`, and `src/handlers/review.ts` while graph/deferred rows remain truthfully partial/deferred. |
 | R128 | quality-attribute | validated | M071/S04 | M071/S02,M071/S05 | S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues. |
 | R129 | operability | validated | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | M071/S05 verified `verify:m071 -- --json` distinguishes complete, partial, missing, and deferred rows with repo-relative evidence paths and exact deferred ownership. The final report has six complete foundation rows, zero partial rows, zero missing rows, four deferred rows, and owner metadata for M072/S01 candidate publication bridge, M073/S01 reducer extraction, M074/S01 specialist lane proof, and M075/S01 metrics/tier closure. |
-| R130 | core-capability | active | M072 | M073,M074 | unmapped |
+| R130 | core-capability | active | M072/S01 | M072/S02,M072/S03,M072/S04,M073,M074 | unmapped |
 | R131 | core-capability | active | M073 | M072,M074 | unmapped |
 | R132 | core-capability | active | M074 | M072,M073,M075 | unmapped |
 | R133 | operability | active | M075 | M072,M073,M074 | unmapped |
