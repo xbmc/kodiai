@@ -29,14 +29,17 @@ const noopTelemetryStore = {
   close: () => {},
 };
 
-function createCaptureLogger() {
+function createCaptureLogger(callOrder?: Array<{ kind: string; data?: Record<string, unknown> }>) {
   const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const capture = (data: unknown, message?: string) => {
     if (typeof data === "string") {
       entries.push({ message: data });
+      callOrder?.push({ kind: "log", data: { message: data } });
       return;
     }
-    entries.push({ message: message ?? "", data: (data ?? {}) as Record<string, unknown> });
+    const entry = { message: message ?? "", data: (data ?? {}) as Record<string, unknown> };
+    entries.push(entry);
+    callOrder?.push({ kind: "log", data: entry.data });
   };
   const logger = {
     info: capture,
@@ -191,13 +194,15 @@ export interface ReviewWithShadowMetricsResult {
   reviewCreatePayloads: Array<Record<string, unknown>>;
   reviewUpdatePayloads: Array<Record<string, unknown>>;
   reviewCommentPayloads: Array<Record<string, unknown>>;
+  callOrder: Array<{ kind: string; data?: Record<string, unknown> }>;
 }
 
 export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetricsOptions): Promise<ReviewWithShadowMetricsResult> {
   const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
   const workspace = await createWorkspaceFixture({ autoApprove: options.autoApprove });
   const cleanups = [workspace.cleanup];
-  const { logger, entries } = createCaptureLogger();
+  const callOrder: Array<{ kind: string; data?: Record<string, unknown> }> = [];
+  const { logger, entries } = createCaptureLogger(callOrder);
   const executorInputs: Array<Parameters<ReturnType<typeof createExecutor>["execute"]>[0]> = [];
   const issueCreatePayloads: Array<Record<string, unknown>> = [];
   const issueUpdatePayloads: Array<Record<string, unknown>> = [];
@@ -212,10 +217,12 @@ export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetric
         listReviews: async () => ({ data: [] }),
         get: async () => ({ data: { head: { sha: "abcdef1234567890" } } }),
         createReviewComment: async (payload: Record<string, unknown>) => {
+          callOrder.push({ kind: "github.pulls.createReviewComment", data: payload });
           reviewCommentPayloads.push(payload);
           return { data: { id: 7001 + reviewCommentPayloads.length, html_url: "https://example.invalid/review-comment", path: payload.path, line: payload.line, original_line: payload.line } };
         },
         createReview: async (payload: Record<string, unknown>) => {
+          callOrder.push({ kind: "github.pulls.createReview", data: payload });
           reviewCreatePayloads.push(payload);
           return { data: { id: 9001, body: payload.body } };
         },
@@ -223,10 +230,12 @@ export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetric
       issues: {
         listComments: async () => ({ data: [] }),
         createComment: async (payload: Record<string, unknown>) => {
+          callOrder.push({ kind: "github.issues.createComment", data: payload });
           issueCreatePayloads.push(payload);
           return { data: { id: 8001, body: payload.body } };
         },
         updateComment: async (payload: Record<string, unknown>) => {
+          callOrder.push({ kind: "github.issues.updateComment", data: payload });
           issueUpdatePayloads.push(payload);
           return { data: { id: payload.comment_id, body: payload.body } };
         },
@@ -234,6 +243,7 @@ export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetric
       reactions: { createForIssue: async () => ({ data: {} }) },
     },
     request: async (_route: string, payload: Record<string, unknown>) => {
+      callOrder.push({ kind: "github.request", data: payload });
       reviewUpdatePayloads.push(payload);
       return { data: { id: payload.review_id, body: payload.body } };
     },
@@ -302,5 +312,5 @@ export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetric
     for (const cleanup of cleanups.reverse()) await cleanup();
   }
 
-  return { entries, executorInputs, issueCreatePayloads, issueUpdatePayloads, reviewCreatePayloads, reviewUpdatePayloads, reviewCommentPayloads };
+  return { entries, executorInputs, issueCreatePayloads, issueUpdatePayloads, reviewCreatePayloads, reviewUpdatePayloads, reviewCommentPayloads, callOrder };
 }

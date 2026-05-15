@@ -5,11 +5,24 @@ import type { Logger } from "pino";
 import { buildMcpServers } from "../execution/mcp/index.ts";
 import type { ExecutionContext, ExecutionResult } from "../execution/types.ts";
 import type { CandidatePublicationPolicyAttempt } from "../specialists/candidate-publication-policy.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
 import { runReviewWithShadowMetrics, specialistCanary, specialistInlineCanary } from "./review-m070-integration-harness.ts";
 
 const deniedCandidateCanary = "M070_DENIED_CANDIDATE_BODY_SHOULD_NOT_LEAK";
 const deniedSpecialistCanary = "M070_DENIED_SPECIALIST_PROSE_SHOULD_NOT_LEAK";
+const bridgeUnsafeRawCanary = "M072_RAW_BRIDGE_CANARY_SHOULD_NOT_LEAK";
+
+function findBridgeLogIndex(callOrder: Array<{ kind: string; data?: Record<string, unknown> }>): number {
+  return callOrder.findIndex((event) => event.kind === "log" && event.data?.gate === "m072-review-handler-publication-bridge");
+}
+
+function findHandlerIssuePublicationIndex(callOrder: Array<{ kind: string; data?: Record<string, unknown> }>): number {
+  return callOrder.findIndex((event) =>
+    (event.kind === "github.issues.createComment" || event.kind === "github.issues.updateComment")
+    && String(event.data?.body ?? "").includes("<summary>Review Details</summary>")
+  );
+}
 
 type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
 
@@ -50,6 +63,74 @@ function candidateKey(candidate: CandidatePublicationPolicyAttempt): string {
     bodySignal: sha256(String(candidate.body ?? "").slice(0, 4096)),
   };
   return `m070-publication:${sha256(JSON.stringify(material))}`;
+}
+
+function buildHandlerEvidenceSummary(params: {
+  input: ExecutionContext;
+  allowed: boolean;
+  unsafe: boolean;
+}): CandidateVerificationPublicationEvidenceSummary {
+  return {
+    aggregateStatus: params.allowed ? "published" : "denied",
+    counts: {
+      attempted: 1,
+      allowed: params.allowed ? 1 : 0,
+      denied: params.allowed ? 0 : 1,
+      published: params.allowed ? 1 : 0,
+      skipped: 0,
+      failed: 0,
+    },
+    publicationDenialCounts: params.allowed ? {} : { "publication-ineligible": 1 },
+    reasonCategories: params.allowed ? ["publication-eligible"] : ["publication-ineligible", ...(params.unsafe ? ["malformed-input" as const] : [])],
+    verificationStateCounts: {
+      verified: params.allowed ? 1 : 0,
+      partially_verified: 0,
+      unverified: params.allowed ? 0 : 1,
+      disproven: 0,
+      unavailable: 0,
+    },
+    candidateVerificationCounts: {
+      candidateCount: 1,
+      evidenceCount: 1,
+      verifiedCount: params.allowed ? 1 : 0,
+      partiallyVerifiedCount: 0,
+      unverifiedCount: params.allowed ? 0 : 1,
+      disprovenCount: 0,
+      publicationEligibleCount: params.allowed ? 1 : 0,
+      duplicateCount: 0,
+      disagreementCount: 0,
+      unclassifiableCount: 0,
+      malformedRecordCount: params.unsafe ? 1 : 0,
+      truncatedCandidateCount: 0,
+      truncatedEvidenceCount: 0,
+      policyCandidateCount: 1,
+    },
+    metadata: {
+      hasDeliveryId: true,
+      hasReviewOutputKey: true,
+      hasCorrelationKey: true,
+      deliveryId: params.input.deliveryId,
+      reviewOutputKey: params.input.reviewOutputKey,
+      correlationKey: params.input.candidateVerificationContext?.correlationKey,
+    },
+    redactionFlags: {
+      privateOnly: true,
+      candidateBodiesIncluded: false,
+      specialistProseIncluded: false,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      diffsIncluded: false,
+      evidencePayloadsIncluded: false,
+      rawFingerprintsIncluded: false,
+      unsafeInputFieldCount: params.unsafe ? 3 : 0,
+      discardedRawPayload: params.unsafe,
+      discardedPublicationFields: params.unsafe,
+      discardedEvidencePayloads: false,
+      candidateAttemptIncluded: false,
+      candidateKeyIncluded: false,
+      publicationEvidenceIncluded: false,
+    },
+  };
 }
 
 function buildShadowResult(
@@ -130,6 +211,7 @@ async function runHandlerMcpPublicationScenario(params: {
   evidenceDecision?: "candidate" | "partially_verified" | "dismissed" | "disagreement" | "unclassifiable";
   shadowMode?: "matching" | "missing" | "malformed" | "stale-key" | "unsafe-canary";
   fallbackAfterDenied?: boolean;
+  reportedPublished?: boolean;
 }) {
   let inlineResult: ToolResult | undefined;
   let fallbackResult: ToolResult | undefined;
@@ -167,7 +249,6 @@ async function runHandlerMcpPublicationScenario(params: {
     },
     executorExecute: async ({ input, octokit, logger }) => {
       executorInput = input;
-      const publishedEvents: unknown[] = [];
       const servers = buildMcpServers({
         getOctokit: async () => octokit as never,
         owner: input.owner,
@@ -178,7 +259,7 @@ async function runHandlerMcpPublicationScenario(params: {
         reviewOutputKey: input.reviewOutputKey,
         deliveryId: input.deliveryId,
         logger,
-        onPublishEvent: (event) => publishedEvents.push(event),
+        onPublishEvent: () => {},
         enableInlineTools: true,
         enableCommentTools: true,
         candidateVerificationContext: input.candidateVerificationContext,
@@ -197,7 +278,7 @@ async function runHandlerMcpPublicationScenario(params: {
       }
       return {
         conclusion: "success",
-        published: inlineResult?.isError ? false : true,
+        published: params.reportedPublished ?? (inlineResult?.isError ? false : true),
         costUsd: 0,
         numTurns: 1,
         durationMs: 1,
@@ -209,6 +290,11 @@ async function runHandlerMcpPublicationScenario(params: {
         cacheReadTokens: undefined,
         cacheCreationTokens: undefined,
         stopReason: undefined,
+        candidateVerificationPublicationEvidence: buildHandlerEvidenceSummary({
+          input,
+          allowed: inlineResult?.isError !== true,
+          unsafe: params.shadowMode === "unsafe-canary",
+        }),
       } satisfies ExecutionResult;
     },
   });
@@ -217,6 +303,88 @@ async function runHandlerMcpPublicationScenario(params: {
 }
 
 describe("review handler M070 candidate verification publication wiring", () => {
+  test("captures M072 bridge before clean canonical issue-comment Review Details publication", async () => {
+    const scenario = await runHandlerMcpPublicationScenario({
+      candidateBody: "SAFE INLINE REVIEW BODY",
+      evidenceDecision: "candidate",
+      reportedPublished: false,
+    });
+
+    const bridgeIndex = findBridgeLogIndex(scenario.callOrder);
+    const issuePublicationIndex = findHandlerIssuePublicationIndex(scenario.callOrder);
+    expect(bridgeIndex).toBeGreaterThanOrEqual(0);
+    expect(issuePublicationIndex).toBeGreaterThan(bridgeIndex);
+
+    const bridgeLog = scenario.entries.find((entry) => entry.data?.gate === "m072-review-handler-publication-bridge");
+    expect(bridgeLog?.data).toMatchObject({
+      candidatePublicationBridgeStatus: "allowed",
+      candidatePublicationBridgeHasDeliveryId: true,
+      candidatePublicationBridgeHasReviewOutputKey: true,
+      candidatePublicationBridgeHasUpstreamCorrelationKey: true,
+      candidatePublicationBridgePrivateOnly: true,
+    });
+
+    const publishedBodies = [
+      ...scenario.issueCreatePayloads.map((payload) => String(payload.body ?? "")),
+      ...scenario.issueUpdatePayloads.map((payload) => String(payload.body ?? "")),
+    ].join("\n---\n");
+    expect(publishedBodies).toContain("M072 candidate publication bridge: status=allowed");
+    expect(publishedBodies).toContain("rawPayloads:n");
+    expect(publishedBodies).not.toContain("candidateBody");
+    expect(publishedBodies).not.toContain("SAFE INLINE REVIEW BODY");
+  });
+
+  test("captures M072 bridge before degraded fallback Review Details publication", async () => {
+    const scenario = await runHandlerMcpPublicationScenario({
+      candidateBody: "SAFE INLINE REVIEW BODY",
+      evidenceDecision: "candidate",
+      reportedPublished: true,
+    });
+
+    const bridgeIndex = findBridgeLogIndex(scenario.callOrder);
+    const degradedPublicationIndex = findHandlerIssuePublicationIndex(scenario.callOrder);
+    expect(bridgeIndex).toBeGreaterThanOrEqual(0);
+    expect(degradedPublicationIndex).toBeGreaterThan(bridgeIndex);
+
+    const fallbackBody = scenario.issueCreatePayloads.map((payload) => String(payload.body ?? "")).find((body) => body.includes("<summary>Review Details</summary>"));
+    expect(fallbackBody).toContain("M072 candidate publication bridge: status=allowed");
+  });
+
+  test("unsafe candidate bridge diagnostics remain bounded and redact raw canaries from handler publications and logs", async () => {
+    const scenario = await runHandlerMcpPublicationScenario({
+      candidateBody: bridgeUnsafeRawCanary,
+      evidenceDecision: "candidate",
+      shadowMode: "unsafe-canary",
+      reportedPublished: false,
+    });
+
+    const bridgeLog = scenario.entries.find((entry) => entry.data?.gate === "m072-review-handler-publication-bridge");
+    expect(bridgeLog?.data).toMatchObject({
+      candidatePublicationBridgePrivateOnly: true,
+      candidatePublicationBridgeDiscardedPublicationFields: true,
+    });
+    expect(["denied", "malformed"]).toContain(bridgeLog?.data?.candidatePublicationBridgeStatus);
+    expect(bridgeLog?.data).toHaveProperty("candidatePublicationBridgeReasonCategories");
+    expect(bridgeLog?.data).not.toHaveProperty("body");
+    expect(bridgeLog?.data).not.toHaveProperty("candidate");
+
+    const serializedVisible = JSON.stringify({
+      logs: scenario.entries,
+      issueBodies: scenario.issueCreatePayloads.map((payload) => payload.body),
+      issueUpdates: scenario.issueUpdatePayloads.map((payload) => payload.body),
+      reviewBodies: scenario.reviewCreatePayloads.map((payload) => payload.body),
+      reviewUpdates: scenario.reviewUpdatePayloads.map((payload) => payload.body),
+    });
+    for (const forbidden of [
+      bridgeUnsafeRawCanary,
+      deniedSpecialistCanary,
+      specialistCanary,
+      specialistInlineCanary,
+    ]) {
+      expect(serializedVisible).not.toContain(forbidden);
+    }
+  });
+
   test.each([
     ["verified candidate", "candidate"],
     ["undisputed safe partial candidate", "partially_verified"],

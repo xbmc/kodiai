@@ -227,6 +227,10 @@ import {
 } from "../specialists/shadow-specialist-review-details.ts";
 import type { CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import {
+  projectReviewHandlerCandidatePublicationBridgeEvidence,
+  type ReviewHandlerPublicationBridgeProjection,
+} from "../issue-131/review-handler-publication-bridge.ts";
 
 
 
@@ -4509,6 +4513,42 @@ export function createReviewHandler(deps: {
           );
         }
 
+        let handlerCandidatePublicationBridge: ReviewHandlerPublicationBridgeProjection;
+        try {
+          handlerCandidatePublicationBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+            evidenceSummary: result.candidateVerificationPublicationEvidence,
+            deliveryId: event.id,
+            reviewOutputKey,
+            upstreamCorrelationKey: candidateVerificationContext.correlationKey,
+          });
+        } catch (err) {
+          handlerCandidatePublicationBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+            evidenceSummary: null,
+            deliveryId: event.id,
+            reviewOutputKey,
+            upstreamCorrelationKey: candidateVerificationContext.correlationKey,
+          });
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "m072-review-handler-publication-bridge",
+              gateResult: "degraded",
+              reason: "bridge-projection-error",
+              ...handlerCandidatePublicationBridge.logFields,
+              err,
+            },
+            "Review handler candidate publication bridge projection failed; using safe unavailable diagnostics",
+          );
+        }
+        logger.info(
+          {
+            ...baseLog,
+            gate: "m072-review-handler-publication-bridge",
+            ...handlerCandidatePublicationBridge.logFields,
+          },
+          "Captured M072 review-handler candidate publication bridge before public publication",
+        );
+
         const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
         const shouldProcessReviewOutput = result.conclusion === "success";
         const extractedFindings = shouldProcessReviewOutput
@@ -5109,6 +5149,7 @@ export function createReviewHandler(deps: {
             profileSelection,
             contributorExperience: authorClassification.contract.reviewDetails,
             shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
+            candidatePublicationBridge: handlerCandidatePublicationBridge.reviewDetails,
             candidateVerificationPublicationEvidence: result.candidateVerificationPublicationEvidence,
             reviewPlanSummary: buildReviewPlanReviewDetailsSummary(),
             prioritization: prioritizationStats,
