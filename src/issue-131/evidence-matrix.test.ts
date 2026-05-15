@@ -183,8 +183,33 @@ describe("issue #131 evidence matrix evaluator", () => {
       "src/handlers/review.ts",
       "src/review-plan/review-plan.ts",
     ]);
-    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-ROW-CLASSIFICATION")?.passed).toBe(true);
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-ROW-CLASSIFICATION")?.passed).toBe(false);
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-ROW-CLASSIFICATION")?.detail).toContain("package-verifier-wiring");
     expect(report.checks.find((check) => check.id === "M071-ISSUE-131-PACKAGE-WIRING")?.passed).toBe(false);
+  });
+
+  test("passes final closure only with exact complete/deferred status counts and package wiring", () => {
+    const report = evaluateFixture({
+      packageJson: JSON.stringify({ scripts: { "verify:m071": "bun scripts/verify-m071.ts --json" } }),
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.statusCode).toBe("m071_issue_131_matrix_ok");
+    expect(report.counts).toEqual({ complete: 6, partial: 0, missing: 0, deferred: 4 });
+    expect(report.rows.map((entry) => [entry.id, entry.status])).toEqual([
+      ["review-plan-contract", "complete"],
+      ["normal-handler-plan-construction", "complete"],
+      ["review-details-plan-summary", "complete"],
+      ["typed-graph-validation-config", "complete"],
+      ["truthful-graph-validation-status", "complete"],
+      ["candidate-finding-mcp-publication-bridge", "deferred"],
+      ["reducer-extraction", "deferred"],
+      ["specialist-lane-proof", "deferred"],
+      ["metrics-tier-closure", "deferred"],
+      ["package-verifier-wiring", "complete"],
+    ]);
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-ROW-CLASSIFICATION")?.passed).toBe(true);
+    expect(report.checks.find((check) => check.id === "M071-ISSUE-131-DEFERRED-OWNERSHIP")?.passed).toBe(true);
   });
 
   test("requires deferred rows to name future owning milestones and slices", () => {

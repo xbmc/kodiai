@@ -180,6 +180,31 @@ const ROW_DEFINITIONS: readonly RowDefinition[] = [
 ];
 
 const FORBIDDEN_PATH_PREFIXES = [".gsd/", ".planning/", ".audits/"] as const;
+
+const FOUNDATION_ROW_IDS = [
+  "review-plan-contract",
+  "normal-handler-plan-construction",
+  "review-details-plan-summary",
+  "typed-graph-validation-config",
+  "truthful-graph-validation-status",
+  "package-verifier-wiring",
+] as const satisfies readonly Issue131RowId[];
+
+const EXPECTED_DEFERRED_OWNERS = {
+  "candidate-finding-mcp-publication-bridge": { milestone: "M072", slice: "S01" },
+  "reducer-extraction": { milestone: "M073", slice: "S01" },
+  "specialist-lane-proof": { milestone: "M074", slice: "S01" },
+  "metrics-tier-closure": { milestone: "M075", slice: "S01" },
+} as const;
+type ExpectedDeferredRowId = keyof typeof EXPECTED_DEFERRED_OWNERS;
+
+const EXPECTED_FINAL_STATUS_COUNTS: Record<Issue131Status, number> = {
+  complete: FOUNDATION_ROW_IDS.length,
+  partial: 0,
+  missing: 0,
+  deferred: Object.keys(EXPECTED_DEFERRED_OWNERS).length,
+};
+
 const FORBIDDEN_REPORT_KEYS = new Set([
   "prompt",
   "rawPrompt",
@@ -227,10 +252,10 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
   };
 
   const rows = ROW_DEFINITIONS.map((definition) => classifyRow(definition, source));
-  const issues = collectRowIssues(rows);
-  const checks = buildChecks(rows, source.packageJson, issues);
-  const allCheckIssues = checks.flatMap((check) => check.passed ? [] : [check.detail]);
   const counts = countStatuses(rows);
+  const issues = collectRowIssues(rows, counts);
+  const checks = buildChecks(rows, source.packageJson, issues, counts);
+  const allCheckIssues = checks.flatMap((check) => check.passed ? [] : [check.detail]);
   const success = checks.every((check) => check.passed);
 
   return {
@@ -350,6 +375,11 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
       }
       return makeRow(definition, "missing", [{ path: "package.json", reason: "package.json scripts do not expose verify:m071 yet." }], ["verify:m071 is not wired in package.json."]);
     }
+    case "candidate-finding-mcp-publication-bridge":
+    case "reducer-extraction":
+    case "specialist-lane-proof":
+    case "metrics-tier-closure":
+      return makeRow(definition, "deferred", [], [], definition.deferredTo);
     default: {
       const exhaustive: never = definition.id;
       return exhaustive;
@@ -569,8 +599,10 @@ function countStatuses(rows: readonly Issue131MatrixRow[]): Record<Issue131Statu
   };
 }
 
-function collectRowIssues(rows: readonly Issue131MatrixRow[]): string[] {
+function collectRowIssues(rows: readonly Issue131MatrixRow[], counts: Record<Issue131Status, number>): string[] {
   const issues: string[] = [];
+  const finalClosure = validateFinalClosureRows(rows, counts);
+  issues.push(...finalClosure.reasons);
   for (const row of rows) {
     if ((row.status === "complete" || row.status === "partial") && row.evidence.length === 0) {
       issues.push(`${row.id}: ${row.status} rows must include concrete source-path evidence.`);
@@ -587,17 +619,11 @@ function collectRowIssues(rows: readonly Issue131MatrixRow[]): string[] {
   return issues;
 }
 
-function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string, issues: readonly string[]): Issue131Check[] {
+function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string, issues: readonly string[], counts: Record<Issue131Status, number>): Issue131Check[] {
   const invalidStatuses = rows.filter((row) => !isIssue131Status(row.status));
   const evidenceIssues = issues.filter((issue) => /evidence|path|forbidden|empty/i.test(issue));
-  const currentSourceClassificationsTruthful = [
-    rows.find((row) => row.id === "review-plan-contract")?.status === "complete",
-    rows.find((row) => row.id === "normal-handler-plan-construction")?.status === "complete",
-    rows.find((row) => row.id === "review-details-plan-summary")?.status === "complete",
-    rows.find((row) => row.id === "typed-graph-validation-config")?.status === "complete",
-    rows.find((row) => row.id === "truthful-graph-validation-status")?.status === "complete",
-  ].every(Boolean);
-  const deferredRows = rows.filter((row) => row.status === "deferred");
+  const finalClosure = validateFinalClosureRows(rows, counts);
+  const deferredOwnership = validateDeferredOwnership(rows);
   const packageScripts = parsePackageScripts(packageJsonText);
   const packageWired = typeof packageScripts["verify:m071"] === "string";
   const safetyIssues = findForbiddenReportFields({ rows });
@@ -605,11 +631,78 @@ function buildChecks(rows: readonly Issue131MatrixRow[], packageJsonText: string
   return [
     makeCheck("M071-ISSUE-131-STATUS-TAXONOMY", invalidStatuses.length === 0, "All rows use the exact issue #131 status taxonomy.", invalidStatuses.map((row) => row.id).join(", "), ["weak_evidence"]),
     makeCheck("M071-ISSUE-131-EVIDENCE-PATHS", evidenceIssues.length === 0, "Non-deferred claims use repo-relative non-planning evidence paths with short reasons.", evidenceIssues.join(" "), ["forbidden_evidence_path", "weak_evidence"]),
-    makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", currentSourceClassificationsTruthful, "Current repo source marks S02/S03 ReviewPlan rows complete while later-slice rows remain fail-closed.", "Current ReviewPlan, Review Details plan-summary, or later-slice classifications drifted.", ["weak_evidence", "schema_gap", "normal_path_gap"]),
-    makeCheck("M071-ISSUE-131-DEFERRED-OWNERSHIP", deferredRows.length === 4 && deferredRows.every((row) => row.deferredTo), "Deferred rows name owning follow-up milestones/slices.", "Deferred issue #131 rows are missing owner metadata.", ["deferred_owner"]),
+    makeCheck("M071-ISSUE-131-ROW-CLASSIFICATION", finalClosure.passed, "Final M071 closure has six complete foundation rows, zero partial/missing rows, and four explicitly deferred future rows.", finalClosure.reasons.join(" "), ["weak_evidence", "schema_gap", "normal_path_gap", "unwired_package_script"]),
+    makeCheck("M071-ISSUE-131-DEFERRED-OWNERSHIP", deferredOwnership.passed, "Deferred rows exactly match M072-M075 owning milestones/slices.", deferredOwnership.reasons.join(" "), ["deferred_owner"]),
     makeCheck("M071-ISSUE-131-PACKAGE-WIRING", packageWired, "package.json exposes verify:m071.", "verify:m071 is not yet wired in package.json.", ["unwired_package_script"]),
     makeCheck("M071-ISSUE-131-REPORT-SAFETY", safetyIssues.length === 0, "Report-shaped data excludes raw prompts, model output, comments, and diffs.", safetyIssues.join(" "), ["raw_field_leak"]),
   ];
+}
+
+function validateFinalClosureRows(rows: readonly Issue131MatrixRow[], counts: Record<Issue131Status, number>): { passed: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  for (const status of ISSUE_131_STATUSES) {
+    if (counts[status] !== EXPECTED_FINAL_STATUS_COUNTS[status]) {
+      reasons.push(`Expected ${EXPECTED_FINAL_STATUS_COUNTS[status]} ${status} rows for final M071 closure, found ${counts[status]}.`);
+    }
+  }
+
+  const foundationRows = new Set<Issue131RowId>(FOUNDATION_ROW_IDS);
+  for (const id of FOUNDATION_ROW_IDS) {
+    const row = rows.find((entry) => entry.id === id);
+    if (!row) {
+      reasons.push(`${id}: final M071 foundation row is missing from the report.`);
+    } else if (row.status !== "complete") {
+      reasons.push(`${id}: final M071 foundation row must be complete, found ${row.status}.`);
+    }
+  }
+
+  for (const row of rows) {
+    if ((row.status === "partial" || row.status === "missing") && foundationRows.has(row.id)) {
+      reasons.push(`${row.id}: final M071 closure cannot contain ${row.status} foundation rows.`);
+    }
+    if (!foundationRows.has(row.id) && row.status !== "deferred") {
+      reasons.push(`${row.id}: post-M071 issue #131 gap must remain deferred, found ${row.status}.`);
+    }
+  }
+
+  return { passed: reasons.length === 0, reasons };
+}
+
+function validateDeferredOwnership(rows: readonly Issue131MatrixRow[]): { passed: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const expectedIds = Object.keys(EXPECTED_DEFERRED_OWNERS) as ExpectedDeferredRowId[];
+  const deferredRows = rows.filter((row) => row.status === "deferred");
+
+  if (deferredRows.length !== expectedIds.length) {
+    reasons.push(`Expected ${expectedIds.length} deferred rows for M072-M075 ownership, found ${deferredRows.length}.`);
+  }
+
+  for (const id of expectedIds) {
+    const row = rows.find((entry) => entry.id === id);
+    const expected = EXPECTED_DEFERRED_OWNERS[id];
+    if (!row) {
+      reasons.push(`${id}: expected deferred owner ${expected.milestone}/${expected.slice}, but row is missing.`);
+      continue;
+    }
+    if (row.status !== "deferred") {
+      reasons.push(`${id}: expected deferred owner ${expected.milestone}/${expected.slice}, but row status is ${row.status}.`);
+      continue;
+    }
+    if (row.deferredTo?.milestone !== expected.milestone || row.deferredTo?.slice !== expected.slice) {
+      reasons.push(`${id}: expected deferred owner ${expected.milestone}/${expected.slice}, found ${row.deferredTo?.milestone ?? "missing"}/${row.deferredTo?.slice ?? "missing"}.`);
+    }
+    if (!row.deferredTo?.reason?.trim()) {
+      reasons.push(`${id}: deferred owner reason is required.`);
+    }
+  }
+
+  for (const row of deferredRows) {
+    if (!(row.id in EXPECTED_DEFERRED_OWNERS)) {
+      reasons.push(`${row.id}: unexpected deferred row outside the M072-M075 owner map.`);
+    }
+  }
+
+  return { passed: reasons.length === 0, reasons };
 }
 
 function makeCheck(id: Issue131CheckId, passed: boolean, okDetail: string, failDetail: string, issueCategories: readonly Issue131IssueCategory[]): Issue131Check {
