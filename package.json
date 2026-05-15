@@ -109,6 +109,7 @@
     "verify:m070:s03": "bun scripts/verify-m070-s03.ts",
     "verify:m070": "bun scripts/verify-m070.ts",
     "verify:m071": "bun scripts/verify-m071.ts",
+    "verify:m072": "bun scripts/verify-m072.ts",
     "verify:m070:s05": "bun scripts/verify-m070-s05.ts",
     "verify:m070:s06": "bun scripts/verify-m070-s06.ts",
     "verify:m069:s02": "bun scripts/verify-m069-s02.ts",

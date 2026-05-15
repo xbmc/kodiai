@@ -151,6 +151,18 @@ describe("verify:m072 CLI", () => {
     expect(() => parseM072Args(["--expect-status", "m072_unknown" as M072StatusCode])).toThrow("--expect-status must be one of");
   });
 
+  test("uses the checked-in package script as package-wiring success evidence", () => {
+    const report = evaluateM072VerifierContract({ generatedAt: "2026-05-10T00:00:00.000Z" });
+
+    expect(report.packageWiring).toEqual({
+      scriptName: "verify:m072",
+      expected: "bun scripts/verify-m072.ts",
+      present: true,
+      matches: true,
+    });
+    expect(check(report, "M072-PACKAGE-WIRING")).toMatchObject({ passed: true, status: "pass" });
+  });
+
   test("emits stable safe JSON report shape for source-evidence closure", () => {
     const report = evaluateM072VerifierContract({
       generatedAt: "2026-05-10T00:00:00.000Z",
@@ -305,6 +317,20 @@ describe("verify:m072 CLI", () => {
     expect(check(report, "M072-DEFERRED-OWNER-CONTINUITY").issueCategories).toContain("owner_drift");
   });
 
+  test("prioritizes missing package script over other source failures", () => {
+    const report = evaluateM072VerifierContract({
+      ...makeReaders({
+        packageJson: PACKAGE_WITHOUT_M072,
+        "src/issue-131/candidate-publication-bridge.ts": undefined as unknown as string,
+      }),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.packageWiring).toEqual({ scriptName: "verify:m072", expected: "bun scripts/verify-m072.ts", present: false, matches: false });
+    expect(report.failing_check_id).toBe("M072-PACKAGE-WIRING");
+    expect(check(report, "M072-PACKAGE-WIRING").issueCategories).toContain("package_wiring");
+  });
+
   test("reports malformed package JSON and mismatched package wiring as absent or mismatched", () => {
     const malformed = evaluateM072VerifierContract({ ...makeReaders({ packageJson: "{" }) });
     expect(malformed.success).toBe(false);
@@ -314,9 +340,17 @@ describe("verify:m072 CLI", () => {
     const weak = evaluateM072VerifierContract({ ...makeReaders({ packageJson: PACKAGE_WEAK_M072 }) });
     expect(weak.success).toBe(false);
     expect(weak.packageWiring).toEqual({ scriptName: "verify:m072", expected: "bun scripts/verify-m072.ts", present: true, matches: false });
+    expect(weak.failing_check_id).toBe("M072-PACKAGE-WIRING");
   });
 
-  test("main emits JSON, supports expected failure status, and returns invalid-arg status", async () => {
+  test("main emits human and JSON output, supports expected status, and returns invalid-arg status", async () => {
+    const human = await runMain([]);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toContain("verify:m072 m072_candidate_publication_bridge_ok success=true");
+    expect(human.stdout).toContain("package: wired");
+    expect(() => JSON.parse(human.stdout)).toThrow();
+    expect(human.stderr).toBe("");
+
     const ok = await runMain(["--json"]);
     expect(ok.exitCode).toBe(0);
     expect(JSON.parse(ok.stdout).status_code).toBe("m072_candidate_publication_bridge_ok");
@@ -325,6 +359,17 @@ describe("verify:m072 CLI", () => {
     const expectedFail = await runMain(["--json", "--expect-status", "m072_candidate_publication_bridge_failed"], PACKAGE_WITHOUT_M072);
     expect(expectedFail.exitCode).toBe(0);
     expect(JSON.parse(expectedFail.stdout).failing_check_id).toBe("M072-PACKAGE-WIRING");
+    expect(expectedFail.stderr).toBe("");
+
+    const expectedMismatch = await runMain(["--json", "--expect-status", "m072_candidate_publication_bridge_ok"], PACKAGE_WITHOUT_M072);
+    expect(expectedMismatch.exitCode).toBe(1);
+    expect(JSON.parse(expectedMismatch.stdout).status_code).toBe("m072_candidate_publication_bridge_failed");
+    expect(expectedMismatch.stderr).toContain("expected status m072_candidate_publication_bridge_ok but got m072_candidate_publication_bridge_failed");
+
+    const invalidExpectedStatus = await runMain(["--expect-status", "m072_unknown"]);
+    expect(invalidExpectedStatus.exitCode).toBe(2);
+    expect(JSON.parse(invalidExpectedStatus.stdout).status_code).toBe("m072_invalid_arg");
+    expect(invalidExpectedStatus.stderr).toContain("--expect-status must be one of");
 
     const invalid = await runMain(["--bad-arg"]);
     expect(invalid.exitCode).toBe(2);

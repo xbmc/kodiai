@@ -426,7 +426,10 @@ function issueCategories(checks: readonly M072VerifierCheck[]): M072IssueCategor
   return [...new Set(checks.flatMap((check) => check.issueCategories))].sort();
 }
 
-function firstFailingCheck(checks: readonly M072VerifierCheck[]): M072VerifierCheck | null {
+function firstFailingCheck(checks: readonly M072VerifierCheck[], packageWiring: M072PackageWiring): M072VerifierCheck | null {
+  if (!packageWiring.matches) {
+    return checks.find((check) => check.id === "M072-PACKAGE-WIRING" && !check.passed) ?? checks.find((check) => !check.passed) ?? null;
+  }
   return checks.find((check) => !check.passed) ?? null;
 }
 
@@ -484,7 +487,7 @@ export function evaluateM072VerifierContract(options: {
     ),
   ];
 
-  const failingCheck = firstFailingCheck(checks);
+  const failingCheck = firstFailingCheck(checks, packageWiring);
   const success = failingCheck === null;
   const statusCode: M072StatusCode = success ? "m072_candidate_publication_bridge_ok" : "m072_candidate_publication_bridge_failed";
   const sourceEvidence = [
