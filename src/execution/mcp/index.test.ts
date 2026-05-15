@@ -23,21 +23,21 @@ function getToolHandler(server: unknown, toolName: string) {
   return tool.handler;
 }
 
-function buildDeniedPolicyResult(): CandidatePublicationPolicyResult {
+function buildAllowedPolicyResult(): CandidatePublicationPolicyResult {
   return {
-    allowed: false,
-    status: "deny" as const,
-    candidateRef: "candidate-test-denied",
-    verificationState: "unverified" as const,
-    reasonCategories: ["no-evidence", "classifier-fail-closed", "publication-ineligible"],
+    allowed: true,
+    status: "allow" as const,
+    candidateRef: "candidate-test-allowed",
+    verificationState: "verified" as const,
+    reasonCategories: [],
     counts: {
       candidateCount: 1,
-      evidenceCount: 0,
-      verifiedCount: 0,
+      evidenceCount: 1,
+      verifiedCount: 1,
       partiallyVerifiedCount: 0,
-      unverifiedCount: 1,
+      unverifiedCount: 0,
       disprovenCount: 0,
-      publicationEligibleCount: 0,
+      publicationEligibleCount: 1,
       duplicateCount: 0,
       disagreementCount: 0,
       unclassifiableCount: 0,
@@ -64,6 +64,24 @@ function buildDeniedPolicyResult(): CandidatePublicationPolicyResult {
       discardedEvidencePayloads: false,
       candidateAttemptIncluded: false as const,
       candidateKeyIncluded: false as const,
+    },
+  };
+}
+
+function buildDeniedPolicyResult(): CandidatePublicationPolicyResult {
+  return {
+    ...buildAllowedPolicyResult(),
+    allowed: false,
+    status: "deny" as const,
+    candidateRef: "candidate-test-denied",
+    verificationState: "unverified" as const,
+    reasonCategories: ["no-evidence", "classifier-fail-closed", "publication-ineligible"],
+    counts: {
+      ...buildAllowedPolicyResult().counts,
+      evidenceCount: 0,
+      verifiedCount: 0,
+      unverifiedCount: 1,
+      publicationEligibleCount: 0,
     },
   };
 }
@@ -427,7 +445,7 @@ describe("buildMcpServers", () => {
       expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
     });
 
-    it("blocks direct fallback acceptance after candidate inline publication is skipped", async () => {
+    it("blocks direct fallback after candidate inline publication fails because the target line is not commentable", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-synchronize:delivery-delivery-direct-fallback:head-abcdef1234";
       const persistedIssueBodies: string[] = [];
       const persistedReviewBodies: string[] = [];
@@ -756,5 +774,174 @@ describe("buildMcpServerFactories", () => {
 
     expect(inlineResult.isError).toBeUndefined();
     expect(createReviewCommentCalls).toBe(1);
+  });
+
+  it("records safe M072 bridge evidence before factory-created inline publication calls GitHub", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-m072-factory-allow:head-abcdef1234";
+    const emittedEvidence: unknown[] = [];
+    let createReviewCommentCalls = 0;
+    let policyCalls = 0;
+    let evidenceCountBeforeVisiblePublication = -1;
+    let evidenceBeforeVisiblePublication = "";
+    const callOrder: string[] = [];
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: { id: 1, html_url: "https://example.test/comment" } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => {
+            callOrder.push("pulls.get");
+            return { data: { head: { sha: "abcdef1234" } } };
+          },
+          createReviewComment: async ({ body }: { body: string }) => {
+            callOrder.push("pulls.createReviewComment");
+            evidenceCountBeforeVisiblePublication = emittedEvidence.length;
+            evidenceBeforeVisiblePublication = JSON.stringify(emittedEvidence);
+            createReviewCommentCalls++;
+            expect(body).toContain(reviewOutputKey);
+            return { data: { id: createReviewCommentCalls, html_url: "https://example.test/review-comment", path: "src/file.ts", line: 10 } };
+          },
+        },
+      },
+    };
+
+    const factories = buildMcpServerFactories({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-m072-factory-allow",
+      enableInlineTools: true,
+      enableCommentTools: true,
+      candidatePublicationPolicy: () => {
+        policyCalls++;
+        return buildAllowedPolicyResult();
+      },
+      candidateVerificationContext: {
+        docsConfigTruth: { evidence: [] },
+        deliveryId: "delivery-m072-factory-allow",
+        reviewOutputKey,
+        correlationKey: "correlation-m072-factory-allow",
+      },
+      candidateVerificationPublicationEvidenceSink: (summary) => emittedEvidence.push(summary),
+    });
+
+    const createInlineComment = getToolHandler(factories.github_inline_comment!(), "create_inline_comment");
+    const result = await createInlineComment({
+      path: "src/file.ts",
+      body: "CANARY-FACTORY-ALLOWED-BRIDGE-BODY",
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(policyCalls).toBe(1);
+    expect(createReviewCommentCalls).toBe(1);
+    expect(callOrder).toEqual(["pulls.get", "pulls.createReviewComment"]);
+    expect(evidenceCountBeforeVisiblePublication).toBe(1);
+    expect(evidenceBeforeVisiblePublication).toContain("\"allowed\":1");
+    expect(evidenceBeforeVisiblePublication).toContain("correlation-m072-factory-allow");
+    expect(evidenceBeforeVisiblePublication).not.toContain("CANARY-FACTORY-ALLOWED-BRIDGE-BODY");
+    const finalEvidence = JSON.stringify(emittedEvidence);
+    expect(emittedEvidence).toHaveLength(2);
+    expect(finalEvidence).toContain("\"published\":1");
+    expect(finalEvidence).toContain("correlation-m072-factory-allow");
+    expect(finalEvidence).not.toContain("CANARY-FACTORY-ALLOWED-BRIDGE-BODY");
+  });
+
+  it("shares denied factory inline state with github_comment fallback blocking", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-m072-factory-deny-fallback:head-abcdef1234";
+    const emittedEvidence: unknown[] = [];
+    let createReviewCommentCalls = 0;
+    let createCommentCalls = 0;
+    let pullsGetCalls = 0;
+    let policyCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            createCommentCalls++;
+            return { data: { id: createCommentCalls, html_url: "https://example.test/comment" } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => {
+            pullsGetCalls++;
+            return { data: { head: { sha: "abcdef1234" } } };
+          },
+          createReviewComment: async () => {
+            createReviewCommentCalls++;
+            return { data: { id: createReviewCommentCalls, html_url: "https://example.test/review-comment", path: "src/file.ts", line: 10 } };
+          },
+        },
+      },
+    };
+
+    const factories = buildMcpServerFactories({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-m072-factory-deny-fallback",
+      enableInlineTools: true,
+      enableCommentTools: true,
+      candidatePublicationPolicy: () => {
+        policyCalls++;
+        return buildDeniedPolicyResult();
+      },
+      candidateVerificationContext: {
+        docsConfigTruth: { evidence: [] },
+        deliveryId: "delivery-m072-factory-deny-fallback",
+        reviewOutputKey,
+        correlationKey: "correlation-m072-factory-deny-fallback",
+      },
+      candidateVerificationPublicationEvidenceSink: (summary) => emittedEvidence.push(summary),
+    });
+
+    const createInlineComment = getToolHandler(factories.github_inline_comment!(), "create_inline_comment");
+    const denied = await createInlineComment({
+      path: "src/file.ts",
+      body: "RAW-FACTORY-DENIED-FALLBACK-CANDIDATE-BODY",
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(denied.isError).toBe(true);
+    expect(denied.content[0]?.text).toContain("\"gate\":\"m070-candidate-publication-policy\"");
+    expect(denied.content[0]?.text).toContain("\"m072_bridge\"");
+    expect(denied.content[0]?.text).toContain("\"status\":\"denied\"");
+    expect(denied.content[0]?.text).not.toContain("RAW-FACTORY-DENIED-FALLBACK-CANDIDATE-BODY");
+    expect(policyCalls).toBe(1);
+    expect(pullsGetCalls).toBe(0);
+    expect(createReviewCommentCalls).toBe(0);
+
+    const createSummaryComment = getToolHandler(factories.github_comment!(), "create_comment");
+    const fallback = await createSummaryComment({ issueNumber: 101, body: buildDraftSummaryBody() });
+
+    expect(fallback.isError).toBe(true);
+    expect(fallback.content[0]?.text).toContain("\"fallback_blocked\":true");
+    expect(fallback.content[0]?.text).toContain("\"candidate_publication_state\":\"skipped\"");
+    expect(fallback.content[0]?.text).toContain("\"candidate_publication_reason\":\"m070-candidate-verification-denied\"");
+    expect(createCommentCalls).toBe(0);
+    const evidenceJson = JSON.stringify(emittedEvidence);
+    expect(emittedEvidence).toHaveLength(2);
+    expect(evidenceJson).toContain("\"denied\":1");
+    expect(evidenceJson).toContain("\"skipped\":1");
+    expect(evidenceJson).toContain("correlation-m072-factory-deny-fallback");
+    expect(evidenceJson).not.toContain("RAW-FACTORY-DENIED-FALLBACK-CANDIDATE-BODY");
   });
 });
