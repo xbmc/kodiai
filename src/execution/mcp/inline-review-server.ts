@@ -7,11 +7,20 @@ import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sani
 import { buildPrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import {
   createReviewOutputPublicationGate,
+  type CandidatePublicationBridgeCaptureState,
   type CandidatePublicationPolicy,
   type CandidateVerificationContext,
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
 import type { CandidateVerificationPublicationEvidenceSink } from "../../specialists/candidate-verification-publication-evidence.ts";
+import type {
+  CandidatePublicationBridgeCounts,
+  CandidatePublicationBridgeMalformedReasonCode,
+  CandidatePublicationBridgePresence,
+  CandidatePublicationBridgeReasonCategory,
+  CandidatePublicationBridgeRedactionFlags,
+  CandidatePublicationBridgeStatus,
+} from "../../issue-131/candidate-publication-bridge.ts";
 
 const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
@@ -143,12 +152,90 @@ export function createInlineReviewServer(
     return "allowed";
   }
 
-  function buildM070CandidateDenialPayload(policyResult: NonNullable<ReturnType<ReviewOutputPublicationGate["evaluateInlineCandidatePublication"]>>) {
+  function hasUnsafeBridgeRedactionFlags(flags: CandidatePublicationBridgeRedactionFlags | undefined): boolean {
+    return flags?.candidateBodiesIncluded === true
+      || flags?.specialistProseIncluded === true
+      || flags?.rawPromptsIncluded === true
+      || flags?.rawModelOutputIncluded === true
+      || flags?.diffsIncluded === true
+      || flags?.evidencePayloadsIncluded === true
+      || flags?.rawFingerprintsIncluded === true
+      || flags?.candidateAttemptIncluded === true
+      || flags?.candidateKeyIncluded === true
+      || flags?.githubCommentBodyIncluded === true
+      || flags?.reducerHandoffIncludesRawPayload === true;
+  }
+
+  function evaluateBridgePublicationEvidence(bridgeState: CandidatePublicationBridgeCaptureState): {
+    allowed: boolean;
+    status: CandidatePublicationBridgeStatus | null;
+    denialReasons: string[];
+    recordKey: string | null;
+    correlationKey: string | null;
+    sourceLabel: string | null;
+    reasonCategories: readonly CandidatePublicationBridgeReasonCategory[];
+    malformedReasonCodes: readonly CandidatePublicationBridgeMalformedReasonCode[];
+    counts: CandidatePublicationBridgeCounts | null;
+    presence: CandidatePublicationBridgePresence | null;
+    redactionFlags: CandidatePublicationBridgeRedactionFlags | null;
+    hasReducerHandoffOwner: boolean;
+  } {
+    if (bridgeState.status !== "captured") {
+      return {
+        allowed: false,
+        status: null,
+        denialReasons: ["missing-bridge-record"],
+        recordKey: null,
+        correlationKey: null,
+        sourceLabel: null,
+        reasonCategories: [],
+        malformedReasonCodes: [],
+        counts: null,
+        presence: null,
+        redactionFlags: null,
+        hasReducerHandoffOwner: false,
+      };
+    }
+
+    const { record, reducerHandoffInput } = bridgeState;
+    const denialReasons: string[] = [];
+    if (record.status !== "allowed" || reducerHandoffInput.status !== "allowed") {
+      denialReasons.push("bridge-status-not-allowed");
+    }
+    if (reducerHandoffInput.downstreamHandoffOwner === null) {
+      denialReasons.push("missing-reducer-handoff-owner");
+    }
+    if (hasUnsafeBridgeRedactionFlags(record.redactionFlags) || hasUnsafeBridgeRedactionFlags(reducerHandoffInput.redactionFlags)) {
+      denialReasons.push("unsafe-bridge-redaction-flags");
+    }
+
+    return {
+      allowed: denialReasons.length === 0,
+      status: record.status,
+      denialReasons,
+      recordKey: record.recordKey,
+      correlationKey: record.correlationKey,
+      sourceLabel: record.sourceLabel,
+      reasonCategories: record.reasonCategories,
+      malformedReasonCodes: record.malformedReasonCodes,
+      counts: record.counts,
+      presence: record.presence,
+      redactionFlags: record.redactionFlags,
+      hasReducerHandoffOwner: reducerHandoffInput.downstreamHandoffOwner !== null,
+    };
+  }
+
+  function buildM070CandidateDenialPayload(
+    policyResult: NonNullable<ReturnType<ReviewOutputPublicationGate["evaluateInlineCandidatePublication"]>>,
+    bridgeEvidence = evaluateBridgePublicationEvidence(reviewOutputPublicationGate?.getCandidatePublicationBridgeCaptureState() ?? { status: "none" }),
+  ) {
     return {
       success: false,
       skipped: true,
       reason: "m070-candidate-verification-denied",
-      gate: "m070-candidate-publication-policy",
+      gate: !policyResult.allowed
+        ? "m070-candidate-publication-policy"
+        : "m072-candidate-publication-bridge",
       gate_result: policyResult.status,
       candidate_ref: policyResult.candidateRef,
       verification_state: policyResult.verificationState,
@@ -159,6 +246,19 @@ export function createInlineReviewServer(
       has_review_output_key: policyResult.hasReviewOutputKey,
       has_correlation_key: policyResult.hasCorrelationKey,
       redaction_flags: policyResult.redactionFlags,
+      m072_bridge: {
+        record_key: bridgeEvidence.recordKey,
+        correlation_key: bridgeEvidence.correlationKey,
+        status: bridgeEvidence.status,
+        source_label: bridgeEvidence.sourceLabel,
+        denial_reasons: bridgeEvidence.denialReasons,
+        reason_categories: bridgeEvidence.reasonCategories,
+        malformed_reason_codes: bridgeEvidence.malformedReasonCodes,
+        counts: bridgeEvidence.counts,
+        presence: bridgeEvidence.presence,
+        redaction_flags: bridgeEvidence.redactionFlags,
+        has_reducer_handoff_owner: bridgeEvidence.hasReducerHandoffOwner,
+      },
     };
   }
 
@@ -264,34 +364,40 @@ export function createInlineReviewServer(
               reviewOutputKey,
               deliveryId,
             });
-            if (policyResult && !policyResult.allowed) {
-              reviewOutputPublicationGate?.recordInlinePublicationSkipped("m070-candidate-verification-denied");
-              const payload = buildM070CandidateDenialPayload(policyResult);
-              logger?.info(
-                {
-                  deliveryId,
-                  reviewOutputKey,
-                  owner,
-                  repo,
-                  prNumber,
-                  tool: "create_inline_comment",
-                  gate: payload.gate,
-                  gateResult: payload.gate_result,
-                  candidateRef: payload.candidate_ref,
-                  verificationState: payload.verification_state,
-                  reasonCategories: payload.reason_categories,
-                  counts: payload.counts,
-                  hasDeliveryId: payload.has_delivery_id,
-                  hasReviewOutputKey: payload.has_review_output_key,
-                  hasCorrelationKey: payload.has_correlation_key,
-                  redactionFlags: payload.redaction_flags,
-                },
-                "M070 candidate verification denied inline review publication",
+            if (policyResult) {
+              const bridgeEvidence = evaluateBridgePublicationEvidence(
+                reviewOutputPublicationGate?.getCandidatePublicationBridgeCaptureState() ?? { status: "none" },
               );
-              return {
-                content: [{ type: "text" as const, text: JSON.stringify(payload) }],
-                isError: true,
-              };
+              if (!policyResult.allowed || !bridgeEvidence.allowed) {
+                reviewOutputPublicationGate?.recordInlinePublicationSkipped("m070-candidate-verification-denied");
+                const payload = buildM070CandidateDenialPayload(policyResult, bridgeEvidence);
+                logger?.info(
+                  {
+                    deliveryId,
+                    reviewOutputKey,
+                    owner,
+                    repo,
+                    prNumber,
+                    tool: "create_inline_comment",
+                    gate: payload.gate,
+                    gateResult: payload.gate_result,
+                    candidateRef: payload.candidate_ref,
+                    verificationState: payload.verification_state,
+                    reasonCategories: payload.reason_categories,
+                    counts: payload.counts,
+                    hasDeliveryId: payload.has_delivery_id,
+                    hasReviewOutputKey: payload.has_review_output_key,
+                    hasCorrelationKey: payload.has_correlation_key,
+                    redactionFlags: payload.redaction_flags,
+                    m072Bridge: payload.m072_bridge,
+                  },
+                  "Candidate verification or M072 bridge evidence denied inline review publication",
+                );
+                return {
+                  content: [{ type: "text" as const, text: JSON.stringify(payload) }],
+                  isError: true,
+                };
+              }
             }
 
             const pr = await octokit.rest.pulls.get({

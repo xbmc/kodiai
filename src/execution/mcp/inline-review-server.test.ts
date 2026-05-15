@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 import { createCommentServer } from "./comment-server.ts";
 import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
-import type { CandidatePublicationPolicyAttempt } from "../../specialists/candidate-publication-policy.ts";
+import type { CandidatePublicationPolicyAttempt, CandidatePublicationPolicyResult } from "../../specialists/candidate-publication-policy.ts";
 
 function createMockLogger() {
   const warnCalls: unknown[][] = [];
@@ -69,6 +69,58 @@ function collectSerialized(values: unknown[]): string {
   return values.map((value) => JSON.stringify(value)).join("\n");
 }
 
+function allowedPolicyResult(overrides: Partial<CandidatePublicationPolicyResult> = {}): CandidatePublicationPolicyResult {
+  const base: CandidatePublicationPolicyResult = {
+    allowed: true,
+    status: "allow",
+    candidateRef: "candidate-safe-ref",
+    verificationState: "verified",
+    reasonCategories: [],
+    counts: {
+      candidateCount: 1,
+      evidenceCount: 1,
+      verifiedCount: 1,
+      partiallyVerifiedCount: 0,
+      unverifiedCount: 0,
+      disprovenCount: 0,
+      publicationEligibleCount: 1,
+      duplicateCount: 0,
+      disagreementCount: 0,
+      unclassifiableCount: 0,
+      malformedRecordCount: 0,
+      truncatedCandidateCount: 0,
+      truncatedEvidenceCount: 0,
+      policyCandidateCount: 1,
+    },
+    hasDeliveryId: true,
+    hasReviewOutputKey: true,
+    hasCorrelationKey: true,
+    redactionFlags: {
+      privateOnly: true,
+      candidateBodiesIncluded: false,
+      specialistProseIncluded: false,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      diffsIncluded: false,
+      evidencePayloadsIncluded: false,
+      rawFingerprintsIncluded: false,
+      unsafeInputFieldCount: 0,
+      discardedRawPayload: false,
+      discardedPublicationFields: false,
+      discardedEvidencePayloads: false,
+      candidateAttemptIncluded: false,
+      candidateKeyIncluded: false,
+    },
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    counts: { ...base.counts, ...overrides.counts },
+    redactionFlags: { ...base.redactionFlags, ...overrides.redactionFlags },
+  };
+}
+
 describe("createInlineReviewServer M070 candidate publication gate", () => {
   const reviewOutputKey = "review-output-m070";
   const deliveryId = "delivery-m070";
@@ -81,9 +133,10 @@ describe("createInlineReviewServer M070 candidate publication gate", () => {
     deliveryId,
   };
 
-  function createOctokit() {
+  function createOctokit(options: { beforePullsGet?: () => void } = {}) {
     let pullsGetCalls = 0;
     let createReviewCommentCalls = 0;
+    const callOrder: string[] = [];
     const reviewBodies: string[] = [];
     const issueBodies: string[] = [];
     const octokit = {
@@ -94,10 +147,13 @@ describe("createInlineReviewServer M070 candidate publication gate", () => {
           }),
           listReviews: async () => ({ data: [] }),
           get: async () => {
+            options.beforePullsGet?.();
+            callOrder.push("pulls.get");
             pullsGetCalls++;
             return { data: { head: { sha: "abcdef1234" } } };
           },
           createReviewComment: async ({ body }: { body: string }) => {
+            callOrder.push("pulls.createReviewComment");
             createReviewCommentCalls++;
             reviewBodies.push(body);
             return {
@@ -122,6 +178,7 @@ describe("createInlineReviewServer M070 candidate publication gate", () => {
     };
     return {
       octokit,
+      callOrder,
       reviewBodies,
       issueBodies,
       get pullsGetCalls() { return pullsGetCalls; },
@@ -151,6 +208,157 @@ describe("createInlineReviewServer M070 candidate publication gate", () => {
     const result = await getToolHandler(server)(candidate);
     return { ...state, result, infoCalls, warnCalls };
   }
+
+  test("verified allowed candidate captures M072 bridge evidence before GitHub-visible inline publication", async () => {
+    const candidate = { ...baseCandidate, body: "CANARY-BRIDGE-ORDER-BODY" };
+    const gate = createReviewOutputPublicationGate({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+      candidateVerificationContext: {
+        docsConfigTruth: { evidence: m070Evidence("verified", candidate) },
+        deliveryId,
+        reviewOutputKey,
+        correlationKey: "correlation-m072-order",
+      },
+    });
+    let bridgeWasCapturedBeforePullsGet = false;
+    const state = createOctokit({
+      beforePullsGet: () => {
+        bridgeWasCapturedBeforePullsGet = gate.getCandidatePublicationBridgeCaptureState().status === "captured";
+      },
+    });
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      undefined,
+      undefined,
+      gate,
+    );
+
+    const result = await getToolHandler(server)(candidate);
+    const bridgeState = gate.getCandidatePublicationBridgeCaptureState();
+
+    expect(result.isError).toBeUndefined();
+    expect(bridgeWasCapturedBeforePullsGet).toBe(true);
+    expect(state.callOrder).toEqual(["pulls.get", "pulls.createReviewComment"]);
+    expect(bridgeState.status).toBe("captured");
+    if (bridgeState.status === "captured") {
+      expect(bridgeState.record.status).toBe("allowed");
+      expect(bridgeState.reducerHandoffInput.downstreamHandoffOwner?.owner).toEqual({ milestone: "M072", slice: "S01" });
+    }
+  });
+
+  test("allowed policy result is denied before GitHub when M072 bridge evidence is unavailable", async () => {
+    const state = createOctokit();
+    const { logger, infoCalls } = createMockLogger();
+    const unavailableBridgeGate = {
+      resolve: async () => ({ shouldPublish: true }),
+      evaluateInlineCandidatePublication: () => allowedPolicyResult(),
+      getInlinePublicationState: () => ({ status: "none" as const }),
+      getCandidateVerificationPublicationEvidenceSummary: () => ({
+        total: 0,
+        allowed: 0,
+        denied: 0,
+        skipped: 0,
+        published: 0,
+        failed: 0,
+        reasonCategories: [],
+        malformedReasonCodes: [],
+        counts: {},
+        hasDeliveryId: false,
+        hasReviewOutputKey: false,
+        hasCorrelationKey: false,
+        redactionFlags: {},
+      }),
+      getCandidatePublicationBridgeCaptureState: () => ({ status: "none" as const }),
+      recordInlinePublicationSkipped: () => undefined,
+      recordInlinePublicationFailed: () => undefined,
+      recordInlinePublicationPublished: () => undefined,
+    };
+    const server = createInlineReviewServer(
+      async () => state.octokit as never,
+      "acme",
+      "repo",
+      101,
+      [],
+      reviewOutputKey,
+      deliveryId,
+      logger as never,
+      undefined,
+      unavailableBridgeGate as never,
+    );
+
+    const result = await getToolHandler(server)({ ...baseCandidate, body: "RAW-UNAVAILABLE-BRIDGE-BODY" });
+    const responseText = result.content[0]?.text ?? "";
+    const logs = collectSerialized(infoCalls);
+
+    expect(result.isError).toBe(true);
+    expect(state.pullsGetCalls).toBe(0);
+    expect(state.createReviewCommentCalls).toBe(0);
+    expect(responseText).toContain("\"gate\":\"m072-candidate-publication-bridge\"");
+    expect(responseText).toContain("missing-bridge-record");
+    expect(responseText).toContain("\"record_key\":null");
+    expect(responseText).not.toContain("RAW-UNAVAILABLE-BRIDGE-BODY");
+    expect(logs).toContain("missing-bridge-record");
+    expect(logs).not.toContain("RAW-UNAVAILABLE-BRIDGE-BODY");
+  });
+
+  test("allowed candidates with malformed or unsafe M072 bridge evidence do not call GitHub", async () => {
+    const cases = [
+      {
+        name: "malformed-status",
+        policyResult: allowedPolicyResult({ counts: { malformedRecordCount: 1 } }),
+        expectedReason: "bridge-status-not-allowed",
+        expectedStatus: "malformed",
+      },
+      {
+        name: "unsafe-redaction",
+        policyResult: allowedPolicyResult({ redactionFlags: { rawPromptsIncluded: true } }),
+        expectedReason: "unsafe-bridge-redaction-flags",
+        expectedStatus: "allowed",
+      },
+    ];
+
+    for (const entry of cases) {
+      const candidate = { ...baseCandidate, body: `RAW-${entry.name}-GITHUB-BODY`, prompt: `RAW-${entry.name}-PROMPT` };
+      const state = createOctokit();
+      const { logger, infoCalls } = createMockLogger();
+      const server = createInlineReviewServer(
+        async () => state.octokit as never,
+        "acme",
+        "repo",
+        101,
+        [],
+        reviewOutputKey,
+        deliveryId,
+        logger as never,
+        undefined,
+        undefined,
+        undefined,
+        () => entry.policyResult,
+        { docsConfigTruth: { evidence: [] }, deliveryId, reviewOutputKey, correlationKey: `correlation-${entry.name}` },
+      );
+
+      const result = await getToolHandler(server)(candidate);
+      const responseText = result.content[0]?.text ?? "";
+      const serialized = `${responseText}\n${collectSerialized(infoCalls)}`;
+
+      expect(result.isError).toBe(true);
+      expect(state.pullsGetCalls).toBe(0);
+      expect(state.createReviewCommentCalls).toBe(0);
+      expect(responseText).toContain(entry.expectedReason);
+      expect(responseText).toContain(`\"status\":\"${entry.expectedStatus}\"`);
+      expect(serialized).not.toContain(candidate.body);
+      expect(serialized).not.toContain(String(candidate.prompt));
+    }
+  });
 
   test("verified allowed candidate reaches the existing inline adapter", async () => {
     const { result, createReviewCommentCalls, reviewBodies } = await publishWithDecision("verified");
