@@ -123,6 +123,21 @@ const formatterSuggestionsSchema = z
     maxSuggestions: 10,
   });
 
+const graphValidationSchema = z
+  .object({
+    /** Enable optional second-pass validation for graph-amplified findings. */
+    enabled: z.boolean().default(false),
+    /** Maximum graph-amplified findings to validate per review. */
+    maxFindingsToValidate: z.number().int().min(1).max(100).default(10),
+    /** Character budget for graph-validation change context. */
+    contextMaxChars: z.number().int().min(100).max(10000).default(1000),
+  })
+  .default({
+    enabled: false,
+    maxFindingsToValidate: 10,
+    contextMaxChars: 1000,
+  });
+
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -173,6 +188,7 @@ const reviewSchema = z
     minConfidence: z.number().min(0).max(100).default(0),
     prioritization: findingPrioritizationWeightsSchema,
     formatterSuggestions: formatterSuggestionsSchema,
+    graphValidation: graphValidationSchema,
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
     /** Output language for review prose. Free-form string (ISO code or full name). Default: "en". */
@@ -215,6 +231,11 @@ const reviewSchema = z
       automatic: false,
       command: DEFAULT_FORMATTER_SUGGESTION_COMMAND,
       maxSuggestions: 10,
+    },
+    graphValidation: {
+      enabled: false,
+      maxFindingsToValidate: 10,
+      contextMaxChars: 1000,
     },
     pathInstructions: [],
     outputLanguage: "en",

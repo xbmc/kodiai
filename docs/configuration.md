@@ -22,6 +22,9 @@ review:
     automatic: false
     command: "git clang-format --diff origin/{baseRef} HEAD"
     maxSuggestions: 10
+  graphValidation:
+    # Optional second-pass validation for graph-amplified findings; disabled by default.
+    enabled: false
   triggers:
     onOpened: true
     onReadyForReview: true
@@ -225,6 +228,28 @@ Operational notes:
 - The published proof surface is a same-PR Pull Request Review containing `suggestion` blocks, not a branch push or automatic commit.
 - See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, `bun run verify:m066:s05`, failure interpretation, and bounded proof capture.
 - See [M066 Formatter Suggestions Smoke Proof](smoke/m066-formatter-suggestions.md) for the accepted live same-PR evidence and [M053 Formatter Suggestions Proof Alignment](smoke/m053-formatter-suggestions.md) for how M053/S05/R085 reuses that evidence without claiming automatic-review formatter suggestions are live.
+
+### `review.graphValidation`
+
+Optional second-pass validation for graph-amplified review findings. This is disabled by default and only applies when the review runtime has graph context for indirectly impacted files; if graph context, validation support, or the validation model is unavailable, Kodiai fails open and keeps the original review findings rather than blocking or dropping results.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Enable optional graph-amplified finding validation when graph context is available. |
+| `maxFindingsToValidate` | `number` | `10` | Maximum graph-amplified findings to validate per review. Valid range: `1–100`. |
+| `contextMaxChars` | `number` | `1000` | Character budget for the change-context summary used by validation. Valid range: `100–10000`. |
+
+Example:
+
+```yaml
+review:
+  graphValidation:
+    enabled: true
+    maxFindingsToValidate: 10
+    contextMaxChars: 1000
+```
+
+Do not use this setting as a hard gate. The validation path is intentionally best-effort and fail-open so review behavior remains available when graph context or validation dependencies are missing.
 
 ### `review.prompt`
 
