@@ -109,6 +109,105 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: M070/S03 advanced this requirement by adding aggregate-only candidate-verification publication evidence to the shared MCP publication gate, ExecutionResult, Review Details, and structured runtime logs. Full validation remains pending later review-tier/live rollout evidence in S04-S06 and beyond.
 
+### R125 — Issue #131 completion matrix must be evidence-backed and fail closed for implied, memory-only, or unwired evidence.
+- Class: failure-visibility
+- Status: active
+- Description: Issue #131 completion matrix must be evidence-backed and fail closed for implied, memory-only, or unwired evidence.
+- Why it matters: The project needs a truthful answer to whether issue #131 is complete; weak evidence must not green the closure path.
+- Source: user
+- Primary owning slice: M071/S01
+- Supporting slices: M071/S05
+- Validation: mapped
+- Notes: Judged against the later repo-grounded issue #131 evolution plan, not the broad generic multi-agent architecture.
+
+### R126 — Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
+- Class: core-capability
+- Status: active
+- Description: Normal PR review runs must construct a typed ReviewPlan before publication-side effects, including route, scope, context sources, gates, budgets, publish policy, and stable hash.
+- Why it matters: Issue #131's repo-grounded plan starts by making Kodiai explain what it intended to do before it reviews or publishes.
+- Source: user/inferred
+- Primary owning slice: M071/S02
+- Supporting slices: M071/S03,M071/S05
+- Validation: mapped
+- Notes: Pure/static contracts count only as partial; completion requires normal review-handler wiring.
+
+### R127 — Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
+- Class: operability
+- Status: active
+- Description: Review Details must expose a compact, safe review-plan summary while detailed plan evidence remains in logs and verifier output.
+- Why it matters: Operators need visible orchestration truth without noisy or unsafe GitHub comments.
+- Source: user
+- Primary owning slice: M071/S03
+- Supporting slices: M071/S02,M071/S05
+- Validation: mapped
+- Notes: Must not expose raw prompts, raw model output, candidate payloads, secrets, or long identifiers that hide safety fields.
+
+### R128 — review.graphValidation.enabled must be typed, preserved by config parsing, documented, and surfaced truthfully as enabled, applied, skipped, or unavailable.
+- Class: quality-attribute
+- Status: active
+- Description: review.graphValidation.enabled must be typed, preserved by config parsing, documented, and surfaced truthfully as enabled, applied, skipped, or unavailable.
+- Why it matters: Config/prompt/tool drift is one of the failure modes issue #131 explicitly wants the orchestration layer to prevent.
+- Source: inferred
+- Primary owning slice: M071/S04
+- Supporting slices: M071/S02,M071/S05
+- Validation: mapped
+- Notes: Zod object schemas strip unknown keys by default; the current handler reads graphValidation through an untyped cast, making this a real config-drift risk.
+
+### R129 — M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
+- Class: operability
+- Status: active
+- Description: M071 verifier must distinguish complete, partial, missing, and deferred issue #131 acceptance items with file-path evidence and explicit later milestone ownership.
+- Why it matters: The final M071 answer must be code-complete for the foundation while preserving an honest path for remaining issue #131 work.
+- Source: user
+- Primary owning slice: M071/S05
+- Supporting slices: M071/S01,M071/S02,M071/S03,M071/S04
+- Validation: mapped
+- Notes: M071 can pass with larger #131 gaps deferred only when those gaps have explicit M072-M075 ownership.
+
+### R130 — Candidate findings must be captured before public GitHub publication and passed through an explicit reducer contract.
+- Class: core-capability
+- Status: active
+- Description: Candidate findings must be captured before public GitHub publication and passed through an explicit reducer contract.
+- Why it matters: Issue #131's repo-grounded plan requires moving verification and utility scoring before visible publication rather than recovering findings from already-published comments.
+- Source: user
+- Primary owning slice: M072
+- Supporting slices: M073,M074
+- Validation: unmapped
+- Notes: Provisional later milestone owner; not required for M071 readiness except as deferred ownership in the completion matrix.
+
+### R131 — Specialist lanes must start in shadow/private mode and emit bounded aggregate evidence only until reducer and verification gates prove they are safe to publish.
+- Class: core-capability
+- Status: active
+- Description: Specialist lanes must start in shadow/private mode and emit bounded aggregate evidence only until reducer and verification gates prove they are safe to publish.
+- Why it matters: Specialization should improve signal without uncontrolled parallelism, comment volume, or leakage of private candidate details.
+- Source: user
+- Primary owning slice: M073
+- Supporting slices: M072,M074
+- Validation: unmapped
+- Notes: Provisional later milestone owner; docs/config truthfulness is the first intended low-blast-radius lane.
+
+### R132 — Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
+- Class: core-capability
+- Status: active
+- Description: Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
+- Why it matters: Issue #131 is about making verification stronger than generation, not adding more unvetted comments.
+- Source: user
+- Primary owning slice: M074
+- Supporting slices: M072,M073,M075
+- Validation: unmapped
+- Notes: Provisional later milestone owner; fail closed on fallback-only, no-artifact, or weak candidate evidence.
+
+### R133 — Final issue #131 closure must be backed by orchestration telemetry, rollout gates, and cost/noise controls.
+- Class: operability
+- Status: active
+- Description: Final issue #131 closure must be backed by orchestration telemetry, rollout gates, and cost/noise controls.
+- Why it matters: The architecture should prove lower latency, better coverage, or lower noise before broader rollout.
+- Source: user
+- Primary owning slice: M075
+- Supporting slices: M072,M073,M074
+- Validation: unmapped
+- Notes: Provisional final closure owner; M071 may report this as deferred until metrics are implemented and proven.
+
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -1203,6 +1302,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Tracked from issue #131 candidate improvements; can build on phase timing and Review Details later.
 
+### R134 — Default-on multi-specialist review tiers for every PR are deferred until shadow evidence and rollout metrics prove signal, cost, and safety.
+- Class: constraint
+- Status: deferred
+- Description: Default-on multi-specialist review tiers for every PR are deferred until shadow evidence and rollout metrics prove signal, cost, and safety.
+- Why it matters: Adding specialists everywhere before proof would recreate the noise/cost risks issue #131 is trying to control.
+- Source: inferred
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Later than M075 unless metrics justify enabling broader tiers.
+
+### R135 — Public publication of raw specialist outputs, raw candidate bodies, raw prompts, raw model payloads, or secret-bearing evidence is deferred and not part of the issue #131 closure path.
+- Class: constraint
+- Status: deferred
+- Description: Public publication of raw specialist outputs, raw candidate bodies, raw prompts, raw model payloads, or secret-bearing evidence is deferred and not part of the issue #131 closure path.
+- Why it matters: Raw evidence can leak sensitive context, overwhelm operators, and make compact safety fields disappear behind long payloads.
+- Source: inferred
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Public surfaces should use compact aggregate evidence and reducer-approved findings only.
+
 ## Out of Scope
 
 ### R089 — Kodiai must not depend on or consume `jenkins4kodi` formatting diff artifacts for this capability.
@@ -1325,6 +1446,28 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: n/a
 - Notes: Approved candidates should adapt into the existing processed-finding/publication shape instead.
+
+### R136 — Do not copy Cloudflare's seven-reviewer architecture wholesale for Kodiai.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Do not copy Cloudflare's seven-reviewer architecture wholesale for Kodiai.
+- Why it matters: Kodiai needs a staged, evidence-backed architecture that fits its current review handler, reducer, MCP, Review Details, and telemetry surfaces.
+- Source: issue #131
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Issue #131 explicitly says to start small and the later repo-grounded comment narrows the path to Kodiai's existing orchestration seams.
+
+### R137 — Do not treat GitHub issue commenting, issue closure, memory references, or prose summaries as proof of issue #131 completion without code and verifier evidence.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Do not treat GitHub issue commenting, issue closure, memory references, or prose summaries as proof of issue #131 completion without code and verifier evidence.
+- Why it matters: The user asked for code-complete based on the issue, not ceremony that claims completion without implementation proof.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: No outward GitHub write action is part of the planning output; future GitHub actions require explicit confirmation.
 
 ## Traceability
 
@@ -1454,10 +1597,23 @@ This file is the explicit capability and coverage contract for the project.
 | R122 | anti-feature | out-of-scope | none | none | n/a |
 | R123 | constraint | out-of-scope | none | none | n/a |
 | R124 | anti-feature | out-of-scope | none | none | n/a |
+| R125 | failure-visibility | active | M071/S01 | M071/S05 | mapped |
+| R126 | core-capability | active | M071/S02 | M071/S03,M071/S05 | mapped |
+| R127 | operability | active | M071/S03 | M071/S02,M071/S05 | mapped |
+| R128 | quality-attribute | active | M071/S04 | M071/S02,M071/S05 | mapped |
+| R129 | operability | active | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | mapped |
+| R130 | core-capability | active | M072 | M073,M074 | unmapped |
+| R131 | core-capability | active | M073 | M072,M074 | unmapped |
+| R132 | core-capability | active | M074 | M072,M073,M075 | unmapped |
+| R133 | operability | active | M075 | M072,M073,M074 | unmapped |
+| R134 | constraint | deferred | none | none | unmapped |
+| R135 | constraint | deferred | none | none | unmapped |
+| R136 | anti-feature | out-of-scope | none | none | n/a |
+| R137 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 10
-- Mapped to slices: 10
+- Active requirements: 19
+- Mapped to slices: 19
 - Validated: 92 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118)
 - Unmapped active requirements: 0
