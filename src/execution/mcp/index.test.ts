@@ -445,7 +445,7 @@ describe("buildMcpServers", () => {
       expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
     });
 
-    it("blocks direct fallback after candidate inline publication fails because the target line is not commentable", async () => {
+    it("allows direct fallback after candidate inline publication fails because the target line is not commentable", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-synchronize:delivery-delivery-direct-fallback:head-abcdef1234";
       const persistedIssueBodies: string[] = [];
       const persistedReviewBodies: string[] = [];
@@ -527,12 +527,11 @@ describe("buildMcpServers", () => {
         body: buildDraftSummaryBody(),
       });
 
-      expect(directFallbackResult.isError).toBe(true);
-      expect(directFallbackResult.content[0]?.text).toContain("\"fallback_blocked\":true");
-      expect(directFallbackResult.content[0]?.text).toContain("\"candidate_publication_state\":\"failed\"");
-      expect(directFallbackResult.content[0]?.text).toContain("\"candidate_publication_reason\":\"line-not-commentable-in-pr-diff\"");
-      expect(createCommentCalls).toBe(0);
-      expect(persistedIssueBodies).toHaveLength(0);
+      expect(directFallbackResult.isError).toBeUndefined();
+      expect(directFallbackResult.content[0]?.text).toContain("\"success\":true");
+      expect(createCommentCalls).toBe(1);
+      expect(persistedIssueBodies).toHaveLength(1);
+      expect(persistedIssueBodies[0]).toContain(reviewOutputKey);
     });
     it("threads M070 candidate policy through shared buildMcpServers gate and blocks direct fallback after denial", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-mention-review:delivery-delivery-m070-deny:head-abcdef1234";
