@@ -37,12 +37,6 @@ import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
-import {
-  buildReviewPlan,
-  summarizeReviewPlanForDiagnostics,
-  summarizeReviewPlanForReviewDetails,
-  type ReviewPlan,
-} from "../review-plan/review-plan.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import {
   computeFileRiskScores,
@@ -53,13 +47,6 @@ import {
 } from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
-import {
-  graphValidationAppliedRuntimeStatus,
-  graphValidationGateForReviewPlan,
-  graphValidationSkippedRuntimeStatus,
-  graphValidationThrownRuntimeStatus,
-  resolveGraphValidationPreStatus,
-} from "../review-graph/graph-validation-status.ts";
 import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
@@ -180,6 +167,50 @@ import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
+  createDegradedReviewReducerResult,
+  reduceReviewFindings,
+  type ProcessedReviewFinding,
+  type ReviewReducerInput,
+  type ReviewReducerResult,
+} from "../review-orchestration/review-reducer.ts";
+import {
+  createReviewCandidateFindingExecutionResult,
+  toReviewCandidateFindingDetailsSummary,
+  type ReviewCandidateFinding,
+  type ReviewCandidateFindingDetailsSummary,
+  type ReviewCandidateFindingExecutionResult,
+} from "../review-orchestration/review-candidate-finding.ts";
+import {
+  buildReviewPlan,
+  createDegradedReviewPlan,
+  resolveGraphValidationPlanStatus,
+  toReviewPlanDetailsSummary,
+  type DegradedReviewPlan,
+  type ReviewPlan,
+} from "../review-orchestration/review-plan.ts";
+import {
+  coordinateReviewCandidateApproval,
+  type ReviewCandidateApprovalResult,
+} from "../review-orchestration/review-candidate-approval.ts";
+import {
+  adaptApprovedCandidatesForInlinePublication,
+  buildCandidateReviewOutputKey,
+  convertPublishedCandidateResultsToProcessedFindings,
+  toReviewCandidatePublicationAdapterSummary,
+  type ReviewCandidatePublishedFindingResult,
+  type ReviewCandidatePublicationAdapterResult,
+} from "../review-orchestration/review-candidate-publication-adapter.ts";
+import {
+  classifyReviewCandidatePublicationRuntime,
+  createCandidatePublicationFlowEvidence,
+  type ReviewCandidatePublicationRuntimeResult,
+} from "../review-orchestration/review-candidate-publication-runtime.ts";
+import {
+  createInlineReviewPublisher,
+  type InlineReviewPublicationResult,
+} from "../execution/mcp/inline-review-publisher.ts";
+import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
+import {
   detectDepBump,
   extractDepBumpDetails,
   classifyDepBump,
@@ -225,8 +256,10 @@ import {
   buildShadowSpecialistReviewDetailsProjection,
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
-import type { CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
-import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import {
+  createCandidateVerificationPublicationEvidenceCollector,
+  type CandidateVerificationPublicationEvidenceSummary,
+} from "../specialists/candidate-verification-publication-evidence.ts";
 import {
   projectReviewHandlerCandidatePublicationBridgeEvidence,
   type ReviewHandlerPublicationBridgeProjection,
@@ -580,6 +613,8 @@ export function buildReviewPromptFingerprint(
     structuralImpactHash: hashPromptString(JSON.stringify(context.structuralImpact ?? null)),
     reviewBoundednessHash: hashPromptString(JSON.stringify(context.reviewBoundedness ?? null)),
     publishToolNamesHash: hashPromptString(JSON.stringify(context.publishToolNames ?? [])),
+    candidateFindingToolName: context.candidateFindingToolName ?? null,
+    candidateFindingMode: context.candidateFindingMode ?? null,
   };
 
   return {
@@ -1765,6 +1800,20 @@ export async function collectDiffContext(params: {
         diffRange,
       });
     }
+    if (nameOnlyResult.exitCode !== 0) {
+      return await buildDiffCollectionFallback({
+        fallbackFileProvider,
+        fallbackDiffProvider,
+        logger,
+        baseLog,
+        stage: "name-only",
+        reason: `diff-failed-${diffRange}-name-only`,
+        deepenAttempts,
+        unshallowAttempted,
+        mergeBaseRecovered,
+        diffRange,
+      });
+    }
   } else if (nameOnlyResult.exitCode !== 0) {
     throw new Error(`git diff ${diffRange} --name-only failed with exit code ${nameOnlyResult.exitCode}`);
   }
@@ -1982,6 +2031,341 @@ async function embedDiffHunks(params: {
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
  */
+type ReviewPlanBuilder = typeof buildReviewPlan;
+
+type ReviewPlanConfigSnapshot = {
+  status: ReviewPlan["status"] | DegradedReviewPlan["status"];
+  hash: string;
+  taskType?: string;
+  routingReason?: string;
+  graphValidationStatus: ReviewPlan["graphValidation"]["status"] | DegradedReviewPlan["graphValidation"]["status"];
+  candidateFindingMode: ReviewPlan["candidateFinding"]["mode"] | DegradedReviewPlan["candidateFinding"]["mode"];
+  degradedReason?: string;
+};
+
+function toReviewPlanConfigSnapshot(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanConfigSnapshot {
+  if (plan.status === "degraded") {
+    return {
+      status: plan.status,
+      hash: plan.hash,
+      taskType: plan.task.taskType,
+      routingReason: plan.task.routingReason,
+      graphValidationStatus: plan.graphValidation.status,
+      candidateFindingMode: plan.candidateFinding.mode,
+      degradedReason: plan.degraded.reason,
+    };
+  }
+
+  return {
+    status: plan.status,
+    hash: plan.hash,
+    taskType: plan.task.taskType,
+    routingReason: plan.task.routingReason,
+    graphValidationStatus: plan.graphValidation.status,
+    candidateFindingMode: plan.candidateFinding.mode,
+  };
+}
+
+function serializeReviewPlanBuilderError(err: unknown): { name: string; message: string } {
+  return {
+    name: err instanceof Error && err.name ? err.name : "Error",
+    message: "ReviewPlan builder failed",
+  };
+}
+
+type ReviewReducer = (input: ReviewReducerInput) => Promise<ReviewReducerResult>;
+
+function hasTrustedReviewReducerCounts(value: unknown): value is ReviewReducerResult["counts"] {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const counts = value as Record<string, unknown>;
+  return [
+    "input",
+    "kept",
+    "suppressed",
+    "rewritten",
+    "deprioritized",
+    "lowConfidence",
+    "auditEvents",
+    "severityDemoted",
+    "graphValidated",
+    "graphUncertain",
+  ].every((key) => typeof counts[key] === "number" && Number.isFinite(counts[key]) && counts[key] >= 0);
+}
+
+function isTrustedReviewReducerResult(value: unknown): value is ReviewReducerResult {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<ReviewReducerResult>;
+  return (candidate.status === "ready" || candidate.status === "degraded")
+    && Array.isArray(candidate.findings)
+    && Array.isArray(candidate.visibleFindings)
+    && Array.isArray(candidate.filteredInlineFindings)
+    && Array.isArray(candidate.lowConfidenceFindings)
+    && candidate.suppressionMatchCounts instanceof Map
+    && Array.isArray(candidate.filterRecords)
+    && hasTrustedReviewReducerCounts(candidate.counts)
+    && Array.isArray(candidate.audit)
+    && typeof candidate.detailsSummary === "object"
+    && candidate.detailsSummary !== null
+    && typeof candidate.detailsSummary.text === "string";
+}
+
+function logReviewReducerResult(params: {
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+  reducerResult: ReviewReducerResult;
+  graphValidationEnabled: boolean;
+}): void {
+  const { logger, baseLog, reducerResult, graphValidationEnabled } = params;
+  const logPayload = {
+    ...baseLog,
+    gate: "review-reducer",
+    gateResult: reducerResult.status,
+    status: reducerResult.status,
+    reason: reducerResult.reason,
+    counts: reducerResult.counts,
+    graphValidation: {
+      enabled: graphValidationEnabled,
+      graphValidated: reducerResult.counts.graphValidated,
+      graphUncertain: reducerResult.counts.graphUncertain,
+    },
+  };
+
+  if (reducerResult.status === "degraded") {
+    logger.warn(logPayload, "Review reducer degraded (fail-open, destructive cleanup disabled)");
+    return;
+  }
+
+  logger.info(logPayload, "Review reducer completed");
+}
+
+type ReviewCandidateFindingSafeSnapshot = {
+  status: ReviewCandidateFindingExecutionResult["status"];
+  recorded: number;
+  rejected: number;
+  errors: number;
+  artifactPresent: boolean;
+  reason?: string;
+};
+
+function sanitizeReviewCandidateReason(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const sanitized = value
+    .trim()
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
+    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
+    .replace(/TOKEN\s*=\s*[^\s]+/gi, "token-redacted")
+    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
+    .replace(/diff --git/gi, "diff-redacted")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+
+  return sanitized || undefined;
+}
+
+function normalizeReviewCandidateCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
+function resolveReviewCandidateFindingResult(params: {
+  candidateFinding: unknown;
+  repo: string;
+  pullNumber: number;
+  reviewOutputKey: string;
+  deliveryId: string;
+}): ReviewCandidateFindingExecutionResult {
+  const { candidateFinding, repo, pullNumber, reviewOutputKey, deliveryId } = params;
+
+  if (typeof candidateFinding !== "object" || candidateFinding === null) {
+    return createReviewCandidateFindingExecutionResult({
+      repo,
+      pullNumber,
+      reviewOutputKey,
+      deliveryId,
+      mode: "unavailable",
+      reason: "candidate-metadata-missing",
+      artifactPresent: false,
+    });
+  }
+
+  const raw = candidateFinding as Record<string, unknown>;
+  const rawStatus = raw.status;
+  const status: ReviewCandidateFindingExecutionResult["status"] = rawStatus === "shadow" || rawStatus === "degraded" || rawStatus === "unavailable"
+    ? rawStatus
+    : "degraded";
+  const counts = typeof raw.counts === "object" && raw.counts !== null
+    ? raw.counts as Record<string, unknown>
+    : {};
+
+  const rawCandidates = Array.isArray(raw.findings)
+    ? raw.findings
+    : Array.isArray(raw.candidates)
+      ? raw.candidates
+      : [];
+  const normalized = createReviewCandidateFindingExecutionResult({
+    repo,
+    pullNumber,
+    reviewOutputKey,
+    deliveryId,
+    mode: status === "unavailable" ? "unavailable" : "shadow",
+    reason: typeof raw.reason === "string" ? raw.reason : undefined,
+    artifactPresent: raw.artifactPresent === true,
+    candidates: rawCandidates as Parameters<typeof createReviewCandidateFindingExecutionResult>[0]["candidates"],
+  });
+
+  if (status === "degraded") {
+    return {
+      ...normalized,
+      status: "degraded",
+      findings: [],
+      rejections: [],
+      counts: {
+        input: normalizeReviewCandidateCount(counts.input),
+        recorded: normalizeReviewCandidateCount(counts.recorded),
+        rejected: normalizeReviewCandidateCount(counts.rejected),
+        errors: normalizeReviewCandidateCount(counts.errors),
+      },
+      ...(sanitizeReviewCandidateReason(raw.reason) ? { reason: sanitizeReviewCandidateReason(raw.reason) } : {}),
+    };
+  }
+
+  return {
+    ...normalized,
+    counts: {
+      input: normalizeReviewCandidateCount(counts.input) || normalized.counts.input,
+      recorded: normalizeReviewCandidateCount(counts.recorded) || normalized.counts.recorded,
+      rejected: normalizeReviewCandidateCount(counts.rejected) || normalized.counts.rejected,
+      errors: normalizeReviewCandidateCount(counts.errors) || normalized.counts.errors,
+    },
+    artifactPresent: raw.artifactPresent === true,
+    ...(typeof raw.artifactBasename === "string" && raw.artifactBasename.trim() ? { artifactBasename: raw.artifactBasename.trim().split(/[\\/]/).pop() } : {}),
+    ...(sanitizeReviewCandidateReason(raw.reason) ? { reason: sanitizeReviewCandidateReason(raw.reason) } : {}),
+  };
+}
+
+function toReviewCandidateFindingSafeSnapshot(
+  result: ReviewCandidateFindingExecutionResult,
+): ReviewCandidateFindingSafeSnapshot {
+  return {
+    status: result.status,
+    recorded: result.counts.recorded,
+    rejected: result.counts.rejected,
+    errors: result.counts.errors,
+    artifactPresent: result.artifactPresent,
+    ...(result.status === "degraded" && result.reason ? { reason: sanitizeReviewCandidateReason(result.reason) } : {}),
+  };
+}
+
+function logReviewCandidateFindingResult(params: {
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+  result: ReviewCandidateFindingExecutionResult;
+}): void {
+  const snapshot = toReviewCandidateFindingSafeSnapshot(params.result);
+  const payload = {
+    ...params.baseLog,
+    gate: "review-candidate-finding",
+    gateResult: snapshot.status,
+    ...snapshot,
+  };
+
+  if (snapshot.status === "degraded") {
+    params.logger.warn(payload, "Review candidate finding capture degraded (fail-open)");
+    return;
+  }
+
+  params.logger.info(payload, "Review candidate finding capture summarized");
+}
+
+function toReviewCandidateReducerDrafts(candidates: ReviewCandidateFindingExecutionResult): ProcessedReviewFinding[] {
+  if (candidates.status !== "shadow") return [];
+
+  return candidates.findings.map((candidate, index) => ({
+    commentId: -(index + 1),
+    filePath: candidate.filePath,
+    title: candidate.title,
+    severity: candidate.severity,
+    category: candidate.category,
+    ...(typeof candidate.startLine === "number" ? { startLine: candidate.startLine } : {}),
+    ...(typeof candidate.endLine === "number" ? { endLine: candidate.endLine } : {}),
+    confidence: 90,
+    body: candidate.body,
+    candidateFingerprint: candidate.fingerprint,
+    candidatePublicationLifecycle: "candidate-draft",
+    candidatePublicationDraft: true,
+  }));
+}
+
+function isCandidatePublicationDraft(finding: unknown): boolean {
+  return typeof finding === "object"
+    && finding !== null
+    && (finding as { candidatePublicationDraft?: unknown }).candidatePublicationDraft === true;
+}
+
+function mergeCandidatePublishedFindings(
+  directFindings: ReadonlyArray<ProcessedReviewFinding>,
+  candidateFindings: ReadonlyArray<ProcessedReviewFinding>,
+): ProcessedReviewFinding[] {
+  if (candidateFindings.length === 0) return [...directFindings];
+
+  const merged: ProcessedReviewFinding[] = [...directFindings];
+  const seen = new Set(merged.map(reviewFindingIdentityKey));
+  for (const finding of candidateFindings) {
+    const key = reviewFindingIdentityKey(finding);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(finding);
+  }
+  return merged;
+}
+
+function reviewFindingIdentityKey(finding: ProcessedReviewFinding): string {
+  const candidateFingerprint = typeof finding.candidateFingerprint === "string" ? finding.candidateFingerprint.trim() : "";
+  if (candidateFingerprint) return `candidate:${candidateFingerprint}`;
+  if (Number.isFinite(finding.commentId)) return `comment:${Math.floor(finding.commentId)}`;
+  return [
+    "content",
+    finding.filePath,
+    finding.title,
+    typeof finding.startLine === "number" ? Math.floor(finding.startLine).toString() : "",
+    typeof finding.endLine === "number" ? Math.floor(finding.endLine).toString() : "",
+  ].join(":");
+}
+
+function logReviewCandidatePublicationRuntime(params: {
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+  runtime: ReviewCandidatePublicationRuntimeResult;
+}): void {
+  const payload = {
+    ...params.baseLog,
+    gate: "review-candidate-publication",
+    gateResult: params.runtime.mode,
+    mode: params.runtime.mode,
+    counts: params.runtime.counts,
+    reasons: params.runtime.reasons,
+    publisherResultSample: params.runtime.publisherResultSample,
+  };
+
+  if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
+    params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
+    return;
+  }
+
+  params.logger.info(payload, "Review candidate publication completed");
+}
+
 export function createReviewHandler(deps: {
   eventRouter: EventRouter;
   jobQueue: JobQueue;
@@ -2037,14 +2421,10 @@ export function createReviewHandler(deps: {
   diffContextCollector?: typeof collectDiffContext;
   /** Optional same-job read-only shadow specialist subflow; fail-open and private by contract. */
   shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
-  /** Optional graph-validation runner override for deterministic fail-open tests. */
-  graphValidationRunner?: typeof validateGraphAmplifiedFindings;
-  /** Optional ReviewPlan builder override for deterministic fail-open tests. */
-  reviewPlanBuilder?: typeof buildReviewPlan;
-  /** Optional ReviewPlan diagnostic projection override for deterministic fail-open tests. */
-  reviewPlanSummarizer?: typeof summarizeReviewPlanForDiagnostics;
-  /** Optional ReviewPlan Review Details projection override for deterministic fail-open tests. */
-  reviewPlanReviewDetailsSummarizer?: typeof summarizeReviewPlanForReviewDetails;
+  /** Optional review plan builder override for fail-open contract tests. */
+  reviewPlanBuilder?: ReviewPlanBuilder;
+  /** Optional review reducer override for fail-open contract tests. */
+  reviewReducer?: ReviewReducer;
   logger: Logger;
 }): void {
   const {
@@ -2076,10 +2456,8 @@ export function createReviewHandler(deps: {
     fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
     diffContextCollector = collectDiffContext,
     shadowSpecialistSubflow = runShadowSpecialistSubflow,
-    graphValidationRunner = validateGraphAmplifiedFindings,
     reviewPlanBuilder = buildReviewPlan,
-    reviewPlanSummarizer = summarizeReviewPlanForDiagnostics,
-    reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails,
+    reviewReducer = reduceReviewFindings,
     logger,
   } = deps;
 
@@ -2667,6 +3045,10 @@ export function createReviewHandler(deps: {
           depth: REVIEW_WORKSPACE_FETCH_DEPTH,
         });
 
+        const trustedBaseRepoConfig = usesPrRef
+          ? await loadRepoConfig(workspace.dir)
+          : null;
+
         // Fork PR / deleted fork: fetch PR head ref from base repo
         if (usesPrRef) {
           await fetchAndCheckoutPullRequestHeadRef({
@@ -2690,8 +3072,9 @@ export function createReviewHandler(deps: {
         });
 
         setReviewWorkPhase("load-config");
-        // Load repo config (.kodiai.yml) with defaults
-        const { config, warnings } = await loadRepoConfig(workspace.dir);
+        // Load repo config (.kodiai.yml) with defaults. For fork PRs, the active
+        // policy comes from the trusted base checkout, not the untrusted PR head.
+        const { config, warnings } = trustedBaseRepoConfig ?? (await loadRepoConfig(workspace.dir));
         for (const w of warnings) {
           logger.warn(
             { section: w.section, issues: w.issues },
@@ -3563,7 +3946,6 @@ export function createReviewHandler(deps: {
             "Shadow specialist subflow failed before normal review; continuing fail-open",
           );
         }
-        void shadowSpecialistResult;
 
         // In incremental mode, further filter to only files that changed since last review
         let reviewFiles = changedFiles;
@@ -3600,6 +3982,7 @@ export function createReviewHandler(deps: {
 
         let graphSelection = applyGraphAwareSelection({ riskScores });
         let graphBlastRadius: ReviewGraphBlastRadiusResult | null = null;
+        let graphQueryBypassedForTrivialChange = false;
         let structuralImpactForReview: import("../structural-impact/types.ts").StructuralImpactPayload | null = null;
         if (reviewGraphQuery) {
           // Trivial-change bypass: skip graph query overhead for small PRs.
@@ -3609,6 +3992,7 @@ export function createReviewHandler(deps: {
           });
 
           if (trivialCheck.bypass) {
+            graphQueryBypassedForTrivialChange = true;
             logger.info(
               { ...baseLog, gate: "graph-query-bypass", reason: trivialCheck.reason, fileCount: reviewFiles.length },
               "Trivial change detected — bypassing graph query",
@@ -4088,128 +4472,99 @@ export function createReviewHandler(deps: {
           );
         }
 
-        const graphValidationPreStatus = resolveGraphValidationPreStatus({
-          config,
-          graphContextAvailable: Boolean(graphBlastRadius),
+        const reviewPlanLinesChangedSource = diffAnalysisLinesChanged === 0 && prApiLinesChanged > 0
+          ? "github-pr-api-fallback"
+          : "local-diff";
+        const reviewPlanGraphValidation = resolveGraphValidationPlanStatus({
+          configEnabled: config.review.graphValidation.enabled,
+          graphQueryAvailable: Boolean(reviewGraphQuery),
+          trivialChangeBypass: graphQueryBypassedForTrivialChange,
+          graphBlastRadiusAvailable: Boolean(graphBlastRadius),
         });
-
-        let reviewPlan: ReviewPlan | null = null;
+        let reviewPlan: ReviewPlan | DegradedReviewPlan;
         try {
           reviewPlan = reviewPlanBuilder({
-            route: {
-              kind: "pull_request",
-              owner: apiOwner,
-              repo: apiRepo,
-              pullNumber: pr.number,
-              eventName: `pull_request.${action}`,
+            task: {
               taskType: reviewRouting.taskType,
               routingReason: reviewRouting.routingReason,
             },
-            scope: {
+            change: {
               changedFileCount: changedFiles.length,
-              reviewedFileCount: promptFiles.length,
-              totalLinesChanged: reviewRoutingLinesChanged,
-              paths: promptFiles,
+              linesChanged: reviewRoutingLinesChanged,
+              linesChangedSource: reviewPlanLinesChangedSource,
             },
-            contextSources: [
-              {
-                name: "config",
-                status: "applied",
-                itemCount: warnings.length,
-                reason: warnings.length > 0 ? "loaded-with-warnings" : "loaded",
-              },
-              {
-                name: "retrieval",
-                status: retriever
-                  ? (retrievalCtx || reviewPrecedentsForPrompt.length > 0 || wikiKnowledgeForPrompt.length > 0 || unifiedResultsForPrompt.length > 0 ? "applied" : "enabled")
-                  : "unavailable",
-                itemCount: (retrievalCtx?.findings.length ?? 0) + reviewPrecedentsForPrompt.length + wikiKnowledgeForPrompt.length + unifiedResultsForPrompt.length,
-                representativePaths: retrievalCtx?.findings.map((finding) => finding.path) ?? [],
-              },
-              {
-                name: "knowledge-store",
-                status: knowledgeStore ? "enabled" : "unavailable",
-                itemCount: priorFindings.length,
-              },
-              {
-                name: "structural-impact",
-                status: structuralImpactForReview ? "applied" : reviewGraphQuery ? "enabled" : "unavailable",
-                itemCount: (structuralImpactForReview?.probableCallers.length ?? 0) + (structuralImpactForReview?.impactedFiles.length ?? 0) + (structuralImpactForReview?.likelyTests.length ?? 0),
-                representativePaths: [
-                  ...(structuralImpactForReview?.impactedFiles.map((file) => file.path) ?? []),
-                  ...(structuralImpactForReview?.likelyTests.map((file) => file.path) ?? []),
-                ],
-              },
-              {
-                name: "graph",
-                status: graphBlastRadius ? "applied" : reviewGraphQuery ? "enabled" : "unavailable",
-                itemCount: graphBlastRadius ? 1 : 0,
-              },
-              {
-                name: "shadow-specialist",
-                status: shadowSpecialistResult
-                  ? shadowSpecialistResult.triggerStatus === "triggered" && !shadowSpecialistResult.errorReason && !shadowSpecialistResult.timeoutReason && !shadowSpecialistResult.unclassifiableReason
-                    ? "applied"
-                    : "skipped"
-                  : "unavailable",
-                itemCount: shadowSpecialistResult?.candidateCount ?? 0,
-                reason: shadowSpecialistResult?.timeoutReason || shadowSpecialistResult?.errorReason || shadowSpecialistResult?.unclassifiableReason || shadowSpecialistResult?.skipReason || undefined,
-              },
-            ],
-            gates: [
-              { name: "review-enabled", status: config.review.enabled ? "enabled" : "skipped" },
-              { name: "review-trigger", status: isReviewTriggerEnabled(action, config.review.triggers) ? "applied" : "skipped" },
-              { name: "review-output-idempotency", status: "applied", reason: acceptedCanonicalSurface ? "accepted-incomplete-canonical-surface" : "accepted-new-output-key" },
-              { name: "publish-rights", status: "enabled", reason: "coordinator-present" },
-              { name: "boundedness", status: reviewBoundedness ? "applied" : "skipped", findingCount: reviewBoundedness?.reasonCodes.length },
-              graphValidationGateForReviewPlan(graphValidationPreStatus),
-            ],
-            budgets: {
-              maxComments: resolvedMaxComments,
-              maxTurns: reviewMaxTurnsOverride ?? config.maxTurns,
+            budget: {
               timeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds,
+              maxTurns: reviewMaxTurnsOverride ?? config.maxTurns,
+              maxTurnsSource: reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
             },
-            publishPolicy: {
-              mode: config.review.autoApprove ? "approve" : "review-comment",
-              autoApprove: config.review.autoApprove,
-              publishReviewDetails: true,
-              inlineComments: true,
-              candidateVerificationRequired: false,
+            context: {
+              sources: [
+                "diff-analysis",
+                ...(retrievalCtx ? ["retrieval"] : []),
+                ...(matchedPathInstructions.length > 0 ? ["path-instructions"] : []),
+                ...(reviewBoundedness ? ["review-boundedness"] : []),
+              ],
             },
-          });
-
-          try {
-            logger.info(
-              {
-                ...baseLog,
-                ...reviewPlanSummarizer(reviewPlan as ReviewPlan),
-              },
-              "ReviewPlan constructed before publication",
-            );
-          } catch (err) {
-            logger.warn(
-              {
-                ...baseLog,
-                gate: "review-plan",
-                gateResult: "degraded",
-                reason: "diagnostic-projection-failed",
-                err,
-              },
-              "ReviewPlan diagnostic projection failed (fail-open, continuing review)",
-            );
-          }
+            gates: {
+              enabled: ["review-routing", "timeout-estimation", "review-boundedness"],
+              current: [
+                "review-routing",
+                "timeout-estimation",
+                ...(reviewBoundedness ? ["review-boundedness"] : []),
+              ],
+            },
+            policy: {
+              publish: "canonical-visible-surface",
+              tools: "github-comment-tools",
+              retry: "timeout-resilience",
+            },
+            graphValidation: reviewPlanGraphValidation,
+            candidateFinding: {
+              mode: "preferred",
+            },
+          }).plan;
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-plan",
+              gateResult: "ready",
+              planHash: reviewPlan.hash,
+              taskType: reviewPlan.task.taskType,
+              routingReason: reviewPlan.task.routingReason,
+              boundedDisclosureRequired: reviewBoundedness?.disclosureRequired ?? false,
+              boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
+              graphValidationStatus: reviewPlan.graphValidation.status,
+              candidateFindingMode: reviewPlan.candidateFinding.mode,
+            },
+            "Review plan ready",
+          );
         } catch (err) {
+          reviewPlan = createDegradedReviewPlan({
+            reason: "builder-error",
+            message: "ReviewPlan builder failed",
+            taskType: reviewRouting.taskType,
+            routingReason: reviewRouting.routingReason,
+          });
           logger.warn(
             {
               ...baseLog,
               gate: "review-plan",
               gateResult: "degraded",
-              reason: "plan-construction-failed",
-              err,
+              planHash: reviewPlan.hash,
+              taskType: reviewRouting.taskType,
+              routingReason: reviewRouting.routingReason,
+              boundedDisclosureRequired: reviewBoundedness?.disclosureRequired ?? false,
+              boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
+              graphValidationStatus: reviewPlan.graphValidation.status,
+              candidateFindingMode: reviewPlan.candidateFinding.mode,
+              error: serializeReviewPlanBuilderError(err),
             },
-            "ReviewPlan construction failed (fail-open, continuing review)",
+            "Review plan builder failed; continuing with degraded plan metadata",
           );
         }
+        const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);
+        const reviewPlanConfigSnapshot = toReviewPlanConfigSnapshot(reviewPlan);
 
         if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {
           resolvedIgnoredAreas.push("style");
@@ -4381,6 +4736,8 @@ export function createReviewHandler(deps: {
             "mcp__github_comment__create_comment",
             "mcp__github_inline_comment__create_inline_comment",
           ],
+          candidateFindingToolName: "record_candidate_finding",
+          candidateFindingMode: "preferred",
           contributorExperienceContract: authorClassification.contract,
           authorExpertise: authorClassification.contract.state === "profile-backed"
             ? authorClassification.expertise?.map(e => ({
@@ -4465,6 +4822,7 @@ export function createReviewHandler(deps: {
           knowledgeStore,
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
+          enableCandidateFindingTool: true,
           prDiffForCommentValidation: diffContext.diffContent,
           // TMO-04: total timeout = infra overhead cushion + complexity-scaled remote runtime budget
           dynamicTimeoutSeconds: appliedTimeoutBudget
@@ -4512,6 +4870,7 @@ export function createReviewHandler(deps: {
             "Captured aggregate M070 candidate-verification publication evidence",
           );
         }
+        let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
 
         let handlerCandidatePublicationBridge: ReviewHandlerPublicationBridgeProjection;
         try {
@@ -4533,11 +4892,11 @@ export function createReviewHandler(deps: {
               ...baseLog,
               gate: "m072-review-handler-publication-bridge",
               gateResult: "degraded",
-              reason: "bridge-projection-error",
-              ...handlerCandidatePublicationBridge.logFields,
+              reason: "projection-exception",
               err,
+              ...handlerCandidatePublicationBridge.logFields,
             },
-            "Review handler candidate publication bridge projection failed; using safe unavailable diagnostics",
+            "Review handler candidate-publication bridge projection failed; using bounded degraded evidence",
           );
         }
         logger.info(
@@ -4546,8 +4905,25 @@ export function createReviewHandler(deps: {
             gate: "m072-review-handler-publication-bridge",
             ...handlerCandidatePublicationBridge.logFields,
           },
-          "Captured M072 review-handler candidate publication bridge before public publication",
+          "Projected review handler candidate-publication bridge evidence",
         );
+
+        const reviewCandidateFindingResult = resolveReviewCandidateFindingResult({
+          candidateFinding: result.candidateFinding,
+          repo: `${apiOwner}/${apiRepo}`,
+          pullNumber: pr.number,
+          reviewOutputKey,
+          deliveryId: event.id,
+        });
+        const reviewCandidateFindingDetailsSummary: ReviewCandidateFindingDetailsSummary =
+          toReviewCandidateFindingDetailsSummary(reviewCandidateFindingResult);
+        const reviewCandidateFindingConfigSnapshot =
+          toReviewCandidateFindingSafeSnapshot(reviewCandidateFindingResult);
+        logReviewCandidateFindingResult({
+          logger,
+          baseLog,
+          result: reviewCandidateFindingResult,
+        });
 
         const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
         const shouldProcessReviewOutput = result.conclusion === "success";
@@ -4563,33 +4939,8 @@ export function createReviewHandler(deps: {
           })
           : [];
 
-        // Language-aware enforcement (LANG-01 through LANG-10)
-        // Runs between finding extraction and existing suppression matching.
-        // Fail-open: errors log warning and return findings unchanged.
-        const enforcedFindings = extractedFindings.length > 0
-          ? await applyEnforcement({
-              findings: extractedFindings,
-              workspaceDir: workspace.dir,
-              filesByCategory: diffAnalysis?.filesByCategory ?? {},
-              filesByLanguage: diffAnalysis?.filesByLanguage ?? {},
-              languageRules: config.languageRules,
-              logger,
-            })
-          : [];
-
-        const toolingSuppressedCount = enforcedFindings.filter(f => f.toolingSuppressed).length;
-        const severityElevatedCount = enforcedFindings.filter(f => f.severityElevated).length;
-        if (toolingSuppressedCount > 0 || severityElevatedCount > 0) {
-          logger.info(
-            { ...baseLog, toolingSuppressedCount, severityElevatedCount },
-            "Language enforcement applied",
-          );
-        }
-
         // Feedback-driven suppression (FEED-01 through FEED-10)
-        // Runs after enforcement, before config suppression matching.
-        // Early returns empty when feedback.autoSuppress.enabled is false (FEED-08).
-        // Fail-open: errors log warning and return empty suppression set.
+        // Evaluated once and passed into the reducer so publication/deletion side effects remain outside.
         const feedbackSuppression = knowledgeStore
           ? await evaluateFeedbackSuppressions({
               store: knowledgeStore,
@@ -4599,295 +4950,8 @@ export function createReviewHandler(deps: {
             })
           : { suppressedFingerprints: new Set<string>(), suppressedPatternCount: 0, patterns: [] };
 
-        if (feedbackSuppression.suppressedPatternCount > 0) {
-          logger.info(
-            { ...baseLog, feedbackSuppressedPatterns: feedbackSuppression.suppressedPatternCount },
-            "Feedback-driven suppression applied",
-          );
-        }
-
-        // Thematic cluster scoring placeholder — model resolved in the scoring step below (M037/S03).
-        // applyClusterScoringWithDegradation handles model load, eligibility, and scoring in one call.
-
-        // Post-LLM abbreviated tier enforcement (LARGE-08)
-        // Suppress medium/minor findings on abbreviated-tier files deterministically.
-        const abbreviatedFileSet = tieredFiles.isLargePR
-          ? new Set(tieredFiles.abbreviated.map(f => f.filePath))
-          : new Set<string>();
-
-        // Post-LLM claim classification (CLAIM-01 through CLAIM-03)
-        // Classifies each finding's claims as diff-grounded, external-knowledge, or inferential.
-        // Fail-open: errors log warning and return findings unchanged.
-        const fileDiffs = diffContext.diffContent
-          ? buildFileDiffsMap(splitDiffByFile(diffContext.diffContent))
-          : new Map();
-        const classifiedFindings = classifyClaims({
-          findings: enforcedFindings as unknown as Array<ExtractedFinding & Record<string, unknown>>,
-          fileDiffs,
-          prDescription: pr.body ?? null,
-          commitMessages: commitMessagesForLinking,
-        });
-        const claimClassificationMap = new Map(
-          classifiedFindings.map((f) => [f.commentId, f.claimClassification]),
-        );
-        const externalClaimCount = classifiedFindings.filter(
-          (f) => f.claimClassification?.summaryLabel === "primarily-external",
-        ).length;
-        const mixedClaimCount = classifiedFindings.filter(
-          (f) => f.claimClassification?.summaryLabel === "mixed",
-        ).length;
-        if (externalClaimCount > 0 || mixedClaimCount > 0) {
-          logger.info(
-            { ...baseLog, externalClaimFindings: externalClaimCount, mixedClaimFindings: mixedClaimCount },
-            "Claim classification applied",
-          );
-        }
-
-        // Severity demotion: cap primarily-external findings at medium (SEV-01, SEV-02)
-        const demotedFindings = demoteExternalClaimSeverities(
-          (enforcedFindings as unknown as DemotableFinding[]).map((f) => ({
-            ...f,
-            claimClassification: claimClassificationMap.get((f as unknown as { commentId: number }).commentId),
-          })),
-          logger,
-        );
-        const demotionMap = new Map(
-          demotedFindings
-            .filter((f) => f.severityDemoted)
-            .map((f) => [f.commentId, {
-              severity: f.severity as FindingSeverity,
-              preDemotionSeverity: f.preDemotionSeverity!,
-              demotionReason: f.demotionReason!,
-            }]),
-        );
-        const demotionCount = demotedFindings.filter((f) => f.severityDemoted).length;
-        if (demotionCount > 0) {
-          logger.info(
-            { ...baseLog, demotedFindings: demotionCount },
-            "Severity demotion applied to external-claim findings",
-          );
-        }
-
-        const suppressionMatchCounts = new Map<string, number>();
-        // Enforcement preserves all ExtractedFinding fields; cast back to the
-        // intersection so downstream code can access commentId, startLine, etc.
-        type EnforcedExtractedFinding = ExtractedFinding & {
-          originalSeverity: FindingSeverity;
-          severityElevated: boolean;
-          toolingSuppressed: boolean;
-          enforcementPatternId?: string;
-        };
-        let processedFindings: ProcessedFinding[] = (enforcedFindings as EnforcedExtractedFinding[]).map((finding) => {
-          const category = finding.category;
-          const matchedSuppression = config.review.suppressions.find((suppression) =>
-            matchesSuppression(
-              {
-                filePath: finding.filePath,
-                title: finding.title,
-                severity: finding.severity,
-                category,
-              },
-              suppression,
-            )
-          );
-          // Incremental dedup suppression (REV-02)
-          const dedupSuppressed = priorFindingCtx
-            ? shouldSuppressFinding({
-                filePath: finding.filePath,
-                titleFingerprint: fingerprintFindingTitle(finding.title),
-                suppressionFingerprints: priorFindingCtx.suppressionFingerprints,
-              })
-            : false;
-          // Abbreviated tier enforcement: suppress medium/minor findings on abbreviated files
-          const abbreviatedSuppressed = abbreviatedFileSet.has(finding.filePath)
-            && (finding.severity === "medium" || finding.severity === "minor");
-          // Feedback-driven suppression: suppress findings whose title fingerprint is in the suppression set
-          const titleFp = fingerprintFindingTitle(finding.title);
-          const feedbackSuppressed = feedbackSuppression.suppressedFingerprints.has(titleFp);
-          const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed || abbreviatedSuppressed || feedbackSuppressed;
-          const suppressionPattern = typeof matchedSuppression === "string"
-            ? matchedSuppression
-            : matchedSuppression?.pattern;
-          if (suppressionPattern) {
-            const existing = suppressionMatchCounts.get(suppressionPattern) ?? 0;
-            suppressionMatchCounts.set(suppressionPattern, existing + 1);
-          }
-
-          // Confidence: base score adjusted by feedback history when pattern data exists
-          const feedbackPattern = feedbackSuppression.patterns.find(p => p.fingerprint === titleFp);
-          const baseConfidence = computeConfidence({
-            severity: finding.severity,
-            category,
-            matchesKnownPattern: Boolean(matchedSuppression),
-          });
-          const confidence = feedbackPattern
-            ? adjustConfidenceForFeedback(baseConfidence, {
-                thumbsUp: feedbackPattern.thumbsUpCount,
-                thumbsDown: feedbackPattern.thumbsDownCount,
-              })
-            : baseConfidence;
-
-          // Apply severity demotion for primarily-external findings (SEV-01, SEV-02)
-          const demotion = demotionMap.get(finding.commentId);
-          const effectiveSeverity = demotion ? demotion.severity : finding.severity;
-
-          return {
-            ...finding,
-            severity: effectiveSeverity,
-            category,
-            suppressed,
-            confidence,
-            suppressionPattern,
-            claimClassification: claimClassificationMap.get(finding.commentId),
-            preDemotionSeverity: demotion?.preDemotionSeverity,
-            severityDemoted: demotion ? true : undefined,
-            demotionReason: demotion?.demotionReason,
-          };
-        });
-
-        // Thematic cluster scoring (M037/S03): score processed findings against
-        // positive/negative centroids using the fail-open degradation wrapper.
-        // Runs after feedback suppression so cluster signal applies to feedback-adjusted
-        // confidence values. All error paths degrade cleanly — review always completes.
-        {
-          const clusterResult = await applyClusterScoringWithDegradation(
-            processedFindings.map(f => ({
-              ...f,
-              // ClusterScoringFinding shape — extra fields preserved via spread
-            })),
-            clusterModelStore ?? null,
-            embeddingProvider ?? null,
-            `${apiOwner}/${apiRepo}`,
-            logger,
-          );
-          if (clusterResult.modelUsed) {
-            // Merge adjusted findings back (confidence and suppressed fields may have changed)
-            processedFindings = processedFindings.map((f, i) => {
-              const adj = clusterResult.findings[i];
-              if (!adj) return f;
-              return { ...f, confidence: adj.confidence, suppressed: adj.suppressed };
-            });
-          }
-        }
-
-        // Output filtering: rewrite mixed findings, suppress primarily-external findings (FILT-01, FILT-02)
-        const filterResult = filterExternalClaims(
-          processedFindings as FilterableFinding[],
-          logger,
-        );
-
-        if (filterResult.suppressionCount > 0 || filterResult.rewriteCount > 0) {
-          const suppressedIds = new Set(
-            filterResult.filtered
-              .filter(r => r.action === "suppressed")
-              .map(r => r.commentId),
-          );
-          const rewriteMap = new Map(
-            filterResult.filtered
-              .filter(r => r.action === "rewritten")
-              .map(r => [r.commentId, r.rewrittenTitle!]),
-          );
-
-          processedFindings = processedFindings.map(f => {
-            if (suppressedIds.has(f.commentId)) {
-              return { ...f, suppressed: true, filterAction: "suppressed" as const, originalTitle: f.title };
-            }
-            const rewrittenTitle = rewriteMap.get(f.commentId);
-            if (rewrittenTitle) {
-              return { ...f, title: rewrittenTitle, filterAction: "rewritten" as const, originalTitle: f.title };
-            }
-            return f;
-          });
-
-          // Log filter summary (FILT-03)
-          logger.info(
-            {
-              ...baseLog,
-              rewriteCount: filterResult.rewriteCount,
-              suppressionCount: filterResult.suppressionCount,
-              filteredFindings: filterResult.filtered.map(r => ({
-                commentId: r.commentId,
-                action: r.action,
-                originalTitle: r.originalTitle.slice(0, 100),
-                reason: r.reason,
-              })),
-            },
-            "Output filter applied: external knowledge claims filtered",
-          );
-        }
-
-        // Unified guardrail pipeline (GUARD-01): authoritative claim-level filtering.
-        // Runs after existing classifyClaims+filterExternalClaims for defense-in-depth.
-        // Fail-open: on error, existing filter results are used as fallback.
-        try {
-          const guardResult = await runGuardrailPipeline({
-            adapter: reviewAdapter,
-            input: {
-              findings: enforcedFindings as unknown as Array<import("../lib/claim-classifier.ts").FindingForClassification>,
-              fileDiffs,
-              prDescription: pr.body ?? null,
-              commitMessages: commitMessagesForLinking,
-            } satisfies ReviewInput,
-            output: {
-              findings: processedFindings as unknown as import("../lib/guardrail/adapters/review-adapter.ts").ReviewFinding[],
-            },
-            config: { strictness: config.guardrails?.strictness ?? "standard" },
-            repo: `${apiOwner}/${apiRepo}`,
-            auditStore: guardrailAuditStore,
-          });
-          if (guardResult.claimsRemoved > 0) {
-            logger.info(
-              {
-                ...baseLog,
-                guardrailClaimsTotal: guardResult.claimsTotal,
-                guardrailClaimsRemoved: guardResult.claimsRemoved,
-                guardrailSuppressed: guardResult.suppressed,
-              },
-              "Guardrail pipeline applied to review findings",
-            );
-          }
-          // Apply guardrail result: replace processedFindings with filtered output (GUARD-01).
-          // Owner decision: guardrail pipeline is authoritative for reviews, not shadow/audit-only.
-          if (guardResult.output !== null && !guardResult.suppressed) {
-            processedFindings = processedFindings.map((f) => {
-              const kept = guardResult.output!.findings.find((gf) => gf.commentId === f.commentId);
-              if (!kept) {
-                // Finding was removed by guardrail -- suppress it
-                return { ...f, suppressed: true, filterAction: "guardrail-suppressed" as const, originalTitle: f.title };
-              }
-              if (kept.title !== f.title) {
-                // Finding title was rewritten by guardrail
-                return { ...f, title: kept.title, filterAction: "guardrail-rewritten" as const, originalTitle: f.title };
-              }
-              return f;
-            });
-          }
-        } catch (guardErr) {
-          logger.warn(
-            { ...baseLog, err: guardErr },
-            "Guardrail pipeline failed (fail-open, existing filter results used)",
-          );
-        }
-
-        // Optional graph-amplified finding validation (M040/S03).
-        // Runs only when typed config enables it and graph context is available.
-        // Fail-open: errors log a bounded warning and leave processedFindings unchanged.
-        const skippedGraphValidationStatus = graphValidationSkippedRuntimeStatus({
-          config,
-          graphContextAvailable: Boolean(graphBlastRadius),
-          findingCount: processedFindings.length,
-        });
-        if (skippedGraphValidationStatus) {
-          logger.info(
-            {
-              ...baseLog,
-              ...skippedGraphValidationStatus,
-            },
-            "Graph-amplified finding validation skipped or unavailable",
-          );
-        } else if (graphBlastRadius) {
-          try {
-            const graphValidationLLM = {
+        const graphValidationLLM = graphBlastRadius && config.review.graphValidation.enabled
+          ? {
               generate: async (prompt: string, system: string): Promise<string> => {
                 const { createTaskRouter } = await import("../llm/task-router.ts");
                 const { TASK_TYPES } = await import("../llm/task-types.ts");
@@ -4905,145 +4969,192 @@ export function createReviewHandler(deps: {
                 });
                 return genResult.text;
               },
-            };
+            }
+          : null;
 
-            const graphValidationInput = processedFindings.map((f) => ({
-              id: f.commentId,
-              filePath: f.filePath,
-              title: f.title,
-              severity: f.severity,
-            } satisfies GraphValidationFinding));
+        const candidateReducerFindings = toReviewCandidateReducerDrafts(reviewCandidateFindingResult);
+        const reviewReducerInput: ReviewReducerInput = {
+          findings: [
+            ...(extractedFindings as unknown as ProcessedReviewFinding[]),
+            ...candidateReducerFindings,
+          ],
+          workspaceDir: workspace.dir,
+          filesByCategory: diffAnalysis?.filesByCategory ?? {},
+          filesByLanguage: diffAnalysis?.filesByLanguage ?? {},
+          languageRules: config.languageRules,
+          reviewSuppressions: config.review.suppressions,
+          minConfidence: config.review.minConfidence,
+          prioritizationWeights: config.review.prioritization,
+          feedbackSuppression,
+          priorFindingContext: priorFindingCtx,
+          diffContent: diffContext.diffContent,
+          prBody: pr.body ?? null,
+          commitMessages: commitMessagesForLinking,
+          tieredFiles,
+          graphBlastRadius,
+          graphValidationEnabled: config.review.graphValidation.enabled,
+          riskScores,
+          resolvedMaxComments,
+          logger,
+          baseLog,
+          repo: `${apiOwner}/${apiRepo}`,
+          clusterModelStore: clusterModelStore ?? null,
+          embeddingProvider: embeddingProvider ?? null,
+          guardrailAuditStore,
+          guardrailStrictness: config.guardrails?.strictness ?? "standard",
+          graphValidationLLM,
+        };
 
-            const validationResult = await graphValidationRunner(
-              graphValidationInput,
-              graphBlastRadius,
-              graphValidationLLM,
-              config.review.graphValidation,
-              logger,
-            );
+        let reducerResult: ReviewReducerResult;
+        try {
+          const candidateReducerResult = await reviewReducer(reviewReducerInput);
+          if (!isTrustedReviewReducerResult(candidateReducerResult)) {
+            throw new Error("malformed-review-reducer-result");
+          }
+          reducerResult = candidateReducerResult;
+        } catch (err) {
+          logger.warn(
+            { ...baseLog, gate: "review-reducer", gateResult: "degraded", reason: "reducer-exception", err },
+            "Review reducer failed unexpectedly (fail-open, destructive cleanup disabled)",
+          );
+          reducerResult = createDegradedReviewReducerResult({
+            findings: reviewReducerInput.findings,
+            reason: "reducer-exception",
+          });
+        }
+        logReviewReducerResult({
+          logger,
+          baseLog,
+          reducerResult,
+          graphValidationEnabled: config.review.graphValidation.enabled,
+        });
 
-            const runtimeStatus = graphValidationAppliedRuntimeStatus({
-              result: validationResult,
-              findingCount: processedFindings.length,
-            });
+        const directFallbackAllowed = reviewCandidateFindingResult.status !== "shadow"
+          || reviewCandidateFindingResult.counts.recorded === 0;
+        const directPublicationAttempted = result.published === true || extractedFindings.length > 0;
+        const reviewCandidateApprovalResult: ReviewCandidateApprovalResult = coordinateReviewCandidateApproval({
+          candidates: reviewCandidateFindingResult,
+          reducer: reducerResult,
+          fallbackPolicy: {
+            allowDirectFallback: directFallbackAllowed,
+            attemptedDirectFallback: directPublicationAttempted,
+          },
+          minConfidence: config.review.minConfidence,
+        });
+        const reviewCandidatePublicationAdapter: ReviewCandidatePublicationAdapterResult =
+          adaptApprovedCandidatesForInlinePublication({
+            approval: reviewCandidateApprovalResult,
+            reducer: reducerResult,
+          });
 
-            if (validationResult.succeeded) {
-              logger.info(
-                {
-                  ...baseLog,
-                  ...runtimeStatus,
-                },
-                "Graph-amplified finding validation completed",
-              );
-
-              // Attach graphValidationVerdict to processedFindings for downstream telemetry.
-              const verdictMap = new Map(
-                validationResult.findings.map((f) => [f.id, { graphValidated: f.graphValidated, graphValidationVerdict: f.graphValidationVerdict }]),
-              );
-              processedFindings = processedFindings.map((f) => {
-                const v = verdictMap.get(f.commentId);
-                if (!v) return f;
-                return { ...f, ...v };
+        const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();
+        const handlerCandidateVerificationPublicationEvidenceCollector = createCandidateVerificationPublicationEvidenceCollector(
+          (summary) => {
+            reviewCandidateVerificationPublicationEvidence = summary;
+          },
+        );
+        if (reviewCandidatePublicationAdapter.payloads.length > 0) {
+          if (canPublishVisibleOutput("candidate-approved inline review comments")) {
+            for (const payload of reviewCandidatePublicationAdapter.payloads) {
+              const candidateReviewOutputKey = buildCandidateReviewOutputKey(reviewOutputKey, payload.candidateFingerprint);
+              const candidatePublisher = createInlineReviewPublisher({
+                getOctokit: async () => extractionOctokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                botHandles: [githubApp.getAppSlug(), "claude"],
+                reviewOutputKey: candidateReviewOutputKey,
+                deliveryId: event.id,
+                logger,
+                publicationGate: createReviewOutputPublicationGate({
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey: candidateReviewOutputKey,
+                  candidateVerificationContext,
+                  candidateVerificationPublicationEvidenceSink: (_summary, event) => {
+                    handlerCandidateVerificationPublicationEvidenceCollector.record(event);
+                  },
+                }),
+                prDiffForCommentValidation: diffContext.diffContent,
               });
-            } else {
-              logger.warn(
-                {
-                  ...baseLog,
-                  ...runtimeStatus,
-                },
-                "Graph-amplified finding validation failed (fail-open, continuing without validation)",
-              );
+              const publishResult = await candidatePublisher.publish(payload.publication);
+              candidatePublisherResults.set(payload.candidateFingerprint, publishResult);
             }
-          } catch {
-            logger.warn(
-              {
-                ...baseLog,
-                ...graphValidationThrownRuntimeStatus({ findingCount: processedFindings.length }),
-              },
-              "Graph-amplified finding validation threw unexpectedly (fail-open)",
-            );
+          } else {
+            for (const payload of reviewCandidatePublicationAdapter.payloads) {
+              candidatePublisherResults.set(payload.candidateFingerprint, {
+                status: "blocked",
+                reason: "publication-failed",
+                content: [{ type: "text", text: "Candidate publication skipped because review publish rights were superseded." }],
+                isError: true,
+              });
+            }
           }
         }
 
-        const recurrenceCounts = new Map<string, number>();
-        for (const finding of processedFindings) {
-          if (finding.suppressed || finding.confidence < config.review.minConfidence) {
-            continue;
-          }
-          const fingerprint = fingerprintFindingTitle(finding.title);
-          recurrenceCounts.set(fingerprint, (recurrenceCounts.get(fingerprint) ?? 0) + 1);
-        }
-
-        const fileRiskByPath = new Map(riskScores.map((risk) => [risk.filePath, risk.score]));
-
-        let visibleFindings = processedFindings.filter((finding) =>
-          !finding.suppressed && finding.confidence >= config.review.minConfidence
-        );
-
-        let prioritizationStats: {
-          findingsScored: number;
-          topScore: number | null;
-          thresholdScore: number | null;
-          maxComments?: number;
-          selectedFindings?: number;
-          omittedFindings?: number;
-        } | undefined;
-
-        if (visibleFindings.length > resolvedMaxComments) {
-          const prioritized = prioritizeFindings({
-            findings: visibleFindings.map((finding) => {
-              const titleFingerprint = fingerprintFindingTitle(finding.title);
-              return {
-                ...finding,
-                fileRiskScore: fileRiskByPath.get(finding.filePath) ?? 0,
-                recurrenceCount: recurrenceCounts.get(titleFingerprint) ?? 1,
-              };
-            }),
-            maxComments: resolvedMaxComments,
-            weights: config.review.prioritization,
+        const reviewCandidatePublishedFindings: ReviewCandidatePublishedFindingResult =
+          convertPublishedCandidateResultsToProcessedFindings({
+            payloads: reviewCandidatePublicationAdapter.payloads,
+            results: candidatePublisherResults,
           });
+        const reviewCandidatePublicationRuntime = classifyReviewCandidatePublicationRuntime({
+          approval: reviewCandidateApprovalResult,
+          adapter: reviewCandidatePublicationAdapter.summary,
+          publisher: reviewCandidatePublishedFindings.summary,
+          convertedProcessedFindingCount: reviewCandidatePublishedFindings.findings.length,
+          directPublication: {
+            attempted: directPublicationAttempted,
+            allowed: directFallbackAllowed,
+            published: directPublicationAttempted ? Math.max(extractedFindings.length, result.published ? 1 : 0) : 0,
+            reason: directFallbackAllowed ? "direct-fallback-audited" : "direct-fallback-disallowed",
+          },
+        });
+        const reviewCandidatePublicationFlow = createCandidatePublicationFlowEvidence({
+          payloadFingerprints: reviewCandidatePublicationAdapter.payloads.map((payload) => payload.candidateFingerprint),
+          publisher: reviewCandidatePublishedFindings.summary,
+        });
+        logReviewCandidatePublicationRuntime({
+          logger,
+          baseLog,
+          runtime: reviewCandidatePublicationRuntime,
+        });
 
-          prioritizationStats = {
-            ...prioritized.stats,
-            maxComments: resolvedMaxComments,
-            selectedFindings: prioritized.selectedFindings.length,
-            omittedFindings: Math.max(0, visibleFindings.length - prioritized.selectedFindings.length),
-          };
-
-          const selectedOriginalIndexes = new Set(
-            prioritized.selectedFindings.map((finding) => finding.originalIndex),
-          );
-          const selectedCommentIds = new Set(
-            visibleFindings
-              .filter((_, index) => selectedOriginalIndexes.has(index))
-              .map((finding) => finding.commentId),
-          );
-
-          processedFindings = processedFindings.map((finding) => {
-            if (finding.suppressed || finding.confidence < config.review.minConfidence) {
-              return finding;
-            }
-
-            if (selectedCommentIds.has(finding.commentId)) {
-              return finding;
-            }
-
-            return {
-              ...finding,
-              deprioritized: true,
-            };
-          });
-
-          visibleFindings = processedFindings.filter((finding) =>
-            !finding.suppressed && !finding.deprioritized && finding.confidence >= config.review.minConfidence
-          );
-        }
-
-        const lowConfidenceFindings = processedFindings.filter((finding) =>
-          !finding.suppressed && finding.confidence < config.review.minConfidence
-        );
-        const filteredInlineFindings = processedFindings.filter((finding) =>
-          finding.suppressed || finding.confidence < config.review.minConfidence || Boolean(finding.deprioritized)
+        const directProcessedFindings = (reducerResult.findings as ProcessedReviewFinding[])
+          .filter((finding) => !isCandidatePublicationDraft(finding));
+        const directVisibleFindings = (reducerResult.visibleFindings as ProcessedReviewFinding[])
+          .filter((finding) => !isCandidatePublicationDraft(finding));
+        const directLowConfidenceFindings = (reducerResult.lowConfidenceFindings as ProcessedReviewFinding[])
+          .filter((finding) => !isCandidatePublicationDraft(finding));
+        const directFilteredInlineFindings = (reducerResult.filteredInlineFindings as ProcessedReviewFinding[])
+          .filter((finding) => !isCandidatePublicationDraft(finding));
+        const processedFindings = mergeCandidatePublishedFindings(
+          directProcessedFindings,
+          reviewCandidatePublishedFindings.findings,
+        ) as ProcessedFinding[];
+        const visibleFindings = mergeCandidatePublishedFindings(
+          directVisibleFindings,
+          reviewCandidatePublishedFindings.findings,
+        ) as ProcessedFinding[];
+        const lowConfidenceFindings = directLowConfidenceFindings as ProcessedFinding[];
+        const filteredInlineFindings = directFilteredInlineFindings as ProcessedFinding[];
+        const suppressionMatchCounts = reducerResult.suppressionMatchCounts;
+        const filterResult = { filtered: reducerResult.filterRecords };
+        const prioritizationStats = reducerResult.prioritizationStats;
+        const reviewReducerDetailsSummary = reducerResult.detailsSummary;
+        const reviewCandidatePublicationAdapterDetailsSummary =
+          toReviewCandidatePublicationAdapterSummary(reviewCandidatePublicationAdapter.summary);
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-candidate-publication-adapter",
+            gateResult: reviewCandidatePublicationAdapter.summary.counts.publishable > 0 ? "publishable" : "skipped",
+            counts: reviewCandidatePublicationAdapter.summary.counts,
+            skipped: reviewCandidatePublicationAdapter.summary.skipped,
+            payloadFingerprints: reviewCandidatePublicationAdapter.summary.fingerprints,
+            details: reviewCandidatePublicationAdapterDetailsSummary.text,
+          },
+          "Review candidate publication adapter summarized",
         );
 
         // Delta classification (REV-03)
@@ -5104,27 +5215,6 @@ export function createReviewHandler(deps: {
 
         const reviewCompletedAt = new Date().toISOString();
         let canonicalReviewDetailsBody: string | null = null;
-        const buildReviewPlanReviewDetailsSummary = () => {
-          if (!reviewPlan) return null;
-          try {
-            return reviewPlanReviewDetailsSummarizer(reviewPlan);
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message.replace(/[\r\n|]+/g, " ").slice(0, 160) : String(err).replace(/[\r\n|]+/g, " ").slice(0, 160);
-            logger.warn(
-              {
-                ...baseLog,
-                gate: "review-plan",
-                gateResult: "degraded",
-                reason: "review-details-projection-failed",
-                reviewDetailsSurface: "Review Details",
-                errorName: err instanceof Error ? err.name : typeof err,
-                errorMessage,
-              },
-              "ReviewPlan Review Details projection failed (fail-open, publishing without Review Plan line)",
-            );
-            return null;
-          }
-        };
         const buildReviewDetailsBody = (params?: {
           timeoutProgress?: TimeoutReviewDetailsProgress;
           reviewFirstPass?: ReviewFirstPassPayload | null;
@@ -5150,12 +5240,15 @@ export function createReviewHandler(deps: {
             contributorExperience: authorClassification.contract.reviewDetails,
             shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
             candidatePublicationBridge: handlerCandidatePublicationBridge.reviewDetails,
-            candidateVerificationPublicationEvidence: result.candidateVerificationPublicationEvidence,
-            reviewPlanSummary: buildReviewPlanReviewDetailsSummary(),
+            candidateVerificationPublicationEvidence: reviewCandidateVerificationPublicationEvidence,
             prioritization: prioritizationStats,
             usageLimit: result.usageLimit,
             tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
             structuralImpact: structuralImpactForReview,
+            reviewPlan: reviewPlanDetailsSummary,
+            reviewReducer: reviewReducerDetailsSummary,
+            reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
+            reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
             phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
               phases: reviewPhaseTimings,
               publicationPhaseStartedAt,
@@ -5185,6 +5278,43 @@ export function createReviewHandler(deps: {
               durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
             }),
           );
+        };
+
+        const logReviewDetailsPublicationCompleted = (params: {
+          surfaceKind: CanonicalSurfaceKind;
+          commentId?: number;
+          reviewId?: number;
+          publicationMode: "canonical" | "degraded-fallback";
+        }): void => {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-details-output",
+              gateResult: "completed",
+              reviewOutputKey,
+              deliveryId: event.id,
+              reviewDetailsPublished: true,
+              publicationMode: params.publicationMode,
+              surfaceKind: params.surfaceKind,
+              hasCommentId: typeof params.commentId === "number",
+              hasReviewId: typeof params.reviewId === "number",
+            },
+            "Review Details publication completed",
+          );
+        };
+
+        const logCanonicalReviewDetailsPublicationCompleted = (
+          surface: CanonicalReviewSurface | undefined,
+          publicationMode: "canonical" | "degraded-fallback" = "canonical",
+        ): void => {
+          if (!surface) {
+            return;
+          }
+          logReviewDetailsPublicationCompleted({
+            surfaceKind: surface.kind,
+            ...(surface.kind === "issue_comment" ? { commentId: surface.commentId } : { reviewId: surface.reviewId }),
+            publicationMode,
+          });
         };
 
         if (shouldProcessReviewOutput) {
@@ -5228,6 +5358,7 @@ export function createReviewHandler(deps: {
                     recheckCanPublish: () =>
                       canPublishVisibleOutput("canonical Review Details merge"),
                   });
+                  logCanonicalReviewDetailsPublicationCompleted(canonicalIssueComment);
                 } catch (appendErr) {
                   logger.warn(
                     { ...baseLog, gate: "review-details-output", gateResult: "degraded-fallback", err: appendErr },
@@ -5235,7 +5366,7 @@ export function createReviewHandler(deps: {
                   );
                   if (canPublishVisibleOutput("degraded Review Details fallback comment")) {
                     setReviewWorkPhase("publish");
-                    await upsertDegradedReviewDetailsFallbackComment({
+                    const fallbackCommentId = await upsertDegradedReviewDetailsFallbackComment({
                       octokit: extractionOctokit,
                       owner: apiOwner,
                       repo: apiRepo,
@@ -5246,6 +5377,13 @@ export function createReviewHandler(deps: {
                       recheckCanPublish: () =>
                         canPublishVisibleOutput("degraded Review Details fallback comment"),
                     });
+                    if (typeof fallbackCommentId === "number") {
+                      logReviewDetailsPublicationCompleted({
+                        surfaceKind: "issue_comment",
+                        commentId: fallbackCommentId,
+                        publicationMode: "degraded-fallback",
+                      });
+                    }
                   }
                 }
 
@@ -5297,6 +5435,14 @@ export function createReviewHandler(deps: {
                   recheckCanPublish: () =>
                     canPublishVisibleOutput("degraded Review Details fallback comment"),
                 });
+
+                if (typeof reviewDetailsCommentId === "number") {
+                  logReviewDetailsPublicationCompleted({
+                    surfaceKind: "issue_comment",
+                    commentId: reviewDetailsCommentId,
+                    publicationMode: "degraded-fallback",
+                  });
+                }
 
                 finalizePublicationPhaseTiming();
                 if (
@@ -5444,6 +5590,15 @@ export function createReviewHandler(deps: {
                 minConfidence: config.review.minConfidence,
                 profile: config.review.profile,
                 shareGlobal: config.knowledge.shareGlobal,
+                reviewPlan: reviewPlanConfigSnapshot,
+                reviewReducer: {
+                  status: reducerResult.status,
+                  counts: reducerResult.counts,
+                  reason: reducerResult.reason,
+                },
+                reviewCandidateFinding: reviewCandidateFindingConfigSnapshot,
+                reviewCandidatePublication: reviewCandidatePublicationRuntime.safeConfigSnapshot,
+                reviewCandidatePublicationFlow,
               }),
               durationMs: result.durationMs,
               model: config.model,
@@ -6993,6 +7148,14 @@ export function createReviewHandler(deps: {
                     canPublishVisibleOutput("degraded Review Details fallback comment"),
                 });
 
+                if (typeof reviewDetailsCommentId === "number") {
+                  logReviewDetailsPublicationCompleted({
+                    surfaceKind: "issue_comment",
+                    commentId: reviewDetailsCommentId,
+                    publicationMode: "degraded-fallback",
+                  });
+                }
+
                 finalizePublicationPhaseTiming();
                 if (
                   reviewDetailsCommentId !== undefined &&
@@ -7055,7 +7218,7 @@ export function createReviewHandler(deps: {
               && canonicalReviewDetailsBody
               && canPublishVisibleOutput("finalized clean review canonical Review Details merge")
             ) {
-              await upsertCanonicalReviewSurface({
+              const finalizedCleanReviewDetails = await upsertCanonicalReviewSurface({
                 octokit,
                 owner: apiOwner,
                 repo: apiRepo,
@@ -7072,6 +7235,7 @@ export function createReviewHandler(deps: {
                 recheckCanPublish: () =>
                   canPublishVisibleOutput("finalized clean review canonical Review Details merge"),
               });
+              logCanonicalReviewDetailsPublicationCompleted(finalizedCleanReviewDetails);
             }
 
             logger.info(
