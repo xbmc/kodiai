@@ -109,6 +109,26 @@ describe("review candidate approval coordinator", () => {
     ]));
   });
 
+  test("suppresses reducer findings below the configured minConfidence", () => {
+    const candidates = candidateResult([
+      candidateInput("src/low-confidence-config.ts", "Config low confidence candidate"),
+    ]);
+    const candidate = candidates.findings[0]!;
+    const reducer = reducerResult({
+      findings: [reducerFinding(1, candidate, { candidateFingerprint: candidate.fingerprint, confidence: 60 })],
+      visibleFindings: [],
+      filteredInlineFindings: [reducerFinding(1, candidate, { candidateFingerprint: candidate.fingerprint, confidence: 60 })],
+      lowConfidenceFindings: [reducerFinding(1, candidate, { candidateFingerprint: candidate.fingerprint, confidence: 60 })],
+    });
+
+    const result = coordinateReviewCandidateApproval({ candidates, reducer, minConfidence: 80 });
+
+    expect(result.counts).toMatchObject({ approved: 0, suppressed: 1 });
+    expect(result.approvedCandidates).toEqual([]);
+    expect(lifecycleMap(result).get(candidate.fingerprint)).toBe("suppressed");
+    expect(result.audit.map((event) => event.reason)).toContain("reducer-low-confidence");
+  });
+
   test("dedupes duplicate normalized candidate fingerprints by base fingerprint", () => {
     const candidates = candidateResult([
       candidateInput("src/dup.ts", "Duplicate candidate"),

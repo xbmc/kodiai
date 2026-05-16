@@ -38,6 +38,7 @@ export type ReviewCandidateApprovalInput = {
   candidates: ReviewCandidateFindingExecutionResult;
   reducer: ReviewReducerResult;
   fallbackPolicy?: ReviewCandidateApprovalFallbackPolicy;
+  minConfidence?: number;
 };
 
 export type ReviewCandidateApprovalCounts = {
@@ -159,7 +160,7 @@ export function coordinateReviewCandidateApproval(input: ReviewCandidateApproval
         continue;
       }
 
-      const lifecycle = classifyJoinedReducerFinding(joined);
+      const lifecycle = classifyJoinedReducerFinding(joined, input.minConfidence ?? 50);
       if (lifecycle.reason === "candidate-approved") {
         outcomes.push({ lifecycle: "approved", reason: lifecycle.reason, fingerprint: candidate.fingerprint });
         approvedCandidates.push({ lifecycle: "approved", fingerprint: candidate.fingerprint, candidate });
@@ -231,7 +232,7 @@ function buildReducerJoin(reducer: ReviewReducerResult): Map<string, ProcessedRe
   return joined;
 }
 
-function classifyJoinedReducerFinding(finding: ProcessedReviewFinding): { reason: ReviewCandidateApprovalReason } {
+function classifyJoinedReducerFinding(finding: ProcessedReviewFinding, minConfidence: number): { reason: ReviewCandidateApprovalReason } {
   if (finding.filterAction === "rewritten" || finding.filterAction === "guardrail-rewritten" || typeof finding.originalTitle === "string") {
     return { reason: "reducer-rewritten" };
   }
@@ -241,7 +242,7 @@ function classifyJoinedReducerFinding(finding: ProcessedReviewFinding): { reason
   if (finding.deprioritized === true) {
     return { reason: "reducer-deprioritized" };
   }
-  if (typeof finding.confidence === "number" && Number.isFinite(finding.confidence) && finding.confidence < 50) {
+  if (typeof finding.confidence === "number" && Number.isFinite(finding.confidence) && finding.confidence < minConfidence) {
     return { reason: "reducer-low-confidence" };
   }
   return { reason: "candidate-approved" };

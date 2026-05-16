@@ -385,6 +385,92 @@ describe("buildMcpServers", () => {
       expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
     });
 
+    it("blocks direct summary publication after candidate inline publication succeeds", async () => {
+      const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-direct-after-inline:head-abcdef1234";
+      const deliveryId = "delivery-direct-after-inline";
+      const body = "Verified candidate publication.";
+      let createReviewCommentCalls = 0;
+      let createIssueCommentCalls = 0;
+      let createReviewCalls = 0;
+      const octokit = {
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => {
+              createIssueCommentCalls++;
+              return { data: { id: 456, html_url: "https://example.test/comment" } };
+            },
+            updateComment: async () => ({ data: {} }),
+          },
+          pulls: {
+            listReviewComments: async () => ({ data: [] }),
+            listReviews: async () => ({ data: [] }),
+            get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+            createReview: async () => {
+              createReviewCalls++;
+              return { data: { id: 789 } };
+            },
+            createReviewComment: async () => {
+              createReviewCommentCalls++;
+              return {
+                data: {
+                  id: 123,
+                  html_url: "https://example.test/review-comment",
+                  path: "src/file.ts",
+                  line: 10,
+                  original_line: 10,
+                },
+              };
+            },
+          },
+        },
+      };
+
+      const servers = buildMcpServers({
+        getOctokit: async () => octokit as never,
+        owner: "acme",
+        repo: "repo",
+        prNumber: 101,
+        botHandles: [],
+        reviewOutputKey,
+        deliveryId,
+        enableInlineTools: true,
+        enableCommentTools: true,
+        candidateVerificationContext: {
+          deliveryId,
+          reviewOutputKey,
+          correlationKey: "correlation-direct-after-inline",
+          docsConfigTruth: {
+            evidence: [{
+              candidateKey: candidatePublicationPolicyKey({
+                path: "src/file.ts",
+                side: "RIGHT",
+                line: 10,
+                reviewOutputKey,
+                deliveryId,
+                body,
+              }),
+              decision: "verified",
+              evidenceId: "verified-direct-after-inline",
+            }],
+          },
+        },
+      });
+
+      const createInlineComment = getToolHandler(servers.github_inline_comment, "create_inline_comment");
+      const inlineResult = await createInlineComment({ path: "src/file.ts", body, line: 10, side: "RIGHT" });
+      expect(inlineResult.isError).toBeUndefined();
+      expect(createReviewCommentCalls).toBe(1);
+
+      const createSummaryComment = getToolHandler(servers.github_comment, "create_comment");
+      const summaryResult = await createSummaryComment({ issueNumber: 101, body: buildDraftSummaryBody() });
+
+      expect(summaryResult.isError).toBe(true);
+      expect(summaryResult.content[0]?.text).toContain("direct-publication-disabled-for-candidate-verification");
+      expect(createIssueCommentCalls).toBe(0);
+      expect(createReviewCalls).toBe(0);
+    });
+
     it("passes candidate verification context into inline publication and emits bounded evidence", async () => {
       const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-verified:head-abcdef1234";
       const deliveryId = "delivery-verified";

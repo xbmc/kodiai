@@ -256,7 +256,10 @@ import {
   buildShadowSpecialistReviewDetailsProjection,
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
-import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import {
+  createCandidateVerificationPublicationEvidenceCollector,
+  type CandidateVerificationPublicationEvidenceSummary,
+} from "../specialists/candidate-verification-publication-evidence.ts";
 import {
   projectReviewHandlerCandidatePublicationBridgeEvidence,
   type ReviewHandlerPublicationBridgeProjection,
@@ -2288,8 +2291,8 @@ function logReviewCandidateFindingResult(params: {
 function toReviewCandidateReducerDrafts(candidates: ReviewCandidateFindingExecutionResult): ProcessedReviewFinding[] {
   if (candidates.status !== "shadow") return [];
 
-  return candidates.findings.map((candidate) => ({
-    commentId: 0,
+  return candidates.findings.map((candidate, index) => ({
+    commentId: -(index + 1),
     filePath: candidate.filePath,
     title: candidate.title,
     severity: candidate.severity,
@@ -4867,6 +4870,7 @@ export function createReviewHandler(deps: {
             "Captured aggregate M070 candidate-verification publication evidence",
           );
         }
+        let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
 
         let handlerCandidatePublicationBridge: ReviewHandlerPublicationBridgeProjection;
         try {
@@ -5035,6 +5039,7 @@ export function createReviewHandler(deps: {
             allowDirectFallback: directFallbackAllowed,
             attemptedDirectFallback: directPublicationAttempted,
           },
+          minConfidence: config.review.minConfidence,
         });
         const reviewCandidatePublicationAdapter: ReviewCandidatePublicationAdapterResult =
           adaptApprovedCandidatesForInlinePublication({
@@ -5043,6 +5048,11 @@ export function createReviewHandler(deps: {
           });
 
         const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();
+        const handlerCandidateVerificationPublicationEvidenceCollector = createCandidateVerificationPublicationEvidenceCollector(
+          (summary) => {
+            reviewCandidateVerificationPublicationEvidence = summary;
+          },
+        );
         if (reviewCandidatePublicationAdapter.payloads.length > 0) {
           if (canPublishVisibleOutput("candidate-approved inline review comments")) {
             for (const payload of reviewCandidatePublicationAdapter.payloads) {
@@ -5061,6 +5071,10 @@ export function createReviewHandler(deps: {
                   repo: apiRepo,
                   prNumber: pr.number,
                   reviewOutputKey: candidateReviewOutputKey,
+                  candidateVerificationContext,
+                  candidateVerificationPublicationEvidenceSink: (_summary, event) => {
+                    handlerCandidateVerificationPublicationEvidenceCollector.record(event);
+                  },
                 }),
                 prDiffForCommentValidation: diffContext.diffContent,
               });
@@ -5226,7 +5240,7 @@ export function createReviewHandler(deps: {
             contributorExperience: authorClassification.contract.reviewDetails,
             shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
             candidatePublicationBridge: handlerCandidatePublicationBridge.reviewDetails,
-            candidateVerificationPublicationEvidence: result.candidateVerificationPublicationEvidence,
+            candidateVerificationPublicationEvidence: reviewCandidateVerificationPublicationEvidence,
             prioritization: prioritizationStats,
             usageLimit: result.usageLimit,
             tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },

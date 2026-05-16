@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import { $ } from "bun";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -30,6 +31,7 @@ import {
   createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;
@@ -16106,6 +16108,209 @@ describe("createReviewHandler phase timing logging", () => {
 });
 
 describe("createReviewHandler ReviewPlan wiring", () => {
+  const candidateTitle = "Guard candidate publication";
+  const candidateBody = "Publish this approved candidate through the shared inline publisher.";
+
+  function sha256(value: string): string {
+    return createHash("sha256").update(value).digest("hex");
+  }
+
+  function reviewCandidateFingerprint(params: {
+    repo: string;
+    pullNumber: number;
+    reviewOutputKey: string;
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    severity: string;
+    category: string;
+    title: string;
+  }): string {
+    const canonical = [
+      params.repo,
+      params.pullNumber,
+      params.reviewOutputKey,
+      params.filePath,
+      params.startLine,
+      params.endLine,
+      params.severity,
+      params.category,
+      params.title.toLowerCase(),
+    ].join("\u001f");
+    return `rcf-${sha256(canonical).slice(0, 16)}`;
+  }
+
+  function candidateReviewOutputKey(reviewOutputKey: string, fingerprint: string): string {
+    return `${reviewOutputKey}:candidate:${fingerprint}`;
+  }
+
+  function formattedCandidateInlineBody(params: {
+    severity: string;
+    category: string;
+    title: string;
+    body: string;
+  }): string {
+    return [
+      "```yaml",
+      `severity: ${params.severity}`,
+      `category: ${params.category}`,
+      "```",
+      "",
+      `**${params.title}**`,
+      "",
+      params.body,
+    ].join("\n");
+  }
+
+  function publicationPolicyCandidateKey(params: {
+    path: string;
+    side: string;
+    line?: number;
+    startLine?: number;
+    reviewOutputKey: string;
+    deliveryId: string;
+    body: string;
+  }): string {
+    const material = {
+      path: params.path.trim().slice(0, 256),
+      side: params.side.trim().slice(0, 32),
+      line: params.line ?? null,
+      startLine: params.startLine ?? null,
+      reviewOutputKey: params.reviewOutputKey.trim().slice(0, 256),
+      deliveryId: params.deliveryId.trim().slice(0, 256),
+      bodySignal: sha256(params.body.slice(0, 4096)),
+    };
+    return `m070-publication:${sha256(JSON.stringify(material))}`;
+  }
+
+  function buildCandidateVerificationShadowSubflow(
+    decision: "verified" | "partially_verified" | "disagreement" = "verified",
+    candidate: {
+      title?: string;
+      body?: string;
+      filePath?: string;
+      line?: number;
+      endLine?: number;
+      severity?: string;
+      category?: string;
+    } = {},
+  ) {
+    return async (input: ShadowSpecialistSubflowInput): Promise<ShadowSpecialistSubflowResult> => {
+      const baseReviewOutputKey = String(input.reviewOutputKey ?? "");
+      const title = candidate.title ?? candidateTitle;
+      const body = candidate.body ?? candidateBody;
+      const filePath = candidate.filePath ?? "README.md";
+      const line = candidate.line ?? 2;
+      const endLine = candidate.endLine ?? line;
+      const severity = candidate.severity ?? "major";
+      const category = candidate.category ?? "correctness";
+      const fingerprint = reviewCandidateFingerprint({
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: baseReviewOutputKey,
+        filePath,
+        startLine: line,
+        endLine,
+        severity,
+        category,
+        title,
+      });
+      const candidateKey = publicationPolicyCandidateKey({
+        path: filePath,
+        side: "RIGHT",
+        ...(line === endLine ? { line } : { startLine: line, line: endLine }),
+        reviewOutputKey: candidateReviewOutputKey(baseReviewOutputKey, fingerprint),
+        deliveryId: String(input.deliveryId ?? ""),
+        body: formattedCandidateInlineBody({
+          severity,
+          category,
+          title,
+          body,
+        }),
+      });
+      return {
+        trigger: {
+          status: "triggered",
+          laneId: "docs-config-truth",
+          skipReason: null,
+          degradedReason: null,
+          errorKind: null,
+          matchedPaths: [filePath],
+          candidateCount: 1,
+          selectedLaneCount: 1,
+          shadowOnly: true,
+          publishesFindings: false,
+          correlationKey: input.correlationKey ?? null,
+          metrics: { decisionCount: 1, duplicateCount: 0, disagreementCount: decision === "disagreement" ? 1 : 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+        },
+        output: {
+          laneId: "docs-config-truth",
+          status: "ok",
+          skipReason: null,
+          degradedReasons: [],
+          errorKind: null,
+          evidence: [{ candidateKey, decision, evidenceId: "review-plan-shadow-evidence-1" }],
+          candidateCount: 1,
+          truncatedCandidateCount: 0,
+          decisionCounts: { candidate: decision === "disagreement" ? 0 : 1, duplicate: 0, disagreement: decision === "disagreement" ? 1 : 0, dismissed: 0, unclassifiable: 0 },
+          duplicateCount: 0,
+          disagreementCount: decision === "disagreement" ? 1 : 0,
+          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+          metrics: { decisionCount: 1, duplicateCount: 0, disagreementCount: decision === "disagreement" ? 1 : 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+          deliveryId: input.deliveryId ?? null,
+          reviewOutputKey: input.reviewOutputKey ?? null,
+          correlationKey: input.correlationKey ?? null,
+          redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+          shadowOnly: true,
+          publishesFindings: false,
+        } as never,
+        durationMs: 1,
+        laneId: "docs-config-truth",
+        triggerStatus: "triggered",
+        skipReason: null,
+        degradedReason: null,
+        errorKind: null,
+        timeoutReason: null,
+        errorReason: null,
+        unclassifiableReason: null,
+        deliveryId: input.deliveryId ?? null,
+        reviewOutputKey: input.reviewOutputKey ?? null,
+        correlationKey: input.correlationKey ?? null,
+        candidateCount: 1,
+        decisionCount: 1,
+        duplicateCount: 0,
+        disagreementCount: decision === "disagreement" ? 1 : 0,
+        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+        redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+        shadowOnly: true,
+        publishesFindings: false,
+      };
+    };
+  }
+
+  function candidateFindingResult() {
+    return {
+      status: "shadow",
+      repo: "acme/repo",
+      pullNumber: 101,
+      reviewOutputKey: "rk_safe",
+      deliveryId: "delivery-123",
+      artifactPresent: true,
+      findings: [
+        {
+          filePath: "README.md",
+          startLine: 2,
+          endLine: 2,
+          severity: "major",
+          category: "correctness",
+          title: candidateTitle,
+          body: candidateBody,
+        },
+      ],
+      rejections: [],
+    };
+  }
+
   async function runReviewPlanScenario(params: {
     reviewPlanBuilder?: typeof buildReviewPlan;
     reviewReducer?: (input: ReviewReducerInput) => Promise<ReviewReducerResult>;
@@ -16122,6 +16327,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     directReviewComments?: Array<Record<string, unknown>>;
     executorPublished?: boolean;
     exposeSummaryComment?: boolean;
+    shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
   } = {}) {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({
@@ -16275,6 +16481,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       ...(params.reviewGraphQuery ? { reviewGraphQuery: params.reviewGraphQuery } : {}),
       ...(params.reviewPlanBuilder ? { reviewPlanBuilder: params.reviewPlanBuilder } : {}),
       ...(params.reviewReducer ? { reviewReducer: params.reviewReducer } : {}),
+      ...(params.shadowSpecialistSubflow ? { shadowSpecialistSubflow: params.shadowSpecialistSubflow } : {}),
       logger: logger as never,
     });
 
@@ -16427,8 +16634,12 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(JSON.stringify(configSnapshot)).not.toContain("/tmp/workspace");
   });
 
-  test("approved candidate findings publish through the shared inline publisher and become stored findings", async () => {
-    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+  test("candidate reducer drafts get unique synthetic ids before reducer processing", async () => {
+    const firstTitle = "First candidate with unique reducer id";
+    const secondTitle = "Second candidate with unique reducer id";
+    const seenCandidateIds: number[] = [];
+
+    await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: false,
       candidateFindingResult: {
@@ -16438,6 +16649,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         reviewOutputKey: "rk_safe",
         deliveryId: "delivery-123",
         artifactPresent: true,
+        counts: { input: 2, recorded: 2, rejected: 0, errors: 0 },
         findings: [
           {
             filePath: "README.md",
@@ -16445,12 +16657,44 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             endLine: 2,
             severity: "major",
             category: "correctness",
-            title: "Guard candidate publication",
-            body: "Publish this approved candidate through the shared inline publisher.",
+            title: firstTitle,
+            body: `${firstTitle} body is safe and grounded.`,
+            fingerprint: "rcf-1111111111111111",
+          },
+          {
+            filePath: "README.md",
+            startLine: 3,
+            endLine: 3,
+            severity: "major",
+            category: "correctness",
+            title: secondTitle,
+            body: `${secondTitle} body is safe and grounded.`,
+            fingerprint: "rcf-2222222222222222",
           },
         ],
         rejections: [],
       },
+      reviewReducer: async (input) => {
+        seenCandidateIds.push(
+          ...input.findings
+            .filter((finding) => typeof finding.candidateFingerprint === "string")
+            .map((finding) => finding.commentId),
+        );
+        return createDegradedReviewReducerResult({ findings: input.findings, reason: "test-stop-after-input-capture" });
+      },
+    });
+
+    expect(seenCandidateIds).toHaveLength(2);
+    expect(new Set(seenCandidateIds).size).toBe(2);
+    expect(seenCandidateIds.every((id) => Number.isInteger(id) && id < 0)).toBe(true);
+  });
+
+  test("approved candidate findings publish through the shared inline publisher and become stored findings", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
       reviewReducer: async (input) => {
         const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
         return {
@@ -16486,7 +16730,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(createdReviewComments).toHaveLength(1);
     expect(createdReviewComments[0]?.path).toBe("README.md");
     expect(createdReviewComments[0]?.line).toBe(2);
-    expect(String(createdReviewComments[0]?.body)).toContain("Guard candidate publication");
+    expect(String(createdReviewComments[0]?.body)).toContain(candidateTitle);
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
     expect(recordFindingEntries).toHaveLength(1);
@@ -16508,33 +16752,65 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       convertedProcessedFindingCount: 1,
       hasFabricatedProcessedFindings: false,
     }));
-    expect(JSON.stringify(configSnapshot)).not.toContain("Publish this approved candidate");
+    expect(JSON.stringify(configSnapshot)).not.toContain(candidateBody);
+  });
+
+  test("approved candidate findings are blocked when handler publication lacks matching verification evidence", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(0);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      candidateBlocked: 1,
+      directPublished: 0,
+    }));
   });
 
   test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
     const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: true,
       exposeSummaryComment: true,
-      candidateFindingResult: {
-        status: "shadow",
-        repo: "acme/repo",
-        pullNumber: 101,
-        reviewOutputKey: "rk_safe",
-        deliveryId: "delivery-123",
-        artifactPresent: true,
-        findings: [
-          {
-            filePath: "README.md",
-            startLine: 2,
-            endLine: 2,
-            severity: "major",
-            category: "correctness",
-            title: "Summary marker must not block candidate inline publication",
-            body: "Publish this candidate even though the top-level summary already has the review output marker.",
-          },
-        ],
-        rejections: [],
-      },
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
       reviewReducer: async (input) => {
         const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
         return {
@@ -16585,6 +16861,12 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       executorPublished: false,
       exposeSummaryComment: false,
       maxComments: 1,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "First capped candidate",
+        body: "Publish only the strongest candidate after prioritization.",
+        severity: "critical",
+        category: "security",
+      }),
       candidateFindingResult: {
         status: "shadow",
         repo: "acme/repo",
@@ -16651,6 +16933,10 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const { recordReviewEntries, recordFindingEntries, logEntries, createdReviewComments } = await runReviewPlanScenario({
       executorPublished: true,
       exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Candidate published finding",
+        body: "Keep candidate publication in bookkeeping too.",
+      }),
       directReviewComments: [
         {
           id: 777,

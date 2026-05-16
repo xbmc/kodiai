@@ -331,24 +331,26 @@ function parseMetadata(value: unknown): CandidateVerificationPublicationEvidence
   };
 }
 
-function parseRedactionFlags(value: unknown): CandidateVerificationPublicationEvidenceRedactionFlags {
+type ParsedM070RedactionFlags = Omit<M070VerifierReport["redaction"], "forbiddenInputFieldPresent">;
+
+function parseRedactionFlags(value: unknown): ParsedM070RedactionFlags {
   const record = isRecord(value) ? value : {};
   return {
-    privateOnly: true,
-    candidateBodiesIncluded: false,
-    specialistProseIncluded: false,
-    rawPromptsIncluded: false,
-    rawModelOutputIncluded: false,
-    diffsIncluded: false,
-    evidencePayloadsIncluded: false,
-    rawFingerprintsIncluded: false,
+    privateOnly: record.privateOnly !== false,
+    candidateBodiesIncluded: record.candidateBodiesIncluded === true,
+    specialistProseIncluded: record.specialistProseIncluded === true,
+    rawPromptsIncluded: record.rawPromptsIncluded === true,
+    rawModelOutputIncluded: record.rawModelOutputIncluded === true,
+    diffsIncluded: record.diffsIncluded === true,
+    evidencePayloadsIncluded: record.evidencePayloadsIncluded === true,
+    rawFingerprintsIncluded: record.rawFingerprintsIncluded === true,
     unsafeInputFieldCount: numberOrZero(record.unsafeInputFieldCount),
     discardedRawPayload: record.discardedRawPayload === true,
     discardedPublicationFields: record.discardedPublicationFields === true,
     discardedEvidencePayloads: record.discardedEvidencePayloads === true,
-    candidateAttemptIncluded: false,
-    candidateKeyIncluded: false,
-    publicationEvidenceIncluded: false,
+    candidateAttemptIncluded: record.candidateAttemptIncluded === true,
+    candidateKeyIncluded: record.candidateKeyIncluded === true,
+    publicationEvidenceIncluded: record.publicationEvidenceIncluded === true,
   };
 }
 
@@ -512,21 +514,21 @@ export function evaluateM070VerifierScenario(
     ),
     makeCheck(
       "M070-CORRELATION-METADATA",
-      !missingCorrelation && !malformed,
+      !missingCorrelation,
       statusCode,
-      !missingCorrelation && !malformed ? "Required correlation metadata booleans are present." : "Required correlation metadata is missing or unavailable.",
-    ),
-    makeCheck(
-      "M070-SAFETY-BLOCKERS",
-      !malformed && !disputed && !unclassifiableOrBlocked,
-      statusCode,
-      !malformed && !disputed && !unclassifiableOrBlocked ? "No dispute, unclassifiable, or malformed blockers detected." : "Safety blocker detected; verifier failed closed.",
+      !missingCorrelation ? "Required correlation metadata booleans are present." : "Required correlation metadata is missing or unavailable.",
     ),
     makeCheck(
       "M070-REDACTION-BOUNDARY",
       !redactionLeakPresent,
       statusCode,
       !redactionLeakPresent ? "Report remains aggregate-only." : "Forbidden raw input fields or redaction flags were observed and discarded from report output.",
+    ),
+    makeCheck(
+      "M070-SAFETY-BLOCKERS",
+      !malformed && !disputed && !unclassifiableOrBlocked,
+      statusCode,
+      !malformed && !disputed && !unclassifiableOrBlocked ? "No dispute, unclassifiable, or malformed blockers detected." : "Safety blocker detected; verifier failed closed.",
     ),
   ];
   const failingCheck = checks.find((check) => !check.passed) ?? null;

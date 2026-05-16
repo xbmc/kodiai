@@ -84,8 +84,14 @@ export function createCommentServer(
   }
 
   function candidateDirectPublicationAllowed(): boolean {
-    if (!candidateVerificationRequired) return true;
-    return getCandidateInlinePublicationState()?.status === "published";
+    return !candidateVerificationRequired;
+  }
+
+  function candidateDirectPublicationBlockedReason(): string {
+    const state = getCandidateInlinePublicationState();
+    return state?.status === "published"
+      ? "direct-publication-disabled-for-candidate-verification"
+      : "direct-publication-requires-approved-candidate";
   }
 
   function getKodiaiDecisionContent(body: string): string[] {
@@ -675,7 +681,7 @@ export function createCommentServer(
               return fallbackBlockedResult();
             }
             if (!candidateDirectPublicationAllowed()) {
-              return directPublicationBlockedResult("direct-publication-requires-approved-candidate");
+              return directPublicationBlockedResult(candidateDirectPublicationBlockedReason());
             }
             const octokit = await getOctokit();
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
