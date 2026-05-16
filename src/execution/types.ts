@@ -5,6 +5,7 @@ import type { FormatterSuggestionRequest } from "../handlers/formatter-suggestio
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 import type { CandidateVerificationContext } from "./mcp/review-output-publication-gate.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import type { ReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
 
 export type ExecutionPublishEvent = {
   type: "comment";
@@ -95,6 +96,9 @@ export type ExecutionContext = {
   /** Optional PR diff used by MCP inline-comment tools to reject non-commentable full-file line numbers before GitHub does. */
   prDiffForCommentValidation?: string;
 
+  /** Enable private candidate-finding capture during review execution. */
+  enableCandidateFindingTool?: boolean;
+
   /** Task type for LLM routing and cost tracking (e.g., "review.full", "mention.response"). */
   taskType?: string;
 
@@ -154,6 +158,8 @@ export type ExecutionResult = {
    * never raw candidates, specialist prose, prompts, diffs, fingerprints, tool payloads, or evidence payloads.
    */
   candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceSummary;
+  /** Private candidate-finding capture summary produced by the executor sidecar path. */
+  candidateFinding?: ReviewCandidateFindingExecutionResult;
   /** Normalized executor-only timing phases captured around ACA handoff/runtime. */
   executorPhaseTimings?: ExecutorPhaseTiming[];
   /** Claude Code usage limit data from the last SDKRateLimitEvent seen during the run. */
