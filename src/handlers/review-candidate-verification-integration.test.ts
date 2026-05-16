@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 
 import { buildMcpServers } from "../execution/mcp/index.ts";
-import type { ExecutionContext, ExecutionResult } from "../execution/types.ts";
+import type { ExecutionContext, ExecutionPublishEvent, ExecutionResult } from "../execution/types.ts";
 import type { CandidatePublicationPolicyAttempt } from "../specialists/candidate-publication-policy.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
@@ -237,7 +237,7 @@ async function runProductionLikeScenario(params: {
     shadowSpecialistSubflow: buildShadowSubflow(params.kind, params.candidateBody),
     executorExecute: async ({ input, octokit, logger }) => {
       executorInput = input;
-      const publishEvents: unknown[] = [];
+      const publishEvents: ExecutionPublishEvent[] = [];
       const servers = buildMcpServers({
         getOctokit: async () => octokit as never,
         owner: input.owner,
@@ -346,9 +346,10 @@ function expectCorrelationEverywhere(scenario: IntegrationScenarioResult) {
   });
 
   const detailsBody = visibleBodies(scenario).find((body) => body.includes("M070 candidate verification publication"));
-  expect(detailsBody).toContain("deliveryIdValue:delivery-shadow-metrics");
-  expect(detailsBody).toContain(`reviewOutputKeyValue:${scenario.executorInput.reviewOutputKey}`);
-  expect(detailsBody).toContain(`correlationKeyValue:${context?.correlationKey}`);
+  expect(detailsBody).toContain("metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y");
+  expect(detailsBody).not.toContain("deliveryIdValue:delivery-shadow-metrics");
+  expect(detailsBody).not.toContain(`reviewOutputKeyValue:${scenario.executorInput.reviewOutputKey}`);
+  expect(detailsBody).not.toContain(`correlationKeyValue:${context?.correlationKey}`);
 }
 
 function expectAggregateOnlySurfaces(scenario: IntegrationScenarioResult, forbiddenValues: string[]) {
