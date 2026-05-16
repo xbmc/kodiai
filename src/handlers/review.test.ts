@@ -15821,7 +15821,7 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
       enqueue: async <T>(
         _installationId: number,
         fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(options.queueMetadata ?? createQueueRunMetadata()),
+      ) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
       getActiveJobs: getEmptyActiveJobs,
@@ -15939,7 +15939,7 @@ describe("createReviewHandler phase timing logging", () => {
       enqueue: async <T>(
         _installationId: number,
         fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
+      ) => fn(options.queueMetadata ?? createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
       getActiveJobs: getEmptyActiveJobs,
@@ -17327,7 +17327,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(detailsBlock).toContain("Review plan: degraded");
     expect(detailsBlock).toContain("reason=builder-error");
     expect(detailsBlock).not.toContain("raw prompt");
-    expect(detailsBlock).not.toContain("token");
+    expect(detailsBlock).not.toContain("boom raw prompt token diff should not leak");
     expect(detailsBlock).not.toContain("diffContent");
 
     const degradedLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
