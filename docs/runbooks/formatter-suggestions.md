@@ -28,18 +28,6 @@ review:
     maxSuggestions: 10
 ```
 
-This repository intentionally keeps a controlled-smoke override in `.kodiai.yml`:
-
-```yaml
-review:
-  formatterSuggestions:
-    automatic: false
-    command: "python3 scripts/m066-formatter-smoke.py"
-    maxSuggestions: 1
-```
-
-That repository override exists only to make the local formatter-suggestion smoke deterministic and tightly bounded. It does not change the product default command documented above, and maintainers should not normalize it away as part of proof-capture or documentation cleanup.
-
 Fields:
 
 | Field | Default | Notes |
@@ -127,9 +115,9 @@ Run the live verifier with the captured identifiers:
 bun run verify:m066:s05 -- --repo <owner/repo> --review-output-key <captured-mention-format-suggestions-key> --delivery-id <captured-delivery-id> --json
 ```
 
-The verifier requires GitHub App access through environment-managed operational inputs such as `GITHUB_APP_ID` and `GITHUB_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_BASE64`; do not paste credential values into files, logs, proof records, or chat transcripts.
+The verifier requires GitHub App access through `GITHUB_APP_ID` and `GITHUB_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_BASE64`.
 
-Passing proof means the verifier found exactly one matching `COMMENTED` Pull Request Review on the target PR and at least one associated review comment with a fenced `suggestion` block. Treat verifier failures, unavailable GitHub/Azure proof systems, malformed identifiers, wrong-action keys, and issue-comment-only surfaces as bounded operational failures, not proof success.
+Passing proof means the verifier found exactly one matching `COMMENTED` Pull Request Review on the target PR and at least one associated review comment with a fenced `suggestion` block.
 
 Common verifier failures:
 
@@ -200,4 +188,4 @@ Do not reuse proof identifiers across retries. Each trigger has its own delivery
 
 ## Proof record
 
-Use the smoke template at [Formatter Suggestions Smoke Proof](../smoke/m066-formatter-suggestions.md), and use [M053 Formatter Suggestions Proof Alignment](../smoke/m053-formatter-suggestions.md) when closing M053/S05/R085 against the accepted M066 evidence. Keep proof artifacts bounded: public PR/review/comment URLs, delivery id, review id, reviewOutputKey, deployed revision, verifier JSON, and concise log summaries are acceptable. Do not include GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr.
+Use the smoke template at [Formatter Suggestions Smoke Proof](../smoke/m066-formatter-suggestions.md). Keep proof artifacts bounded: public PR/review/comment URLs, delivery id, review id, reviewOutputKey, deployed revision, verifier JSON, and concise log summaries are acceptable. Do not include GitHub App private keys, tokens, raw formatter stdout, or unbounded formatter stderr.

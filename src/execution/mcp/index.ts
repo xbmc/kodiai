@@ -10,20 +10,30 @@ import { createIssueLabelServer } from "./issue-label-server.ts";
 import { createIssueCommentServer } from "./issue-comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
-import {
-  createReviewOutputPublicationGate,
-  type CandidatePublicationPolicy,
-  type CandidateVerificationContext,
-} from "./review-output-publication-gate.ts";
-import type { CandidateVerificationPublicationEvidenceSink } from "../../specialists/candidate-verification-publication-evidence.ts";
+import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
+import { createCandidateFindingServer } from "./candidate-finding-server.ts";
+import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
+export {
+  createInlineReviewPublisher,
+  publishInlineReviewComment,
+  REVIEW_OUTPUT_MARKER_PREFIX,
+  type InlineCommentLocation,
+  type InlineReviewPublicationReason,
+  type InlineReviewPublicationResult,
+  type InlineReviewPublicationStatus,
+  type InlineReviewPublisherOptions,
+  type PublishInlineReviewCommentInput,
+  type PublishInlineReviewCommentOptions,
+} from "./inline-review-publisher.ts";
 export { createCIStatusServer } from "./ci-status-server.ts";
 export { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
 export { createCheckpointServer } from "./checkpoint-server.ts";
 export { createIssueLabelServer } from "./issue-label-server.ts";
 export { createIssueCommentServer } from "./issue-comment-server.ts";
+export { createCandidateFindingServer } from "./candidate-finding-server.ts";
 
 export interface TriageConfig {
   enabled: boolean;
@@ -49,11 +59,10 @@ export function buildMcpServers(deps: {
   totalFiles?: number;
   enableCheckpointTool?: boolean;
   prDiffForCommentValidation?: string;
-  candidatePublicationPolicy?: CandidatePublicationPolicy;
-  candidateVerificationContext?: CandidateVerificationContext;
-  candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
+  enableCandidateFindingTool?: boolean;
+  candidateFindingRecorder?: ReviewCandidateFindingRecorder;
 }): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {};
   const reviewOutputPublicationGate =
@@ -63,9 +72,6 @@ export function buildMcpServers(deps: {
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
-          candidatePublicationPolicy: deps.candidatePublicationPolicy,
-          candidateVerificationContext: deps.candidateVerificationContext,
-          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
       : undefined;
 
@@ -82,8 +88,6 @@ export function buildMcpServers(deps: {
       deps.onPublishEvent,
       deps.logger,
       reviewOutputPublicationGate,
-      deps.candidatePublicationPolicy,
-      deps.candidateVerificationContext,
     );
   }
 
@@ -112,9 +116,6 @@ export function buildMcpServers(deps: {
       deps.onPublish,
       reviewOutputPublicationGate,
       deps.prDiffForCommentValidation,
-      deps.candidatePublicationPolicy,
-      deps.candidateVerificationContext,
-      deps.candidateVerificationPublicationEvidenceSink,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
@@ -162,6 +163,22 @@ export function buildMcpServers(deps: {
     );
   }
 
+  const enableCandidateFindingTool = deps.enableCandidateFindingTool ?? false;
+  if (
+    enableCandidateFindingTool &&
+    deps.prNumber !== undefined &&
+    deps.reviewOutputKey
+  ) {
+    servers.review_candidate_finding = createCandidateFindingServer({
+      recorder: deps.candidateFindingRecorder,
+      repo: `${deps.owner}/${deps.repo}`,
+      pullNumber: deps.prNumber,
+      reviewOutputKey: deps.reviewOutputKey,
+      deliveryId: deps.deliveryId,
+      logger: deps.logger,
+    });
+  }
+
   return servers;
 }
 
@@ -189,6 +206,9 @@ export const MCP_TOOL_NAMES_BY_SERVER: Record<string, string[]> = {
   github_issue_comment: [
     "create_comment",
     "update_comment",
+  ],
+  review_candidate_finding: [
+    "record_candidate_finding",
   ],
 };
 
@@ -222,6 +242,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
   const enableInlineTools = deps.enableInlineTools ?? true;
   const enableCheckpointTool = deps.enableCheckpointTool ?? false;
   const enableIssueTools = deps.enableIssueTools ?? false;
+  const enableCandidateFindingTool = deps.enableCandidateFindingTool ?? false;
   const reviewOutputPublicationGate =
     deps.reviewOutputKey && deps.prNumber !== undefined
       ? createReviewOutputPublicationGate({
@@ -229,9 +250,6 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
-          candidatePublicationPolicy: deps.candidatePublicationPolicy,
-          candidateVerificationContext: deps.candidateVerificationContext,
-          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
       : undefined;
 
@@ -250,8 +268,6 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublishEvent,
         deps.logger,
         reviewOutputPublicationGate,
-        deps.candidatePublicationPolicy,
-        deps.candidateVerificationContext,
       ) as McpSdkServerConfigWithInstance;
   }
 
@@ -280,9 +296,6 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublish,
         reviewOutputPublicationGate,
         deps.prDiffForCommentValidation,
-        deps.candidatePublicationPolicy,
-        deps.candidateVerificationContext,
-        deps.candidateVerificationPublicationEvidenceSink,
       ) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>
@@ -330,6 +343,22 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         () => ({ enabled: getTriageConfig().enabled, comment: getTriageConfig().comment }),
         deps.botHandles ?? [],
       ) as McpSdkServerConfigWithInstance;
+  }
+
+  if (
+    enableCandidateFindingTool &&
+    deps.prNumber !== undefined &&
+    deps.reviewOutputKey
+  ) {
+    factories.review_candidate_finding = () =>
+      createCandidateFindingServer({
+        recorder: deps.candidateFindingRecorder,
+        repo: `${deps.owner}/${deps.repo}`,
+        pullNumber: deps.prNumber!,
+        reviewOutputKey: deps.reviewOutputKey!,
+        deliveryId: deps.deliveryId,
+        logger: deps.logger,
+      }) as McpSdkServerConfigWithInstance;
   }
 
   return factories;

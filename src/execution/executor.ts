@@ -1,5 +1,5 @@
 import { cp, mkdir, writeFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { $ } from "bun";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -30,9 +30,14 @@ import {
   createAzureFilesWorkspaceDir,
 } from "../jobs/workspace.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
-import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { SMALL_DIFF_REVIEW_BASE_TOOLS } from "../lib/review-routing.ts";
+import {
+  type ReviewCandidateFinding,
+  type ReviewCandidateFindingExecutionResult,
+  type ReviewCandidateFindingRecorder,
+  type ReviewCandidateFindingRejection,
+} from "../review-orchestration/review-candidate-finding.ts";
 
 export function buildSecurityClaudeMd(): string {
   return `# Security Policy
@@ -151,34 +156,6 @@ function normalizeExecutorPhaseTimingsFromResult(params: {
   return fallback.map((phase) => normalizedByName.get(phase.name) ?? phase);
 }
 
-function hasCandidateVerificationPublicationEvidence(
-  summary: CandidateVerificationPublicationEvidenceSummary | undefined,
-): summary is CandidateVerificationPublicationEvidenceSummary {
-  if (!summary) return false;
-  const counts = summary.counts;
-  return Boolean(counts && (
-    counts.attempted > 0 ||
-    counts.allowed > 0 ||
-    counts.denied > 0 ||
-    counts.published > 0 ||
-    counts.skipped > 0 ||
-    counts.failed > 0
-  ));
-}
-
-function withCandidateVerificationPublicationEvidence<T extends ExecutionResult>(
-  result: T,
-  evidence: CandidateVerificationPublicationEvidenceSummary | undefined,
-): T {
-  if (!hasCandidateVerificationPublicationEvidence(evidence)) {
-    return result;
-  }
-  return {
-    ...result,
-    candidateVerificationPublicationEvidence: evidence,
-  };
-}
-
 async function hasGitWorkspace(repoDir: string): Promise<boolean> {
   const result = await $`git -C ${repoDir} rev-parse --is-inside-work-tree`.quiet().nothrow();
   return result.exitCode === 0 && result.stdout.toString().trim() === "true";
@@ -290,6 +267,24 @@ async function buildGitArchiveTransport(params: {
   };
 }
 
+async function hasTrackedSymlinks(repoDir: string): Promise<boolean> {
+  const result = await $`git -C ${repoDir} ls-files -s`.quiet().nothrow();
+  if (result.exitCode !== 0) {
+    return false;
+  }
+  return result.stdout.toString().split(/\r?\n/).some((line) => line.startsWith("120000 "));
+}
+
+async function exportGitWorkingTreeSnapshot(params: {
+  sourceRepoDir: string;
+  workspaceDir: string;
+}): Promise<string> {
+  const repoCwd = join(params.workspaceDir, "repo");
+  await mkdir(repoCwd, { recursive: true });
+  await $`git -C ${params.sourceRepoDir} checkout-index -a -f --prefix=${repoCwd + "/"}`.quiet();
+  return repoCwd;
+}
+
 function filterGitToolsForSnapshot(allowedTools: string[]): string[] {
   return allowedTools.filter((tool) => !tool.startsWith("Bash(git "));
 }
@@ -320,12 +315,21 @@ export async function prepareAgentWorkspace(params: {
       .then((value) => value.trim() === "true")
       .catch(() => false);
     if (sourceIsShallow) {
-      const preparedRepo = await buildGitArchiveTransport({
-        sourceRepoDir: params.sourceRepoDir,
-        workspaceDir: params.workspaceDir,
-      });
-      repoTransport = preparedRepo.repoTransport;
-      allowedTools = filterGitToolsForSnapshot(params.allowedTools);
+      const sourceHasTrackedSymlinks = await hasTrackedSymlinks(params.sourceRepoDir);
+      if (sourceHasTrackedSymlinks) {
+        const preparedRepo = await buildGitArchiveTransport({
+          sourceRepoDir: params.sourceRepoDir,
+          workspaceDir: params.workspaceDir,
+        });
+        repoTransport = preparedRepo.repoTransport;
+        allowedTools = filterGitToolsForSnapshot(params.allowedTools);
+      } else {
+        repoCwd = await exportGitWorkingTreeSnapshot({
+          sourceRepoDir: params.sourceRepoDir,
+          workspaceDir: params.workspaceDir,
+        });
+        allowedTools = filterGitToolsForSnapshot(params.allowedTools);
+      }
     } else {
       const preparedRepo = await buildGitRepoTransport({
         sourceRepoDir: params.sourceRepoDir,
@@ -358,6 +362,139 @@ export async function prepareAgentWorkspace(params: {
   return { repoCwd, repoBundlePath, repoTransport };
 }
 
+type ReviewCandidateFindingCollector = {
+  recorder?: ReviewCandidateFindingRecorder;
+  setArtifactPath: (path: string) => void;
+  result: () => ReviewCandidateFindingExecutionResult | undefined;
+};
+
+const REVIEW_CANDIDATE_FINDING_ARTIFACT_BASENAME = "review-candidate-findings.json";
+const MAX_RETAINED_REVIEW_CANDIDATE_FINDINGS = 100;
+
+export function createReviewCandidateFindingCollector(params: {
+  enabled?: boolean;
+  repo: string;
+  pullNumber?: number;
+  reviewOutputKey?: string;
+  deliveryId?: string;
+  logger: Logger;
+  maxRetainedFindings?: number;
+}): ReviewCandidateFindingCollector {
+  if (!params.enabled) {
+    return {
+      setArtifactPath: () => {},
+      result: () => undefined,
+    };
+  }
+
+  const maxRetainedFindings = Math.max(0, Math.floor(params.maxRetainedFindings ?? MAX_RETAINED_REVIEW_CANDIDATE_FINDINGS));
+  const repo = params.repo;
+  const pullNumber = params.pullNumber ?? 0;
+  const reviewOutputKey = params.reviewOutputKey ?? "";
+  const deliveryId = params.deliveryId;
+  const findings: ReviewCandidateFinding[] = [];
+  const rejections: ReviewCandidateFindingRejection[] = [];
+  let inputCount = 0;
+  let recordedCount = 0;
+  let errorCount = 0;
+  let status: ReviewCandidateFindingExecutionResult["status"] = pullNumber > 0 && reviewOutputKey ? "shadow" : "unavailable";
+  let reason: string | undefined = status === "unavailable" ? "missing-correlation" : undefined;
+  let artifactPath: string | undefined;
+  let artifactBasename: string | undefined;
+  let artifactPresent = false;
+
+  const buildResult = (): ReviewCandidateFindingExecutionResult => ({
+    status,
+    repo,
+    pullNumber,
+    reviewOutputKey,
+    ...(deliveryId ? { deliveryId } : {}),
+    artifactPresent,
+    ...(artifactBasename && artifactPresent ? { artifactBasename } : {}),
+    findings: findings.slice(),
+    rejections: rejections.slice(),
+    counts: {
+      input: inputCount,
+      recorded: recordedCount,
+      rejected: rejections.length,
+      errors: errorCount,
+    },
+    ...(reason ? { reason } : {}),
+  });
+
+  const writeSidecar = async () => {
+    if (!artifactPath || status === "unavailable") {
+      return;
+    }
+
+    const payload = {
+      schemaVersion: 1,
+      repo,
+      pullNumber,
+      reviewOutputKey,
+      ...(deliveryId ? { deliveryId } : {}),
+      counts: buildResult().counts,
+      findings,
+      rejections,
+    };
+
+    try {
+      await writeFile(artifactPath, JSON.stringify(payload, null, 2));
+      artifactPresent = true;
+    } catch (err) {
+      artifactPresent = false;
+      errorCount++;
+      reason = "sidecar-write-failed";
+      params.logger.warn(
+        {
+          event: "review-candidate-finding-sidecar-write-failed",
+          repo,
+          prNumber: pullNumber,
+          reviewOutputKey,
+          deliveryId,
+          counts: buildResult().counts,
+          artifactBasename,
+          err,
+        },
+        "Shadow candidate finding sidecar write failed",
+      );
+    }
+  };
+
+  const recorder: ReviewCandidateFindingRecorder | undefined = status === "unavailable"
+    ? undefined
+    : {
+        recordCandidateFinding: async (finding) => {
+          inputCount++;
+          recordedCount++;
+          if (findings.length < maxRetainedFindings) {
+            findings.push(finding);
+          }
+          await writeSidecar();
+        },
+        recordCandidateFindingRejection: async (rejection) => {
+          inputCount++;
+          rejections.push({ index: rejections.length, reason: rejection.reason });
+          await writeSidecar();
+        },
+        recordCandidateFindingError: async (failureReason) => {
+          errorCount++;
+          status = "degraded";
+          reason = failureReason;
+          await writeSidecar();
+        },
+      };
+
+  return {
+    recorder,
+    setArtifactPath: (path) => {
+      artifactPath = path;
+      artifactBasename = basename(path);
+    },
+    result: () => buildResult(),
+  };
+}
+
 export function createExecutor(deps: {
   githubApp: GitHubApp;
   logger: Logger;
@@ -379,7 +516,36 @@ export function createExecutor(deps: {
       let executorHandoffDurationMs: number | undefined;
       let remoteRuntimeDurationMs: number | undefined;
       let registeredMcpBearerToken: string | undefined;
-      let candidateVerificationPublicationEvidence: CandidateVerificationPublicationEvidenceSummary | undefined;
+      const candidateFindingCollector = createReviewCandidateFindingCollector({
+        enabled: context.enableCandidateFindingTool,
+        repo: `${context.owner}/${context.repo}`,
+        pullNumber: context.prNumber,
+        reviewOutputKey: context.reviewOutputKey,
+        deliveryId: context.deliveryId,
+        logger,
+      });
+      const withCandidateFinding = (result: ExecutionResult): ExecutionResult => {
+        const candidateFinding = candidateFindingCollector.result();
+        if (!candidateFinding) {
+          return result;
+        }
+        logger.info(
+          {
+            event: "review-candidate-finding-executor-result",
+            repo: candidateFinding.repo,
+            prNumber: candidateFinding.pullNumber,
+            reviewOutputKey: candidateFinding.reviewOutputKey,
+            deliveryId: candidateFinding.deliveryId,
+            status: candidateFinding.status,
+            counts: candidateFinding.counts,
+            artifactPresent: candidateFinding.artifactPresent,
+            artifactBasename: candidateFinding.artifactBasename,
+            reason: candidateFinding.reason,
+          },
+          "Shadow candidate finding executor metadata finalized",
+        );
+        return { ...result, candidateFinding };
+      };
 
       try {
         // Load repo config (.kodiai.yml) with defaults
@@ -470,10 +636,6 @@ export function createExecutor(deps: {
           botHandles: context.botHandles,
           reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
-          candidateVerificationContext: context.candidateVerificationContext,
-          candidateVerificationPublicationEvidenceSink: (summary: CandidateVerificationPublicationEvidenceSummary) => {
-            candidateVerificationPublicationEvidence = summary;
-          },
           logger,
           onPublish: () => {
             published = true;
@@ -489,6 +651,8 @@ export function createExecutor(deps: {
           prDiffForCommentValidation: context.prDiffForCommentValidation,
           enableIssueTools,
           triageConfig,
+          enableCandidateFindingTool: context.enableCandidateFindingTool,
+          candidateFindingRecorder: candidateFindingCollector.recorder,
         };
 
         // Build allowed tools list
@@ -547,6 +711,7 @@ export function createExecutor(deps: {
           mountBase: "/mnt/kodiai-workspaces",
           jobId: context.deliveryId ?? crypto.randomUUID(),
         });
+        candidateFindingCollector.setArtifactPath(join(workspaceDir, REVIEW_CANDIDATE_FINDING_ARTIFACT_BASENAME));
         await prepareAgentWorkspace({
           sourceRepoDir: context.workspace.dir,
           workspaceDir,
@@ -647,7 +812,7 @@ export function createExecutor(deps: {
           });
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
-          return withCandidateVerificationPublicationEvidence({
+          return withCandidateFinding({
             conclusion: "error",
             costUsd: undefined,
             numTurns: undefined,
@@ -666,7 +831,7 @@ export function createExecutor(deps: {
             stopReason: undefined,
             publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
             executorPhaseTimings,
-          }, candidateVerificationPublicationEvidence);
+          });
         }
 
         // Handle job failure
@@ -686,9 +851,6 @@ export function createExecutor(deps: {
             const failedResult = rawResult as Partial<ExecutionResult> & {
               executorPhaseTimings?: unknown;
             };
-            if (hasCandidateVerificationPublicationEvidence(failedResult.candidateVerificationPublicationEvidence)) {
-              candidateVerificationPublicationEvidence = failedResult.candidateVerificationPublicationEvidence;
-            }
             if (typeof failedResult.errorMessage === "string" && failedResult.errorMessage.trim().length > 0) {
               resultErrorMessage = failedResult.errorMessage;
             }
@@ -710,7 +872,7 @@ export function createExecutor(deps: {
           }
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
-          return withCandidateVerificationPublicationEvidence({
+          return withCandidateFinding({
             conclusion: "error",
             costUsd: undefined,
             numTurns: undefined,
@@ -729,7 +891,7 @@ export function createExecutor(deps: {
             stopReason: undefined,
             publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
             executorPhaseTimings,
-          }, candidateVerificationPublicationEvidence);
+          });
         }
 
         // succeeded — read result from workspace
@@ -737,9 +899,6 @@ export function createExecutor(deps: {
         const jobResult = rawResult as ExecutionResult & {
           executorPhaseTimings?: unknown;
         };
-        if (hasCandidateVerificationPublicationEvidence(jobResult.candidateVerificationPublicationEvidence)) {
-          candidateVerificationPublicationEvidence = jobResult.candidateVerificationPublicationEvidence;
-        }
         const executorPhaseTimings = normalizeExecutorPhaseTimingsFromResult({
           candidate: jobResult.executorPhaseTimings,
           fallback: buildExecutorPhaseTimings({
@@ -756,7 +915,7 @@ export function createExecutor(deps: {
         registeredMcpBearerToken = undefined;
 
         // Merge published / publishEvents from MCP callbacks (fired during pollUntilComplete)
-        return withCandidateVerificationPublicationEvidence({
+        return withCandidateFinding({
           ...jobResult,
           durationMs: jobResult.durationMs ?? durationMs,
           published: jobResult.published || published,
@@ -768,7 +927,7 @@ export function createExecutor(deps: {
                 ]
               : jobResult.publishEvents,
           executorPhaseTimings,
-        }, candidateVerificationPublicationEvidence);
+        });
       } catch (err) {
         const durationMs = Date.now() - startTime;
         const errorMessage =
@@ -792,7 +951,7 @@ export function createExecutor(deps: {
             : "remote runtime finished but result processing failed",
         });
 
-        return withCandidateVerificationPublicationEvidence({
+        return withCandidateFinding({
           conclusion: "error",
           costUsd: undefined,
           numTurns: undefined,
@@ -808,7 +967,7 @@ export function createExecutor(deps: {
           stopReason: undefined,
           publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
           executorPhaseTimings,
-        }, candidateVerificationPublicationEvidence);
+        });
       }
     },
   };

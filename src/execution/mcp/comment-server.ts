@@ -8,8 +8,6 @@ import { wrapInDetails } from "../../lib/formatting.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 import {
   createReviewOutputPublicationGate,
-  type CandidatePublicationPolicy,
-  type CandidateVerificationContext,
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
 
@@ -24,28 +22,14 @@ export function createCommentServer(
   onPublishEvent?: (event: ExecutionPublishEvent) => void,
   logger?: Logger,
   publicationGate?: ReviewOutputPublicationGate,
-  candidatePublicationPolicy?: CandidatePublicationPolicy,
-  candidateVerificationContext?: CandidateVerificationContext,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
   const reviewOutputPublicationGate = publicationGate
     ?? (
       reviewOutputKey && prNumber !== undefined
-        ? createReviewOutputPublicationGate({
-            owner,
-            repo,
-            prNumber,
-            reviewOutputKey,
-            candidatePublicationPolicy,
-            candidateVerificationContext,
-          })
+        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
         : undefined
     );
-
-  function isRecoverableInlinePublicationFailure(reason: string | undefined): boolean {
-    return reason === "line-not-commentable-in-pr-diff"
-      || reason === "review-thread-line-not-resolved";
-  }
 
   // One-shot publish guard: only one create_comment call succeeds per server instance.
   // Prevents the agent from double-posting when it retries a tool call within a turn.
@@ -630,60 +614,6 @@ export function createCommentServer(
           }
           try {
             const octokit = await getOctokit();
-            const inlinePublicationState = reviewOutputPublicationGate?.getInlinePublicationState();
-            if (
-              inlinePublicationState?.status === "skipped" ||
-              inlinePublicationState?.status === "published" ||
-              (
-                inlinePublicationState?.status === "failed" &&
-                !isRecoverableInlinePublicationFailure(inlinePublicationState.reason)
-              )
-            ) {
-              const fallbackReason = inlinePublicationState.status === "published"
-                ? "candidate-already-published"
-                : inlinePublicationState.reason;
-              logger?.info(
-                {
-                  reviewOutputKey,
-                  idempotencyOutcome: "direct-fallback-blocked",
-                  candidatePublicationState: inlinePublicationState.status,
-                  candidatePublicationReason: fallbackReason,
-                },
-                "Blocking direct comment fallback after inline candidate publication state was recorded",
-              );
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: JSON.stringify({
-                      success: false,
-                      skipped: true,
-                      fallback_blocked: true,
-                      reason: "candidate-publication-state-blocks-direct-fallback",
-                      candidate_publication_state: inlinePublicationState.status,
-                      candidate_publication_reason: fallbackReason,
-                      review_output_key: reviewOutputKey,
-                      marker_prefix: "kodiai:review-output-key",
-                    }),
-                  },
-                ],
-                isError: true,
-              };
-            }
-            if (
-              inlinePublicationState?.status === "failed" &&
-              isRecoverableInlinePublicationFailure(inlinePublicationState.reason)
-            ) {
-              logger?.info(
-                {
-                  reviewOutputKey,
-                  idempotencyOutcome: "direct-fallback-allowed",
-                  candidatePublicationState: inlinePublicationState.status,
-                  candidatePublicationReason: inlinePublicationState.reason,
-                },
-                "Allowing direct comment fallback after recoverable inline candidate publication failure",
-              );
-            }
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
             if (publicationStatus && !publicationStatus.shouldPublish) {
               logger?.info(

@@ -101,10 +101,6 @@ function createFakePublicationGate(status: ReviewOutputPublicationStatus): {
         resolveCalls.push(octokit);
         return status;
       },
-      getInlinePublicationState: () => ({ status: "none" }),
-      recordInlinePublicationSkipped: () => {},
-      recordInlinePublicationFailed: () => {},
-      recordInlinePublicationPublished: () => {},
     },
     resolveCalls,
   };
@@ -121,10 +117,6 @@ function createRejectingPublicationGate(error: unknown): {
         resolveCalls.push(octokit);
         throw error;
       },
-      getInlinePublicationState: () => ({ status: "none" }),
-      recordInlinePublicationSkipped: () => {},
-      recordInlinePublicationFailed: () => {},
-      recordInlinePublicationPublished: () => {},
     },
     resolveCalls,
   };
