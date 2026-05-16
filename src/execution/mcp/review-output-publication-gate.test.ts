@@ -87,7 +87,7 @@ function expectSafeBridgeJson(value: unknown): void {
   expect(json).not.toContain('"commentBody"');
 }
 
-function createGate(overrides: Parameters<typeof createReviewOutputPublicationGate>[0] = {}) {
+function createGate(overrides: Partial<Parameters<typeof createReviewOutputPublicationGate>[0]> = {}) {
   return createReviewOutputPublicationGate({
     owner: "acme",
     repo: "repo",

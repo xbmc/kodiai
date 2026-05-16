@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import {
+  buildReviewOutputMarker,
   ensureReviewOutputNotPublished,
   type ReviewOutputPublicationStatus,
 } from "../../handlers/review-idempotency.ts";
@@ -48,6 +49,9 @@ export type CandidatePublicationBridgeCaptureState =
 
 export interface ReviewOutputPublicationGate {
   resolve(octokit: Octokit): Promise<ReviewOutputPublicationStatus>;
+}
+
+export interface CandidateReviewOutputPublicationGate extends ReviewOutputPublicationGate {
   evaluateInlineCandidatePublication(candidate: CandidatePublicationPolicyAttempt): CandidatePublicationPolicyResult | null;
   getInlinePublicationState(): ReviewOutputInlinePublicationState;
   getCandidateVerificationPublicationEvidenceSummary(): CandidateVerificationPublicationEvidenceSummary;
@@ -102,6 +106,31 @@ function failClosedCandidatePublicationResult(): CandidatePublicationPolicyResul
   };
 }
 
+export function createInlineReviewOutputPublicationGate(params: {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+}): ReviewOutputPublicationGate {
+  return {
+    async resolve(): Promise<ReviewOutputPublicationStatus> {
+      return {
+        reviewOutputKey: params.reviewOutputKey,
+        marker: buildReviewOutputMarker(params.reviewOutputKey),
+        shouldPublish: true,
+        publicationState: "publish",
+        existingLocation: null,
+        idempotencyDecision: "publish",
+        scanStats: {
+          reviewComments: { scanned: 0, hitCap: false },
+          issueComments: { scanned: 0, hitCap: false },
+          reviews: { scanned: 0, hitCap: false },
+        },
+      };
+    },
+  };
+}
+
 export function createReviewOutputPublicationGate(params: {
   owner: string;
   repo: string;
@@ -110,7 +139,7 @@ export function createReviewOutputPublicationGate(params: {
   candidatePublicationPolicy?: CandidatePublicationPolicy;
   candidateVerificationContext?: CandidateVerificationContext;
   candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
-}): ReviewOutputPublicationGate {
+}): CandidateReviewOutputPublicationGate {
   let cachedStatus: ReviewOutputPublicationStatus | null = null;
   let inFlight: Promise<ReviewOutputPublicationStatus> | null = null;
 
