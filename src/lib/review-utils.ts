@@ -21,6 +21,10 @@ import { summarizeStructuralImpactDegradation } from "../structural-impact/degra
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import type { ReviewBoundednessContract } from "./review-boundedness.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
+import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-plan.ts";
+import type { ReviewReducerDetailsSummary } from "../review-orchestration/review-reducer.ts";
+import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
+import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -220,12 +224,6 @@ function formatCandidateVerificationMetadata(value: unknown): string {
     `reviewOutputKey:${metadata.hasReviewOutputKey === true ? "y" : "n"}`,
     `correlationKey:${metadata.hasCorrelationKey === true ? "y" : "n"}`,
   ];
-  const deliveryId = boundedReviewDetailsValue(metadata.deliveryId);
-  const reviewOutputKey = boundedReviewDetailsValue(metadata.reviewOutputKey);
-  const correlationKey = boundedReviewDetailsValue(metadata.correlationKey);
-  if (deliveryId) parts.push(`deliveryIdValue:${deliveryId}`);
-  if (reviewOutputKey) parts.push(`reviewOutputKeyValue:${reviewOutputKey}`);
-  if (correlationKey) parts.push(`correlationKeyValue:${correlationKey}`);
   return parts.join(",");
 }
 
@@ -337,6 +335,164 @@ function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsForm
   }
 }
 
+function formatReviewPlanDetailsLine(reviewPlan?: ReviewPlanDetailsSummary | null): string[] {
+  try {
+    const text = typeof reviewPlan?.text === "string"
+      ? reviewPlan.text.trim().replace(/\s+/g, " ")
+      : "";
+    return text ? [`- ${text}`] : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatReviewReducerDetailsLine(reviewReducer?: ReviewReducerDetailsSummary | null): string[] {
+  try {
+    const text = typeof reviewReducer?.text === "string"
+      ? reviewReducer.text.trim().replace(/\s+/g, " ")
+      : "";
+    return text ? [`- ${text}`] : [];
+  } catch {
+    return [];
+  }
+}
+
+export function formatReviewCandidateFindingDetailsLine(
+  reviewCandidateFinding?: ReviewCandidateFindingDetailsSummary | null,
+): string[] {
+  try {
+    if (reviewCandidateFinding?.label !== "Review candidates") return [];
+    if (
+      reviewCandidateFinding.status !== "shadow"
+      && reviewCandidateFinding.status !== "unavailable"
+      && reviewCandidateFinding.status !== "degraded"
+    ) {
+      return [];
+    }
+
+    const text = typeof reviewCandidateFinding.text === "string"
+      ? sanitizeReviewCandidateDetailsText(reviewCandidateFinding.text)
+      : "";
+    if (!text || !text.startsWith("Review candidates:")) return [];
+    return [`- ${text}`];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeReviewCandidateDetailsText(value: string): string {
+  return value
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
+    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
+    .replace(/TOKEN\s*=\s*[^\s]+/gi, "token-redacted")
+    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
+    .replace(/diff --git/gi, "diff-redacted")
+    .replace(/BEGIN\s+PROMPT/gi, "prompt-redacted")
+    .replace(/system prompt|hidden instructions/gi, "prompt-redacted")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 260);
+}
+
+const REVIEW_CANDIDATE_PUBLICATION_MODES = new Set([
+  "candidate-approved",
+  "candidate-approved-partial",
+  "direct-fallback",
+  "fallback-disallowed",
+  "blocked",
+  "degraded",
+]);
+const MAX_REVIEW_CANDIDATE_PUBLICATION_REASONS = 6;
+
+export function formatReviewCandidatePublicationDetailsLine(
+  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null,
+): string[] {
+  try {
+    if (!reviewCandidatePublication) return [];
+    if (reviewCandidatePublication.label !== "Review candidate publication runtime") return [];
+    if (typeof reviewCandidatePublication.text !== "string" || reviewCandidatePublication.text.trim().length === 0) {
+      return [formatMalformedReviewCandidatePublicationDetailsLine()];
+    }
+
+    const normalized = normalizeReviewCandidatePublicationDetailsText(reviewCandidatePublication.text);
+    return normalized ? [`- ${normalized}`] : [formatMalformedReviewCandidatePublicationDetailsLine()];
+  } catch {
+    return [formatMalformedReviewCandidatePublicationDetailsLine()];
+  }
+}
+
+function normalizeReviewCandidatePublicationDetailsText(value: string): string | null {
+  const text = sanitizeReviewCandidatePublicationDetailsText(value);
+  const match = text.match(/^Review candidate publication runtime:\s+(\S+)\s*/);
+  if (!match) return null;
+
+  const rawMode = sanitizeReviewCandidatePublicationToken(match[1] ?? "degraded");
+  const mode = REVIEW_CANDIDATE_PUBLICATION_MODES.has(rawMode) ? rawMode : "degraded";
+  const approved = extractCandidatePublicationCount(text, "approvedRefs");
+  const rewritten = extractCandidatePublicationCount(text, "rewrittenRefs");
+  const published = extractCandidatePublicationCount(text, "candidatePublished");
+  const directFallback = Math.max(
+    extractCandidatePublicationCount(text, "fallbackEvidence"),
+    extractCandidatePublicationCount(text, "directPublished"),
+  );
+  const reasons = formatReviewCandidatePublicationReasons(text);
+
+  return `Review candidate publication: mode=${mode} approved=${approved} rewritten=${rewritten} published=${published} directFallback=${directFallback} reasons=${reasons}`;
+}
+
+function formatMalformedReviewCandidatePublicationDetailsLine(): string {
+  return "- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary";
+}
+
+function extractCandidatePublicationCount(text: string, key: string): number {
+  const match = text.match(new RegExp(`(?:^|\\s)${key}=(-?\\d+)`));
+  if (!match) return 0;
+  const value = Number.parseInt(match[1] ?? "0", 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function formatReviewCandidatePublicationReasons(text: string): string {
+  const marker = "reasons=";
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return "none";
+
+  const reasonText = text.slice(markerIndex + marker.length).trim();
+  if (!reasonText || reasonText === "none") return "none";
+
+  const reasons = reasonText
+    .split(",")
+    .map((reason) => sanitizeReviewCandidatePublicationToken(reason))
+    .filter((reason) => reason.length > 0);
+
+  if (reasons.length === 0) return "none";
+
+  const cappedReasons = reasons.slice(0, MAX_REVIEW_CANDIDATE_PUBLICATION_REASONS);
+  const remaining = reasons.length - cappedReasons.length;
+  return remaining > 0 ? `${cappedReasons.join(",")} +${remaining} more` : cappedReasons.join(",");
+}
+
+function sanitizeReviewCandidatePublicationDetailsText(value: string): string {
+  return value
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
+    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
+    .replace(/TOKEN\s*=\s*[^\s]+/gi, "token-redacted")
+    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
+    .replace(/diff --git/gi, "diff-redacted")
+    .replace(/BEGIN\s+PROMPT/gi, "prompt-redacted")
+    .replace(/system prompt|hidden instructions/gi, "prompt-redacted")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 1_000);
+}
+
+function sanitizeReviewCandidatePublicationToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9:_-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64);
+}
 
 function boundedBridgeToken(value: unknown, fallback = "unavailable", maxLength = 160): string {
   const text = boundedReviewDetailsValue(value, maxLength);
@@ -959,6 +1115,10 @@ export function formatReviewDetailsSummary(params: {
   candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceReviewDetails | null;
   candidatePublicationBridge?: CandidatePublicationBridgeReviewDetails | null;
   reviewPlanSummary?: ReviewPlanReviewDetailsFormatterSummary | null;
+  reviewPlan?: ReviewPlanDetailsSummary | null;
+  reviewReducer?: ReviewReducerDetailsSummary | null;
+  reviewCandidateFinding?: ReviewCandidateFindingDetailsSummary | null;
+  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -1001,6 +1161,10 @@ export function formatReviewDetailsSummary(params: {
     candidateVerificationPublicationEvidence,
     candidatePublicationBridge,
     reviewPlanSummary,
+    reviewPlan,
+    reviewReducer,
+    reviewCandidateFinding,
+    reviewCandidatePublication,
     prioritization,
     usageLimit,
     tokenUsage,
@@ -1090,6 +1254,10 @@ export function formatReviewDetailsSummary(params: {
     "<details>",
     "<summary>Review Details</summary>",
     "",
+    ...formatReviewPlanDetailsLine(reviewPlan),
+    ...formatReviewReducerDetailsLine(reviewReducer),
+    ...formatReviewCandidateFindingDetailsLine(reviewCandidateFinding),
+    ...formatReviewCandidatePublicationDetailsLine(reviewCandidatePublication),
     ...primaryReviewDetailLines,
     ...timeoutProgressLines,
     lineCountText,

@@ -125,18 +125,9 @@ const formatterSuggestionsSchema = z
 
 const graphValidationSchema = z
   .object({
-    /** Enable optional second-pass validation for graph-amplified findings. */
     enabled: z.boolean().default(false),
-    /** Maximum graph-amplified findings to validate per review. */
-    maxFindingsToValidate: z.number().int().min(1).max(100).default(10),
-    /** Character budget for graph-validation change context. */
-    contextMaxChars: z.number().int().min(100).max(10000).default(1000),
   })
-  .default({
-    enabled: false,
-    maxFindingsToValidate: 10,
-    contextMaxChars: 1000,
-  });
+  .default({ enabled: false });
 
 const reviewSchema = z
   .object({
@@ -232,11 +223,7 @@ const reviewSchema = z
       command: DEFAULT_FORMATTER_SUGGESTION_COMMAND,
       maxSuggestions: 10,
     },
-    graphValidation: {
-      enabled: false,
-      maxFindingsToValidate: 10,
-      contextMaxChars: 1000,
-    },
+    graphValidation: { enabled: false },
     pathInstructions: [],
     outputLanguage: "en",
   });

@@ -199,7 +199,18 @@ function buildModeInstructions(mode: "standard" | "enhanced"): string {
   ].join("\n");
 }
 
-function buildToolAvailabilityContract(toolNames: string[]): string {
+type PromptCandidateFindingMode = "shadow" | "preferred" | "unavailable";
+
+function normalizePromptCandidateFindingMode(mode: unknown): PromptCandidateFindingMode {
+  return mode === "shadow" || mode === "preferred" ? mode : "unavailable";
+}
+
+function buildToolAvailabilityContract(params: {
+  toolNames: string[];
+  candidateFindingMode?: PromptCandidateFindingMode;
+  candidateFindingToolAvailable?: boolean;
+}): string {
+  const { toolNames, candidateFindingMode = "unavailable", candidateFindingToolAvailable = false } = params;
   if (toolNames.length === 0) {
     return "";
   }
@@ -207,6 +218,20 @@ function buildToolAvailabilityContract(toolNames: string[]): string {
   const uniqueToolNames = [...new Set(toolNames.map((tool) => tool.trim()).filter(Boolean))];
   if (uniqueToolNames.length === 0) {
     return "";
+  }
+
+  if (candidateFindingMode === "preferred" && candidateFindingToolAvailable) {
+    return [
+      "## Tool Availability Contract",
+      "",
+      "The following direct GitHub publish tools are available as audited fallback in this run:",
+      ...uniqueToolNames.map((tool) => `- \`${tool}\``),
+      "",
+      "Prefer the candidate-approved publication path: record findings with the candidate capture tool first and do not duplicate those findings through direct GitHub comments.",
+      "Use direct GitHub publish tools only when candidate capture, approval, or candidate publication is unavailable, degraded, or a tool call fails.",
+      "If direct fallback is used, name the fallback tool and explain the fallback reason in your final result.",
+      "Do NOT claim the GitHub comment tools are unavailable unless a tool call actually returns an error.",
+    ].join("\n");
   }
 
   return [
@@ -219,6 +244,39 @@ function buildToolAvailabilityContract(toolNames: string[]): string {
     "Do NOT claim the GitHub comment tools are unavailable unless a tool call actually returns an error.",
     "If a publish tool call fails, name the tool and quote the exact error in your final result.",
     "Ending the run with unpublished findings before attempting the available publish tools is incorrect.",
+  ].join("\n");
+}
+
+function buildCandidateFindingCaptureSection(params: {
+  toolName?: string;
+  mode?: PromptCandidateFindingMode;
+}): string {
+  const toolName = params.toolName?.trim();
+  const mode = params.mode ?? "unavailable";
+  if (!toolName || mode === "unavailable") {
+    return "";
+  }
+
+  if (mode === "preferred") {
+    return [
+      "## Candidate-Preferred Finding Capture",
+      "",
+      `The candidate-preferred publication path is available through \`${toolName}\`.`,
+      `For every actionable draft finding, call \`${toolName}\` to record every actionable draft finding before using direct GitHub publish tools.`,
+      "Do not publish duplicate direct GitHub comments for findings already recorded as candidates.",
+      "Use direct GitHub publish tools only as audited fallback when candidate capture, approval, or candidate publication is unavailable, degraded, or a candidate tool call fails.",
+      "If you use direct fallback publication, explain the fallback reason in your final text without including raw prompts, raw diffs, raw candidate payloads, or secrets.",
+    ].join("\n");
+  }
+
+  return [
+    "## Shadow Candidate Finding Capture",
+    "",
+    `The optional shadow-only tool available is \`${toolName}\`.`,
+    "This tool records candidate findings for bounded internal analysis only; it does not publish GitHub comments or visible review output.",
+    "It does not replace `mcp__github_inline_comment__create_inline_comment` or `mcp__github_comment__create_comment` for actionable findings.",
+    "If you find actionable issues, you MUST still use the GitHub publish tools described above.",
+    "If candidate capture is unavailable, degraded, or any call fails, ignore candidate-capture failures and continue the review/publication path unchanged.",
   ].join("\n");
 }
 
@@ -1708,6 +1766,8 @@ export function buildReviewPromptDetails(context: {
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
+  candidateFindingToolName?: string;
+  candidateFindingMode?: "shadow" | "preferred" | "unavailable";
   gitDiffInstructionsAvailable?: boolean;
   diffContent?: string;
 }): PromptBuildResult {
@@ -1932,6 +1992,13 @@ export function buildReviewPromptDetails(context: {
   pushBudgetedSection("review-knowledge-context", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);
 
   const gitDiffInstructionsAvailable = context.gitDiffInstructionsAvailable !== false;
+  const candidateFindingMode = normalizePromptCandidateFindingMode(context.candidateFindingMode);
+  const candidateFindingToolAvailable = Boolean(context.candidateFindingToolName?.trim());
+  const candidatePreferred = candidateFindingMode === "preferred" && candidateFindingToolAvailable;
+  const issueReportingInstruction = candidatePreferred
+    ? "Record actionable draft findings with the candidate capture tool first; use `mcp__github_inline_comment__create_inline_comment` only as audited fallback when candidate capture or approval is unavailable or degraded."
+    : "Use the `mcp__github_inline_comment__create_inline_comment` tool to post inline comments on the specific file and line where the issue occurs.";
+
   const instructionLines: string[] = [
     "## Reading the code",
     "",
@@ -1965,7 +2032,7 @@ export function buildReviewPromptDetails(context: {
     "",
     "## How to report issues",
     "",
-    "Use the `mcp__github_inline_comment__create_inline_comment` tool to post inline comments on the specific file and line where the issue occurs.",
+    issueReportingInstruction,
     "",
     "When you have a concrete fix, include a GitHub suggestion block in your comment body:",
     "",
@@ -1978,9 +2045,21 @@ export function buildReviewPromptDetails(context: {
     "The suggestion block replaces the entire line range (from startLine to line). Make sure the replacement is syntactically complete.",
   ];
 
-  const toolAvailabilityContract = buildToolAvailabilityContract(context.publishToolNames ?? []);
+  const toolAvailabilityContract = buildToolAvailabilityContract({
+    toolNames: context.publishToolNames ?? [],
+    candidateFindingMode,
+    candidateFindingToolAvailable,
+  });
   if (toolAvailabilityContract) {
     instructionLines.push("", toolAvailabilityContract);
+  }
+
+  const candidateFindingCaptureSection = buildCandidateFindingCaptureSection({
+    toolName: context.candidateFindingToolName,
+    mode: candidateFindingMode,
+  });
+  if (candidateFindingCaptureSection) {
+    instructionLines.push("", candidateFindingCaptureSection);
   }
 
   if (context.checkpointEnabled === true) {
@@ -2429,6 +2508,8 @@ export function buildReviewPrompt(context: {
   reviewBoundedness?: ReviewBoundednessContract | null;
   diffContent?: string;
   publishToolNames?: string[];
+  candidateFindingToolName?: string;
+  candidateFindingMode?: "shadow" | "preferred" | "unavailable";
 }): string {
   return buildReviewPromptDetails(context).text;
 }

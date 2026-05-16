@@ -99,8 +99,8 @@ export type ReviewOutputArtifactsOctokit = {
         pull_number: number;
         per_page?: number;
         page?: number;
-        sort?: string;
-        direction?: string;
+        sort?: "updated" | "created";
+        direction?: "asc" | "desc";
       }): Promise<{ data: ReviewCommentLike[] }>;
       listReviews(args: {
         owner: string;
@@ -117,8 +117,8 @@ export type ReviewOutputArtifactsOctokit = {
         issue_number: number;
         per_page?: number;
         page?: number;
-        sort?: string;
-        direction?: string;
+        sort?: "updated" | "created";
+        direction?: "asc" | "desc";
       }): Promise<{ data: IssueCommentLike[] }>;
     };
   };
