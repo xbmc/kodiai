@@ -22,9 +22,6 @@ review:
     automatic: false
     command: "git clang-format --diff origin/{baseRef} HEAD"
     maxSuggestions: 10
-  graphValidation:
-    # Optional second-pass validation for graph-amplified findings; disabled by default.
-    enabled: false
   triggers:
     onOpened: true
     onReadyForReview: true
@@ -189,6 +186,20 @@ Use the nested `review.triggers.onSynchronize` shape. Legacy `review.onSynchroni
 
 If `true`, Kodiai submits an approving GitHub review when the review completes cleanly with no published findings. The default is `false`, so clean reviews publish the same approval-shaped content as a normal PR issue comment instead of changing GitHub's review approval state. Set this to `true` only for repositories that explicitly want Kodiai to approve PRs.
 
+### `review.graphValidation`
+
+Controls optional graph-amplified review validation. This is disabled by default and remains fail-open: if graph prerequisites are unavailable or validation cannot run, Kodiai continues the normal review path and records the bounded status/reason instead of blocking review publication or changing findings destructively.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Opt in to graph-amplified validation when the required graph context is available |
+
+```yaml
+review:
+  graphValidation:
+    enabled: true
+```
+
 ### `review.formatterSuggestions`
 
 Controls formatter-generated GitHub suggestion reviews for explicit mention requests. This section does **not** make formatter suggestions part of normal automatic PR reviews yet; `automatic` is parsed now but remains reserved until runtime wiring is added.
@@ -219,37 +230,12 @@ review:
 
 Override `command` only when the repository needs different formatter tooling. The default command runs `git-clang-format` in diff mode against the PR head.
 
-Repository-local smoke override note: this repository's `.kodiai.yml` intentionally overrides the product default with `command: "python3 scripts/m066-formatter-smoke.py"` and `maxSuggestions: 1` for the controlled formatter-suggestion smoke. That override keeps repo-local proof deterministic and bounded; it should not be copied as the general default and should not be removed by documentation-only cleanup.
-
 Operational notes:
 
 - The command must write a git unified diff to stdout; no suggestions are published when stdout has no applicable PR diff hunks.
 - Explicit PR mentions can request formatter suggestions with `@kodiai format suggestions` or combine review and formatting with `@kodiai review format suggestions` / `@kodiai review & format suggestions`.
 - The published proof surface is a same-PR Pull Request Review containing `suggestion` blocks, not a branch push or automatic commit.
-- See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, `bun run verify:m066:s05`, failure interpretation, and bounded proof capture.
-- See [M066 Formatter Suggestions Smoke Proof](smoke/m066-formatter-suggestions.md) for the accepted live same-PR evidence and [M053 Formatter Suggestions Proof Alignment](smoke/m053-formatter-suggestions.md) for how M053/S05/R085 reuses that evidence without claiming automatic-review formatter suggestions are live.
-
-### `review.graphValidation`
-
-Optional second-pass validation for graph-amplified review findings. This is disabled by default and only applies when the review runtime has graph context for indirectly impacted files; if graph context, validation support, or the validation model is unavailable, Kodiai fails open and keeps the original review findings rather than blocking or dropping results.
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | `boolean` | `false` | Enable optional graph-amplified finding validation when graph context is available. |
-| `maxFindingsToValidate` | `number` | `10` | Maximum graph-amplified findings to validate per review. Valid range: `1–100`. |
-| `contextMaxChars` | `number` | `1000` | Character budget for the change-context summary used by validation. Valid range: `100–10000`. |
-
-Example:
-
-```yaml
-review:
-  graphValidation:
-    enabled: true
-    maxFindingsToValidate: 10
-    contextMaxChars: 1000
-```
-
-Do not use this setting as a hard gate. The validation path is intentionally best-effort and fail-open so review behavior remains available when graph context or validation dependencies are missing.
+- See the [Formatter Suggestions Runbook](runbooks/formatter-suggestions.md) for smoke testing, verifier usage, and failure interpretation.
 
 ### `review.prompt`
 
