@@ -8,6 +8,7 @@ import { wrapInDetails } from "../../lib/formatting.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 import {
   createReviewOutputPublicationGate,
+  type CandidateReviewOutputPublicationGate,
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
 
@@ -614,6 +615,14 @@ export function createCommentServer(
           }
           try {
             const octokit = await getOctokit();
+            const candidateGate = reviewOutputPublicationGate as CandidateReviewOutputPublicationGate | undefined;
+            const inlinePublicationState = candidateGate?.getInlinePublicationState?.();
+            if (inlinePublicationState?.status === "skipped" && inlinePublicationState.reason === "m070-candidate-verification-denied") {
+              return {
+                content: [{ type: "text" as const, text: JSON.stringify({ success: false, blocked: true, fallback_blocked: true, candidate_publication_state: inlinePublicationState.status, reason: "m070-direct-fallback-blocked-after-candidate-denial" }) }],
+                isError: true,
+              };
+            }
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
             if (publicationStatus && !publicationStatus.shouldPublish) {
               logger?.info(

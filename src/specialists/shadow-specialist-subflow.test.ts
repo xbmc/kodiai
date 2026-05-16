@@ -78,7 +78,7 @@ describe("runShadowSpecialistSubflow", () => {
       correlationKey: "corr-2",
       readOnly: true,
     });
-    expect(Object.keys(calls[0]).sort()).toEqual([
+    expect(Object.keys(calls[0]!).sort()).toEqual([
       "changedPaths",
       "correlationKey",
       "deliveryId",

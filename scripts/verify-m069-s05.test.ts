@@ -13,7 +13,14 @@ import {
   type M069S05Evidence,
 } from "./verify-m069-s05.ts";
 
-function cloneEvidence(overrides: Partial<M069S05Evidence> = {}): M069S05Evidence {
+type M069S05EvidenceOverrides = Partial<Omit<M069S05Evidence, "sourceAvailability" | "reviewDetails" | "runtimeLog" | "visiblePublication">> & {
+  sourceAvailability?: Partial<M069S05Evidence["sourceAvailability"]>;
+  reviewDetails?: Partial<NonNullable<M069S05Evidence["reviewDetails"]>> | null;
+  runtimeLog?: Partial<NonNullable<M069S05Evidence["runtimeLog"]>> | null;
+  visiblePublication?: Partial<NonNullable<M069S05Evidence["visiblePublication"]>> | null;
+};
+
+function cloneEvidence(overrides: M069S05EvidenceOverrides = {}): M069S05Evidence {
   const base = buildSyntheticPassingM069S05Evidence();
   return {
     ...base,
@@ -407,8 +414,8 @@ describe("verify-m069-s05", () => {
   test("main emits JSON and allow-blocked only changes exit code, not success", async () => {
     const passStdout: string[] = [];
     const passExit = await main(["--json"], {
-      stdout: { write: (chunk: string) => void passStdout.push(chunk) },
-      stderr: { write: () => undefined },
+      stdout: { write: async (chunk: string) => { passStdout.push(chunk); return chunk.length; } },
+      stderr: { write: async () => 0 },
       evaluate: () => evaluate(),
     });
     expect(passExit).toBe(0);
@@ -416,8 +423,8 @@ describe("verify-m069-s05", () => {
 
     const blockedStdout: string[] = [];
     const blockedExit = await main(["--json", "--allow-blocked"], {
-      stdout: { write: (chunk: string) => void blockedStdout.push(chunk) },
-      stderr: { write: () => undefined },
+      stdout: { write: async (chunk: string) => { blockedStdout.push(chunk); return chunk.length; } },
+      stderr: { write: async () => 0 },
       evaluate: () => evaluate(buildBlockedM069S05Evidence()),
     });
     const blockedReport = JSON.parse(blockedStdout.join(""));
@@ -426,8 +433,8 @@ describe("verify-m069-s05", () => {
 
     const blockedWithoutAllowStdout: string[] = [];
     const blockedWithoutAllowExit = await main(["--json"], {
-      stdout: { write: (chunk: string) => void blockedWithoutAllowStdout.push(chunk) },
-      stderr: { write: () => undefined },
+      stdout: { write: async (chunk: string) => { blockedWithoutAllowStdout.push(chunk); return chunk.length; } },
+      stderr: { write: async () => 0 },
       evaluate: () => evaluate(buildBlockedM069S05Evidence()),
     });
     expect(blockedWithoutAllowExit).toBe(1);
@@ -435,8 +442,8 @@ describe("verify-m069-s05", () => {
 
     const invalidStdout: string[] = [];
     const invalidExit = await main(["--fixture", ".gsd/secret.json"], {
-      stdout: { write: (chunk: string) => void invalidStdout.push(chunk) },
-      stderr: { write: () => undefined },
+      stdout: { write: async (chunk: string) => { invalidStdout.push(chunk); return chunk.length; } },
+      stderr: { write: async () => 0 },
       evaluate: () => evaluate(),
     });
     expect(invalidExit).toBe(2);

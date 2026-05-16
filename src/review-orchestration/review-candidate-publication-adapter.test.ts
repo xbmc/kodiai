@@ -4,6 +4,7 @@ import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
 } from "../execution/mcp/inline-review-publisher.ts";
+import { createReviewOutputPublicationGate } from "../execution/mcp/review-output-publication-gate.ts";
 import {
   createReviewCandidateFindingExecutionResult,
   type ReviewCandidateFinding,
@@ -19,6 +20,7 @@ import {
 } from "./review-candidate-approval.ts";
 import {
   adaptApprovedCandidatesForInlinePublication,
+  buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
   toReviewCandidatePublicationAdapterSummary,
 } from "./review-candidate-publication-adapter.ts";
@@ -299,6 +301,82 @@ describe("review candidate publication adapter", () => {
       "line-not-commentable-in-pr-diff",
       "secret-detected",
     ]);
+  });
+
+  test("uses candidate-specific review output keys so distinct candidates publish once and replays skip", async () => {
+    const candidates = candidateResult([
+      candidateInput("src/first.ts", "First candidate", { startLine: 10, endLine: 10 }),
+      candidateInput("src/second.ts", "Second candidate", { startLine: 20, endLine: 20 }),
+    ]);
+    const approval = coordinateReviewCandidateApproval({
+      candidates,
+      reducer: reducerResult({
+        findings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
+        visibleFindings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
+      }),
+    });
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult() });
+    const publishedBodies: string[] = [];
+    let createReviewCommentCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        pulls: {
+          listReviewComments: async () => ({
+            data: publishedBodies.map((body, index) => ({ id: index + 1, body })),
+          }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async (params: { body: string; path: string; line: number }) => {
+            createReviewCommentCalls++;
+            publishedBodies.push(params.body);
+            return {
+              data: {
+                id: 7000 + createReviewCommentCalls,
+                html_url: `https://example.test/comment/${7000 + createReviewCommentCalls}`,
+                path: params.path,
+                line: params.line,
+                original_line: params.line,
+              },
+            };
+          },
+        },
+      },
+    };
+
+    async function publishPayload(index: number): Promise<InlineReviewPublicationResult> {
+      const payload = adapted.payloads[index];
+      if (!payload) throw new Error(`missing payload ${index}`);
+      const candidateReviewOutputKey = buildCandidateReviewOutputKey(BASE_INPUT.reviewOutputKey, payload.candidateFingerprint);
+      const publisher = createInlineReviewPublisher({
+        getOctokit: async () => octokit as never,
+        owner: "owner",
+        repo: "repo",
+        prNumber: 42,
+        botHandles: [],
+        reviewOutputKey: candidateReviewOutputKey,
+        publicationGate: createReviewOutputPublicationGate({
+          owner: "owner",
+          repo: "repo",
+          prNumber: 42,
+          reviewOutputKey: candidateReviewOutputKey,
+        }),
+      });
+      return publisher.publish(payload.publication);
+    }
+
+    const first = await publishPayload(0);
+    const second = await publishPayload(1);
+    const replayFirst = await publishPayload(0);
+
+    expect(first.status).toBe("published");
+    expect(second.status).toBe("published");
+    expect(replayFirst).toMatchObject({ status: "skipped", reason: "already-published" });
+    expect(createReviewCommentCalls).toBe(2);
+    expect(publishedBodies[0]).toContain(`<!-- kodiai:review-output-key:${buildCandidateReviewOutputKey(BASE_INPUT.reviewOutputKey, adapted.payloads[0]!.candidateFingerprint)} -->`);
+    expect(publishedBodies[1]).toContain(`<!-- kodiai:review-output-key:${buildCandidateReviewOutputKey(BASE_INPUT.reviewOutputKey, adapted.payloads[1]!.candidateFingerprint)} -->`);
   });
 });
 

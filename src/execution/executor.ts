@@ -653,6 +653,7 @@ export function createExecutor(deps: {
           triageConfig,
           enableCandidateFindingTool: context.enableCandidateFindingTool,
           candidateFindingRecorder: candidateFindingCollector.recorder,
+          candidateVerificationContext: context.candidateVerificationContext,
         };
 
         // Build allowed tools list

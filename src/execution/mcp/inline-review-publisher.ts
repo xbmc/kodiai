@@ -21,6 +21,7 @@ export type InlineReviewPublicationStatus = "published" | "skipped" | "blocked" 
 
 export type InlineReviewPublicationReason =
   | "already-published"
+  | "m070-candidate-verification-denied"
   | "secret-detected"
   | "validation-error"
   | "line-not-commentable-in-pr-diff"
@@ -65,6 +66,13 @@ type GitHubApiErrorDetails = {
   requestId?: string;
   responseMessage?: string;
   responseErrors?: unknown;
+};
+
+type CandidateAwarePublicationGate = ReviewOutputPublicationGate & {
+  evaluateInlineCandidatePublication?: (candidate: Record<string, unknown>) => { allowed: boolean; status?: unknown; candidateRef?: unknown; counts?: unknown; reasonCategories?: readonly unknown[]; hasDeliveryId?: unknown; hasReviewOutputKey?: unknown; hasCorrelationKey?: unknown; redactionFlags?: unknown } | null;
+  recordInlinePublicationSkipped?: (reason: string) => void;
+  recordInlinePublicationFailed?: (reason: string) => void;
+  recordInlinePublicationPublished?: (details?: { commentId?: number; path?: string }) => void;
 };
 
 function formatInlineCommentLocation(location: InlineCommentLocation): string {
@@ -276,8 +284,55 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
         assertRightSideCommentability(rightCommentableLines, input.location);
 
         const octokit = await options.getOctokit();
+        const candidateGate = reviewOutputPublicationGate as CandidateAwarePublicationGate | undefined;
+        const candidatePolicyResult = candidateGate?.evaluateInlineCandidatePublication?.({
+          path: input.location.path,
+          side: input.location.side || "RIGHT",
+          line: input.location.line,
+          startLine: input.location.startLine,
+          body: input.body,
+          reviewOutputKey: options.reviewOutputKey,
+          deliveryId: options.deliveryId,
+        });
+        if (candidatePolicyResult && candidatePolicyResult.allowed !== true) {
+          const reason = "m070-candidate-verification-denied";
+          candidateGate?.recordInlinePublicationSkipped?.(reason);
+          options.logger?.warn(
+            {
+              deliveryId: options.deliveryId,
+              reviewOutputKey: options.reviewOutputKey,
+              owner: options.owner,
+              repo: options.repo,
+              prNumber: options.prNumber,
+              tool: "create_inline_comment",
+              gate: "m070-candidate-publication-policy",
+              path: input.location.path,
+              line: input.location.line,
+              startLine: input.location.startLine,
+              side: input.location.side || "RIGHT",
+              reason,
+              gateResult: candidatePolicyResult.status,
+              candidateRef: candidatePolicyResult.candidateRef,
+              counts: candidatePolicyResult.counts,
+              reasonCategories: candidatePolicyResult.reasonCategories,
+              hasDeliveryId: candidatePolicyResult.hasDeliveryId,
+              hasReviewOutputKey: candidatePolicyResult.hasReviewOutputKey,
+              hasCorrelationKey: candidatePolicyResult.hasCorrelationKey,
+              redactionFlags: candidatePolicyResult.redactionFlags,
+            },
+            "Inline review comment publication blocked by candidate verification policy",
+          );
+          return {
+            status: "blocked",
+            reason,
+            content: [{ type: "text", text: JSON.stringify({ success: false, blocked: true, reason }) }],
+            isError: true,
+          };
+        }
+
         const publicationState = await resolveOutputPublicationState(octokit);
         if (publicationState === "already-published") {
+          candidateGate?.recordInlinePublicationSkipped?.("already-published");
           return {
             status: "skipped",
             reason: "already-published",
@@ -305,6 +360,7 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
         const sanitizedBody = sanitizeOutgoingMentions(input.body, options.botHandles);
         const scanResult = scanOutgoingForSecrets(sanitizedBody);
         if (scanResult.blocked) {
+          candidateGate?.recordInlinePublicationSkipped?.("secret-detected");
           options.logger?.warn(
             { matchedPattern: scanResult.matchedPattern, tool: "create_inline_comment" },
             "Outgoing secret scan blocked publish",
@@ -343,6 +399,10 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
         );
 
         options.onPublish?.();
+        candidateGate?.recordInlinePublicationPublished?.({
+          commentId: result.data.id,
+          path: result.data.path,
+        });
 
         if (options.reviewOutputKey) {
           options.logger?.info(
@@ -374,6 +434,8 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
           ],
         };
       } catch (error) {
+        const candidateGate = reviewOutputPublicationGate as CandidateAwarePublicationGate | undefined;
+        candidateGate?.recordInlinePublicationFailed?.(classifyFailure(error instanceof Error ? error.message : String(error)));
         return makeErrorResult({
           error,
           location: input.location,

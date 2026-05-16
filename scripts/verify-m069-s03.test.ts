@@ -105,7 +105,7 @@ async function evaluateWithFixtures(overrides: {
   packageJsonText?: string;
   reducerText?: string;
   handlerText?: string;
-  projectMetrics?: Parameters<typeof evaluateM069S03Contract>[0]["projectMetrics"];
+  projectMetrics?: NonNullable<Parameters<typeof evaluateM069S03Contract>[0]>["projectMetrics"];
 } = {}) {
   return await evaluateM069S03Contract({
     generatedAt: "2026-05-10T23:30:00.000Z",

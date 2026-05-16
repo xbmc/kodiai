@@ -99,6 +99,12 @@ export type ReviewCandidatePublishedFindingResult = {
 const MAX_SUMMARY_LENGTH = 280;
 const MAX_SUMMARY_ITEMS = 20;
 
+export function buildCandidateReviewOutputKey(reviewOutputKey: string, candidateFingerprint: string): string {
+  const baseKey = typeof reviewOutputKey === "string" ? reviewOutputKey.trim() : "";
+  const fingerprint = sanitizeSummaryToken(candidateFingerprint);
+  return `${baseKey}:candidate:${fingerprint}`;
+}
+
 export function adaptApprovedCandidatesForInlinePublication(input: {
   approval: ReviewCandidateApprovalResult;
   reducer: Pick<ReviewReducerResult, "visibleFindings">;

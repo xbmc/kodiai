@@ -194,6 +194,7 @@ import {
 } from "../review-orchestration/review-candidate-approval.ts";
 import {
   adaptApprovedCandidatesForInlinePublication,
+  buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
   toReviewCandidatePublicationAdapterSummary,
   type ReviewCandidatePublishedFindingResult,
@@ -208,7 +209,7 @@ import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
 } from "../execution/mcp/inline-review-publisher.ts";
-import { createInlineReviewOutputPublicationGate } from "../execution/mcp/review-output-publication-gate.ts";
+import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
 import {
   detectDepBump,
   extractDepBumpDetails,
@@ -245,6 +246,21 @@ import { createTaskRouter } from "../llm/task-router.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { linkPRToIssues, type LinkResult } from "../knowledge/issue-linker.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
+import {
+  runShadowSpecialistSubflow,
+  type ShadowSpecialistSubflowInput,
+  type ShadowSpecialistSubflowResult,
+} from "../specialists/shadow-specialist-subflow.ts";
+import { projectShadowSpecialistMetrics } from "../specialists/shadow-specialist-metrics.ts";
+import {
+  buildShadowSpecialistReviewDetailsProjection,
+  type ShadowSpecialistReviewDetailsProjection,
+} from "../specialists/shadow-specialist-review-details.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import {
+  projectReviewHandlerCandidatePublicationBridgeEvidence,
+  type ReviewHandlerPublicationBridgeProjection,
+} from "../issue-131/review-handler-publication-bridge.ts";
 
 
 
@@ -310,6 +326,148 @@ function hashPromptString(value: string | null | undefined): string | null {
   }
 
   return sha256Hex(value);
+}
+
+function buildShadowSpecialistCorrelationKey(params: {
+  deliveryId?: string | null;
+  reviewOutputKey?: string | null;
+  prNumber: number;
+}): string {
+  return sha256Hex(`${params.deliveryId ?? "unknown-delivery"}:${params.reviewOutputKey ?? "unknown-output"}:${params.prNumber}`).slice(0, 16);
+}
+
+function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): Record<string, unknown> {
+  try {
+    const metricsProjection = projectShadowSpecialistMetrics(result);
+    const reviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(metricsProjection);
+
+    return {
+      gate: "shadow-specialist",
+      laneId: reviewDetailsProjection.laneId,
+      status: result.triggerStatus,
+      outputStatus: reviewDetailsProjection.status,
+      reason: reviewDetailsProjection.reason,
+      candidateCount: reviewDetailsProjection.candidateCount,
+      decisionCount: reviewDetailsProjection.decisionCount,
+      decisionCounts: reviewDetailsProjection.decisionCounts,
+      duplicateCount: reviewDetailsProjection.duplicateCount,
+      disagreementCount: reviewDetailsProjection.disagreementCount,
+      dismissedCount: reviewDetailsProjection.dismissedCount,
+      unclassifiableCount: reviewDetailsProjection.unclassifiableCount,
+      truncatedCandidateCount: reviewDetailsProjection.truncatedCandidateCount,
+      durationMs: result.durationMs,
+      deliveryId: reviewDetailsProjection.deliveryId,
+      reviewOutputKey: reviewDetailsProjection.reviewOutputKey,
+      correlationKey: reviewDetailsProjection.correlationKey,
+      metricAvailability: reviewDetailsProjection.metricAvailability,
+      tokenCountAvailable: reviewDetailsProjection.tokenCountAvailable,
+      costAvailable: reviewDetailsProjection.costAvailable,
+      latencyMsAvailable: reviewDetailsProjection.latencyMsAvailable,
+      unsafeFieldCount: reviewDetailsProjection.redactionFlags.unsafeFieldCount,
+      discardedRawPayload: reviewDetailsProjection.redactionFlags.discardedRawPayload,
+      discardedPublicationFields: reviewDetailsProjection.redactionFlags.discardedPublicationFields,
+      discardedApprovalFields: reviewDetailsProjection.redactionFlags.discardedApprovalFields,
+      privateOnly: reviewDetailsProjection.privateOnly,
+      shadowOnly: reviewDetailsProjection.shadowOnly,
+      publishesFindings: reviewDetailsProjection.publishesFindings,
+      visiblePublicationDenied: reviewDetailsProjection.visiblePublicationDenied,
+      approvalPublicationDenied: reviewDetailsProjection.approvalPublicationDenied,
+      rawContentFieldCount: reviewDetailsProjection.rawContentFieldCount,
+      candidateBodyFieldCount: reviewDetailsProjection.candidateBodyFieldCount,
+      githubPublicationFieldCount: reviewDetailsProjection.githubPublicationFieldCount,
+      approvalFieldCount: reviewDetailsProjection.approvalFieldCount,
+      specialistContentIncluded: reviewDetailsProjection.specialistContentIncluded,
+      candidateFingerprintsIncluded: reviewDetailsProjection.candidateFingerprintsIncluded,
+      candidateBodiesIncluded: reviewDetailsProjection.candidateBodiesIncluded,
+      rawModelOutputIncluded: reviewDetailsProjection.rawModelOutputIncluded,
+      toolPayloadIncluded: reviewDetailsProjection.toolPayloadIncluded,
+      approvalFieldsIncluded: reviewDetailsProjection.approvalFieldsIncluded,
+      tierModeIncluded: reviewDetailsProjection.tierModeIncluded,
+      s04EvidenceAvailable: true,
+      reviewDetailsProjectionAvailable: true,
+      reviewDetailsProjectionStatus: reviewDetailsProjection.status,
+      reviewDetailsLineAvailable: reviewDetailsProjection.reviewDetailsLine.length > 0,
+      metricBoundedness: "bounded-aggregate-only",
+      metricBoundednessAvailable: true,
+      metricProjectionDegraded: false,
+      compactReviewDetailsPrivateOnly: reviewDetailsProjection.privateOnly,
+      compactReviewDetailsShadowOnly: reviewDetailsProjection.shadowOnly,
+      compactReviewDetailsVisiblePublicationDenied: reviewDetailsProjection.visiblePublicationDenied,
+      compactReviewDetailsApprovalPublicationDenied: reviewDetailsProjection.approvalPublicationDenied,
+    };
+  } catch {
+    return {
+      gate: "shadow-specialist",
+      laneId: result.laneId ?? "docs-config-truth",
+      status: "degraded",
+      outputStatus: "degraded",
+      reason: "metrics-projection-error",
+      durationMs: result.durationMs,
+      deliveryId: result.deliveryId,
+      reviewOutputKey: result.reviewOutputKey,
+      correlationKey: result.correlationKey,
+      privateOnly: true,
+      shadowOnly: true,
+      publishesFindings: false,
+      visiblePublicationDenied: true,
+      approvalPublicationDenied: true,
+      specialistContentIncluded: false,
+      candidateFingerprintsIncluded: false,
+      candidateBodiesIncluded: false,
+      rawModelOutputIncluded: false,
+      toolPayloadIncluded: false,
+      approvalFieldsIncluded: false,
+      tierModeIncluded: false,
+      s04EvidenceAvailable: false,
+      reviewDetailsProjectionAvailable: false,
+      reviewDetailsProjectionStatus: "degraded",
+      reviewDetailsLineAvailable: false,
+      metricBoundedness: "bounded-aggregate-only",
+      metricBoundednessAvailable: false,
+      metricProjectionDegraded: true,
+    };
+  }
+}
+
+function buildCandidateVerificationPublicationEvidenceLogFields(
+  evidence: CandidateVerificationPublicationEvidenceSummary,
+): Record<string, unknown> {
+  return {
+    gate: "m070-candidate-verification-evidence",
+    aggregateStatus: evidence.aggregateStatus,
+    attemptedCount: evidence.counts.attempted,
+    allowedCount: evidence.counts.allowed,
+    deniedCount: evidence.counts.denied,
+    publishedCount: evidence.counts.published,
+    skippedCount: evidence.counts.skipped,
+    failedCount: evidence.counts.failed,
+    publicationDenialCounts: evidence.publicationDenialCounts,
+    reasonCategories: evidence.reasonCategories,
+    verificationStateCounts: evidence.verificationStateCounts,
+    candidateVerificationCounts: evidence.candidateVerificationCounts,
+    hasDeliveryId: evidence.metadata.hasDeliveryId,
+    hasReviewOutputKey: evidence.metadata.hasReviewOutputKey,
+    hasCorrelationKey: evidence.metadata.hasCorrelationKey,
+    deliveryId: evidence.metadata.deliveryId,
+    reviewOutputKey: evidence.metadata.reviewOutputKey,
+    correlationKey: evidence.metadata.correlationKey,
+    privateOnly: evidence.redactionFlags.privateOnly,
+    candidateBodiesIncluded: evidence.redactionFlags.candidateBodiesIncluded,
+    specialistProseIncluded: evidence.redactionFlags.specialistProseIncluded,
+    rawPromptsIncluded: evidence.redactionFlags.rawPromptsIncluded,
+    rawModelOutputIncluded: evidence.redactionFlags.rawModelOutputIncluded,
+    diffsIncluded: evidence.redactionFlags.diffsIncluded,
+    evidencePayloadsIncluded: evidence.redactionFlags.evidencePayloadsIncluded,
+    rawFingerprintsIncluded: evidence.redactionFlags.rawFingerprintsIncluded,
+    publicationEvidenceIncluded: evidence.redactionFlags.publicationEvidenceIncluded,
+    unsafeInputFieldCount: evidence.redactionFlags.unsafeInputFieldCount,
+    discardedRawPayload: evidence.redactionFlags.discardedRawPayload,
+    discardedPublicationFields: evidence.redactionFlags.discardedPublicationFields,
+    discardedEvidencePayloads: evidence.redactionFlags.discardedEvidencePayloads,
+    candidateAttemptIncluded: evidence.redactionFlags.candidateAttemptIncluded,
+    candidateKeyIncluded: evidence.redactionFlags.candidateKeyIncluded,
+    boundedness: "aggregate-only",
+  };
 }
 
 function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
@@ -2258,6 +2416,8 @@ export function createReviewHandler(deps: {
   fetchRemoteTrackingBranchFn?: typeof fetchRemoteTrackingBranch;
   /** Optional diff context collector for deterministic tests and bounded fallback behavior. */
   diffContextCollector?: typeof collectDiffContext;
+  /** Optional same-job read-only shadow specialist subflow; fail-open and private by contract. */
+  shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
   /** Optional review plan builder override for fail-open contract tests. */
   reviewPlanBuilder?: ReviewPlanBuilder;
   /** Optional review reducer override for fail-open contract tests. */
@@ -2292,6 +2452,7 @@ export function createReviewHandler(deps: {
     clusterModelStore,
     fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
     diffContextCollector = collectDiffContext,
+    shadowSpecialistSubflow = runShadowSpecialistSubflow,
     reviewPlanBuilder = buildReviewPlan,
     reviewReducer = reduceReviewFindings,
     logger,
@@ -3721,6 +3882,68 @@ export function createReviewHandler(deps: {
           return;
         }
 
+        let shadowSpecialistResult: ShadowSpecialistSubflowResult | undefined;
+        let shadowSpecialistReviewDetailsProjection: ShadowSpecialistReviewDetailsProjection | null = null;
+        let candidateVerificationContext: CandidateVerificationContext;
+        const shadowSpecialistCorrelationKey = buildShadowSpecialistCorrelationKey({
+          deliveryId: event.id,
+          reviewOutputKey,
+          prNumber: pr.number,
+        });
+        try {
+          shadowSpecialistResult = await shadowSpecialistSubflow({
+            changedPaths: changedFiles,
+            diffText: diffContext.diffContent,
+            diffSnippet: diffContext.diffContent,
+            workspaceDir: workspace.dir,
+            deliveryId: event.id,
+            reviewOutputKey,
+            correlationKey: shadowSpecialistCorrelationKey,
+          });
+          candidateVerificationContext = {
+            docsConfigTruth: shadowSpecialistResult.output,
+            deliveryId: event.id,
+            reviewOutputKey,
+            correlationKey: shadowSpecialistResult.correlationKey ?? shadowSpecialistCorrelationKey,
+          };
+          shadowSpecialistReviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(
+            projectShadowSpecialistMetrics(shadowSpecialistResult),
+          );
+
+          const shadowLogFields = {
+            ...baseLog,
+            ...buildShadowSpecialistLogFields(shadowSpecialistResult),
+          };
+          const shadowMessage = "Shadow specialist subflow completed";
+          if (shadowSpecialistResult.timeoutReason || shadowSpecialistResult.errorReason || shadowSpecialistResult.unclassifiableReason) {
+            logger.warn(shadowLogFields, shadowMessage);
+          } else {
+            logger.info(shadowLogFields, shadowMessage);
+          }
+        } catch (err) {
+          candidateVerificationContext = {
+            docsConfigTruth: null,
+            deliveryId: event.id,
+            reviewOutputKey,
+            correlationKey: shadowSpecialistCorrelationKey,
+          };
+          shadowSpecialistReviewDetailsProjection = null;
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "shadow-specialist",
+              laneId: "docs-config-truth",
+              status: "error",
+              reason: "handler-subflow-error",
+              deliveryId: event.id,
+              reviewOutputKey,
+              correlationKey: shadowSpecialistCorrelationKey,
+              err,
+            },
+            "Shadow specialist subflow failed before normal review; continuing fail-open",
+          );
+        }
+
         // In incremental mode, further filter to only files that changed since last review
         let reviewFiles = changedFiles;
         if (incrementalResult?.mode === "incremental" && incrementalResult.changedFilesSinceLastReview.length > 0) {
@@ -4592,6 +4815,7 @@ export function createReviewHandler(deps: {
           promptSections: reviewPromptSections,
           reviewOutputKey,
           deliveryId: event.id,
+          candidateVerificationContext,
           knowledgeStore,
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
@@ -4632,6 +4856,52 @@ export function createReviewHandler(deps: {
             sessionId: result.sessionId,
           },
           "Review execution completed",
+        );
+
+        if (result.candidateVerificationPublicationEvidence) {
+          logger.info(
+            {
+              ...baseLog,
+              ...buildCandidateVerificationPublicationEvidenceLogFields(result.candidateVerificationPublicationEvidence),
+            },
+            "Captured aggregate M070 candidate-verification publication evidence",
+          );
+        }
+
+        let handlerCandidatePublicationBridge: ReviewHandlerPublicationBridgeProjection;
+        try {
+          handlerCandidatePublicationBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+            evidenceSummary: result.candidateVerificationPublicationEvidence,
+            deliveryId: event.id,
+            reviewOutputKey,
+            upstreamCorrelationKey: candidateVerificationContext.correlationKey,
+          });
+        } catch (err) {
+          handlerCandidatePublicationBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
+            evidenceSummary: null,
+            deliveryId: event.id,
+            reviewOutputKey,
+            upstreamCorrelationKey: candidateVerificationContext.correlationKey,
+          });
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "m072-review-handler-publication-bridge",
+              gateResult: "degraded",
+              reason: "projection-exception",
+              err,
+              ...handlerCandidatePublicationBridge.logFields,
+            },
+            "Review handler candidate-publication bridge projection failed; using bounded degraded evidence",
+          );
+        }
+        logger.info(
+          {
+            ...baseLog,
+            gate: "m072-review-handler-publication-bridge",
+            ...handlerCandidatePublicationBridge.logFields,
+          },
+          "Projected review handler candidate-publication bridge evidence",
         );
 
         const reviewCandidateFindingResult = resolveReviewCandidateFindingResult({
@@ -4775,25 +5045,25 @@ export function createReviewHandler(deps: {
         const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();
         if (reviewCandidatePublicationAdapter.payloads.length > 0) {
           if (canPublishVisibleOutput("candidate-approved inline review comments")) {
-            const candidatePublisher = createInlineReviewPublisher({
-              getOctokit: async () => extractionOctokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              botHandles: [githubApp.getAppSlug(), "claude"],
-              reviewOutputKey,
-              deliveryId: event.id,
-              logger,
-              publicationGate: createInlineReviewOutputPublicationGate({
+            for (const payload of reviewCandidatePublicationAdapter.payloads) {
+              const candidateReviewOutputKey = buildCandidateReviewOutputKey(reviewOutputKey, payload.candidateFingerprint);
+              const candidatePublisher = createInlineReviewPublisher({
+                getOctokit: async () => extractionOctokit,
                 owner: apiOwner,
                 repo: apiRepo,
                 prNumber: pr.number,
-                reviewOutputKey,
-              }),
-              prDiffForCommentValidation: diffContext.diffContent,
-            });
-
-            for (const payload of reviewCandidatePublicationAdapter.payloads) {
+                botHandles: [githubApp.getAppSlug(), "claude"],
+                reviewOutputKey: candidateReviewOutputKey,
+                deliveryId: event.id,
+                logger,
+                publicationGate: createReviewOutputPublicationGate({
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey: candidateReviewOutputKey,
+                }),
+                prDiffForCommentValidation: diffContext.diffContent,
+              });
               const publishResult = await candidatePublisher.publish(payload.publication);
               candidatePublisherResults.set(payload.candidateFingerprint, publishResult);
             }
@@ -4954,6 +5224,9 @@ export function createReviewHandler(deps: {
             keywordParsing: parsedIntent,
             profileSelection,
             contributorExperience: authorClassification.contract.reviewDetails,
+            shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
+            candidatePublicationBridge: handlerCandidatePublicationBridge.reviewDetails,
+            candidateVerificationPublicationEvidence: result.candidateVerificationPublicationEvidence,
             prioritization: prioritizationStats,
             usageLimit: result.usageLimit,
             tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
@@ -6234,6 +6507,16 @@ export function createReviewHandler(deps: {
                       promptSections: retryPromptSections,
                       reviewOutputKey: retryReviewOutputKey,
                       deliveryId: retryDeliveryId,
+                      candidateVerificationContext: {
+                        docsConfigTruth: null,
+                        deliveryId: retryDeliveryId,
+                        reviewOutputKey: retryReviewOutputKey,
+                        correlationKey: buildShadowSpecialistCorrelationKey({
+                          deliveryId: retryDeliveryId,
+                          reviewOutputKey: retryReviewOutputKey,
+                          prNumber: pr.number,
+                        }),
+                      },
                       dynamicTimeoutSeconds: retryTimeout,
                       maxTurnsOverride: reviewMaxTurnsOverride,
                       knowledgeStore,

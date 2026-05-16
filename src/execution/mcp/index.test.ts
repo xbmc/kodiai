@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { createHash } from "node:crypto";
 import { buildMcpServers, buildMcpServerFactories, buildAllowedMcpTools, createCandidateFindingServer } from "./index.ts";
 import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
 
@@ -46,6 +47,30 @@ function buildDraftSummaryBody(): string {
     "",
     "</details>",
   ].join("\n");
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function candidatePublicationPolicyKey(candidate: {
+  path: string;
+  side?: string;
+  line?: number;
+  startLine?: number;
+  reviewOutputKey: string;
+  deliveryId: string;
+  body: string;
+}): string {
+  return `m070-publication:${sha256(JSON.stringify({
+    path: candidate.path,
+    side: candidate.side ?? "RIGHT",
+    line: candidate.line ?? null,
+    startLine: candidate.startLine ?? null,
+    reviewOutputKey: candidate.reviewOutputKey,
+    deliveryId: candidate.deliveryId,
+    bodySignal: sha256(candidate.body),
+  }))}`;
 }
 
 // Minimal mock dependencies
@@ -358,6 +383,88 @@ describe("buildMcpServers", () => {
       expect(createReviewCommentCalls).toBe(0);
       expect(secondResult.content[0]?.text).toContain("\"skipped\":true");
       expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
+    });
+
+    it("passes candidate verification context into inline publication and emits bounded evidence", async () => {
+      const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-verified:head-abcdef1234";
+      const deliveryId = "delivery-verified";
+      const body = "Verified candidate publication.";
+      const evidenceEvents: unknown[] = [];
+      let createReviewCommentCalls = 0;
+      const octokit = {
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+          },
+          pulls: {
+            listReviewComments: async () => ({ data: [] }),
+            listReviews: async () => ({ data: [] }),
+            get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+            createReviewComment: async () => {
+              createReviewCommentCalls++;
+              return {
+                data: {
+                  id: 123,
+                  html_url: "https://example.test/review-comment",
+                  path: "src/file.ts",
+                  line: 10,
+                  original_line: 10,
+                },
+              };
+            },
+          },
+        },
+      };
+
+      const servers = buildMcpServers({
+        getOctokit: async () => octokit as never,
+        owner: "acme",
+        repo: "repo",
+        prNumber: 101,
+        botHandles: [],
+        reviewOutputKey,
+        deliveryId,
+        enableInlineTools: true,
+        enableCommentTools: false,
+        candidateVerificationContext: {
+          deliveryId,
+          reviewOutputKey,
+          correlationKey: "correlation-verified",
+          docsConfigTruth: {
+            evidence: [{
+              candidateKey: candidatePublicationPolicyKey({
+                path: "src/file.ts",
+                side: "RIGHT",
+                line: 10,
+                reviewOutputKey,
+                deliveryId,
+                body,
+              }),
+              decision: "verified",
+              evidenceId: "verified-1",
+            }],
+          },
+        },
+        candidateVerificationPublicationEvidenceSink: (summary, event) => {
+          evidenceEvents.push({ summary, event });
+        },
+      });
+
+      const createInlineComment = getToolHandler(servers.github_inline_comment, "create_inline_comment");
+      const result = await createInlineComment({
+        path: "src/file.ts",
+        body,
+        line: 10,
+        side: "RIGHT",
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(createReviewCommentCalls).toBe(1);
+      expect(evidenceEvents).toHaveLength(2);
+      expect(evidenceEvents).toMatchObject([
+        { event: { outcome: "allowed" }, summary: { counts: { attempted: 1, allowed: 1, published: 0 } } },
+        { event: { outcome: "published" }, summary: { counts: { attempted: 1, allowed: 1, published: 1 } } },
+      ]);
     });
   });
 });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 
 import { buildMcpServers } from "../execution/mcp/index.ts";
-import type { ExecutionContext, ExecutionResult } from "../execution/types.ts";
+import type { ExecutionContext, ExecutionPublishEvent, ExecutionResult } from "../execution/types.ts";
 import type { CandidatePublicationPolicyAttempt } from "../specialists/candidate-publication-policy.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
@@ -237,7 +237,7 @@ async function runProductionLikeScenario(params: {
     shadowSpecialistSubflow: buildShadowSubflow(params.kind, params.candidateBody),
     executorExecute: async ({ input, octokit, logger }) => {
       executorInput = input;
-      const publishEvents: unknown[] = [];
+      const publishEvents: ExecutionPublishEvent[] = [];
       const servers = buildMcpServers({
         getOctokit: async () => octokit as never,
         owner: input.owner,

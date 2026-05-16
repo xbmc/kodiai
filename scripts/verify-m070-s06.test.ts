@@ -15,6 +15,7 @@ import {
   parseM070S06Args,
   type M070S06SourceSnapshot,
 } from "./verify-m070-s06.ts";
+import type { ReviewOutputArtifactCollection } from "../src/review-audit/review-output-artifacts.ts";
 
 const GENERATED_AT = "2026-05-10T00:00:00.000Z";
 const TARGET = "xbmc/xbmc#28172";
@@ -50,7 +51,7 @@ function approvedReviewBody(extra = ""): string {
   });
 }
 
-function fakeCollection(overrides: Partial<Record<string, unknown>> = {}) {
+function fakeCollection(overrides: Partial<Record<string, unknown>> = {}): ReviewOutputArtifactCollection {
   return {
     requestedReviewOutputKey: REVIEW_OUTPUT_KEY,
     prUrl: "https://github.com/xbmc/xbmc/pull/28172",
@@ -69,6 +70,10 @@ function fakeCollection(overrides: Partial<Record<string, unknown>> = {}) {
       ...overrides,
     }],
   } as never;
+}
+
+function fakeArtifact() {
+  return fakeCollection().artifacts[0]!;
 }
 
 function baseSources(): M070S06SourceSnapshot {
@@ -305,23 +310,23 @@ describe("verify-m070-s06 exact-key wrapper", () => {
 
   test("collector maps no artifacts, duplicate artifacts, wrong source, and wrong review state to blocked policy surfaces", async () => {
     const args = parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY, "--correlation-key", CORRELATION_KEY]);
-    const deps = (collection: never) => ({
+    const deps = (collection: ReviewOutputArtifactCollection) => ({
       env: { GITHUB_APP_ID: "123", GITHUB_PRIVATE_KEY: "-----BEGIN TEST KEY-----" },
       createInstallationOctokit: async () => ({} as never),
       collectReviewOutputArtifacts: async () => collection,
       queryRuntimeLogs: async () => ({ unavailable: false, rows: [{ id: "runtime", reviewOutputKey: REVIEW_OUTPUT_KEY, deliveryId: DELIVERY_ID, correlationKey: CORRELATION_KEY, available: true }] }),
     });
 
-    const noArtifacts = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 0, total: 0 }, artifacts: [] } as never)) });
+    const noArtifacts = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 0, total: 0 }, artifacts: [] })) });
     expect(noArtifacts.status_code).toBe("m070_s06_no_artifact_blocked");
 
-    const duplicate = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 2, total: 2 }, artifacts: [fakeCollection().artifacts[0], { ...fakeCollection().artifacts[0], sourceUrl: "https://github.com/xbmc/xbmc/pull/28172#pullrequestreview-2" }] } as never)) });
+    const duplicate = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 0, reviews: 2, total: 2 }, artifacts: [fakeArtifact(), { ...fakeArtifact(), sourceUrl: "https://github.com/xbmc/xbmc/pull/28172#pullrequestreview-2" }] })) });
     expect(duplicate.status_code).toBe("m070_s06_duplicate_artifact_blocked");
 
-    const wrongSource = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 1, reviews: 0, total: 1 }, artifacts: [{ ...fakeCollection().artifacts[0], source: "issue-comment", reviewState: null }] } as never)) });
+    const wrongSource = await evaluate({ sources: await collectM070S06Sources(args, deps({ ...fakeCollection(), artifactCounts: { reviewComments: 0, issueComments: 1, reviews: 0, total: 1 }, artifacts: [{ ...fakeArtifact(), source: "issue-comment", reviewState: null }] })) });
     expect(wrongSource.status_code).toBe("m070_s06_direct_fallback_rejected");
 
-    const wrongState = await evaluate({ sources: await collectM070S06Sources(args, deps(fakeCollection({ reviewState: "COMMENTED" }) as never)) });
+    const wrongState = await evaluate({ sources: await collectM070S06Sources(args, deps(fakeCollection({ reviewState: "COMMENTED" }))) });
     expect(wrongState.status_code).toBe("m070_s06_malformed_aggregate_blocked");
   });
 

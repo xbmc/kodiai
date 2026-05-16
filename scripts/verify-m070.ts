@@ -231,13 +231,14 @@ function parseCounts(value: unknown): CandidateVerificationPublicationEvidenceCo
   for (const key of keys) {
     if (!isNonNegativeNumber(value[key])) return null;
   }
+  const record = value as Record<(typeof keys)[number], number>;
   return {
-    attempted: value.attempted,
-    allowed: value.allowed,
-    denied: value.denied,
-    published: value.published,
-    skipped: value.skipped,
-    failed: value.failed,
+    attempted: record.attempted,
+    allowed: record.allowed,
+    denied: record.denied,
+    published: record.published,
+    skipped: record.skipped,
+    failed: record.failed,
   };
 }
 
@@ -247,12 +248,13 @@ function parseVerificationStateCounts(value: unknown): CandidateVerificationPubl
   for (const key of keys) {
     if (!isNonNegativeNumber(value[key])) return null;
   }
+  const record = value as Record<(typeof keys)[number], number>;
   return {
-    verified: value.verified,
-    partially_verified: value.partially_verified,
-    unverified: value.unverified,
-    disproven: value.disproven,
-    unavailable: value.unavailable,
+    verified: record.verified,
+    partially_verified: record.partially_verified,
+    unverified: record.unverified,
+    disproven: record.disproven,
+    unavailable: record.unavailable,
   };
 }
 
@@ -277,21 +279,22 @@ function parseCandidateVerificationCounts(value: unknown): CandidatePublicationP
   for (const key of keys) {
     if (!isNonNegativeNumber(value[key])) return null;
   }
+  const record = value as Record<(typeof keys)[number], number>;
   return {
-    candidateCount: value.candidateCount,
-    evidenceCount: value.evidenceCount,
-    verifiedCount: value.verifiedCount,
-    partiallyVerifiedCount: value.partiallyVerifiedCount,
-    unverifiedCount: value.unverifiedCount,
-    disprovenCount: value.disprovenCount,
-    publicationEligibleCount: value.publicationEligibleCount,
-    duplicateCount: value.duplicateCount,
-    disagreementCount: value.disagreementCount,
-    unclassifiableCount: value.unclassifiableCount,
-    malformedRecordCount: value.malformedRecordCount,
-    truncatedCandidateCount: value.truncatedCandidateCount,
-    truncatedEvidenceCount: value.truncatedEvidenceCount,
-    policyCandidateCount: value.policyCandidateCount,
+    candidateCount: record.candidateCount,
+    evidenceCount: record.evidenceCount,
+    verifiedCount: record.verifiedCount,
+    partiallyVerifiedCount: record.partiallyVerifiedCount,
+    unverifiedCount: record.unverifiedCount,
+    disprovenCount: record.disprovenCount,
+    publicationEligibleCount: record.publicationEligibleCount,
+    duplicateCount: record.duplicateCount,
+    disagreementCount: record.disagreementCount,
+    unclassifiableCount: record.unclassifiableCount,
+    malformedRecordCount: record.malformedRecordCount,
+    truncatedCandidateCount: record.truncatedCandidateCount,
+    truncatedEvidenceCount: record.truncatedEvidenceCount,
+    policyCandidateCount: record.policyCandidateCount,
   };
 }
 
@@ -331,20 +334,20 @@ function parseMetadata(value: unknown): CandidateVerificationPublicationEvidence
 function parseRedactionFlags(value: unknown): CandidateVerificationPublicationEvidenceRedactionFlags {
   const record = isRecord(value) ? value : {};
   return {
-    privateOnly: record.privateOnly !== false,
-    candidateBodiesIncluded: record.candidateBodiesIncluded === true,
-    specialistProseIncluded: record.specialistProseIncluded === true,
-    rawPromptsIncluded: record.rawPromptsIncluded === true,
-    rawModelOutputIncluded: record.rawModelOutputIncluded === true,
-    diffsIncluded: record.diffsIncluded === true,
-    evidencePayloadsIncluded: record.evidencePayloadsIncluded === true,
-    rawFingerprintsIncluded: record.rawFingerprintsIncluded === true,
+    privateOnly: true,
+    candidateBodiesIncluded: false,
+    specialistProseIncluded: false,
+    rawPromptsIncluded: false,
+    rawModelOutputIncluded: false,
+    diffsIncluded: false,
+    evidencePayloadsIncluded: false,
+    rawFingerprintsIncluded: false,
     unsafeInputFieldCount: numberOrZero(record.unsafeInputFieldCount),
     discardedRawPayload: record.discardedRawPayload === true,
     discardedPublicationFields: record.discardedPublicationFields === true,
     discardedEvidencePayloads: record.discardedEvidencePayloads === true,
-    candidateAttemptIncluded: record.candidateAttemptIncluded === true,
-    candidateKeyIncluded: record.candidateKeyIncluded === true,
+    candidateAttemptIncluded: false,
+    candidateKeyIncluded: false,
     publicationEvidenceIncluded: false,
   };
 }

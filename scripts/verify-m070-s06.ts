@@ -241,9 +241,9 @@ export function parseM070S06Args(argv: readonly string[]): M070S06Args {
   let help = false;
   let reviewOutputKey: string | null = null;
   let deliveryId: string | null = null;
-  let repo = DEFAULT_REPO;
+  let repo: string = DEFAULT_REPO;
   let correlationKey: string | null = null;
-  let target = DEFAULT_TARGET;
+  let target: string = DEFAULT_TARGET;
   let expectStatus: M070S06StatusCode | null = null;
   let allowBlocked = false;
 

@@ -10,9 +10,10 @@ import { createIssueLabelServer } from "./issue-label-server.ts";
 import { createIssueCommentServer } from "./issue-comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
-import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
+import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "./review-output-publication-gate.ts";
 import { createCandidateFindingServer } from "./candidate-finding-server.ts";
 import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
+import type { CandidateVerificationPublicationEvidenceSink } from "../../specialists/candidate-verification-publication-evidence.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
@@ -63,6 +64,8 @@ export function buildMcpServers(deps: {
   triageConfig?: TriageConfig;
   enableCandidateFindingTool?: boolean;
   candidateFindingRecorder?: ReviewCandidateFindingRecorder;
+  candidateVerificationContext?: CandidateVerificationContext;
+  candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
 }): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {};
   const reviewOutputPublicationGate =
@@ -72,6 +75,8 @@ export function buildMcpServers(deps: {
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
+          candidateVerificationContext: deps.candidateVerificationContext,
+          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
       : undefined;
 
@@ -250,6 +255,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
+          candidateVerificationContext: deps.candidateVerificationContext,
+          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
       : undefined;
 
