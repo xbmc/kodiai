@@ -1,7 +1,7 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { McpServerConfig, McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-import { createCommentServer } from "./comment-server.ts";
+import { createCommentServer, type CommentPublicationState } from "./comment-server.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 import { createCIStatusServer } from "./ci-status-server.ts";
 import { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
@@ -81,6 +81,7 @@ export function buildMcpServers(deps: {
       : undefined;
 
   const enableCommentTools = deps.enableCommentTools ?? true;
+  const candidateVerificationRequired = deps.candidateVerificationContext !== undefined;
   if (enableCommentTools) {
     servers.github_comment = createCommentServer(
       deps.getOctokit,
@@ -93,6 +94,8 @@ export function buildMcpServers(deps: {
       deps.onPublishEvent,
       deps.logger,
       reviewOutputPublicationGate,
+      { createCommentPublished: false },
+      candidateVerificationRequired,
     );
   }
 
@@ -261,6 +264,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
       : undefined;
 
   const factories: Record<string, () => McpSdkServerConfigWithInstance> = {};
+  const commentPublicationState: CommentPublicationState = { createCommentPublished: false };
+  const candidateVerificationRequired = deps.candidateVerificationContext !== undefined;
 
   if (enableCommentTools) {
     factories.github_comment = () =>
@@ -275,6 +280,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublishEvent,
         deps.logger,
         reviewOutputPublicationGate,
+        commentPublicationState,
+        candidateVerificationRequired,
       ) as McpSdkServerConfigWithInstance;
   }
 

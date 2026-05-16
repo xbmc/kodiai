@@ -640,4 +640,221 @@ describe("buildMcpServerFactories", () => {
     expect(inlineResult.isError).toBeUndefined();
     expect(createReviewCommentCalls).toBe(1);
   });
+
+  it("blocks factory-created duplicate summary comments for the same review output", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review:delivery-delivery-dup:head-abcdef1234";
+    let createCommentCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            createCommentCalls++;
+            return { data: { id: createCommentCalls, html_url: "https://example.test/comment" } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const factories = buildMcpServerFactories({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-dup",
+      enableCommentTools: true,
+    });
+
+    const firstCreate = getToolHandler(factories.github_comment!(), "create_comment");
+    const secondCreate = getToolHandler(factories.github_comment!(), "create_comment");
+
+    const first = await firstCreate({ issueNumber: 101, body: buildDraftSummaryBody() });
+    const second = await secondCreate({ issueNumber: 101, body: buildDraftSummaryBody() });
+
+    expect(first.isError).toBeUndefined();
+    expect(second.isError).toBe(true);
+    expect(second.content[0]?.text).toContain("comment-already-posted-for-this-review-output");
+    expect(createCommentCalls).toBe(1);
+  });
+
+  it("blocks model-supplied issue numbers outside the current PR", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review:delivery-delivery-target:head-abcdef1234";
+    let createCommentCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            createCommentCalls++;
+            return { data: { id: createCommentCalls, html_url: "https://example.test/comment" } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const servers = buildMcpServers({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-target",
+      enableCommentTools: true,
+    });
+
+    const createComment = getToolHandler(servers.github_comment, "create_comment");
+    const result = await createComment({ issueNumber: 1, body: buildDraftSummaryBody() });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("issue-number-must-match-current-pr");
+    expect(createCommentCalls).toBe(0);
+  });
+
+  it("blocks direct approval comments when candidate verification is enabled but no candidate was published", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review:delivery-delivery-candidate-required:head-abcdef1234";
+    let createReviewCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: { id: 1, html_url: "https://example.test/comment" } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          createReview: async () => {
+            createReviewCalls++;
+            return { data: { id: createReviewCalls } };
+          },
+        },
+      },
+    };
+
+    const servers = buildMcpServers({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-candidate-required",
+      enableCommentTools: true,
+      candidateVerificationContext: {
+        deliveryId: "delivery-candidate-required",
+        reviewOutputKey,
+        correlationKey: "correlation-candidate-required",
+        docsConfigTruth: { evidence: [] },
+      },
+    });
+
+    const createComment = getToolHandler(servers.github_comment, "create_comment");
+    const result = await createComment({
+      issueNumber: 101,
+      body: ["Decision: APPROVE", "Issues: none", "Evidence:", "- Reviewed changed files."].join("\n"),
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("direct-publication-requires-approved-candidate");
+    expect(createReviewCalls).toBe(0);
+  });
+
+  it("blocks model-callable update_comment in PR review context", async () => {
+    let updateCommentCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          updateComment: async () => {
+            updateCommentCalls++;
+            return { data: { id: 123 } };
+          },
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const servers = buildMcpServers({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      enableCommentTools: true,
+    });
+
+    const updateComment = getToolHandler(servers.github_comment, "update_comment");
+    const result = await updateComment({ commentId: 123, body: buildDraftSummaryBody() });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("update-comment-disabled-for-review-pr-context");
+    expect(updateCommentCalls).toBe(0);
+  });
+
+  it("blocks update_comment after candidate verification denied inline publication", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review:delivery-delivery-update-denied:head-abcdef1234";
+    let updateCommentCalls = 0;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          updateComment: async () => {
+            updateCommentCalls++;
+            return { data: { id: 99 } };
+          },
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async () => ({ data: { id: 1, html_url: "https://example.test/review-comment", path: "src/file.ts", line: 10, original_line: 10 } }),
+        },
+      },
+    };
+
+    const servers = buildMcpServers({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-update-denied",
+      enableInlineTools: true,
+      enableCommentTools: true,
+      candidateVerificationContext: {
+        deliveryId: "delivery-update-denied",
+        reviewOutputKey,
+        correlationKey: "correlation-update-denied",
+        docsConfigTruth: { evidence: [] },
+      },
+    });
+
+    const createInlineComment = getToolHandler(servers.github_inline_comment, "create_inline_comment");
+    const updateComment = getToolHandler(servers.github_comment, "update_comment");
+
+    const denied = await createInlineComment({ path: "src/file.ts", body: "Denied candidate", line: 10, side: "RIGHT" });
+    expect(denied.isError).toBe(true);
+
+    const updateResult = await updateComment({ commentId: 99, body: buildDraftSummaryBody() });
+    expect(updateResult.isError).toBe(true);
+    expect(updateResult.content[0]?.text).toContain("m070-direct-fallback-blocked-after-candidate-denial");
+    expect(updateCommentCalls).toBe(0);
+  });
 });

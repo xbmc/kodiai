@@ -12,6 +12,10 @@ import {
   type ReviewOutputPublicationGate,
 } from "./review-output-publication-gate.ts";
 
+export type CommentPublicationState = {
+  createCommentPublished: boolean;
+};
+
 export function createCommentServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
@@ -23,6 +27,8 @@ export function createCommentServer(
   onPublishEvent?: (event: ExecutionPublishEvent) => void,
   logger?: Logger,
   publicationGate?: ReviewOutputPublicationGate,
+  publicationState: CommentPublicationState = { createCommentPublished: false },
+  candidateVerificationRequired = false,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
   const reviewOutputPublicationGate = publicationGate
@@ -32,15 +38,54 @@ export function createCommentServer(
         : undefined
     );
 
-  // One-shot publish guard: only one create_comment call succeeds per server instance.
-  // Prevents the agent from double-posting when it retries a tool call within a turn.
-  let createCommentPublished = false;
+  // Shared publication state is injected by MCP factories so stateless HTTP
+  // server instances cannot reset the one-shot publication guard.
 
   async function resolveOutputPublicationStatus(octokit: Octokit) {
     if (!reviewOutputPublicationGate) {
       return null;
     }
     return reviewOutputPublicationGate.resolve(octokit);
+  }
+
+  function getCandidateInlinePublicationState() {
+    const candidateGate = reviewOutputPublicationGate as CandidateReviewOutputPublicationGate | undefined;
+    return candidateGate?.getInlinePublicationState?.();
+  }
+
+  function fallbackBlockedResult(reason = "m070-direct-fallback-blocked-after-candidate-denial") {
+    const state = getCandidateInlinePublicationState();
+    return {
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          success: false,
+          blocked: true,
+          fallback_blocked: true,
+          candidate_publication_state: state?.status ?? "unknown",
+          reason,
+        }),
+      }],
+      isError: true,
+    };
+  }
+
+  function directPublicationBlockedResult(reason: string) {
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({ success: false, blocked: true, reason }) }],
+      isError: true,
+    };
+  }
+
+  function candidateDeniedFallbackBlocked(): boolean {
+    const inlinePublicationState = getCandidateInlinePublicationState();
+    return inlinePublicationState?.status === "skipped"
+      && inlinePublicationState.reason === "m070-candidate-verification-denied";
+  }
+
+  function candidateDirectPublicationAllowed(): boolean {
+    if (!candidateVerificationRequired) return true;
+    return getCandidateInlinePublicationState()?.status === "published";
   }
 
   function getKodiaiDecisionContent(body: string): string[] {
@@ -556,6 +601,15 @@ export function createCommentServer(
         },
         async ({ commentId, body }) => {
           try {
+            if (candidateDeniedFallbackBlocked()) {
+              return fallbackBlockedResult();
+            }
+            if (prNumber !== undefined) {
+              return directPublicationBlockedResult("update-comment-disabled-for-review-pr-context");
+            }
+            if (candidateVerificationRequired) {
+              return directPublicationBlockedResult("update-comment-disabled-for-candidate-verification");
+            }
             const octokit = await getOctokit();
             const sanitized = sanitizeOutgoingMentions(
               maybeStampMarker(
@@ -607,22 +661,23 @@ export function createCommentServer(
           body: z.string().describe("Comment body (markdown)"),
         },
         async ({ issueNumber, body }) => {
-          if (createCommentPublished) {
+          if (publicationState.createCommentPublished) {
             return {
-              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Comment already posted — create_comment can only be called once per execution." }) }],
+              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "comment-already-posted-for-this-review-output" }) }],
               isError: true,
             };
           }
           try {
-            const octokit = await getOctokit();
-            const candidateGate = reviewOutputPublicationGate as CandidateReviewOutputPublicationGate | undefined;
-            const inlinePublicationState = candidateGate?.getInlinePublicationState?.();
-            if (inlinePublicationState?.status === "skipped" && inlinePublicationState.reason === "m070-candidate-verification-denied") {
-              return {
-                content: [{ type: "text" as const, text: JSON.stringify({ success: false, blocked: true, fallback_blocked: true, candidate_publication_state: inlinePublicationState.status, reason: "m070-direct-fallback-blocked-after-candidate-denial" }) }],
-                isError: true,
-              };
+            if (reviewOutputKey && prNumber !== undefined && issueNumber !== prNumber) {
+              return directPublicationBlockedResult("issue-number-must-match-current-pr");
             }
+            if (candidateDeniedFallbackBlocked()) {
+              return fallbackBlockedResult();
+            }
+            if (!candidateDirectPublicationAllowed()) {
+              return directPublicationBlockedResult("direct-publication-requires-approved-candidate");
+            }
+            const octokit = await getOctokit();
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
             if (publicationStatus && !publicationStatus.shouldPublish) {
               logger?.info(
@@ -673,7 +728,7 @@ export function createCommentServer(
                 body: sanitized,
               });
               onPublish?.();
-              createCommentPublished = true;
+              publicationState.createCommentPublished = true;
               return {
                 content: [
                   {
@@ -690,7 +745,7 @@ export function createCommentServer(
               issue_number: issueNumber,
               body: sanitized,
             });
-            createCommentPublished = true;
+            publicationState.createCommentPublished = true;
             onPublish?.();
             onPublishEvent?.({
               type: "comment",

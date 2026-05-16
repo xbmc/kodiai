@@ -32,7 +32,7 @@ function m070EvidenceLine(correlationKey = CORRELATION_KEY): string {
     "candidateVerification=candidateCount:1,evidenceCount:1,verifiedCount:1,partiallyVerifiedCount:0,unverifiedCount:0,disprovenCount:0,publicationEligibleCount:1",
     "denialCounts=none",
     "reasons=full-support",
-    `metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y,deliveryIdValue:${DELIVERY_ID},reviewOutputKeyValue:${REVIEW_OUTPUT_KEY},correlationKeyValue:${correlationKey}`,
+    "metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y",
     "redaction=privateOnly:y,candidateBodies:n,specialistProse:n,rawPrompts:n,rawModelOutput:n,diffs:n,evidencePayloads:n,rawFingerprints:n,publicationEvidence:n,unsafeFields:0",
   ].join("; ");
 }
@@ -272,13 +272,13 @@ describe("verify-m070-s06 exact-key wrapper", () => {
     expect(aggregate).toMatchObject({
       aggregateStatus: "mixed",
       counts: { attempted: 1, allowed: 1, denied: 0, published: 1 },
-      metadata: { hasDeliveryId: true, hasReviewOutputKey: true, hasCorrelationKey: true, correlationKey: CORRELATION_KEY },
+      metadata: { hasDeliveryId: true, hasReviewOutputKey: true, hasCorrelationKey: true },
     });
     expect(JSON.stringify(aggregate)).not.toContain("M070_S06_BODY_CANARY_SHOULD_NOT_LEAK");
   });
 
   test("collects GitHub artifacts through injected production-like seam and discards raw bodies", async () => {
-    const sources = await collectM070S06Sources(parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY, "--repo", REPO, "--target", TARGET]), {
+    const sources = await collectM070S06Sources(parseM070S06Args(["--review-output-key", REVIEW_OUTPUT_KEY, "--repo", REPO, "--target", TARGET, "--correlation-key", CORRELATION_KEY]), {
       env: { GITHUB_APP_ID: "123", GITHUB_PRIVATE_KEY: "-----BEGIN TEST KEY-----" },
       createInstallationOctokit: async (parsed) => {
         expect(parsed).toMatchObject({ owner: "xbmc", repo: "xbmc", prNumber: 28172, effectiveDeliveryId: DELIVERY_ID });
@@ -287,7 +287,7 @@ describe("verify-m070-s06 exact-key wrapper", () => {
       collectReviewOutputArtifacts: async () => fakeCollection(),
       queryRuntimeLogs: async () => ({ unavailable: false, rows: [] }),
     });
-    const report = await evaluate({ correlationKey: null, sources });
+    const report = await evaluate({ correlationKey: CORRELATION_KEY, sources });
     expect(report.status_code).toBe("m070_s06_candidate_approved_verified_ok");
     expect(report.runtimeCorrelation.correlationKeyPresent).toBe(true);
     expect(JSON.stringify(report)).not.toContain("candidate-approved non-fallback proof");

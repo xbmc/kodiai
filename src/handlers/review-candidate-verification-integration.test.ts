@@ -346,9 +346,10 @@ function expectCorrelationEverywhere(scenario: IntegrationScenarioResult) {
   });
 
   const detailsBody = visibleBodies(scenario).find((body) => body.includes("M070 candidate verification publication"));
-  expect(detailsBody).toContain("deliveryIdValue:delivery-shadow-metrics");
-  expect(detailsBody).toContain(`reviewOutputKeyValue:${scenario.executorInput.reviewOutputKey}`);
-  expect(detailsBody).toContain(`correlationKeyValue:${context?.correlationKey}`);
+  expect(detailsBody).toContain("metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y");
+  expect(detailsBody).not.toContain("deliveryIdValue:delivery-shadow-metrics");
+  expect(detailsBody).not.toContain(`reviewOutputKeyValue:${scenario.executorInput.reviewOutputKey}`);
+  expect(detailsBody).not.toContain(`correlationKeyValue:${context?.correlationKey}`);
 }
 
 function expectAggregateOnlySurfaces(scenario: IntegrationScenarioResult, forbiddenValues: string[]) {

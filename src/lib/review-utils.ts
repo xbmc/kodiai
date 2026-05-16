@@ -224,12 +224,6 @@ function formatCandidateVerificationMetadata(value: unknown): string {
     `reviewOutputKey:${metadata.hasReviewOutputKey === true ? "y" : "n"}`,
     `correlationKey:${metadata.hasCorrelationKey === true ? "y" : "n"}`,
   ];
-  const deliveryId = boundedReviewDetailsValue(metadata.deliveryId);
-  const reviewOutputKey = boundedReviewDetailsValue(metadata.reviewOutputKey);
-  const correlationKey = boundedReviewDetailsValue(metadata.correlationKey);
-  if (deliveryId) parts.push(`deliveryIdValue:${deliveryId}`);
-  if (reviewOutputKey) parts.push(`reviewOutputKeyValue:${reviewOutputKey}`);
-  if (correlationKey) parts.push(`correlationKeyValue:${correlationKey}`);
   return parts.join(",");
 }
 
