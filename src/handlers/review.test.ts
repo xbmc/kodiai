@@ -15821,462 +15821,7 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
       enqueue: async <T>(
         _installationId: number,
         fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-          createReview: async () => ({ data: { id: 1 } }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async () => {
-            published = true;
-            return { data: { id: 1 } };
-          },
-          updateComment: async () => ({ data: {} }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => {
-          executorCalled = true;
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-review-plan-fail-open",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      reviewPlanBuilder: () => {
-        throw new Error("injected review-plan failure");
-      },
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.opened");
-    expect(handler).toBeDefined();
-
-    try {
-      await handler!(
-        buildReviewRequestedEvent({
-          action: "opened",
-          pull_request: {
-            number: 101,
-            draft: false,
-            title: "ReviewPlan fail-open",
-            body: "",
-            commits: 0,
-            additions: 40,
-            deletions: 10,
-            user: { login: "octocat" },
-            author_association: "CONTRIBUTOR",
-            base: { ref: "main", sha: "mainsha" },
-            head: {
-              sha: "abcdef1234567890",
-              ref: "feature/review-plan-fail-open",
-              repo: {
-                full_name: "acme/repo",
-                name: "repo",
-                owner: { login: "acme" },
-              },
-            },
-            labels: [],
-          },
-        }),
-      );
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-
-    expect(executorCalled).toBe(true);
-    expect(published).toBe(true);
-    expect(warnings).toContainEqual(expect.objectContaining({
-      gate: "review-plan",
-      gateResult: "degraded",
-      reason: "plan-construction-failed",
-    }));
-  });
-
-
-  test("publishes Review Details without Review Plan line when public projection fails", async () => {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const warnings: Array<Record<string, unknown>> = [];
-    const publishedBodies: string[] = [];
-
-    const logger = {
-      info: () => undefined,
-      warn: (data: Record<string, unknown>) => {
-        warnings.push(data);
-      },
-      error: () => undefined,
-      debug: () => undefined,
-      trace: () => undefined,
-      fatal: () => undefined,
-      child: () => logger,
-    } as unknown as Logger;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-          createReview: async () => ({ data: { id: 1 } }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async (params: { body: string }) => {
-            publishedBodies.push(params.body);
-            return { data: { id: 1 } };
-          },
-          updateComment: async (params: { body: string }) => {
-            publishedBodies.push(params.body);
-            return { data: {} };
-          },
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => ({
-          conclusion: "success",
-          published: false,
-          costUsd: 0,
-          numTurns: 1,
-          durationMs: 1,
-          sessionId: "session-review-plan-details-projection-fail-open",
-        }),
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      reviewPlanReviewDetailsSummarizer: () => {
-        throw new Error("projection failure with secret token that must be bounded and not visible");
-      },
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.opened");
-    expect(handler).toBeDefined();
-
-    try {
-      await handler!(
-        buildReviewRequestedEvent({
-          action: "opened",
-          pull_request: {
-            number: 101,
-            draft: false,
-            title: "ReviewPlan projection fail-open",
-            body: "private body",
-            commits: 0,
-            additions: 40,
-            deletions: 10,
-            user: { login: "octocat" },
-            author_association: "CONTRIBUTOR",
-            base: { ref: "main", sha: "mainsha" },
-            head: {
-              sha: "abcdef1234567890",
-              ref: "feature/review-plan-details-fail-open",
-              repo: {
-                full_name: "acme/repo",
-                name: "repo",
-                owner: { login: "acme" },
-              },
-            },
-            labels: [],
-          },
-        }),
-      );
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-
-    const combinedBodies = publishedBodies.join("\n---\n");
-    expect(combinedBodies).toContain("<summary>Review Details</summary>");
-    expect(combinedBodies).not.toContain("- Review Plan:");
-    expect(combinedBodies).not.toContain("projection failure");
-    expect(combinedBodies).not.toContain("secret token");
-    expect(warnings).toContainEqual(expect.objectContaining({
-      gate: "review-plan",
-      gateResult: "degraded",
-      reason: "review-details-projection-failed",
-      reviewDetailsSurface: "Review Details",
-    }));
-    const warning = warnings.find((entry) => entry.reason === "review-details-projection-failed");
-    expect(String(warning?.errorMessage ?? "").length).toBeLessThanOrEqual(160);
-  });
-
-  test("advances through pre-executor checkpoint phases before dispatching the executor", async () => {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-
-    const phaseTransitions: string[] = [];
-    let phasesSeenAtExecutor: string[] = [];
-    const coordinator = createReviewWorkCoordinator({
-      nowFn: (() => {
-        let nowMs = 12_000;
-        return () => ++nowMs;
-      })(),
-    });
-    const reviewWorkCoordinator = {
-      claim: (claim: Parameters<typeof coordinator.claim>[0]) => coordinator.claim(claim),
-      canPublish: (attemptId: Parameters<typeof coordinator.canPublish>[0]) => coordinator.canPublish(attemptId),
-      setPhase: (
-        attemptId: Parameters<typeof coordinator.setPhase>[0],
-        phase: Parameters<NonNullable<typeof coordinator.setPhase>>[1],
-      ) => {
-        phaseTransitions.push(phase);
-        return coordinator.setPhase(attemptId, phase);
-      },
-      getSnapshot: (familyKey: Parameters<typeof coordinator.getSnapshot>[0]) => coordinator.getSnapshot(familyKey),
-      release: (attemptId: Parameters<typeof coordinator.release>[0]) => coordinator.release(attemptId),
-      complete: (attemptId: Parameters<typeof coordinator.complete>[0]) => coordinator.complete(attemptId),
-    };
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async () => ({ data: { id: 1 } }),
-          updateComment: async () => ({ data: {} }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => {
-          phasesSeenAtExecutor = [...phaseTransitions];
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-phase-checkpoints",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      reviewWorkCoordinator,
-      logger: createNoopLogger(),
-    });
-
-    const handler = handlers.get("pull_request.review_requested");
-    expect(handler).toBeDefined();
-
-    await handler!(
-      buildReviewRequestedEvent({
-        requested_reviewer: { login: "kodiai[bot]" },
-        pull_request: {
-          number: 101,
-          draft: false,
-          title: "Coordinator phase checkpoints",
-          body: "",
-          commits: 0,
-          additions: 40,
-          deletions: 10,
-          user: { login: "octocat" },
-          author_association: "CONTRIBUTOR",
-          base: { ref: "main", sha: "mainsha" },
-          head: {
-            sha: "abcdef1234567890",
-            ref: "feature/phase-checkpoints",
-            repo: {
-              full_name: "acme/repo",
-              name: "repo",
-              owner: { login: "acme" },
-            },
-          },
-          labels: [],
-        },
-      }),
-    );
-
-    await workspaceFixture.cleanup();
-
-    expect(phasesSeenAtExecutor).toEqual([
-      "workspace-create",
-      "load-config",
-      "incremental-diff",
-      "prompt-build",
-      "executor-dispatch",
-    ]);
-    expect(phaseTransitions).toContain("publish");
-  });
-
-  test("exposes truthful workspace-create and load-config phases at async boundaries", async () => {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const reviewFamilyKey = buildReviewFamilyKey("acme", "repo", 102);
-    await Bun.write(
-      join(workspaceFixture.dir, ".kodiai.yml"),
-      [
-        "review:",
-        "  enabled: true",
-        "  autoApprove: false",
-        "  onSynchronize: true",
-                "  triggers:",
-        "    onOpened: true",
-        "    onReadyForReview: true",
-        "    onReviewRequested: true",
-        "  skipAuthors: []",
-        "  skipPaths: []",
-        "",
-      ].join("\n"),
-    );
-
-    let phaseAtWorkspaceCreate: string | undefined;
-    let phaseAtConfigWarning: string | undefined;
-    const coordinator = createReviewWorkCoordinator({
-      nowFn: (() => {
-        let nowMs = 13_000;
-        return () => ++nowMs;
-      })(),
-    });
-
-    const logger = {
-      info: () => undefined,
-      warn: (_data: Record<string, unknown>, message: string) => {
-        if (message === "Config warning detected") {
-          phaseAtConfigWarning = coordinator.getSnapshot(reviewFamilyKey)?.attempts[0]?.phase;
-        }
-      },
-      error: () => undefined,
-      debug: () => undefined,
-      trace: () => undefined,
-      fatal: () => undefined,
-      child: () => logger,
-    } as unknown as Logger;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
+      ) => fn(options.queueMetadata ?? createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
       getActiveJobs: getEmptyActiveJobs,
@@ -16311,6 +15856,572 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
         search: {
           issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
         },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-phase-boundaries",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: coordinator,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 102,
+          draft: false,
+          title: "Coordinator phase boundary checkpoints",
+          body: "",
+          commits: 0,
+          additions: 20,
+          deletions: 5,
+          user: { login: "octocat" },
+          author_association: "CONTRIBUTOR",
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "bcdef1234567890a",
+            ref: "feature/phase-boundaries",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(phaseAtWorkspaceCreate).toBe("workspace-create");
+    expect(phaseAtConfigWarning).toBe("load-config");
+  });
+});
+
+describe("createReviewHandler phase timing logging", () => {
+  async function runPhaseTimingScenario(options: {
+    queueMetadata?: JobQueueRunMetadata;
+  }) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+      ) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 550,
+          sessionId: "session-phase-timing",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Phase timing contract",
+          body: "",
+          commits: 0,
+          additions: 40,
+          deletions: 10,
+          user: { login: "octocat" },
+          author_association: "CONTRIBUTOR",
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature/phase-timing",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    return { entries, workspaceDir: workspaceFixture.dir };
+  }
+
+  test("emits one correlated review phase timing payload with the required six phases", async () => {
+    const { entries, workspaceDir } = await runPhaseTimingScenario({
+      queueMetadata: createQueueRunMetadata(),
+    });
+
+    const matchingEntries = entries.filter((entry) => entry.message === "Review phase timing summary");
+    expect(matchingEntries).toHaveLength(1);
+
+    const summary = matchingEntries[0]?.data as {
+      deliveryId: string;
+      reviewOutputKey: string;
+      phases: Array<{ name: string; status: string; durationMs?: number; detail?: string }>;
+      totalDurationMs: number;
+    };
+
+    expect(summary.deliveryId).toBe("delivery-123");
+    expect(summary.reviewOutputKey).toContain("delivery-delivery-123");
+    expect(summary.phases.map((phase) => phase.name)).toEqual([
+      "queue wait",
+      "workspace preparation",
+      "retrieval/context assembly",
+      "executor handoff",
+      "remote runtime",
+      "publication",
+    ]);
+    expect(summary.phases[0]).toEqual({
+      name: "queue wait",
+      status: "completed",
+      durationMs: 250,
+    });
+    expect(summary.phases[3]).toEqual({
+      name: "executor handoff",
+      status: "completed",
+      durationMs: 50,
+    });
+    expect(summary.phases[4]).toEqual({
+      name: "remote runtime",
+      status: "completed",
+      durationMs: 500,
+    });
+    expect(summary.phases[5]).toEqual(expect.objectContaining({
+      name: "publication",
+      status: "completed",
+      durationMs: expect.any(Number),
+    }));
+    expect(summary.totalDurationMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(summary)).not.toContain(workspaceDir);
+  });
+
+  test("marks queue wait unavailable instead of coercing invalid wait metadata to zero", async () => {
+    const { entries } = await runPhaseTimingScenario({
+      queueMetadata: createQueueRunMetadata({
+        queuedAtMs: 1_000,
+        startedAtMs: 900,
+        waitMs: -100,
+      }),
+    });
+
+    const summary = entries.find((entry) => entry.message === "Review phase timing summary")?.data as {
+      phases: Array<{ name: string; status: string; durationMs?: number; detail?: string }>;
+    };
+    const queueWaitPhase = summary.phases.find((phase) => phase.name === "queue wait");
+
+    expect(queueWaitPhase).toEqual({
+      name: "queue wait",
+      status: "unavailable",
+      detail: "invalid queue wait metadata",
+    });
+  });
+});
+
+describe("createReviewHandler ReviewPlan wiring", () => {
+  const candidateTitle = "Guard candidate publication";
+  const candidateBody = "Publish this approved candidate through the shared inline publisher.";
+
+  function sha256(value: string): string {
+    return createHash("sha256").update(value).digest("hex");
+  }
+
+  function reviewCandidateFingerprint(params: {
+    repo: string;
+    pullNumber: number;
+    reviewOutputKey: string;
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    severity: string;
+    category: string;
+    title: string;
+  }): string {
+    const canonical = [
+      params.repo,
+      params.pullNumber,
+      params.reviewOutputKey,
+      params.filePath,
+      params.startLine,
+      params.endLine,
+      params.severity,
+      params.category,
+      params.title.toLowerCase(),
+    ].join("\u001f");
+    return `rcf-${sha256(canonical).slice(0, 16)}`;
+  }
+
+  function candidateReviewOutputKey(reviewOutputKey: string, fingerprint: string): string {
+    return `${reviewOutputKey}:candidate:${fingerprint}`;
+  }
+
+  function formattedCandidateInlineBody(params: {
+    severity: string;
+    category: string;
+    title: string;
+    body: string;
+  }): string {
+    return [
+      "```yaml",
+      `severity: ${params.severity}`,
+      `category: ${params.category}`,
+      "```",
+      "",
+      `**${params.title}**`,
+      "",
+      params.body,
+    ].join("\n");
+  }
+
+  function publicationPolicyCandidateKey(params: {
+    path: string;
+    side: string;
+    line?: number;
+    startLine?: number;
+    reviewOutputKey: string;
+    deliveryId: string;
+    body: string;
+  }): string {
+    const material = {
+      path: params.path.trim().slice(0, 256),
+      side: params.side.trim().slice(0, 32),
+      line: params.line ?? null,
+      startLine: params.startLine ?? null,
+      reviewOutputKey: params.reviewOutputKey.trim().slice(0, 256),
+      deliveryId: params.deliveryId.trim().slice(0, 256),
+      bodySignal: sha256(params.body.slice(0, 4096)),
+    };
+    return `m070-publication:${sha256(JSON.stringify(material))}`;
+  }
+
+  function buildCandidateVerificationShadowSubflow(
+    decision: "verified" | "partially_verified" | "disagreement" = "verified",
+    candidate: {
+      title?: string;
+      body?: string;
+      filePath?: string;
+      line?: number;
+      endLine?: number;
+      severity?: string;
+      category?: string;
+    } = {},
+  ) {
+    return async (input: ShadowSpecialistSubflowInput): Promise<ShadowSpecialistSubflowResult> => {
+      const baseReviewOutputKey = String(input.reviewOutputKey ?? "");
+      const title = candidate.title ?? candidateTitle;
+      const body = candidate.body ?? candidateBody;
+      const filePath = candidate.filePath ?? "README.md";
+      const line = candidate.line ?? 2;
+      const endLine = candidate.endLine ?? line;
+      const severity = candidate.severity ?? "major";
+      const category = candidate.category ?? "correctness";
+      const fingerprint = reviewCandidateFingerprint({
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: baseReviewOutputKey,
+        filePath,
+        startLine: line,
+        endLine,
+        severity,
+        category,
+        title,
+      });
+      const candidateKey = publicationPolicyCandidateKey({
+        path: filePath,
+        side: "RIGHT",
+        ...(line === endLine ? { line } : { startLine: line, line: endLine }),
+        reviewOutputKey: candidateReviewOutputKey(baseReviewOutputKey, fingerprint),
+        deliveryId: String(input.deliveryId ?? ""),
+        body: formattedCandidateInlineBody({
+          severity,
+          category,
+          title,
+          body,
+        }),
+      });
+      return {
+        trigger: {
+          status: "triggered",
+          laneId: "docs-config-truth",
+          skipReason: null,
+          degradedReason: null,
+          errorKind: null,
+          matchedPaths: [filePath],
+          candidateCount: 1,
+          selectedLaneCount: 1,
+          shadowOnly: true,
+          publishesFindings: false,
+          correlationKey: input.correlationKey ?? null,
+          metrics: { decisionCount: 1, duplicateCount: 0, disagreementCount: decision === "disagreement" ? 1 : 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+        },
+        output: {
+          laneId: "docs-config-truth",
+          status: "ok",
+          skipReason: null,
+          degradedReasons: [],
+          errorKind: null,
+          evidence: [{ candidateKey, decision, evidenceId: "review-plan-shadow-evidence-1" }],
+          candidateCount: 1,
+          truncatedCandidateCount: 0,
+          decisionCounts: { candidate: decision === "disagreement" ? 0 : 1, duplicate: 0, disagreement: decision === "disagreement" ? 1 : 0, dismissed: 0, unclassifiable: 0 },
+          duplicateCount: 0,
+          disagreementCount: decision === "disagreement" ? 1 : 0,
+          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+          metrics: { decisionCount: 1, duplicateCount: 0, disagreementCount: decision === "disagreement" ? 1 : 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+          deliveryId: input.deliveryId ?? null,
+          reviewOutputKey: input.reviewOutputKey ?? null,
+          correlationKey: input.correlationKey ?? null,
+          redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+          shadowOnly: true,
+          publishesFindings: false,
+        } as never,
+        durationMs: 1,
+        laneId: "docs-config-truth",
+        triggerStatus: "triggered",
+        skipReason: null,
+        degradedReason: null,
+        errorKind: null,
+        timeoutReason: null,
+        errorReason: null,
+        unclassifiableReason: null,
+        deliveryId: input.deliveryId ?? null,
+        reviewOutputKey: input.reviewOutputKey ?? null,
+        correlationKey: input.correlationKey ?? null,
+        candidateCount: 1,
+        decisionCount: 1,
+        duplicateCount: 0,
+        disagreementCount: decision === "disagreement" ? 1 : 0,
+        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+        redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+        shadowOnly: true,
+        publishesFindings: false,
+      };
+    };
+  }
+
+  function candidateFindingResult() {
+    return {
+      status: "shadow",
+      repo: "acme/repo",
+      pullNumber: 101,
+      reviewOutputKey: "rk_safe",
+      deliveryId: "delivery-123",
+      artifactPresent: true,
+      findings: [
+        {
+          filePath: "README.md",
+          startLine: 2,
+          endLine: 2,
+          severity: "major",
+          category: "correctness",
+          title: candidateTitle,
+          body: candidateBody,
+        },
+      ],
+      rejections: [],
+    };
+  }
+
+  async function runReviewPlanScenario(params: {
+    reviewPlanBuilder?: typeof buildReviewPlan;
+    reviewReducer?: (input: ReviewReducerInput) => Promise<ReviewReducerResult>;
+    graphValidationEnabled?: boolean;
+    reviewGraphQuery?: (input: {
+      repo: string;
+      workspaceKey: string;
+      changedPaths: string[];
+      limit?: number;
+    }) => Promise<ReviewGraphBlastRadiusResult>;
+    extraChangedFiles?: number;
+    maxComments?: number;
+    candidateFindingResult?: Record<string, unknown>;
+    directReviewComments?: Array<Record<string, unknown>>;
+    executorPublished?: boolean;
+    exposeSummaryComment?: boolean;
+    shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+  } = {}) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({
+      graphValidationEnabled: params.graphValidationEnabled,
+      extraChangedFiles: params.extraChangedFiles,
+      maxComments: params.maxComments,
+    });
+    const { logger, entries } = createCaptureLogger();
+
+    let executeStarted = false;
+    let updatedSummaryBody: string | undefined;
+    const executeCalls: Array<Record<string, unknown>> = [];
+    const promptBuildContexts: Array<Record<string, unknown>> = [];
+    const recordReviewEntries: Array<Record<string, unknown>> = [];
+    const recordFindingEntries: Array<Record<string, unknown>> = [];
+    const createdReviewComments: Array<Record<string, unknown>> = [];
+    const createdIssueComments: Array<Record<string, unknown>> = [];
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const summaryBody = [
+      "<details>",
+      "<summary>Kodiai Review Summary</summary>",
+      "",
+      "## What Changed",
+      "- Reviewed the fixture change.",
+      "",
+      "</details>",
+      "",
+      buildReviewOutputMarker(reviewOutputKey),
+    ].join("\n");
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    let postExecuteReviewCommentListCalls = 0;
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!executeStarted) return { data: [] };
+            postExecuteReviewCommentListCalls += 1;
+            return {
+              data: postExecuteReviewCommentListCalls === 1
+                ? (params.directReviewComments ?? [])
+                : [],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234567890" } } }),
+          createReviewComment: async (commentParams: Record<string, unknown>) => {
+            const id = 1200 + createdReviewComments.length;
+            createdReviewComments.push({ ...commentParams, id });
+            return { data: { id, path: commentParams.path, html_url: `https://example.test/comment/${id}` } };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: executeStarted && params.exposeSummaryComment !== false ? [{ id: 991, body: summaryBody }] : [] }),
+          createComment: async (commentParams: Record<string, unknown>) => {
+            const id = 992 + createdIssueComments.length;
+            createdIssueComments.push({ ...commentParams, id });
+            return { data: { id } };
+          },
+          updateComment: async (updateParams: { body: string }) => {
+            updatedSummaryBody = updateParams.body;
+            return { data: {} };
+          },
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+        search: { issuesAndPullRequests: async () => ({ data: { total_count: 4 } }) },
       },
     };
 
