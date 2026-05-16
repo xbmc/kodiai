@@ -16434,242 +16434,909 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async () => ({
-          conclusion: "success",
-          published: false,
-          costUsd: 0,
-          numTurns: 1,
-          durationMs: 1,
-          sessionId: "session-phase-boundaries",
-        }),
+        execute: async (context: Record<string, unknown>) => {
+          executeStarted = true;
+          executeCalls.push(context);
+          return {
+            conclusion: "success",
+            published: params.executorPublished ?? true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-review-plan",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+            ...(params.candidateFindingResult === undefined ? {} : { candidateFinding: params.candidateFindingResult }),
+          };
+        },
       } as never,
       telemetryStore: noopTelemetryStore,
-      reviewWorkCoordinator: coordinator,
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.review_requested");
-    expect(handler).toBeDefined();
-
-    await handler!(
-      buildReviewRequestedEvent({
-        requested_reviewer: { login: "kodiai[bot]" },
-        pull_request: {
-          number: 102,
-          draft: false,
-          title: "Coordinator phase boundary checkpoints",
-          body: "",
-          commits: 0,
-          additions: 20,
-          deletions: 5,
-          user: { login: "octocat" },
-          author_association: "CONTRIBUTOR",
-          base: { ref: "main", sha: "mainsha" },
-          head: {
-            sha: "bcdef1234567890a",
-            ref: "feature/phase-boundaries",
-            repo: {
-              full_name: "acme/repo",
-              name: "repo",
-              owner: { login: "acme" },
+      knowledgeStore: createKnowledgeStoreStub({
+        recordReview: async (entry: Record<string, unknown>) => {
+          recordReviewEntries.push(entry);
+          return 1;
+        },
+        recordFindings: async (entries: Record<string, unknown>[]) => {
+          recordFindingEntries.push(...entries);
+        },
+      }) as never,
+      reviewPromptBuilder: (context: Record<string, unknown>) => {
+        promptBuildContexts.push(context);
+        return {
+          text: "safe test prompt",
+          sections: [
+            {
+              sectionName: "review-pr-context",
+              sectionPosition: 0,
+              charCount: 16,
+              estimatedTokens: 4,
             },
-          },
-          labels: [],
-        },
-      }),
-    );
-
-    await workspaceFixture.cleanup();
-
-    expect(phaseAtWorkspaceCreate).toBe("workspace-create");
-    expect(phaseAtConfigWarning).toBe("load-config");
-  });
-});
-
-describe("createReviewHandler phase timing logging", () => {
-  async function runPhaseTimingScenario(options: {
-    queueMetadata?: JobQueueRunMetadata;
-  }) {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const { logger, entries } = createCaptureLogger();
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(options.queueMetadata ?? createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async () => ({ data: { id: 1 } }),
-          updateComment: async () => ({ data: {} }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => ({
-          conclusion: "success",
-          published: false,
-          costUsd: 0,
-          numTurns: 1,
-          durationMs: 550,
-          sessionId: "session-phase-timing",
-          executorPhaseTimings: [
-            { name: "executor handoff", status: "completed", durationMs: 50 },
-            { name: "remote runtime", status: "completed", durationMs: 500 },
           ],
-        }),
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      logger,
+        };
+      },
+      ...(params.reviewGraphQuery ? { reviewGraphQuery: params.reviewGraphQuery } : {}),
+      ...(params.reviewPlanBuilder ? { reviewPlanBuilder: params.reviewPlanBuilder } : {}),
+      ...(params.reviewReducer ? { reviewReducer: params.reviewReducer } : {}),
+      ...(params.shadowSpecialistSubflow ? { shadowSpecialistSubflow: params.shadowSpecialistSubflow } : {}),
+      logger: logger as never,
     });
 
     const handler = handlers.get("pull_request.review_requested");
     expect(handler).toBeDefined();
 
-    await handler!(
-      buildReviewRequestedEvent({
-        requested_reviewer: { login: "kodiai[bot]" },
-        pull_request: {
-          number: 101,
-          draft: false,
-          title: "Phase timing contract",
-          body: "",
-          commits: 0,
-          additions: 40,
-          deletions: 10,
-          user: { login: "octocat" },
-          author_association: "CONTRIBUTOR",
-          base: { ref: "main", sha: "mainsha" },
-          head: {
-            sha: "abcdef1234567890",
-            ref: "feature/phase-timing",
-            repo: {
-              full_name: "acme/repo",
-              name: "repo",
-              owner: { login: "acme" },
-            },
-          },
-          labels: [],
-        },
-      }),
-    );
-
+    await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
     await workspaceFixture.cleanup();
 
-    return { entries, workspaceDir: workspaceFixture.dir };
+    return { updatedSummaryBody, executeCalls, promptBuildContexts, recordReviewEntries, recordFindingEntries, createdReviewComments, createdIssueComments, logEntries: entries };
   }
 
-  test("emits one correlated review phase timing payload with the required six phases", async () => {
-    const { entries, workspaceDir } = await runPhaseTimingScenario({
-      queueMetadata: createQueueRunMetadata(),
-    });
-
-    const matchingEntries = entries.filter((entry) => entry.message === "Review phase timing summary");
-    expect(matchingEntries).toHaveLength(1);
-
-    const summary = matchingEntries[0]?.data as {
-      deliveryId: string;
-      reviewOutputKey: string;
-      phases: Array<{ name: string; status: string; durationMs?: number; detail?: string }>;
-      totalDurationMs: number;
+  function buildGraphBlastRadiusFixture(changedPaths: string[]): ReviewGraphBlastRadiusResult {
+    return {
+      changedFiles: changedPaths,
+      seedSymbols: changedPaths.map((filePath, index) => ({
+        stableKey: `seed-${index}`,
+        symbolName: `seed${index}`,
+        qualifiedName: `seed${index}`,
+        filePath,
+      })),
+      impactedFiles: [
+        {
+          path: "README.md",
+          score: 0.9,
+          confidence: 0.8,
+          reasons: ["test-fixture"],
+          relatedChangedPaths: changedPaths,
+          languages: ["markdown"],
+        },
+      ],
+      probableDependents: [],
+      likelyTests: [],
+      graphStats: {
+        files: changedPaths.length,
+        nodes: changedPaths.length,
+        edges: changedPaths.length,
+        changedFilesFound: changedPaths.length,
+      },
     };
+  }
 
-    expect(summary.deliveryId).toBe("delivery-123");
-    expect(summary.reviewOutputKey).toContain("delivery-delivery-123");
-    expect(summary.phases.map((phase) => phase.name)).toEqual([
-      "queue wait",
-      "workspace preparation",
-      "retrieval/context assembly",
-      "executor handoff",
-      "remote runtime",
-      "publication",
-    ]);
-    expect(summary.phases[0]).toEqual({
-      name: "queue wait",
-      status: "completed",
-      durationMs: 250,
-    });
-    expect(summary.phases[3]).toEqual({
-      name: "executor handoff",
-      status: "completed",
-      durationMs: 50,
-    });
-    expect(summary.phases[4]).toEqual({
-      name: "remote runtime",
-      status: "completed",
-      durationMs: 500,
-    });
-    expect(summary.phases[5]).toEqual(expect.objectContaining({
-      name: "publication",
-      status: "completed",
-      durationMs: expect.any(Number),
-    }));
-    expect(summary.totalDurationMs).toBeGreaterThanOrEqual(0);
-    expect(JSON.stringify(summary)).not.toContain(workspaceDir);
+  test("default graph-validation config reports skipped in Review Details, logs, and knowledge snapshot", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("graph=skipped");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.graphValidationStatus).toBe("skipped");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).graphValidationStatus).toBe("skipped");
   });
 
-  test("marks queue wait unavailable instead of coercing invalid wait metadata to zero", async () => {
-    const { entries } = await runPhaseTimingScenario({
-      queueMetadata: createQueueRunMetadata({
-        queuedAtMs: 1_000,
-        startedAtMs: 900,
-        waitMs: -100,
+  test("enabled graph validation without reviewGraphQuery reports unavailable and still dispatches executor", async () => {
+    const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      graphValidationEnabled: true,
+    });
+
+    expect(executeCalls).toHaveLength(1);
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("graph=unavailable");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.graphValidationStatus).toBe("unavailable");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).graphValidationStatus).toBe("unavailable");
+  });
+
+  test("enabled graph validation with graph prerequisites reports enabled rather than graph-selection state", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      graphValidationEnabled: true,
+      extraChangedFiles: 3,
+      reviewGraphQuery: async (input) => buildGraphBlastRadiusFixture(input.changedPaths),
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("graph=enabled");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.graphValidationStatus).toBe("enabled");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).graphValidationStatus).toBe("enabled");
+  });
+
+  test("review runs prefer candidate capture and pass optional prompt context", async () => {
+    const { updatedSummaryBody, executeCalls, promptBuildContexts } = await runReviewPlanScenario();
+
+    expect(executeCalls).toHaveLength(1);
+    expect(executeCalls[0]?.enableCandidateFindingTool).toBe(true);
+    expect(promptBuildContexts[0]?.candidateFindingToolName).toBe("record_candidate_finding");
+    expect(promptBuildContexts[0]?.candidateFindingMode).toBe("preferred");
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("candidates=preferred");
+  });
+
+  test("candidate finding result is projected once into Review Details, logs, and safe snapshots", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        artifactBasename: "candidate-findings.jsonl",
+        counts: { input: 3, recorded: 2, rejected: 1, errors: 0 },
+        findings: [
+          {
+            title: "RAW TITLE MUST NOT LEAK",
+            body: "RAW BODY MUST NOT LEAK",
+            filePath: "/tmp/workspace/src/secret.ts",
+          },
+        ],
+        rejections: [],
+      },
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review candidates: shadow recorded=2 rejected=1 errors=0 artifact=present");
+    expect(detailsBlock).not.toContain("RAW TITLE MUST NOT LEAK");
+    expect(detailsBlock).not.toContain("RAW BODY MUST NOT LEAK");
+    expect(detailsBlock).not.toContain("/tmp/workspace");
+
+    const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
+    expect(candidateLog?.data).toEqual(expect.objectContaining({
+      gateResult: "shadow",
+      status: "shadow",
+      recorded: 2,
+      rejected: 1,
+      errors: 0,
+      artifactPresent: true,
+    }));
+    expect(JSON.stringify(candidateLog?.data)).not.toContain("RAW TITLE MUST NOT LEAK");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewCandidateFinding).toEqual({
+      status: "shadow",
+      recorded: 2,
+      rejected: 1,
+      errors: 0,
+      artifactPresent: true,
+    });
+    expect(JSON.stringify(configSnapshot)).not.toContain("RAW BODY MUST NOT LEAK");
+    expect(JSON.stringify(configSnapshot)).not.toContain("/tmp/workspace");
+  });
+
+  test("candidate reducer drafts get unique synthetic ids before reducer processing", async () => {
+    const firstTitle = "First candidate with unique reducer id";
+    const secondTitle = "Second candidate with unique reducer id";
+    const seenCandidateIds: number[] = [];
+
+    await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        counts: { input: 2, recorded: 2, rejected: 0, errors: 0 },
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: firstTitle,
+            body: `${firstTitle} body is safe and grounded.`,
+            fingerprint: "rcf-1111111111111111",
+          },
+          {
+            filePath: "README.md",
+            startLine: 3,
+            endLine: 3,
+            severity: "major",
+            category: "correctness",
+            title: secondTitle,
+            body: `${secondTitle} body is safe and grounded.`,
+            fingerprint: "rcf-2222222222222222",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => {
+        seenCandidateIds.push(
+          ...input.findings
+            .filter((finding) => typeof finding.candidateFingerprint === "string")
+            .map((finding) => finding.commentId),
+        );
+        return createDegradedReviewReducerResult({ findings: input.findings, reason: "test-stop-after-input-capture" });
+      },
+    });
+
+    expect(seenCandidateIds).toHaveLength(2);
+    expect(new Set(seenCandidateIds).size).toBe(2);
+    expect(seenCandidateIds.every((id) => Number.isInteger(id) && id < 0)).toBe(true);
+  });
+
+  test("approved candidate findings publish through the shared inline publisher and become stored findings", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(createdReviewComments[0]?.path).toBe("README.md");
+    expect(createdReviewComments[0]?.line).toBe(2);
+    expect(String(createdReviewComments[0]?.body)).toContain(candidateTitle);
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+    expect(recordFindingEntries[0]?.commentId).toBe(1200);
+    expect(recordFindingEntries[0]?.filePath).toBe("README.md");
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("candidate-approved");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 1,
+      directPublished: 0,
+      fallbackEvidence: 0,
+    }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("candidate-approved");
+    expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
+      publishedCommentIds: [1200],
+      convertedProcessedFindingCount: 1,
+      hasFabricatedProcessedFindings: false,
+    }));
+    expect(JSON.stringify(configSnapshot)).not.toContain(candidateBody);
+  });
+
+  test("approved candidate findings are blocked when handler publication lacks matching verification evidence", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(0);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      candidateBlocked: 1,
+      directPublished: 0,
+    }));
+  });
+
+  test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: true,
+      exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("candidate-approved");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 1,
+      directPublished: 1,
+      fallbackEvidence: 0,
+    }));
+  });
+
+  test("candidate draft prioritization respects maxComments before inline publication", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      maxComments: 1,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "First capped candidate",
+        body: "Publish only the strongest candidate after prioritization.",
+        severity: "critical",
+        category: "security",
+      }),
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "critical",
+            category: "security",
+            title: "First capped candidate",
+            body: "Publish only the strongest candidate after prioritization.",
+          },
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "minor",
+            category: "style",
+            title: "Second capped candidate",
+            body: "This candidate should be omitted by the max comment cap.",
+          },
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "minor",
+            category: "style",
+            title: "Third capped candidate",
+            body: "This candidate should also be omitted by the max comment cap.",
+          },
+        ],
+        rejections: [],
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(String(createdReviewComments[0]?.body)).toContain("First capped candidate");
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 1,
+      convertedProcessedFindings: 1,
+    }));
+  });
+
+  test("candidate-published findings are merged with direct inline findings in review bookkeeping", async () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const { recordReviewEntries, recordFindingEntries, logEntries, createdReviewComments } = await runReviewPlanScenario({
+      executorPublished: true,
+      exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Candidate published finding",
+        body: "Keep candidate publication in bookkeeping too.",
+      }),
+      directReviewComments: [
+        {
+          id: 777,
+          body: [
+            "```yaml",
+            "severity: MAJOR",
+            "category: correctness",
+            "```",
+            "",
+            "**Direct published finding**",
+            "Keep direct executor output in bookkeeping when candidate publication also succeeds.",
+            "",
+            marker,
+          ].join("\n"),
+          path: "src/direct.ts",
+          line: 4,
+          start_line: 4,
+        },
+      ],
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: "Candidate published finding",
+            body: "Keep candidate publication in bookkeeping too.",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => ({
+        status: "ready",
+        findings: input.findings,
+        visibleFindings: input.findings,
+        filteredInlineFindings: [],
+        lowConfidenceFindings: [],
+        suppressionMatchCounts: new Map(),
+        filterRecords: [],
+        counts: {
+          input: input.findings.length,
+          kept: input.findings.length,
+          suppressed: 0,
+          rewritten: 0,
+          deprioritized: 0,
+          lowConfidence: 0,
+          auditEvents: 0,
+          severityDemoted: 0,
+          graphValidated: 0,
+          graphUncertain: 0,
+        },
+        audit: [],
+        detailsSummary: {
+          label: "Review reducer",
+          status: "ready",
+          text: `Review reducer: ready input=${input.findings.length} kept=${input.findings.length} suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0`,
+        },
       }),
     });
 
-    const summary = entries.find((entry) => entry.message === "Review phase timing summary")?.data as {
-      phases: Array<{ name: string; status: string; durationMs?: number; detail?: string }>;
-    };
-    const queueWaitPhase = summary.phases.find((phase) => phase.name === "queue wait");
+    const extractionLog = logEntries.find((entry) => entry.data?.gate === "finding-extraction");
+    expect(extractionLog?.data?.extractedCount).toBe(1);
+    expect(createdReviewComments).toHaveLength(1);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(2);
+    expect(recordFindingEntries.map((entry) => entry.commentId).sort((a, b) => Number(a) - Number(b))).toEqual([777, 1200]);
+    expect(recordFindingEntries.map((entry) => entry.title).sort()).toEqual([
+      "Candidate published finding",
+      "Direct published finding",
+    ]);
+  });
 
-    expect(queueWaitPhase).toEqual({
-      name: "queue wait",
-      status: "unavailable",
-      detail: "invalid queue wait metadata",
+  test("direct executor publication is audited as fallback and cannot satisfy candidate-approved success", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("Review candidate publication: mode=direct-fallback");
+    expect(detailsBlock).toContain("published=0");
+    expect(detailsBlock).toContain("directFallback=1");
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("direct-fallback");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      directPublished: 1,
+      fallbackEvidence: 1,
+    }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("direct-fallback");
+    expect(JSON.stringify(configSnapshot)).not.toContain("safe test prompt");
+    expect(JSON.stringify(configSnapshot)).not.toContain("base\\nfeature");
+  });
+
+  test("candidate publication blocks skipped publisher results without storing draft findings", async () => {
+    const { recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 999,
+            endLine: 999,
+            severity: "major",
+            category: "correctness",
+            title: "Unpublishable candidate line",
+            body: "This line is not commentable in the PR diff.",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
     });
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      candidateFailed: 1,
+      convertedProcessedFindings: 0,
+    }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("blocked");
+    expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
+      publishedCommentIds: [],
+      convertedProcessedFindingCount: 0,
+      hasFabricatedProcessedFindings: false,
+    }));
+    expect(JSON.stringify(configSnapshot)).not.toContain("This line is not commentable");
+  });
+  test("missing candidate metadata keeps Review Details publication fail-open with unavailable snapshot", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review candidates: unavailable");
+
+    const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
+    expect(candidateLog?.data?.gateResult).toBe("unavailable");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewCandidateFinding).toEqual({
+      status: "unavailable",
+      recorded: 0,
+      rejected: 0,
+      errors: 0,
+      artifactPresent: false,
+    });
+  });
+
+  test("degraded candidate metadata is sanitized and does not block details publication", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      candidateFindingResult: {
+        status: "degraded",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: false,
+        counts: { errors: 2 },
+        findings: [],
+        rejections: [],
+        reason: "  bad {json} PROMPT_SECRET TOKEN=abc123  ",
+      },
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review candidates: degraded");
+    expect(detailsBlock).toContain("errors=2");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET");
+    expect(detailsBlock).not.toContain("TOKEN=abc123");
+
+    const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
+    expect(candidateLog?.data?.gateResult).toBe("degraded");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewCandidateFinding).toEqual({
+      status: "degraded",
+      recorded: 0,
+      rejected: 0,
+      errors: 2,
+      artifactPresent: false,
+      reason: "bad-json-prompt-redacted-token-redacted",
+    });
+  });
+
+  test("successful review publishes a compact ready Review plan line and preserves executor dispatch inputs", async () => {
+    const { updatedSummaryBody, executeCalls, logEntries } = await runReviewPlanScenario();
+
+    expect(executeCalls).toHaveLength(1);
+    expect(executeCalls[0]?.taskType).toBe("review.small-diff");
+    expect(executeCalls[0]?.prompt).toBe("safe test prompt");
+    expect(executeCalls[0]?.triggerBody).toBe("safe test prompt");
+    expect(executeCalls[0]?.totalFiles).toBe(1);
+    expect(executeCalls[0]?.reviewOutputKey).toBe(buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    }));
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review plan:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review plan: ready");
+    expect(detailsBlock).toContain("task=review.small-diff");
+    expect(detailsBlock).toContain("route=tiny-diff");
+    expect(detailsBlock).not.toContain("safe test prompt");
+    expect(detailsBlock).not.toContain("base\\nfeature");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.gateResult).toBe("ready");
+    expect(readyLog?.data?.planHash).toEqual(expect.any(String));
+    expect(readyLog?.data?.taskType).toBe("review.small-diff");
+    expect(readyLog?.data).not.toHaveProperty("prompt");
+    expect(readyLog?.data).not.toHaveProperty("diffContent");
+  });
+
+  test("knowledge configSnapshot contains only safe ReviewPlan metadata", async () => {
+    const { recordReviewEntries } = await runReviewPlanScenario();
+
+    expect(recordReviewEntries).toHaveLength(1);
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    const reviewPlan = configSnapshot.reviewPlan as Record<string, unknown>;
+
+    expect(reviewPlan).toBeDefined();
+    expect(reviewPlan.status).toBe("ready");
+    expect(reviewPlan.hash).toEqual(expect.any(String));
+    expect(reviewPlan.taskType).toBe("review.small-diff");
+    expect(reviewPlan.routingReason).toBe("tiny-diff");
+    expect(reviewPlan.graphValidationStatus).toEqual(expect.any(String));
+    expect(reviewPlan.candidateFindingMode).toEqual(expect.any(String));
+
+    const serialized = JSON.stringify(configSnapshot);
+    expect(serialized).not.toContain("safe test prompt");
+    expect(serialized).not.toContain("base\\nfeature");
+    expect(serialized).not.toContain("token");
+    expect(serialized).not.toContain("diffContent");
+  });
+
+  test("injected ready review reducer publishes compact details, logs counts, and stores safe snapshot", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      reviewReducer: async (input) => {
+        const counts = {
+          input: input.findings.length,
+          kept: input.findings.length,
+          suppressed: 0,
+          rewritten: 0,
+          deprioritized: 0,
+          lowConfidence: 0,
+          auditEvents: 0,
+          severityDemoted: 0,
+          graphValidated: 0,
+          graphUncertain: 0,
+        };
+        return {
+          status: "ready",
+          findings: input.findings,
+          visibleFindings: input.findings,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts,
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=0 kept=0 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review reducer:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review reducer: ready");
+    expect(detailsBlock).not.toContain("safe test prompt");
+    expect(detailsBlock).not.toContain("diff --git");
+
+    const reducerLog = logEntries.find((entry) => entry.data?.gate === "review-reducer");
+    expect(reducerLog?.data?.gateResult).toBe("ready");
+    expect(reducerLog?.data?.counts).toEqual(expect.objectContaining({ input: 0, kept: 0 }));
+    expect(reducerLog?.data?.graphValidation).toEqual(expect.objectContaining({ enabled: false, graphValidated: 0, graphUncertain: 0 }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewReducer).toEqual({
+      status: "ready",
+      counts: expect.objectContaining({ input: 0, kept: 0 }),
+      reason: undefined,
+    });
+    expect(JSON.stringify(configSnapshot)).not.toContain("safe test prompt");
+    expect(JSON.stringify(configSnapshot)).not.toContain("diffContent");
+  });
+
+  test("injected reducer failure degrades fail-open and stores a sanitized reason", async () => {
+    const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      reviewReducer: async () => {
+        throw new Error("boom diff --git PROMPT_SECRET TOKEN=abc123");
+      },
+    });
+
+    expect(executeCalls).toHaveLength(1);
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review reducer:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review reducer: degraded");
+    expect(detailsBlock).toContain("reason=reducer-exception");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET");
+    expect(detailsBlock).not.toContain("TOKEN=abc123");
+    expect(detailsBlock).not.toContain("diff --git");
+
+    const reducerLog = logEntries.find((entry) => entry.data?.gate === "review-reducer");
+    expect(reducerLog?.data?.gateResult).toBe("degraded");
+    expect(reducerLog?.data?.reason).toBe("reducer-exception");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    const reviewReducer = configSnapshot.reviewReducer as Record<string, unknown>;
+    expect(reviewReducer.status).toBe("degraded");
+    expect(reviewReducer.reason).toBe("reducer-exception");
+    expect(JSON.stringify(configSnapshot)).not.toContain("PROMPT_SECRET");
+    expect(JSON.stringify(configSnapshot)).not.toContain("TOKEN=abc123");
+    expect(JSON.stringify(configSnapshot)).not.toContain("diff --git");
+  });
+
+  test("builder failure still dispatches executor and renders a degraded Review plan line", async () => {
+    const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      reviewPlanBuilder: () => {
+        throw new Error("boom raw prompt token diff should not leak");
+      },
+    });
+
+    expect(executeCalls).toHaveLength(1);
+    expect(executeCalls[0]?.taskType).toBe("review.small-diff");
+    expect(executeCalls[0]?.prompt).toBe("safe test prompt");
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review plan:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review plan: degraded");
+    expect(detailsBlock).toContain("reason=builder-error");
+    expect(detailsBlock).not.toContain("raw prompt");
+    expect(detailsBlock).not.toContain("token");
+    expect(detailsBlock).not.toContain("diffContent");
+
+    const degradedLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(degradedLog?.data?.gateResult).toBe("degraded");
+    expect(degradedLog?.data?.planHash).toMatch(/^degraded-/);
+    expect(degradedLog?.data?.error).toEqual({ name: "Error", message: "ReviewPlan builder failed" });
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).status).toBe("degraded");
   });
 });
 
@@ -16794,6 +17461,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     const workspaceFixture = await createWorkspaceFixture();
 
     const createdCommentBodies: string[] = [];
+    const { logger, entries } = createCaptureLogger();
     let updatedSummaryBody: string | undefined;
     let updatedSummaryCommentId: number | undefined;
     let issueCommentListCalls = 0;
@@ -16899,7 +17567,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("pull_request.review_requested");
@@ -16931,6 +17599,19 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     );
     expect(updatedSummaryBody).toContain(buildReviewOutputMarker(reviewOutputKey));
     expect(createdCommentBodies).toHaveLength(0);
+
+    const completedLog = entries.find((entry) =>
+      entry.data?.gate === "review-details-output" && entry.data?.gateResult === "completed"
+    );
+    expect(completedLog?.data).toMatchObject({
+      reviewOutputKey,
+      deliveryId: "delivery-123",
+      reviewDetailsPublished: true,
+      surfaceKind: "issue_comment",
+      hasCommentId: true,
+      hasReviewId: false,
+    });
+    expect(JSON.stringify(completedLog?.data ?? {})).not.toContain("<summary>Review Details</summary>");
 
     await workspaceFixture.cleanup();
   });
