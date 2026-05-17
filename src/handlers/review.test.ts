@@ -61,25 +61,26 @@ const noopTelemetryStore = {
 };
 
 function createCaptureLogger() {
-  const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
-  const capture = (data: unknown, message?: string) => {
+  const entries: Array<{ level?: "info" | "warn" | "error" | "debug" | "trace" | "fatal"; message: string; data?: Record<string, unknown> }> = [];
+  const capture = (level: "info" | "warn" | "error" | "debug" | "trace" | "fatal") => (data: unknown, message?: string) => {
     if (typeof data === "string") {
-      entries.push({ message: data });
+      entries.push({ level, message: data });
       return;
     }
     entries.push({
+      level,
       message: message ?? "",
       data: (data ?? {}) as Record<string, unknown>,
     });
   };
 
   const logger = {
-    info: capture,
-    warn: capture,
-    error: capture,
-    debug: capture,
-    trace: capture,
-    fatal: capture,
+    info: capture("info"),
+    warn: capture("warn"),
+    error: capture("error"),
+    debug: capture("debug"),
+    trace: capture("trace"),
+    fatal: capture("fatal"),
     child: () => logger,
   } as unknown as Logger;
 
@@ -10129,7 +10130,7 @@ describe("createReviewHandler timeout resilience", () => {
     const partial = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
     expect(partial).toBeDefined();
     expect(partial!).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
-    expect(partial!).toContain("follow-up review is pending (timeout budget: remote runtime 355s + infra overhead 180s = total 535s).");
+    expect(partial!).toContain("follow-up review is pending (timeout budget: remote runtime 505s + infra overhead 180s = total 685s).");
     expect(partial!).toContain("Found two issues before timeout.");
     expect(partial!).toContain("Scheduling a reduced-scope retry.");
     expect(partial!).toContain(buildReviewOutputMarker(buildReviewOutputKey({
@@ -16797,6 +16798,8 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(recordFindingEntries).toHaveLength(0);
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.level).toBe("info");
+    expect(publicationLog?.message).toBe("Review candidate publication completed with expected policy block");
     expect(publicationLog?.data?.gateResult).toBe("blocked");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublished: 0,

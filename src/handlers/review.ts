@@ -2358,6 +2358,19 @@ function logReviewCandidatePublicationRuntime(params: {
     publisherResultSample: params.runtime.publisherResultSample,
   };
 
+  const expectedPolicyBlocked = params.runtime.mode === "blocked"
+    && params.runtime.counts.candidateBlocked > 0
+    && params.runtime.counts.candidateFailed === 0
+    && params.runtime.counts.candidateMalformed === 0
+    && params.runtime.counts.directPublished === 0
+    && params.runtime.counts.malformed === 0
+    && params.runtime.reasons.every((reason) => reason === "candidate-publisher-blocked");
+
+  if (expectedPolicyBlocked) {
+    params.logger.info(payload, "Review candidate publication completed with expected policy block");
+    return;
+  }
+
   if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
     params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
     return;

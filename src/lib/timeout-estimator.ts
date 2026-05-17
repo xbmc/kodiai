@@ -53,7 +53,7 @@ export function computeLanguageComplexity(
  *   lineScore  = min(linesChanged / 5000, 1.0)
  *   langScore  = languageComplexity (0-1)
  *
- * Remote runtime timeout = baseTimeoutSeconds * (0.5 + complexity), clamped [30, 1800].
+ * Remote runtime timeout = baseTimeoutSeconds * (0.75 + complexity), clamped [30, 1800].
  * Total timeout = remote runtime timeout + fixed infra overhead cushion.
  */
 export function estimateTimeoutRisk(params: {
@@ -86,8 +86,8 @@ export function estimateTimeoutRisk(params: {
     riskLevel = "high";
   }
 
-  // Dynamic timeout: range [0.5x, 1.5x] of base, clamped so total budget stays within platform max
-  const rawTimeout = baseTimeoutSeconds * (0.5 + complexity);
+  // Dynamic timeout: range [0.75x, 1.75x] of base, clamped so total budget stays within platform max
+  const rawTimeout = baseTimeoutSeconds * (0.75 + complexity);
   const maxRemoteRuntimeBudgetSeconds = Math.max(
     30,
     MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
