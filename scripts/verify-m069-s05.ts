@@ -1034,7 +1034,7 @@ function statusReason(status: M069S05StatusCode): string {
 }
 
 function scanLeakSurface(value: unknown, seen = new Set<unknown>()): M069S05LeakSummary {
-  const summary: M069S05LeakSummary = {
+  const summary: { -readonly [K in keyof M069S05LeakSummary]: M069S05LeakSummary[K] } = {
     rawPayloadLeakCount: 0,
     visiblePublicationFieldCount: 0,
     approvalFieldCount: 0,

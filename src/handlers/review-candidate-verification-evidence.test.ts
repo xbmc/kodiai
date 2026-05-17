@@ -119,9 +119,10 @@ describe("review handler M070 candidate-verification aggregate evidence", () => 
     expect(visibleBodies).toContain("- M070 candidate verification publication: status=mixed");
     expect(visibleBodies).toContain("counts=attempted:3,allowed:1,denied:2,published:1,skipped:1,failed:1");
     expect(visibleBodies).toContain("denialCounts=publication-ineligible:2,evidence-conflict:1");
-    expect(visibleBodies).toContain("deliveryIdValue:delivery-m070-evidence");
-    expect(visibleBodies).toContain("reviewOutputKeyValue:review-output-m070-evidence");
-    expect(visibleBodies).toContain("correlationKeyValue:corr-m070-evidence");
+    expect(visibleBodies).toContain("metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y");
+    expect(visibleBodies).not.toContain("deliveryIdValue:delivery-m070-evidence");
+    expect(visibleBodies).not.toContain("reviewOutputKeyValue:review-output-m070-evidence");
+    expect(visibleBodies).not.toContain("correlationKeyValue:corr-m070-evidence");
     expect(visibleBodies).toContain("redaction=privateOnly:y,candidateBodies:n,specialistProse:n,rawPrompts:n,rawModelOutput:n,diffs:n,evidencePayloads:n,rawFingerprints:n,publicationEvidence:n,unsafeFields:7");
 
     const log = scenario.entries.find((entry) => entry.data?.gate === "m070-candidate-verification-evidence");

@@ -15,15 +15,16 @@ const GENERATED_AT = "2026-05-10T00:00:00.000Z";
 const CANARY = "M070_S05_TEST_CANARY_SHOULD_NOT_LEAK";
 
 type Spec = {
-  readonly kind: string;
+  readonly kind: M070S05ScenarioRow["scenario"];
   readonly verifierScenario: M070ScenarioName;
   readonly expectedStatus: M070StatusCode;
   readonly fallbackAfterDenied?: boolean;
 };
 
 function syntheticRow(overrides: Partial<M070S05ScenarioRow> & Pick<M070S05ScenarioRow, "scenario" | "verifierScenario" | "expectedStatus">): M070S05ScenarioRow {
+  const { scenario, verifierScenario, expectedStatus, ...rowOverrides } = overrides;
   const m070 = evaluateM070VerifierScenario({
-    scenario: overrides.verifierScenario,
+    scenario: verifierScenario,
     aggregateEvidence: {
       aggregateStatus: "mixed",
       counts: { attempted: 1, allowed: 1, denied: 0, published: 1, skipped: 0, failed: 0 },
@@ -37,21 +38,21 @@ function syntheticRow(overrides: Partial<M070S05ScenarioRow> & Pick<M070S05Scena
     publicationMode: { candidateApprovedNonFallback: true, directFallbackEvidence: false },
   }, { generatedAt: GENERATED_AT });
   return {
-    scenario: overrides.scenario,
-    verifierScenario: overrides.verifierScenario,
+    scenario,
+    verifierScenario,
     success: m070.success,
-    expectedStatus: overrides.expectedStatus,
-    actualStatus: overrides.expectedStatus,
+    expectedStatus,
+    actualStatus: expectedStatus,
     statusMatchesExpected: true,
     m070,
-    publicationMode: { candidateApprovedNonFallback: overrides.scenario === "verified" || overrides.scenario === "partial", directFallbackEvidence: overrides.scenario === "direct-fallback-only", fallbackBlocked: overrides.scenario === "direct-fallback-only" },
+    publicationMode: { candidateApprovedNonFallback: scenario === "verified" || scenario === "partial", directFallbackEvidence: scenario === "direct-fallback-only", fallbackBlocked: scenario === "direct-fallback-only" },
     correlationMetadata: { contextHasDeliveryId: true, contextHasReviewOutputKey: true, contextHasCorrelationKey: true, evidenceHasDeliveryId: true, evidenceHasReviewOutputKey: true, evidenceHasCorrelationKey: true },
     evidenceSurfaces: { reviewDetailsPresent: true, runtimeLogPresent: true, mcpEvidencePresent: true },
-    visibleVolume: { issueCreateCount: 1, issueUpdateCount: 0, reviewCreateCount: 0, reviewUpdateCount: 0, reviewCommentCount: overrides.scenario === "verified" || overrides.scenario === "partial" ? 1 : 0, totalVisibleBodies: overrides.scenario === "verified" || overrides.scenario === "partial" ? 2 : 1 },
+    visibleVolume: { issueCreateCount: 1, issueUpdateCount: 0, reviewCreateCount: 0, reviewUpdateCount: 0, reviewCommentCount: scenario === "verified" || scenario === "partial" ? 1 : 0, totalVisibleBodies: scenario === "verified" || scenario === "partial" ? 2 : 1 },
     denialReasonCategories: [],
     redaction: { candidateCanaryLeaked: false, specialistCanaryLeaked: false, rawCanaryLeaked: false, verifierJsonLeakPresent: false, aggregateOnly: true },
     issue_categories: [],
-    ...overrides,
+    ...rowOverrides,
   } as M070S05ScenarioRow;
 }
 

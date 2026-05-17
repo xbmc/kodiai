@@ -792,6 +792,104 @@ test("buildReviewPrompt omits tool availability contract when publish tools are 
   expect(prompt).not.toContain("## Tool Availability Contract");
 });
 
+
+test("buildReviewPrompt renders candidate finding as separate optional shadow capture section", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: [
+        "mcp__github_comment__create_comment",
+        "mcp__github_inline_comment__create_inline_comment",
+      ],
+      candidateFindingToolName: "record_candidate_finding",
+      candidateFindingMode: "shadow",
+    }),
+  );
+
+  const publishSection = prompt.match(/## Tool Availability Contract[\s\S]*?(?=\n## |$)/)?.[0] ?? "";
+  const candidateSection = prompt.match(/## Shadow Candidate Finding Capture[\s\S]*?(?=\n## |$)/)?.[0] ?? "";
+
+  expect(candidateSection).toContain("record_candidate_finding");
+  expect(candidateSection).toContain("optional");
+  expect(candidateSection).toContain("shadow-only");
+  expect(candidateSection).toContain("does not publish");
+  expect(candidateSection).toContain("does not replace");
+  expect(candidateSection).toContain("ignore candidate-capture failures");
+  expect(candidateSection).toContain("unavailable");
+  expect(publishSection).toContain("mcp__github_comment__create_comment");
+  expect(publishSection).toContain("mcp__github_inline_comment__create_inline_comment");
+  expect(publishSection).toContain("MUST attempt the available publish tools");
+  expect(publishSection).not.toContain("record_candidate_finding");
+});
+
+test("buildReviewPrompt prefers candidate finding capture over duplicate direct publication", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: [
+        "mcp__github_comment__create_comment",
+        "mcp__github_inline_comment__create_inline_comment",
+      ],
+      candidateFindingToolName: "record_candidate_finding",
+      candidateFindingMode: "preferred",
+    }),
+  );
+
+  const publishSection = prompt.match(/## Tool Availability Contract[\s\S]*?(?=\n## |$)/)?.[0] ?? "";
+  const candidateSection = prompt.match(/## Candidate-Preferred Finding Capture[\s\S]*?(?=\n## |$)/)?.[0] ?? "";
+
+  expect(candidateSection).toContain("record_candidate_finding");
+  expect(candidateSection).toContain("candidate-preferred publication path");
+  expect(candidateSection).toContain("record every actionable draft finding before using direct GitHub publish tools");
+  expect(candidateSection).toContain("Do not publish duplicate direct GitHub comments for findings already recorded as candidates");
+  expect(candidateSection).toContain("explain the fallback reason in your final text");
+  expect(publishSection).toContain("audited fallback");
+  expect(publishSection).not.toContain("MUST attempt the available publish tools before ending the run");
+  expect(prompt).not.toContain("## Shadow Candidate Finding Capture");
+});
+
+test("buildReviewPrompt degrades preferred candidate mode when the candidate tool is unavailable", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: ["mcp__github_inline_comment__create_inline_comment"],
+      candidateFindingMode: "preferred",
+    }),
+  );
+
+  const publishSection = prompt.match(/## Tool Availability Contract[\s\S]*?(?=\n## |$)/)?.[0] ?? "";
+
+  expect(prompt).not.toContain("## Candidate-Preferred Finding Capture");
+  expect(prompt).not.toContain("record every actionable draft finding before using direct GitHub publish tools");
+  expect(publishSection).toContain("MUST attempt the available publish tools");
+});
+
+test("buildReviewPrompt treats unknown candidate mode as unavailable", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: ["mcp__github_inline_comment__create_inline_comment"],
+      candidateFindingToolName: "record_candidate_finding",
+      candidateFindingMode: "surprise-mode",
+    }),
+  );
+
+  expect(prompt).toContain("## Tool Availability Contract");
+  expect(prompt).not.toContain("## Candidate-Preferred Finding Capture");
+  expect(prompt).not.toContain("## Shadow Candidate Finding Capture");
+});
+
+test("buildReviewPrompt omits optional candidate finding section when candidate fields are absent", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: [
+        "mcp__github_comment__create_comment",
+        "mcp__github_inline_comment__create_inline_comment",
+      ],
+    }),
+  );
+
+  expect(prompt).toContain("## Tool Availability Contract");
+  expect(prompt).not.toContain("## Shadow Candidate Finding Capture");
+  expect(prompt).not.toContain("record_candidate_finding");
+});
+
 test("buildReviewPrompt includes suppression section when suppressions provided", () => {
   const prompt = buildReviewPrompt(
     baseContext({

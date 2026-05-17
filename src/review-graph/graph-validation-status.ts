@@ -15,7 +15,7 @@ export type GraphValidationPreStatus = {
 export type GraphValidationRuntimeStatus = {
   gate: typeof GRAPH_VALIDATION_GATE;
   gateResult: "skipped" | "unavailable" | "applied" | "failure";
-  reason: "config-disabled" | "graph-context-unavailable" | "validation-applied" | "no-findings-validated" | "validation-failed" | "validation-threw";
+  reason: "config-disabled" | "graph-context-unavailable" | "graph-context-available" | "validation-applied" | "no-findings-validated" | "validation-failed" | "validation-threw";
   enabled: boolean;
   graphContextAvailable: boolean;
   findingCount?: number;

@@ -81,7 +81,7 @@ function buildHandlerEvidenceSummary(params: {
       failed: 0,
     },
     publicationDenialCounts: params.allowed ? {} : { "publication-ineligible": 1 },
-    reasonCategories: params.allowed ? ["publication-eligible"] : ["publication-ineligible", ...(params.unsafe ? ["malformed-input" as const] : [])],
+    reasonCategories: params.allowed ? ["full-support"] : ["publication-ineligible", ...(params.unsafe ? ["malformed-input" as const] : [])],
     verificationStateCounts: {
       verified: params.allowed ? 1 : 0,
       partially_verified: 0,
@@ -111,7 +111,7 @@ function buildHandlerEvidenceSummary(params: {
       hasCorrelationKey: true,
       deliveryId: params.input.deliveryId,
       reviewOutputKey: params.input.reviewOutputKey,
-      correlationKey: params.input.candidateVerificationContext?.correlationKey,
+      correlationKey: typeof params.input.candidateVerificationContext?.correlationKey === "string" ? params.input.candidateVerificationContext.correlationKey : undefined,
     },
     redactionFlags: {
       privateOnly: true,
@@ -363,7 +363,7 @@ describe("review handler M070 candidate verification publication wiring", () => 
       candidatePublicationBridgePrivateOnly: true,
       candidatePublicationBridgeDiscardedPublicationFields: true,
     });
-    expect(["denied", "malformed"]).toContain(bridgeLog?.data?.candidatePublicationBridgeStatus);
+    expect(["denied", "malformed"]).toContain(String(bridgeLog?.data?.candidatePublicationBridgeStatus));
     expect(bridgeLog?.data).toHaveProperty("candidatePublicationBridgeReasonCategories");
     expect(bridgeLog?.data).not.toHaveProperty("body");
     expect(bridgeLog?.data).not.toHaveProperty("candidate");

@@ -172,7 +172,7 @@ describe("createCommentServer", () => {
     );
     const { create } = getToolHandlers(server);
 
-    const result = await create({ issueNumber: 10, body });
+    const result = await create({ issueNumber: 42, body });
     expect(result.isError).toBeUndefined();
 
     const parsed = JSON.parse(result.content[0]!.text);

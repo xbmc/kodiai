@@ -17,7 +17,7 @@ function configWithGraphValidation(enabled: boolean): Pick<RepoConfig, "review">
         maxFindingsToValidate: 7,
         contextMaxChars: 700,
       },
-    } as RepoConfig["review"],
+    } as unknown as RepoConfig["review"],
   };
 }
 

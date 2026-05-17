@@ -3,7 +3,7 @@ import { test, expect, afterEach, mock, beforeEach } from "bun:test";
 import { mkdtemp, rm, readFile, writeFile, mkdir, lstat, symlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildSecurityClaudeMd, createExecutor, prepareAgentWorkspace } from "./executor.ts";
+import { buildSecurityClaudeMd, createExecutor, createReviewCandidateFindingCollector, prepareAgentWorkspace } from "./executor.ts";
 import type { ExecutionContext, ExecutionResult } from "./types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { Logger } from "pino";
@@ -359,6 +359,18 @@ function createTestableExecutor(deps: {
       let executorHandoffDurationMs: number | undefined;
       let remoteRuntimeDurationMs: number | undefined;
       let registeredMcpBearerToken: string | undefined;
+      const candidateFindingCollector = createReviewCandidateFindingCollector({
+        enabled: context.enableCandidateFindingTool,
+        repo: `${context.owner}/${context.repo}`,
+        pullNumber: context.prNumber,
+        reviewOutputKey: context.reviewOutputKey,
+        deliveryId: context.deliveryId,
+        logger,
+      });
+      const withCandidateFinding = (result: ExecutionResult): ExecutionResult => {
+        const candidateFinding = candidateFindingCollector.result();
+        return candidateFinding ? { ...result, candidateFinding } : result;
+      };
 
       const buildExecutorPhaseTimings = (params: {
         handoffStatus: "completed" | "degraded" | "unavailable";
@@ -454,21 +466,25 @@ function createTestableExecutor(deps: {
             : (context.enableInlineTools ?? !isMentionEvent);
         const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
 
-        const { buildMcpServers, buildAllowedMcpTools } = await import("./mcp/index.ts");
-        const mcpServers = buildMcpServers({
+        const { buildMcpServerFactories, buildAllowedMcpTools } = await import("./mcp/index.ts");
+        const mcpServerDeps = {
           getOctokit,
           owner: context.owner,
           repo: context.repo,
           prNumber: context.prNumber,
           commentId: context.commentId,
           botHandles: context.botHandles,
+          reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
           logger,
           onPublish: () => { published = true; },
-          onPublishEvent: (event) => { publishEvents.push(event); },
+          onPublishEvent: (event: import("./types.ts").ExecutionPublishEvent) => { publishEvents.push(event); },
           enableInlineTools,
           enableCommentTools,
-        });
+          enableCandidateFindingTool: context.enableCandidateFindingTool,
+          candidateFindingRecorder: candidateFindingCollector.recorder,
+        };
+        const mcpFactories = buildMcpServerFactories(mcpServerDeps);
 
         const hasGitTools = await $`git -C ${context.workspace.dir} rev-parse --is-inside-work-tree`.quiet().nothrow()
           .then((result) => result.exitCode === 0 && result.stdout.toString().trim() === "true");
@@ -491,7 +507,7 @@ function createTestableExecutor(deps: {
             ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
             : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
-        const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
+        const mcpTools = buildAllowedMcpTools(Object.keys(mcpFactories));
         const allowedTools = context.allowedToolsOverride ?? [...baseTools, ...writeTools, ...mcpTools];
 
         const { buildPrompt } = await import("./prompt.ts");
@@ -507,6 +523,7 @@ function createTestableExecutor(deps: {
           mountBase: "/mnt/kodiai-workspaces",
           jobId: context.deliveryId ?? crypto.randomUUID(),
         });
+        candidateFindingCollector.setArtifactPath(join(workspaceDir, "review-candidate-findings.json"));
         if (workspaceDir === context.workspace.dir) {
           // Test-harness shortcut only: production always stages into a distinct Azure Files dir.
           await writeFile(join(workspaceDir, "prompt.txt"), prompt);
@@ -523,7 +540,7 @@ function createTestableExecutor(deps: {
             maxTurns,
             allowedTools,
             taskType,
-            mcpServerNames: Object.keys(mcpServers),
+            mcpServerNames: Object.keys(mcpFactories),
             token: context.workspace.token,
           });
         }
@@ -531,12 +548,7 @@ function createTestableExecutor(deps: {
         const mcpBearerToken = Buffer.from(
           crypto.getRandomValues(new Uint8Array(32)),
         ).toString("hex");
-        const factories: Record<string, () => unknown> = {};
-        for (const [name, server] of Object.entries(mcpServers)) {
-          const captured = server;
-          factories[name] = () => captured;
-        }
-        mcpJobRegistry.register(mcpBearerToken, factories as never, (timeoutSeconds + 60) * 1000);
+        mcpJobRegistry.register(mcpBearerToken, mcpFactories as never, (timeoutSeconds + 60) * 1000);
         registeredMcpBearerToken = mcpBearerToken;
 
         const { buildAcaJobSpec } = await import("../jobs/aca-launcher.ts");
@@ -585,7 +597,7 @@ function createTestableExecutor(deps: {
           } catch {}
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
-          return {
+          return withCandidateFinding({
             conclusion: "error",
             costUsd: undefined,
             numTurns: undefined,
@@ -610,13 +622,13 @@ function createTestableExecutor(deps: {
               remoteRuntimeDurationMs,
               remoteRuntimeDetail: "remote runtime timed out",
             }),
-          };
+          });
         }
 
         if (status === "failed") {
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
-          return {
+          return withCandidateFinding({
             conclusion: "error",
             costUsd: undefined,
             numTurns: undefined,
@@ -638,7 +650,7 @@ function createTestableExecutor(deps: {
               remoteRuntimeDurationMs,
               remoteRuntimeDetail: "remote runtime failed",
             }),
-          };
+          });
         }
 
         const rawResult = await readResultFn(workspaceDir);
@@ -655,7 +667,7 @@ function createTestableExecutor(deps: {
         mcpJobRegistry.unregister(mcpBearerToken);
         registeredMcpBearerToken = undefined;
 
-        return {
+        return withCandidateFinding({
           ...jobResult,
           durationMs: jobResult.durationMs ?? durationMs,
           published: jobResult.published || published,
@@ -664,7 +676,7 @@ function createTestableExecutor(deps: {
               ? [...(jobResult.publishEvents ?? []), ...publishEvents]
               : jobResult.publishEvents,
           executorPhaseTimings,
-        };
+        });
       } catch (err) {
         const durationMs = Date.now() - startTime;
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -673,7 +685,7 @@ function createTestableExecutor(deps: {
           mcpJobRegistry.unregister(registeredMcpBearerToken);
           registeredMcpBearerToken = undefined;
         }
-        return {
+        return withCandidateFinding({
           conclusion: "error",
           costUsd: undefined,
           numTurns: undefined,
@@ -700,7 +712,7 @@ function createTestableExecutor(deps: {
               ? "remote runtime never started"
               : "remote runtime finished but result processing failed",
           }),
-        };
+        });
       }
     },
   };
@@ -1643,7 +1655,7 @@ test("prepareAgentWorkspace writes a review bundle transport for repos with trac
   }
 });
 
-test("prepareAgentWorkspace uses archive transport for shallow PR workspaces without unshallowing", async () => {
+test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "kodiai-shallow-bundle-"));
   const bareRepoDir = join(tempRoot, "origin.git");
   const seedRepoDir = join(tempRoot, "seed");
@@ -1688,24 +1700,335 @@ test("prepareAgentWorkspace uses archive transport for shallow PR workspaces wit
 
     expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
     expect(result.repoBundlePath).toBeUndefined();
-    expect(result.repoCwd).toBeUndefined();
+    expect(result.repoCwd).toBe(join(workspaceDir, "repo"));
 
     const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
     const agentConfig = JSON.parse(rawAgentConfig) as {
       repoCwd?: string;
-      repoTransport?: { kind?: string; archivePath?: string };
-      allowedTools?: string[];
+      repoTransport?: unknown;
     };
 
-    expect(agentConfig.repoCwd).toBeUndefined();
-    expect(agentConfig.repoTransport).toEqual({
-      kind: "working-tree-archive",
-      archivePath: join(workspaceDir, "repo.tar"),
-    });
-    expect(agentConfig.allowedTools).toEqual(["Read", "Grep", "Glob"]);
-    expect((await lstat(join(workspaceDir, "repo.tar"))).isFile()).toBe(true);
-    await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
+    expect(agentConfig.repoTransport).toBeUndefined();
+    expect(agentConfig.repoCwd).toBe(join(workspaceDir, "repo"));
+    expect((agentConfig as { allowedTools?: string[] }).allowedTools).toEqual(["Read", "Grep", "Glob"]);
+    expect(await readFile(join(workspaceDir, "repo", "feature.txt"), "utf-8")).toBe("one\ntwo\npr\n");
+    await expect(stat(join(workspaceDir, "repo", ".git"))).rejects.toThrow();
   } finally {
     await Promise.all(cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  }
+});
+
+function getMcpToolHandler(server: unknown, toolName: string) {
+  const candidate = server as {
+    instance?: {
+      _registeredTools?: Record<
+        string,
+        {
+          handler: (
+            input: Record<string, unknown>,
+          ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
+        }
+      >;
+    };
+  };
+
+  const registeredTool = candidate.instance?._registeredTools?.[toolName];
+  if (!registeredTool) {
+    throw new Error(`tool '${toolName}' is not registered`);
+  }
+  return registeredTool.handler;
+}
+
+test("ACA dispatch: candidate finding tool records through shared factory state and returns sidecar metadata", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+  let registeredToken: string | undefined;
+
+  const wrappedRegistry = {
+    register: (token: string, factories: never, ttlMs?: number) => {
+      registeredToken = token;
+      registry.register(token, factories, ttlMs);
+    },
+    unregister: registry.unregister.bind(registry),
+    hasToken: registry.hasToken.bind(registry),
+    getFactory: registry.getFactory.bind(registry),
+  };
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: wrappedRegistry as never,
+    launchFn: async () => ({ executionName: "exec-candidate" }),
+    pollFn: async () => {
+      const firstFactory = registry.getFactory(registeredToken!, "review_candidate_finding")!;
+      const secondFactory = registry.getFactory(registeredToken!, "review_candidate_finding")!;
+      expect(firstFactory).toBeFunction();
+      expect(secondFactory).toBeFunction();
+
+      const firstServer = firstFactory();
+      const secondServer = secondFactory();
+      expect(firstServer).not.toBe(secondServer);
+      const firstHandler = getMcpToolHandler(firstServer, "record_candidate_finding");
+      const secondHandler = getMcpToolHandler(secondServer, "record_candidate_finding");
+      await firstHandler({
+        filePath: "src/feature.ts",
+        startLine: 10,
+        severity: "major",
+        category: "correctness",
+        title: "Candidate issue",
+        body: "This is a shadow-only candidate body.",
+      });
+      await secondHandler({
+        filePath: "src/feature.ts",
+        startLine: 11,
+        severity: "minor",
+        category: "style",
+        title: "Second candidate",
+        body: "This verifies fresh factory instances share executor collector state.",
+      });
+      return { status: "succeeded", durationMs: 1000 };
+    },
+    readResultFn: async () => makeJobResult({ published: false }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!, {
+    enableCandidateFindingTool: true,
+    reviewOutputKey: "review-key-1",
+    deliveryId: "delivery-candidate-1",
+  }));
+
+  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as { allowedTools: string[] };
+  expect(agentConfig.allowedTools).toContain("mcp__review_candidate_finding__record_candidate_finding");
+  expect(result.published).toBe(false);
+  expect(result.candidateFinding).toEqual(expect.objectContaining({
+    status: "shadow",
+    repo: "xbmc/xbmc",
+    pullNumber: 1,
+    reviewOutputKey: "review-key-1",
+    deliveryId: "delivery-candidate-1",
+    artifactPresent: true,
+    artifactBasename: "review-candidate-findings.json",
+    counts: { input: 2, recorded: 2, rejected: 0, errors: 0 },
+  }));
+  expect(result.candidateFinding?.findings.map((finding) => finding.title)).toEqual([
+    "Candidate issue",
+    "Second candidate",
+  ]);
+  expect(JSON.stringify(result.candidateFinding)).not.toContain(tmpDir!);
+
+  const sidecar = JSON.parse(await readFile(join(tmpDir!, "review-candidate-findings.json"), "utf-8")) as {
+    findings: Array<{ title: string }>;
+  };
+  expect(sidecar.findings.map((finding) => finding.title)).toEqual(["Candidate issue", "Second candidate"]);
+});
+
+test("ACA dispatch: candidate finding result is present with zero calls when enabled", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger: makeLogger(),
+    config: makeConfig(),
+    mcpJobRegistry: createMcpJobRegistry(),
+    launchFn: async () => ({ executionName: "exec-candidate-zero" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult({ published: false }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!, {
+    enableCandidateFindingTool: true,
+    reviewOutputKey: "review-key-zero",
+  }));
+
+  expect(result.candidateFinding).toEqual(expect.objectContaining({
+    status: "shadow",
+    artifactPresent: false,
+    counts: { input: 0, recorded: 0, rejected: 0, errors: 0 },
+  }));
+});
+
+test("ACA dispatch: candidate finding is disabled by default", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger: makeLogger(),
+    config: makeConfig(),
+    mcpJobRegistry: createMcpJobRegistry(),
+    launchFn: async () => ({ executionName: "exec-candidate-disabled" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult({ published: false }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!, {
+    reviewOutputKey: "review-key-disabled",
+  }));
+
+  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as { allowedTools: string[] };
+  expect(agentConfig.allowedTools).not.toContain("mcp__review_candidate_finding__record_candidate_finding");
+  expect(result.candidateFinding).toBeUndefined();
+});
+
+test("ACA dispatch: candidate finding enabled without correlation returns unavailable metadata", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger: makeLogger(),
+    config: makeConfig(),
+    mcpJobRegistry: createMcpJobRegistry(),
+    launchFn: async () => ({ executionName: "exec-candidate-missing-correlation" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult({ published: false }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!, {
+    enableCandidateFindingTool: true,
+    reviewOutputKey: undefined,
+  }));
+
+  expect(result.candidateFinding).toEqual(expect.objectContaining({
+    status: "unavailable",
+    reason: "missing-correlation",
+    artifactPresent: false,
+    counts: { input: 0, recorded: 0, rejected: 0, errors: 0 },
+  }));
+});
+
+test("ACA dispatch: malformed candidate input increments rejected count without failing execution", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const registry = createMcpJobRegistry();
+  let registeredToken: string | undefined;
+  const wrappedRegistry = {
+    register: (token: string, factories: never, ttlMs?: number) => {
+      registeredToken = token;
+      registry.register(token, factories, ttlMs);
+    },
+    unregister: registry.unregister.bind(registry),
+    hasToken: registry.hasToken.bind(registry),
+    getFactory: registry.getFactory.bind(registry),
+  };
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger: makeLogger(),
+    config: makeConfig(),
+    mcpJobRegistry: wrappedRegistry as never,
+    launchFn: async () => ({ executionName: "exec-candidate-rejected" }),
+    pollFn: async () => {
+      const factory = registry.getFactory(registeredToken!, "review_candidate_finding")!;
+      const handler = getMcpToolHandler(factory(), "record_candidate_finding");
+      await handler({
+        filePath: "../secret.ts",
+        startLine: 1,
+        title: "Unsafe path",
+        body: "Body",
+      });
+      return { status: "succeeded", durationMs: 1000 };
+    },
+    readResultFn: async () => makeJobResult({ published: false }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!, {
+    enableCandidateFindingTool: true,
+    reviewOutputKey: "review-key-rejected",
+  }));
+
+  expect(result.conclusion).toBe("success");
+  expect(result.published).toBe(false);
+  expect(result.candidateFinding).toEqual(expect.objectContaining({
+    status: "shadow",
+    counts: { input: 1, recorded: 0, rejected: 1, errors: 0 },
+  }));
+  expect(result.candidateFinding?.rejections).toEqual([{ index: 0, reason: "unsafe-file-path" }]);
+});
+
+test("ACA dispatch: candidate sidecar write failure preserves in-memory candidate findings", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const registry = createMcpJobRegistry();
+  let registeredToken: string | undefined;
+  const wrappedRegistry = {
+    register: (token: string, factories: never, ttlMs?: number) => {
+      registeredToken = token;
+      registry.register(token, factories, ttlMs);
+    },
+    unregister: registry.unregister.bind(registry),
+    hasToken: registry.hasToken.bind(registry),
+    getFactory: registry.getFactory.bind(registry),
+  };
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger: makeLogger(),
+    config: makeConfig(),
+    mcpJobRegistry: wrappedRegistry as never,
+    launchFn: async () => ({ executionName: "exec-candidate-sidecar-failure" }),
+    pollFn: async () => {
+      await rm(tmpDir!, { recursive: true, force: true });
+      const factory = registry.getFactory(registeredToken!, "review_candidate_finding")!;
+      const handler = getMcpToolHandler(factory(), "record_candidate_finding");
+      await handler({
+        filePath: "src/feature.ts",
+        startLine: 10,
+        title: "Candidate issue",
+        body: "Body",
+      });
+      return { status: "succeeded", durationMs: 1000 };
+    },
+    readResultFn: async () => makeJobResult({ published: false }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!, {
+    enableCandidateFindingTool: true,
+    reviewOutputKey: "review-key-sidecar-failure",
+  }));
+
+  expect(result.conclusion).toBe("success");
+  expect(result.published).toBe(false);
+  expect(result.candidateFinding).toEqual(expect.objectContaining({
+    status: "shadow",
+    artifactPresent: false,
+    counts: { input: 1, recorded: 1, rejected: 0, errors: 1 },
+    reason: "sidecar-write-failed",
+  }));
+  expect(result.candidateFinding?.findings).toHaveLength(1);
+  expect(result.candidateFinding?.findings[0]?.title).toBe("Candidate issue");
+  tmpDir = undefined;
+});
+
+test("ACA dispatch: timeout, failed, and local error paths include candidate metadata", async () => {
+  for (const scenario of ["timed-out", "failed", "local-error"] as const) {
+    tmpDir = await mkdtemp(join(tmpdir(), `kodiai-executor-${scenario}-`));
+    const executor = createTestableExecutor({
+      githubApp: makeGithubApp(),
+      logger: makeLogger(),
+      config: makeConfig(),
+      mcpJobRegistry: createMcpJobRegistry(),
+      launchFn: scenario === "local-error" ? async () => { throw new Error("launch failed"); } : async () => ({ executionName: `exec-${scenario}` }),
+      pollFn: async () => ({ status: scenario === "failed" ? "failed" : "timed-out", durationMs: 1000 }),
+      cancelFn: async () => {},
+      createWorkspaceDirFn: async () => tmpDir!,
+    });
+
+    const result = await executor.execute(makeContext(tmpDir!, {
+      enableCandidateFindingTool: true,
+      reviewOutputKey: `review-key-${scenario}`,
+    }));
+
+    expect(result.conclusion).toBe("error");
+    expect(result.candidateFinding).toEqual(expect.objectContaining({
+      reviewOutputKey: `review-key-${scenario}`,
+      counts: { input: 0, recorded: 0, rejected: 0, errors: 0 },
+    }));
+    await rm(tmpDir!, { recursive: true, force: true });
+    tmpDir = undefined;
   }
 });
