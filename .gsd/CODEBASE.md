@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-15T16:40:10Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-15T16:40:10Z","fingerprint":"ee1bb60f6b2f48e91afc5b95de6ca3a435c3b55d","fileCount":500,"truncated":true} -->
+Generated: 2026-05-17T21:31:33Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-17T21:31:33Z","fingerprint":"e29b9cec04ef28dd3e4859d4f98e5bc50b8cfa2b","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -87,7 +87,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(238 files: 233 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(253 files: 248 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -129,25 +129,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - *(29 files: 29 .ts)*
 
 ### src/execution/mcp/
-- `src/execution/mcp/checkpoint-server.test.ts`
-- `src/execution/mcp/checkpoint-server.ts`
-- `src/execution/mcp/ci-status-server.ts`
-- `src/execution/mcp/comment-server.test.ts`
-- `src/execution/mcp/comment-server.ts`
-- `src/execution/mcp/http-server.test.ts`
-- `src/execution/mcp/http-server.ts`
-- `src/execution/mcp/index.test.ts`
-- `src/execution/mcp/index.ts`
-- `src/execution/mcp/inline-review-server.test.ts`
-- `src/execution/mcp/inline-review-server.ts`
-- `src/execution/mcp/issue-comment-server.test.ts`
-- `src/execution/mcp/issue-comment-server.ts`
-- `src/execution/mcp/issue-label-server.test.ts`
-- `src/execution/mcp/issue-label-server.ts`
-- `src/execution/mcp/review-comment-thread-server.test.ts`
-- `src/execution/mcp/review-comment-thread-server.ts`
-- `src/execution/mcp/review-output-publication-gate.test.ts`
-- `src/execution/mcp/review-output-publication-gate.ts`
+- *(22 files: 22 .ts)*
 
 ### src/feedback/
 - `src/feedback/aggregator.test.ts`
@@ -156,23 +138,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/feedback/confidence-adjuster.ts`
 - `src/feedback/index.ts`
 - `src/feedback/safety-guard.test.ts`
-- `src/feedback/safety-guard.ts`
-- `src/feedback/types.ts`
-
-### src/handlers/
-- `src/handlers/addon-check.test.ts`
-- `src/handlers/addon-check.ts`
-- `src/handlers/ci-failure.test.ts`
-- `src/handlers/ci-failure.ts`
-- `src/handlers/dep-bump-merge-history.test.ts`
-- `src/handlers/dep-bump-merge-history.ts`
-- `src/handlers/feedback-sync.test.ts`
-- `src/handlers/feedback-sync.ts`
-- `src/handlers/formatter-suggestion-intent.test.ts`
-- `src/handlers/formatter-suggestion-intent.ts`
-- `src/handlers/formatter-suggestion-orchestration.test.ts`
-- `src/handlers/formatter-suggestion-orchestration.ts`
-- `src/handlers/identity-suggest.test.ts`
-- `src/handlers/identity-suggest.ts`
-- `src/handlers/issue-closed.test.ts`
-- `src/handlers/issue-closed.ts`

@@ -1,16 +1,3 @@
-{"id":"dc1a66c8-9d6d-4ff5-ab05-1de995692f93","ts":"2026-05-14T06:51:47.913Z","severity":"info","message":"Stuck recovery: artifact for plan-slice M070/S06 found on disk. Invalidating caches.","source":"notify","read":false}
-{"id":"0f7f4b2b-c595-45db-90e7-1cd8e1da8019","ts":"2026-05-14T06:56:44.646Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"86d260b4-f70c-4ed8-aa5a-5f1ccfe453e9","ts":"2026-05-14T07:01:01.808Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch, pre-dispatch: created gsd snapshot after 33m of uncommitted changes","source":"notify","read":false}
-{"id":"d01b7b84-ab59-406d-8170-0f8812af7d69","ts":"2026-05-14T07:01:01.879Z","severity":"info","message":"Stuck recovery: artifact for plan-slice M070/S06 found on disk. Invalidating caches.","source":"notify","read":false}
-{"id":"24d3171c-a9be-4a42-9acc-9edfc636e5c3","ts":"2026-05-14T07:01:02.271Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"1e7e2d73-bc1a-40f3-9afb-622c61962d3e","ts":"2026-05-14T07:06:19.266Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"12cb4c65-1f41-4254-a335-d1a770a878a1","ts":"2026-05-14T07:11:38.785Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"54827c2a-2e43-407b-8d5c-c2290605cf0a","ts":"2026-05-14T07:11:38.880Z","severity":"info","message":"Stuck recovery: artifact for plan-slice M070/S06 found on disk. Invalidating caches.","source":"notify","read":false}
-{"id":"addb493a-d18e-4c3e-a9ac-e6b0afeaa988","ts":"2026-05-14T07:16:22.612Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"06c26550-b6b6-498b-a694-29d456a81638","ts":"2026-05-14T07:20:55.575Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"596e8262-59e4-4859-a95d-0dcab976bb6f","ts":"2026-05-14T07:20:55.645Z","severity":"info","message":"Stuck recovery: artifact for plan-slice M070/S06 found on disk. Invalidating caches.","source":"notify","read":false}
-{"id":"2bfeee47-afba-46d5-a7cb-cc7b64709473","ts":"2026-05-14T07:26:07.038Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
-{"id":"e8b0a434-1b81-4c79-beff-f2e3ecd30144","ts":"2026-05-14T07:31:19.903Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch, pre-dispatch: created gsd snapshot after 30m of uncommitted changes","source":"notify","read":false}
 {"id":"81528ad4-6c74-4947-8ecb-21ae0ab37f0e","ts":"2026-05-14T07:31:20.073Z","severity":"info","message":"Stuck recovery: artifact for plan-slice M070/S06 found on disk. Invalidating caches.","source":"notify","read":false}
 {"id":"4e4e227d-a2e4-4faa-a840-a5760a74df6c","ts":"2026-05-14T07:31:20.511Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"16fc0c04-eaf1-4df9-9ece-23b1ab4ebfae","ts":"2026-05-14T07:34:59.205Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
@@ -498,3 +485,16 @@
 {"id":"69925c78-313d-4e70-9479-39bd5cee945f","ts":"2026-05-15T15:45:45.227Z","severity":"info","message":"Building forensic report...","source":"notify","read":false}
 {"id":"8b8cdbd0-27b4-4426-b9bc-60def78d4582","ts":"2026-05-15T15:45:47.538Z","severity":"info","message":"Forensic report saved: .gsd/forensics/report-2026-05-15-15-45-47.md","source":"notify","read":false}
 {"id":"c24ca473-b4ef-4343-942b-6a8455391854","ts":"2026-05-15T16:44:10.471Z","severity":"info","message":"Auto-mode resumed.","source":"notify","read":false}
+{"id":"a39e5208-296e-406a-8b79-373e2a847266","ts":"2026-05-17T15:10:36.675Z","severity":"warning","message":"All milestones are complete and the discussion didn't produce a new one. Run /gsd to start a new milestone manually.","source":"notify","read":false}
+{"id":"61fcc6d2-ee1a-424e-90ec-49f17676815b","ts":"2026-05-17T15:10:52.809Z","severity":"info","message":"Analyzing codebase...","source":"notify","read":false}
+{"id":"644c5a68-9b61-4199-9ac5-18bccf3ba2f2","ts":"2026-05-17T15:10:52.854Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":false}
+{"id":"47ac4294-f6e0-4384-937f-34f367a88073","ts":"2026-05-17T15:10:52.857Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":false}
+{"id":"7d5976b3-82da-4c33-9b97-e5b5d17e41d1","ts":"2026-05-17T15:10:52.910Z","severity":"success","message":"✓ Reviewed prior context","source":"notify","read":false}
+{"id":"f01ba0f6-6492-4bf1-be01-eafd8ef4e52f","ts":"2026-05-17T16:38:51.925Z","severity":"info","message":"Empty-turn detected: LLM announced intent but called no tool. Prompting it to execute.","source":"notify","read":false}
+{"id":"46d16d6d-c716-437e-a016-e2121d523bd9","ts":"2026-05-17T16:59:19.726Z","severity":"info","message":"discuss-milestone M073 is waiting for your approval - pausing before more tool calls run.","source":"notify","read":false}
+{"id":"dd4842f2-f3c4-4cff-8147-5e71a2374082","ts":"2026-05-17T17:38:20.895Z","severity":"info","message":"discuss-milestone M073 is waiting for your approval - pausing before more tool calls run.","source":"notify","read":false}
+{"id":"ec8612bf-79a7-4c42-8b58-152d26063f00","ts":"2026-05-17T21:29:25.842Z","severity":"success","message":"Milestone M073 ready.","source":"notify","read":false}
+{"id":"3e8f16b6-80af-47ca-9bf2-e4bd772c34d8","ts":"2026-05-17T21:29:27.310Z","severity":"info","message":"Auto-mode started. Will loop until milestone complete.","source":"notify","read":false}
+{"id":"1777104b-1b02-4bb4-8fc4-e3b108d2c0c0","ts":"2026-05-17T21:29:27.318Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
+{"id":"91e5b694-9fc7-4ee7-81a0-827089885592","ts":"2026-05-17T21:29:27.323Z","severity":"info","message":"Pre-flight: 61 milestones queued. All have full context.","source":"notify","read":false}
+{"id":"29b377ae-2160-4a91-923b-5079c2774874","ts":"2026-05-17T21:36:53.984Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
