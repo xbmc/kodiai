@@ -646,7 +646,7 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
 
     const recurrenceCounts = new Map<string, number>();
     for (const finding of processedFindings) {
-      if (finding.suppressed || Number(finding.confidence) < input.minConfidence) {
+if (finding.suppressed || (typeof finding.confidence === "number" && Number.isFinite(finding.confidence) && finding.confidence < input.minConfidence)) {
         continue;
       }
       const fingerprint = fingerprintFindingTitle(finding.title);
