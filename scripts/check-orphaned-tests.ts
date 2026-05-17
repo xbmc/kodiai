@@ -37,7 +37,14 @@ export const EXPLICIT_TEST_TARGET_MAP = {
   "scripts/deploy.test.ts": "deploy.sh",
   "scripts/deploy-timeout-alignment.test.ts": "deploy.sh",
   "src/execution/prepare-agent-workspace.test.ts": "src/execution/executor.ts",
+  "src/handlers/review-candidate-verification-evidence.test.ts": "src/handlers/review-m070-integration-harness.ts",
+  "src/handlers/review-candidate-verification-integration.test.ts": "src/handlers/review-m070-integration-harness.ts",
+  "src/handlers/review-candidate-verification-publication.test.ts": "src/handlers/review-m070-integration-harness.ts",
+  "src/handlers/review-shadow-specialist-metrics.test.ts": "src/handlers/review-m070-integration-harness.ts",
+  "src/handlers/review-shadow-specialist-publication.test.ts": "src/handlers/review-m070-integration-harness.ts",
+  "src/handlers/review-shadow-specialist.test.ts": "src/handlers/review.test.ts",
   "src/slack/v1-safety-contract.test.ts": "src/slack/safety-rails.ts",
+  "src/specialists/shadow-specialist-runner.test.ts": "src/specialists/shadow-specialist-subflow.test.ts",
 } as const satisfies Record<string, string>;
 
 const EXPLICIT_TARGET_PATHS = [...new Set(Object.values(EXPLICIT_TEST_TARGET_MAP))].sort();

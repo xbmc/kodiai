@@ -249,13 +249,21 @@ export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetric
     },
   };
 
-  createReviewHandler({
+  createReviewHandler(({
     eventRouter: {
       register: (eventKey, handler) => handlers.set(eventKey, handler),
       dispatch: async () => undefined,
     } as EventRouter,
     jobQueue: {
-      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn({ queuedAtMs: 1, startedAtMs: 1, waitMs: 0 }),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn({
+        jobId: "job-m070-integration",
+        lane: "review",
+        key: "installation-123:pr-28172",
+        queuedAtMs: 1,
+        startedAtMs: 1,
+        waitMs: 0,
+        setPhase: () => undefined,
+      }),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
       getActiveJobs: getEmptyActiveJobs,
@@ -299,7 +307,7 @@ export async function runReviewWithShadowMetrics(options: ReviewWithShadowMetric
     }),
     shadowSpecialistSubflow: options.shadowSpecialistSubflow ?? (async (input) => createMaliciousShadowResult(input)),
     logger,
-  });
+  }) as Parameters<typeof createReviewHandler>[0] & { shadowSpecialistSubflow?: ReviewWithShadowMetricsOptions["shadowSpecialistSubflow"] });
 
   const handler = handlers.get("pull_request.review_requested");
   if (!handler) {

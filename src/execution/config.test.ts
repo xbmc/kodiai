@@ -43,11 +43,6 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.focusAreas).toEqual([]);
     expect(config.review.ignoredAreas).toEqual([]);
     expect(config.review.maxComments).toBe(7);
-    expect(config.review.graphValidation).toEqual({
-      enabled: false,
-      maxFindingsToValidate: 10,
-      contextMaxChars: 1000,
-    });
     expect(config.review.prioritization).toEqual({
       severity: 0.45,
       fileRisk: 0.3,
@@ -116,6 +111,78 @@ test("reads and validates .kodiai.yml when present", async () => {
   }
 });
 
+test("defaults review.graphValidation.enabled to false when no config exists", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.graphValidation.enabled).toBe(false);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("defaults review.graphValidation.enabled to false when review block omits it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.graphValidation.enabled).toBe(false);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.graphValidation.enabled true and false distinctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  graphValidation:\n    enabled: true\n",
+    );
+    const enabled = await loadRepoConfig(dir);
+    expect(enabled.config.review.graphValidation.enabled).toBe(true);
+    expect(enabled.warnings).toEqual([]);
+
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  graphValidation:\n    enabled: false\n",
+    );
+    const disabled = await loadRepoConfig(dir);
+    expect(disabled.config.review.graphValidation.enabled).toBe(false);
+    expect(disabled.warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid review.graphValidation.enabled falls back review section with warning", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    for (const enabledYaml of ["'true'", "{}", "[]"]) {
+      await writeFile(
+        join(dir, ".kodiai.yml"),
+        `review:\n  maxComments: 12\n  graphValidation:\n    enabled: ${enabledYaml}\n`,
+      );
+      const { config, warnings } = await loadRepoConfig(dir);
+
+      expect(config.review.graphValidation.enabled).toBe(false);
+      expect(config.review.maxComments).toBe(7);
+      expect(
+        warnings.some((warning) =>
+          warning.section === "review"
+          && warning.issues.some((issue) => issue.includes("graphValidation.enabled")),
+        ),
+      ).toBe(true);
+    }
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 test("defaults review.formatterSuggestions when no config exists", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {
@@ -144,110 +211,6 @@ test("defaults review.formatterSuggestions when review block omits it", async ()
     expect(config.review.formatterSuggestions.maxSuggestions).toBe(10);
     expect((config.review.formatterSuggestions as Record<string, unknown>).enabled).toBeUndefined();
     expect(warnings).toEqual([]);
-  } finally {
-    await rm(dir, { recursive: true });
-  }
-});
-
-test("defaults review.graphValidation when review block omits it", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
-  try {
-    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
-    const { config, warnings } = await loadRepoConfig(dir);
-
-    expect(config.review.graphValidation).toEqual({
-      enabled: false,
-      maxFindingsToValidate: 10,
-      contextMaxChars: 1000,
-    });
-    expect(warnings).toEqual([]);
-  } finally {
-    await rm(dir, { recursive: true });
-  }
-});
-
-test("preserves review.graphValidation enabled intent from YAML", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
-  try {
-    await writeFile(
-      join(dir, ".kodiai.yml"),
-      [
-        "review:",
-        "  graphValidation:",
-        "    enabled: true",
-        "    maxFindingsToValidate: 5",
-        "    contextMaxChars: 2000",
-        "",
-      ].join("\n"),
-    );
-    const { config, warnings } = await loadRepoConfig(dir);
-
-    expect(config.review.graphValidation).toEqual({
-      enabled: true,
-      maxFindingsToValidate: 5,
-      contextMaxChars: 2000,
-    });
-    expect(warnings).toEqual([]);
-  } finally {
-    await rm(dir, { recursive: true });
-  }
-});
-
-test("review.graphValidation fills omitted nested options with defaults", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
-  try {
-    await writeFile(
-      join(dir, ".kodiai.yml"),
-      "review:\n  graphValidation:\n    enabled: true\n",
-    );
-    const { config, warnings } = await loadRepoConfig(dir);
-
-    expect(config.review.graphValidation).toEqual({
-      enabled: true,
-      maxFindingsToValidate: 10,
-      contextMaxChars: 1000,
-    });
-    expect(warnings).toEqual([]);
-  } finally {
-    await rm(dir, { recursive: true });
-  }
-});
-
-test("invalid review.graphValidation values fall back review section with warning", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
-  try {
-    await writeFile(
-      join(dir, ".kodiai.yml"),
-      "review:\n  maxComments: 12\n  graphValidation:\n    enabled: sometimes\n",
-    );
-    const invalidEnabled = await loadRepoConfig(dir);
-    expect(invalidEnabled.config.review.maxComments).toBe(7);
-    expect(invalidEnabled.config.review.graphValidation.enabled).toBe(false);
-    expect(invalidEnabled.warnings.some((w) => w.section === "review")).toBe(true);
-
-    await writeFile(
-      join(dir, ".kodiai.yml"),
-      "review:\n  graphValidation:\n    enabled: true\n    maxFindingsToValidate: 0\n",
-    );
-    const invalidMaxFindings = await loadRepoConfig(dir);
-    expect(invalidMaxFindings.config.review.graphValidation).toEqual({
-      enabled: false,
-      maxFindingsToValidate: 10,
-      contextMaxChars: 1000,
-    });
-    expect(invalidMaxFindings.warnings.some((w) => w.section === "review")).toBe(true);
-
-    await writeFile(
-      join(dir, ".kodiai.yml"),
-      "review:\n  graphValidation:\n    enabled: true\n    contextMaxChars: 10001\n",
-    );
-    const invalidContext = await loadRepoConfig(dir);
-    expect(invalidContext.config.review.graphValidation).toEqual({
-      enabled: false,
-      maxFindingsToValidate: 10,
-      contextMaxChars: 1000,
-    });
-    expect(invalidContext.warnings.some((w) => w.section === "review")).toBe(true);
   } finally {
     await rm(dir, { recursive: true });
   }

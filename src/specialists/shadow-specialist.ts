@@ -379,12 +379,12 @@ function normalizeNonNegativeInteger(value: unknown): number | null {
 }
 
 function detectUnsafeFields(value: unknown): ShadowSpecialistRedactionFlags {
-  const flags = {
+  const flags: { -readonly [K in keyof ShadowSpecialistRedactionFlags]: ShadowSpecialistRedactionFlags[K] } = {
     unsafeFieldCount: 0,
     discardedRawPayload: false,
     discardedPublicationFields: false,
     discardedApprovalFields: false,
-  } satisfies ShadowSpecialistRedactionFlags;
+  };
 
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {

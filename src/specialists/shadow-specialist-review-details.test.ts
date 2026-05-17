@@ -182,8 +182,7 @@ describe("buildShadowSpecialistReviewDetailsProjection", () => {
         discardedPublicationFields: true,
         discardedApprovalFields: true,
       },
-    });
-
+    } as unknown as Parameters<typeof buildShadowSpecialistReviewDetailsProjection>[0]);
     expect(projection.status).toBe("degraded");
     expect(projection.reason).toHaveLength(96);
     expect(projection.reason).not.toContain("\n");
@@ -238,7 +237,7 @@ describe("buildShadowSpecialistReviewDetailsProjection", () => {
       commentBody: "SECRET_BODY_SENTINEL",
       approval: "SECRET_APPROVAL_SENTINEL",
       tierMode: "SECRET_TIER_SENTINEL",
-    });
+    } as unknown as Parameters<typeof buildShadowSpecialistReviewDetailsProjection>[0]);
 
     expect(projection).toMatchObject({
       laneId: null,

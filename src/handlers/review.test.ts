@@ -1,13 +1,19 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import { $ } from "bun";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, REVIEW_WORKSPACE_FETCH_DEPTH } from "./review.ts";
+import { buildReviewPlan } from "../review-orchestration/review-plan.ts";
+import {
+  createDegradedReviewReducerResult,
+  type ReviewReducerInput,
+  type ReviewReducerResult,
+} from "../review-orchestration/review-reducer.ts";
 import { createMentionHandler } from "./mention.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
-import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
   ContributorProfile,
@@ -24,9 +30,8 @@ import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
-import { buildReviewPlan, type ReviewPlanInput } from "../review-plan/review-plan.ts";
-import type { GraphValidationFinding, GraphValidationResult } from "../review-graph/validation.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;
@@ -221,6 +226,125 @@ describe("createReviewHandler queued-claim cleanup", () => {
     expect(coordinator.getSnapshot(familyKey)?.attempts.map((attempt) => attempt.attemptId)).toEqual([
       olderAttempt.attemptId,
     ]);
+  });
+
+  test("fork pull requests use trusted base config instead of PR-head config", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: false });
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet()).text().trim();
+
+    await $`git -C ${workspaceFixture.dir} checkout feature`.quiet();
+    await Bun.write(
+      join(workspaceFixture.dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  enabled: false",
+        "  autoApprove: false",
+        "  triggers:",
+        "    onOpened: false",
+        "    onReadyForReview: false",
+        "    onReviewRequested: false",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+      ].join("\n") + "\n",
+    );
+    await $`git -C ${workspaceFixture.dir} add .kodiai.yml`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "disable review in fork head"`.quiet();
+    const disabledConfigFeatureSha = (await $`git -C ${workspaceFixture.dir} rev-parse HEAD`.quiet()).text().trim();
+    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/101/head ${disabledConfigFeatureSha}`.quiet();
+    await $`git -C ${workspaceFixture.dir} checkout main`.quiet();
+
+    let executeCount = 0;
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+        search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount += 1;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-fork-base-config",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Fork config trust",
+          body: "",
+          user: { login: "external-contributor" },
+          base: { ref: "main", sha: featureSha },
+          head: {
+            sha: disabledConfigFeatureSha,
+            ref: "feature",
+            repo: {
+              full_name: "external/repo",
+              name: "repo",
+              owner: { login: "external" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+    expect(executeCount).toBe(1);
   });
 
   test("older queued automatic review stays suppressed after a newer explicit review finishes first", async () => {
@@ -512,7 +636,7 @@ function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
+async function createWorkspaceFixture(options: { autoApprove?: boolean; graphValidationEnabled?: boolean; extraChangedFiles?: number; maxComments?: number } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
 
   await $`git -C ${dir} init --initial-branch=main`.quiet();
@@ -522,7 +646,7 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   await Bun.write(join(dir, "README.md"), "base\n");
   await Bun.write(
     join(dir, ".kodiai.yml"),
-    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  maxComments: ${options.maxComments ?? 10}\n  graphValidation:\n    enabled: ${options.graphValidationEnabled ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
   );
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -530,7 +654,10 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   await $`git -C ${dir} checkout -b feature`.quiet();
 
   await Bun.write(join(dir, "README.md"), "base\nfeature\n");
-  await $`git -C ${dir} add README.md`.quiet();
+  for (let index = 0; index < (options.extraChangedFiles ?? 0); index += 1) {
+    await Bun.write(join(dir, `feature-${index}.txt`), `feature ${index}\n`);
+  }
+  await $`git -C ${dir} add README.md ${Array.from({ length: options.extraChangedFiles ?? 0 }, (_, index) => `feature-${index}.txt`)}`.quiet();
   await $`git -C ${dir} commit -m "feature"`.quiet();
   await $`git -C ${dir} remote add origin ${dir}`.quiet();
 
@@ -5045,6 +5172,47 @@ describe("createReviewHandler diff collection resilience", () => {
     }
   });
 
+  test("uses GitHub file list when triple-dot and two-dot name-only diffs both fail", async () => {
+    const workspaceFixture = await createWorkspaceFixture();
+    await $`git -C ${workspaceFixture.dir} update-ref refs/remotes/origin/main main`.quiet();
+    const { logger, entries } = createCaptureLogger();
+    const commands: string[] = [];
+
+    try {
+      const result = await collectDiffContext({
+        workspaceDir: workspaceFixture.dir,
+        baseRef: "main",
+        maxFilesForFullDiff: 200,
+        logger,
+        baseLog: { deliveryId: "delivery-123", prNumber: 101 },
+        runGitCommand: async (args) => {
+          commands.push(args.join(" "));
+          if (args.join(" ") === "diff origin/main...HEAD --name-only") {
+            return { exitCode: 128, stdout: "", stderr: "no merge base", timedOut: false };
+          }
+          if (args.join(" ") === "diff origin/main..HEAD --name-only") {
+            return { exitCode: 128, stdout: "", stderr: "bad revision", timedOut: false };
+          }
+          throw new Error(`unexpected git command: ${args.join(" ")}`);
+        },
+        fallbackFileProvider: async () => ["README.md"],
+      });
+
+      expect(commands).toContain("diff origin/main...HEAD --name-only");
+      expect(commands).toContain("diff origin/main..HEAD --name-only");
+      expect(result.strategy).toBe("github-file-list-fallback");
+      expect(result.changedFiles).toEqual(["README.md"]);
+
+      const fallbackLog = entries.find((entry) =>
+        entry.message === "Diff collection degraded to GitHub file-list fallback"
+      );
+      expect(fallbackLog?.data?.stage).toBe("name-only");
+      expect(fallbackLog?.data?.reason).toBe("diff-failed-origin/main..HEAD-name-only");
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  });
+
   test("uses GitHub PR file metadata when merge-base recovery times out", async () => {
     const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
     const { logger } = createCaptureLogger();
@@ -5279,382 +5447,6 @@ describe("createReviewHandler diff collection resilience", () => {
     expect(capturedPrompt).not.toContain("Path-Specific Review Instructions");
 
     await workspaceFixture.cleanup();
-  });
-});
-
-describe("createReviewHandler shadow specialist", () => {
-  async function runShadowSpecialistReviewFlow(params: {
-    changedFiles: readonly unknown[];
-    diffContent?: string;
-    shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
-  }) {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const { logger, entries } = createCaptureLogger();
-    const calls: string[] = [];
-    const shadowInputs: ShadowSpecialistSubflowInput[] = [];
-    let executeCount = 0;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-      },
-    };
-
-    const defaultShadowResult = (input: ShadowSpecialistSubflowInput): ShadowSpecialistSubflowResult => ({
-      trigger: {
-        status: "triggered",
-        laneId: "docs-config-truth",
-        skipReason: null,
-        degradedReason: null,
-        errorKind: null,
-        matchedPaths: ["docs/runbook.md"],
-        candidateCount: 1,
-        selectedLaneCount: 1,
-        shadowOnly: true,
-        publishesFindings: false,
-        correlationKey: input.correlationKey ?? null,
-        metrics: {
-          decisionCount: 1,
-          duplicateCount: 0,
-          disagreementCount: 1,
-          tokenCountAvailable: false,
-          costAvailable: false,
-          latencyMsAvailable: true,
-        },
-      },
-      output: {
-        laneId: "docs-config-truth",
-        status: "ok",
-        skipReason: null,
-        degradedReasons: [],
-        errorKind: null,
-        candidates: [{ fingerprint: "candidate-1", decision: "disagreement", disagreementCategory: "operator-runbook-gap", duplicate: false, privateOnly: true }],
-        candidateCount: 1,
-        truncatedCandidateCount: 0,
-        decisionCounts: { candidate: 0, duplicate: 0, disagreement: 1, dismissed: 0, unclassifiable: 0 },
-        duplicateCount: 0,
-        disagreementCount: 1,
-        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "available" },
-        metrics: {
-          decisionCount: 1,
-          duplicateCount: 0,
-          disagreementCount: 1,
-          tokenCountAvailable: false,
-          costAvailable: false,
-          latencyMsAvailable: true,
-        },
-        deliveryId: input.deliveryId ?? null,
-        reviewOutputKey: input.reviewOutputKey ?? null,
-        correlationKey: input.correlationKey ?? null,
-        redactionFlags: {
-          unsafeFieldCount: 0,
-          discardedRawPayload: false,
-          discardedPublicationFields: false,
-          discardedApprovalFields: false,
-        },
-        shadowOnly: true,
-        publishesFindings: false,
-      },
-      durationMs: 7,
-      laneId: "docs-config-truth",
-      triggerStatus: "triggered",
-      skipReason: null,
-      degradedReason: null,
-      errorKind: null,
-      timeoutReason: null,
-      errorReason: null,
-      unclassifiableReason: null,
-      deliveryId: input.deliveryId ?? null,
-      reviewOutputKey: input.reviewOutputKey ?? null,
-      correlationKey: input.correlationKey ?? null,
-      candidateCount: 1,
-      decisionCount: 1,
-      duplicateCount: 0,
-      disagreementCount: 1,
-      metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "available" },
-      redactionFlags: {
-        unsafeFieldCount: 0,
-        discardedRawPayload: false,
-        discardedPublicationFields: false,
-        discardedApprovalFields: false,
-      },
-      shadowOnly: true,
-      publishesFindings: false,
-    });
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => {
-          calls.push("executor");
-          executeCount++;
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-shadow-specialist",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      diffContextCollector: async () => ({
-        changedFiles: params.changedFiles as string[],
-        numstatLines: [],
-        diffContent: params.diffContent,
-        strategy: "github-file-list-fallback",
-        mergeBaseRecovered: false,
-        deepenAttempts: 0,
-        unshallowAttempted: false,
-        diffRange: "github-api:file-list",
-      }),
-      shadowSpecialistSubflow: async (input: ShadowSpecialistSubflowInput) => {
-        calls.push("shadow");
-        shadowInputs.push(input);
-        return params.shadowSpecialistSubflow
-          ? params.shadowSpecialistSubflow(input)
-          : defaultShadowResult(input);
-      },
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.review_requested");
-    expect(handler).toBeDefined();
-
-    try {
-      await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
-      return { calls, executeCount, shadowInputs, entries };
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-  }
-
-  test("invokes a docs/config shadow specialist once after diff context and before executor", async () => {
-    const result = await runShadowSpecialistReviewFlow({
-      changedFiles: ["docs/runbook.md", ".github/workflows/ci.yml"],
-      diffContent: "diff --git a/docs/runbook.md b/docs/runbook.md\n+operator truth\n",
-    });
-
-    expect(result.calls).toEqual(["shadow", "executor"]);
-    expect(result.executeCount).toBe(1);
-    expect(result.shadowInputs).toHaveLength(1);
-    expect(result.shadowInputs[0]?.changedPaths).toEqual(["docs/runbook.md", ".github/workflows/ci.yml"]);
-    expect(result.shadowInputs[0]?.diffText).toContain("operator truth");
-    expect(result.shadowInputs[0]?.workspaceDir).toContain("kodiai-review-handler-");
-    expect(result.shadowInputs[0]?.deliveryId).toBe("delivery-123");
-    expect(result.shadowInputs[0]?.reviewOutputKey).toContain("delivery-123");
-    expect(typeof result.shadowInputs[0]?.correlationKey).toBe("string");
-
-    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
-    expect(log?.data?.laneId).toBe("docs-config-truth");
-    expect(log?.data?.status).toBe("triggered");
-    expect(log?.data?.candidateCount).toBe(1);
-    expect(log?.data?.disagreementCount).toBe(1);
-    expect(JSON.stringify(log?.data)).not.toContain("operator truth");
-  });
-
-  test("records skipped status for source-only changes and still executes normal review", async () => {
-    const result = await runShadowSpecialistReviewFlow({
-      changedFiles: ["src/app.ts"],
-      shadowSpecialistSubflow: async (input) => ({
-        trigger: {
-          status: "skipped",
-          laneId: null,
-          skipReason: "no-operator-truth-paths",
-          degradedReason: null,
-          errorKind: null,
-          matchedPaths: [],
-          candidateCount: 0,
-          selectedLaneCount: 0,
-          shadowOnly: true,
-          publishesFindings: false,
-          correlationKey: input.correlationKey ?? null,
-          metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
-        },
-        output: {
-          laneId: "docs-config-truth",
-          status: "skipped",
-          skipReason: "not-applicable",
-          degradedReasons: [],
-          errorKind: null,
-          candidates: [],
-          candidateCount: 0,
-          truncatedCandidateCount: 0,
-          decisionCounts: { candidate: 0, duplicate: 0, disagreement: 0, dismissed: 0, unclassifiable: 0 },
-          duplicateCount: 0,
-          disagreementCount: 0,
-          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
-          metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
-          deliveryId: input.deliveryId ?? null,
-          reviewOutputKey: input.reviewOutputKey ?? null,
-          correlationKey: input.correlationKey ?? null,
-          redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
-          shadowOnly: true,
-          publishesFindings: false,
-        },
-        durationMs: 2,
-        laneId: null,
-        triggerStatus: "skipped",
-        skipReason: "no-operator-truth-paths",
-        degradedReason: null,
-        errorKind: null,
-        timeoutReason: null,
-        errorReason: null,
-        unclassifiableReason: null,
-        deliveryId: input.deliveryId ?? null,
-        reviewOutputKey: input.reviewOutputKey ?? null,
-        correlationKey: input.correlationKey ?? null,
-        candidateCount: 0,
-        decisionCount: 0,
-        duplicateCount: 0,
-        disagreementCount: 0,
-        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
-        redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
-        shadowOnly: true,
-        publishesFindings: false,
-      }),
-    });
-
-    expect(result.calls).toEqual(["shadow", "executor"]);
-    expect(result.executeCount).toBe(1);
-    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
-    expect(log?.data?.status).toBe("skipped");
-    expect(log?.data?.reason).toBe("no-operator-truth-paths");
-  });
-
-  test("keeps executor authoritative when the shadow specialist degrades, errors, times out, or returns malformed output", async () => {
-    const outcomes: Array<{ name: string; result: Partial<ShadowSpecialistSubflowResult> }> = [
-      { name: "degraded", result: { triggerStatus: "triggered", degradedReason: "runner-timeout", timeoutReason: "runner-timeout" } },
-      { name: "error", result: { triggerStatus: "triggered", errorKind: "runner-error", errorReason: "runner-error" } },
-      { name: "malformed", result: { triggerStatus: "triggered", degradedReason: "malformed-output", unclassifiableReason: "malformed-output" } },
-    ];
-
-    for (const outcome of outcomes) {
-      const result = await runShadowSpecialistReviewFlow({
-        changedFiles: ["docs/runbook.md"],
-        shadowSpecialistSubflow: async (input) => ({
-          trigger: {
-            status: "triggered",
-            laneId: "docs-config-truth",
-            skipReason: null,
-            degradedReason: null,
-            errorKind: null,
-            matchedPaths: ["docs/runbook.md"],
-            candidateCount: 0,
-            selectedLaneCount: 1,
-            shadowOnly: true,
-            publishesFindings: false,
-            correlationKey: input.correlationKey ?? null,
-            metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
-          },
-          output: {
-            laneId: "docs-config-truth",
-            status: outcome.name === "error" ? "error" : "degraded",
-            skipReason: "missing-output",
-            degradedReasons: [],
-            errorKind: null,
-            candidates: [],
-            candidateCount: 0,
-            truncatedCandidateCount: 0,
-            decisionCounts: { candidate: 0, duplicate: 0, disagreement: 0, dismissed: 0, unclassifiable: 0 },
-            duplicateCount: 0,
-            disagreementCount: 0,
-            metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
-            metrics: { decisionCount: 0, duplicateCount: 0, disagreementCount: 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
-            deliveryId: input.deliveryId ?? null,
-            reviewOutputKey: input.reviewOutputKey ?? null,
-            correlationKey: input.correlationKey ?? null,
-            redactionFlags: { unsafeFieldCount: 1, discardedRawPayload: true, discardedPublicationFields: true, discardedApprovalFields: true },
-            shadowOnly: true,
-            publishesFindings: false,
-          },
-          durationMs: 3,
-          laneId: "docs-config-truth",
-          triggerStatus: "triggered",
-          skipReason: null,
-          degradedReason: null,
-          errorKind: null,
-          timeoutReason: null,
-          errorReason: null,
-          unclassifiableReason: null,
-          deliveryId: input.deliveryId ?? null,
-          reviewOutputKey: input.reviewOutputKey ?? null,
-          correlationKey: input.correlationKey ?? null,
-          candidateCount: 0,
-          decisionCount: 0,
-          duplicateCount: 0,
-          disagreementCount: 0,
-          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
-          redactionFlags: { unsafeFieldCount: 1, discardedRawPayload: true, discardedPublicationFields: true, discardedApprovalFields: true },
-          shadowOnly: true,
-          publishesFindings: false,
-          ...outcome.result,
-        } as ShadowSpecialistSubflowResult),
-      });
-
-      expect(result.calls).toEqual(["shadow", "executor"]);
-      expect(result.executeCount).toBe(1);
-      const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
-      expect(log?.data?.status).toBe(outcome.result.triggerStatus);
-      expect(log?.data?.unsafeFieldCount).toBe(1);
-      expect(log?.data).not.toHaveProperty("candidates");
-      expect(log?.data).not.toHaveProperty("output");
-    }
-  });
-
-  test("continues normal review when injected shadow specialist throws", async () => {
-    const result = await runShadowSpecialistReviewFlow({
-      changedFiles: ["docs/runbook.md"],
-      shadowSpecialistSubflow: async () => {
-        throw new Error("private specialist unavailable");
-      },
-    });
-
-    expect(result.calls).toEqual(["shadow", "executor"]);
-    expect(result.executeCount).toBe(1);
-    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
-    expect(log?.data?.status).toBe("error");
-    expect(log?.data?.reason).toBe("handler-subflow-error");
-    expect(JSON.stringify(log?.data)).not.toContain("private specialist unavailable");
   });
 });
 
@@ -6006,6 +5798,128 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).not.toContain("Low Confidence Findings");
 
     await workspaceFixture.cleanup();
+  });
+
+  test("skips destructive inline deletion when the injected review reducer throws", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    let exposeInlineFinding = false;
+    const deletedCommentIds: number[] = [];
+    const recordedFindings: Array<Record<string, unknown>> = [];
+    let detailsCommentBody: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({
+            data: exposeInlineFinding
+              ? [
+                  {
+                    id: 71,
+                    body: [`[MINOR] Finding that would be filtered`, "Details.", "", marker].join("\n"),
+                    path: "README.md",
+                    line: 2,
+                    start_line: 2,
+                  },
+                ]
+              : [],
+          }),
+          deleteReviewComment: async (params: { comment_id: number }) => {
+            deletedCommentIds.push(params.comment_id);
+            return { data: {} };
+          },
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: { id: 901 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-reducer-throw",
+            inputTokens: 0,
+            outputTokens: 0,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        recordReview: async () => 123,
+        recordFindings: async (findings: Record<string, unknown>[]) => {
+          recordedFindings.push(...findings);
+        },
+      }) as never,
+      reviewReducer: async () => {
+        throw new Error("malformed reducer state");
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+    await workspaceFixture.cleanup();
+
+    expect(recordedFindings).toHaveLength(1);
+    expect(recordedFindings[0]?.title).toBe("Finding that would be filtered");
+    expect(deletedCommentIds).toEqual([]);
+    expect(detailsCommentBody).toContain("Review reducer: degraded");
+    expect(detailsCommentBody).toContain("reason=reducer-exception");
   });
 
   test("review-comment idempotency accept still publishes Review Details when no canonical issue comment exists yet", async () => {
@@ -15710,473 +15624,6 @@ describe("createReviewHandler draft PR behavior", () => {
 });
 
 describe("createReviewHandler coordinator phase checkpoints", () => {
-  test("logs a bounded ReviewPlan before normal review publication", async () => {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const sequence: string[] = [];
-    const logEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
-    const publishedBodies: string[] = [];
-
-    const logger = {
-      info: (data: unknown, message?: string) => {
-        if (typeof data === "object" && data !== null && (data as Record<string, unknown>).gate === "review-plan") {
-          sequence.push("log:review-plan");
-        }
-        logEntries.push({
-          message: typeof data === "string" ? data : message ?? "",
-          data: typeof data === "object" && data !== null ? data as Record<string, unknown> : undefined,
-        });
-      },
-      warn: () => undefined,
-      error: () => undefined,
-      debug: () => undefined,
-      trace: () => undefined,
-      fatal: () => undefined,
-      child: () => logger,
-    } as unknown as Logger;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-          createReview: async () => {
-            sequence.push("publish:createReview");
-            return { data: { id: 1 } };
-          },
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async (params: { body: string }) => {
-            sequence.push("publish:createComment");
-            publishedBodies.push(params.body);
-            return { data: { id: 1 } };
-          },
-          updateComment: async () => ({ data: {} }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => {
-          sequence.push("executor");
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-review-plan",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.opened");
-    expect(handler).toBeDefined();
-
-    try {
-      await handler!(
-        buildReviewRequestedEvent({
-          action: "opened",
-          pull_request: {
-            number: 101,
-            draft: false,
-            title: "ReviewPlan log order",
-            body: "PR body must not be logged in review-plan diagnostics",
-            commits: 0,
-            additions: 40,
-            deletions: 10,
-            user: { login: "octocat" },
-            author_association: "CONTRIBUTOR",
-            base: { ref: "main", sha: "mainsha" },
-            head: {
-              sha: "abcdef1234567890",
-              ref: "feature/review-plan",
-              repo: {
-                full_name: "acme/repo",
-                name: "repo",
-                owner: { login: "acme" },
-              },
-            },
-            labels: [],
-          },
-        }),
-      );
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-
-    const planIndex = sequence.indexOf("log:review-plan");
-    const firstPublishIndex = sequence.findIndex((entry) => entry.startsWith("publish:"));
-    expect(planIndex).toBeGreaterThanOrEqual(0);
-    expect(firstPublishIndex).toBeGreaterThan(planIndex);
-    expect(sequence.indexOf("executor")).toBeGreaterThan(planIndex);
-
-    const planLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
-    expect(planLog?.message).toBe("ReviewPlan constructed before publication");
-    expect(planLog?.data?.planHash).toMatch(/^review-plan:v1:[a-f0-9]{64}$/);
-    expect(planLog?.data?.route).toEqual({
-      kind: "pull_request",
-      taskType: "review.small-diff",
-      routingReason: "tiny-diff",
-    });
-    expect(planLog?.data?.scope).toMatchObject({
-      changedFileCount: 1,
-      reviewedFileCount: 1,
-      totalLinesChanged: 1,
-    });
-    expect(planLog?.data?.budgets).toMatchObject({ maxComments: 15, maxTurns: 25 });
-    expect(planLog?.data?.publishPolicy).toMatchObject({
-      mode: "review-comment",
-      autoApprove: false,
-      publishReviewDetails: true,
-      inlineComments: true,
-    });
-    expect(JSON.stringify(planLog?.data)).not.toContain("PR body must not be logged");
-    expect(JSON.stringify(planLog?.data)).not.toContain("diff --git");
-    expect(JSON.stringify(planLog?.data)).not.toContain("commentBody");
-
-    const combinedBodies = publishedBodies.join("\n---\n");
-    expect(combinedBodies).toContain("<summary>Review Details</summary>");
-    expect(combinedBodies).toContain("- Review Plan: hash=review-plan:v1:");
-    expect(combinedBodies).toContain("route=pull_request/[redacted]/[redacted]");
-    expect(combinedBodies).toContain("publish=review-comment,autoApprove:n,details:y,inline:y,candidateVerification:n");
-    expect(combinedBodies).not.toContain("PR body must not be logged");
-    expect(combinedBodies).not.toContain("diff --git");
-    expect(combinedBodies).not.toContain("commentBody");
-  });
-
-  test("continues normal review when ReviewPlan construction fails", async () => {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const warnings: Array<Record<string, unknown>> = [];
-    let executorCalled = false;
-    let published = false;
-
-    const logger = {
-      info: () => undefined,
-      warn: (data: Record<string, unknown>) => {
-        warnings.push(data);
-      },
-      error: () => undefined,
-      debug: () => undefined,
-      trace: () => undefined,
-      fatal: () => undefined,
-      child: () => logger,
-    } as unknown as Logger;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-          createReview: async () => ({ data: { id: 1 } }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async () => {
-            published = true;
-            return { data: { id: 1 } };
-          },
-          updateComment: async () => ({ data: {} }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => {
-          executorCalled = true;
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-review-plan-fail-open",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      reviewPlanBuilder: () => {
-        throw new Error("injected review-plan failure");
-      },
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.opened");
-    expect(handler).toBeDefined();
-
-    try {
-      await handler!(
-        buildReviewRequestedEvent({
-          action: "opened",
-          pull_request: {
-            number: 101,
-            draft: false,
-            title: "ReviewPlan fail-open",
-            body: "",
-            commits: 0,
-            additions: 40,
-            deletions: 10,
-            user: { login: "octocat" },
-            author_association: "CONTRIBUTOR",
-            base: { ref: "main", sha: "mainsha" },
-            head: {
-              sha: "abcdef1234567890",
-              ref: "feature/review-plan-fail-open",
-              repo: {
-                full_name: "acme/repo",
-                name: "repo",
-                owner: { login: "acme" },
-              },
-            },
-            labels: [],
-          },
-        }),
-      );
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-
-    expect(executorCalled).toBe(true);
-    expect(published).toBe(true);
-    expect(warnings).toContainEqual(expect.objectContaining({
-      gate: "review-plan",
-      gateResult: "degraded",
-      reason: "plan-construction-failed",
-    }));
-  });
-
-
-  test("publishes Review Details without Review Plan line when public projection fails", async () => {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    const warnings: Array<Record<string, unknown>> = [];
-    const publishedBodies: string[] = [];
-
-    const logger = {
-      info: () => undefined,
-      warn: (data: Record<string, unknown>) => {
-        warnings.push(data);
-      },
-      error: () => undefined,
-      debug: () => undefined,
-      trace: () => undefined,
-      fatal: () => undefined,
-      child: () => logger,
-    } as unknown as Logger;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-          createReview: async () => ({ data: { id: 1 } }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async (params: { body: string }) => {
-            publishedBodies.push(params.body);
-            return { data: { id: 1 } };
-          },
-          updateComment: async (params: { body: string }) => {
-            publishedBodies.push(params.body);
-            return { data: {} };
-          },
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => ({
-          conclusion: "success",
-          published: false,
-          costUsd: 0,
-          numTurns: 1,
-          durationMs: 1,
-          sessionId: "session-review-plan-details-projection-fail-open",
-        }),
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      reviewPlanReviewDetailsSummarizer: () => {
-        throw new Error("projection failure with secret token that must be bounded and not visible");
-      },
-      logger,
-    });
-
-    const handler = handlers.get("pull_request.opened");
-    expect(handler).toBeDefined();
-
-    try {
-      await handler!(
-        buildReviewRequestedEvent({
-          action: "opened",
-          pull_request: {
-            number: 101,
-            draft: false,
-            title: "ReviewPlan projection fail-open",
-            body: "private body",
-            commits: 0,
-            additions: 40,
-            deletions: 10,
-            user: { login: "octocat" },
-            author_association: "CONTRIBUTOR",
-            base: { ref: "main", sha: "mainsha" },
-            head: {
-              sha: "abcdef1234567890",
-              ref: "feature/review-plan-details-fail-open",
-              repo: {
-                full_name: "acme/repo",
-                name: "repo",
-                owner: { login: "acme" },
-              },
-            },
-            labels: [],
-          },
-        }),
-      );
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-
-    const combinedBodies = publishedBodies.join("\n---\n");
-    expect(combinedBodies).toContain("<summary>Review Details</summary>");
-    expect(combinedBodies).not.toContain("- Review Plan:");
-    expect(combinedBodies).not.toContain("projection failure");
-    expect(combinedBodies).not.toContain("secret token");
-    expect(warnings).toContainEqual(expect.objectContaining({
-      gate: "review-plan",
-      gateResult: "degraded",
-      reason: "review-details-projection-failed",
-      reviewDetailsSurface: "Review Details",
-    }));
-    const warning = warnings.find((entry) => entry.reason === "review-details-projection-failed");
-    expect(String(warning?.errorMessage ?? "").length).toBeLessThanOrEqual(160);
-  });
-
   test("advances through pre-executor checkpoint phases before dispatching the executor", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -16660,6 +16107,1239 @@ describe("createReviewHandler phase timing logging", () => {
   });
 });
 
+describe("createReviewHandler ReviewPlan wiring", () => {
+  const candidateTitle = "Guard candidate publication";
+  const candidateBody = "Publish this approved candidate through the shared inline publisher.";
+
+  function sha256(value: string): string {
+    return createHash("sha256").update(value).digest("hex");
+  }
+
+  function reviewCandidateFingerprint(params: {
+    repo: string;
+    pullNumber: number;
+    reviewOutputKey: string;
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    severity: string;
+    category: string;
+    title: string;
+  }): string {
+    const canonical = [
+      params.repo,
+      params.pullNumber,
+      params.reviewOutputKey,
+      params.filePath,
+      params.startLine,
+      params.endLine,
+      params.severity,
+      params.category,
+      params.title.toLowerCase(),
+    ].join("\u001f");
+    return `rcf-${sha256(canonical).slice(0, 16)}`;
+  }
+
+  function candidateReviewOutputKey(reviewOutputKey: string, fingerprint: string): string {
+    return `${reviewOutputKey}:candidate:${fingerprint}`;
+  }
+
+  function formattedCandidateInlineBody(params: {
+    severity: string;
+    category: string;
+    title: string;
+    body: string;
+  }): string {
+    return [
+      "```yaml",
+      `severity: ${params.severity}`,
+      `category: ${params.category}`,
+      "```",
+      "",
+      `**${params.title}**`,
+      "",
+      params.body,
+    ].join("\n");
+  }
+
+  function publicationPolicyCandidateKey(params: {
+    path: string;
+    side: string;
+    line?: number;
+    startLine?: number;
+    reviewOutputKey: string;
+    deliveryId: string;
+    body: string;
+  }): string {
+    const material = {
+      path: params.path.trim().slice(0, 256),
+      side: params.side.trim().slice(0, 32),
+      line: params.line ?? null,
+      startLine: params.startLine ?? null,
+      reviewOutputKey: params.reviewOutputKey.trim().slice(0, 256),
+      deliveryId: params.deliveryId.trim().slice(0, 256),
+      bodySignal: sha256(params.body.slice(0, 4096)),
+    };
+    return `m070-publication:${sha256(JSON.stringify(material))}`;
+  }
+
+  function buildCandidateVerificationShadowSubflow(
+    decision: "verified" | "partially_verified" | "disagreement" = "verified",
+    candidate: {
+      title?: string;
+      body?: string;
+      filePath?: string;
+      line?: number;
+      endLine?: number;
+      severity?: string;
+      category?: string;
+    } = {},
+  ) {
+    return async (input: ShadowSpecialistSubflowInput): Promise<ShadowSpecialistSubflowResult> => {
+      const baseReviewOutputKey = String(input.reviewOutputKey ?? "");
+      const title = candidate.title ?? candidateTitle;
+      const body = candidate.body ?? candidateBody;
+      const filePath = candidate.filePath ?? "README.md";
+      const line = candidate.line ?? 2;
+      const endLine = candidate.endLine ?? line;
+      const severity = candidate.severity ?? "major";
+      const category = candidate.category ?? "correctness";
+      const fingerprint = reviewCandidateFingerprint({
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: baseReviewOutputKey,
+        filePath,
+        startLine: line,
+        endLine,
+        severity,
+        category,
+        title,
+      });
+      const candidateKey = publicationPolicyCandidateKey({
+        path: filePath,
+        side: "RIGHT",
+        ...(line === endLine ? { line } : { startLine: line, line: endLine }),
+        reviewOutputKey: candidateReviewOutputKey(baseReviewOutputKey, fingerprint),
+        deliveryId: String(input.deliveryId ?? ""),
+        body: formattedCandidateInlineBody({
+          severity,
+          category,
+          title,
+          body,
+        }),
+      });
+      return {
+        trigger: {
+          status: "triggered",
+          laneId: "docs-config-truth",
+          skipReason: null,
+          degradedReason: null,
+          errorKind: null,
+          matchedPaths: [filePath],
+          candidateCount: 1,
+          selectedLaneCount: 1,
+          shadowOnly: true,
+          publishesFindings: false,
+          correlationKey: input.correlationKey ?? null,
+          metrics: { decisionCount: 1, duplicateCount: 0, disagreementCount: decision === "disagreement" ? 1 : 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+        },
+        output: {
+          laneId: "docs-config-truth",
+          status: "ok",
+          skipReason: null,
+          degradedReasons: [],
+          errorKind: null,
+          evidence: [{ candidateKey, decision, evidenceId: "review-plan-shadow-evidence-1" }],
+          candidateCount: 1,
+          truncatedCandidateCount: 0,
+          decisionCounts: { candidate: decision === "disagreement" ? 0 : 1, duplicate: 0, disagreement: decision === "disagreement" ? 1 : 0, dismissed: 0, unclassifiable: 0 },
+          duplicateCount: 0,
+          disagreementCount: decision === "disagreement" ? 1 : 0,
+          metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+          metrics: { decisionCount: 1, duplicateCount: 0, disagreementCount: decision === "disagreement" ? 1 : 0, tokenCountAvailable: false, costAvailable: false, latencyMsAvailable: false },
+          deliveryId: input.deliveryId ?? null,
+          reviewOutputKey: input.reviewOutputKey ?? null,
+          correlationKey: input.correlationKey ?? null,
+          redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+          shadowOnly: true,
+          publishesFindings: false,
+        } as never,
+        durationMs: 1,
+        laneId: "docs-config-truth",
+        triggerStatus: "triggered",
+        skipReason: null,
+        degradedReason: null,
+        errorKind: null,
+        timeoutReason: null,
+        errorReason: null,
+        unclassifiableReason: null,
+        deliveryId: input.deliveryId ?? null,
+        reviewOutputKey: input.reviewOutputKey ?? null,
+        correlationKey: input.correlationKey ?? null,
+        candidateCount: 1,
+        decisionCount: 1,
+        duplicateCount: 0,
+        disagreementCount: decision === "disagreement" ? 1 : 0,
+        metricAvailability: { tokenCount: "unavailable", costUsd: "unavailable", latencyMs: "unavailable" },
+        redactionFlags: { unsafeFieldCount: 0, discardedRawPayload: false, discardedPublicationFields: false, discardedApprovalFields: false },
+        shadowOnly: true,
+        publishesFindings: false,
+      };
+    };
+  }
+
+  function candidateFindingResult() {
+    return {
+      status: "shadow",
+      repo: "acme/repo",
+      pullNumber: 101,
+      reviewOutputKey: "rk_safe",
+      deliveryId: "delivery-123",
+      artifactPresent: true,
+      findings: [
+        {
+          filePath: "README.md",
+          startLine: 2,
+          endLine: 2,
+          severity: "major",
+          category: "correctness",
+          title: candidateTitle,
+          body: candidateBody,
+        },
+      ],
+      rejections: [],
+    };
+  }
+
+  async function runReviewPlanScenario(params: {
+    reviewPlanBuilder?: typeof buildReviewPlan;
+    reviewReducer?: (input: ReviewReducerInput) => Promise<ReviewReducerResult>;
+    graphValidationEnabled?: boolean;
+    reviewGraphQuery?: (input: {
+      repo: string;
+      workspaceKey: string;
+      changedPaths: string[];
+      limit?: number;
+    }) => Promise<ReviewGraphBlastRadiusResult>;
+    extraChangedFiles?: number;
+    maxComments?: number;
+    candidateFindingResult?: Record<string, unknown>;
+    directReviewComments?: Array<Record<string, unknown>>;
+    executorPublished?: boolean;
+    exposeSummaryComment?: boolean;
+    shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+  } = {}) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({
+      graphValidationEnabled: params.graphValidationEnabled,
+      extraChangedFiles: params.extraChangedFiles,
+      maxComments: params.maxComments,
+    });
+    const { logger, entries } = createCaptureLogger();
+
+    let executeStarted = false;
+    let updatedSummaryBody: string | undefined;
+    const executeCalls: Array<Record<string, unknown>> = [];
+    const promptBuildContexts: Array<Record<string, unknown>> = [];
+    const recordReviewEntries: Array<Record<string, unknown>> = [];
+    const recordFindingEntries: Array<Record<string, unknown>> = [];
+    const createdReviewComments: Array<Record<string, unknown>> = [];
+    const createdIssueComments: Array<Record<string, unknown>> = [];
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const summaryBody = [
+      "<details>",
+      "<summary>Kodiai Review Summary</summary>",
+      "",
+      "## What Changed",
+      "- Reviewed the fixture change.",
+      "",
+      "</details>",
+      "",
+      buildReviewOutputMarker(reviewOutputKey),
+    ].join("\n");
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    let postExecuteReviewCommentListCalls = 0;
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!executeStarted) return { data: [] };
+            postExecuteReviewCommentListCalls += 1;
+            return {
+              data: postExecuteReviewCommentListCalls === 1
+                ? (params.directReviewComments ?? [])
+                : [],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234567890" } } }),
+          createReviewComment: async (commentParams: Record<string, unknown>) => {
+            const id = 1200 + createdReviewComments.length;
+            createdReviewComments.push({ ...commentParams, id });
+            return { data: { id, path: commentParams.path, html_url: `https://example.test/comment/${id}` } };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: executeStarted && params.exposeSummaryComment !== false ? [{ id: 991, body: summaryBody }] : [] }),
+          createComment: async (commentParams: Record<string, unknown>) => {
+            const id = 992 + createdIssueComments.length;
+            createdIssueComments.push({ ...commentParams, id });
+            return { data: { id } };
+          },
+          updateComment: async (updateParams: { body: string }) => {
+            updatedSummaryBody = updateParams.body;
+            return { data: {} };
+          },
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+        search: { issuesAndPullRequests: async () => ({ data: { total_count: 4 } }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: Record<string, unknown>) => {
+          executeStarted = true;
+          executeCalls.push(context);
+          return {
+            conclusion: "success",
+            published: params.executorPublished ?? true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-review-plan",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+            ...(params.candidateFindingResult === undefined ? {} : { candidateFinding: params.candidateFindingResult }),
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        recordReview: async (entry: Record<string, unknown>) => {
+          recordReviewEntries.push(entry);
+          return 1;
+        },
+        recordFindings: async (entries: Record<string, unknown>[]) => {
+          recordFindingEntries.push(...entries);
+        },
+      }) as never,
+      reviewPromptBuilder: (context: Record<string, unknown>) => {
+        promptBuildContexts.push(context);
+        return {
+          text: "safe test prompt",
+          sections: [
+            {
+              sectionName: "review-pr-context",
+              sectionPosition: 0,
+              charCount: 16,
+              estimatedTokens: 4,
+            },
+          ],
+        };
+      },
+      ...(params.reviewGraphQuery ? { reviewGraphQuery: params.reviewGraphQuery } : {}),
+      ...(params.reviewPlanBuilder ? { reviewPlanBuilder: params.reviewPlanBuilder } : {}),
+      ...(params.reviewReducer ? { reviewReducer: params.reviewReducer } : {}),
+      ...(params.shadowSpecialistSubflow ? { shadowSpecialistSubflow: params.shadowSpecialistSubflow } : {}),
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+    await workspaceFixture.cleanup();
+
+    return { updatedSummaryBody, executeCalls, promptBuildContexts, recordReviewEntries, recordFindingEntries, createdReviewComments, createdIssueComments, logEntries: entries };
+  }
+
+  function buildGraphBlastRadiusFixture(changedPaths: string[]): ReviewGraphBlastRadiusResult {
+    return {
+      changedFiles: changedPaths,
+      seedSymbols: changedPaths.map((filePath, index) => ({
+        stableKey: `seed-${index}`,
+        symbolName: `seed${index}`,
+        qualifiedName: `seed${index}`,
+        filePath,
+      })),
+      impactedFiles: [
+        {
+          path: "README.md",
+          score: 0.9,
+          confidence: 0.8,
+          reasons: ["test-fixture"],
+          relatedChangedPaths: changedPaths,
+          languages: ["markdown"],
+        },
+      ],
+      probableDependents: [],
+      likelyTests: [],
+      graphStats: {
+        files: changedPaths.length,
+        nodes: changedPaths.length,
+        edges: changedPaths.length,
+        changedFilesFound: changedPaths.length,
+      },
+    };
+  }
+
+  test("default graph-validation config reports skipped in Review Details, logs, and knowledge snapshot", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("graph=skipped");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.graphValidationStatus).toBe("skipped");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).graphValidationStatus).toBe("skipped");
+  });
+
+  test("enabled graph validation without reviewGraphQuery reports unavailable and still dispatches executor", async () => {
+    const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      graphValidationEnabled: true,
+    });
+
+    expect(executeCalls).toHaveLength(1);
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("graph=unavailable");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.graphValidationStatus).toBe("unavailable");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).graphValidationStatus).toBe("unavailable");
+  });
+
+  test("enabled graph validation with graph prerequisites reports enabled rather than graph-selection state", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      graphValidationEnabled: true,
+      extraChangedFiles: 3,
+      reviewGraphQuery: async (input) => buildGraphBlastRadiusFixture(input.changedPaths),
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("graph=enabled");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.graphValidationStatus).toBe("enabled");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).graphValidationStatus).toBe("enabled");
+  });
+
+  test("review runs prefer candidate capture and pass optional prompt context", async () => {
+    const { updatedSummaryBody, executeCalls, promptBuildContexts } = await runReviewPlanScenario();
+
+    expect(executeCalls).toHaveLength(1);
+    expect(executeCalls[0]?.enableCandidateFindingTool).toBe(true);
+    expect(promptBuildContexts[0]?.candidateFindingToolName).toBe("record_candidate_finding");
+    expect(promptBuildContexts[0]?.candidateFindingMode).toBe("preferred");
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("candidates=preferred");
+  });
+
+  test("candidate finding result is projected once into Review Details, logs, and safe snapshots", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        artifactBasename: "candidate-findings.jsonl",
+        counts: { input: 3, recorded: 2, rejected: 1, errors: 0 },
+        findings: [
+          {
+            title: "RAW TITLE MUST NOT LEAK",
+            body: "RAW BODY MUST NOT LEAK",
+            filePath: "/tmp/workspace/src/secret.ts",
+          },
+        ],
+        rejections: [],
+      },
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review candidates: shadow recorded=2 rejected=1 errors=0 artifact=present");
+    expect(detailsBlock).not.toContain("RAW TITLE MUST NOT LEAK");
+    expect(detailsBlock).not.toContain("RAW BODY MUST NOT LEAK");
+    expect(detailsBlock).not.toContain("/tmp/workspace");
+
+    const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
+    expect(candidateLog?.data).toEqual(expect.objectContaining({
+      gateResult: "shadow",
+      status: "shadow",
+      recorded: 2,
+      rejected: 1,
+      errors: 0,
+      artifactPresent: true,
+    }));
+    expect(JSON.stringify(candidateLog?.data)).not.toContain("RAW TITLE MUST NOT LEAK");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewCandidateFinding).toEqual({
+      status: "shadow",
+      recorded: 2,
+      rejected: 1,
+      errors: 0,
+      artifactPresent: true,
+    });
+    expect(JSON.stringify(configSnapshot)).not.toContain("RAW BODY MUST NOT LEAK");
+    expect(JSON.stringify(configSnapshot)).not.toContain("/tmp/workspace");
+  });
+
+  test("candidate reducer drafts get unique synthetic ids before reducer processing", async () => {
+    const firstTitle = "First candidate with unique reducer id";
+    const secondTitle = "Second candidate with unique reducer id";
+    const seenCandidateIds: number[] = [];
+
+    await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        counts: { input: 2, recorded: 2, rejected: 0, errors: 0 },
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: firstTitle,
+            body: `${firstTitle} body is safe and grounded.`,
+            fingerprint: "rcf-1111111111111111",
+          },
+          {
+            filePath: "README.md",
+            startLine: 3,
+            endLine: 3,
+            severity: "major",
+            category: "correctness",
+            title: secondTitle,
+            body: `${secondTitle} body is safe and grounded.`,
+            fingerprint: "rcf-2222222222222222",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => {
+        seenCandidateIds.push(
+          ...input.findings
+            .filter((finding) => typeof finding.candidateFingerprint === "string")
+            .map((finding) => finding.commentId),
+        );
+        return createDegradedReviewReducerResult({ findings: input.findings, reason: "test-stop-after-input-capture" });
+      },
+    });
+
+    expect(seenCandidateIds).toHaveLength(2);
+    expect(new Set(seenCandidateIds).size).toBe(2);
+    expect(seenCandidateIds.every((id) => Number.isInteger(id) && id < 0)).toBe(true);
+  });
+
+  test("approved candidate findings publish through the shared inline publisher and become stored findings", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(createdReviewComments[0]?.path).toBe("README.md");
+    expect(createdReviewComments[0]?.line).toBe(2);
+    expect(String(createdReviewComments[0]?.body)).toContain(candidateTitle);
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+    expect(recordFindingEntries[0]?.commentId).toBe(1200);
+    expect(recordFindingEntries[0]?.filePath).toBe("README.md");
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("candidate-approved");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 1,
+      directPublished: 0,
+      fallbackEvidence: 0,
+    }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("candidate-approved");
+    expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
+      publishedCommentIds: [1200],
+      convertedProcessedFindingCount: 1,
+      hasFabricatedProcessedFindings: false,
+    }));
+    expect(JSON.stringify(configSnapshot)).not.toContain(candidateBody);
+  });
+
+  test("approved candidate findings are blocked when handler publication lacks matching verification evidence", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(0);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      candidateBlocked: 1,
+      directPublished: 0,
+    }));
+  });
+
+  test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: true,
+      exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("candidate-approved");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 1,
+      directPublished: 1,
+      fallbackEvidence: 0,
+    }));
+  });
+
+  test("candidate draft prioritization respects maxComments before inline publication", async () => {
+    const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      maxComments: 1,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "First capped candidate",
+        body: "Publish only the strongest candidate after prioritization.",
+        severity: "critical",
+        category: "security",
+      }),
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "critical",
+            category: "security",
+            title: "First capped candidate",
+            body: "Publish only the strongest candidate after prioritization.",
+          },
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "minor",
+            category: "style",
+            title: "Second capped candidate",
+            body: "This candidate should be omitted by the max comment cap.",
+          },
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "minor",
+            category: "style",
+            title: "Third capped candidate",
+            body: "This candidate should also be omitted by the max comment cap.",
+          },
+        ],
+        rejections: [],
+      },
+    });
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(String(createdReviewComments[0]?.body)).toContain("First capped candidate");
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 1,
+      convertedProcessedFindings: 1,
+    }));
+  });
+
+  test("candidate-published findings are merged with direct inline findings in review bookkeeping", async () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const { recordReviewEntries, recordFindingEntries, logEntries, createdReviewComments } = await runReviewPlanScenario({
+      executorPublished: true,
+      exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Candidate published finding",
+        body: "Keep candidate publication in bookkeeping too.",
+      }),
+      directReviewComments: [
+        {
+          id: 777,
+          body: [
+            "```yaml",
+            "severity: MAJOR",
+            "category: correctness",
+            "```",
+            "",
+            "**Direct published finding**",
+            "Keep direct executor output in bookkeeping when candidate publication also succeeds.",
+            "",
+            marker,
+          ].join("\n"),
+          path: "src/direct.ts",
+          line: 4,
+          start_line: 4,
+        },
+      ],
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: "Candidate published finding",
+            body: "Keep candidate publication in bookkeeping too.",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => ({
+        status: "ready",
+        findings: input.findings,
+        visibleFindings: input.findings,
+        filteredInlineFindings: [],
+        lowConfidenceFindings: [],
+        suppressionMatchCounts: new Map(),
+        filterRecords: [],
+        counts: {
+          input: input.findings.length,
+          kept: input.findings.length,
+          suppressed: 0,
+          rewritten: 0,
+          deprioritized: 0,
+          lowConfidence: 0,
+          auditEvents: 0,
+          severityDemoted: 0,
+          graphValidated: 0,
+          graphUncertain: 0,
+        },
+        audit: [],
+        detailsSummary: {
+          label: "Review reducer",
+          status: "ready",
+          text: `Review reducer: ready input=${input.findings.length} kept=${input.findings.length} suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0`,
+        },
+      }),
+    });
+
+    const extractionLog = logEntries.find((entry) => entry.data?.gate === "finding-extraction");
+    expect(extractionLog?.data?.extractedCount).toBe(1);
+    expect(createdReviewComments).toHaveLength(1);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(2);
+    expect(recordFindingEntries.map((entry) => entry.commentId).sort((a, b) => Number(a) - Number(b))).toEqual([777, 1200]);
+    expect(recordFindingEntries.map((entry) => entry.title).sort()).toEqual([
+      "Candidate published finding",
+      "Direct published finding",
+    ]);
+  });
+
+  test("direct executor publication is audited as fallback and cannot satisfy candidate-approved success", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("Review candidate publication: mode=direct-fallback");
+    expect(detailsBlock).toContain("published=0");
+    expect(detailsBlock).toContain("directFallback=1");
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("direct-fallback");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      directPublished: 1,
+      fallbackEvidence: 1,
+    }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("direct-fallback");
+    expect(JSON.stringify(configSnapshot)).not.toContain("safe test prompt");
+    expect(JSON.stringify(configSnapshot)).not.toContain("base\\nfeature");
+  });
+
+  test("candidate publication blocks skipped publisher results without storing draft findings", async () => {
+    const { recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 999,
+            endLine: 999,
+            severity: "major",
+            category: "correctness",
+            title: "Unpublishable candidate line",
+            body: "This line is not commentable in the PR diff.",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublished: 0,
+      candidateFailed: 1,
+      convertedProcessedFindings: 0,
+    }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("blocked");
+    expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
+      publishedCommentIds: [],
+      convertedProcessedFindingCount: 0,
+      hasFabricatedProcessedFindings: false,
+    }));
+    expect(JSON.stringify(configSnapshot)).not.toContain("This line is not commentable");
+  });
+  test("missing candidate metadata keeps Review Details publication fail-open with unavailable snapshot", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review candidates: unavailable");
+
+    const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
+    expect(candidateLog?.data?.gateResult).toBe("unavailable");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewCandidateFinding).toEqual({
+      status: "unavailable",
+      recorded: 0,
+      rejected: 0,
+      errors: 0,
+      artifactPresent: false,
+    });
+  });
+
+  test("degraded candidate metadata is sanitized and does not block details publication", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      candidateFindingResult: {
+        status: "degraded",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: false,
+        counts: { errors: 2 },
+        findings: [],
+        rejections: [],
+        reason: "  bad {json} PROMPT_SECRET TOKEN=abc123  ",
+      },
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review candidates: degraded");
+    expect(detailsBlock).toContain("errors=2");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET");
+    expect(detailsBlock).not.toContain("TOKEN=abc123");
+
+    const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
+    expect(candidateLog?.data?.gateResult).toBe("degraded");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewCandidateFinding).toEqual({
+      status: "degraded",
+      recorded: 0,
+      rejected: 0,
+      errors: 2,
+      artifactPresent: false,
+      reason: "bad-json-prompt-redacted-token-redacted",
+    });
+  });
+
+  test("successful review publishes a compact ready Review plan line and preserves executor dispatch inputs", async () => {
+    const { updatedSummaryBody, executeCalls, logEntries } = await runReviewPlanScenario();
+
+    expect(executeCalls).toHaveLength(1);
+    expect(executeCalls[0]?.taskType).toBe("review.small-diff");
+    expect(executeCalls[0]?.prompt).toBe("safe test prompt");
+    expect(executeCalls[0]?.triggerBody).toBe("safe test prompt");
+    expect(executeCalls[0]?.totalFiles).toBe(1);
+    expect(executeCalls[0]?.reviewOutputKey).toBe(buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    }));
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review plan:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review plan: ready");
+    expect(detailsBlock).toContain("task=review.small-diff");
+    expect(detailsBlock).toContain("route=tiny-diff");
+    expect(detailsBlock).not.toContain("safe test prompt");
+    expect(detailsBlock).not.toContain("base\\nfeature");
+
+    const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(readyLog?.data?.gateResult).toBe("ready");
+    expect(readyLog?.data?.planHash).toEqual(expect.any(String));
+    expect(readyLog?.data?.taskType).toBe("review.small-diff");
+    expect(readyLog?.data).not.toHaveProperty("prompt");
+    expect(readyLog?.data).not.toHaveProperty("diffContent");
+  });
+
+  test("knowledge configSnapshot contains only safe ReviewPlan metadata", async () => {
+    const { recordReviewEntries } = await runReviewPlanScenario();
+
+    expect(recordReviewEntries).toHaveLength(1);
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    const reviewPlan = configSnapshot.reviewPlan as Record<string, unknown>;
+
+    expect(reviewPlan).toBeDefined();
+    expect(reviewPlan.status).toBe("ready");
+    expect(reviewPlan.hash).toEqual(expect.any(String));
+    expect(reviewPlan.taskType).toBe("review.small-diff");
+    expect(reviewPlan.routingReason).toBe("tiny-diff");
+    expect(reviewPlan.graphValidationStatus).toEqual(expect.any(String));
+    expect(reviewPlan.candidateFindingMode).toEqual(expect.any(String));
+
+    const serialized = JSON.stringify(configSnapshot);
+    expect(serialized).not.toContain("safe test prompt");
+    expect(serialized).not.toContain("base\\nfeature");
+    expect(serialized).not.toContain("token");
+    expect(serialized).not.toContain("diffContent");
+  });
+
+  test("injected ready review reducer publishes compact details, logs counts, and stores safe snapshot", async () => {
+    const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      reviewReducer: async (input) => {
+        const counts = {
+          input: input.findings.length,
+          kept: input.findings.length,
+          suppressed: 0,
+          rewritten: 0,
+          deprioritized: 0,
+          lowConfidence: 0,
+          auditEvents: 0,
+          severityDemoted: 0,
+          graphValidated: 0,
+          graphUncertain: 0,
+        };
+        return {
+          status: "ready",
+          findings: input.findings,
+          visibleFindings: input.findings,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts,
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=0 kept=0 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review reducer:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review reducer: ready");
+    expect(detailsBlock).not.toContain("safe test prompt");
+    expect(detailsBlock).not.toContain("diff --git");
+
+    const reducerLog = logEntries.find((entry) => entry.data?.gate === "review-reducer");
+    expect(reducerLog?.data?.gateResult).toBe("ready");
+    expect(reducerLog?.data?.counts).toEqual(expect.objectContaining({ input: 0, kept: 0 }));
+    expect(reducerLog?.data?.graphValidation).toEqual(expect.objectContaining({ enabled: false, graphValidated: 0, graphUncertain: 0 }));
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect(configSnapshot.reviewReducer).toEqual({
+      status: "ready",
+      counts: expect.objectContaining({ input: 0, kept: 0 }),
+      reason: undefined,
+    });
+    expect(JSON.stringify(configSnapshot)).not.toContain("safe test prompt");
+    expect(JSON.stringify(configSnapshot)).not.toContain("diffContent");
+  });
+
+  test("injected reducer failure degrades fail-open and stores a sanitized reason", async () => {
+    const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      reviewReducer: async () => {
+        throw new Error("boom diff --git PROMPT_SECRET TOKEN=abc123");
+      },
+    });
+
+    expect(executeCalls).toHaveLength(1);
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review reducer:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review reducer: degraded");
+    expect(detailsBlock).toContain("reason=reducer-exception");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET");
+    expect(detailsBlock).not.toContain("TOKEN=abc123");
+    expect(detailsBlock).not.toContain("diff --git");
+
+    const reducerLog = logEntries.find((entry) => entry.data?.gate === "review-reducer");
+    expect(reducerLog?.data?.gateResult).toBe("degraded");
+    expect(reducerLog?.data?.reason).toBe("reducer-exception");
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    const reviewReducer = configSnapshot.reviewReducer as Record<string, unknown>;
+    expect(reviewReducer.status).toBe("degraded");
+    expect(reviewReducer.reason).toBe("reducer-exception");
+    expect(JSON.stringify(configSnapshot)).not.toContain("PROMPT_SECRET");
+    expect(JSON.stringify(configSnapshot)).not.toContain("TOKEN=abc123");
+    expect(JSON.stringify(configSnapshot)).not.toContain("diff --git");
+  });
+
+  test("builder failure still dispatches executor and renders a degraded Review plan line", async () => {
+    const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
+      reviewPlanBuilder: () => {
+        throw new Error("boom raw prompt token diff should not leak");
+      },
+    });
+
+    expect(executeCalls).toHaveLength(1);
+    expect(executeCalls[0]?.taskType).toBe("review.small-diff");
+    expect(executeCalls[0]?.prompt).toBe("safe test prompt");
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock.match(/Review plan:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review plan: degraded");
+    expect(detailsBlock).toContain("reason=builder-error");
+    expect(detailsBlock).not.toContain("raw prompt");
+    expect(detailsBlock).not.toContain("boom raw prompt token diff should not leak");
+    expect(detailsBlock).not.toContain("diffContent");
+
+    const degradedLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
+    expect(degradedLog?.data?.gateResult).toBe("degraded");
+    expect(degradedLog?.data?.planHash).toMatch(/^degraded-/);
+    expect(degradedLog?.data?.error).toEqual({ name: "Error", message: "ReviewPlan builder failed" });
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewPlan as Record<string, unknown>).status).toBe("degraded");
+  });
+});
+
 describe("createReviewHandler Review Details phase timing publication", () => {
   test("merges Review Details before later unrelated details blocks in the canonical summary body", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
@@ -16781,6 +17461,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     const workspaceFixture = await createWorkspaceFixture();
 
     const createdCommentBodies: string[] = [];
+    const { logger, entries } = createCaptureLogger();
     let updatedSummaryBody: string | undefined;
     let updatedSummaryCommentId: number | undefined;
     let issueCommentListCalls = 0;
@@ -16886,7 +17567,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("pull_request.review_requested");
@@ -16918,6 +17599,19 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     );
     expect(updatedSummaryBody).toContain(buildReviewOutputMarker(reviewOutputKey));
     expect(createdCommentBodies).toHaveLength(0);
+
+    const completedLog = entries.find((entry) =>
+      entry.data?.gate === "review-details-output" && entry.data?.gateResult === "completed"
+    );
+    expect(completedLog?.data).toMatchObject({
+      reviewOutputKey,
+      deliveryId: "delivery-123",
+      reviewDetailsPublished: true,
+      surfaceKind: "issue_comment",
+      hasCommentId: true,
+      hasReviewId: false,
+    });
+    expect(JSON.stringify(completedLog?.data ?? {})).not.toContain("<summary>Review Details</summary>");
 
     await workspaceFixture.cleanup();
   });
@@ -19347,281 +20041,5 @@ describe("createReviewHandler canonical continuation-family state", () => {
     });
 
     await workspaceFixture.cleanup();
-  });
-});
-
-describe("createReviewHandler graph-validation status", () => {
-  function makeGraphBlastRadius(changedFiles: string[] = ["README.md", "src/a.ts", "src/b.ts", "src/c.ts"]): ReviewGraphBlastRadiusResult {
-    return {
-      changedFiles,
-      seedSymbols: [],
-      impactedFiles: [
-        { path: "src/indirect.ts", score: 0.9, confidence: 0.8, reasons: ["test"], relatedChangedPaths: [changedFiles[0] ?? "README.md"], languages: ["TypeScript"] },
-      ],
-      probableDependents: [],
-      likelyTests: [],
-      graphStats: { files: 5, nodes: 4, edges: 3, changedFilesFound: changedFiles.length },
-    };
-  }
-
-  async function runGraphValidationReview(options: {
-    graphValidationEnabled: boolean;
-    graphAvailable: boolean;
-    validationResult?: GraphValidationResult<GraphValidationFinding>;
-    validationThrows?: boolean;
-  }) {
-    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture();
-    await Bun.write(
-      join(workspaceFixture.dir, ".kodiai.yml"),
-      [
-        "review:",
-        "  enabled: true",
-        "  autoApprove: false",
-        "  triggers:",
-        "    onOpened: true",
-        "    onReadyForReview: true",
-        "    onReviewRequested: true",
-        "  skipAuthors: []",
-        "  skipPaths: []",
-        "  graphValidation:",
-        `    enabled: ${options.graphValidationEnabled ? "true" : "false"}`,
-        "    maxFindingsToValidate: 4",
-        "    contextMaxChars: 500",
-        "",
-      ].join("\n"),
-    );
-
-    const { logger, entries } = createCaptureLogger();
-    const capturedPlanInputs: ReviewPlanInput[] = [];
-    let validatorCallCount = 0;
-    let validatorOptions: unknown;
-
-    const eventRouter: EventRouter = {
-      register: (eventKey, handler) => {
-        handlers.set(eventKey, handler);
-      },
-      dispatch: async () => undefined,
-    };
-
-    const jobQueue: JobQueue = {
-      enqueue: async <T>(
-        _installationId: number,
-        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
-      ) => fn(createQueueRunMetadata()),
-      getQueueSize: () => 0,
-      getPendingCount: () => 0,
-      getActiveJobs: getEmptyActiveJobs,
-    };
-
-    const workspaceManager: WorkspaceManager = {
-      create: async () => ({
-        dir: workspaceFixture.dir,
-        cleanup: async () => undefined,
-      }),
-      cleanupStale: async () => 0,
-    };
-
-    const octokit = {
-      rest: {
-        pulls: {
-          listReviewComments: async () => ({ data: [] }),
-          listReviews: async () => ({ data: [] }),
-          listCommits: async () => ({ data: [] }),
-          createReview: async () => ({ data: { id: 1 } }),
-        },
-        issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async () => ({ data: { id: 1 } }),
-          updateComment: async () => ({ data: {} }),
-        },
-        reactions: {
-          createForIssue: async () => ({ data: {} }),
-        },
-        search: {
-          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
-        },
-      },
-    };
-
-    const graph = makeGraphBlastRadius();
-
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async () => ({
-          conclusion: "success",
-          published: false,
-          costUsd: 0,
-          numTurns: 1,
-          durationMs: 1,
-          sessionId: "session-graph-validation-status",
-        }),
-      } as never,
-      telemetryStore: noopTelemetryStore,
-      diffContextCollector: async () => ({
-        changedFiles: graph.changedFiles,
-        numstatLines: graph.changedFiles.map((file) => `10\t0\t${file}`),
-        diffContent: undefined,
-        strategy: "github-file-list-fallback",
-        mergeBaseRecovered: false,
-        deepenAttempts: 0,
-        unshallowAttempted: false,
-        diffRange: "github-api:file-list",
-      }),
-      reviewGraphQuery: options.graphAvailable ? async () => graph : undefined,
-      graphValidationRunner: async (_findings, _blastRadius, _llm, validationOptions, _logger) => {
-        validatorCallCount += 1;
-        validatorOptions = validationOptions;
-        if (options.validationThrows) throw new Error("private validation failure");
-        return options.validationResult ?? {
-          findings: [],
-          validatedCount: 1,
-          confirmedCount: 1,
-          uncertainCount: 0,
-          succeeded: true,
-        };
-      },
-      reviewPlanBuilder: (input) => {
-        capturedPlanInputs.push(input);
-        return buildReviewPlan(input);
-      },
-      logger,
-    });
-
-    try {
-      await handlers.get("pull_request.opened")!(
-        buildReviewRequestedEvent({
-          action: "opened",
-          pull_request: {
-            number: 101,
-            draft: false,
-            title: "Graph validation status",
-            body: "",
-            commits: 0,
-            additions: 40,
-            deletions: 0,
-            user: { login: "octocat" },
-            author_association: "CONTRIBUTOR",
-            base: { ref: "main", sha: "mainsha" },
-            head: {
-              sha: "abcdef1234567890",
-              ref: "feature/graph-validation-status",
-              repo: {
-                full_name: "acme/repo",
-                name: "repo",
-                owner: { login: "acme" },
-              },
-            },
-            labels: [],
-          },
-        }),
-      );
-    } finally {
-      await workspaceFixture.cleanup();
-    }
-
-    return { entries, capturedPlanInputs, validatorCallCount, validatorOptions };
-  }
-
-  test("disabled config surfaces skipped and never invokes validation", async () => {
-    const result = await runGraphValidationReview({
-      graphValidationEnabled: false,
-      graphAvailable: true,
-    });
-
-    expect(result.validatorCallCount).toBe(0);
-    expect(result.capturedPlanInputs.at(-1)?.gates).toContainEqual({
-      name: "graph-validation",
-      status: "skipped",
-      reason: "config-disabled",
-    });
-    expect(result.entries).toContainEqual(expect.objectContaining({
-      data: expect.objectContaining({
-        gate: "graph-validation",
-        gateResult: "skipped",
-        reason: "config-disabled",
-      }),
-    }));
-  });
-
-  test("enabled config without graph context surfaces unavailable and never invokes validation", async () => {
-    const result = await runGraphValidationReview({
-      graphValidationEnabled: true,
-      graphAvailable: false,
-    });
-
-    expect(result.validatorCallCount).toBe(0);
-    expect(result.capturedPlanInputs.at(-1)?.gates).toContainEqual({
-      name: "graph-validation",
-      status: "unavailable",
-      reason: "graph-context-unavailable",
-    });
-    expect(result.entries).toContainEqual(expect.objectContaining({
-      data: expect.objectContaining({
-        gate: "graph-validation",
-        gateResult: "unavailable",
-        reason: "graph-context-unavailable",
-      }),
-    }));
-  });
-
-  test("enabled config with graph context surfaces enabled then applied with typed options", async () => {
-    const result = await runGraphValidationReview({
-      graphValidationEnabled: true,
-      graphAvailable: true,
-    });
-
-    expect(result.validatorCallCount).toBe(1);
-    expect(result.validatorOptions).toEqual({
-      enabled: true,
-      maxFindingsToValidate: 4,
-      contextMaxChars: 500,
-    });
-    expect(result.capturedPlanInputs.at(-1)?.gates).toContainEqual({
-      name: "graph-validation",
-      status: "enabled",
-      reason: "graph-context-available",
-    });
-    expect(result.entries).toContainEqual(expect.objectContaining({
-      data: expect.objectContaining({
-        gate: "graph-validation",
-        gateResult: "applied",
-        reason: "validation-applied",
-        validatedCount: 1,
-        confirmedCount: 1,
-        uncertainCount: 0,
-      }),
-    }));
-  });
-
-  test("validator failure logs bounded failure and continues fail-open", async () => {
-    const result = await runGraphValidationReview({
-      graphValidationEnabled: true,
-      graphAvailable: true,
-      validationResult: {
-        findings: [],
-        validatedCount: 0,
-        confirmedCount: 0,
-        uncertainCount: 0,
-        succeeded: false,
-        errorMessage: "raw failure should not be logged",
-      },
-    });
-
-    expect(result.validatorCallCount).toBe(1);
-    const failureLog = result.entries.find((entry) => entry.data?.gate === "graph-validation" && entry.data?.gateResult === "failure");
-    expect(failureLog?.data).toMatchObject({
-      gate: "graph-validation",
-      gateResult: "failure",
-      reason: "validation-failed",
-    });
-    expect(JSON.stringify(failureLog)).not.toContain("raw failure should not be logged");
   });
 });

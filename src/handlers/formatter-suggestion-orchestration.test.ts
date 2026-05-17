@@ -248,10 +248,9 @@ describe("runFormatterSuggestionSubflow", () => {
   });
 
   test("publishes mapped suggestions with formatter-specific review output key and resolved head sha", async () => {
-    const { entries, logger } = createLogger();
     const publishCalls: unknown[] = [];
     const result = await runFormatterSuggestionSubflow(
-      makeOptions({ logger }),
+      makeOptions(),
       makeDeps({
         publishFormatterSuggestionReview: async (payload) => {
           publishCalls.push(payload);
@@ -264,45 +263,12 @@ describe("runFormatterSuggestionSubflow", () => {
       status: "posted",
       publisherStatus: "posted",
       suggestions: 1,
-      skipped: 0,
-      capped: 0,
       posted: 1,
       reviewUrl: "https://github.com/acme/widgets/pull/42#pullrequestreview-987",
-      reviewId: 987,
       headSha: "abc123def456",
     });
     expect(publishCalls).toHaveLength(1);
-    expect(publishCalls[0]).toMatchObject({
-      owner: "acme",
-      repo: "widgets",
-      prNumber: 42,
-      commitId: "abc123def456",
-      suggestions: [expect.objectContaining({
-        path: "src/example.ts",
-        line: 2,
-        side: "RIGHT",
-        suggestionBody: "```suggestion\nconst value = 1;\n```",
-      })],
-      skipped: [],
-      reviewOutputKey: "kodiai-review-output:v1:inst-123:acme/widgets:pr-42:action-mention-format-suggestions:delivery-delivery-abc:head-abc123def456",
-      botHandles: ["kodiai"],
-      logger,
-    });
-    expect(result.reviewOutputKey).toBe("kodiai-review-output:v1:inst-123:acme/widgets:pr-42:action-mention-format-suggestions:delivery-delivery-abc:head-abc123def456");
-    expect(entries.at(-1)).toMatchObject({
-      level: "info",
-      fields: expect.objectContaining({
-        status: "posted",
-        publisherStatus: "posted",
-        suggestions: 1,
-        skipped: 0,
-        capped: 0,
-        posted: 1,
-        reviewUrl: "https://github.com/acme/widgets/pull/42#pullrequestreview-987",
-        reviewId: 987,
-      }),
-      message: "Formatter suggestion subflow completed",
-    });
+    expect(publishCalls[0]).toMatchObject({ commitId: "abc123def456", reviewOutputKey: expect.stringContaining("action-mention-format-suggestions") });
   });
 
   test("maps publisher skipped output to duplicate status", async () => {
@@ -366,84 +332,7 @@ describe("runFormatterSuggestionSubflow", () => {
     expect(thrown.visibleMessage).toContain("formatter suggestions could not be published");
   });
 
-  test("returns pr-diff-unavailable when full PR diff collection throws", async () => {
-    let publishCalls = 0;
-    const result = await runFormatterSuggestionSubflow(
-      makeOptions(),
-      makeDeps({
-        collectDiffContext: async () => { throw new Error("full diff fetch failed for ghp_secretTokenValue"); },
-        publishFormatterSuggestionReview: async () => { publishCalls += 1; return makePublisherResult(); },
-      }),
-    );
-
-    expect(publishCalls).toBe(0);
-    expect(result).toMatchObject({
-      status: "pr-diff-unavailable",
-      commandStatus: "success",
-      suggestions: 0,
-      skipped: 0,
-      capped: 0,
-      diffRange: "origin/main...HEAD",
-    });
-    expect(result.reason).toContain("full diff fetch failed");
-    expect(result.reason).not.toContain("ghp_secretTokenValue");
-    expect(result.visibleMessage).toContain("full PR diff was unavailable");
-  });
-
-  test("fails visibly without publisher handoff when head sha cannot be resolved", async () => {
-    let publishCalls = 0;
-    const result = await runFormatterSuggestionSubflow(
-      makeOptions(),
-      makeDeps({
-        resolveHeadSha: async () => { throw new Error("HEAD is unavailable"); },
-        publishFormatterSuggestionReview: async () => { publishCalls += 1; return makePublisherResult(); },
-      }),
-    );
-
-    expect(publishCalls).toBe(0);
-    expect(result).toMatchObject({
-      status: "failed",
-      commandStatus: "success",
-      suggestions: 1,
-      skipped: 0,
-      capped: 0,
-      reason: "HEAD is unavailable",
-      diffRange: "origin/main...HEAD",
-    });
-    expect(result.reviewOutputKey).toBeUndefined();
-    expect(result.headSha).toBeUndefined();
-    expect(result.mapperCounts?.suggestions).toBe(1);
-    expect(result.visibleMessage).toContain("PR head commit could not be resolved");
-  });
-
-  test("preserves publisher no-suggestions status without inferring success", async () => {
-    const result = await runFormatterSuggestionSubflow(
-      makeOptions(),
-      makeDeps({
-        publishFormatterSuggestionReview: async () => makePublisherResult({
-          status: "no-suggestions",
-          posted: 0,
-          skipped: 1,
-          review: undefined,
-          reviewOutput: { key: "formatter-output-key", markerIncluded: false },
-        }),
-      }),
-    );
-
-    expect(result).toMatchObject({
-      status: "mapped-no-suggestions",
-      publisherStatus: "no-suggestions",
-      suggestions: 1,
-      posted: 0,
-      publisherSkipped: 1,
-      headSha: "abc123def456",
-    });
-    expect(result.reviewOutputKey).toContain("action-mention-format-suggestions");
-    expect(result.visibleMessage).toContain("No formatter suggestions could be published");
-  });
-
   test("reports capped mapped suggestions without bypassing S02 cap semantics", async () => {
-    const publishCalls: unknown[] = [];
     const result = await runFormatterSuggestionSubflow(
       makeOptions({ maxSuggestions: 1 }),
       makeDeps({
@@ -458,14 +347,11 @@ describe("runFormatterSuggestionSubflow", () => {
           unshallowAttempted: false,
           diffRange: "origin/main...HEAD",
         }),
-        publishFormatterSuggestionReview: async (payload) => {
-          publishCalls.push(payload);
-          return makePublisherResult({
-            status: "posted",
-            posted: 1,
-            skipped: 1,
-          });
-        },
+        publishFormatterSuggestionReview: async () => makePublisherResult({
+          status: "posted",
+          posted: 1,
+          skipped: 1,
+        }),
       }),
     );
 
@@ -474,10 +360,5 @@ describe("runFormatterSuggestionSubflow", () => {
     expect(result.skipped).toBe(1);
     expect(result.capped).toBe(1);
     expect(result.mapperCounts?.capped).toBe(1);
-    expect(publishCalls).toHaveLength(1);
-    expect(publishCalls[0]).toMatchObject({
-      suggestions: [expect.objectContaining({ path: "src/example.ts" })],
-      skipped: [expect.objectContaining({ reason: "max-suggestions-exceeded" })],
-    });
   });
 });

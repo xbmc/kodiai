@@ -103,6 +103,8 @@
     "verify:m065:s02": "bun scripts/verify-m065-s02.ts",
     "verify:m065:s03": "bun scripts/verify-m065-s03.ts",
     "verify:m066:s05": "bun scripts/verify-m066-s05.ts",
+    "verify:m067:s05": "bun scripts/verify-m067-s05.ts",
+    "verify:m068": "bun scripts/verify-m068.ts",
     "verify:m068:candidate-publication": "bun scripts/verify-m068-candidate-publication.ts",
     "verify:m069:s01": "bun scripts/verify-m069-s01.ts",
     "verify:m070:s01": "bun scripts/verify-m070-s01.ts",

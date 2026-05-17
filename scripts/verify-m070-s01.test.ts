@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { classifyCandidateVerification, type CandidateVerificationClassifierInput } from "../src/specialists/candidate-verification.ts";
+import { classifyCandidateVerification, type CandidateVerificationClassifierInput, type CandidateVerificationReasonCategory } from "../src/specialists/candidate-verification.ts";
 import {
   M070_S01_CHECK_IDS,
   evaluateM070S01Contract,
@@ -89,7 +89,7 @@ describe("verify-m070-s01", () => {
     expect(report.redaction.unsafeInputFieldCount).toBeGreaterThanOrEqual(5);
     expect(report.check_ids).toEqual(M070_S01_CHECK_IDS);
     expect(report.checks.every((check) => check.passed)).toBe(true);
-    for (const reason of [
+    const expectedReasons: CandidateVerificationReasonCategory[] = [
       "candidate-duplicate-key",
       "evidence-conflict",
       "evidence-contradiction",
@@ -97,7 +97,8 @@ describe("verify-m070-s01", () => {
       "malformed-input",
       "partial-support",
       "full-support",
-    ]) {
+    ];
+    for (const reason of expectedReasons) {
       expect(report.summary.reasonCategories).toContain(reason);
     }
 

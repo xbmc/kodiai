@@ -23,9 +23,19 @@ async function evaluateWithEvidence(evidence: M069S04Evidence = buildSyntheticPa
   });
 }
 
-function cloneEvidence(overrides: Partial<M069S04Evidence> = {}): M069S04Evidence {
+type M069S04EvidenceOverrides = Partial<Omit<M069S04Evidence, "log" | "verifier">> & {
+  log?: Record<string, unknown> | null;
+  verifier?: Record<string, unknown> | null;
+};
+
+function cloneEvidence(overrides: M069S04EvidenceOverrides = {}): M069S04Evidence {
   const base = buildSyntheticPassingEvidence();
-  return { ...base, ...overrides };
+  return {
+    ...base,
+    ...overrides,
+    log: overrides.log === null ? null : { ...(base.log ?? {}), ...(overrides.log ?? {}) },
+    verifier: overrides.verifier === null ? null : { ...(base.verifier ?? {}), ...(overrides.verifier ?? {}) },
+  };
 }
 
 describe("verify-m069-s04", () => {
@@ -138,9 +148,12 @@ describe("verify-m069-s04", () => {
   });
 
   test("classifies bounded degraded and malformed metric availability as degraded", async () => {
-    const evidence = cloneEvidence({ status: "degraded", reason: "timeout" });
-    evidence.log = { ...evidence.log, tokenCountAvailable: "maybe" };
-    evidence.verifier = { ...evidence.verifier, tokenCountAvailable: "maybe" };
+    const evidence = cloneEvidence({
+      status: "degraded",
+      reason: "timeout",
+      log: { tokenCountAvailable: "maybe" },
+      verifier: { tokenCountAvailable: "maybe" },
+    });
     const report = await evaluateWithEvidence(evidence);
 
     expect(report.success).toBe(false);
@@ -150,15 +163,15 @@ describe("verify-m069-s04", () => {
   });
 
   test("classifies visible specialist findings, comments, approvals, or publication fields as violation", async () => {
-    const evidence = cloneEvidence();
-    evidence.log = {
-      ...evidence.log,
-      visibleSpecialistFindingPublished: true,
-      visibleSpecialistCommentPublished: true,
-      visibleSpecialistApprovalPublished: true,
-      finding: { summary: "bounded-not-raw" },
-      approval: { state: "APPROVE" },
-    };
+    const evidence = cloneEvidence({
+      log: {
+        visibleSpecialistFindingPublished: true,
+        visibleSpecialistCommentPublished: true,
+        visibleSpecialistApprovalPublished: true,
+        finding: { summary: "bounded-not-raw" },
+        approval: { state: "APPROVE" },
+      },
+    });
     const report = await evaluateWithEvidence(evidence);
 
     expect(report.success).toBe(false);
@@ -181,19 +194,18 @@ describe("verify-m069-s04", () => {
   });
 
   test("classifies raw candidate body, prompt, approval sentinel, and tier-mode leakage as malformed evidence without echoing values", async () => {
-    const evidence = cloneEvidence();
-    evidence.log = {
-      ...evidence.log,
-      candidateBody: "candidate-body-visible",
-      prompt: "raw prompt visible",
-      modelOutput: "raw model visible",
-      toolPayload: { payload: "tool payload visible" },
-      tierMode: "tier-mode-visible",
-    };
-    evidence.verifier = {
-      ...evidence.verifier,
-      candidateFingerprint: "candidate-fingerprint-visible",
-    };
+    const evidence = cloneEvidence({
+      log: {
+        candidateBody: "candidate-body-visible",
+        prompt: "raw prompt visible",
+        modelOutput: "raw model visible",
+        toolPayload: { payload: "tool payload visible" },
+        tierMode: "tier-mode-visible",
+      },
+      verifier: {
+        candidateFingerprint: "candidate-fingerprint-visible",
+      },
+    });
     const report = await evaluateWithEvidence(evidence);
 
     expect(report.success).toBe(false);

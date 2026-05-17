@@ -2,8 +2,10 @@ import { describe, it, expect } from "bun:test";
 import { formatReviewDetailsSummary } from "./review-utils.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
-import { projectReviewHandlerCandidatePublicationBridgeEvidence } from "../issue-131/review-handler-publication-bridge.ts";
-import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-plan.ts";
+import type { ReviewReducerDetailsSummary } from "../review-orchestration/review-reducer.ts";
+import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
+import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
 
 const BOUNDED_TIMEOUT_FIRST_PASS: ReviewFirstPassPayload = {
   state: "bounded-first-pass",
@@ -35,77 +37,239 @@ const BASE_PARAMS = {
   }).reviewDetails,
 };
 
-const M072_CANARIES = [
-  "M072_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK",
-  "M072_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
-  "M072_PROMPT_SHOULD_NOT_LEAK",
-  "M072_MODEL_OUTPUT_SHOULD_NOT_LEAK",
-  "M072_DIFF_SHOULD_NOT_LEAK",
-  "M072_FINGERPRINT_SHOULD_NOT_LEAK",
-  "M072_GITHUB_COMMENT_BODY_SHOULD_NOT_LEAK",
-] as const;
-
-function candidatePublicationSummary(
-  overrides: Partial<CandidateVerificationPublicationEvidenceSummary> = {},
-): CandidateVerificationPublicationEvidenceSummary {
-  return {
-    aggregateStatus: "published",
-    counts: { attempted: 1, allowed: 1, denied: 0, published: 1, skipped: 0, failed: 0 },
-    publicationDenialCounts: {},
-    reasonCategories: ["full-support"],
-    verificationStateCounts: { verified: 1, partially_verified: 0, unverified: 0, disproven: 0, unavailable: 0 },
-    candidateVerificationCounts: {
-      candidateCount: 1,
-      evidenceCount: 2,
-      verifiedCount: 1,
-      partiallyVerifiedCount: 0,
-      unverifiedCount: 0,
-      disprovenCount: 0,
-      publicationEligibleCount: 1,
-      duplicateCount: 0,
-      disagreementCount: 0,
-      unclassifiableCount: 0,
-      malformedRecordCount: 0,
-      truncatedCandidateCount: 0,
-      truncatedEvidenceCount: 0,
-      policyCandidateCount: 1,
-    },
-    metadata: {
-      hasDeliveryId: true,
-      hasReviewOutputKey: true,
-      hasCorrelationKey: true,
-      deliveryId: "delivery-123",
-      reviewOutputKey: "review-output-456",
-      correlationKey: "correlation-789",
-    },
-    redactionFlags: {
-      privateOnly: true,
-      candidateBodiesIncluded: false,
-      specialistProseIncluded: false,
-      rawPromptsIncluded: false,
-      rawModelOutputIncluded: false,
-      diffsIncluded: false,
-      evidencePayloadsIncluded: false,
-      rawFingerprintsIncluded: false,
-      unsafeInputFieldCount: 0,
-      discardedRawPayload: false,
-      discardedPublicationFields: false,
-      discardedEvidencePayloads: false,
-      candidateAttemptIncluded: false,
-      candidateKeyIncluded: false,
-      publicationEvidenceIncluded: false,
-    },
-    ...overrides,
-  };
+function reviewPlanLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review plan:")).length;
 }
 
-function expectNoM072CanaryLeak(value: string): void {
-  for (const canary of M072_CANARIES) {
-    expect(value).not.toContain(canary);
-  }
+function reviewReducerLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review reducer:")).length;
+}
+
+function reviewCandidateLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review candidates:")).length;
+}
+
+function reviewCandidatePublicationLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review candidate publication:")).length;
 }
 
 describe("formatReviewDetailsSummary", () => {
+  it("renders exactly one compact ready review plan line without dumping structured plan data", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewPlan: {
+        label: "Review plan",
+        status: "ready",
+        hash: "abcdef1234567890",
+        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
+      } satisfies ReviewPlanDetailsSummary,
+    });
+
+    expect(reviewPlanLineCount(result)).toBe(1);
+    expect(result).toContain("- Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow");
+    expect(result).not.toContain("{\"");
+    expect(result).not.toContain("routing:");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("prompt text");
+  });
+
+  it("renders exactly one compact degraded review plan line without throwing on missing hash or unknown projection fields", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewPlan: {
+        label: "Review plan",
+        status: "degraded",
+        text: "Review plan: degraded route=unknown reason=builder-error graph=skipped candidates=unavailable",
+        routing: { prompt: "prompt text", diff: "diff --git a/secret b/secret" },
+      } as never,
+    });
+
+    expect(reviewPlanLineCount(result)).toBe(1);
+    expect(result).toContain("- Review plan: degraded route=unknown reason=builder-error graph=skipped candidates=unavailable");
+    expect(result).not.toContain("{\"");
+    expect(result).not.toContain("routing:");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("prompt text");
+  });
+
+  it("preserves no-plan Review Details output and marker placement when reviewPlan is omitted", () => {
+    const completedAt = "2026-04-22T20:15:00.000Z";
+    const result = formatReviewDetailsSummary({ ...BASE_PARAMS, completedAt });
+
+    expect(reviewPlanLineCount(result)).toBe(0);
+    expect(result).not.toContain("Review plan:");
+    expect(result).toContain("- Review completed: 2026-04-22T20:15:00.000Z");
+    expect(result).toContain("\n\n</details>\n\n<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("renders exactly one compact review reducer line next to the review plan line", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewPlan: {
+        label: "Review plan",
+        status: "ready",
+        hash: "abcdef1234567890",
+        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
+      } satisfies ReviewPlanDetailsSummary,
+      reviewReducer: {
+        label: "Review reducer",
+        status: "ready",
+        text: "Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0",
+      } satisfies ReviewReducerDetailsSummary,
+    });
+
+    expect(reviewPlanLineCount(result)).toBe(1);
+    expect(reviewReducerLineCount(result)).toBe(1);
+    expect(result.indexOf("Review plan:")).toBeLessThan(result.indexOf("Review reducer:"));
+    expect(result).toContain("- Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("prompt text");
+  });
+
+  it("renders exactly one compact review candidate line after plan and reducer lines", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewPlan: {
+        label: "Review plan",
+        status: "ready",
+        hash: "abcdef1234567890",
+        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
+      } satisfies ReviewPlanDetailsSummary,
+      reviewReducer: {
+        label: "Review reducer",
+        status: "ready",
+        text: "Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0",
+      } satisfies ReviewReducerDetailsSummary,
+      reviewCandidateFinding: {
+        label: "Review candidates",
+        status: "shadow",
+        text: "Review candidates: shadow recorded=1 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001",
+      } satisfies ReviewCandidateFindingDetailsSummary,
+    });
+
+    expect(reviewCandidateLineCount(result)).toBe(1);
+    expect(result.indexOf("Review plan:")).toBeLessThan(result.indexOf("Review reducer:"));
+    expect(result.indexOf("Review reducer:")).toBeLessThan(result.indexOf("Review candidates:"));
+    expect(result).toContain("- Review candidates: shadow recorded=1 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001");
+  });
+
+  it("omits candidate metadata when omitted or malformed without breaking Review Details", () => {
+    const omitted = formatReviewDetailsSummary({ ...BASE_PARAMS });
+    const malformed = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidateFinding: {
+        label: "Review candidates",
+        status: "shadow",
+        text: 17,
+      } as never,
+    });
+
+    expect(reviewCandidateLineCount(omitted)).toBe(0);
+    expect(reviewCandidateLineCount(malformed)).toBe(0);
+    expect(malformed).toContain("<summary>Review Details</summary>");
+    expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("does not leak raw candidate title body diff prompt token or secret-like strings in public details", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidateFinding: {
+        label: "Review candidates",
+        status: "degraded",
+        text: "Review candidates: degraded recorded=0 rejected=1 errors=1 artifact=absent reason=scanner-redacted repo=owner-repo pr=42 key=review-output-abc123",
+        rawTitle: "Raw candidate title",
+        rawBody: "Raw body with diff --git and prompt text",
+        token: "ghp_secret_token_value",
+        secret: "sk-secret-value",
+      } as never,
+    });
+
+    expect(reviewCandidateLineCount(result)).toBe(1);
+    expect(result).toContain("- Review candidates: degraded recorded=0 rejected=1 errors=1 artifact=absent reason=scanner-redacted repo=owner-repo pr=42 key=review-output-abc123");
+    expect(result).not.toContain("Raw candidate title");
+    expect(result).not.toContain("Raw body");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("prompt text");
+    expect(result).not.toContain("ghp_secret_token_value");
+    expect(result).not.toContain("sk-secret-value");
+  });
+
+  it("renders exactly one bounded candidate-approved publication line after candidate details", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidateFinding: {
+        label: "Review candidates",
+        status: "shadow",
+        text: "Review candidates: shadow recorded=2 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001",
+      } satisfies ReviewCandidateFindingDetailsSummary,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: candidate-approved approvedRefs=2 rewrittenRefs=1 publishable=3 candidatePublished=3 skipped=0 blocked=0 failed=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-publisher-published",
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result.indexOf("Review candidates:")).toBeLessThan(result.indexOf("Review candidate publication:"));
+    expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 published=3 directFallback=0 reasons=candidate-publisher-published");
+    expect(result).not.toContain("Review candidate publication runtime:");
+  });
+
+  it("renders direct fallback publication state as audited fallback evidence", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: direct-fallback approvedRefs=0 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 directPublished=2 fallbackEvidence=2 malformed=0 reasons=direct-fallback-attempted,direct-fallback-published",
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("- Review candidate publication: mode=direct-fallback approved=0 rewritten=0 published=0 directFallback=2 reasons=direct-fallback-attempted,direct-fallback-published");
+  });
+
+  it("omits missing candidate publication metadata and degrades malformed metadata without breaking Review Details", () => {
+    const omitted = formatReviewDetailsSummary({ ...BASE_PARAMS });
+    const malformed = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: 17,
+      } as never,
+    });
+
+    expect(reviewCandidatePublicationLineCount(omitted)).toBe(0);
+    expect(reviewCandidatePublicationLineCount(malformed)).toBe(1);
+    expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
+    expect(malformed).toContain("<summary>Review Details</summary>");
+    expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("caps oversized candidate publication reasons and redacts secret prompt and diff markers", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: degraded approvedRefs=1 rewrittenRefs=0 publishable=1 candidatePublished=0 skipped=0 blocked=0 failed=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-failed,sk-secret-value,ghp_secret_token_value,BEGIN PROMPT,diff --git,hidden instructions,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six",
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("- Review candidate publication: mode=degraded approved=1 rewritten=0 published=0 directFallback=0 reasons=candidate-publisher-failed,redacted,redacted,prompt-redacted,diff-redacted,prompt-redacted");
+    expect(result).toContain("+6 more");
+    expect(result).not.toContain("sk-secret-value");
+    expect(result).not.toContain("ghp_secret_token_value");
+    expect(result).not.toContain("BEGIN PROMPT");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("hidden instructions");
+  });
+
+  it("omits the review reducer line when reducer metadata is omitted", () => {
+    const result = formatReviewDetailsSummary({ ...BASE_PARAMS });
+
+    expect(reviewReducerLineCount(result)).toBe(0);
+    expect(result).not.toContain("Review reducer:");
+  });
+
   it("renders bounded first-pass diagnostics from the normalized contract", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
@@ -230,30 +394,6 @@ describe("formatReviewDetailsSummary", () => {
       expect(result).not.toContain("established contributor guidance");
       expect(result).not.toContain("senior contributor guidance");
     }
-  });
-
-  it("renders compact shadow specialist aggregate evidence without raw payload surfaces", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      shadowSpecialistReviewDetails: {
-        reviewDetailsLine: "Shadow specialist: lane=docs-config-truth status=degraded reason=unsafe-publication-field candidateCount=4 decisionCount=4 decisionCounts=candidate:1,duplicate:1,evidence-conflict:1,dismissed:1,unclassifiable:0 duplicateCount=1 disagreementCount=1 metricAvailability=token:y,cost:y,latency:y visiblePublicationDenied=true approvalPublicationDenied=true privateOnly=true shadowOnly=true reviewOutputKey=test-key-001 deliveryId=delivery-shadow-metrics correlationKey=abc123",
-      },
-    });
-
-    expect(result).toContain("- Shadow specialist: lane=docs-config-truth status=degraded");
-    expect(result).toContain("candidateCount=4");
-    expect(result).toContain("decisionCount=4");
-    expect(result).toContain("duplicateCount=1");
-    expect(result).toContain("disagreementCount=1");
-    expect(result).toContain("metricAvailability=token:y,cost:y,latency:y");
-    expect(result).toContain("visiblePublicationDenied=true");
-    expect(result).toContain("approvalPublicationDenied=true");
-    expect(result).toContain("privateOnly=true");
-    expect(result).toContain("shadowOnly=true");
-    expect(result).toContain("correlationKey=abc123");
-    expect(result).not.toContain("SPECIALIST_SHOULD_NEVER_PUBLISH");
-    expect(result).not.toContain("candidate-a");
-    expect(result).not.toContain("raw prompt");
   });
 
   it("renders usage line when usageLimit is present", () => {
@@ -575,201 +715,5 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("- Requested profile:");
     expect(result).not.toContain("- Effective profile:");
     expect(result).not.toContain("- Bounded review:");
-  });
-
-  it("renders compact M070 candidate-verification publication evidence without raw payload content", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      candidateVerificationPublicationEvidence: {
-        aggregateStatus: "mixed",
-        counts: { attempted: 2, allowed: 1, denied: 1, published: 1, skipped: 1, failed: 0 },
-        publicationDenialCounts: { "publication-ineligible": 1 },
-        reasonCategories: ["publication-ineligible", "evidence-conflict"],
-        verificationStateCounts: { verified: 1, partially_verified: 0, unverified: 1, disproven: 0, unavailable: 0 },
-        candidateVerificationCounts: {
-          candidateCount: 2,
-          evidenceCount: 2,
-          verifiedCount: 1,
-          partiallyVerifiedCount: 0,
-          unverifiedCount: 1,
-          disprovenCount: 0,
-          publicationEligibleCount: 1,
-        },
-        metadata: {
-          hasDeliveryId: true,
-          hasReviewOutputKey: true,
-          hasCorrelationKey: true,
-          deliveryId: "delivery-m070",
-          reviewOutputKey: "review-output-m070",
-          correlationKey: "corr-m070",
-        },
-        redactionFlags: {
-          privateOnly: true,
-          candidateBodiesIncluded: false,
-          specialistProseIncluded: false,
-          rawPromptsIncluded: false,
-          rawModelOutputIncluded: false,
-          diffsIncluded: false,
-          evidencePayloadsIncluded: false,
-          rawFingerprintsIncluded: false,
-          publicationEvidenceIncluded: false,
-          unsafeInputFieldCount: 3,
-        },
-        candidate: "M070_RAW_CANDIDATE_SHOULD_NOT_LEAK",
-        specialistProse: "M070_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
-        prompt: "M070_PROMPT_SHOULD_NOT_LEAK",
-        diff: "M070_DIFF_SHOULD_NOT_LEAK",
-        fingerprint: "M070_FINGERPRINT_SHOULD_NOT_LEAK",
-        toolPayload: "M070_TOOL_PAYLOAD_SHOULD_NOT_LEAK",
-        evidencePayload: "M070_EVIDENCE_PAYLOAD_SHOULD_NOT_LEAK",
-      } as never,
-    });
-
-    expect(result).toContain("- M070 candidate verification publication: status=mixed");
-    expect(result).toContain("counts=attempted:2,allowed:1,denied:1,published:1,skipped:1,failed:0");
-    expect(result).toContain("denialCounts=publication-ineligible:1");
-    expect(result).toContain("reasons=publication-ineligible,evidence-conflict");
-    expect(result).toContain("deliveryIdValue:delivery-m070");
-    expect(result).toContain("reviewOutputKeyValue:review-output-m070");
-    expect(result).toContain("correlationKeyValue:corr-m070");
-    expect(result).toContain("redaction=privateOnly:y,candidateBodies:n,specialistProse:n,rawPrompts:n,rawModelOutput:n,diffs:n,evidencePayloads:n,rawFingerprints:n,publicationEvidence:n,unsafeFields:3");
-    for (const forbidden of [
-      "M070_RAW_CANDIDATE_SHOULD_NOT_LEAK",
-      "M070_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
-      "M070_PROMPT_SHOULD_NOT_LEAK",
-      "M070_DIFF_SHOULD_NOT_LEAK",
-      "M070_FINGERPRINT_SHOULD_NOT_LEAK",
-      "M070_TOOL_PAYLOAD_SHOULD_NOT_LEAK",
-      "M070_EVIDENCE_PAYLOAD_SHOULD_NOT_LEAK",
-    ]) {
-      expect(result).not.toContain(forbidden);
-    }
-  });
-
-  it("drops malformed M070 candidate-verification publication evidence fail-open", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      candidateVerificationPublicationEvidence: {
-        aggregateStatus: "mixed",
-        counts: "not-counts",
-        candidate: "M070_MALFORMED_RAW_CANDIDATE_SHOULD_NOT_LEAK",
-      } as never,
-    });
-
-    expect(result).toContain("<summary>Review Details</summary>");
-    expect(result).not.toContain("M070 candidate verification publication");
-    expect(result).not.toContain("M070_MALFORMED_RAW_CANDIDATE_SHOULD_NOT_LEAK");
-  });
-
-  it("renders compact M072 allowed candidate publication bridge diagnostics", () => {
-    const bridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
-      evidenceSummary: candidatePublicationSummary(),
-      deliveryId: "delivery-123",
-      reviewOutputKey: "review-output-456",
-      upstreamCorrelationKey: "upstream-correlation-789",
-    }).reviewDetails;
-
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      candidatePublicationBridge: bridge,
-    });
-
-    expect(result).toContain("- M072 candidate publication bridge: status=allowed");
-    expect(result).toContain("bridgeVersion=candidate-publication-bridge.v1");
-    expect(result).toContain("bridgeId=candidate-publication-record:");
-    expect(result).toContain("recordKey=candidate-publication-record:");
-    expect(result).toContain("correlationKey=candidate-publication-bridge:");
-    expect(result).toContain("source=review-handler-publication");
-    expect(result).toContain("candidateRef=candidate-publication-summary-");
-    expect(result).toContain("verification=verified");
-    expect(result).toContain("counts=candidateCount:1,evidenceCount:2,verifiedCount:1,partiallyVerifiedCount:0,unverifiedCount:0,disprovenCount:0,publicationEligibleCount:1,malformedRecordCount:0,unsafeInputFieldCount:0");
-    expect(result).toContain("reasons=full-support");
-    expect(result).toContain("malformed=none");
-    expect(result).toContain("presence=deliveryId:y,reviewOutputKey:y,upstreamCorrelationKey:y,policyCorrelationKey:y");
-    expect(result).toContain("handoffOwner=available");
-    expect(result).toContain("redaction=privateOnly:y,rawPayloads:n,publicationFields:n,evidencePayloads:n,githubCommentBody:n,reducerRawPayload:n");
-    expectNoM072CanaryLeak(result);
-  });
-
-  it("renders denied and malformed M072 bridge projections without raw candidate leakage", () => {
-    const deniedBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
-      evidenceSummary: candidatePublicationSummary({
-        aggregateStatus: "denied",
-        counts: { attempted: 1, allowed: 0, denied: 1, published: 0, skipped: 0, failed: 0 },
-        reasonCategories: ["no-evidence", "publication-ineligible"],
-        verificationStateCounts: { verified: 0, partially_verified: 0, unverified: 1, disproven: 0, unavailable: 0 },
-        candidateVerificationCounts: {
-          ...candidatePublicationSummary().candidateVerificationCounts,
-          evidenceCount: 0,
-          verifiedCount: 0,
-          unverifiedCount: 1,
-          publicationEligibleCount: 0,
-        },
-      }),
-      deliveryId: "delivery-123",
-      reviewOutputKey: "review-output-456",
-      upstreamCorrelationKey: "upstream-correlation-789",
-    }).reviewDetails;
-    const malformedBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
-      evidenceSummary: { counts: "bad", body: "M072_GITHUB_COMMENT_BODY_SHOULD_NOT_LEAK" } as never,
-      deliveryId: undefined,
-      reviewOutputKey: undefined,
-      upstreamCorrelationKey: undefined,
-    }).reviewDetails;
-
-    const denied = formatReviewDetailsSummary({ ...BASE_PARAMS, candidatePublicationBridge: deniedBridge });
-    const malformed = formatReviewDetailsSummary({ ...BASE_PARAMS, candidatePublicationBridge: malformedBridge });
-
-    expect(denied).toContain("- M072 candidate publication bridge: status=denied");
-    expect(denied).toContain("reasons=no-evidence,publication-ineligible");
-    expect(denied).toContain("handoffOwner=available");
-    expect(malformed).toContain("- M072 candidate publication bridge: status=malformed");
-    expect(malformed).toContain("malformed=missing-delivery-id,missing-review-output-key,missing-correlation-key");
-    expect(malformed).toContain("presence=deliveryId:n,reviewOutputKey:n,upstreamCorrelationKey:n,policyCorrelationKey:n");
-    expect(malformed).toContain("discardedPublicationFields:y");
-    expectNoM072CanaryLeak(denied);
-    expectNoM072CanaryLeak(malformed);
-  });
-
-  it("fails closed for unsafe or invalid M072 bridge Review Details input", () => {
-    const unsafe = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      candidatePublicationBridge: {
-        status: "allowed",
-        bridgeVersion: "M072_PROMPT_SHOULD_NOT_LEAK",
-        bridgeId: "M072_MODEL_OUTPUT_SHOULD_NOT_LEAK",
-        recordKey: "M072_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK",
-        correlationKey: "M072_DIFF_SHOULD_NOT_LEAK",
-        sourceLabel: "M072_SPECIALIST_PROSE_SHOULD_NOT_LEAK",
-        candidateRef: "M072_FINGERPRINT_SHOULD_NOT_LEAK",
-        verificationState: "verified",
-        reasonCategories: ["M072_GITHUB_COMMENT_BODY_SHOULD_NOT_LEAK", "publication-ineligible"],
-        malformedReasonCodes: ["M072_DIFF_SHOULD_NOT_LEAK", "missing-delivery-id"],
-        counts: { candidateCount: 999_999, unsafeInputFieldCount: 3 },
-        presence: { hasDeliveryId: true },
-        reducerHandoffAvailable: true,
-        redaction: {
-          privateOnly: false,
-          rawPayloadsIncluded: true,
-          publicationFieldsIncluded: true,
-          evidencePayloadsIncluded: true,
-          githubCommentBodyIncluded: true,
-          reducerHandoffIncludesRawPayload: true,
-        },
-      },
-    });
-    const malformed = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      candidatePublicationBridge: "M072_RAW_CANDIDATE_BODY_SHOULD_NOT_LEAK" as never,
-    });
-
-    expect(unsafe).toContain("- M072 candidate publication bridge: status=unavailable");
-    expect(unsafe).toContain("reasons=unsafe-redaction-flags");
-    expect(unsafe).toContain("rawPayloads:y");
-    expect(unsafe).not.toContain("status=allowed; bridgeVersion");
-    expect(malformed).toContain("- M072 candidate publication bridge: status=unavailable");
-    expect(malformed).toContain("reasons=malformed-bridge-projection");
-    expectNoM072CanaryLeak(unsafe);
-    expectNoM072CanaryLeak(malformed);
   });
 });

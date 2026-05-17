@@ -205,6 +205,46 @@ describe("verify-m070 pure evaluator", () => {
     }
   });
 
+  test("redaction leak flags fail closed without echoing raw payloads", () => {
+    const input = scenario("candidate_approved_verified");
+    const report = evaluate({
+      ...input,
+      aggregateEvidence: {
+        ...input.aggregateEvidence as object,
+        redactionFlags: {
+          privateOnly: false,
+          candidateBodiesIncluded: true,
+          specialistProseIncluded: true,
+          rawPromptsIncluded: true,
+          rawModelOutputIncluded: true,
+          diffsIncluded: true,
+          evidencePayloadsIncluded: true,
+          rawFingerprintsIncluded: true,
+          candidateAttemptIncluded: true,
+          candidateKeyIncluded: true,
+          unsafeInputFieldCount: 9,
+        },
+      },
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m070_malformed_evidence_blocked");
+    expect(report.failing_check_id).toBe("M070-REDACTION-BOUNDARY");
+    expect(report.redaction).toMatchObject({
+      privateOnly: false,
+      candidateBodiesIncluded: true,
+      specialistProseIncluded: true,
+      rawPromptsIncluded: true,
+      rawModelOutputIncluded: true,
+      diffsIncluded: true,
+      evidencePayloadsIncluded: true,
+      rawFingerprintsIncluded: true,
+      candidateAttemptIncluded: true,
+      candidateKeyIncluded: true,
+      forbiddenInputFieldPresent: false,
+    });
+  });
+
   test("serialized reports omit raw candidate, specialist, prompt, model/tool, diff, fingerprint, candidate-key, and payload canaries", () => {
     const report = evaluate({
       scenario: "candidate_approved_verified",
