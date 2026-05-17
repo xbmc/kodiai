@@ -390,8 +390,8 @@ No public GitHub mutation was performed for this readiness record. No prompt con
 |---|---:|---:|---|---|
 | `bun test scripts/verify-m068.test.ts scripts/verify-m067-s05.test.ts` | 0 | 1585 | ✅ pass | tests passed; no command failure |
 | `bun test src/execution/mcp/candidate-finding-server.test.ts src/execution/review-prompt.test.ts` | 0 | 220 | ✅ pass | tests passed; no command failure |
-| `bun run verify:m068 --json` | 0 | 273 | ✅ pass | `status_code="local_prerequisites_ok"`, `failing_check_id=null`, `success=true` |
-| `bun run verify:m068 -- --preflight-only --json` | 0 | 249 | ✅ pass | `status_code="local_prerequisites_ok"`, `failing_check_id=null`, `success=true` |
+| `bun run verify:m068 --json` | 0 | 273 | ✅ pass | top-level `status_code="m068_skipped_missing_review_output_key"`, `failing_check_id=null`, `success=true`; check-level `M068-LOCAL-PREREQUISITES.status_code="local_prerequisites_ok"` |
+| `bun run verify:m068 -- --preflight-only --json` | 0 | 249 | ✅ pass | top-level `status_code="m068_skipped_missing_review_output_key"`, `failing_check_id=null`, `success=true`; check-level `M068-LOCAL-PREREQUISITES.status_code="local_prerequisites_ok"` |
 | `bun run verify:m068:s01 --json` | 0 | 165 | ✅ pass | `status_code="m068_s01_ok"`, `failing_check_id=null`, `success=true` |
 | `bun run verify:m068:s02 --json` | 0 | 46 | ✅ pass | `status_code="m068_s02_ok"`, `failing_check_id=null`, `success=true` |
 | `bun run verify:m068:s03 --json` | 0 | 73 | ✅ pass | `status_code="m068_s03_ok"`, `failing_check_id=null`, `success=true` |
