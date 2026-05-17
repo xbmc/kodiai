@@ -3,10 +3,6 @@ timeoutSeconds: 1800
 review:
   profile: strict
   minConfidence: 70
-  formatterSuggestions:
-    automatic: false
-    command: "python3 scripts/m066-formatter-smoke.py"
-    maxSuggestions: 1
   triggers:
     onSynchronize: true
   suppressions:
