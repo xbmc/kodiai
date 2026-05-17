@@ -180,7 +180,64 @@ describe("createCandidateFindingServer", () => {
     });
     expect(JSON.stringify(failingResult)).not.toContain("raw body text");
     expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ err: expect.any(Error) }),
+      "Candidate finding recorder failed",
+    ]));
     expect(JSON.stringify(warnings)).not.toContain(validInput.body);
+  });
+
+  test("logs recorder rejection and nested error recorder failures without returning raw details", async () => {
+    const warnings: unknown[] = [];
+    const recorder: ReviewCandidateFindingRecorder = {
+      recordCandidateFinding: async () => {
+        throw new Error("primary recorder raw payload should stay out of tool response");
+      },
+      recordCandidateFindingRejection: async () => {
+        throw new Error("rejection recorder raw payload should stay out of tool response");
+      },
+      recordCandidateFindingError: async () => {
+        throw new Error("error recorder raw payload should stay out of tool response");
+      },
+    };
+    const logger = { warn: (...args: unknown[]) => warnings.push(args) };
+    const server = createCandidateFindingServer({
+      recorder,
+      repo: "acme/repo",
+      pullNumber: 42,
+      reviewOutputKey: "review-key",
+      deliveryId: "delivery-1",
+      logger: logger as never,
+    });
+
+    const rejectedResult = await getRegisteredTool(server, "record_candidate_finding").handler({
+      ...validInput,
+      filePath: "../outside.ts",
+    });
+    const failedResult = await getRegisteredTool(server, "record_candidate_finding").handler(validInput);
+
+    expect(parseToolResponse(rejectedResult)).toEqual({
+      recorded: false,
+      mode: "shadow",
+      reason: "candidate-finding-rejected",
+    });
+    expect(parseToolResponse(failedResult)).toEqual({
+      recorded: false,
+      mode: "degraded",
+      reason: "candidate-finding-record-failed",
+    });
+    expect(warnings.map((entry) => (entry as unknown[])[1])).toEqual(expect.arrayContaining([
+      "Candidate finding rejection recorder failed",
+      "Candidate finding error recorder failed",
+      "Candidate finding recorder failed",
+    ]));
+    expect(warnings).toEqual(expect.arrayContaining([
+      expect.arrayContaining([expect.objectContaining({ err: expect.any(Error) }), "Candidate finding rejection recorder failed"]),
+      expect.arrayContaining([expect.objectContaining({ err: expect.any(Error) }), "Candidate finding error recorder failed"]),
+      expect.arrayContaining([expect.objectContaining({ err: expect.any(Error) }), "Candidate finding recorder failed"]),
+    ]));
+    expect(JSON.stringify(rejectedResult)).not.toContain("raw payload");
+    expect(JSON.stringify(failedResult)).not.toContain("raw payload");
   });
 
   test("returns unavailable JSON when review correlation is missing", async () => {

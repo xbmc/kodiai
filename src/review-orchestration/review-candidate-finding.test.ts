@@ -158,6 +158,7 @@ describe("review candidate finding contract", () => {
   });
 
   it("creates degraded fail-open results when local normalization fails", () => {
+    const warnings: unknown[] = [];
     const result = createReviewCandidateFindingExecutionResult({
       ...BASE_INPUT,
       candidates: [
@@ -166,12 +167,19 @@ describe("review candidate finding contract", () => {
       unsafeTextDetector: () => {
         throw new Error("sk-secret-from-scanner");
       },
+      logger: { warn: (...args: unknown[]) => warnings.push(args) },
     });
 
     expect(result.status).toBe("degraded");
     expect(result.findings).toEqual([]);
     expect(result.counts).toEqual({ input: 1, recorded: 0, rejected: 0, errors: 1 });
     expect(result.reason).toBe("normalization-error");
+    expect(warnings).toEqual([
+      expect.arrayContaining([
+        expect.objectContaining({ repo: "owner/repo", pullNumber: 42, reviewOutputKey: "review-output-abc123", inputCount: 1, err: expect.any(Error) }),
+        "Review candidate finding normalization failed",
+      ]),
+    ]);
 
     const explicit = createDegradedReviewCandidateFindingResult({
       repo: "owner/repo",

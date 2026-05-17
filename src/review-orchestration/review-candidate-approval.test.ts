@@ -129,6 +129,34 @@ describe("review candidate approval coordinator", () => {
     expect(result.audit.map((event) => event.reason)).toContain("reducer-low-confidence");
   });
 
+  test("suppression wins over originalTitle metadata when reducers keep pre-filter context", () => {
+    const candidates = candidateResult([
+      candidateInput("src/suppressed-rewrite.ts", "Suppressed rewritten candidate"),
+    ]);
+    const candidate = candidates.findings[0]!;
+    const reducer = reducerResult({
+      findings: [reducerFinding(1, candidate, {
+        candidateFingerprint: candidate.fingerprint,
+        suppressed: true,
+        filterAction: "suppressed",
+        originalTitle: candidate.title,
+      })],
+      filteredInlineFindings: [reducerFinding(1, candidate, {
+        candidateFingerprint: candidate.fingerprint,
+        suppressed: true,
+        filterAction: "suppressed",
+        originalTitle: candidate.title,
+      })],
+    });
+
+    const result = coordinateReviewCandidateApproval({ candidates, reducer });
+
+    expect(result.counts).toMatchObject({ rewritten: 0, suppressed: 1 });
+    expect(result.rewrittenCandidates).toEqual([]);
+    expect(lifecycleMap(result).get(candidate.fingerprint)).toBe("suppressed");
+    expect(result.audit.map((event) => event.reason)).toContain("reducer-suppressed");
+  });
+
   test("dedupes duplicate normalized candidate fingerprints by base fingerprint", () => {
     const candidates = candidateResult([
       candidateInput("src/dup.ts", "Duplicate candidate"),

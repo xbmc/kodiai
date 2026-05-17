@@ -109,7 +109,24 @@ describe("review candidate publication adapter", () => {
       detailsSummary: { label: "Review candidate approval", text: "Review candidate approval: test" },
     };
 
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult() });
+    const warnings: unknown[] = [];
+    const logger = { warn: (...args: unknown[]) => warnings.push(args) };
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), logger: logger as never });
+
+    expect(warnings).toEqual([
+      expect.arrayContaining([
+        expect.objectContaining({
+          fingerprint: rewrittenCandidate!.fingerprint,
+          lifecycle: "rewritten",
+          reason: "missing-rewrite-visible-finding",
+          sourceReason: "reducer-rewritten",
+          filePath: "src/rewrite.ts",
+          startLine: 10,
+          endLine: 10,
+        }),
+        "Rewritten review candidate missing visible reducer finding",
+      ]),
+    ]);
 
     expect(adapted.payloads).toEqual([]);
     expect(adapted.summary.counts).toMatchObject({ input: 3, publishable: 0, skipped: 3 });

@@ -325,7 +325,7 @@ function canonicalJson(value: unknown, path = ""): string {
 
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new TypeError(`Unsupported non-finite number at ${path || "<root>"}`);
+      throw new TypeError(`Unsupported non-finite number at ${path || "<root>"}: ${String(value)}`);
     }
     return JSON.stringify(value);
   }

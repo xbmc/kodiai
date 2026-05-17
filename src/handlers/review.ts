@@ -5045,6 +5045,7 @@ export function createReviewHandler(deps: {
           adaptApprovedCandidatesForInlinePublication({
             approval: reviewCandidateApprovalResult,
             reducer: reducerResult,
+            logger,
           });
 
         const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();

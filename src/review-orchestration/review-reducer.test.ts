@@ -71,14 +71,18 @@ describe("buildReviewReducerCounts", () => {
     ], undefined, { minConfidence: 50 })).not.toThrow();
   });
 
-  test("counts all-suppressed boundary without treating suppressed findings as kept", () => {
+  test("counts overlapping filtered states with reducer-visible predicates", () => {
     expect(buildReviewReducerCounts([
-      baseFinding({ commentId: 1, suppressed: true }),
-      baseFinding({ commentId: 2, suppressed: true, filterAction: "guardrail-suppressed" }),
+      baseFinding({ commentId: 1, suppressed: true, filterAction: "suppressed", confidence: 10 }),
+      baseFinding({ commentId: 2, deprioritized: true, confidence: 10 }),
+      baseFinding({ commentId: 3, confidence: 10 }),
+      baseFinding({ commentId: 4, confidence: 90 }),
     ], [], { minConfidence: 50 })).toMatchObject({
-      input: 2,
-      kept: 0,
-      suppressed: 2,
+      input: 4,
+      kept: 1,
+      suppressed: 1,
+      deprioritized: 1,
+      lowConfidence: 1,
     });
   });
 });

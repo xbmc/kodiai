@@ -29,6 +29,9 @@ export type ReviewCandidateFindingInput = {
   artifactPresent?: boolean;
   candidates?: ReadonlyArray<ReviewCandidateFindingCandidateInput> | null;
   unsafeTextDetector?: (value: string) => boolean;
+  logger?: {
+    warn: (obj: unknown, msg: string) => void;
+  };
 };
 
 export type ReviewCandidateFindingCandidateInput = {
@@ -211,7 +214,18 @@ export function createReviewCandidateFindingExecutionResult(
         errors: 0,
       },
     };
-  } catch {
+  } catch (err) {
+    input.logger?.warn(
+      {
+        repo,
+        pullNumber,
+        reviewOutputKey,
+        ...(deliveryId ? { deliveryId } : {}),
+        inputCount,
+        err,
+      },
+      "Review candidate finding normalization failed",
+    );
     return createDegradedReviewCandidateFindingResult({
       repo,
       pullNumber,

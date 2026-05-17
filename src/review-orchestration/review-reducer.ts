@@ -113,6 +113,7 @@ export type ReviewReducerPrioritizationStats = {
 type ReducerLogger = {
   info: (obj: unknown, msg: string) => void;
   warn: (obj: unknown, msg: string) => void;
+  error?: (obj: unknown, msg: string) => void;
   debug?: (obj: unknown, msg: string) => void;
 };
 
@@ -215,7 +216,13 @@ export function buildReviewReducerCounts(
       deprioritized += 1;
     }
 
-    if (typeof finding.confidence === "number" && Number.isFinite(finding.confidence) && finding.confidence < minConfidence) {
+    if (
+      finding.suppressed !== true
+      && finding.deprioritized !== true
+      && typeof finding.confidence === "number"
+      && Number.isFinite(finding.confidence)
+      && finding.confidence < minConfidence
+    ) {
       lowConfidence += 1;
     }
 
@@ -232,9 +239,14 @@ export function buildReviewReducerCounts(
     }
   }
 
+  const kept = findings.filter((finding) => {
+    const isLowConfidence = typeof finding.confidence === "number" && Number.isFinite(finding.confidence) && finding.confidence < minConfidence;
+    return finding.suppressed !== true && finding.deprioritized !== true && !isLowConfidence;
+  }).length;
+
   return {
     input: findings.length,
-    kept: Math.max(0, findings.length - suppressed - lowConfidence - deprioritized),
+    kept,
     suppressed,
     rewritten,
     deprioritized,
@@ -719,7 +731,9 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
     };
 
     return result;
-  } catch {
+  } catch (err) {
+    const log = input.logger.error ?? input.logger.warn;
+    log({ ...input.baseLog, err }, "Review reducer failed unexpectedly");
     return createDegradedReviewReducerResult({ findings: input.findings, reason: "reducer-exception" });
   }
 }

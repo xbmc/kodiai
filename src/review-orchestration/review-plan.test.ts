@@ -315,6 +315,15 @@ describe("buildReviewPlan", () => {
         summary: undefined,
       },
     })).toThrow("Unsupported undefined value at context.summary");
+
+    expect(() => buildReviewPlan({
+      ...baseInput(),
+      change: {
+        changedFileCount: Number.NaN,
+        linesChanged: 1,
+        linesChangedSource: "pr-metadata",
+      },
+    })).toThrow("Unsupported non-finite number at change.changedFileCount: NaN");
   });
 });
 

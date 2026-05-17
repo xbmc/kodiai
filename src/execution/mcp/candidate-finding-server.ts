@@ -98,6 +98,7 @@ export function createCandidateFindingServer(deps: {
             pullNumber: deps.pullNumber,
             reviewOutputKey: deps.reviewOutputKey ?? "",
             deliveryId: deps.deliveryId,
+            logger: deps.logger,
             candidates: [parsed.data],
           });
 
@@ -123,9 +124,9 @@ export function createCandidateFindingServer(deps: {
                   reviewOutputKey: normalized.reviewOutputKey,
                   ...(normalized.deliveryId ? { deliveryId: normalized.deliveryId } : {}),
                 });
-              } catch {
+              } catch (err) {
                 deps.logger?.warn(
-                  logContext(deps, { input: 1, recorded: 0, rejected: 1, errors: 1, reason: "rejection-record-failed" }),
+                  { ...logContext(deps, { input: 1, recorded: 0, rejected: 1, errors: 1, reason: "rejection-record-failed" }), err },
                   "Candidate finding rejection recorder failed",
                 );
               }
@@ -167,7 +168,7 @@ export function createCandidateFindingServer(deps: {
             );
 
             return textResponse({ recorded: true, mode: "shadow" });
-          } catch {
+          } catch (err) {
             try {
               await deps.recorder.recordCandidateFindingError?.("record-failed", {
                 repo: normalized.repo,
@@ -175,11 +176,14 @@ export function createCandidateFindingServer(deps: {
                 reviewOutputKey: normalized.reviewOutputKey,
                 ...(normalized.deliveryId ? { deliveryId: normalized.deliveryId } : {}),
               });
-            } catch {
-              // Fail open: MCP warning below is sufficient and review publication must continue.
+            } catch (errorRecordErr) {
+              deps.logger?.warn(
+                { ...logContext(deps, { input: 1, recorded: 0, rejected: 0, errors: 1, reason: "error-record-failed" }), err: errorRecordErr },
+                "Candidate finding error recorder failed",
+              );
             }
             deps.logger?.warn(
-              logContext(deps, { input: 1, recorded: 0, rejected: 0, errors: 1, reason: "record-failed" }),
+              { ...logContext(deps, { input: 1, recorded: 0, rejected: 0, errors: 1, reason: "record-failed" }), err },
               "Candidate finding recorder failed",
             );
             return textResponse({

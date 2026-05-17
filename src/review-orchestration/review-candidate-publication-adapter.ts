@@ -50,6 +50,10 @@ export type ReviewCandidatePublicationAdapterSkipped = {
   fingerprint: string;
   lifecycle: ReviewCandidatePublicationLifecycle;
   reason: ReviewCandidatePublicationSkipReason;
+  sourceReason?: ReviewCandidateApprovalReason;
+  filePath?: string;
+  startLine?: number;
+  endLine?: number;
 };
 
 export type ReviewCandidatePublicationAdapterSummary = {
@@ -108,6 +112,9 @@ export function buildCandidateReviewOutputKey(reviewOutputKey: string, candidate
 export function adaptApprovedCandidatesForInlinePublication(input: {
   approval: ReviewCandidateApprovalResult;
   reducer: Pick<ReviewReducerResult, "visibleFindings">;
+  logger?: {
+    warn: (obj: unknown, msg: string) => void;
+  };
 }): ReviewCandidatePublicationAdapterResult {
   const visibleByFingerprint = buildVisibleFindingJoin(input.reducer.visibleFindings);
   const candidates = [
@@ -120,19 +127,42 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
   for (const reference of candidates) {
     const candidate = reference.candidate;
     if (!isCandidateFinding(candidate)) {
-      skipped.push(skip(reference.fingerprint, reference.lifecycle, "missing-candidate"));
+      skipped.push(skip(reference.fingerprint, reference.lifecycle, "missing-candidate", { sourceReason: reference.reason }));
       continue;
     }
 
     const location = toInlineCommentLocation(candidate);
     if ("reason" in location) {
-      skipped.push(skip(reference.fingerprint, reference.lifecycle, location.reason));
+      skipped.push(skip(reference.fingerprint, reference.lifecycle, location.reason, {
+        sourceReason: reference.reason,
+        filePath: candidate.filePath,
+        ...(typeof candidate.startLine === "number" ? { startLine: candidate.startLine } : {}),
+        ...(typeof candidate.endLine === "number" ? { endLine: candidate.endLine } : {}),
+      }));
       continue;
     }
 
     const joinedFinding = visibleByFingerprint.get(reference.fingerprint);
     if (reference.lifecycle === "rewritten" && !joinedFinding) {
-      skipped.push(skip(reference.fingerprint, reference.lifecycle, "missing-rewrite-visible-finding"));
+      const skippedRewrite = skip(reference.fingerprint, reference.lifecycle, "missing-rewrite-visible-finding", {
+        sourceReason: reference.reason,
+        filePath: candidate.filePath,
+        ...(typeof candidate.startLine === "number" ? { startLine: candidate.startLine } : {}),
+        ...(typeof candidate.endLine === "number" ? { endLine: candidate.endLine } : {}),
+      });
+      skipped.push(skippedRewrite);
+      input.logger?.warn(
+        {
+          fingerprint: skippedRewrite.fingerprint,
+          lifecycle: skippedRewrite.lifecycle,
+          reason: skippedRewrite.reason,
+          sourceReason: skippedRewrite.sourceReason,
+          filePath: skippedRewrite.filePath,
+          startLine: skippedRewrite.startLine,
+          endLine: skippedRewrite.endLine,
+        },
+        "Rewritten review candidate missing visible reducer finding",
+      );
       continue;
     }
 
@@ -337,8 +367,17 @@ function skip(
   fingerprint: string,
   lifecycle: ReviewCandidatePublicationLifecycle,
   reason: ReviewCandidatePublicationSkipReason,
+  context: Partial<Pick<ReviewCandidatePublicationAdapterSkipped, "sourceReason" | "filePath" | "startLine" | "endLine">> = {},
 ): ReviewCandidatePublicationAdapterSkipped {
-  return { fingerprint: sanitizeSummaryToken(fingerprint), lifecycle, reason };
+  return {
+    fingerprint: sanitizeSummaryToken(fingerprint),
+    lifecycle,
+    reason,
+    ...(context.sourceReason ? { sourceReason: context.sourceReason } : {}),
+    ...(context.filePath ? { filePath: context.filePath } : {}),
+    ...(typeof context.startLine === "number" ? { startLine: context.startLine } : {}),
+    ...(typeof context.endLine === "number" ? { endLine: context.endLine } : {}),
+  };
 }
 
 function isCandidateFinding(value: unknown): value is ReviewCandidateFinding {

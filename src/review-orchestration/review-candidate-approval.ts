@@ -233,11 +233,11 @@ function buildReducerJoin(reducer: ReviewReducerResult): Map<string, ProcessedRe
 }
 
 function classifyJoinedReducerFinding(finding: ProcessedReviewFinding, minConfidence: number): { reason: ReviewCandidateApprovalReason } {
-  if (finding.filterAction === "rewritten" || finding.filterAction === "guardrail-rewritten" || typeof finding.originalTitle === "string") {
-    return { reason: "reducer-rewritten" };
-  }
   if (finding.suppressed === true || finding.filterAction === "suppressed" || finding.filterAction === "guardrail-suppressed") {
     return { reason: "reducer-suppressed" };
+  }
+  if (finding.filterAction === "rewritten" || finding.filterAction === "guardrail-rewritten") {
+    return { reason: "reducer-rewritten" };
   }
   if (finding.deprioritized === true) {
     return { reason: "reducer-deprioritized" };
