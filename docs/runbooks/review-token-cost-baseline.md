@@ -73,6 +73,33 @@ Expected successful shape:
 
 The S04 fixture is text-free. It proves whether a retry can safely replay compacted checkpoint deltas or must receive fuller context; it never stores checkpoint text, prompts, diffs, review comments, candidate payloads, model output, raw cache keys, raw fingerprints, embeddings, tokens, or secrets.
 
+## S05 visible budget behavior verifier
+
+S05 has a dedicated runbook for bounded Review Details/operator disclosure language, redaction boundaries, scoped-review interpretation, failure triage, and S06 live-proof handoff: `docs/runbooks/review-budget-visible-behavior.md`.
+
+Run the offline verifier from the repository root:
+
+```sh
+bun scripts/verify-m073-s05.ts --fixture scripts/fixtures/m073-s05-visible-budget.json --json
+```
+
+Package-script equivalent:
+
+```sh
+bun run verify:m073:s05 --json
+```
+
+Expected successful shape:
+
+- `overallPassed: true`
+- `statusCode: "m073_s05_ok"`
+- `failedCheckIds: []`
+- `observedTotals.statusCounts` includes complete, scoped, and fallback cases
+- `observedTotals.reasonCounts` includes bounded visible reasons such as `within-budget`, `prompt-budget-limited`, and `continuation-fallback`
+- aggregate prompt/cache/continuation counts match deterministic fixture totals
+
+The S05 fixture is text-free. It proves that public Review Details and operator evidence can explain budgeted, scoped, cache-affected, compacted, or fallback review behavior with bounded statuses, reasons, and counts only. It never authorizes publishing raw prompts, prompt fragments, diffs, review comments, cache keys, fingerprints, candidates, model output, checkpoint text, tokens, or secrets.
+
 ## S02 prompt-budget evidence verifier
 
 S02 adds a second offline verifier for prompt-budget enforcement evidence:
