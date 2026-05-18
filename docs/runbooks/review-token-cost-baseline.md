@@ -30,6 +30,67 @@ For human-readable output, omit `--json`. The JSON mode is preferred for automat
 
 The verifier is offline: it reads a local fixture and does not require live GitHub, telemetry, database, or model access.
 
+## S02 prompt-budget evidence verifier
+
+S02 adds a second offline verifier for prompt-budget enforcement evidence:
+
+```sh
+bun scripts/verify-m073-s02.ts --fixture scripts/fixtures/m073-s02-prompt-budget.json --json
+```
+
+Package-script equivalent:
+
+```sh
+bun run verify:m073:s02 --json
+```
+
+Expected successful shape:
+
+- `overallPassed: true`
+- `statusCode: "m073_s02_ok"`
+- `failedCheckIds: []`
+- `observedTotals.sectionCount`, `includedSections`, `trimmedSections`, and `bypassedSections`
+- deterministic overflow totals: `totalBudgetChars`, `totalBudgetTokens`, `totalIncludedChars`, `totalIncludedTokens`, `totalTrimmedChars`, and `totalTrimmedTokens`
+
+The S02 fixture is also text-free. It may contain only bounded identifiers, section names, prompt kinds, counts, budgets, statuses, and reason vocabulary. It must not include raw prompts, included text, trimmed text, diffs, comments, candidate payloads, model output, completion content, token strings, secrets, or live production identifiers.
+
+### S02 evidence fields
+
+| Field | Meaning | Safety note |
+|---|---|---|
+| `promptBudgetEvidence[].caseId`, `deliveryId`, `repo`, `taskType`, `promptKind` | Bounded correlation metadata for a replayed prompt-budget observation. | Use generic replay identifiers such as `delivery-budget-001`; do not paste live IDs unless explicitly approved for fixtures. |
+| `sections[].sectionName`, `sectionPosition` | Stable section identity and deterministic order. | Section names are allowed; section contents are not. |
+| `sections[].budgetChars`, `budgetTokens` | Configured section budget projected into chars and estimated tokens. | Tokens are estimates from bounded counts, not raw tokenizer output. |
+| `sections[].includedChars`, `includedTokens` | Bounded amount retained in the assembled prompt. | Counts only; never include retained text. |
+| `sections[].trimmedChars`, `trimmedTokens` | Bounded overflow amount removed from the assembled prompt. | Counts only; this is the downstream-safe overflow proof. |
+| `sections[].budgetStatus` | One of `included`, `trimmed`, or `bypassed`. | Unknown statuses fail closed. |
+| `sections[].budgetReason` | One of `within-budget`, `section-over-budget`, or `zero-budget`. | Unknown reasons fail closed. |
+| `overflowSummary` | Fixture-declared totals that must match deterministic sums from all section outcomes. | Mismatches fail `overflow-totals.deterministic`. |
+
+### S02 check IDs
+
+| Check ID | Pass condition | Failure means |
+|---|---|---|
+| `fixture.shape` | The fixture root has `promptBudgetEvidence[]` and `overflowSummary`. | The fixture is malformed or cannot be evaluated safely. |
+| `budget-evidence.present` | At least one prompt-budget observation is present. | No replayed budget evidence was provided. |
+| `budget-outcomes.valid` | Every section has bounded counts, an allowed status, an allowed reason, and status/reason/count consistency. | A budget outcome is malformed, impossible, duplicated, or uses unknown vocabulary. |
+| `overflow-totals.deterministic` | `overflowSummary` exactly equals deterministic sums from section outcomes. | The fixture summary cannot prove what was included, trimmed, or bypassed. |
+| `redaction.safe` | The fixture contains only bounded, text-free fields and no secret-like values. | Raw prompt/review/model text, oversized strings, or secret-like values were detected. |
+
+### S02 failure triage
+
+Start with `failedCheckIds`, then inspect bounded `issues`. Do not add raw prompt text while debugging.
+
+1. For `fixture.shape`, confirm the JSON root contains `promptBudgetEvidence` as an array and `overflowSummary` as an object.
+2. For `budget-evidence.present`, add a replay row from prompt section telemetry that already includes budget outcome fields.
+3. For `budget-outcomes.valid`, compare section rows with `src/execution/prompt-budget.ts` and `src/execution/prompt-section-metrics.ts`: `included` rows use `within-budget`, `trimmed` rows use `section-over-budget`, and `bypassed` rows use `zero-budget` with zero included chars.
+4. For `overflow-totals.deterministic`, recompute totals from section rows instead of manually guessing summary values.
+5. For `redaction.safe`, remove fields named like prompt text, included text, trimmed text, diff, comment, candidate payload, model output, completion content, or content/body/text. Replace examples with section names, statuses, reason codes, and counts.
+
+### S02 downstream handoff
+
+Later slices should consume S02 evidence through `observedTotals`, stable check IDs, and section-level budget outcome fields. The safe handoff answers: which sections were included, trimmed, or bypassed; how much budget was configured; how much was included; and how much overflow was removed. It does **not** authorize reconstructing prompt text, publishing raw fixture rows with additional fields, or treating estimated tokens as billed model usage.
+
 ## Scorecard inputs and interpretation
 
 The source contract lives in `src/review-cost-baseline/scorecard.ts`. The verifier projects that contract through `scripts/verify-m073-s01.ts`.

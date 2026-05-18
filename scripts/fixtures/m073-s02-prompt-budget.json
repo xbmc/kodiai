@@ -1,0 +1,95 @@
+{
+  "generatedAt": "2026-05-18T01:00:00.000Z",
+  "promptBudgetEvidence": [
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-budget-001",
+      "repo": "octo/example",
+      "taskType": "review",
+      "promptKind": "system",
+      "sections": [
+        {
+          "sectionName": "persona",
+          "sectionPosition": 0,
+          "budgetChars": 600,
+          "budgetTokens": 150,
+          "includedChars": 400,
+          "includedTokens": 100,
+          "trimmedChars": 0,
+          "trimmedTokens": 0,
+          "budgetStatus": "included",
+          "budgetReason": "within-budget"
+        },
+        {
+          "sectionName": "pr-metadata",
+          "sectionPosition": 1,
+          "budgetChars": 500,
+          "budgetTokens": 125,
+          "includedChars": 500,
+          "includedTokens": 125,
+          "trimmedChars": 0,
+          "trimmedTokens": 0,
+          "budgetStatus": "included",
+          "budgetReason": "within-budget"
+        },
+        {
+          "sectionName": "changed-files-summary",
+          "sectionPosition": 2,
+          "budgetChars": 1200,
+          "budgetTokens": 300,
+          "includedChars": 1200,
+          "includedTokens": 300,
+          "trimmedChars": 600,
+          "trimmedTokens": 150,
+          "budgetStatus": "trimmed",
+          "budgetReason": "section-over-budget"
+        }
+      ]
+    },
+    {
+      "caseId": "large-diff-review",
+      "deliveryId": "delivery-budget-002",
+      "repo": "octo/example",
+      "taskType": "review",
+      "promptKind": "user",
+      "sections": [
+        {
+          "sectionName": "retrieval-context",
+          "sectionPosition": 0,
+          "budgetChars": 0,
+          "budgetTokens": 0,
+          "includedChars": 0,
+          "includedTokens": 0,
+          "trimmedChars": 0,
+          "trimmedTokens": 0,
+          "budgetStatus": "bypassed",
+          "budgetReason": "zero-budget"
+        },
+        {
+          "sectionName": "code-context",
+          "sectionPosition": 1,
+          "budgetChars": 1600,
+          "budgetTokens": 400,
+          "includedChars": 1600,
+          "includedTokens": 400,
+          "trimmedChars": 800,
+          "trimmedTokens": 200,
+          "budgetStatus": "trimmed",
+          "budgetReason": "section-over-budget"
+        }
+      ]
+    }
+  ],
+  "overflowSummary": {
+    "sectionCount": 5,
+    "includedSections": 2,
+    "trimmedSections": 2,
+    "bypassedSections": 1,
+    "totalBudgetChars": 3900,
+    "totalBudgetTokens": 975,
+    "totalIncludedChars": 3700,
+    "totalIncludedTokens": 925,
+    "totalTrimmedChars": 1400,
+    "totalTrimmedTokens": 350
+  }
+}
