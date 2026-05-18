@@ -78,3 +78,13 @@ Expected result:
 - `statusCode: "m073_s06_ok"`
 - `failedCheckIds: []`
 - observed totals report 5 upstream evidence rows, 2 runtime proof rows, 23.58% token reduction, 138,000 ms live duration, 3 rollback controls, and 4 negative cases.
+
+## Final T04 proof-bundle run
+
+The final M073/S06 proof bundle was run through the package verifier with production-like, offline evidence only. No live GitHub writes were performed or implied.
+
+| Command | Exit Code | Status Code | Failed Checks | Duration |
+|---|---:|---|---|---:|
+| `bun run verify:m073:s06 --json` | 0 | `m073_s06_ok` | none | 126 ms |
+
+Final observed totals: 5 of 5 upstream evidence rows passed, 2 runtime proof rows were evaluated, runtime tokens dropped from 21,200 to 16,200 (23.58% reduction), proof latency was 138,000 ms under the 210,000 ms ceiling, visible projection count remained 3, rollback control count remained 3, and 4 negative cases were covered.
