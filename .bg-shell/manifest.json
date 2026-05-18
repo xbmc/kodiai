@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "f1fbb3fa",
+    "label": "gsd auto M073 after skip fix",
+    "command": "gsd auto",
+    "cwd": "/home/keith/src/kodiai",
+    "ownerSessionFile": "/home/keith/.gsd/sessions/--home-keith-src-kodiai-.gsd-worktrees-pr-trim-m051m060--/2026-05-18T23-27-49-716Z_9b6da143-3a04-4911-92e0-00376798dbb8.jsonl",
+    "persistAcrossSessions": false,
+    "startedAt": 1779147567289,
+    "processType": "generic",
+    "group": "gsd-auto-fix",
+    "readyPattern": null,
+    "readyPort": null,
+    "pid": 493907
+  }
+]

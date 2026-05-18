@@ -208,6 +208,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: The proof must include deterministic replay/fixture correctness plus at least one live or production-like review/job effectiveness check.
 
+### R148 — Review findings must behave as durable lifecycle records with stable identity, status/history, actionability fields, validation evidence, and revalidation before closure.
+- Class: core-capability
+- Status: active
+- Description: Review findings must behave as durable lifecycle records with stable identity, status/history, actionability fields, validation evidence, and revalidation before closure.
+- Why it matters: Clawpatch showed that findings are more useful when they survive across runs and can be triaged, acted on, validated, and revalidated instead of existing only as transient PR comment prose.
+- Source: M074 queue discussion
+- Primary owning slice: M074
+- Supporting slices: M073,M132
+- Validation: M074 verifier proves stable finding identities, status/history transitions, actionability fields, validation/revalidation evidence, and no raw artifact leakage.
+- Notes: Introduced by M074 after the Clawpatch deep dive; this is a Kodiai workflow contract, not a Clawpatch port.
+
+### R149 — Fix suggestions derived from review findings must publish only through bounded same-PR inline review surfaces unless a later explicit milestone expands write authority.
+- Class: core-capability
+- Status: active
+- Description: Fix suggestions derived from review findings must publish only through bounded same-PR inline review surfaces unless a later explicit milestone expands write authority.
+- Why it matters: The user wants Clawpatch-inspired fix evidence integrated into Kodiai's current PR review flow, not separate bot PRs, branch mutation, or direct pushes by default.
+- Source: M074 queue discussion
+- Primary owning slice: M074
+- Supporting slices: M066,M132
+- Validation: Production-like or live M074 proof shows eligible findings produce bounded same-PR inline fix evidence through existing Kodiai review publication gates, while unsafe or unmappable suggestions are blocked.
+- Notes: Direct pushes, bot commits, and separate bot PRs remain out of scope for the default M074 delivery path.
+
 ## Validated
 
 ### R011 — docs/deployment.md consolidates deployment instructions; existing runbooks are linked from a docs index
@@ -1726,6 +1748,8 @@ This file is the explicit capability and coverage contract for the project.
 | R141 | continuity | active | M073/S04 | M073/S02,M073/S03,M073/S06 | mapped |
 | R142 | failure-visibility | active | M073/S05 | M073/S02,M073/S03,M073/S04,M073/S06 | mapped |
 | R143 | launchability | active | M073/S06 | M073/S01,M073/S02,M073/S03,M073/S04,M073/S05 | mapped |
+| R148 | core-capability | active | M074 | M073,M132 | M074 verifier proves stable finding identities, status/history transitions, actionability fields, validation/revalidation evidence, and no raw artifact leakage. |
+| R149 | core-capability | active | M074 | M066,M132 | Production-like or live M074 proof shows eligible findings produce bounded same-PR inline fix evidence through existing Kodiai review publication gates, while unsafe or unmappable suggestions are blocked. |
 | R144 | constraint | deferred | none | none | unmapped |
 | R145 | constraint | deferred | none | none | unmapped |
 | R146 | anti-feature | out-of-scope | none | none | n/a |
@@ -1733,7 +1757,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 19
-- Mapped to slices: 19
+- Active requirements: 21
+- Mapped to slices: 21
 - Validated: 98 (R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R030, R038, R036, R035, R037, R039, R040, R041, R042, R044, R045, R047, R046, R048, R052, R053, R054, R055, R056, R057, R058, R059, R069, R061, R064, R062, R063, R065, R066, R068, R067, R071, R072, R073, R074, R075, R076, R079, R078, R082, R083, R081, R077, R092, R095, R094, R096, R097, R098, R093, R100, R111, R112, R113, R080, R084, R085, R110, R114, R115, R116, R103, R117, R102, R118, R126, R127, R128, R125, R129, R130)
 - Unmapped active requirements: 0

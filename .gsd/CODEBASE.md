@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-18T14:23:24Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T14:23:24Z","fingerprint":"b6097decf0709730fcd85e312072f5f214567b4c","fileCount":500,"truncated":true} -->
+Generated: 2026-05-18T23:27:53Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T23:27:53Z","fingerprint":"3de52da55d3b558df267bcf24ca29d59f9d0f0fa","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -51,6 +51,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/mentions.md`
 - `docs/runbooks/nightly-sync-failures.md`
 - `docs/runbooks/recent-review-audit.md`
+- `docs/runbooks/review-budget-visible-behavior.md`
 - `docs/runbooks/review-cache-telemetry.md`
 - `docs/runbooks/review-requested-debug.md`
 - `docs/runbooks/review-token-cost-baseline.md`
@@ -89,7 +90,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(261 files: 256 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(263 files: 258 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -98,6 +99,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `scripts/fixtures/m073-s02-prompt-budget.json`
 - `scripts/fixtures/m073-s03-cache-telemetry.json`
 - `scripts/fixtures/m073-s04-continuation-compaction.json`
+- `scripts/fixtures/m073-s05-visible-budget.json`
 
 ### src/
 - `src/config.test.ts`
@@ -148,7 +150,24 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/execution/formatter-suggestions.ts`
 - `src/execution/issue-code-context.test.ts`
 - `src/execution/issue-code-context.ts`
-- `src/execution/mention-context.test.ts`
 
 ### src/execution/mcp/
-- *(22 files: 22 .ts)*
+- `src/execution/mcp/candidate-finding-server.test.ts`
+- `src/execution/mcp/candidate-finding-server.ts`
+- `src/execution/mcp/checkpoint-server.test.ts`
+- `src/execution/mcp/checkpoint-server.ts`
+- `src/execution/mcp/ci-status-server.ts`
+- `src/execution/mcp/comment-server.test.ts`
+- `src/execution/mcp/comment-server.ts`
+- `src/execution/mcp/http-server.test.ts`
+- `src/execution/mcp/http-server.ts`
+- `src/execution/mcp/index.test.ts`
+- `src/execution/mcp/index.ts`
+- `src/execution/mcp/inline-review-publisher.ts`
+- `src/execution/mcp/inline-review-server.test.ts`
+- `src/execution/mcp/inline-review-server.ts`
+- `src/execution/mcp/issue-comment-server.test.ts`
+- `src/execution/mcp/issue-comment-server.ts`
+- `src/execution/mcp/issue-label-server.test.ts`
+- `src/execution/mcp/issue-label-server.ts`
+- `src/execution/mcp/review-comment-thread-server.test.ts`
