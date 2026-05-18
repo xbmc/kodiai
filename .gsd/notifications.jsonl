@@ -1,17 +1,3 @@
-{"id":"faf66ba9-8f50-47bc-9516-63245be22c7b","ts":"2026-05-14T19:44:59.264Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":false}
-{"id":"9908bebd-0490-4f02-aa42-92bcd87a3d56","ts":"2026-05-14T19:44:59.267Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":false}
-{"id":"7dd558b6-ba1c-42d7-a985-0ffafa34b650","ts":"2026-05-14T19:44:59.278Z","severity":"success","message":"✓ Reviewed prior context","source":"notify","read":false}
-{"id":"712df7c9-d243-4938-b184-b737808607a9","ts":"2026-05-14T21:41:48.571Z","severity":"warning","message":"All milestones are complete and the discussion didn't produce a new one. Run /gsd to start a new milestone manually.","source":"notify","read":false}
-{"id":"d42ed069-193d-4957-a7fd-9032fe8ba03e","ts":"2026-05-14T21:43:14.093Z","severity":"warning","message":"[migration] Provider-specific default fallback used without an explicit available model; configure provider-aware model preferences before removing defaults.","source":"workflow-logger","read":false}
-{"id":"52619f40-4a69-47fc-8bde-258265d0ff74","ts":"2026-05-14T21:43:16.766Z","severity":"info","message":"Analyzing codebase...","source":"notify","read":false}
-{"id":"18b1a16c-6e44-411e-b459-1eaa67663e99","ts":"2026-05-14T21:43:16.794Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":false}
-{"id":"bc3b3110-c153-4d66-8875-18ad615afbd6","ts":"2026-05-14T21:43:16.798Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":false}
-{"id":"fa8e82c7-fe47-4fe6-bc19-b79d186f484a","ts":"2026-05-14T21:43:16.807Z","severity":"success","message":"✓ Reviewed prior context","source":"notify","read":false}
-{"id":"782f6940-2e09-4267-a36f-edfb6262bbb9","ts":"2026-05-15T00:14:42.174Z","severity":"success","message":"Milestone M071 ready.","source":"notify","read":false}
-{"id":"472e4612-4d30-482b-b309-bf7869cc8b44","ts":"2026-05-15T00:14:43.049Z","severity":"info","message":"Auto-mode started. Will loop through 2 milestones.","source":"notify","read":false}
-{"id":"3d7735f7-7a40-4d48-aa01-51e4ef1ad22b","ts":"2026-05-15T00:14:43.059Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
-{"id":"443665b3-3c95-46b4-b708-c627d0968ca1","ts":"2026-05-15T00:14:43.065Z","severity":"info","message":"Pre-flight: 59 milestones queued. All have full context.","source":"notify","read":false}
-{"id":"66c1816a-9a14-4d4a-8612-b22a93abf5ca","ts":"2026-05-15T00:14:43.502Z","severity":"warning","message":"[renderer] parsers-legacy.ts require failed, falling back to .js: Cannot find module './parsers-legacy.ts'\nRequire stack:\n- /home/keith/.gsd/agent/extensions/gsd/markdown-renderer.js","source":"workflow-logger","read":false}
 {"id":"295b3cfe-7a61-408e-b5a8-de98ce5f947c","ts":"2026-05-15T00:14:43.947Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"445cdc9b-b24b-4501-96ee-c81901c80bab","ts":"2026-05-15T00:16:40.044Z","severity":"info","message":"Pre-dispatch: cleared stale auto.lock before dispatch","source":"notify","read":false}
 {"id":"d64cd888-dde4-415c-91f2-886a19954c80","ts":"2026-05-15T00:20:43.277Z","severity":"info","message":"Committed: test: Added a pure fail-closed issue #131 evidence matrix evaluator wit…","source":"notify","read":false}
@@ -498,3 +484,17 @@
 {"id":"22f4d50e-4971-4ee8-a72c-d6742e1cbfc4","ts":"2026-05-18T05:40:15.332Z","severity":"info","message":"Recovered 23 tool calls from paused session. Resuming with context.","source":"notify","read":false}
 {"id":"b63c3647-b561-4819-b09f-cb8d7ad20418","ts":"2026-05-18T05:40:16.780Z","severity":"warning","message":"Unit execute-task M073/S05/T01 was aborted by the user. Pausing auto-mode (recoverable).","source":"notify","read":false}
 {"id":"334b62da-fb19-4628-b1f1-0cae2ac17d65","ts":"2026-05-18T05:40:17.593Z","severity":"info","message":"Auto-mode paused (Escape). Type to interact, or /gsd auto to resume.","source":"notify","read":false}
+{"id":"e8fc59e4-e15c-4982-997a-607fbed13d10","ts":"2026-05-18T05:40:18.176Z","severity":"info","message":"Committed: feat: Define bounded visible budget behavior contract","source":"notify","read":false}
+{"id":"4e4f4e4e-89fa-42e2-94c4-a391f92bca7d","ts":"2026-05-18T05:40:35.858Z","severity":"info","message":"Using existing global GSD skill preferences at /home/keith/.gsd/PREFERENCES.md","source":"notify","read":false}
+{"id":"d3784501-ce1e-488b-a60f-4086570a8af9","ts":"2026-05-18T05:40:35.864Z","severity":"info","message":"Building forensic report...","source":"notify","read":false}
+{"id":"ff401edc-78ae-4c6e-9f72-7423e6944a93","ts":"2026-05-18T05:40:38.354Z","severity":"info","message":"Forensic report saved: .gsd/forensics/report-2026-05-18-05-40-38.md","source":"notify","read":false}
+{"id":"ec975df3-0b60-47b1-b914-4cf8d42ae4b9","ts":"2026-05-18T05:45:10.521Z","severity":"warning","message":"[migration] Provider-specific default fallback used without an explicit available model; configure provider-aware model preferences before removing defaults.","source":"workflow-logger","read":false}
+{"id":"73ce5ad0-e3b5-49b4-907e-db601065dc39","ts":"2026-05-18T14:23:06.879Z","severity":"info","message":"Auto-mode resumed.","source":"notify","read":false}
+{"id":"9f05ff39-4f2b-4eff-86cb-bd404c3965a2","ts":"2026-05-18T14:23:09.168Z","severity":"info","message":"Resume: applied 7 fix(es) to state.","source":"notify","read":false}
+{"id":"b347762d-1824-481e-8f23-2a1a1c6e7987","ts":"2026-05-18T14:23:09.202Z","severity":"info","message":"Recovered 74 tool calls from paused session. Resuming with context.","source":"notify","read":false}
+{"id":"c2479405-0010-4ec2-8c9b-89e556103768","ts":"2026-05-18T14:23:09.759Z","severity":"warning","message":"Auto-mode blocked: invalid-root: Unit root /home/keith/src/kodiai is not the expected worktree root for M073.. Fix and run /gsd auto to resume.","source":"notify","read":false}
+{"id":"df449085-5bb0-4aec-96d9-5209b116268a","ts":"2026-05-18T14:23:32.977Z","severity":"info","message":"Auto-mode started. Will loop through 2 milestones.","source":"notify","read":false}
+{"id":"a08f784f-4231-418d-be43-fca5ec36061e","ts":"2026-05-18T14:23:32.989Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.5)","source":"notify","read":false}
+{"id":"7286f32a-c0e0-4d83-a0d1-ba3cf8f24936","ts":"2026-05-18T14:23:32.995Z","severity":"info","message":"Pre-flight: 62 milestones queued. All have full context.","source":"notify","read":false}
+{"id":"7c6627fa-ef0b-4e5e-89ed-cedc6ab34e56","ts":"2026-05-18T14:38:35.810Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"fa5a1a2f-855f-4614-ac56-3b3568b7c24f","ts":"2026-05-18T14:38:35.845Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}

@@ -2271,6 +2271,30 @@ describe("createReviewHandler review_requested idempotency", () => {
             numTurns: 1,
             durationMs: 1,
             sessionId: "session-clean-comment-only",
+            promptSections: [
+              {
+                deliveryId: "delivery-123",
+                repo: "acme/repo",
+                taskType: "review",
+                promptKind: "review.user-prompt",
+                sections: [
+                  {
+                    sectionName: "review-change-context",
+                    sectionPosition: 0,
+                    charCount: 40,
+                    estimatedTokens: 10,
+                    budgetChars: 20,
+                    budgetTokens: 5,
+                    includedChars: 20,
+                    includedTokens: 5,
+                    trimmedChars: 20,
+                    trimmedTokens: 5,
+                    budgetStatus: "trimmed",
+                    budgetReason: "section-over-budget",
+                  },
+                ],
+              },
+            ],
             executorPhaseTimings: [
               { name: "executor handoff", status: "completed", durationMs: 50 },
               { name: "remote runtime", status: "completed", durationMs: 500 },
@@ -2294,6 +2318,8 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdIssueComments).toHaveLength(1);
     expect(createdIssueComments[0]).toContain("Decision: APPROVE");
     expect(createdIssueComments[0]).toContain("Issues: none");
+    expect(createdIssueComments[0]).toContain("Review scope note: output was scoped by prompt budget limits; Review Details include bounded counts only.");
+    expect(createdIssueComments[0]).toContain("Budget behavior: scoped (prompt-budget-limited).");
     expect(createdIssueComments[0]).toContain("<summary>Review Details</summary>");
     expect(createdIssueComments[0]).toContain(buildReviewOutputMarker(buildReviewOutputKey({
       installationId: 42,
@@ -9534,6 +9560,30 @@ describe("createReviewHandler usageLimit and token wiring", () => {
           numTurns: 1,
           durationMs: 1,
           sessionId: "session-usage-wiring",
+          promptSections: [
+            {
+              deliveryId: "delivery-123",
+              repo: "acme/repo",
+              taskType: "review",
+              promptKind: "review.user-prompt",
+              sections: [
+                {
+                  sectionName: "review-change-context",
+                  sectionPosition: 0,
+                  charCount: 40,
+                  estimatedTokens: 10,
+                  budgetChars: 20,
+                  budgetTokens: 5,
+                  includedChars: 20,
+                  includedTokens: 5,
+                  trimmedChars: 20,
+                  trimmedTokens: 5,
+                  budgetStatus: "trimmed",
+                  budgetReason: "section-over-budget",
+                },
+              ],
+            },
+          ],
           usageLimit: {
             utilization: 0.8,
             rateLimitType: "seven_day",
@@ -9560,6 +9610,9 @@ describe("createReviewHandler usageLimit and token wiring", () => {
     expect(detailsCommentBody).toBeDefined();
     expect(detailsCommentBody).toContain("20% of seven_day limit remaining");
     expect(detailsCommentBody).toContain("in /");
+    expect(detailsCommentBody).toContain("Budget behavior: scoped (prompt-budget-limited).");
+    expect(detailsCommentBody).toContain("Prompt budget: 1 sections, 1 trimmed, 0 bypassed, 5 trimmed tokens.");
+    expect(detailsCommentBody).toContain("Cache behavior: 1 observations");
   });
 });
 

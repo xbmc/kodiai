@@ -17,7 +17,7 @@ import type {
 } from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { ReviewCacheEventRecord, TelemetryStore } from "../telemetry/types.ts";
+import type { PromptSectionRecord, ReviewCacheEventRecord, TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
   PriorFinding,
@@ -264,6 +264,16 @@ import {
   projectReviewHandlerCandidatePublicationBridgeEvidence,
   type ReviewHandlerPublicationBridgeProjection,
 } from "../issue-131/review-handler-publication-bridge.ts";
+import {
+  buildReviewDetailsBudgetLines,
+  buildVisibleBudgetProjection,
+  type PromptBudgetEvidenceObservation,
+  type VisibleBudgetProjection,
+  type VisibleBudgetScenario,
+} from "../review-visible-budget/visible-budget-behavior.ts";
+import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
+import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
+import type { PromptBudgetOutcome } from "../execution/prompt-budget.ts";
 
 
 
@@ -373,6 +383,139 @@ function buildPromptReviewCacheEvent(params: {
     ...(normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) ? { invalidationSignalNames: normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) } : {}),
     ...(params.state.bookkeepingErrorCount ? { bookkeepingErrorCount: params.state.bookkeepingErrorCount } : {}),
   };
+}
+
+function buildPromptBudgetEvidenceObservations(records: readonly PromptSectionRecord[]): PromptBudgetEvidenceObservation[] {
+  return records
+    .map((record) => {
+      const sections = record.sections
+        .filter((section) =>
+          typeof section.budgetChars === "number"
+          && typeof section.budgetTokens === "number"
+          && typeof section.includedChars === "number"
+          && typeof section.includedTokens === "number"
+          && typeof section.trimmedChars === "number"
+          && typeof section.trimmedTokens === "number"
+          && (section.budgetStatus === "included" || section.budgetStatus === "trimmed" || section.budgetStatus === "bypassed")
+          && (section.budgetReason === "within-budget" || section.budgetReason === "section-over-budget" || section.budgetReason === "zero-budget")
+        )
+        .map((section) => ({
+          sectionName: section.sectionName,
+          sectionPosition: section.sectionPosition,
+          budgetChars: section.budgetChars!,
+          budgetTokens: section.budgetTokens!,
+          includedChars: section.includedChars!,
+          includedTokens: section.includedTokens!,
+          trimmedChars: section.trimmedChars!,
+          trimmedTokens: section.trimmedTokens!,
+          budgetStatus: section.budgetStatus!,
+          budgetReason: section.budgetReason!,
+        }));
+
+      if (sections.length === 0) {
+        return null;
+      }
+
+      return {
+        caseId: `${record.promptKind}:budget`,
+        deliveryId: record.deliveryId ?? "unknown-delivery",
+        repo: record.repo,
+        taskType: record.taskType,
+        promptKind: record.promptKind,
+        sections,
+      };
+    })
+    .filter((entry): entry is PromptBudgetEvidenceObservation => entry !== null);
+}
+
+function buildPromptBudgetOutcomes(records: readonly PromptSectionRecord[]): PromptBudgetOutcome[] {
+  return buildPromptBudgetEvidenceObservations(records).flatMap((observation) =>
+    observation.sections.map((section) => ({
+      sectionName: section.sectionName,
+      sectionPosition: section.sectionPosition,
+      budgetChars: section.budgetChars,
+      budgetTokens: section.budgetTokens,
+      includedChars: section.includedChars,
+      includedTokens: section.includedTokens,
+      trimmedChars: section.trimmedChars,
+      trimmedTokens: section.trimmedTokens,
+      status: section.budgetStatus,
+      reason: section.budgetReason,
+    }))
+  );
+}
+
+function chooseVisibleBudgetScenario(params: {
+  promptBudgetEvidence: readonly PromptBudgetEvidenceObservation[];
+  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  continuationCompactionObservations: readonly ContinuationCompactionObservation[];
+}): VisibleBudgetScenario {
+  if (params.continuationCompactionObservations.some((observation) => observation.status === "fallback")) {
+    return "fallback-review";
+  }
+
+  const promptScoped = params.promptBudgetEvidence.some((observation) =>
+    observation.sections.some((section) => section.budgetStatus === "trimmed" || section.budgetStatus === "bypassed")
+  );
+  const cacheScoped = params.cacheTelemetryObservations.some((observation) =>
+    observation.status === "degraded" || observation.status === "bypass"
+  );
+  const continuationScoped = params.continuationCompactionObservations.some((observation) =>
+    observation.status === "compacted" || observation.status === "degraded"
+  );
+
+  return promptScoped || cacheScoped || continuationScoped ? "scoped-review" : "happy-path";
+}
+
+function buildVisibleBudgetProjectionFromEvidence(params: {
+  promptSectionRecords: readonly PromptSectionRecord[];
+  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  continuationCompactionObservations: readonly ContinuationCompactionObservation[];
+}): VisibleBudgetProjection | null {
+  const promptBudgetEvidence = buildPromptBudgetEvidenceObservations(params.promptSectionRecords);
+  if (
+    promptBudgetEvidence.length === 0
+    && params.cacheTelemetryObservations.length === 0
+    && params.continuationCompactionObservations.length === 0
+  ) {
+    return null;
+  }
+
+  return buildVisibleBudgetProjection({
+    scenario: chooseVisibleBudgetScenario({
+      promptBudgetEvidence,
+      cacheTelemetryObservations: params.cacheTelemetryObservations,
+      continuationCompactionObservations: params.continuationCompactionObservations,
+    }),
+    promptBudgetEvidence,
+    cacheTelemetryObservations: params.cacheTelemetryObservations,
+    continuationCompactionObservations: params.continuationCompactionObservations,
+  });
+}
+
+function appendReviewDetailsBudgetLines(body: string, projection: VisibleBudgetProjection | null): string {
+  if (!projection) return body;
+  const lines = buildReviewDetailsBudgetLines(projection).map((line) => `- ${line}`);
+  const closeMarker = "\n\n</details>";
+  const closeIndex = body.lastIndexOf(closeMarker);
+  if (closeIndex === -1) {
+    return `${body}\n${lines.join("\n")}`;
+  }
+  return `${body.slice(0, closeIndex)}\n${lines.join("\n")}${body.slice(closeIndex)}`;
+}
+
+function buildVisibleBudgetDisclosureEvidence(projection: VisibleBudgetProjection | null): string | null {
+  if (!projection || projection.visibleStatus === "complete") return null;
+  if (projection.visibleStatus === "fallback") {
+    return "Review scope note: fallback review behavior was used; Review Details include bounded budget/cache/continuation counts only.";
+  }
+  if (projection.visibleReason === "prompt-budget-limited") {
+    return "Review scope note: output was scoped by prompt budget limits; Review Details include bounded counts only.";
+  }
+  if (projection.visibleReason === "cache-degraded") {
+    return "Review scope note: cache reuse was degraded or bypassed; Review Details include bounded cache status counts only.";
+  }
+  return "Review scope note: continuation or compaction behavior scoped the review; Review Details include bounded counts only.";
 }
 
 function buildRetrievalReviewCacheEvent(params: {
@@ -4277,6 +4420,18 @@ export function createReviewHandler(deps: {
 
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         let retrievalCtx: RetrievalContextForPrompt | null = null;
+        const visibleReviewCacheObservations: ReviewCacheTelemetryObservation[] = [];
+        const visibleContinuationCompactionObservations: ContinuationCompactionObservation[] = [];
+        let visiblePromptSectionRecords: PromptSectionRecord[] = [];
+        let reviewVisibleBudgetProjection: VisibleBudgetProjection | null = null;
+        const refreshReviewVisibleBudgetProjection = (): VisibleBudgetProjection | null => {
+          reviewVisibleBudgetProjection = buildVisibleBudgetProjectionFromEvidence({
+            promptSectionRecords: visiblePromptSectionRecords,
+            cacheTelemetryObservations: visibleReviewCacheObservations,
+            continuationCompactionObservations: visibleContinuationCompactionObservations,
+          });
+          return reviewVisibleBudgetProjection;
+        };
         let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
         let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
         let unifiedResultsForPrompt: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] = [];
@@ -4306,14 +4461,15 @@ export function createReviewHandler(deps: {
               triggerType: "pr_review",
             });
 
-            if (config.telemetry.enabled) {
-              const retrievalCacheEvent = buildRetrievalReviewCacheEvent({
-                deliveryId: event.id,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                result,
-              });
+            const retrievalCacheEvent = buildRetrievalReviewCacheEvent({
+              deliveryId: event.id,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              result,
+            });
+            visibleReviewCacheObservations.push(retrievalCacheEvent);
 
+            if (config.telemetry.enabled) {
               try {
                 const totalEmbeddingLookups = (result?.provenance?.embeddingRequests ?? 0) + (result?.provenance?.embeddingCacheHits ?? 0);
                 await telemetryStore.recordRateLimitEvent({
@@ -4952,6 +5108,7 @@ export function createReviewHandler(deps: {
             sections: reviewPromptResult.sections,
           }),
         ];
+        visiblePromptSectionRecords = reviewPromptSections;
         logger.info(
           {
             ...baseLog,
@@ -4961,13 +5118,16 @@ export function createReviewHandler(deps: {
           },
           "Resolved review prompt derived-cache state",
         );
+        const reviewPromptCacheEvent = buildPromptReviewCacheEvent({
+          deliveryId: event.id,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          state: reviewPromptCacheState,
+        });
+        visibleReviewCacheObservations.push(reviewPromptCacheEvent);
+        refreshReviewVisibleBudgetProjection();
         if (config.telemetry.enabled) {
-          await recordReviewCacheEventFailOpen(buildPromptReviewCacheEvent({
-            deliveryId: event.id,
-            repo: `${apiOwner}/${apiRepo}`,
-            prNumber: pr.number,
-            state: reviewPromptCacheState,
-          }));
+          await recordReviewCacheEventFailOpen(reviewPromptCacheEvent);
         }
         reviewPhaseTimings.set(
           "retrieval/context assembly",
@@ -5008,15 +5168,8 @@ export function createReviewHandler(deps: {
           maxTurnsOverride: reviewMaxTurnsOverride,
         });
         executorResult = result;
-        executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
-          "executor phase timings unavailable",
-        );
-        for (const phase of executorPhaseTimings) {
-          reviewPhaseTimings.set(phase.name, phase);
-        }
-        publicationPhaseStartedAt = Date.now();
-
-        executorResult = result;
+        visiblePromptSectionRecords = result.promptSections ?? visiblePromptSectionRecords;
+        refreshReviewVisibleBudgetProjection();
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
           "executor phase timings unavailable",
         );
@@ -5398,7 +5551,8 @@ export function createReviewHandler(deps: {
           reviewFirstPass?: ReviewFirstPassPayload | null;
           timeoutBudget?: TimeoutBudgetDetails | null;
         }): string => {
-          const reviewDetailsBody = formatReviewDetailsSummary({
+          const visibleBudgetProjection = refreshReviewVisibleBudgetProjection();
+          const reviewDetailsBody = appendReviewDetailsBudgetLines(formatReviewDetailsSummary({
             reviewOutputKey,
             filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
             linesAdded: reviewDetailsLineCounts.linesAdded,
@@ -5435,7 +5589,7 @@ export function createReviewHandler(deps: {
             timeoutProgress: params?.timeoutProgress,
             timeoutBudget: params?.timeoutBudget,
             lineCountSource: reviewDetailsLineCounts.source,
-          });
+          }), visibleBudgetProjection);
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
           return suppressedSection
@@ -6115,6 +6269,12 @@ export function createReviewHandler(deps: {
                 checkpoint,
                 riskScores,
                 timeoutSeconds: timeoutDuration,
+                continuationCompaction: {
+                  attemptId: reviewWorkAttempt.attemptId,
+                  attemptOrdinal: 0,
+                  promptBudgetOutcomes: buildPromptBudgetOutcomes(visiblePromptSectionRecords),
+                  cacheTelemetryObservations: visibleReviewCacheObservations,
+                },
                 hasPublishedInlineFindings: hasPublishedInlines,
                 isChronicTimeout,
                 estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
@@ -6135,6 +6295,10 @@ export function createReviewHandler(deps: {
 
               switch (retryPlan.decision) {
                 case "schedule-continuation":
+                  if (retryPlan.continuationCompaction) {
+                    visibleContinuationCompactionObservations.push(retryPlan.continuationCompaction);
+                    refreshReviewVisibleBudgetProjection();
+                  }
                   retryState = "scheduled reduced-scope retry";
                   retrySummaryNote = "Scheduling a reduced-scope retry.";
                   break;
@@ -6647,6 +6811,28 @@ export function createReviewHandler(deps: {
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
                       smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
+                      retryPromptCompaction: retryPlan.continuationCompaction
+                        ? {
+                            observation: retryPlan.continuationCompaction,
+                            checkpointSummaries: checkpoint
+                              ? [{
+                                  reviewOutputKey: checkpoint.reviewOutputKey,
+                                  filesReviewed: checkpoint.filesReviewed,
+                                  findingCount: checkpoint.findingCount,
+                                  totalFiles: checkpoint.totalFiles,
+                                  summaryDraft: checkpoint.summaryDraft,
+                                }]
+                              : [],
+                            promptBudgetOutcomes: buildPromptBudgetOutcomes(visiblePromptSectionRecords).map((outcome) => ({
+                              sectionName: outcome.sectionName,
+                              status: outcome.status,
+                              reason: outcome.reason,
+                              includedChars: outcome.includedChars,
+                              trimmedChars: outcome.trimmedChars,
+                            })),
+                            cacheSafetySignalNames: Array.from(new Set(visibleReviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []))).sort((a, b) => a.localeCompare(b)),
+                          }
+                        : null,
                     } satisfies ReviewPromptBuildContext;
                     const retryPromptCacheState: ReviewPromptCacheState = {
                       status: retryReviewPromptDerivedCacheStatus,
@@ -6679,13 +6865,16 @@ export function createReviewHandler(deps: {
                       },
                       "Resolved retry review prompt derived-cache state",
                     );
+                    const retryPromptCacheEvent = buildPromptReviewCacheEvent({
+                      deliveryId: retryDeliveryId,
+                      repo: `${apiOwner}/${apiRepo}`,
+                      prNumber: pr.number,
+                      state: retryPromptCacheState,
+                    });
+                    visibleReviewCacheObservations.push(retryPromptCacheEvent);
+                    refreshReviewVisibleBudgetProjection();
                     if (config.telemetry.enabled) {
-                      await recordReviewCacheEventFailOpen(buildPromptReviewCacheEvent({
-                        deliveryId: retryDeliveryId,
-                        repo: `${apiOwner}/${apiRepo}`,
-                        prNumber: pr.number,
-                        state: retryPromptCacheState,
-                      }));
+                      await recordReviewCacheEventFailOpen(retryPromptCacheEvent);
                     }
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
@@ -7363,8 +7552,10 @@ export function createReviewHandler(deps: {
             }
 
             setReviewWorkPhase("publish");
+            const visibleBudgetDisclosureEvidence = buildVisibleBudgetDisclosureEvidence(refreshReviewVisibleBudgetProjection());
             const approvalEvidence = [
               `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
+              ...(visibleBudgetDisclosureEvidence ? [visibleBudgetDisclosureEvidence] : []),
             ];
             const approvalConfidence = depBumpContext?.mergeConfidence
               ? renderApprovalConfidence(depBumpContext.mergeConfidence)
