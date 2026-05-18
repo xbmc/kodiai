@@ -432,8 +432,73 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
   expect(result.sections.every((section) => section.charCount > 0)).toBe(true);
   expect(result.sections.every((section) => section.estimatedTokens === Math.ceil(section.charCount / 4))).toBe(true);
   expect(result.sections.some((section) => section.truncated === true)).toBe(true);
+  expect(result.sections.every((section) => section.budgetChars !== undefined)).toBe(true);
+  expect(result.sections.every((section) => section.includedChars !== undefined)).toBe(true);
+  expect(result.sections.every((section) => section.budgetStatus === "included" || section.budgetStatus === "trimmed")).toBe(true);
+  const trimmedSections = result.sections.filter((section) => section.budgetStatus === "trimmed");
+  expect(trimmedSections.length).toBeGreaterThan(0);
+  for (const section of trimmedSections) {
+    expect(section.budgetReason).toBe("section-over-budget");
+    expect(section.trimmedChars).toBeGreaterThan(0);
+    expect(section.trimmedTokens).toBeGreaterThan(0);
+    expect(section.includedChars).toBe(section.budgetChars);
+  }
   expect(result.text).toContain("You are reviewing pull request #42 in acme/app.");
   expect(result.text).toContain("## Knowledge Context");
+});
+
+test("buildReviewPromptDetails reports deterministic budget outcomes without raw overflow text", () => {
+  const oversizedChangedFiles = Array.from(
+    { length: 220 },
+    (_, index) => `src/${String(index).padStart(3, "0")}-${"change".repeat(18)}.ts`,
+  );
+  const omittedChangePath = oversizedChangedFiles.at(-1)!;
+  const diffOverflowSentinel = "DIFF_OVERFLOW_SENTINEL_SHOULD_NOT_APPEAR";
+  const instructionOverflowSentinel = "INSTRUCTION_OVERFLOW_SENTINEL_SHOULD_NOT_APPEAR";
+  const knowledgeOverflowSentinel = "KNOWLEDGE_OVERFLOW_SENTINEL_SHOULD_NOT_APPEAR";
+
+  const result = buildReviewPromptDetails(baseContext({
+    changedFiles: oversizedChangedFiles,
+    diffContent: `${"+diff line with enough context\n".repeat(700)}${diffOverflowSentinel}`,
+    customInstructions: `${"Investigate this custom instruction carefully. ".repeat(500)}${instructionOverflowSentinel}`,
+    linkedIssues: {
+      referencedIssues: Array.from({ length: 18 }, (_, index) => ({
+        issueNumber: index + 1,
+        repo: "acme/app",
+        title: `Linked issue ${index}`,
+        state: "open",
+        descriptionSummary: `${"knowledge summary ".repeat(40)}${index === 17 ? knowledgeOverflowSentinel : ""}`,
+        linkType: "referenced" as const,
+        keyword: "fixes",
+      })),
+      semanticMatches: [],
+    },
+  }));
+
+  const byName = new Map(result.sections.map((section) => [section.sectionName, section]));
+  for (const sectionName of [
+    "review-change-context",
+    "review-diff-context",
+    "review-knowledge-context",
+    "review-instructions",
+  ]) {
+    const section = byName.get(sectionName);
+    expect(section).toBeDefined();
+    expect(section?.budgetStatus).toBe("trimmed");
+    expect(section?.budgetReason).toBe("section-over-budget");
+    expect(section?.trimmedChars).toBeGreaterThan(0);
+    expect(section?.trimmedTokens).toBe(Math.ceil((section?.trimmedChars ?? 0) / 4));
+    expect(section?.includedChars).toBe(section?.budgetChars);
+    expect(section?.includedTokens).toBe(Math.ceil((section?.includedChars ?? 0) / 4));
+  }
+
+  expect(result.text).not.toContain(omittedChangePath);
+  expect(result.text).not.toContain(diffOverflowSentinel);
+  expect(result.text).not.toContain(instructionOverflowSentinel);
+  expect(result.text).not.toContain(knowledgeOverflowSentinel);
+  expect(JSON.stringify(result.sections)).not.toContain(diffOverflowSentinel);
+  expect(JSON.stringify(result.sections)).not.toContain(instructionOverflowSentinel);
+  expect(JSON.stringify(result.sections)).not.toContain(knowledgeOverflowSentinel);
 });
 
 test("default config includes severity classification guidelines", () => {

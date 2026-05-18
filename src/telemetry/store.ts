@@ -225,6 +225,14 @@ export function createTelemetryStore(opts: {
           char_count: section.charCount,
           estimated_tokens: section.estimatedTokens,
           truncated: section.truncated ?? false,
+          budget_chars: section.budgetChars ?? null,
+          budget_tokens: section.budgetTokens ?? null,
+          included_chars: section.includedChars ?? null,
+          included_tokens: section.includedTokens ?? null,
+          trimmed_chars: section.trimmedChars ?? null,
+          trimmed_tokens: section.trimmedTokens ?? null,
+          budget_status: section.budgetStatus ?? null,
+          budget_reason: section.budgetReason ?? null,
         }));
 
         await sql`
@@ -239,6 +247,14 @@ export function createTelemetryStore(opts: {
             "char_count",
             "estimated_tokens",
             "truncated",
+            "budget_chars",
+            "budget_tokens",
+            "included_chars",
+            "included_tokens",
+            "trimmed_chars",
+            "trimmed_tokens",
+            "budget_status",
+            "budget_reason",
           )}
           ON CONFLICT (delivery_id, task_type, prompt_kind, section_position)
           WHERE delivery_id IS NOT NULL
@@ -247,7 +263,15 @@ export function createTelemetryStore(opts: {
             section_name = EXCLUDED.section_name,
             char_count = EXCLUDED.char_count,
             estimated_tokens = EXCLUDED.estimated_tokens,
-            truncated = EXCLUDED.truncated
+            truncated = EXCLUDED.truncated,
+            budget_chars = EXCLUDED.budget_chars,
+            budget_tokens = EXCLUDED.budget_tokens,
+            included_chars = EXCLUDED.included_chars,
+            included_tokens = EXCLUDED.included_tokens,
+            trimmed_chars = EXCLUDED.trimmed_chars,
+            trimmed_tokens = EXCLUDED.trimmed_tokens,
+            budget_status = EXCLUDED.budget_status,
+            budget_reason = EXCLUDED.budget_reason
         `;
       } catch (err) {
         logger.warn(

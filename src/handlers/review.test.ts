@@ -13479,6 +13479,12 @@ describe("createReviewHandler review prompt section telemetry", () => {
       ]),
     );
     expect(promptSectionEntries[0]?.sections.some((section) => section.truncated === true)).toBeTrue();
+    const sectionWithBudgetMetadata = promptSectionEntries[0]?.sections.find((section) => section.sectionName === "review-instructions") as (typeof promptSectionEntries)[number]["sections"][number] & Record<string, unknown> | undefined;
+    expect(sectionWithBudgetMetadata?.budgetStatus).toBe("trimmed");
+    expect(sectionWithBudgetMetadata?.budgetReason).toBe("section-over-budget");
+    expect(sectionWithBudgetMetadata?.budgetChars).toBeGreaterThan(0);
+    expect(sectionWithBudgetMetadata?.includedChars).toBe(sectionWithBudgetMetadata?.budgetChars);
+    expect(sectionWithBudgetMetadata?.trimmedChars).toBeGreaterThan(0);
 
     await workspaceFixture.cleanup();
   });
@@ -13666,6 +13672,11 @@ describe("createReviewHandler review prompt section telemetry", () => {
         ]),
       );
       expect(entry.sections.some((section) => section.truncated === true)).toBeTrue();
+      const sectionWithBudgetMetadata = entry.sections.find((section) => section.sectionName === "review-instructions") as (typeof entry.sections)[number] & Record<string, unknown> | undefined;
+      expect(sectionWithBudgetMetadata?.budgetStatus).toBe("trimmed");
+      expect(sectionWithBudgetMetadata?.budgetReason).toBe("section-over-budget");
+      expect(sectionWithBudgetMetadata?.includedChars).toBe(sectionWithBudgetMetadata?.budgetChars);
+      expect(sectionWithBudgetMetadata?.trimmedChars).toBeGreaterThan(0);
     }
 
     await workspaceFixture.cleanup();

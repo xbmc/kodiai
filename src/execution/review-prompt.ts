@@ -24,6 +24,7 @@ import {
 } from "../contributor/experience-contract.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
+import { evaluatePromptBudget, type PromptBudgetOutcome } from "./prompt-budget.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1771,10 +1772,12 @@ export function buildReviewPromptDetails(context: {
   gitDiffInstructionsAvailable?: boolean;
   diffContent?: string;
 }): PromptBuildResult {
-  const sectionBlocks: Array<{ sectionName: string; text: string; truncated?: boolean }> = [];
+  const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number }> = [];
   const scaleNotes: string[] = [];
   const mode = context.mode ?? "standard";
   const REVIEW_SECTION_BUDGETS = {
+    prContext: 2_800,
+    smallDiffScope: 1_200,
     changeContext: 4_000,
     sizeContext: 3_200,
     graphContext: 4_000,
@@ -1783,21 +1786,47 @@ export function buildReviewPromptDetails(context: {
     instructions: 16_000,
   } as const;
 
-  const pushSection = (sectionName: string, lines: string[]) => {
+  const pushSection = (sectionName: string, lines: string[], budgetChars?: number) => {
     const text = lines.join("\n").trim();
     if (!text) return;
-    sectionBlocks.push({ sectionName, text });
+    sectionBlocks.push({ sectionName, text, budgetChars: budgetChars ?? text.length });
   };
 
-  const pushBudgetedSection = (sectionName: string, lines: string[], maxChars: number) => {
-    const text = lines.join("\n").trim();
-    if (!text) return;
-    const truncated = truncateDeterministic(text, maxChars);
-    sectionBlocks.push({
-      sectionName,
-      text: truncated.text,
-      ...(truncated.truncated ? { truncated: true } : {}),
+  const pushBudgetedSection = (sectionName: string, lines: string[], budgetChars: number) => {
+    pushSection(sectionName, lines, budgetChars);
+  };
+
+  const buildBudgetedPromptResult = (): PromptBuildResult => {
+    const evaluation = evaluatePromptBudget({
+      sections: sectionBlocks.map((section) => ({
+        sectionName: section.sectionName,
+        text: section.text,
+      })),
+      budgets: sectionBlocks.map((section) => ({
+        sectionName: section.sectionName,
+        budgetChars: section.budgetChars,
+      })),
+      separator: "\n\n",
     });
+    const outcomeByPosition = new Map<number, PromptBudgetOutcome>(
+      evaluation.outcomes.map((outcome) => [outcome.sectionPosition, outcome]),
+    );
+    const budgetedSections = sectionBlocks
+      .map((section, sectionPosition) => {
+        const outcome = outcomeByPosition.get(sectionPosition);
+        if (!outcome) {
+          throw new Error(`Missing prompt budget outcome for section '${section.sectionName}'`);
+        }
+        return {
+          sectionName: section.sectionName,
+          text: section.text.slice(0, outcome.includedChars),
+          ...(outcome.status !== "included" ? { truncated: true } : {}),
+          budgetOutcome: outcome,
+        };
+      })
+      .filter((section) => section.text.length > 0);
+
+    return buildPromptBuildResult(budgetedSections, "\n\n");
   };
 
   const titleSanitized = sanitizeContent(context.prTitle);
@@ -1844,10 +1873,10 @@ export function buildReviewPromptDetails(context: {
   if (prBodySanitized.length > 0) {
     prContextLines.push("", "PR description:", "---", prBodyTruncated.text, "---");
   }
-  pushSection("review-pr-context", prContextLines);
+  pushSection("review-pr-context", prContextLines, REVIEW_SECTION_BUDGETS.prContext);
 
   if (context.smallDiffReview) {
-    pushSection("review-small-diff-scope", buildSmallDiffScopeSection().split("\n"));
+    pushSection("review-small-diff-scope", buildSmallDiffScopeSection().split("\n"), REVIEW_SECTION_BUDGETS.smallDiffScope);
   }
 
   const changeContextLines = ["Changed files:"];
@@ -2423,7 +2452,7 @@ Include this line after the summary: "${reviewedLine}"
 
   pushBudgetedSection("review-instructions", instructionLines, REVIEW_SECTION_BUDGETS.instructions);
 
-  return buildPromptBuildResult(sectionBlocks, "\n\n");
+  return buildBudgetedPromptResult();
 }
 
 export function buildReviewPrompt(context: {

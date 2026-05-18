@@ -148,6 +148,14 @@ export type PromptSectionMetric = {
   charCount: number;
   estimatedTokens: number;
   truncated?: boolean;
+  budgetChars?: number;
+  budgetTokens?: number;
+  includedChars?: number;
+  includedTokens?: number;
+  trimmedChars?: number;
+  trimmedTokens?: number;
+  budgetStatus?: "included" | "trimmed" | "bypassed";
+  budgetReason?: "within-budget" | "section-over-budget" | "zero-budget";
 };
 
 /**
