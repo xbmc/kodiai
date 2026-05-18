@@ -13756,7 +13756,7 @@ describe("review prompt derived cache", () => {
         ...baseContext.retrievalContext,
         findings: [
           {
-            ...baseContext.retrievalContext.findings[0],
+            ...baseContext.retrievalContext.findings[0]!,
             findingText: "A different retrieval finding must not reuse the old prompt.",
           },
         ],

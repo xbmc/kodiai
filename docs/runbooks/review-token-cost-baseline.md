@@ -30,6 +30,18 @@ For human-readable output, omit `--json`. The JSON mode is preferred for automat
 
 The verifier is offline: it reads a local fixture and does not require live GitHub, telemetry, database, or model access.
 
+## S03 review cache telemetry verifier
+
+S03 has a dedicated runbook for bounded review cache hit/miss/degraded/bypass telemetry, usage-report inspection, and safe S04 handoff: `docs/runbooks/review-cache-telemetry.md`.
+
+Run the offline verifier from the repository root:
+
+```sh
+bun scripts/verify-m073-s03.ts --fixture scripts/fixtures/m073-s03-cache-telemetry.json --json
+```
+
+The S03 verifier and usage-report cache section prove observable safe reuse boundaries only. They do not claim live token reduction.
+
 ## S02 prompt-budget evidence verifier
 
 S02 adds a second offline verifier for prompt-budget enforcement evidence:
