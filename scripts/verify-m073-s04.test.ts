@@ -36,18 +36,18 @@ describe("verify-m073-s04", () => {
       statusCode: "m073_s04_ok",
       failedCheckIds: [],
       observedTotals: {
-        observationCount: 4,
-        deliveryCount: 4,
-        attemptCount: 4,
+        observationCount: 7,
+        deliveryCount: 7,
+        attemptCount: 7,
         statusCounts: {
           compacted: 1,
-          fallback: 1,
+          fallback: 4,
           degraded: 1,
           bypass: 1,
         },
-        includedDeltaCount: 14,
+        includedDeltaCount: 29,
         reusedCheckpointCount: 3,
-        omittedScopeCount: 12,
+        omittedScopeCount: 15,
       },
     });
     expect(report.checks.map((check) => check.id)).toEqual([

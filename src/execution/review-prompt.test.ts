@@ -433,6 +433,50 @@ test("buildReviewPromptDetails marks retry compaction fallback without checkpoin
   expect(result.text).not.toContain("This summary must not be replayed");
 });
 
+test("buildReviewPromptDetails marks degraded retry compaction as partial context without checkpoint summary replay", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    retryPromptCompaction: {
+      observation: {
+        caseId: "retry-prompt-compaction",
+        deliveryId: "review-123",
+        repo: "acme/app",
+        attemptId: "attempt-2",
+        priorAttemptId: "attempt-1",
+        attemptOrdinal: 2,
+        status: "degraded",
+        reason: "degraded-cache-signal",
+        fallbackState: "partial-context",
+        includedDeltaCount: 1,
+        reusedCheckpointCount: 1,
+        omittedScopeCount: 1,
+        remainingScopeCount: 1,
+        safetySignalNames: ["prompt-budget.included"],
+        budgetSignalNames: ["prompt-budget.included"],
+        cacheSignalNames: ["cache.bookkeeping-failure"],
+      },
+      checkpointSummaries: [
+        {
+          reviewOutputKey: "review-123",
+          filesReviewed: ["src/a.ts"],
+          findingCount: 0,
+          totalFiles: 2,
+          summaryDraft: "This degraded summary must not be replayed.",
+        },
+      ],
+      promptBudgetOutcomes: [],
+      cacheSafetySignalNames: ["cache.bookkeeping-failure"],
+    },
+  }));
+
+  expect(result.text).toContain("Status: degraded");
+  expect(result.text).toContain("Reason: degraded-cache-signal");
+  expect(result.text).toContain("Fallback state: partial-context");
+  expect(result.text).toContain("Prompt budget signals: prompt-budget.included");
+  expect(result.text).toContain("Cache safety signals: cache.bookkeeping-failure");
+  expect(result.text).toContain("Available safety signals: prompt-budget.included");
+  expect(result.text).not.toContain("This degraded summary must not be replayed");
+});
+
 test("buildReviewPromptDetails returns budgeted named prompt-section metrics", () => {
   const result = buildReviewPromptDetails(baseContext({
     changedFiles: Array.from({ length: 260 }, (_, index) => `src/file-${index}.ts`),

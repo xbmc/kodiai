@@ -160,7 +160,17 @@ function deriveBudgetSignalNames(outcomes: readonly PromptBudgetOutcome[]): stri
 }
 
 function deriveCacheSignalNames(observations: readonly ReviewCacheTelemetryObservation[]): string[] {
-  return uniqueSorted(observations.flatMap((observation) => observation.safetySignalNames ?? []));
+  return uniqueSorted(observations.flatMap((observation) => [
+    ...(observation.safetySignalNames ?? []),
+    ...(observation.missingSignalNames ?? []),
+    ...(observation.invalidationSignalNames ?? []),
+    ...(observation.status === "degraded" ? [`cache.${observation.reason ?? "degraded"}`] : []),
+    ...(observation.status === "bypass" ? [`cache.${observation.reason ?? "bypass"}`] : []),
+  ]));
+}
+
+function hasUsableCheckpointSummary(checkpoint: CheckpointRecord | null): boolean {
+  return typeof checkpoint?.summaryDraft === "string" && checkpoint.summaryDraft.trim().length > 0;
 }
 
 function buildContinuationCompactionObservation(params: {
@@ -177,7 +187,8 @@ function buildContinuationCompactionObservation(params: {
 }): ContinuationCompactionObservation {
   const budgetSignalNames = deriveBudgetSignalNames(params.promptBudgetOutcomes);
   const cacheSignalNames = deriveCacheSignalNames(params.cacheTelemetryObservations);
-  const cacheUnsafe = params.cacheTelemetryObservations.some((observation) => observation.status !== "hit");
+  const degradedCacheSignals = params.cacheTelemetryObservations.some((observation) => observation.status === "degraded");
+  const unsafeCacheSignals = params.cacheTelemetryObservations.some((observation) => observation.status !== "hit" && observation.status !== "degraded");
   const hasCompleteBudgetSignals = params.promptBudgetOutcomes.length > 0
     && params.promptBudgetOutcomes.every((outcome) => outcome.status === "included");
   const hasCompleteCacheSignals = params.cacheTelemetryObservations.length > 0
@@ -209,6 +220,18 @@ function buildContinuationCompactionObservation(params: {
     };
   }
 
+  if (!hasUsableCheckpointSummary(params.checkpoint)) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "malformed-prior-state",
+      fallbackState: "fuller-context",
+      missingSignalNames: ["checkpoint.summary"],
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
+
   if (!hasCompleteBudgetSignals) {
     return {
       ...base,
@@ -221,7 +244,21 @@ function buildContinuationCompactionObservation(params: {
     };
   }
 
-  if (cacheUnsafe || !hasCompleteCacheSignals) {
+  if (degradedCacheSignals) {
+    return {
+      ...base,
+      status: "degraded",
+      reason: "degraded-cache-signal",
+      fallbackState: "partial-context",
+      reusedCheckpointCount: 1,
+      missingSignalNames: cacheSignalNames.length === 0 ? ["cache.safe-reuse"] : undefined,
+      safetySignalNames: budgetSignalNames,
+      budgetSignalNames,
+      cacheSignalNames: cacheSignalNames.length > 0 ? cacheSignalNames : ["cache.degraded"],
+    };
+  }
+
+  if (unsafeCacheSignals || !hasCompleteCacheSignals) {
     return {
       ...base,
       status: "fallback",

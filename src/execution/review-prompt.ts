@@ -1714,6 +1714,15 @@ function buildRetryPromptCompactionSection(input: RetryPromptCompactionInput): s
     if (observation.missingSignalNames && observation.missingSignalNames.length > 0) {
       lines.push(`Missing safety signals: ${observation.missingSignalNames.join(", ")}`);
     }
+    if (observation.budgetSignalNames && observation.budgetSignalNames.length > 0) {
+      lines.push(`Prompt budget signals: ${observation.budgetSignalNames.join(", ")}`);
+    }
+    if (observation.cacheSignalNames && observation.cacheSignalNames.length > 0) {
+      lines.push(`Cache safety signals: ${observation.cacheSignalNames.join(", ")}`);
+    }
+    if (observation.safetySignalNames && observation.safetySignalNames.length > 0) {
+      lines.push(`Available safety signals: ${observation.safetySignalNames.join(", ")}`);
+    }
     return lines.join("\n");
   }
 
