@@ -2660,7 +2660,7 @@ export function createReviewHandler(deps: {
       params.statusTarget.status = cacheDegraded ? "degraded" : loaderExecuted ? "miss" : "hit";
       params.statusTarget.reason = cacheDegraded ? "cache-bookkeeping-error" : null;
       params.statusTarget.fingerprintVersion = REVIEW_PROMPT_FINGERPRINT_VERSION;
-      params.statusTarget.safetySignalNames = ["prompt-fingerprint-v1"];
+      params.statusTarget.safetySignalNames = ["prompt-fingerprint-v1", "prompt-cache-query-head-sha"];
       if (cacheDegraded) {
         params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
       }

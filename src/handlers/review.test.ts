@@ -13704,6 +13704,107 @@ describe("review prompt derived cache", () => {
     });
   });
 
+  test("buildReviewPromptFingerprint invalidates bounded prompt safety inputs without exposing raw payloads", () => {
+    const baseContext = {
+      owner: "Acme",
+      repo: "Repo",
+      prNumber: 101,
+      prTitle: "Prompt fingerprint",
+      prBody: "Review this safely",
+      prAuthor: "octocat",
+      baseBranch: "main",
+      headBranch: "feature",
+      changedFiles: ["README.md", "src/a.ts"],
+      contextWindow: "budget-relevant context",
+      retrievalContext: {
+        maxChars: 240,
+        findings: [
+          {
+            findingText: "Prefer bounded cache telemetry.",
+            severity: "medium",
+            category: "observability",
+            path: "src/a.ts",
+            line: 12,
+            snippet: "bounded telemetry",
+            outcome: "accepted",
+            distance: 0.1234567,
+            sourceRepo: "ACME/Repo",
+          },
+        ],
+      },
+    };
+
+    const base = buildReviewPromptFingerprint(baseContext);
+    expect(base.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(base.missingSignals).toEqual([]);
+
+    const sameSemanticState = buildReviewPromptFingerprint({
+      ...baseContext,
+      owner: "acme",
+      repo: "repo",
+      changedFiles: ["src/a.ts", "README.md"],
+    });
+    expect(sameSemanticState.fingerprint).toBe(base.fingerprint);
+
+    const changedFiles = buildReviewPromptFingerprint({
+      ...baseContext,
+      changedFiles: ["README.md", "src/b.ts"],
+    });
+    const changedRetrievalFinding = buildReviewPromptFingerprint({
+      ...baseContext,
+      retrievalContext: {
+        ...baseContext.retrievalContext,
+        findings: [
+          {
+            ...baseContext.retrievalContext.findings[0],
+            findingText: "A different retrieval finding must not reuse the old prompt.",
+          },
+        ],
+      },
+    });
+    const changedBudgetContext = buildReviewPromptFingerprint({
+      ...baseContext,
+      contextWindow: "different budget-relevant context",
+    });
+
+    expect(changedFiles.fingerprint).not.toBe(base.fingerprint);
+    expect(changedRetrievalFinding.fingerprint).not.toBe(base.fingerprint);
+    expect(changedBudgetContext.fingerprint).not.toBe(base.fingerprint);
+    expect(JSON.stringify({ base, changedFiles, changedRetrievalFinding, changedBudgetContext })).not.toContain("Prefer bounded cache telemetry");
+  });
+
+  test("buildReviewPromptFingerprint bypasses malformed retrieval fingerprint state", () => {
+    const result = buildReviewPromptFingerprint({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      prTitle: "Prompt fingerprint",
+      prBody: "",
+      prAuthor: "octocat",
+      baseBranch: "main",
+      headBranch: "feature",
+      changedFiles: ["README.md"],
+      retrievalContext: {
+        maxChars: 240,
+        findings: [
+          {
+            findingText: "missing distance",
+            severity: "medium",
+            category: "observability",
+            path: "README.md",
+            outcome: "accepted",
+            sourceRepo: "acme/repo",
+          } as never,
+        ],
+      },
+    });
+
+    expect(result).toEqual({
+      fingerprint: null,
+      missingSignals: ["retrieval-fingerprint-data"],
+    });
+  });
+
   test("reuses identical review prompt artifacts across identical review state", async () => {
     const reuseTelemetry: Array<Record<string, unknown>> = [];
     const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
@@ -13869,7 +13970,7 @@ describe("review prompt derived cache", () => {
         repo: "acme/repo",
         prNumber: 101,
         fingerprintVersion: "review-prompt-v1",
-        safetySignalNames: ["prompt-fingerprint-v1"],
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
       },
       {
         cacheSurface: "review-derived-prompt",
@@ -13879,7 +13980,7 @@ describe("review prompt derived cache", () => {
         repo: "acme/repo",
         prNumber: 101,
         fingerprintVersion: "review-prompt-v1",
-        safetySignalNames: ["prompt-fingerprint-v1"],
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
       },
     ]);
     expect(JSON.stringify(reviewCacheTelemetry)).not.toContain("prompt:");
@@ -13891,6 +13992,7 @@ describe("review prompt derived cache", () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
     let promptBuilderCalls = 0;
 
     const eventRouter: EventRouter = {
@@ -13958,7 +14060,12 @@ describe("review prompt derived cache", () => {
           stopReason: "end_turn",
         }),
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordReviewCacheEvent: async (entry) => {
+          reviewCacheTelemetry.push(entry as Record<string, unknown>);
+        },
+      },
       reviewPromptBuilder: (context) => {
         promptBuilderCalls += 1;
         return {
@@ -14030,6 +14137,28 @@ describe("review prompt derived cache", () => {
     }));
 
     expect(promptBuilderCalls).toBe(2);
+    expect(reviewCacheTelemetry.map((entry) => ({
+      cacheSurface: entry.cacheSurface,
+      status: entry.status,
+      reason: entry.reason,
+      fingerprintVersion: entry.fingerprintVersion,
+      safetySignalNames: entry.safetySignalNames,
+    }))).toEqual([
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "miss",
+        reason: "cache-miss",
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
+      },
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "miss",
+        reason: "cache-miss",
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
+      },
+    ]);
 
     await workspaceFixture.cleanup();
   });
