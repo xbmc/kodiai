@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-05-18T03:45:00.000Z",
+  "continuationCompactionObservations": [
+    {
+      "caseId": "safe-retry-delta",
+      "deliveryId": "delivery-continuation-001",
+      "repo": "octo/example",
+      "attemptId": "attempt-002",
+      "priorAttemptId": "attempt-001",
+      "attemptOrdinal": 2,
+      "status": "compacted",
+      "reason": "safe-delta-reuse",
+      "fallbackState": "none",
+      "includedDeltaCount": 3,
+      "reusedCheckpointCount": 2,
+      "omittedScopeCount": 8,
+      "remainingScopeCount": 3,
+      "safetySignalNames": ["budget-window", "cache-hit-safe", "checkpoint-integrity"],
+      "budgetSignalNames": ["remaining-token-budget"],
+      "cacheSignalNames": ["review-derived-prompt"]
+    },
+    {
+      "caseId": "missing-budget-signal",
+      "deliveryId": "delivery-continuation-002",
+      "repo": "octo/example",
+      "attemptId": "attempt-001",
+      "attemptOrdinal": 1,
+      "status": "fallback",
+      "reason": "missing-budget-signal",
+      "fallbackState": "fuller-context",
+      "includedDeltaCount": 9,
+      "reusedCheckpointCount": 0,
+      "omittedScopeCount": 0,
+      "remainingScopeCount": 9,
+      "missingSignalNames": ["prompt-budget-outcomes"]
+    },
+    {
+      "caseId": "degraded-cache-signal",
+      "deliveryId": "delivery-continuation-003",
+      "repo": "octo/example",
+      "attemptId": "attempt-003",
+      "priorAttemptId": "attempt-002",
+      "attemptOrdinal": 3,
+      "status": "degraded",
+      "reason": "degraded-cache-signal",
+      "fallbackState": "partial-context",
+      "includedDeltaCount": 2,
+      "reusedCheckpointCount": 1,
+      "omittedScopeCount": 4,
+      "remainingScopeCount": 2,
+      "safetySignalNames": ["budget-window"],
+      "budgetSignalNames": ["remaining-token-budget"],
+      "cacheSignalNames": ["retrieval-query-embedding", "cache-ttl"]
+    },
+    {
+      "caseId": "no-remaining-scope",
+      "deliveryId": "delivery-continuation-004",
+      "repo": "octo/example",
+      "attemptId": "attempt-001",
+      "attemptOrdinal": 1,
+      "status": "bypass",
+      "reason": "no-remaining-scope",
+      "fallbackState": "none",
+      "includedDeltaCount": 0,
+      "reusedCheckpointCount": 0,
+      "omittedScopeCount": 0,
+      "remainingScopeCount": 0
+    }
+  ],
+  "continuationCompactionSummary": {
+    "observationCount": 4,
+    "deliveryCount": 4,
+    "attemptCount": 4,
+    "statusCounts": {
+      "compacted": 1,
+      "fallback": 1,
+      "degraded": 1,
+      "bypass": 1
+    },
+    "reasonCounts": {
+      "safe-delta-reuse": 1,
+      "missing-checkpoint": 0,
+      "missing-budget-signal": 1,
+      "degraded-cache-signal": 1,
+      "unsafe-cache-state": 0,
+      "malformed-prior-state": 0,
+      "no-remaining-scope": 1
+    },
+    "fallbackStateCounts": {
+      "none": 2,
+      "fuller-context": 1,
+      "partial-context": 1
+    },
+    "includedDeltaCount": 14,
+    "reusedCheckpointCount": 3,
+    "omittedScopeCount": 12,
+    "remainingScopeCount": 14,
+    "safetySignalNames": ["budget-window", "cache-hit-safe", "checkpoint-integrity"],
+    "budgetSignalNames": ["remaining-token-budget"],
+    "cacheSignalNames": ["cache-ttl", "retrieval-query-embedding", "review-derived-prompt"],
+    "missingSignalNames": ["prompt-budget-outcomes"]
+  }
+}
