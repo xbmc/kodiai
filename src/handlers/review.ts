@@ -17,7 +17,7 @@ import type {
 } from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { TelemetryStore } from "../telemetry/types.ts";
+import type { ReviewCacheEventRecord, TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
   PriorFinding,
@@ -318,6 +318,111 @@ export type ReviewPromptFingerprintResult = {
   fingerprint: string | null;
   missingSignals: string[];
 };
+
+type ReviewPromptCacheState = {
+  status: ReviewCacheEventRecord["status"];
+  reason: string | null;
+  fingerprintVersion?: string;
+  safetySignalNames?: string[];
+  missingSignalNames?: string[];
+  invalidationSignalNames?: string[];
+  bookkeepingErrorCount?: number;
+};
+
+const REVIEW_PROMPT_FINGERPRINT_VERSION = "review-prompt-v1";
+const RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION = "retrieval-query-embedding-v1";
+const BOUNDED_REVIEW_CACHE_SIGNAL_NAME = /^[a-z0-9][a-z0-9.-]{0,79}$/;
+
+function normalizeReviewCacheSignalNames(values: readonly string[] | undefined): string[] | undefined {
+  if (!values || values.length === 0) return undefined;
+  const normalized = Array.from(new Set(
+    values
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => BOUNDED_REVIEW_CACHE_SIGNAL_NAME.test(value)),
+  )).sort((a, b) => a.localeCompare(b));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function mapReviewPromptCacheReason(state: ReviewPromptCacheState): ReviewCacheEventRecord["reason"] {
+  if (state.status === "hit") return "safe-reuse";
+  if (state.status === "miss") return "cache-miss";
+  if (state.status === "bypass") {
+    return state.reason === "disabled-cache" ? "disabled-cache" : "incomplete-fingerprint";
+  }
+  if (state.status === "degraded") return "bookkeeping-failure";
+  return undefined;
+}
+
+function buildPromptReviewCacheEvent(params: {
+  deliveryId: string;
+  repo: string;
+  prNumber: number;
+  state: ReviewPromptCacheState;
+}): ReviewCacheEventRecord {
+  const reason = mapReviewPromptCacheReason(params.state);
+  return {
+    deliveryId: params.deliveryId,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    cacheSurface: "review-derived-prompt",
+    status: params.state.status,
+    ...(reason ? { reason } : {}),
+    ...(params.state.fingerprintVersion ? { fingerprintVersion: params.state.fingerprintVersion } : {}),
+    ...(normalizeReviewCacheSignalNames(params.state.safetySignalNames) ? { safetySignalNames: normalizeReviewCacheSignalNames(params.state.safetySignalNames) } : {}),
+    ...(normalizeReviewCacheSignalNames(params.state.missingSignalNames) ? { missingSignalNames: normalizeReviewCacheSignalNames(params.state.missingSignalNames) } : {}),
+    ...(normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) ? { invalidationSignalNames: normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) } : {}),
+    ...(params.state.bookkeepingErrorCount ? { bookkeepingErrorCount: params.state.bookkeepingErrorCount } : {}),
+  };
+}
+
+function buildRetrievalReviewCacheEvent(params: {
+  deliveryId: string;
+  repo: string;
+  prNumber: number;
+  result: RetrieveResult | null | undefined;
+}): ReviewCacheEventRecord {
+  const provenance = params.result?.provenance;
+  if (
+    !params.result
+    || !provenance
+    || !Number.isFinite(provenance.embeddingRequests)
+    || !Number.isFinite(provenance.embeddingCacheHits)
+  ) {
+    return {
+      deliveryId: params.deliveryId,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      cacheSurface: "retrieval-query-embedding",
+      status: "degraded",
+      reason: "unavailable-retrieval",
+      missingSignalNames: ["retrieval-provenance"],
+    };
+  }
+
+  if (provenance.embeddingCacheHits > 0) {
+    return {
+      deliveryId: params.deliveryId,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      cacheSurface: "retrieval-query-embedding",
+      status: "hit",
+      reason: "safe-reuse",
+      fingerprintVersion: RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION,
+      safetySignalNames: ["embedding-cache-provenance"],
+    };
+  }
+
+  return {
+    deliveryId: params.deliveryId,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    cacheSurface: "retrieval-query-embedding",
+    status: "miss",
+    reason: "cache-miss",
+    fingerprintVersion: RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION,
+    safetySignalNames: ["embedding-cache-provenance"],
+  };
+}
 
 function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -2525,12 +2630,13 @@ export function createReviewHandler(deps: {
   async function buildReviewPromptResultWithCache(params: {
     cacheQuery: string;
     context: ReviewPromptBuildContext;
-    statusTarget: { status: "hit" | "miss" | "degraded" | "bypass"; reason: string | null };
+    statusTarget: ReviewPromptCacheState;
   }): Promise<PromptBuildResult> {
     const fingerprintResult = buildReviewPromptFingerprint(params.context);
     if (!fingerprintResult.fingerprint) {
       params.statusTarget.status = "bypass";
-      params.statusTarget.reason = fingerprintResult.missingSignals.join(",") || "incomplete-fingerprint";
+      params.statusTarget.reason = "incomplete-fingerprint";
+      params.statusTarget.missingSignalNames = fingerprintResult.missingSignals;
       return reviewPromptBuilder(params.context);
     }
 
@@ -2553,10 +2659,16 @@ export function createReviewHandler(deps: {
       const cacheDegraded = reviewPromptDerivedCacheErrorCount > cacheErrorsBeforeLookup;
       params.statusTarget.status = cacheDegraded ? "degraded" : loaderExecuted ? "miss" : "hit";
       params.statusTarget.reason = cacheDegraded ? "cache-bookkeeping-error" : null;
+      params.statusTarget.fingerprintVersion = REVIEW_PROMPT_FINGERPRINT_VERSION;
+      params.statusTarget.safetySignalNames = ["prompt-fingerprint-v1"];
+      if (cacheDegraded) {
+        params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
+      }
       return result;
     } catch (error) {
       params.statusTarget.status = "degraded";
-      params.statusTarget.reason = "prompt-build-failed";
+      params.statusTarget.reason = "cache-bookkeeping-error";
+      params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
       logger.warn(
         {
           err: error,
@@ -2567,6 +2679,44 @@ export function createReviewHandler(deps: {
         "Review prompt cache lookup failed; rebuilding directly",
       );
       return reviewPromptBuilder(params.context);
+    }
+  }
+
+  async function recordReviewCacheEventFailOpen(entry: ReviewCacheEventRecord): Promise<void> {
+    try {
+      if (!telemetryStore.recordReviewCacheEvent) {
+        logger.warn(
+          {
+            deliveryId: entry.deliveryId,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+            cacheSurface: entry.cacheSurface,
+            status: entry.status,
+            reason: entry.reason,
+          },
+          "Review cache telemetry store method unavailable (non-blocking)",
+        );
+        return;
+      }
+      await telemetryStore.recordReviewCacheEvent(entry);
+    } catch (err) {
+      logger.warn(
+        {
+          err,
+          deliveryId: entry.deliveryId,
+          repo: entry.repo,
+          prNumber: entry.prNumber,
+          cacheSurface: entry.cacheSurface,
+          status: entry.status,
+          reason: entry.reason,
+          fingerprintVersion: entry.fingerprintVersion,
+          safetySignalNames: entry.safetySignalNames,
+          missingSignalNames: entry.missingSignalNames,
+          invalidationSignalNames: entry.invalidationSignalNames,
+          bookkeepingErrorCount: entry.bookkeepingErrorCount ?? 0,
+        },
+        "Review cache telemetry write failed (non-blocking)",
+      );
     }
   }
 
@@ -4157,8 +4307,15 @@ export function createReviewHandler(deps: {
             });
 
             if (config.telemetry.enabled) {
+              const retrievalCacheEvent = buildRetrievalReviewCacheEvent({
+                deliveryId: event.id,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                result,
+              });
+
               try {
-                const totalEmbeddingLookups = (result?.provenance.embeddingRequests ?? 0) + (result?.provenance.embeddingCacheHits ?? 0);
+                const totalEmbeddingLookups = (result?.provenance?.embeddingRequests ?? 0) + (result?.provenance?.embeddingCacheHits ?? 0);
                 await telemetryStore.recordRateLimitEvent({
                   deliveryId: event.id,
                   executionIdentity: `${event.id}:reuse.retrieval-query-embedding.main`,
@@ -4166,13 +4323,13 @@ export function createReviewHandler(deps: {
                   prNumber: pr.number,
                   eventType: "reuse.retrieval-query-embedding.main",
                   cacheHitRate: totalEmbeddingLookups > 0
-                    ? (result?.provenance.embeddingCacheHits ?? 0) / totalEmbeddingLookups
+                    ? (result?.provenance?.embeddingCacheHits ?? 0) / totalEmbeddingLookups
                     : 0,
-                  skippedQueries: result?.provenance.embeddingCacheHits ?? 0,
-                  retryAttempts: result?.provenance.embeddingRequests ?? 0,
-                  degradationPath: result == null
-                    ? "degraded"
-                    : (result.provenance.embeddingCacheHits > 0 ? "hit" : "miss"),
+                  skippedQueries: result?.provenance?.embeddingCacheHits ?? 0,
+                  retryAttempts: result?.provenance?.embeddingRequests ?? 0,
+                  degradationPath: retrievalCacheEvent.reason
+                    ? `${retrievalCacheEvent.status}:${retrievalCacheEvent.reason}`
+                    : retrievalCacheEvent.status,
                 });
               } catch (err) {
                 logger.warn(
@@ -4180,6 +4337,8 @@ export function createReviewHandler(deps: {
                   "Review retrieval reuse telemetry write failed (non-blocking)",
                 );
               }
+
+              await recordReviewCacheEventFailOpen(retrievalCacheEvent);
             }
 
             // Capture unified cross-corpus results (KI-13/KI-17)
@@ -4772,10 +4931,7 @@ export function createReviewHandler(deps: {
           reviewBoundedness,
           smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
         } satisfies ReviewPromptBuildContext;
-        const reviewPromptCacheState: {
-          status: "hit" | "miss" | "degraded" | "bypass";
-          reason: string | null;
-        } = {
+        const reviewPromptCacheState: ReviewPromptCacheState = {
           status: reviewPromptDerivedCacheStatus,
           reason: reviewPromptDerivedCacheReason,
         };
@@ -4805,6 +4961,14 @@ export function createReviewHandler(deps: {
           },
           "Resolved review prompt derived-cache state",
         );
+        if (config.telemetry.enabled) {
+          await recordReviewCacheEventFailOpen(buildPromptReviewCacheEvent({
+            deliveryId: event.id,
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+            state: reviewPromptCacheState,
+          }));
+        }
         reviewPhaseTimings.set(
           "retrieval/context assembly",
           createReviewPhaseTiming({
@@ -6484,10 +6648,7 @@ export function createReviewHandler(deps: {
                       structuralImpact: structuralImpactForReview,
                       smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
                     } satisfies ReviewPromptBuildContext;
-                    const retryPromptCacheState: {
-                      status: "hit" | "miss" | "degraded" | "bypass";
-                      reason: string | null;
-                    } = {
+                    const retryPromptCacheState: ReviewPromptCacheState = {
                       status: retryReviewPromptDerivedCacheStatus,
                       reason: retryReviewPromptDerivedCacheReason,
                     };
@@ -6518,6 +6679,14 @@ export function createReviewHandler(deps: {
                       },
                       "Resolved retry review prompt derived-cache state",
                     );
+                    if (config.telemetry.enabled) {
+                      await recordReviewCacheEventFailOpen(buildPromptReviewCacheEvent({
+                        deliveryId: retryDeliveryId,
+                        repo: `${apiOwner}/${apiRepo}`,
+                        prNumber: pr.number,
+                        state: retryPromptCacheState,
+                      }));
+                    }
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({

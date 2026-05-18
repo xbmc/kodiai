@@ -164,6 +164,20 @@ export type PromptSectionMetric = {
  * Each group represents one prompt surface (for example a system prompt or the
  * main user prompt) and contains only text-free accounting metadata.
  */
+export type ReviewCacheEventRecord = {
+  deliveryId: string;
+  repo: string;
+  prNumber?: number;
+  cacheSurface: "review-derived-prompt" | "retrieval-query-embedding";
+  status: "hit" | "miss" | "degraded" | "bypass";
+  reason?: "safe-reuse" | "cache-miss" | "bookkeeping-failure" | "incomplete-fingerprint" | "expired-stale-entry" | "disabled-cache" | "unavailable-retrieval";
+  fingerprintVersion?: string;
+  safetySignalNames?: readonly string[];
+  missingSignalNames?: readonly string[];
+  invalidationSignalNames?: readonly string[];
+  bookkeepingErrorCount?: number;
+};
+
 export type PromptSectionRecord = {
   deliveryId?: string;
   repo: string;
@@ -191,6 +205,8 @@ export type TelemetryStore = {
   recordResilienceEvent?(entry: ResilienceEventRecord): Promise<void>;
   /** Insert an LLM cost tracking record into the llm_cost_events table. */
   recordLlmCost(entry: LlmCostRecord): Promise<void>;
+  /** Insert a bounded review cache decision row without raw prompts, retrieval chunks, or fingerprints. */
+  recordReviewCacheEvent?(entry: ReviewCacheEventRecord): Promise<void>;
   /** Insert prompt-section accounting rows without storing raw prompt text. */
   recordPromptSections(entry: PromptSectionRecord): Promise<void>;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */

@@ -51,6 +51,7 @@ const noopTelemetryStore = {
   record: async () => {},
   recordRetrievalQuality: async () => {},
   recordRateLimitEvent: async () => {},
+  recordReviewCacheEvent: async () => {},
   recordResilienceEvent: async () => {},
   recordLlmCost: async () => {},
   recordPromptSections: async () => {},
@@ -13705,6 +13706,7 @@ describe("review prompt derived cache", () => {
 
   test("reuses identical review prompt artifacts across identical review state", async () => {
     const reuseTelemetry: Array<Record<string, unknown>> = [];
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
@@ -13784,6 +13786,9 @@ describe("review prompt derived cache", () => {
         recordRateLimitEvent: async (entry) => {
           reuseTelemetry.push(entry as Record<string, unknown>);
         },
+        recordReviewCacheEvent: async (entry) => {
+          reviewCacheTelemetry.push(entry as Record<string, unknown>);
+        },
       },
       reviewPromptBuilder: (context) => {
         promptBuilderCalls += 1;
@@ -13846,6 +13851,38 @@ describe("review prompt derived cache", () => {
       .filter((entry) => entry.eventType === "reuse.review-derived-prompt")
       .map((entry) => entry.degradationPath);
     expect(promptReuseStatuses).toEqual(["miss", "hit"]);
+    expect(reviewCacheTelemetry.map((entry) => ({
+      cacheSurface: entry.cacheSurface,
+      status: entry.status,
+      reason: entry.reason,
+      deliveryId: entry.deliveryId,
+      repo: entry.repo,
+      prNumber: entry.prNumber,
+      fingerprintVersion: entry.fingerprintVersion,
+      safetySignalNames: entry.safetySignalNames,
+    }))).toEqual([
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "miss",
+        reason: "cache-miss",
+        deliveryId: event.id,
+        repo: "acme/repo",
+        prNumber: 101,
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-fingerprint-v1"],
+      },
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "hit",
+        reason: "safe-reuse",
+        deliveryId: event.id,
+        repo: "acme/repo",
+        prNumber: 101,
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-fingerprint-v1"],
+      },
+    ]);
+    expect(JSON.stringify(reviewCacheTelemetry)).not.toContain("prompt:");
 
     await workspaceFixture.cleanup();
   });
@@ -14002,6 +14039,7 @@ describe("review prompt derived cache", () => {
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
     const promptTexts: string[] = [];
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
     const { logger, entries } = createCaptureLogger();
     let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
     let promptBuilderCalls = 0;
@@ -14116,7 +14154,12 @@ describe("review prompt derived cache", () => {
           };
         },
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordReviewCacheEvent: async (entry) => {
+          reviewCacheTelemetry.push(entry as Record<string, unknown>);
+        },
+      },
       knowledgeStore: createKnowledgeStoreStub({
         getCheckpoint: async () => null,
         updateCheckpointCommentId: () => undefined,
@@ -14182,6 +14225,13 @@ describe("review prompt derived cache", () => {
     expect(
       entries.filter((entry) => entry.message === "Resolved review prompt derived-cache state").every((entry) => entry.data?.gateResult === "degraded"),
     ).toBeTrue();
+    expect(reviewCacheTelemetry.some((entry) =>
+      entry.cacheSurface === "review-derived-prompt"
+      && entry.status === "degraded"
+      && entry.reason === "bookkeeping-failure"
+      && typeof entry.bookkeepingErrorCount === "number"
+      && entry.bookkeepingErrorCount > 0
+    )).toBeTrue();
 
     await workspaceFixture.cleanup();
   });
@@ -14200,6 +14250,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
     telemetryStore?: {
       recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
+      recordReviewCacheEvent?: (entry: Record<string, unknown>) => void;
     };
   }): Promise<number> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
@@ -14367,6 +14418,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
     telemetryStore?: {
       recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
+      recordReviewCacheEvent?: (entry: Record<string, unknown>) => void;
     };
     knowledgeStoreOverrides?: Record<string, unknown>;
     configYaml?: string;
@@ -14803,6 +14855,73 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(searchTelemetryEvents[0]?.retryAttempts).toBe(1);
     expect(searchTelemetryEvents[0]?.skippedQueries).toBe(0);
     expect(searchTelemetryEvents[0]?.degradationPath).toBe("none");
+  });
+
+  test("records bounded retrieval embedding cache telemetry beside legacy rate-limit reuse telemetry", async () => {
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
+    const retriever = {
+      retrieve: async () => ({
+        findings: [],
+        reviewPrecedents: [],
+        wikiKnowledge: [],
+        unifiedResults: [],
+        contextWindow: "",
+        provenance: {
+          embeddingRequests: 1,
+          embeddingCacheHits: 2,
+        },
+      }),
+    };
+
+    const { executeCount } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => ({ data: { total_count: 5 } }),
+      retriever: retriever as never,
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+        recordReviewCacheEvent: (entry) => {
+          reviewCacheTelemetry.push(entry);
+        },
+      },
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "knowledge:",
+        "  retrieval:",
+        "    enabled: true",
+        "    topK: 2",
+        "    maxContextChars: 240",
+        "telemetry:",
+        "  enabled: true",
+        "",
+      ].join("\n"),
+    });
+
+    expect(executeCount).toBe(1);
+    expect(rateLimitEvents.some((event) => event.eventType === "reuse.retrieval-query-embedding.main")).toBeTrue();
+    const retrievalRows = reviewCacheTelemetry.filter((entry) => entry.cacheSurface === "retrieval-query-embedding");
+    expect(retrievalRows).toEqual([
+      {
+        deliveryId: "delivery-123",
+        repo: "acme/repo",
+        prNumber: 101,
+        cacheSurface: "retrieval-query-embedding",
+        status: "hit",
+        reason: "safe-reuse",
+        fingerprintVersion: "retrieval-query-embedding-v1",
+        safetySignalNames: ["embedding-cache-provenance"],
+      },
+    ]);
+    expect(JSON.stringify(reviewCacheTelemetry)).not.toContain("contextWindow");
   });
 
   test("degrades author-tier enrichment after second rate limit and adds partial disclaimer to prompt", async () => {
