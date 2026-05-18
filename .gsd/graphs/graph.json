@@ -5886,6 +5886,38 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M073:S02",
+      "label": "S02: Prompt section budgets and deterministic overflow",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M073:S02:T01",
+      "label": "T01: Define prompt budget contract and evaluator",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S02:T02",
+      "label": "T02: Wire budget outcomes into review prompt assembly",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S02:T03",
+      "label": "T03: Add S02 verifier, fixture, docs, and package script",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M074",
+      "label": "M074: M074",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/M074-ROADMAP.md"
+    },
+    {
       "id": "decision:M053:1",
       "label": "Deliver formatter fixes as GitHub fenced `suggestion` blocks in inline review comments on the existing PR, not as a separate formatting PR or bot-pushed branch.",
       "type": "decision",
@@ -13338,6 +13370,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M073",
+      "to": "slice:M073:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S02",
+      "to": "task:M073:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S02",
+      "to": "task:M073:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S02",
+      "to": "task:M073:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -15006,5 +15062,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-17T21:45:07.943Z"
+  "builtAt": "2026-05-18T02:50:37.414Z"
 }

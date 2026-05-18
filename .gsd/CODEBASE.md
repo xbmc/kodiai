@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-18T02:15:05Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T02:15:05Z","fingerprint":"f81cbeb7235d64c5f284fce603e266b4e461516d","fileCount":500,"truncated":true} -->
+Generated: 2026-05-18T03:17:45Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T03:17:45Z","fingerprint":"70633dde906a7a042986856b38688cb55f994873","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -88,12 +88,13 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(255 files: 250 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(257 files: 252 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
 - `scripts/fixtures/m068-direct-fallback-proof.json`
 - `scripts/fixtures/m073-s01-baseline-scorecard.json`
+- `scripts/fixtures/m073-s02-prompt-budget.json`
 
 ### src/
 - `src/config.test.ts`
@@ -115,7 +116,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(82 files: 82 .sql)*
+- *(84 files: 84 .sql)*
 
 ### src/enforcement/
 - `src/enforcement/index.ts`
@@ -128,11 +129,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/enforcement/types.ts`
 
 ### src/execution/
-- *(29 files: 29 .ts)*
+- *(26 files: 26 .ts)*
 
 ### src/execution/mcp/
 - *(22 files: 22 .ts)*
-
-### src/feedback/
-- `src/feedback/aggregator.test.ts`
-- `src/feedback/aggregator.ts`
