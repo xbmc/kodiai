@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-17T21:31:33Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-17T21:31:33Z","fingerprint":"e29b9cec04ef28dd3e4859d4f98e5bc50b8cfa2b","fileCount":500,"truncated":true} -->
+Generated: 2026-05-18T02:15:05Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T02:15:05Z","fingerprint":"f81cbeb7235d64c5f284fce603e266b4e461516d","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -52,6 +52,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/nightly-sync-failures.md`
 - `docs/runbooks/recent-review-audit.md`
 - `docs/runbooks/review-requested-debug.md`
+- `docs/runbooks/review-token-cost-baseline.md`
 - `docs/runbooks/scale.md`
 - `docs/runbooks/slack-integration.md`
 - `docs/runbooks/slack-webhook-relay.md`
@@ -87,11 +88,12 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(253 files: 248 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(255 files: 250 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
 - `scripts/fixtures/m068-direct-fallback-proof.json`
+- `scripts/fixtures/m073-s01-baseline-scorecard.json`
 
 ### src/
 - `src/config.test.ts`
@@ -134,7 +136,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 ### src/feedback/
 - `src/feedback/aggregator.test.ts`
 - `src/feedback/aggregator.ts`
-- `src/feedback/confidence-adjuster.test.ts`
-- `src/feedback/confidence-adjuster.ts`
-- `src/feedback/index.ts`
-- `src/feedback/safety-guard.test.ts`

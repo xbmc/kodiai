@@ -1,16 +1,16 @@
 {
   "nodes": [
     {
-      "id": "milestone:M072",
-      "label": "M072: Candidate Publication Bridge",
+      "id": "milestone:M073",
+      "label": "M073: Token-First Review Efficiency",
       "type": "milestone",
-      "description": "Active milestone: M072",
+      "description": "Active milestone: M073",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
     {
-      "id": "concept:phase:validating-milestone",
-      "label": "Phase: validating-milestone",
+      "id": "concept:phase:planning",
+      "label": "Phase: planning",
       "type": "concept",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
@@ -5748,6 +5748,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M072",
+      "label": "M072: Candidate Publication Bridge",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-ROADMAP.md"
+    },
+    {
       "id": "slice:M072:S01",
       "label": "S01: Source owned bridge contract",
       "type": "slice",
@@ -5850,6 +5857,31 @@
     {
       "id": "task:M072:S04:T03",
       "label": "T03: Close with integration regression proof",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S01",
+      "label": "S01: Token cost baseline and scorecard",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M073:S01:T01",
+      "label": "T01: Define offline review cost scorecard contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S01:T02",
+      "label": "T02: Add replay fixture verifier for baseline scorecards",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S01:T03",
+      "label": "T03: Document baseline interpretation and downstream handoff",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -7820,6 +7852,262 @@
       "description": "Source: S06-SUMMARY.md/Deviations",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:1",
+      "label": "Chose to plan M072 risk-first around a source-owned bridge contract, then wire inline MCP ordering, normal review-handler ordering, and deterministic verifier/handoff continuity.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:2",
+      "label": "Chose deterministic source, unit, integration, and verifier proof instead of requiring live GitHub smoke proof for M072 closure, because the milestone's safety boundary is capture-before-publication ordering and live public output could create noisy or unsafe candidate publication.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Verification Class Compliance",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:3",
+      "label": "Chose the S01 candidate publication bridge as the canonical source for stable keys, bounded counts, redaction flags, reducer handoff shape, and owner validation across inline MCP, review-handler, Review Details, and verifier consumers.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:4",
+      "label": "Chose to keep `verify:m072` separate from M071 evidence matrices and limited to fixed checked-in source paths plus package wiring, so planning prose, direct script execution, or unsafe report fields cannot masquerade as milestone closure.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:5",
+      "label": "A non-pass validation artifact can still contain passing acceptance, integration, and verification evidence when the attention items are scoped requirement deferrals and non-blocking artifact completeness gaps; closeout must distinguish scope-appropriate partial R131-R133 progress from R130 completion failure.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:6",
+      "label": "Repository-wide TypeScript remained blocked by unrelated existing errors, so M072 relied on scoped strict TypeScript and targeted bridge/verifier/integration tests for truthful evidence rather than claiming repo-wide type health.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:7",
+      "label": "Review-handler tests needed mocked executor result candidate evidence to exercise the production handler boundary because the integration harness did not naturally expose aggregate publication evidence from MCP `onPublishEvent`.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:8",
+      "label": "S04 lacks a standalone `S04-ASSESSMENT.md` even though `S04-SUMMARY.md`, `S04-UAT.md`, DB slice completion, and verifier evidence are present; future validators should avoid treating assessment-file absence as source-code failure when summary/UAT evidence is complete.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:9",
+      "label": "Candidate-publication diagnostics should be source-verifiable in memory and expose only safe metadata: stable record/correlation keys, status, bounded counts, reason categories, presence flags, malformed codes, and redaction flags.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:10",
+      "label": "Candidate bridge capture and reducer handoff projection should occur after idempotency/commentability checks but before GitHub-visible publication calls, preserving existing gates and fallback semantics.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:11",
+      "label": "Project candidate evidence once at the post-executor review-handler boundary, then thread only the safe projection into Review Details and structured logs for all public handler publication branches.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:12",
+      "label": "Milestone source-evidence closure should use a dedicated verifier that checks implementation markers, package wiring, deferred ownership, report safety, and negative planning-only/unsafe-field cases.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:13",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:14",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:1",
+      "label": "A non-pass validation artifact can still contain passing acceptance, integration, and verification evidence when the attention items are scoped requirement deferrals and non-blocking artifact completeness gaps; closeout must distinguish scope-appropriate partial R131-R133 progress from R130 completion failure.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:2",
+      "label": "Repository-wide TypeScript remained blocked by unrelated existing errors, so M072 relied on scoped strict TypeScript and targeted bridge/verifier/integration tests for truthful evidence rather than claiming repo-wide type health.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:3",
+      "label": "Review-handler tests needed mocked executor result candidate evidence to exercise the production handler boundary because the integration harness did not naturally expose aggregate publication evidence from MCP `onPublishEvent`.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:4",
+      "label": "S04 lacks a standalone `S04-ASSESSMENT.md` even though `S04-SUMMARY.md`, `S04-UAT.md`, DB slice completion, and verifier evidence are present; future validators should avoid treating assessment-file absence as source-code failure when summary/UAT evidence is complete.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:5",
+      "label": "Candidate-publication diagnostics should be source-verifiable in memory and expose only safe metadata: stable record/correlation keys, status, bounded counts, reason categories, presence flags, malformed codes, and redaction flags.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:6",
+      "label": "Candidate bridge capture and reducer handoff projection should occur after idempotency/commentability checks but before GitHub-visible publication calls, preserving existing gates and fallback semantics.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:7",
+      "label": "Project candidate evidence once at the post-executor review-handler boundary, then thread only the safe projection into Review Details and structured logs for all public handler publication branches.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:8",
+      "label": "Milestone source-evidence closure should use a dedicated verifier that checks implementation markers, package wiring, deferred ownership, report safety, and negative planning-only/unsafe-field cases.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:9",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:10",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:1",
+      "label": "Candidate-publication diagnostics should be source-verifiable in memory and expose only safe metadata: stable record/correlation keys, status, bounded counts, reason categories, presence flags, malformed codes, and redaction flags.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:2",
+      "label": "Candidate bridge capture and reducer handoff projection should occur after idempotency/commentability checks but before GitHub-visible publication calls, preserving existing gates and fallback semantics.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:3",
+      "label": "Project candidate evidence once at the post-executor review-handler boundary, then thread only the safe projection into Review Details and structured logs for all public handler publication branches.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:4",
+      "label": "Milestone source-evidence closure should use a dedicated verifier that checks implementation markers, package wiring, deferred ownership, report safety, and negative planning-only/unsafe-field cases.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:5",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "pattern",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:6",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "pattern",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M072:1",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M072:2",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -13026,6 +13314,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M073",
+      "to": "slice:M073:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S01",
+      "to": "task:M073:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S01",
+      "to": "task:M073:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S01",
+      "to": "task:M073:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -14500,7 +14812,199 @@
       "to": "surprise:M071:2",
       "type": "relates_to",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "surprise:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "surprise:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-15T08:22:03.034Z"
+  "builtAt": "2026-05-17T21:45:07.943Z"
 }
