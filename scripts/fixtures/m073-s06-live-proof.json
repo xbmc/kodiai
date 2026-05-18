@@ -13,8 +13,10 @@
         "failedCheckIds": [],
         "observedTotals": {
           "caseCount": 2,
-          "runtimeTotalTokens": 24400,
-          "runtimeDurationMs": 204000
+          "deliveryCount": 3,
+          "runtimeTotalTokens": 21200,
+          "runtimeDurationMs": 198000,
+          "phaseLatencyMs": 213700
         }
       },
       "s02": {
@@ -22,8 +24,8 @@
         "statusCode": "m073_s02_ok",
         "failedCheckIds": [],
         "observedTotals": {
-          "sectionCount": 6,
-          "includedSections": 3,
+          "sectionCount": 5,
+          "includedSections": 2,
           "trimmedSections": 2,
           "bypassedSections": 1,
           "totalIncludedTokens": 925,
@@ -76,11 +78,11 @@
       }
     },
     "baselineComparison": {
-      "baselineRuntimeTotalTokens": 24400,
+      "baselineRuntimeTotalTokens": 21200,
       "liveRuntimeTotalTokens": 16200,
-      "tokenReductionPercent": 33.61,
+      "tokenReductionPercent": 23.58,
       "minimumReductionPercent": 20,
-      "baselineDurationMs": 204000,
+      "baselineDurationMs": 198000,
       "liveDurationMs": 138000,
       "maxAllowedLatencyMs": 210000
     },
@@ -131,7 +133,7 @@
     "rollback": {
       "tested": true,
       "lastKnownSafeMode": "legacy-full-context",
-      "operatorRunbook": "docs/runbooks/review-live-proof-and-rollback.md",
+      "operatorRunbook": "docs/smoke/m073-live-proof.md",
       "controls": [
         {
           "name": "review.promptBudget.enabled",
@@ -158,12 +160,82 @@
         "redaction.safe",
         "visible-projection.compatible"
       ]
+    },
+    "generatedFrom": {
+      "baselineRunbook": "docs/runbooks/review-token-cost-baseline.md",
+      "visibleRunbook": "docs/runbooks/review-budget-visible-behavior.md",
+      "baselineFixture": "scripts/fixtures/m073-s01-baseline-scorecard.json",
+      "visibleFixture": "scripts/fixtures/m073-s05-visible-budget.json"
+    },
+    "phaseLatencyRows": [
+      {
+        "caseId": "normal-full-review",
+        "phase": "context-assembly",
+        "status": "completed",
+        "durationMs": 7200
+      },
+      {
+        "caseId": "normal-full-review",
+        "phase": "remote-runtime",
+        "status": "completed",
+        "durationMs": 38000
+      },
+      {
+        "caseId": "normal-full-review",
+        "phase": "publication",
+        "status": "completed",
+        "durationMs": 2400
+      },
+      {
+        "caseId": "retry-timeout-review",
+        "phase": "context-assembly",
+        "status": "completed",
+        "durationMs": 11600
+      },
+      {
+        "caseId": "retry-timeout-review",
+        "phase": "remote-runtime",
+        "status": "fallback",
+        "durationMs": 100000
+      },
+      {
+        "caseId": "retry-timeout-review",
+        "phase": "publication",
+        "status": "completed",
+        "durationMs": 3200
+      }
+    ],
+    "budgetSummary": {
+      "sectionCount": 5,
+      "includedSections": 2,
+      "trimmedSections": 2,
+      "bypassedSections": 1,
+      "includedTokens": 925,
+      "trimmedTokens": 350
+    },
+    "cacheSummary": {
+      "observationCount": 7,
+      "hitCount": 1,
+      "missCount": 2,
+      "degradedCount": 2,
+      "bypassCount": 2
+    },
+    "continuationSummary": {
+      "observationCount": 7,
+      "compactedCount": 1,
+      "fallbackCount": 4,
+      "degradedCount": 1,
+      "bypassCount": 1,
+      "includedDeltaCount": 29,
+      "reusedCheckpointCount": 3
     }
   },
   "negativeProofCases": [
     {
       "caseId": "token-regression-fails",
-      "expectedFailedCheckIds": ["token-reduction.met"],
+      "expectedFailedCheckIds": [
+        "token-reduction.met"
+      ],
       "liveProof": {
         "proofId": "negative-token-regression",
         "mode": "production-like",
@@ -171,11 +243,31 @@
         "externalWritesPerformed": false,
         "explicitWriteConfirmationRequired": true,
         "upstreamEvidence": {
-          "s01": { "overallPassed": true, "statusCode": "m073_s01_ok", "failedCheckIds": [] },
-          "s02": { "overallPassed": true, "statusCode": "m073_s02_ok", "failedCheckIds": [] },
-          "s03": { "overallPassed": true, "statusCode": "m073_s03_ok", "failedCheckIds": [] },
-          "s04": { "overallPassed": true, "statusCode": "m073_s04_ok", "failedCheckIds": [] },
-          "s05": { "overallPassed": true, "statusCode": "m073_s05_ok", "failedCheckIds": [] }
+          "s01": {
+            "overallPassed": true,
+            "statusCode": "m073_s01_ok",
+            "failedCheckIds": []
+          },
+          "s02": {
+            "overallPassed": true,
+            "statusCode": "m073_s02_ok",
+            "failedCheckIds": []
+          },
+          "s03": {
+            "overallPassed": true,
+            "statusCode": "m073_s03_ok",
+            "failedCheckIds": []
+          },
+          "s04": {
+            "overallPassed": true,
+            "statusCode": "m073_s04_ok",
+            "failedCheckIds": []
+          },
+          "s05": {
+            "overallPassed": true,
+            "statusCode": "m073_s05_ok",
+            "failedCheckIds": []
+          }
         },
         "baselineComparison": {
           "baselineRuntimeTotalTokens": 1000,
@@ -186,28 +278,54 @@
           "liveDurationMs": 90000,
           "maxAllowedLatencyMs": 120000
         },
-        "runtimeRows": [{ "caseId": "negative", "deliveryId": "delivery-negative-001", "inputTokens": 900, "outputTokens": 200, "durationMs": 90000 }],
+        "runtimeRows": [
+          {
+            "caseId": "negative",
+            "deliveryId": "delivery-negative-001",
+            "inputTokens": 900,
+            "outputTokens": 200,
+            "durationMs": 90000
+          }
+        ],
         "visibleDisclosure": {
           "reviewDetailsVisible": true,
           "projectionCompatible": true,
           "rawPayloadPublished": false,
           "projectionCount": 3,
-          "statusCounts": { "complete": 1, "scoped": 1, "fallback": 1 },
-          "reasonCounts": { "within-budget": 1, "prompt-budget-limited": 1, "continuation-fallback": 1 }
+          "statusCounts": {
+            "complete": 1,
+            "scoped": 1,
+            "fallback": 1
+          },
+          "reasonCounts": {
+            "within-budget": 1,
+            "prompt-budget-limited": 1,
+            "continuation-fallback": 1
+          }
         },
         "rollback": {
           "tested": true,
           "lastKnownSafeMode": "legacy-full-context",
           "controls": [
-            { "name": "review.promptBudget.enabled", "disableValue": "false", "verified": true },
-            { "name": "review.cacheReuse.enabled", "disableValue": "false", "verified": true }
+            {
+              "name": "review.promptBudget.enabled",
+              "disableValue": "false",
+              "verified": true
+            },
+            {
+              "name": "review.cacheReuse.enabled",
+              "disableValue": "false",
+              "verified": true
+            }
           ]
         }
       }
     },
     {
       "caseId": "latency-regression-fails",
-      "expectedFailedCheckIds": ["latency.acceptable"],
+      "expectedFailedCheckIds": [
+        "latency.acceptable"
+      ],
       "liveProof": {
         "proofId": "negative-latency-regression",
         "mode": "production-like",
@@ -215,11 +333,31 @@
         "externalWritesPerformed": false,
         "explicitWriteConfirmationRequired": true,
         "upstreamEvidence": {
-          "s01": { "overallPassed": true, "statusCode": "m073_s01_ok", "failedCheckIds": [] },
-          "s02": { "overallPassed": true, "statusCode": "m073_s02_ok", "failedCheckIds": [] },
-          "s03": { "overallPassed": true, "statusCode": "m073_s03_ok", "failedCheckIds": [] },
-          "s04": { "overallPassed": true, "statusCode": "m073_s04_ok", "failedCheckIds": [] },
-          "s05": { "overallPassed": true, "statusCode": "m073_s05_ok", "failedCheckIds": [] }
+          "s01": {
+            "overallPassed": true,
+            "statusCode": "m073_s01_ok",
+            "failedCheckIds": []
+          },
+          "s02": {
+            "overallPassed": true,
+            "statusCode": "m073_s02_ok",
+            "failedCheckIds": []
+          },
+          "s03": {
+            "overallPassed": true,
+            "statusCode": "m073_s03_ok",
+            "failedCheckIds": []
+          },
+          "s04": {
+            "overallPassed": true,
+            "statusCode": "m073_s04_ok",
+            "failedCheckIds": []
+          },
+          "s05": {
+            "overallPassed": true,
+            "statusCode": "m073_s05_ok",
+            "failedCheckIds": []
+          }
         },
         "baselineComparison": {
           "baselineRuntimeTotalTokens": 1000,
@@ -230,28 +368,54 @@
           "liveDurationMs": 130000,
           "maxAllowedLatencyMs": 120000
         },
-        "runtimeRows": [{ "caseId": "negative", "deliveryId": "delivery-negative-002", "inputTokens": 500, "outputTokens": 200, "durationMs": 130000 }],
+        "runtimeRows": [
+          {
+            "caseId": "negative",
+            "deliveryId": "delivery-negative-002",
+            "inputTokens": 500,
+            "outputTokens": 200,
+            "durationMs": 130000
+          }
+        ],
         "visibleDisclosure": {
           "reviewDetailsVisible": true,
           "projectionCompatible": true,
           "rawPayloadPublished": false,
           "projectionCount": 3,
-          "statusCounts": { "complete": 1, "scoped": 1, "fallback": 1 },
-          "reasonCounts": { "within-budget": 1, "prompt-budget-limited": 1, "continuation-fallback": 1 }
+          "statusCounts": {
+            "complete": 1,
+            "scoped": 1,
+            "fallback": 1
+          },
+          "reasonCounts": {
+            "within-budget": 1,
+            "prompt-budget-limited": 1,
+            "continuation-fallback": 1
+          }
         },
         "rollback": {
           "tested": true,
           "lastKnownSafeMode": "legacy-full-context",
           "controls": [
-            { "name": "review.promptBudget.enabled", "disableValue": "false", "verified": true },
-            { "name": "review.cacheReuse.enabled", "disableValue": "false", "verified": true }
+            {
+              "name": "review.promptBudget.enabled",
+              "disableValue": "false",
+              "verified": true
+            },
+            {
+              "name": "review.cacheReuse.enabled",
+              "disableValue": "false",
+              "verified": true
+            }
           ]
         }
       }
     },
     {
       "caseId": "rollback-gap-fails",
-      "expectedFailedCheckIds": ["rollback.ready"],
+      "expectedFailedCheckIds": [
+        "rollback.ready"
+      ],
       "liveProof": {
         "proofId": "negative-rollback-gap",
         "mode": "production-like",
@@ -259,11 +423,31 @@
         "externalWritesPerformed": false,
         "explicitWriteConfirmationRequired": true,
         "upstreamEvidence": {
-          "s01": { "overallPassed": true, "statusCode": "m073_s01_ok", "failedCheckIds": [] },
-          "s02": { "overallPassed": true, "statusCode": "m073_s02_ok", "failedCheckIds": [] },
-          "s03": { "overallPassed": true, "statusCode": "m073_s03_ok", "failedCheckIds": [] },
-          "s04": { "overallPassed": true, "statusCode": "m073_s04_ok", "failedCheckIds": [] },
-          "s05": { "overallPassed": true, "statusCode": "m073_s05_ok", "failedCheckIds": [] }
+          "s01": {
+            "overallPassed": true,
+            "statusCode": "m073_s01_ok",
+            "failedCheckIds": []
+          },
+          "s02": {
+            "overallPassed": true,
+            "statusCode": "m073_s02_ok",
+            "failedCheckIds": []
+          },
+          "s03": {
+            "overallPassed": true,
+            "statusCode": "m073_s03_ok",
+            "failedCheckIds": []
+          },
+          "s04": {
+            "overallPassed": true,
+            "statusCode": "m073_s04_ok",
+            "failedCheckIds": []
+          },
+          "s05": {
+            "overallPassed": true,
+            "statusCode": "m073_s05_ok",
+            "failedCheckIds": []
+          }
         },
         "baselineComparison": {
           "baselineRuntimeTotalTokens": 1000,
@@ -274,25 +458,49 @@
           "liveDurationMs": 90000,
           "maxAllowedLatencyMs": 120000
         },
-        "runtimeRows": [{ "caseId": "negative", "deliveryId": "delivery-negative-003", "inputTokens": 500, "outputTokens": 200, "durationMs": 90000 }],
+        "runtimeRows": [
+          {
+            "caseId": "negative",
+            "deliveryId": "delivery-negative-003",
+            "inputTokens": 500,
+            "outputTokens": 200,
+            "durationMs": 90000
+          }
+        ],
         "visibleDisclosure": {
           "reviewDetailsVisible": true,
           "projectionCompatible": true,
           "rawPayloadPublished": false,
           "projectionCount": 3,
-          "statusCounts": { "complete": 1, "scoped": 1, "fallback": 1 },
-          "reasonCounts": { "within-budget": 1, "prompt-budget-limited": 1, "continuation-fallback": 1 }
+          "statusCounts": {
+            "complete": 1,
+            "scoped": 1,
+            "fallback": 1
+          },
+          "reasonCounts": {
+            "within-budget": 1,
+            "prompt-budget-limited": 1,
+            "continuation-fallback": 1
+          }
         },
         "rollback": {
           "tested": false,
           "lastKnownSafeMode": "legacy-full-context",
-          "controls": [{ "name": "review.promptBudget.enabled", "disableValue": "false", "verified": false }]
+          "controls": [
+            {
+              "name": "review.promptBudget.enabled",
+              "disableValue": "false",
+              "verified": false
+            }
+          ]
         }
       }
     },
     {
       "caseId": "unsafe-payload-fails",
-      "expectedFailedCheckIds": ["redaction.safe"],
+      "expectedFailedCheckIds": [
+        "redaction.safe"
+      ],
       "liveProof": {
         "proofId": "negative-unsafe-payload",
         "mode": "production-like",
@@ -301,11 +509,31 @@
         "explicitWriteConfirmationRequired": true,
         "rawPrompt": "forbidden-example",
         "upstreamEvidence": {
-          "s01": { "overallPassed": true, "statusCode": "m073_s01_ok", "failedCheckIds": [] },
-          "s02": { "overallPassed": true, "statusCode": "m073_s02_ok", "failedCheckIds": [] },
-          "s03": { "overallPassed": true, "statusCode": "m073_s03_ok", "failedCheckIds": [] },
-          "s04": { "overallPassed": true, "statusCode": "m073_s04_ok", "failedCheckIds": [] },
-          "s05": { "overallPassed": true, "statusCode": "m073_s05_ok", "failedCheckIds": [] }
+          "s01": {
+            "overallPassed": true,
+            "statusCode": "m073_s01_ok",
+            "failedCheckIds": []
+          },
+          "s02": {
+            "overallPassed": true,
+            "statusCode": "m073_s02_ok",
+            "failedCheckIds": []
+          },
+          "s03": {
+            "overallPassed": true,
+            "statusCode": "m073_s03_ok",
+            "failedCheckIds": []
+          },
+          "s04": {
+            "overallPassed": true,
+            "statusCode": "m073_s04_ok",
+            "failedCheckIds": []
+          },
+          "s05": {
+            "overallPassed": true,
+            "statusCode": "m073_s05_ok",
+            "failedCheckIds": []
+          }
         },
         "baselineComparison": {
           "baselineRuntimeTotalTokens": 1000,
@@ -316,21 +544,45 @@
           "liveDurationMs": 90000,
           "maxAllowedLatencyMs": 120000
         },
-        "runtimeRows": [{ "caseId": "negative", "deliveryId": "delivery-negative-004", "inputTokens": 500, "outputTokens": 200, "durationMs": 90000 }],
+        "runtimeRows": [
+          {
+            "caseId": "negative",
+            "deliveryId": "delivery-negative-004",
+            "inputTokens": 500,
+            "outputTokens": 200,
+            "durationMs": 90000
+          }
+        ],
         "visibleDisclosure": {
           "reviewDetailsVisible": true,
           "projectionCompatible": true,
           "rawPayloadPublished": false,
           "projectionCount": 3,
-          "statusCounts": { "complete": 1, "scoped": 1, "fallback": 1 },
-          "reasonCounts": { "within-budget": 1, "prompt-budget-limited": 1, "continuation-fallback": 1 }
+          "statusCounts": {
+            "complete": 1,
+            "scoped": 1,
+            "fallback": 1
+          },
+          "reasonCounts": {
+            "within-budget": 1,
+            "prompt-budget-limited": 1,
+            "continuation-fallback": 1
+          }
         },
         "rollback": {
           "tested": true,
           "lastKnownSafeMode": "legacy-full-context",
           "controls": [
-            { "name": "review.promptBudget.enabled", "disableValue": "false", "verified": true },
-            { "name": "review.cacheReuse.enabled", "disableValue": "false", "verified": true }
+            {
+              "name": "review.promptBudget.enabled",
+              "disableValue": "false",
+              "verified": true
+            },
+            {
+              "name": "review.cacheReuse.enabled",
+              "disableValue": "false",
+              "verified": true
+            }
           ]
         }
       }
