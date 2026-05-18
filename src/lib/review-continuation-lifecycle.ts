@@ -1,4 +1,7 @@
 import type { CheckpointRecord } from "../knowledge/types.ts";
+import type { PromptBudgetOutcome } from "../execution/prompt-budget.ts";
+import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
+import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
 import type { FileRiskScore } from "./file-risk-scorer.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { computeRetryScope } from "./retry-scope-reducer.ts";
@@ -15,6 +18,14 @@ export type EstimateContinuationTimeoutParams = {
   files: string[];
 };
 
+export type ContinuationCompactionPlanningSignals = {
+  attemptId: string;
+  priorAttemptId?: string;
+  attemptOrdinal?: number;
+  promptBudgetOutcomes: readonly PromptBudgetOutcome[];
+  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+};
+
 export type PlanReviewContinuationParams = {
   reviewOutputKey: string;
   firstPass: ReviewFirstPassPayload | null;
@@ -23,6 +34,7 @@ export type PlanReviewContinuationParams = {
   timeoutSeconds: number;
   hasPublishedInlineFindings: boolean;
   isChronicTimeout: boolean;
+  continuationCompaction?: ContinuationCompactionPlanningSignals;
   estimateContinuationTimeout: (
     params: EstimateContinuationTimeoutParams,
   ) => ContinuationTimeoutEstimate;
@@ -41,6 +53,7 @@ export type ScheduleContinuationDecision = {
   timeoutEstimate: ContinuationTimeoutEstimate;
   firstPass: ReviewFirstPassPayload;
   checkpoint: CheckpointRecord | null;
+  continuationCompaction?: ContinuationCompactionObservation;
 };
 
 export type SkipContinuationReason =
@@ -138,6 +151,101 @@ function hasNewReviewedFiles(baseCheckpoint: CheckpointRecord, continuationCheck
   return continuationCheckpoint.filesReviewed.some((file) => !reviewedSet.has(file));
 }
 
+function uniqueSorted(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function deriveBudgetSignalNames(outcomes: readonly PromptBudgetOutcome[]): string[] {
+  return uniqueSorted(outcomes.map((outcome) => `prompt-budget.${outcome.status}`));
+}
+
+function deriveCacheSignalNames(observations: readonly ReviewCacheTelemetryObservation[]): string[] {
+  return uniqueSorted(observations.flatMap((observation) => observation.safetySignalNames ?? []));
+}
+
+function buildContinuationCompactionObservation(params: {
+  reviewOutputKey: string;
+  repo: string;
+  attemptId: string;
+  priorAttemptId?: string;
+  attemptOrdinal?: number;
+  checkpoint: CheckpointRecord | null;
+  continuationFiles: readonly string[];
+  omittedScopeCount: number;
+  promptBudgetOutcomes: readonly PromptBudgetOutcome[];
+  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+}): ContinuationCompactionObservation {
+  const budgetSignalNames = deriveBudgetSignalNames(params.promptBudgetOutcomes);
+  const cacheSignalNames = deriveCacheSignalNames(params.cacheTelemetryObservations);
+  const cacheUnsafe = params.cacheTelemetryObservations.some((observation) => observation.status !== "hit");
+  const hasCompleteBudgetSignals = params.promptBudgetOutcomes.length > 0
+    && params.promptBudgetOutcomes.every((outcome) => outcome.status === "included");
+  const hasCompleteCacheSignals = params.cacheTelemetryObservations.length > 0
+    && params.cacheTelemetryObservations.every((observation) => observation.status === "hit")
+    && cacheSignalNames.length > 0;
+
+  const base = {
+    caseId: "retry-prompt-compaction",
+    deliveryId: params.reviewOutputKey,
+    repo: params.repo,
+    attemptId: params.attemptId,
+    ...(params.priorAttemptId ? { priorAttemptId: params.priorAttemptId } : {}),
+    ...(params.attemptOrdinal !== undefined ? { attemptOrdinal: params.attemptOrdinal } : {}),
+    includedDeltaCount: params.continuationFiles.length,
+    reusedCheckpointCount: 0,
+    omittedScopeCount: params.omittedScopeCount,
+    remainingScopeCount: params.continuationFiles.length,
+  } as const;
+
+  if (!params.checkpoint) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "missing-checkpoint",
+      fallbackState: "fuller-context",
+      missingSignalNames: ["checkpoint.summary"],
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
+
+  if (!hasCompleteBudgetSignals) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "missing-budget-signal",
+      fallbackState: "fuller-context",
+      missingSignalNames: ["prompt-budget.included"],
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
+
+  if (cacheUnsafe || !hasCompleteCacheSignals) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "unsafe-cache-state",
+      fallbackState: "fuller-context",
+      missingSignalNames: cacheSignalNames.length === 0 ? ["cache.safe-reuse"] : undefined,
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
+
+  return {
+    ...base,
+    status: "compacted",
+    reason: "safe-delta-reuse",
+    fallbackState: "none",
+    priorAttemptId: params.priorAttemptId ?? params.checkpoint.reviewOutputKey,
+    reusedCheckpointCount: 1,
+    safetySignalNames: uniqueSorted([...budgetSignalNames, ...cacheSignalNames, "checkpoint.summary"]),
+    budgetSignalNames,
+    cacheSignalNames,
+  };
+}
+
 export function planReviewContinuation(
   params: PlanReviewContinuationParams,
 ): ReviewContinuationPlanDecision {
@@ -220,6 +328,21 @@ export function planReviewContinuation(
   });
   const scheduledTimeoutSeconds = Math.max(30, timeoutEstimate.dynamicTimeoutSeconds);
 
+  const continuationCompaction = params.continuationCompaction
+    ? buildContinuationCompactionObservation({
+        reviewOutputKey: params.reviewOutputKey,
+        repo: params.checkpoint?.repo ?? "unknown/repo",
+        attemptId: params.continuationCompaction.attemptId,
+        priorAttemptId: params.continuationCompaction.priorAttemptId,
+        attemptOrdinal: params.continuationCompaction.attemptOrdinal,
+        checkpoint: params.checkpoint,
+        continuationFiles,
+        omittedScopeCount: filesAlreadyReviewed.length,
+        promptBudgetOutcomes: params.continuationCompaction.promptBudgetOutcomes,
+        cacheTelemetryObservations: params.continuationCompaction.cacheTelemetryObservations,
+      })
+    : undefined;
+
   return {
     decision: "schedule-continuation",
     reason: "remaining-scope-available",
@@ -233,6 +356,7 @@ export function planReviewContinuation(
     timeoutEstimate,
     firstPass,
     checkpoint: params.checkpoint,
+    ...(continuationCompaction ? { continuationCompaction } : {}),
   };
 }
 

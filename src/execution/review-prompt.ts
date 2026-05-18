@@ -25,6 +25,7 @@ import {
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 import { evaluatePromptBudget, type PromptBudgetOutcome } from "./prompt-budget.ts";
+import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1678,6 +1679,83 @@ export function buildSmallDiffScopeSection(): string {
   ].join("\n");
 }
 
+export type RetryPromptCheckpointSummary = {
+  reviewOutputKey: string;
+  filesReviewed: readonly string[];
+  findingCount: number;
+  totalFiles: number;
+  summaryDraft?: string;
+};
+
+export type RetryPromptCompactionInput = {
+  observation: ContinuationCompactionObservation;
+  checkpointSummaries: readonly RetryPromptCheckpointSummary[];
+  promptBudgetOutcomes: readonly Pick<PromptBudgetOutcome, "sectionName" | "status" | "reason" | "includedChars" | "trimmedChars">[];
+  cacheSafetySignalNames: readonly string[];
+};
+
+function buildRetryPromptCompactionSection(input: RetryPromptCompactionInput): string {
+  const observation = input.observation;
+  const lines = [
+    "## Retry Continuation Compaction",
+    "",
+    `Status: ${observation.status}`,
+    `Reason: ${observation.reason}`,
+    `Fallback state: ${observation.fallbackState}`,
+    `Attempt: ${observation.attemptId}${observation.priorAttemptId ? ` after ${observation.priorAttemptId}` : ""}`,
+    `Counts: ${observation.includedDeltaCount} included delta file(s), ${observation.reusedCheckpointCount} reused checkpoint(s), ${observation.omittedScopeCount} omitted previously reviewed file(s), ${observation.remainingScopeCount} remaining file(s).`,
+  ];
+
+  if (observation.status !== "compacted") {
+    lines.push(
+      "",
+      "Compaction is not safe for this retry. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this compact section.",
+    );
+    if (observation.missingSignalNames && observation.missingSignalNames.length > 0) {
+      lines.push(`Missing safety signals: ${observation.missingSignalNames.join(", ")}`);
+    }
+    return lines.join("\n");
+  }
+
+  lines.push(
+    "",
+    "Safe retry delta reuse is enabled. Reuse the bounded prior-attempt checkpoint summaries below instead of replaying full prior prompt context.",
+    "Keep all normal review instructions, changed-file scope, publication constraints, and safety gates in force.",
+  );
+
+  if (observation.safetySignalNames && observation.safetySignalNames.length > 0) {
+    lines.push(`Safety signals: ${observation.safetySignalNames.join(", ")}`);
+  }
+  if (observation.budgetSignalNames && observation.budgetSignalNames.length > 0) {
+    lines.push(`Prompt budget signals: ${observation.budgetSignalNames.join(", ")}`);
+  }
+  if (input.cacheSafetySignalNames.length > 0) {
+    lines.push(`Cache safety signals: ${input.cacheSafetySignalNames.join(", ")}`);
+  }
+
+  if (input.checkpointSummaries.length > 0) {
+    lines.push("", "Prior checkpoint summaries:");
+    for (const checkpoint of input.checkpointSummaries.slice(0, 3)) {
+      lines.push(
+        `- ${checkpoint.reviewOutputKey}: reviewed ${checkpoint.filesReviewed.length}/${checkpoint.totalFiles} file(s), findings ${checkpoint.findingCount}.`,
+      );
+      const summaryDraft = sanitizeContent((checkpoint.summaryDraft ?? "").trim());
+      if (summaryDraft) {
+        lines.push(`  Summary: ${truncateDeterministic(summaryDraft, 400).text}`);
+      }
+    }
+  }
+
+  if (input.promptBudgetOutcomes.length > 0) {
+    lines.push("", "Prompt budget outcomes reused for safety:");
+    for (const outcome of input.promptBudgetOutcomes.slice(0, 8)) {
+      lines.push(`- ${outcome.sectionName}: ${outcome.status}/${outcome.reason}; included ${outcome.includedChars}, trimmed ${outcome.trimmedChars}.`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -1766,6 +1844,7 @@ export function buildReviewPromptDetails(context: {
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
+  retryPromptCompaction?: RetryPromptCompactionInput | null;
   publishToolNames?: string[];
   candidateFindingToolName?: string;
   candidateFindingMode?: "shadow" | "preferred" | "unavailable";
@@ -1936,6 +2015,10 @@ export function buildReviewPromptDetails(context: {
       "Do not claim the review found all relevant issues when bounded files or severity filters excluded scope.",
       "If the review is bounded, frame the verdict as the result for the inspected scope.",
     );
+  }
+  if (context.retryPromptCompaction) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
   }
   pushBudgetedSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);
 
@@ -2535,6 +2618,7 @@ export function buildReviewPrompt(context: {
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
+  retryPromptCompaction?: RetryPromptCompactionInput | null;
   diffContent?: string;
   publishToolNames?: string[];
   candidateFindingToolName?: string;
