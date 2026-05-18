@@ -5911,6 +5911,68 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M073:S03",
+      "label": "S03: Cache telemetry and safe reuse boundaries",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M073:S03:T01",
+      "label": "T01: Define text-free cache telemetry contract and verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S03:T02",
+      "label": "T02: Persist bounded review cache telemetry from prompt and retrieval paths",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S03:T03",
+      "label": "T03: Harden safe reuse boundaries with cache invalidation tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S03:T04",
+      "label": "T04: Expose S03 cache telemetry in usage reports and runbooks",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S04",
+      "label": "S04: Compact continuation and retry context",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M073:S04:T01",
+      "label": "T01: Define text-free continuation compaction contract and verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S04:T02",
+      "label": "T02: Compact retry prompt inputs when safety signals are complete",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S04:T03",
+      "label": "T03: Fallback explicitly when compaction safety is missing or degraded",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S04:T04",
+      "label": "T04: Document S04 handoff and add executable verification surface",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "milestone:M074",
       "label": "M074: M074",
       "type": "milestone",
@@ -13394,6 +13456,66 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M073",
+      "to": "slice:M073:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -15062,5 +15184,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-18T02:50:37.414Z"
+  "builtAt": "2026-05-18T04:20:14.167Z"
 }

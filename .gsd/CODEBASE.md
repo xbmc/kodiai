@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-18T03:17:45Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T03:17:45Z","fingerprint":"70633dde906a7a042986856b38688cb55f994873","fileCount":500,"truncated":true} -->
+Generated: 2026-05-18T05:23:10Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-18T05:23:10Z","fingerprint":"b6097decf0709730fcd85e312072f5f214567b4c","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -51,6 +51,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/mentions.md`
 - `docs/runbooks/nightly-sync-failures.md`
 - `docs/runbooks/recent-review-audit.md`
+- `docs/runbooks/review-cache-telemetry.md`
 - `docs/runbooks/review-requested-debug.md`
 - `docs/runbooks/review-token-cost-baseline.md`
 - `docs/runbooks/scale.md`
@@ -88,13 +89,15 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(257 files: 252 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(261 files: 256 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
 - `scripts/fixtures/m068-direct-fallback-proof.json`
 - `scripts/fixtures/m073-s01-baseline-scorecard.json`
 - `scripts/fixtures/m073-s02-prompt-budget.json`
+- `scripts/fixtures/m073-s03-cache-telemetry.json`
+- `scripts/fixtures/m073-s04-continuation-compaction.json`
 
 ### src/
 - `src/config.test.ts`
@@ -116,7 +119,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(84 files: 84 .sql)*
+- *(86 files: 86 .sql)*
 
 ### src/enforcement/
 - `src/enforcement/index.ts`
@@ -129,7 +132,23 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/enforcement/types.ts`
 
 ### src/execution/
-- *(26 files: 26 .ts)*
+- `src/execution/agent-entrypoint.test.ts`
+- `src/execution/agent-entrypoint.ts`
+- `src/execution/config.test.ts`
+- `src/execution/config.ts`
+- `src/execution/diff-analysis.test.ts`
+- `src/execution/diff-analysis.ts`
+- `src/execution/env.test.ts`
+- `src/execution/env.ts`
+- `src/execution/executor.test.ts`
+- `src/execution/executor.ts`
+- `src/execution/formatter-suggestion-publisher.test.ts`
+- `src/execution/formatter-suggestion-publisher.ts`
+- `src/execution/formatter-suggestions.test.ts`
+- `src/execution/formatter-suggestions.ts`
+- `src/execution/issue-code-context.test.ts`
+- `src/execution/issue-code-context.ts`
+- `src/execution/mention-context.test.ts`
 
 ### src/execution/mcp/
 - *(22 files: 22 .ts)*
