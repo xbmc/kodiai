@@ -124,7 +124,9 @@
     "check:orphaned-tests": "bun scripts/check-orphaned-tests.ts",
     "verify:m069:s05": "bun scripts/verify-m069-s05.ts",
     "verify:m073:s01": "bun scripts/verify-m073-s01.ts",
-    "verify:m073:s02": "bun scripts/verify-m073-s02.ts"
+    "verify:m073:s02": "bun scripts/verify-m073-s02.ts",
+    "verify:m073:s03": "bun scripts/verify-m073-s03.ts",
+    "verify:m073:s04": "bun scripts/verify-m073-s04.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",

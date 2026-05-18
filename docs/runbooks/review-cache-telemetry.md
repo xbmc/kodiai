@@ -139,3 +139,54 @@ S04 should consume only the safe projection from S03:
 - stable verifier check IDs and pass/fail state
 
 S04 must not request raw prompts, diffs, retrieval chunks, raw fingerprints, cache keys, candidate payloads, or model output to explain cache behavior. If S04 needs user-visible disclosure, publish only bounded counts, reason labels, signal names, and verifier status.
+
+## Continuation compaction verification
+
+S04 adds an offline continuation compaction verifier for retry and timeout review paths:
+
+```sh
+bun scripts/verify-m073-s04.ts --fixture scripts/fixtures/m073-s04-continuation-compaction.json --json
+bun run verify:m073:s04 --json
+```
+
+The verifier reads only `scripts/fixtures/m073-s04-continuation-compaction.json` and does not call GitHub, a model, cache services, retrieval, or Postgres.
+
+### S04 evidence fields
+
+| Field | Meaning | Safety note |
+|---|---|---|
+| `caseId`, `deliveryId`, `repo` | Bounded replay and correlation identifiers. | Use generic replay identifiers in fixtures unless live IDs are explicitly approved. |
+| `attemptId`, `priorAttemptId`, `attemptOrdinal` | Retry attempt identity and parent attempt linkage. | Compacted rows require a prior attempt; duplicates fail verification. |
+| `status` | One of `compacted`, `fallback`, `degraded`, or `bypass`. | Only `compacted` can reuse safe checkpoint deltas. |
+| `reason` | Bounded decision reason such as `safe-delta-reuse`, `missing-checkpoint`, `missing-budget-signal`, `degraded-cache-signal`, `unsafe-cache-state`, `malformed-prior-state`, or `no-remaining-scope`. | Unknown reasons fail closed. |
+| `fallbackState` | One of `none`, `fuller-context`, or `partial-context`. | `fallback` rows use `fuller-context`; `degraded` rows use `partial-context`. |
+| `includedDeltaCount`, `reusedCheckpointCount`, `omittedScopeCount`, `remainingScopeCount` | Deterministic bounded counts for what retry context includes, reuses, omits, and still needs. | Counts only; never include the underlying text or file contents. |
+| `safetySignalNames`, `budgetSignalNames`, `cacheSignalNames`, `missingSignalNames` | Names of bounded signals used to decide compaction or fallback. | Names only; no raw values, fingerprints, cache keys, prompts, diffs, or chunks. |
+| `continuationCompactionSummary` | Declared aggregate totals that must match deterministic sums from observations. | Mismatches fail `totals.deterministic`. |
+
+### S04 check IDs
+
+| Check ID | Pass condition | Failure means |
+|---|---|---|
+| `fixture.shape` | Fixture root has `continuationCompactionObservations[]` and `continuationCompactionSummary`. | The fixture cannot be evaluated safely. |
+| `compaction-observations.present` | At least one continuation compaction row exists. | No retry/continuation evidence was provided. |
+| `vocabulary.bounded` | Statuses, reasons, and fallback states use approved vocabulary. | A row uses unbounded or unknown decision language. |
+| `attempt-identity.valid` | Attempt identifiers are bounded and unique per delivery/attempt. | Retry identity cannot be trusted. |
+| `decision-safety.valid` | Compacted rows include prior attempt, safety/budget/cache signals, and checkpoint reuse; fallback rows do not reuse checkpoints. | Unsafe or incomplete safety signals tried to take a compacted path. |
+| `totals.deterministic` | Declared summary totals exactly match deterministic aggregation. | The aggregate proof cannot be trusted. |
+| `redaction.safe` | Fixture contains only bounded, text-free fields and no secret-like values. | Raw review content, raw cache/fingerprint material, oversized strings, or secrets were detected. |
+
+### S04 fallback triage
+
+Start with `failedCheckIds`, then inspect bounded `issues`. Do not paste raw review content while debugging.
+
+1. For `missing-checkpoint`, confirm the prior checkpoint summary exists and is structurally valid; if not, keep the retry on fuller context.
+2. For `missing-budget-signal`, confirm prompt-budget evidence from S02 is present before compacting; missing budget evidence is a safe fallback, not a compaction success.
+3. For `degraded-cache-signal`, inspect private cache telemetry/logs for the degraded cache path; do not convert the row to `compacted` until cache safety signals are complete.
+4. For `unsafe-cache-state`, keep `reusedCheckpointCount` at zero and use fuller context until S03 cache telemetry shows bounded safe reuse.
+5. For `malformed-prior-state`, fix or discard the malformed checkpoint metadata; do not replay checkpoint summaries that failed shape/redaction checks.
+6. For `no-remaining-scope`, `bypass` is acceptable because there is no retry scope to compact.
+
+### S04 redaction boundary
+
+Allowed S04 evidence is limited to bounded identifiers, attempt identity, approved status/reason/fallback vocabulary, deterministic counts, signal names, and verifier check status. Do not add raw prompt sections, checkpoint text, diffs, patches, file contents, review comments, model output, candidate payloads, raw retrieval chunks, raw fingerprints, cache keys, embeddings, token strings, secrets, or free-form failure payloads to the fixture, runbooks, usage reports, summaries, or public Review Details.

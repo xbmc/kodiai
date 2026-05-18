@@ -40,7 +40,38 @@ Run the offline verifier from the repository root:
 bun scripts/verify-m073-s03.ts --fixture scripts/fixtures/m073-s03-cache-telemetry.json --json
 ```
 
+Package-script equivalent:
+
+```sh
+bun run verify:m073:s03 --json
+```
+
 The S03 verifier and usage-report cache section prove observable safe reuse boundaries only. They do not claim live token reduction.
+
+## S04 continuation compaction verifier
+
+S04 verifies retry/continuation compaction evidence for safe delta reuse and fail-closed fallback behavior:
+
+```sh
+bun scripts/verify-m073-s04.ts --fixture scripts/fixtures/m073-s04-continuation-compaction.json --json
+```
+
+Package-script equivalent:
+
+```sh
+bun run verify:m073:s04 --json
+```
+
+Expected successful shape:
+
+- `overallPassed: true`
+- `statusCode: "m073_s04_ok"`
+- `failedCheckIds: []`
+- `observedTotals.statusCounts` includes compacted, fallback, degraded, and bypass cases
+- deterministic totals for `includedDeltaCount`, `reusedCheckpointCount`, `omittedScopeCount`, and `remainingScopeCount`
+- bounded signal-name lists for `safetySignalNames`, `budgetSignalNames`, `cacheSignalNames`, and `missingSignalNames`
+
+The S04 fixture is text-free. It proves whether a retry can safely replay compacted checkpoint deltas or must receive fuller context; it never stores checkpoint text, prompts, diffs, review comments, candidate payloads, model output, raw cache keys, raw fingerprints, embeddings, tokens, or secrets.
 
 ## S02 prompt-budget evidence verifier
 
@@ -242,7 +273,7 @@ Actions:
 |---|---|---|---|
 | S02 prompt budgets | `promptSections[].promptKind`, `sectionName`, `charCount`, `estimatedTokens`, `truncated`, plus `totals.promptEstimatedTokens` and `totals.promptCharCount` | Set and verify section-level prompt budgets against the baseline. | Budget from counts and estimates only; do not request or reconstruct prompt text. |
 | S03 cache telemetry | `retrievalCache[].evidenceType`, `status`, `cacheHitRate`, `reusedUnits`, `primaryWorkUnits`, `skippedQueries`, `retryAttempts`, plus runtime cache token fields | Compare cache/reuse states and cache token movement against the baseline. | A cache hit is evidence of reuse state, not standalone proof of reduced total cost. |
-| S04 continuation compaction | `continuations[].kind`, `parentDeliveryId`, `retryScopeRatio`, `checkpointFilesReviewed`, `retryFilesCount`, `attributedChildDeliveries`, and per-delivery runtime totals | Compare continuation or retry scope to the parent delivery and measure child-attributed cost. | Keep parent/child linkage at delivery-ID granularity; never include checkpoint content. |
+| S04 continuation compaction | `continuationCompactionObservations[].deliveryId`, `attemptId`, `priorAttemptId`, `attemptOrdinal`, `status`, `reason`, `fallbackState`, bounded signal-name lists, and deterministic count fields; plus `continuations[].kind`, `parentDeliveryId`, `retryScopeRatio`, `checkpointFilesReviewed`, `retryFilesCount`, `attributedChildDeliveries`, and per-delivery runtime totals from S01 | Decide whether a retry/continuation may safely reuse compacted checkpoint deltas or must fall back to fuller context. | Keep parent/child linkage and signal names at bounded identifier granularity; never include checkpoint content, raw cache keys, prompt text, diffs, comments, or model output. |
 | S05 visible bounded disclosure | `checks[].id`, `status`, bounded `message`, bounded `issues`, aggregate totals, case labels/scenarios | Publish safe scorecard status and failure categories without exposing review content. | Do not publish raw fixture rows if they include any field outside the approved metric contract. |
 | S06 live proof | `observedTotals`, `observedCases`, `runtimeUsage`, `phaseLatencies`, telemetry-compatible fields from upstream producers | Prove live systems can emit evidence compatible with the S01 replay contract. | Live proof may compare against the baseline, but S01 itself makes no reduction or improvement claim. |
 
