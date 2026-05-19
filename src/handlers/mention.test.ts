@@ -13143,11 +13143,33 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     const visibleBodies = [...result.reviewBodies, ...result.commentBodies];
     expect(visibleBodies).toHaveLength(1);
     const body = visibleBodies[0] ?? "";
+    const validationTruthLog = result.infoCalls.find(
+      (entry) => entry.message === "Projected explicit mention review validation truth evidence",
+    );
+    expect(validationTruthLog?.bindings).toMatchObject({
+      gate: "review-validation-truth",
+      gateResult: "normalized",
+      source: "explicit-mention-review",
+      reviewOutputKey: result.capturedContext?.reviewOutputKey,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      counts: expect.objectContaining({ detected: 1, suggested: 0, open: 1 }),
+      redaction: expect.objectContaining({
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        replacementTextIncluded: false,
+        toolPayloadsIncluded: false,
+        diffsIncluded: false,
+      }),
+    });
+    expect(JSON.stringify(validationTruthLog?.bindings)).not.toContain(rawCanary);
     expect(body).toContain("Decision: APPROVE");
     expect(body).toContain("Review finding lifecycle: status=normalized");
     expect(body).toContain("counts=input:1,recorded:1,rejected:0,unsafeInputFields:0");
     expect(body).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:0");
     expect(body).toContain("<!-- kodiai:review-output-key:");
+    expect(body).not.toContain("Review validation truth:");
     expect(body).not.toContain(rawCanary);
 
     const publishLog = result.infoCalls.find(

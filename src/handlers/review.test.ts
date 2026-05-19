@@ -16970,6 +16970,12 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
     expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock.match(/Review validation truth:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review validation truth: status=empty");
+    expect(detailsBlock).toMatch(/counts=detected:\d+,suggested:\d+,validated:\d+,revalidated:\d+,resolved:\d+,blocked:\d+,degraded:\d+,open:\d+,uncertain:\d+,inputFindings:\d+,unsafeInputFields:\d+/);
+    expect(detailsBlock).toContain("evidence=fresh:");
+    expect(detailsBlock).toContain("correlation=reviewOutputKey:y,deliveryId:y");
+    expect(detailsBlock).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,replacementText:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n");
     expect(detailsBlock).toContain("Review candidates: shadow recorded=2 rejected=1 errors=0 artifact=present");
     expect(detailsBlock).not.toContain("RAW TITLE MUST NOT LEAK");
     expect(detailsBlock).not.toContain("RAW BODY MUST NOT LEAK");

@@ -279,6 +279,7 @@ import {
   attachReviewFindingLifecycle,
   attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
+  type AttachReviewValidationTruthResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
 
 
@@ -5508,6 +5509,7 @@ export function createReviewHandler(deps: {
           },
           "Projected review finding lifecycle evidence",
         );
+        let reviewValidationTruthProjection: AttachReviewValidationTruthResult["projection"] | null = null;
         try {
           const reviewValidationTruth = attachReviewValidationTruth({
             lifecycle: reviewFindingLifecycleResult.lifecycle,
@@ -5530,6 +5532,7 @@ export function createReviewHandler(deps: {
             }),
             requireRevalidation: true,
           });
+          reviewValidationTruthProjection = reviewValidationTruth.projection;
           logger.info(
             {
               ...baseLog,
@@ -5678,6 +5681,7 @@ export function createReviewHandler(deps: {
             reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
             reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
             reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
+            reviewValidationTruth: reviewValidationTruthProjection,
             phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
               phases: reviewPhaseTimings,
               publicationPhaseStartedAt,
