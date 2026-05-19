@@ -201,7 +201,8 @@ function makeErrorResult(params: {
     helpMessage = " This usually means the PR number, repository, or file path is incorrect.";
   }
 
-  params.logger?.warn(
+  const log = reason === "line-not-commentable-in-pr-diff" ? params.logger?.info : params.logger?.warn;
+  log?.(
     {
       deliveryId: params.deliveryId,
       reviewOutputKey: params.reviewOutputKey,
@@ -297,7 +298,7 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
         if (candidatePolicyResult && candidatePolicyResult.allowed !== true) {
           const reason = "m070-candidate-verification-denied";
           candidateGate?.recordInlinePublicationSkipped?.(reason);
-          options.logger?.warn(
+          options.logger?.info(
             {
               deliveryId: options.deliveryId,
               reviewOutputKey: options.reviewOutputKey,

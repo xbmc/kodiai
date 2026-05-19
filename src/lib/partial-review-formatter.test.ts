@@ -157,6 +157,32 @@ describe("formatPartialReviewComment", () => {
     );
   });
 
+  test("retry-skipped disclaimer can publish explicit chronic-timeout and no-remaining-scope reasons", () => {
+    const chronic = formatPartialReviewComment({
+      summaryDraft: "Body",
+      firstPass: TIMEOUT_FIRST_PASS,
+      timedOutAfterSeconds: 60,
+      isRetrySkipped: true,
+      retrySkipReason: "Retry skipped -- chronic-timeout",
+    });
+    const noRemaining = formatPartialReviewComment({
+      summaryDraft: "Body",
+      firstPass: {
+        ...TIMEOUT_FIRST_PASS,
+        coveredScope: { reviewedFiles: 12, totalFiles: 12 },
+        remainingScope: { remainingFiles: 0, totalFiles: 12 },
+      },
+      timedOutAfterSeconds: 60,
+      isRetrySkipped: true,
+      retrySkipReason: "Retry skipped -- no-remaining-scope",
+    });
+
+    expect(chronic).toContain("> Retry skipped -- chronic-timeout");
+    expect(chronic).toContain("Consider splitting large PRs to stay within the review timeout budget.");
+    expect(noRemaining).toContain("> Retry skipped -- no-remaining-scope");
+    expect(noRemaining).toContain("0 of 12 files remain unreviewed");
+  });
+
   test("empty summaryDraft still produces valid output", () => {
     const out = formatPartialReviewComment({
       summaryDraft: "",

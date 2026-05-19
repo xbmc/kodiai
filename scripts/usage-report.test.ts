@@ -127,6 +127,37 @@ function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): Us
         statuses: ["hit"],
       },
     ],
+    reviewCacheTelemetry: {
+      note: null,
+      rows: [
+        {
+          cacheSurface: "review-derived-prompt",
+          status: "hit",
+          reason: "safe-reuse",
+          executions: 3,
+          distinctDeliveries: 3,
+          affectedPrs: 2,
+          fingerprintVersions: ["review-cache-fp-v1"],
+          safetySignalNames: ["base-ref", "head-ref", "prompt-schema"],
+          missingSignalNames: [],
+          invalidationSignalNames: [],
+          bookkeepingErrorCount: 0,
+        },
+        {
+          cacheSurface: "retrieval-query-embedding",
+          status: "degraded",
+          reason: "incomplete-fingerprint",
+          executions: 1,
+          distinctDeliveries: 1,
+          affectedPrs: 1,
+          fingerprintVersions: [],
+          safetySignalNames: [],
+          missingSignalNames: ["tree-sha"],
+          invalidationSignalNames: [],
+          bookkeepingErrorCount: 0,
+        },
+      ],
+    },
     ...overrides,
   };
 }
@@ -164,6 +195,8 @@ describe("buildUsageReport", () => {
     expect(report.rateLimits[0]?.avgCacheHitRate).toBe(0.5);
     expect(report.reuseEvidence[0]?.evidenceType).toBe("mention.derived-context");
     expect(report.reuseEvidence[1]?.reusedUnits).toBe(2);
+    expect(report.reviewCacheTelemetry?.rows[0]?.cacheSurface).toBe("review-derived-prompt");
+    expect(report.reviewCacheTelemetry?.rows[1]?.reason).toBe("incomplete-fingerprint");
   });
 });
 
@@ -186,7 +219,34 @@ describe("renderUsageReportText", () => {
     expect(text).toContain("conversation-history");
     expect(text).toContain("Reuse evidence");
     expect(text).toContain("retrieval.query-embedding");
+    expect(text).toContain("Review cache telemetry");
+    expect(text).toContain("review-derived-prompt status=hit reason=safe-reuse");
+    expect(text).toContain("retrieval-query-embedding status=degraded reason=incomplete-fingerprint");
+    expect(text).toContain("missing_signals=tree-sha");
     expect(text).toContain("Cache effectiveness");
+  });
+
+  test("renders review cache telemetry empty-state and fail-open notes without raw payloads", () => {
+    const text = renderUsageReportText(
+      buildUsageReport({
+        generatedAt: "2026-04-24T00:00:00.000Z",
+        filters: { repo: "xbmc/xbmc", since: "7d", deliveryId: "delivery-1" },
+        accessState: "available",
+        accessDetail: "Connected to telemetry Postgres.",
+        result: buildFixtureResult({
+          reviewCacheTelemetry: {
+            note: "review_cache_events table is not available; cache telemetry section failed open without blocking the usage report.",
+            rows: [],
+          },
+        }),
+      }),
+    );
+
+    expect(text).toContain("delivery=delivery-1");
+    expect(text).toContain("review_cache_events table is not available");
+    expect(text).toContain("No review_cache_events rows matched the requested filters");
+    expect(text).not.toContain("raw prompt");
+    expect(text).not.toContain("diff --git");
   });
 
   test("renders fail-open guidance when telemetry access is unavailable", () => {

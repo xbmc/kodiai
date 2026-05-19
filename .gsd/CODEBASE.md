@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-15T16:40:10Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-15T16:40:10Z","fingerprint":"ee1bb60f6b2f48e91afc5b95de6ca3a435c3b55d","fileCount":500,"truncated":true} -->
+Generated: 2026-05-19T09:07:48Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-19T09:07:48Z","fingerprint":"50a0efc2e83aa33022dcb89d3b5cfcbb47bab2d5","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -37,6 +37,8 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/issue-intelligence.md`
 - `docs/knowledge-system.md`
 - `docs/m029-s04-ops-runbook.md`
+- `docs/m074-s06-production-like-proof.md`
+- `docs/m074-s07-repo-doctrine-proof.md`
 - `docs/README.md`
 
 ### docs/operations/
@@ -51,7 +53,11 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/runbooks/mentions.md`
 - `docs/runbooks/nightly-sync-failures.md`
 - `docs/runbooks/recent-review-audit.md`
+- `docs/runbooks/review-budget-visible-behavior.md`
+- `docs/runbooks/review-cache-telemetry.md`
+- `docs/runbooks/review-live-proof-and-rollback.md`
 - `docs/runbooks/review-requested-debug.md`
+- `docs/runbooks/review-token-cost-baseline.md`
 - `docs/runbooks/scale.md`
 - `docs/runbooks/slack-integration.md`
 - `docs/runbooks/slack-webhook-relay.md`
@@ -62,6 +68,8 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/smoke/m053-formatter-suggestions.md`
 - `docs/smoke/m066-formatter-suggestions.md`
 - `docs/smoke/m068-candidate-publication.md`
+- `docs/smoke/m073-live-proof.md`
+- `docs/smoke/m073-s07-remediation.md`
 - `docs/smoke/phase27-uat-notes.md`
 - `docs/smoke/phase72-telemetry-follow-through.md`
 - `docs/smoke/phase74-reliability-regression-gate.md`
@@ -87,11 +95,20 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(238 files: 233 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(280 files: 275 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
 - `scripts/fixtures/m068-direct-fallback-proof.json`
+- `scripts/fixtures/m073-s01-baseline-scorecard.json`
+- `scripts/fixtures/m073-s02-prompt-budget.json`
+- `scripts/fixtures/m073-s03-cache-telemetry.json`
+- `scripts/fixtures/m073-s04-continuation-compaction.json`
+- `scripts/fixtures/m073-s05-visible-budget.json`
+- `scripts/fixtures/m073-s06-live-proof.json`
+- `scripts/fixtures/m073-s07-remediation.json`
+- `scripts/fixtures/m074-s06-production-like-proof.json`
+- `scripts/fixtures/m074-s07-repo-doctrine-proof.json`
 
 ### src/
 - `src/config.test.ts`
@@ -113,7 +130,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(82 files: 82 .sql)*
+- *(86 files: 86 .sql)*
 
 ### src/enforcement/
 - `src/enforcement/index.ts`
@@ -126,53 +143,12 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/enforcement/types.ts`
 
 ### src/execution/
-- *(29 files: 29 .ts)*
-
-### src/execution/mcp/
-- `src/execution/mcp/checkpoint-server.test.ts`
-- `src/execution/mcp/checkpoint-server.ts`
-- `src/execution/mcp/ci-status-server.ts`
-- `src/execution/mcp/comment-server.test.ts`
-- `src/execution/mcp/comment-server.ts`
-- `src/execution/mcp/http-server.test.ts`
-- `src/execution/mcp/http-server.ts`
-- `src/execution/mcp/index.test.ts`
-- `src/execution/mcp/index.ts`
-- `src/execution/mcp/inline-review-server.test.ts`
-- `src/execution/mcp/inline-review-server.ts`
-- `src/execution/mcp/issue-comment-server.test.ts`
-- `src/execution/mcp/issue-comment-server.ts`
-- `src/execution/mcp/issue-label-server.test.ts`
-- `src/execution/mcp/issue-label-server.ts`
-- `src/execution/mcp/review-comment-thread-server.test.ts`
-- `src/execution/mcp/review-comment-thread-server.ts`
-- `src/execution/mcp/review-output-publication-gate.test.ts`
-- `src/execution/mcp/review-output-publication-gate.ts`
-
-### src/feedback/
-- `src/feedback/aggregator.test.ts`
-- `src/feedback/aggregator.ts`
-- `src/feedback/confidence-adjuster.test.ts`
-- `src/feedback/confidence-adjuster.ts`
-- `src/feedback/index.ts`
-- `src/feedback/safety-guard.test.ts`
-- `src/feedback/safety-guard.ts`
-- `src/feedback/types.ts`
-
-### src/handlers/
-- `src/handlers/addon-check.test.ts`
-- `src/handlers/addon-check.ts`
-- `src/handlers/ci-failure.test.ts`
-- `src/handlers/ci-failure.ts`
-- `src/handlers/dep-bump-merge-history.test.ts`
-- `src/handlers/dep-bump-merge-history.ts`
-- `src/handlers/feedback-sync.test.ts`
-- `src/handlers/feedback-sync.ts`
-- `src/handlers/formatter-suggestion-intent.test.ts`
-- `src/handlers/formatter-suggestion-intent.ts`
-- `src/handlers/formatter-suggestion-orchestration.test.ts`
-- `src/handlers/formatter-suggestion-orchestration.ts`
-- `src/handlers/identity-suggest.test.ts`
-- `src/handlers/identity-suggest.ts`
-- `src/handlers/issue-closed.test.ts`
-- `src/handlers/issue-closed.ts`
+- `src/execution/agent-entrypoint.test.ts`
+- `src/execution/agent-entrypoint.ts`
+- `src/execution/config.test.ts`
+- `src/execution/config.ts`
+- `src/execution/diff-analysis.test.ts`
+- `src/execution/diff-analysis.ts`
+- `src/execution/env.test.ts`
+- `src/execution/env.ts`
+- `src/execution/executor.test.ts`

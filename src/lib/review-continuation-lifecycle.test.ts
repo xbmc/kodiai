@@ -105,6 +105,402 @@ describe("planReviewContinuation", () => {
     });
   });
 
+  test("adds compact retry evidence when checkpoint, prompt budget, and cache safety signals are complete", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint(),
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+        ["src/d.ts", 70],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        priorAttemptId: "attempt-1",
+        attemptOrdinal: 2,
+        promptBudgetOutcomes: [
+          {
+            sectionName: "review-change-context",
+            sectionPosition: 0,
+            budgetChars: 4000,
+            budgetTokens: 1000,
+            includedChars: 500,
+            includedTokens: 125,
+            trimmedChars: 0,
+            trimmedTokens: 0,
+            status: "included",
+            reason: "within-budget",
+          },
+        ],
+        cacheTelemetryObservations: [
+          {
+            cacheSurface: "review-derived-prompt",
+            status: "hit",
+            reason: "safe-reuse",
+            deliveryId: "review-123",
+            repo: "owner/repo",
+            attemptOrdinal: 2,
+            fingerprintVersion: "v1",
+            safetySignalNames: ["cache.safe-reuse"],
+          },
+        ],
+      },
+      estimateContinuationTimeout: ({ timeoutSeconds, files }) => ({
+        riskLevel: "medium",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: `${files.length} files`,
+        shouldReduceScope: true,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationCompaction).toEqual({
+      caseId: "retry-prompt-compaction",
+      deliveryId: "review-123",
+      repo: "owner/repo",
+      attemptId: "attempt-2",
+      priorAttemptId: "attempt-1",
+      attemptOrdinal: 2,
+      status: "compacted",
+      reason: "safe-delta-reuse",
+      fallbackState: "none",
+      includedDeltaCount: 2,
+      reusedCheckpointCount: 1,
+      omittedScopeCount: 2,
+      remainingScopeCount: 2,
+      safetySignalNames: ["cache.safe-reuse", "checkpoint.summary", "prompt-budget.included"],
+      budgetSignalNames: ["prompt-budget.included"],
+      cacheSignalNames: ["cache.safe-reuse"],
+    });
+  });
+
+  test("falls back to fuller retry context when prompt budget safety is incomplete", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint(),
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        promptBudgetOutcomes: [
+          {
+            sectionName: "review-instructions",
+            sectionPosition: 0,
+            budgetChars: 100,
+            budgetTokens: 25,
+            includedChars: 100,
+            includedTokens: 25,
+            trimmedChars: 50,
+            trimmedTokens: 13,
+            status: "trimmed",
+            reason: "section-over-budget",
+          },
+        ],
+        cacheTelemetryObservations: [
+          {
+            cacheSurface: "review-derived-prompt",
+            status: "hit",
+            reason: "safe-reuse",
+            deliveryId: "review-123",
+            repo: "owner/repo",
+            fingerprintVersion: "v1",
+            safetySignalNames: ["cache.safe-reuse"],
+          },
+        ],
+      },
+      estimateContinuationTimeout: ({ timeoutSeconds }) => ({
+        riskLevel: "low",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: "ok",
+        shouldReduceScope: false,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationCompaction).toEqual(expect.objectContaining({
+      status: "fallback",
+      reason: "missing-budget-signal",
+      fallbackState: "fuller-context",
+      reusedCheckpointCount: 0,
+      missingSignalNames: ["prompt-budget.included"],
+      budgetSignalNames: ["prompt-budget.trimmed"],
+      cacheSignalNames: ["cache.safe-reuse"],
+    }));
+  });
+
+  test("falls back to fuller retry context when checkpoint evidence is missing", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: null,
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        promptBudgetOutcomes: [
+          {
+            sectionName: "review-change-context",
+            sectionPosition: 0,
+            budgetChars: 100,
+            budgetTokens: 25,
+            includedChars: 40,
+            includedTokens: 10,
+            trimmedChars: 0,
+            trimmedTokens: 0,
+            status: "included",
+            reason: "within-budget",
+          },
+        ],
+        cacheTelemetryObservations: [
+          {
+            cacheSurface: "review-derived-prompt",
+            status: "hit",
+            reason: "safe-reuse",
+            deliveryId: "review-123",
+            repo: "owner/repo",
+            fingerprintVersion: "v1",
+            safetySignalNames: ["cache.safe-reuse"],
+          },
+        ],
+      },
+      estimateContinuationTimeout: ({ timeoutSeconds }) => ({
+        riskLevel: "low",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: "ok",
+        shouldReduceScope: false,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationCompaction).toEqual(expect.objectContaining({
+      status: "fallback",
+      reason: "missing-checkpoint",
+      fallbackState: "fuller-context",
+      reusedCheckpointCount: 0,
+      missingSignalNames: ["checkpoint.summary"],
+    }));
+  });
+
+  test("falls back to fuller retry context when prior checkpoint summary is malformed", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint({ summaryDraft: "   " }),
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        promptBudgetOutcomes: [
+          {
+            sectionName: "review-change-context",
+            sectionPosition: 0,
+            budgetChars: 100,
+            budgetTokens: 25,
+            includedChars: 40,
+            includedTokens: 10,
+            trimmedChars: 0,
+            trimmedTokens: 0,
+            status: "included",
+            reason: "within-budget",
+          },
+        ],
+        cacheTelemetryObservations: [
+          {
+            cacheSurface: "review-derived-prompt",
+            status: "hit",
+            reason: "safe-reuse",
+            deliveryId: "review-123",
+            repo: "owner/repo",
+            fingerprintVersion: "v1",
+            safetySignalNames: ["cache.safe-reuse"],
+          },
+        ],
+      },
+      estimateContinuationTimeout: ({ timeoutSeconds }) => ({
+        riskLevel: "low",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: "ok",
+        shouldReduceScope: false,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationCompaction).toEqual(expect.objectContaining({
+      status: "fallback",
+      reason: "malformed-prior-state",
+      fallbackState: "fuller-context",
+      reusedCheckpointCount: 0,
+      missingSignalNames: ["checkpoint.summary"],
+    }));
+  });
+
+  test("marks degraded cache telemetry as partial-context fallback instead of compacting", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint(),
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        promptBudgetOutcomes: [
+          {
+            sectionName: "review-change-context",
+            sectionPosition: 0,
+            budgetChars: 100,
+            budgetTokens: 25,
+            includedChars: 40,
+            includedTokens: 10,
+            trimmedChars: 0,
+            trimmedTokens: 0,
+            status: "included",
+            reason: "within-budget",
+          },
+        ],
+        cacheTelemetryObservations: [
+          {
+            cacheSurface: "review-derived-prompt",
+            status: "degraded",
+            reason: "bookkeeping-failure",
+            deliveryId: "review-123",
+            repo: "owner/repo",
+            bookkeepingErrorCount: 1,
+            safetySignalNames: ["cache.safe-reuse"],
+          },
+        ],
+      },
+      estimateContinuationTimeout: ({ timeoutSeconds }) => ({
+        riskLevel: "low",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: "ok",
+        shouldReduceScope: false,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationCompaction).toEqual(expect.objectContaining({
+      status: "degraded",
+      reason: "degraded-cache-signal",
+      fallbackState: "partial-context",
+      reusedCheckpointCount: 1,
+      safetySignalNames: ["prompt-budget.included"],
+      budgetSignalNames: ["prompt-budget.included"],
+      cacheSignalNames: ["cache.bookkeeping-failure", "cache.safe-reuse"],
+    }));
+  });
+
+  test("falls back to fuller retry context when cache telemetry is bypassed", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint(),
+      riskScores: makeRiskScores([
+        ["src/a.ts", 10],
+        ["src/b.ts", 20],
+        ["src/c.ts", 90],
+      ]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        promptBudgetOutcomes: [
+          {
+            sectionName: "review-change-context",
+            sectionPosition: 0,
+            budgetChars: 100,
+            budgetTokens: 25,
+            includedChars: 40,
+            includedTokens: 10,
+            trimmedChars: 0,
+            trimmedTokens: 0,
+            status: "included",
+            reason: "within-budget",
+          },
+        ],
+        cacheTelemetryObservations: [
+          {
+            cacheSurface: "review-derived-prompt",
+            status: "bypass",
+            reason: "disabled-cache",
+            deliveryId: "review-123",
+            repo: "owner/repo",
+            missingSignalNames: ["cache.safe-reuse"],
+          },
+        ],
+      },
+      estimateContinuationTimeout: ({ timeoutSeconds }) => ({
+        riskLevel: "low",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: "ok",
+        shouldReduceScope: false,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationCompaction).toEqual(expect.objectContaining({
+      status: "fallback",
+      reason: "unsafe-cache-state",
+      fallbackState: "fuller-context",
+      reusedCheckpointCount: 0,
+      cacheSignalNames: ["cache.disabled-cache", "cache.safe-reuse"],
+    }));
+  });
+
   test("uses the continuation timeout estimate for the scheduled retry budget", async () => {
     const mod = await loadLifecycleModule();
     expect(mod).not.toBeNull();

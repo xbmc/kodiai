@@ -78,6 +78,57 @@ describe("buildSearchCacheKey", () => {
 
     expect(keyA).not.toBe(keyB);
   });
+
+  test("isolates review-derived prompt keys by bounded safety extras", () => {
+    const base = {
+      repo: "acme/repo",
+      searchType: "review-derived-prompt",
+      query: "initial:101:abcdef1234567890",
+      extra: {
+        fingerprintVersion: "review-prompt-v1",
+        fingerprint: "bounded-fingerprint-a",
+      },
+    };
+
+    expect(buildSearchCacheKey(base)).toBe(buildSearchCacheKey({
+      ...base,
+      extra: {
+        fingerprint: "bounded-fingerprint-a",
+        fingerprintVersion: "review-prompt-v1",
+      },
+    }));
+    expect(buildSearchCacheKey(base)).not.toBe(buildSearchCacheKey({
+      ...base,
+      query: "initial:101:fedcba0987654321",
+    }));
+    expect(buildSearchCacheKey(base)).not.toBe(buildSearchCacheKey({
+      ...base,
+      extra: {
+        fingerprintVersion: "review-prompt-v1",
+        fingerprint: "bounded-fingerprint-b",
+      },
+    }));
+  });
+
+  test("isolates retrieval embedding keys by retrieval fingerprint extras", () => {
+    const base = {
+      repo: "acme/repo",
+      searchType: "retrieval-query-embedding",
+      query: "semantic review context",
+      extra: {
+        fingerprintVersion: "retrieval-query-embedding-v1",
+        retrievalFindingHash: "finding-hash-a",
+      },
+    };
+
+    expect(buildSearchCacheKey(base)).not.toBe(buildSearchCacheKey({
+      ...base,
+      extra: {
+        fingerprintVersion: "retrieval-query-embedding-v1",
+        retrievalFindingHash: "finding-hash-b",
+      },
+    }));
+  });
 });
 
 describe("createSearchCache", () => {

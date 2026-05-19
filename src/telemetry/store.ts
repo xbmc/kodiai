@@ -3,6 +3,7 @@ import type { Sql } from "../db/client.ts";
 import type {
   LlmCostRecord,
   PromptSectionRecord,
+  ReviewCacheEventRecord,
   RateLimitEventRecord,
   RetrievalQualityRecord,
   ResilienceEventRecord,
@@ -209,6 +210,48 @@ export function createTelemetryStore(opts: {
       }
     },
 
+    async recordReviewCacheEvent(entry: ReviewCacheEventRecord): Promise<void> {
+      try {
+        await sql`
+          INSERT INTO review_cache_events (
+            delivery_id, repo, pr_number, cache_surface, status, reason,
+            fingerprint_version, safety_signal_names, missing_signal_names,
+            invalidation_signal_names, bookkeeping_error_count
+          ) VALUES (
+            ${entry.deliveryId},
+            ${entry.repo},
+            ${entry.prNumber ?? null},
+            ${entry.cacheSurface},
+            ${entry.status},
+            ${entry.reason ?? null},
+            ${entry.fingerprintVersion ?? null},
+            ${entry.safetySignalNames ? [...entry.safetySignalNames] : []},
+            ${entry.missingSignalNames ? [...entry.missingSignalNames] : []},
+            ${entry.invalidationSignalNames ? [...entry.invalidationSignalNames] : []},
+            ${entry.bookkeepingErrorCount ?? 0}
+          )
+        `;
+      } catch (err) {
+        logger.warn(
+          {
+            err,
+            deliveryId: entry.deliveryId,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+            cacheSurface: entry.cacheSurface,
+            status: entry.status,
+            reason: entry.reason,
+            fingerprintVersion: entry.fingerprintVersion,
+            safetySignalNames: entry.safetySignalNames,
+            missingSignalNames: entry.missingSignalNames,
+            invalidationSignalNames: entry.invalidationSignalNames,
+            bookkeepingErrorCount: entry.bookkeepingErrorCount ?? 0,
+          },
+          "Review cache telemetry write failed",
+        );
+      }
+    },
+
     async recordPromptSections(entry: PromptSectionRecord): Promise<void> {
       if (entry.sections.length === 0) {
         return;
@@ -225,6 +268,14 @@ export function createTelemetryStore(opts: {
           char_count: section.charCount,
           estimated_tokens: section.estimatedTokens,
           truncated: section.truncated ?? false,
+          budget_chars: section.budgetChars ?? null,
+          budget_tokens: section.budgetTokens ?? null,
+          included_chars: section.includedChars ?? null,
+          included_tokens: section.includedTokens ?? null,
+          trimmed_chars: section.trimmedChars ?? null,
+          trimmed_tokens: section.trimmedTokens ?? null,
+          budget_status: section.budgetStatus ?? null,
+          budget_reason: section.budgetReason ?? null,
         }));
 
         await sql`
@@ -239,6 +290,14 @@ export function createTelemetryStore(opts: {
             "char_count",
             "estimated_tokens",
             "truncated",
+            "budget_chars",
+            "budget_tokens",
+            "included_chars",
+            "included_tokens",
+            "trimmed_chars",
+            "trimmed_tokens",
+            "budget_status",
+            "budget_reason",
           )}
           ON CONFLICT (delivery_id, task_type, prompt_kind, section_position)
           WHERE delivery_id IS NOT NULL
@@ -247,7 +306,15 @@ export function createTelemetryStore(opts: {
             section_name = EXCLUDED.section_name,
             char_count = EXCLUDED.char_count,
             estimated_tokens = EXCLUDED.estimated_tokens,
-            truncated = EXCLUDED.truncated
+            truncated = EXCLUDED.truncated,
+            budget_chars = EXCLUDED.budget_chars,
+            budget_tokens = EXCLUDED.budget_tokens,
+            included_chars = EXCLUDED.included_chars,
+            included_tokens = EXCLUDED.included_tokens,
+            trimmed_chars = EXCLUDED.trimmed_chars,
+            trimmed_tokens = EXCLUDED.trimmed_tokens,
+            budget_status = EXCLUDED.budget_status,
+            budget_reason = EXCLUDED.budget_reason
         `;
       } catch (err) {
         logger.warn(
@@ -282,8 +349,11 @@ export function createTelemetryStore(opts: {
       const r5 = await sql`
         DELETE FROM prompt_section_events WHERE created_at < now() - ${interval}::interval
       `;
+      const r6 = await sql`
+        DELETE FROM review_cache_events WHERE created_at < now() - ${interval}::interval
+      `;
 
-      return r1.count + r2.count + r3.count + r4.count + r5.count;
+      return r1.count + r2.count + r3.count + r4.count + r5.count + r6.count;
     },
 
     checkpoint(): void {

@@ -17,7 +17,7 @@ import type {
 } from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { TelemetryStore } from "../telemetry/types.ts";
+import type { PromptSectionRecord, ReviewCacheEventRecord, TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
   PriorFinding,
@@ -143,6 +143,10 @@ import {
   computeContentHash,
 } from "../knowledge/code-snippet-chunker.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
+import {
+  normalizeRepoDoctrineProjection,
+  type RepoDoctrineProjection,
+} from "../repo-doctrine/contracts.ts";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
@@ -196,6 +200,7 @@ import {
   adaptApprovedCandidatesForInlinePublication,
   buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
+  convertPublishedCandidateResultsToValidationTruthFixes,
   toReviewCandidatePublicationAdapterSummary,
   type ReviewCandidatePublishedFindingResult,
   type ReviewCandidatePublicationAdapterResult,
@@ -264,6 +269,22 @@ import {
   projectReviewHandlerCandidatePublicationBridgeEvidence,
   type ReviewHandlerPublicationBridgeProjection,
 } from "../issue-131/review-handler-publication-bridge.ts";
+import {
+  buildReviewDetailsBudgetLines,
+  buildVisibleBudgetProjection,
+  type PromptBudgetEvidenceObservation,
+  type VisibleBudgetProjection,
+  type VisibleBudgetScenario,
+} from "../review-visible-budget/visible-budget-behavior.ts";
+import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
+import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
+import type { PromptBudgetOutcome } from "../execution/prompt-budget.ts";
+import {
+  attachReviewFindingLifecycle,
+  attachReviewValidationTruth,
+  type AttachReviewFindingLifecycleResult,
+  type AttachReviewValidationTruthResult,
+} from "../review-lifecycle/handler-lifecycle.ts";
 
 
 
@@ -318,6 +339,244 @@ export type ReviewPromptFingerprintResult = {
   fingerprint: string | null;
   missingSignals: string[];
 };
+
+type ReviewPromptCacheState = {
+  status: ReviewCacheEventRecord["status"];
+  reason: string | null;
+  fingerprintVersion?: string;
+  safetySignalNames?: string[];
+  missingSignalNames?: string[];
+  invalidationSignalNames?: string[];
+  bookkeepingErrorCount?: number;
+};
+
+const REVIEW_PROMPT_FINGERPRINT_VERSION = "review-prompt-v1";
+const RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION = "retrieval-query-embedding-v1";
+const BOUNDED_REVIEW_CACHE_SIGNAL_NAME = /^[a-z0-9][a-z0-9.-]{0,79}$/;
+
+function normalizeReviewCacheSignalNames(values: readonly string[] | undefined): string[] | undefined {
+  if (!values || values.length === 0) return undefined;
+  const normalized = Array.from(new Set(
+    values
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => BOUNDED_REVIEW_CACHE_SIGNAL_NAME.test(value)),
+  )).sort((a, b) => a.localeCompare(b));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function mapReviewPromptCacheReason(state: ReviewPromptCacheState): ReviewCacheEventRecord["reason"] {
+  if (state.status === "hit") return "safe-reuse";
+  if (state.status === "miss") return "cache-miss";
+  if (state.status === "bypass") {
+    return state.reason === "disabled-cache" ? "disabled-cache" : "incomplete-fingerprint";
+  }
+  if (state.status === "degraded") return "bookkeeping-failure";
+  return undefined;
+}
+
+function buildPromptReviewCacheEvent(params: {
+  deliveryId: string;
+  repo: string;
+  prNumber: number;
+  state: ReviewPromptCacheState;
+}): ReviewCacheEventRecord {
+  const reason = mapReviewPromptCacheReason(params.state);
+  return {
+    deliveryId: params.deliveryId,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    cacheSurface: "review-derived-prompt",
+    status: params.state.status,
+    ...(reason ? { reason } : {}),
+    ...(params.state.fingerprintVersion ? { fingerprintVersion: params.state.fingerprintVersion } : {}),
+    ...(normalizeReviewCacheSignalNames(params.state.safetySignalNames) ? { safetySignalNames: normalizeReviewCacheSignalNames(params.state.safetySignalNames) } : {}),
+    ...(normalizeReviewCacheSignalNames(params.state.missingSignalNames) ? { missingSignalNames: normalizeReviewCacheSignalNames(params.state.missingSignalNames) } : {}),
+    ...(normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) ? { invalidationSignalNames: normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) } : {}),
+    ...(params.state.bookkeepingErrorCount ? { bookkeepingErrorCount: params.state.bookkeepingErrorCount } : {}),
+  };
+}
+
+function buildPromptBudgetEvidenceObservations(records: readonly PromptSectionRecord[]): PromptBudgetEvidenceObservation[] {
+  return records
+    .map((record) => {
+      const sections = record.sections
+        .filter((section) =>
+          typeof section.budgetChars === "number"
+          && typeof section.budgetTokens === "number"
+          && typeof section.includedChars === "number"
+          && typeof section.includedTokens === "number"
+          && typeof section.trimmedChars === "number"
+          && typeof section.trimmedTokens === "number"
+          && (section.budgetStatus === "included" || section.budgetStatus === "trimmed" || section.budgetStatus === "bypassed")
+          && (section.budgetReason === "within-budget" || section.budgetReason === "section-over-budget" || section.budgetReason === "zero-budget")
+        )
+        .map((section) => ({
+          sectionName: section.sectionName,
+          sectionPosition: section.sectionPosition,
+          budgetChars: section.budgetChars!,
+          budgetTokens: section.budgetTokens!,
+          includedChars: section.includedChars!,
+          includedTokens: section.includedTokens!,
+          trimmedChars: section.trimmedChars!,
+          trimmedTokens: section.trimmedTokens!,
+          budgetStatus: section.budgetStatus!,
+          budgetReason: section.budgetReason!,
+        }));
+
+      if (sections.length === 0) {
+        return null;
+      }
+
+      return {
+        caseId: `${record.promptKind}:budget`,
+        deliveryId: record.deliveryId ?? "unknown-delivery",
+        repo: record.repo,
+        taskType: record.taskType,
+        promptKind: record.promptKind,
+        sections,
+      };
+    })
+    .filter((entry): entry is PromptBudgetEvidenceObservation => entry !== null);
+}
+
+function buildPromptBudgetOutcomes(records: readonly PromptSectionRecord[]): PromptBudgetOutcome[] {
+  return buildPromptBudgetEvidenceObservations(records).flatMap((observation) =>
+    observation.sections.map((section) => ({
+      sectionName: section.sectionName,
+      sectionPosition: section.sectionPosition,
+      budgetChars: section.budgetChars,
+      budgetTokens: section.budgetTokens,
+      includedChars: section.includedChars,
+      includedTokens: section.includedTokens,
+      trimmedChars: section.trimmedChars,
+      trimmedTokens: section.trimmedTokens,
+      status: section.budgetStatus,
+      reason: section.budgetReason,
+    }))
+  );
+}
+
+function chooseVisibleBudgetScenario(params: {
+  promptBudgetEvidence: readonly PromptBudgetEvidenceObservation[];
+  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  continuationCompactionObservations: readonly ContinuationCompactionObservation[];
+}): VisibleBudgetScenario {
+  if (params.continuationCompactionObservations.some((observation) => observation.status === "fallback")) {
+    return "fallback-review";
+  }
+
+  const promptScoped = params.promptBudgetEvidence.some((observation) =>
+    observation.sections.some((section) => section.budgetStatus === "trimmed" || section.budgetStatus === "bypassed")
+  );
+  const cacheScoped = params.cacheTelemetryObservations.some((observation) =>
+    observation.status === "degraded" || observation.status === "bypass"
+  );
+  const continuationScoped = params.continuationCompactionObservations.some((observation) =>
+    observation.status === "compacted" || observation.status === "degraded"
+  );
+
+  return promptScoped || cacheScoped || continuationScoped ? "scoped-review" : "happy-path";
+}
+
+function buildVisibleBudgetProjectionFromEvidence(params: {
+  promptSectionRecords: readonly PromptSectionRecord[];
+  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  continuationCompactionObservations: readonly ContinuationCompactionObservation[];
+}): VisibleBudgetProjection | null {
+  const promptBudgetEvidence = buildPromptBudgetEvidenceObservations(params.promptSectionRecords);
+  if (
+    promptBudgetEvidence.length === 0
+    && params.cacheTelemetryObservations.length === 0
+    && params.continuationCompactionObservations.length === 0
+  ) {
+    return null;
+  }
+
+  return buildVisibleBudgetProjection({
+    scenario: chooseVisibleBudgetScenario({
+      promptBudgetEvidence,
+      cacheTelemetryObservations: params.cacheTelemetryObservations,
+      continuationCompactionObservations: params.continuationCompactionObservations,
+    }),
+    promptBudgetEvidence,
+    cacheTelemetryObservations: params.cacheTelemetryObservations,
+    continuationCompactionObservations: params.continuationCompactionObservations,
+  });
+}
+
+function appendReviewDetailsBudgetLines(body: string, projection: VisibleBudgetProjection | null): string {
+  if (!projection) return body;
+  const lines = buildReviewDetailsBudgetLines(projection).map((line) => `- ${line}`);
+  const closeMarker = "\n\n</details>";
+  const closeIndex = body.lastIndexOf(closeMarker);
+  if (closeIndex === -1) {
+    return `${body}\n${lines.join("\n")}`;
+  }
+  return `${body.slice(0, closeIndex)}\n${lines.join("\n")}${body.slice(closeIndex)}`;
+}
+
+function buildVisibleBudgetDisclosureEvidence(projection: VisibleBudgetProjection | null): string | null {
+  if (!projection || projection.visibleStatus === "complete") return null;
+  if (projection.visibleStatus === "fallback") {
+    return "Review scope note: fallback review behavior was used; Review Details include bounded budget/cache/continuation counts only.";
+  }
+  if (projection.visibleReason === "prompt-budget-limited") {
+    return "Review scope note: output was scoped by prompt budget limits; Review Details include bounded counts only.";
+  }
+  if (projection.visibleReason === "cache-degraded") {
+    return "Review scope note: cache reuse was degraded or bypassed; Review Details include bounded cache status counts only.";
+  }
+  return "Review scope note: continuation or compaction behavior scoped the review; Review Details include bounded counts only.";
+}
+
+function buildRetrievalReviewCacheEvent(params: {
+  deliveryId: string;
+  repo: string;
+  prNumber: number;
+  result: RetrieveResult | null | undefined;
+}): ReviewCacheEventRecord {
+  const provenance = params.result?.provenance;
+  if (
+    !params.result
+    || !provenance
+    || !Number.isFinite(provenance.embeddingRequests)
+    || !Number.isFinite(provenance.embeddingCacheHits)
+  ) {
+    return {
+      deliveryId: params.deliveryId,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      cacheSurface: "retrieval-query-embedding",
+      status: "degraded",
+      reason: "unavailable-retrieval",
+      missingSignalNames: ["retrieval-provenance"],
+    };
+  }
+
+  if (provenance.embeddingCacheHits > 0) {
+    return {
+      deliveryId: params.deliveryId,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      cacheSurface: "retrieval-query-embedding",
+      status: "hit",
+      reason: "safe-reuse",
+      fingerprintVersion: RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION,
+      safetySignalNames: ["embedding-cache-provenance"],
+    };
+  }
+
+  return {
+    deliveryId: params.deliveryId,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    cacheSurface: "retrieval-query-embedding",
+    status: "miss",
+    reason: "cache-miss",
+    fingerprintVersion: RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION,
+    safetySignalNames: ["embedding-cache-provenance"],
+  };
+}
 
 function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -2040,8 +2299,45 @@ type ReviewPlanConfigSnapshot = {
   routingReason?: string;
   graphValidationStatus: ReviewPlan["graphValidation"]["status"] | DegradedReviewPlan["graphValidation"]["status"];
   candidateFindingMode: ReviewPlan["candidateFinding"]["mode"] | DegradedReviewPlan["candidateFinding"]["mode"];
+  repoDoctrine?: ReturnType<typeof toRepoDoctrineReviewSurfaceProjection>;
   degradedReason?: string;
 };
+
+function toRepoDoctrineReviewSurfaceProjection(doctrine: RepoDoctrineProjection) {
+  const status = !doctrine.enabled
+    ? "disabled"
+    : doctrine.consumedContractCount > 0
+      ? "applied"
+      : doctrine.reasonCodes.length > 0
+        ? "degraded"
+        : "skipped";
+  const omittedCount = doctrine.omittedContractCount + doctrine.omittedMatchedPathCandidateCount;
+  const reasonCodes = doctrine.reasonCodes.length > 0
+    ? doctrine.reasonCodes
+    : status === "applied"
+      ? ["none"]
+      : [status];
+
+  return {
+    status,
+    contractCount: doctrine.contractCount,
+    matchedCount: doctrine.matchedPathCandidateCount,
+    omittedCount,
+    reasonCodes,
+  };
+}
+
+function buildRepoDoctrineLogFields(doctrine: RepoDoctrineProjection): Record<string, unknown> {
+  const projection = toRepoDoctrineReviewSurfaceProjection(doctrine);
+  return {
+    repoDoctrineStatus: projection.status,
+    repoDoctrineContractCount: projection.contractCount,
+    repoDoctrineConsumedContractCount: doctrine.consumedContractCount,
+    repoDoctrineMatchedPathCandidateCount: projection.matchedCount,
+    repoDoctrineOmittedCount: projection.omittedCount,
+    repoDoctrineReasonCodes: projection.reasonCodes.slice(0, 8),
+  };
+}
 
 function toReviewPlanConfigSnapshot(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanConfigSnapshot {
   if (plan.status === "degraded") {
@@ -2063,6 +2359,7 @@ function toReviewPlanConfigSnapshot(plan: ReviewPlan | DegradedReviewPlan): Revi
     routingReason: plan.task.routingReason,
     graphValidationStatus: plan.graphValidation.status,
     candidateFindingMode: plan.candidateFinding.mode,
+    repoDoctrine: plan.repoDoctrine,
   };
 }
 
@@ -2358,6 +2655,19 @@ function logReviewCandidatePublicationRuntime(params: {
     publisherResultSample: params.runtime.publisherResultSample,
   };
 
+  const expectedPolicyBlocked = params.runtime.mode === "blocked"
+    && params.runtime.counts.candidateBlocked > 0
+    && params.runtime.counts.candidateFailed === 0
+    && params.runtime.counts.candidateMalformed === 0
+    && params.runtime.counts.directPublished === 0
+    && params.runtime.counts.malformed === 0
+    && params.runtime.reasons.every((reason) => reason === "candidate-publisher-blocked");
+
+  if (expectedPolicyBlocked) {
+    params.logger.info(payload, "Review candidate publication completed with expected policy block");
+    return;
+  }
+
   if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
     params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
     return;
@@ -2512,12 +2822,13 @@ export function createReviewHandler(deps: {
   async function buildReviewPromptResultWithCache(params: {
     cacheQuery: string;
     context: ReviewPromptBuildContext;
-    statusTarget: { status: "hit" | "miss" | "degraded" | "bypass"; reason: string | null };
+    statusTarget: ReviewPromptCacheState;
   }): Promise<PromptBuildResult> {
     const fingerprintResult = buildReviewPromptFingerprint(params.context);
     if (!fingerprintResult.fingerprint) {
       params.statusTarget.status = "bypass";
-      params.statusTarget.reason = fingerprintResult.missingSignals.join(",") || "incomplete-fingerprint";
+      params.statusTarget.reason = "incomplete-fingerprint";
+      params.statusTarget.missingSignalNames = fingerprintResult.missingSignals;
       return reviewPromptBuilder(params.context);
     }
 
@@ -2540,10 +2851,16 @@ export function createReviewHandler(deps: {
       const cacheDegraded = reviewPromptDerivedCacheErrorCount > cacheErrorsBeforeLookup;
       params.statusTarget.status = cacheDegraded ? "degraded" : loaderExecuted ? "miss" : "hit";
       params.statusTarget.reason = cacheDegraded ? "cache-bookkeeping-error" : null;
+      params.statusTarget.fingerprintVersion = REVIEW_PROMPT_FINGERPRINT_VERSION;
+      params.statusTarget.safetySignalNames = ["prompt-fingerprint-v1", "prompt-cache-query-head-sha"];
+      if (cacheDegraded) {
+        params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
+      }
       return result;
     } catch (error) {
       params.statusTarget.status = "degraded";
-      params.statusTarget.reason = "prompt-build-failed";
+      params.statusTarget.reason = "cache-bookkeeping-error";
+      params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
       logger.warn(
         {
           err: error,
@@ -2554,6 +2871,44 @@ export function createReviewHandler(deps: {
         "Review prompt cache lookup failed; rebuilding directly",
       );
       return reviewPromptBuilder(params.context);
+    }
+  }
+
+  async function recordReviewCacheEventFailOpen(entry: ReviewCacheEventRecord): Promise<void> {
+    try {
+      if (!telemetryStore.recordReviewCacheEvent) {
+        logger.warn(
+          {
+            deliveryId: entry.deliveryId,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+            cacheSurface: entry.cacheSurface,
+            status: entry.status,
+            reason: entry.reason,
+          },
+          "Review cache telemetry store method unavailable (non-blocking)",
+        );
+        return;
+      }
+      await telemetryStore.recordReviewCacheEvent(entry);
+    } catch (err) {
+      logger.warn(
+        {
+          err,
+          deliveryId: entry.deliveryId,
+          repo: entry.repo,
+          prNumber: entry.prNumber,
+          cacheSurface: entry.cacheSurface,
+          status: entry.status,
+          reason: entry.reason,
+          fingerprintVersion: entry.fingerprintVersion,
+          safetySignalNames: entry.safetySignalNames,
+          missingSignalNames: entry.missingSignalNames,
+          invalidationSignalNames: entry.invalidationSignalNames,
+          bookkeepingErrorCount: entry.bookkeepingErrorCount ?? 0,
+        },
+        "Review cache telemetry write failed (non-blocking)",
+      );
     }
   }
 
@@ -4092,6 +4447,18 @@ export function createReviewHandler(deps: {
           ? matchPathInstructions(config.review.pathInstructions, changedFiles)
           : [];
 
+        const repoDoctrineProjection = normalizeRepoDoctrineProjection(config.review.doctrine, changedFiles);
+        const repoDoctrineReviewSurface = toRepoDoctrineReviewSurfaceProjection(repoDoctrineProjection);
+        logger.info(
+          {
+            ...baseLog,
+            gate: "repo-doctrine",
+            gateResult: repoDoctrineReviewSurface.status,
+            ...buildRepoDoctrineLogFields(repoDoctrineProjection),
+          },
+          "Resolved bounded repository doctrine projection",
+        );
+
         // Prior finding dedup context (REV-02)
         let priorFindingCtx: PriorFindingContext | null = null;
         let priorFindings: PriorFinding[] = [];
@@ -4114,6 +4481,18 @@ export function createReviewHandler(deps: {
 
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         let retrievalCtx: RetrievalContextForPrompt | null = null;
+        const visibleReviewCacheObservations: ReviewCacheTelemetryObservation[] = [];
+        const visibleContinuationCompactionObservations: ContinuationCompactionObservation[] = [];
+        let visiblePromptSectionRecords: PromptSectionRecord[] = [];
+        let reviewVisibleBudgetProjection: VisibleBudgetProjection | null = null;
+        const refreshReviewVisibleBudgetProjection = (): VisibleBudgetProjection | null => {
+          reviewVisibleBudgetProjection = buildVisibleBudgetProjectionFromEvidence({
+            promptSectionRecords: visiblePromptSectionRecords,
+            cacheTelemetryObservations: visibleReviewCacheObservations,
+            continuationCompactionObservations: visibleContinuationCompactionObservations,
+          });
+          return reviewVisibleBudgetProjection;
+        };
         let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
         let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
         let unifiedResultsForPrompt: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] = [];
@@ -4143,9 +4522,17 @@ export function createReviewHandler(deps: {
               triggerType: "pr_review",
             });
 
+            const retrievalCacheEvent = buildRetrievalReviewCacheEvent({
+              deliveryId: event.id,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              result,
+            });
+            visibleReviewCacheObservations.push(retrievalCacheEvent);
+
             if (config.telemetry.enabled) {
               try {
-                const totalEmbeddingLookups = (result?.provenance.embeddingRequests ?? 0) + (result?.provenance.embeddingCacheHits ?? 0);
+                const totalEmbeddingLookups = (result?.provenance?.embeddingRequests ?? 0) + (result?.provenance?.embeddingCacheHits ?? 0);
                 await telemetryStore.recordRateLimitEvent({
                   deliveryId: event.id,
                   executionIdentity: `${event.id}:reuse.retrieval-query-embedding.main`,
@@ -4153,13 +4540,13 @@ export function createReviewHandler(deps: {
                   prNumber: pr.number,
                   eventType: "reuse.retrieval-query-embedding.main",
                   cacheHitRate: totalEmbeddingLookups > 0
-                    ? (result?.provenance.embeddingCacheHits ?? 0) / totalEmbeddingLookups
+                    ? (result?.provenance?.embeddingCacheHits ?? 0) / totalEmbeddingLookups
                     : 0,
-                  skippedQueries: result?.provenance.embeddingCacheHits ?? 0,
-                  retryAttempts: result?.provenance.embeddingRequests ?? 0,
-                  degradationPath: result == null
-                    ? "degraded"
-                    : (result.provenance.embeddingCacheHits > 0 ? "hit" : "miss"),
+                  skippedQueries: result?.provenance?.embeddingCacheHits ?? 0,
+                  retryAttempts: result?.provenance?.embeddingRequests ?? 0,
+                  degradationPath: retrievalCacheEvent.reason
+                    ? `${retrievalCacheEvent.status}:${retrievalCacheEvent.reason}`
+                    : retrievalCacheEvent.status,
                 });
               } catch (err) {
                 logger.warn(
@@ -4167,6 +4554,8 @@ export function createReviewHandler(deps: {
                   "Review retrieval reuse telemetry write failed (non-blocking)",
                 );
               }
+
+              await recordReviewCacheEventFailOpen(retrievalCacheEvent);
             }
 
             // Capture unified cross-corpus results (KI-13/KI-17)
@@ -4503,14 +4892,16 @@ export function createReviewHandler(deps: {
                 "diff-analysis",
                 ...(retrievalCtx ? ["retrieval"] : []),
                 ...(matchedPathInstructions.length > 0 ? ["path-instructions"] : []),
+                ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
                 ...(reviewBoundedness ? ["review-boundedness"] : []),
               ],
             },
             gates: {
-              enabled: ["review-routing", "timeout-estimation", "review-boundedness"],
+              enabled: ["review-routing", "timeout-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
               current: [
                 "review-routing",
                 "timeout-estimation",
+                ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
                 ...(reviewBoundedness ? ["review-boundedness"] : []),
               ],
             },
@@ -4523,6 +4914,7 @@ export function createReviewHandler(deps: {
             candidateFinding: {
               mode: "preferred",
             },
+            repoDoctrine: repoDoctrineReviewSurface,
           }).plan;
           logger.info(
             {
@@ -4536,6 +4928,7 @@ export function createReviewHandler(deps: {
               boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
               graphValidationStatus: reviewPlan.graphValidation.status,
               candidateFindingMode: reviewPlan.candidateFinding.mode,
+              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
             },
             "Review plan ready",
           );
@@ -4558,6 +4951,7 @@ export function createReviewHandler(deps: {
               boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
               graphValidationStatus: reviewPlan.graphValidation.status,
               candidateFindingMode: reviewPlan.candidateFinding.mode,
+              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
               error: serializeReviewPlanBuilderError(err),
             },
             "Review plan builder failed; continuing with degraded plan metadata",
@@ -4757,12 +5151,10 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
+          repoDoctrine: repoDoctrineProjection,
           smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
         } satisfies ReviewPromptBuildContext;
-        const reviewPromptCacheState: {
-          status: "hit" | "miss" | "degraded" | "bypass";
-          reason: string | null;
-        } = {
+        const reviewPromptCacheState: ReviewPromptCacheState = {
           status: reviewPromptDerivedCacheStatus,
           reason: reviewPromptDerivedCacheReason,
         };
@@ -4783,6 +5175,7 @@ export function createReviewHandler(deps: {
             sections: reviewPromptResult.sections,
           }),
         ];
+        visiblePromptSectionRecords = reviewPromptSections;
         logger.info(
           {
             ...baseLog,
@@ -4792,6 +5185,17 @@ export function createReviewHandler(deps: {
           },
           "Resolved review prompt derived-cache state",
         );
+        const reviewPromptCacheEvent = buildPromptReviewCacheEvent({
+          deliveryId: event.id,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          state: reviewPromptCacheState,
+        });
+        visibleReviewCacheObservations.push(reviewPromptCacheEvent);
+        refreshReviewVisibleBudgetProjection();
+        if (config.telemetry.enabled) {
+          await recordReviewCacheEventFailOpen(reviewPromptCacheEvent);
+        }
         reviewPhaseTimings.set(
           "retrieval/context assembly",
           createReviewPhaseTiming({
@@ -4831,15 +5235,8 @@ export function createReviewHandler(deps: {
           maxTurnsOverride: reviewMaxTurnsOverride,
         });
         executorResult = result;
-        executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
-          "executor phase timings unavailable",
-        );
-        for (const phase of executorPhaseTimings) {
-          reviewPhaseTimings.set(phase.name, phase);
-        }
-        publicationPhaseStartedAt = Date.now();
-
-        executorResult = result;
+        visiblePromptSectionRecords = result.promptSections ?? visiblePromptSectionRecords;
+        refreshReviewVisibleBudgetProjection();
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
           "executor phase timings unavailable",
         );
@@ -5003,6 +5400,7 @@ export function createReviewHandler(deps: {
           guardrailAuditStore,
           guardrailStrictness: config.guardrails?.strictness ?? "standard",
           graphValidationLLM,
+          repoDoctrine: repoDoctrineReviewSurface,
         };
 
         let reducerResult: ReviewReducerResult;
@@ -5045,6 +5443,8 @@ export function createReviewHandler(deps: {
           adaptApprovedCandidatesForInlinePublication({
             approval: reviewCandidateApprovalResult,
             reducer: reducerResult,
+            prDiffText: diffContext.diffContent,
+            maxFixSuggestions: resolvedMaxComments,
             logger,
           });
 
@@ -5145,6 +5545,95 @@ export function createReviewHandler(deps: {
         const reviewReducerDetailsSummary = reducerResult.detailsSummary;
         const reviewCandidatePublicationAdapterDetailsSummary =
           toReviewCandidatePublicationAdapterSummary(reviewCandidatePublicationAdapter.summary);
+        const reviewFindingLifecycleResult: AttachReviewFindingLifecycleResult = attachReviewFindingLifecycle({
+          source: "automatic",
+          trigger: "pull_request",
+          correlation: {
+            repo: `${apiOwner}/${apiRepo}`,
+            pullNumber: pr.number,
+            reviewOutputKey,
+            deliveryId: event.id,
+            commitSha: pr.head.sha,
+            headSha: pr.head.sha,
+            baseSha: pr.base.sha,
+            headRef: pr.head.ref,
+            baseRef: pr.base.ref,
+          },
+          findings: processedFindings,
+          candidateFinding: reviewCandidateFindingResult,
+        });
+        logger.info(
+          {
+            ...baseLog,
+            ...reviewFindingLifecycleResult.logEvidence,
+            source: "automatic-review",
+          },
+          "Projected review finding lifecycle evidence",
+        );
+        let reviewValidationTruthProjection: AttachReviewValidationTruthResult["projection"] | null = null;
+        try {
+          const reviewValidationTruth = attachReviewValidationTruth({
+            lifecycle: reviewFindingLifecycleResult.lifecycle,
+            correlation: {
+              repo: `${apiOwner}/${apiRepo}`,
+              pullNumber: pr.number,
+              reviewOutputKey,
+              deliveryId: event.id,
+              commitSha: pr.head.sha,
+              headSha: pr.head.sha,
+              baseSha: pr.base.sha,
+              headRef: pr.head.ref,
+              baseRef: pr.base.ref,
+            },
+            publicationFixes: convertPublishedCandidateResultsToValidationTruthFixes({
+              payloads: reviewCandidatePublicationAdapter.payloads,
+              results: candidatePublisherResults,
+              reviewOutputKey,
+              deliveryId: event.id,
+            }),
+            requireRevalidation: true,
+          });
+          reviewValidationTruthProjection = reviewValidationTruth.projection;
+          logger.info(
+            {
+              ...baseLog,
+              ...reviewValidationTruth.logEvidence,
+              gateResult: reviewValidationTruth.status,
+              source: "automatic-review",
+            },
+            "Projected review validation truth evidence",
+          );
+        } catch (err) {
+          try {
+            logger.warn(
+              {
+                ...baseLog,
+                err,
+                gate: "review-validation-truth",
+                gateResult: "degraded",
+                reviewOutputKey,
+                deliveryId: event.id,
+              },
+              "Review validation truth diagnostics failed; continuing review publication",
+            );
+          } catch {
+            // Diagnostics are fail-open for review execution and must not block publication.
+          }
+        }
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-fix-eligibility",
+            gateResult: reviewCandidatePublicationAdapter.summary.fixEligibility.status,
+            reviewOutputKey,
+            deliveryId: event.id,
+            counts: reviewCandidatePublicationAdapter.summary.fixEligibility.counts,
+            reasonCounts: reviewCandidatePublicationAdapter.summary.fixEligibility.reasonCounts,
+            omittedReasonCounts: reviewCandidatePublicationAdapter.summary.fixEligibility.omittedReasonCounts,
+            redaction: reviewCandidatePublicationAdapter.summary.fixEligibility.redaction,
+          },
+          "Review fix eligibility summarized",
+        );
         logger.info(
           {
             ...baseLog,
@@ -5153,6 +5642,7 @@ export function createReviewHandler(deps: {
             counts: reviewCandidatePublicationAdapter.summary.counts,
             skipped: reviewCandidatePublicationAdapter.summary.skipped,
             payloadFingerprints: reviewCandidatePublicationAdapter.summary.fingerprints,
+            fixEligibility: reviewCandidatePublicationAdapter.summary.fixEligibility,
             details: reviewCandidatePublicationAdapterDetailsSummary.text,
           },
           "Review candidate publication adapter summarized",
@@ -5221,7 +5711,8 @@ export function createReviewHandler(deps: {
           reviewFirstPass?: ReviewFirstPassPayload | null;
           timeoutBudget?: TimeoutBudgetDetails | null;
         }): string => {
-          const reviewDetailsBody = formatReviewDetailsSummary({
+          const visibleBudgetProjection = refreshReviewVisibleBudgetProjection();
+          const reviewDetailsBody = appendReviewDetailsBudgetLines(formatReviewDetailsSummary({
             reviewOutputKey,
             filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
             linesAdded: reviewDetailsLineCounts.linesAdded,
@@ -5250,6 +5741,8 @@ export function createReviewHandler(deps: {
             reviewReducer: reviewReducerDetailsSummary,
             reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
             reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
+            reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
+            reviewValidationTruth: reviewValidationTruthProjection,
             phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
               phases: reviewPhaseTimings,
               publicationPhaseStartedAt,
@@ -5258,7 +5751,7 @@ export function createReviewHandler(deps: {
             timeoutProgress: params?.timeoutProgress,
             timeoutBudget: params?.timeoutBudget,
             lineCountSource: reviewDetailsLineCounts.source,
-          });
+          }), visibleBudgetProjection);
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
           return suppressedSection
@@ -5299,6 +5792,7 @@ export function createReviewHandler(deps: {
               surfaceKind: params.surfaceKind,
               hasCommentId: typeof params.commentId === "number",
               hasReviewId: typeof params.reviewId === "number",
+              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
             },
             "Review Details publication completed",
           );
@@ -5938,6 +6432,12 @@ export function createReviewHandler(deps: {
                 checkpoint,
                 riskScores,
                 timeoutSeconds: timeoutDuration,
+                continuationCompaction: {
+                  attemptId: reviewWorkAttempt.attemptId,
+                  attemptOrdinal: 0,
+                  promptBudgetOutcomes: buildPromptBudgetOutcomes(visiblePromptSectionRecords),
+                  cacheTelemetryObservations: visibleReviewCacheObservations,
+                },
                 hasPublishedInlineFindings: hasPublishedInlines,
                 isChronicTimeout,
                 estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
@@ -5958,6 +6458,10 @@ export function createReviewHandler(deps: {
 
               switch (retryPlan.decision) {
                 case "schedule-continuation":
+                  if (retryPlan.continuationCompaction) {
+                    visibleContinuationCompactionObservations.push(retryPlan.continuationCompaction);
+                    refreshReviewVisibleBudgetProjection();
+                  }
                   retryState = "scheduled reduced-scope retry";
                   retrySummaryNote = "Scheduling a reduced-scope retry.";
                   break;
@@ -6469,12 +6973,32 @@ export function createReviewHandler(deps: {
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
+                      repoDoctrine: repoDoctrineProjection,
                       smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
+                      retryPromptCompaction: retryPlan.continuationCompaction
+                        ? {
+                            observation: retryPlan.continuationCompaction,
+                            checkpointSummaries: checkpoint
+                              ? [{
+                                  reviewOutputKey: checkpoint.reviewOutputKey,
+                                  filesReviewed: checkpoint.filesReviewed,
+                                  findingCount: checkpoint.findingCount,
+                                  totalFiles: checkpoint.totalFiles,
+                                  summaryDraft: checkpoint.summaryDraft,
+                                }]
+                              : [],
+                            promptBudgetOutcomes: buildPromptBudgetOutcomes(visiblePromptSectionRecords).map((outcome) => ({
+                              sectionName: outcome.sectionName,
+                              status: outcome.status,
+                              reason: outcome.reason,
+                              includedChars: outcome.includedChars,
+                              trimmedChars: outcome.trimmedChars,
+                            })),
+                            cacheSafetySignalNames: Array.from(new Set(visibleReviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []))).sort((a, b) => a.localeCompare(b)),
+                          }
+                        : null,
                     } satisfies ReviewPromptBuildContext;
-                    const retryPromptCacheState: {
-                      status: "hit" | "miss" | "degraded" | "bypass";
-                      reason: string | null;
-                    } = {
+                    const retryPromptCacheState: ReviewPromptCacheState = {
                       status: retryReviewPromptDerivedCacheStatus,
                       reason: retryReviewPromptDerivedCacheReason,
                     };
@@ -6505,6 +7029,17 @@ export function createReviewHandler(deps: {
                       },
                       "Resolved retry review prompt derived-cache state",
                     );
+                    const retryPromptCacheEvent = buildPromptReviewCacheEvent({
+                      deliveryId: retryDeliveryId,
+                      repo: `${apiOwner}/${apiRepo}`,
+                      prNumber: pr.number,
+                      state: retryPromptCacheState,
+                    });
+                    visibleReviewCacheObservations.push(retryPromptCacheEvent);
+                    refreshReviewVisibleBudgetProjection();
+                    if (config.telemetry.enabled) {
+                      await recordReviewCacheEventFailOpen(retryPromptCacheEvent);
+                    }
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({
@@ -7181,8 +7716,10 @@ export function createReviewHandler(deps: {
             }
 
             setReviewWorkPhase("publish");
+            const visibleBudgetDisclosureEvidence = buildVisibleBudgetDisclosureEvidence(refreshReviewVisibleBudgetProjection());
             const approvalEvidence = [
               `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
+              ...(visibleBudgetDisclosureEvidence ? [visibleBudgetDisclosureEvidence] : []),
             ];
             const approvalConfidence = depBumpContext?.mergeConfidence
               ? renderApprovalConfidence(depBumpContext.mergeConfidence)

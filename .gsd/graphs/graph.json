@@ -1,10 +1,10 @@
 {
   "nodes": [
     {
-      "id": "milestone:M072",
-      "label": "M072: Candidate Publication Bridge",
+      "id": "milestone:M074",
+      "label": "M074: Clawpatch Inspired Review Workflow and Inline Fix Evidence",
       "type": "milestone",
-      "description": "Active milestone: M072",
+      "description": "Active milestone: M074",
       "confidence": "EXTRACTED",
       "sourceFile": "STATE.md"
     },
@@ -5748,6 +5748,13 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "milestone:M072",
+      "label": "M072: Candidate Publication Bridge",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-ROADMAP.md"
+    },
+    {
       "id": "slice:M072:S01",
       "label": "S01: Source owned bridge contract",
       "type": "slice",
@@ -5850,6 +5857,417 @@
     {
       "id": "task:M072:S04:T03",
       "label": "T03: Close with integration regression proof",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "milestone:M073",
+      "label": "M073: Token-First Review Efficiency",
+      "type": "milestone",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-ROADMAP.md"
+    },
+    {
+      "id": "slice:M073:S01",
+      "label": "S01: Token cost baseline and scorecard",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M073:S01:T01",
+      "label": "T01: Define offline review cost scorecard contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S01:T02",
+      "label": "T02: Add replay fixture verifier for baseline scorecards",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S01:T03",
+      "label": "T03: Document baseline interpretation and downstream handoff",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S02",
+      "label": "S02: Prompt section budgets and deterministic overflow",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M073:S02:T01",
+      "label": "T01: Define prompt budget contract and evaluator",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S02:T02",
+      "label": "T02: Wire budget outcomes into review prompt assembly",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S02:T03",
+      "label": "T03: Add S02 verifier, fixture, docs, and package script",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S03",
+      "label": "S03: Cache telemetry and safe reuse boundaries",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M073:S03:T01",
+      "label": "T01: Define text-free cache telemetry contract and verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S03:T02",
+      "label": "T02: Persist bounded review cache telemetry from prompt and retrieval paths",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S03:T03",
+      "label": "T03: Harden safe reuse boundaries with cache invalidation tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S03:T04",
+      "label": "T04: Expose S03 cache telemetry in usage reports and runbooks",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S04",
+      "label": "S04: Compact continuation and retry context",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M073:S04:T01",
+      "label": "T01: Define text-free continuation compaction contract and verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S04:T02",
+      "label": "T02: Compact retry prompt inputs when safety signals are complete",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S04:T03",
+      "label": "T03: Fallback explicitly when compaction safety is missing or degraded",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S04:T04",
+      "label": "T04: Document S04 handoff and add executable verification surface",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S05",
+      "label": "S05: Budget aware visible review behavior",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S05/S05-PLAN.md"
+    },
+    {
+      "id": "task:M073:S05:T01",
+      "label": "T01: Define bounded visible budget behavior contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S05:T02",
+      "label": "T02: Wire bounded projection into Review Details and visible output",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S05:T03",
+      "label": "T03: Add S05 verifier script and runbook handoff",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S06",
+      "label": "S06: Live proof and rollback ready verifier",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S06/S06-PLAN.md"
+    },
+    {
+      "id": "task:M073:S06:T01",
+      "label": "T01: Define the S06 live proof verifier contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S06:T02",
+      "label": "T02: Map production like evidence into the S06 fixture",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S06:T03",
+      "label": "T03: Expose S06 verification and rollback operator guidance",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S06:T04",
+      "label": "T04: Run final M073 proof bundle",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M073:S07",
+      "label": "S07: S07 R131 evidence and S01 S02 linkage remediation",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S07/S07-PLAN.md"
+    },
+    {
+      "id": "task:M073:S07:T01",
+      "label": "T01: Make S02 budget evidence cite S01 baseline inputs",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S07:T02",
+      "label": "T02: Add S07 remediation verifier for linkage and R131 disposition",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S07:T03",
+      "label": "T03: Wire S07 proof into scripts docs and requirement disposition",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S01",
+      "label": "S01: Lifecycle Contract and Redaction Boundary",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S01/S01-PLAN.md"
+    },
+    {
+      "id": "task:M074:S01:T01",
+      "label": "T01: Define pure lifecycle record and projection contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S01:T02",
+      "label": "T02: Add M074 S01 verifier for deterministic redaction-safe fixtures",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S02",
+      "label": "S02: Review Trigger Lifecycle Attachment",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S02/S02-PLAN.md"
+    },
+    {
+      "id": "task:M074:S02:T01",
+      "label": "T01: Add shared handler lifecycle attachment adapter and verifier",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S02:T02",
+      "label": "T02: Wire lifecycle projection into automatic review handler and Review Details",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S02:T03",
+      "label": "T03: Wire lifecycle evidence into explicit mention review lane",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S02:T04",
+      "label": "T04: Run integration verifier and guard negative publication boundaries",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S03",
+      "label": "S03: Same PR Inline Fix Eligibility",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S03/S03-PLAN.md"
+    },
+    {
+      "id": "task:M074:S03:T01",
+      "label": "T01: Define same PR fix eligibility reducer",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S03:T02",
+      "label": "T02: Attach fix eligibility to candidate publication adapter",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S03:T03",
+      "label": "T03: Wire same PR fix suggestions through review handlers",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S03:T04",
+      "label": "T04: Add S03 verifier and package wiring",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S04",
+      "label": "S04: Validation and Revalidation Truth",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S04/S04-PLAN.md"
+    },
+    {
+      "id": "task:M074:S04:T01",
+      "label": "T01: Add validation truth reducer contract",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S04:T02",
+      "label": "T02: Compose validation truth with lifecycle and fix publication evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S04:T03",
+      "label": "T03: Wire review-time validation truth diagnostics into review triggers",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S04:T04",
+      "label": "T04: Package S04 verifier and regression gate",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S05",
+      "label": "S05: Review Details and Verifier Evidence",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S05/S05-PLAN.md"
+    },
+    {
+      "id": "task:M074:S05:T01",
+      "label": "T01: Add validation truth Review Details projection formatting",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S05:T02",
+      "label": "T02: Wire validation truth projection through review and mention handlers",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S05:T03",
+      "label": "T03: Package S05 verifier for Review Details and operator evidence",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S05:T04",
+      "label": "T04: Run full S05 regression gate and preserve upstream verifier contracts",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S06",
+      "label": "S06: Production Like Same PR Proof",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S06/S06-PLAN.md"
+    },
+    {
+      "id": "task:M074:S06:T01",
+      "label": "T01: Create S06 proof evaluator and production-like evidence fixture",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S06:T02",
+      "label": "T02: Exercise automatic review trigger path in a production-like harness",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S06:T03",
+      "label": "T03: Verify explicit review parity and optional live-source blocked semantics",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S06:T04",
+      "label": "T04: Run full M074 proof bundle and document production-like assumptions",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "slice:M074:S07",
+      "label": "S07: R104 Requirement Coverage Remediation",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S07/S07-PLAN.md"
+    },
+    {
+      "id": "task:M074:S07:T01",
+      "label": "T01: Add typed repo doctrine config contract and projection tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T02",
+      "label": "T02: Wire doctrine contracts into ReviewPlan, prompt, reducer input, and Review Details",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T03",
+      "label": "T03: Integrate doctrine wiring through review and explicit review handler fixtures",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T04",
+      "label": "T04: Add S07 verifier, fixture, package script, and operator proof document",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T05",
+      "label": "T05: Update configuration docs, R104 validation metadata, and closeout regression bundle",
       "type": "task",
       "confidence": "EXTRACTED"
     },
@@ -7820,6 +8238,582 @@
       "description": "Source: S06-SUMMARY.md/Deviations",
       "confidence": "EXTRACTED",
       "sourceFile": "milestones/M071/M071-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:1",
+      "label": "Chose to plan M072 risk-first around a source-owned bridge contract, then wire inline MCP ordering, normal review-handler ordering, and deterministic verifier/handoff continuity.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Success Criteria Checklist",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:2",
+      "label": "Chose deterministic source, unit, integration, and verifier proof instead of requiring live GitHub smoke proof for M072 closure, because the milestone's safety boundary is capture-before-publication ordering and live public output could create noisy or unsafe candidate publication.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Verification Class Compliance",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:3",
+      "label": "Chose the S01 candidate publication bridge as the canonical source for stable keys, bounded counts, redaction flags, reducer handoff shape, and owner validation across inline MCP, review-handler, Review Details, and verifier consumers.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:4",
+      "label": "Chose to keep `verify:m072` separate from M071 evidence matrices and limited to fixed checked-in source paths plus package wiring, so planning prose, direct script execution, or unsafe report fields cannot masquerade as milestone closure.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:5",
+      "label": "A non-pass validation artifact can still contain passing acceptance, integration, and verification evidence when the attention items are scoped requirement deferrals and non-blocking artifact completeness gaps; closeout must distinguish scope-appropriate partial R131-R133 progress from R130 completion failure.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:6",
+      "label": "Repository-wide TypeScript remained blocked by unrelated existing errors, so M072 relied on scoped strict TypeScript and targeted bridge/verifier/integration tests for truthful evidence rather than claiming repo-wide type health.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:7",
+      "label": "Review-handler tests needed mocked executor result candidate evidence to exercise the production handler boundary because the integration harness did not naturally expose aggregate publication evidence from MCP `onPublishEvent`.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:8",
+      "label": "S04 lacks a standalone `S04-ASSESSMENT.md` even though `S04-SUMMARY.md`, `S04-UAT.md`, DB slice completion, and verifier evidence are present; future validators should avoid treating assessment-file absence as source-code failure when summary/UAT evidence is complete.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:9",
+      "label": "Candidate-publication diagnostics should be source-verifiable in memory and expose only safe metadata: stable record/correlation keys, status, bounded counts, reason categories, presence flags, malformed codes, and redaction flags.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:10",
+      "label": "Candidate bridge capture and reducer handoff projection should occur after idempotency/commentability checks but before GitHub-visible publication calls, preserving existing gates and fallback semantics.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:11",
+      "label": "Project candidate evidence once at the post-executor review-handler boundary, then thread only the safe projection into Review Details and structured logs for all public handler publication branches.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:12",
+      "label": "Milestone source-evidence closure should use a dedicated verifier that checks implementation markers, package wiring, deferred ownership, report safety, and negative planning-only/unsafe-field cases.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:13",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M072:14",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "decision",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:1",
+      "label": "A non-pass validation artifact can still contain passing acceptance, integration, and verification evidence when the attention items are scoped requirement deferrals and non-blocking artifact completeness gaps; closeout must distinguish scope-appropriate partial R131-R133 progress from R130 completion failure.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Verdict Rationale",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:2",
+      "label": "Repository-wide TypeScript remained blocked by unrelated existing errors, so M072 relied on scoped strict TypeScript and targeted bridge/verifier/integration tests for truthful evidence rather than claiming repo-wide type health.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:3",
+      "label": "Review-handler tests needed mocked executor result candidate evidence to exercise the production handler boundary because the integration harness did not naturally expose aggregate publication evidence from MCP `onPublishEvent`.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Deviations",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:4",
+      "label": "S04 lacks a standalone `S04-ASSESSMENT.md` even though `S04-SUMMARY.md`, `S04-UAT.md`, DB slice completion, and verifier evidence are present; future validators should avoid treating assessment-file absence as source-code failure when summary/UAT evidence is complete.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:5",
+      "label": "Candidate-publication diagnostics should be source-verifiable in memory and expose only safe metadata: stable record/correlation keys, status, bounded counts, reason categories, presence flags, malformed codes, and redaction flags.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:6",
+      "label": "Candidate bridge capture and reducer handoff projection should occur after idempotency/commentability checks but before GitHub-visible publication calls, preserving existing gates and fallback semantics.",
+      "type": "lesson",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:7",
+      "label": "Project candidate evidence once at the post-executor review-handler boundary, then thread only the safe projection into Review Details and structured logs for all public handler publication branches.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:8",
+      "label": "Milestone source-evidence closure should use a dedicated verifier that checks implementation markers, package wiring, deferred ownership, report safety, and negative planning-only/unsafe-field cases.",
+      "type": "lesson",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:9",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M072:10",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:1",
+      "label": "Candidate-publication diagnostics should be source-verifiable in memory and expose only safe metadata: stable record/correlation keys, status, bounded counts, reason categories, presence flags, malformed codes, and redaction flags.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:2",
+      "label": "Candidate bridge capture and reducer handoff projection should occur after idempotency/commentability checks but before GitHub-visible publication calls, preserving existing gates and fallback semantics.",
+      "type": "pattern",
+      "description": "Source: S02-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:3",
+      "label": "Project candidate evidence once at the post-executor review-handler boundary, then thread only the safe projection into Review Details and structured logs for all public handler publication branches.",
+      "type": "pattern",
+      "description": "Source: S03-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:4",
+      "label": "Milestone source-evidence closure should use a dedicated verifier that checks implementation markers, package wiring, deferred ownership, report safety, and negative planning-only/unsafe-field cases.",
+      "type": "pattern",
+      "description": "Source: S04-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:5",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "pattern",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M072:6",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "pattern",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M072:1",
+      "label": "The prior validation verdict was `needs-attention` despite all M072 acceptance criteria, cross-slice integration boundaries, and planned verification classes passing, because requirement coverage aggregation expected explicit acknowledgment that R131-R133 remain deferred.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Requirement Coverage",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M072:2",
+      "label": "Validation observed the missing S04 assessment artifact after S04 was DB-complete with summary/UAT/verifier evidence, making artifact completeness an attention item rather than a source remediation blocker.",
+      "type": "lesson",
+      "description": "Source: M072-VALIDATION.md/Slice Delivery Audit",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M072/M072-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:1",
+      "label": "Use text-free prompt budget outcomes as the prompt/context budget contract: section identity, included/trimmed counts, status, and bounded overflow reasons are persisted, while raw prompt text stays out of telemetry.",
+      "type": "decision",
+      "description": "Source: S02-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:2",
+      "label": "Store review cache observations in a dedicated `review_cache_events` telemetry table rather than overloading rate-limit events, with cache-specific status/reason vocabulary and fail-open persistence.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/Key Design Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:3",
+      "label": "Treat continuation compaction as a safety-gated bounded evidence model: compact only when checkpoint, prompt budget, and cache safety signals are complete; otherwise fall back with explicit reasons.",
+      "type": "decision",
+      "description": "Source: S04-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:4",
+      "label": "Expose token-efficiency behavior publicly only through bounded Review Details projections and scoped-review language, preserving candidate verification, reducer, publication, idempotency, and secret-safety gates.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Integration closure",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:5",
+      "label": "Keep final rollout proof production-like/offline and aggregate-only until a human explicitly confirms any live GitHub write.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Key Decisions",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:6",
+      "label": "A baseline contract is not enough unless downstream consumption is machine-checkable; S07 had to add deterministic S01-to-S02 source ids and a verifier because prose handoff evidence left a validation gap.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:7",
+      "label": "Broad issue #131-adjacent requirements can look partially uncovered even when a token-first milestone succeeds; explicit ownership records are needed to distinguish M073 completion from R131/R132/R133 follow-up scope.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Requirements Invalidated or Re-scoped",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:8",
+      "label": "Token reduction proof is strongest when it combines upstream verifier rows, before/after runtime totals, latency ceiling, bounded visible projections, rollback controls, and negative cases in one rerunnable fixture.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:9",
+      "label": "Cache telemetry must remain observability-only and fail-open; stale, incomplete, expired, or weakly keyed cache entries should bypass/degrade rather than silently produce hits.",
+      "type": "decision",
+      "description": "Source: S03-SUMMARY.md/What Was Built",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:10",
+      "label": "Use redaction-safe golden fixtures plus verifier CLIs for review-pipeline contracts so agents and operators can rerun checks without raw prompts, diffs, comments, candidates, model output, cache keys, fingerprints, tokens, or secrets.",
+      "type": "decision",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:11",
+      "label": "Use bounded status/reason vocabularies and deterministic totals for prompt budgets, cache states, continuation compaction, and visible projections so verifier output is stable and failure localization is machine-checkable.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:12",
+      "label": "Add final remediation verifiers for cross-slice boundary-map claims when validation depends on producer-to-consumer linkage, instead of relying on slice-summary prose alone.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:13",
+      "label": "Separate token-efficiency proof from specialist-lane publication-safety proof; do not let a token-first milestone accidentally validate private/shadow specialist requirements it did not implement.",
+      "type": "decision",
+      "description": "Source: S07-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:14",
+      "label": "Pair every operator-visible efficiency signal with an explicit redaction boundary and gate-preservation test before exposing it in Review Details or public review output.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:15",
+      "label": "The validation artifact remained `needs-attention` even after all slices were complete, because the original S02 summary did not itself record S01 consumption and S07 had to provide a later machine-checkable remediation bridge.",
+      "type": "decision",
+      "description": "Source: M073-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:16",
+      "label": "The milestone achieved a 23.58% runtime-token reduction while keeping production-like latency under the rollout ceiling, showing that token-first optimization can address timeout pressure without relying only on headroom increases.",
+      "type": "decision",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "decision:M073:17",
+      "label": "Some slice summaries contained sparse frontmatter (`key_files`, `key_decisions`, and `patterns_established` empty) despite rich narrative sections, so closeout synthesis had to read full summaries rather than relying only on metadata.",
+      "type": "decision",
+      "description": "Source: S05-SUMMARY.md/Frontmatter",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:1",
+      "label": "A baseline contract is not enough unless downstream consumption is machine-checkable; S07 had to add deterministic S01-to-S02 source ids and a verifier because prose handoff evidence left a validation gap.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:2",
+      "label": "Broad issue #131-adjacent requirements can look partially uncovered even when a token-first milestone succeeds; explicit ownership records are needed to distinguish M073 completion from R131/R132/R133 follow-up scope.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Requirements Invalidated or Re-scoped",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:3",
+      "label": "Token reduction proof is strongest when it combines upstream verifier rows, before/after runtime totals, latency ceiling, bounded visible projections, rollback controls, and negative cases in one rerunnable fixture.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:4",
+      "label": "Cache telemetry must remain observability-only and fail-open; stale, incomplete, expired, or weakly keyed cache entries should bypass/degrade rather than silently produce hits.",
+      "type": "lesson",
+      "description": "Source: S03-SUMMARY.md/What Was Built",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:5",
+      "label": "Use redaction-safe golden fixtures plus verifier CLIs for review-pipeline contracts so agents and operators can rerun checks without raw prompts, diffs, comments, candidates, model output, cache keys, fingerprints, tokens, or secrets.",
+      "type": "lesson",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:6",
+      "label": "Use bounded status/reason vocabularies and deterministic totals for prompt budgets, cache states, continuation compaction, and visible projections so verifier output is stable and failure localization is machine-checkable.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:7",
+      "label": "Add final remediation verifiers for cross-slice boundary-map claims when validation depends on producer-to-consumer linkage, instead of relying on slice-summary prose alone.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:8",
+      "label": "Separate token-efficiency proof from specialist-lane publication-safety proof; do not let a token-first milestone accidentally validate private/shadow specialist requirements it did not implement.",
+      "type": "lesson",
+      "description": "Source: S07-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:9",
+      "label": "Pair every operator-visible efficiency signal with an explicit redaction boundary and gate-preservation test before exposing it in Review Details or public review output.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:10",
+      "label": "The validation artifact remained `needs-attention` even after all slices were complete, because the original S02 summary did not itself record S01 consumption and S07 had to provide a later machine-checkable remediation bridge.",
+      "type": "lesson",
+      "description": "Source: M073-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:11",
+      "label": "The milestone achieved a 23.58% runtime-token reduction while keeping production-like latency under the rollout ceiling, showing that token-first optimization can address timeout pressure without relying only on headroom increases.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "lesson:M073:12",
+      "label": "Some slice summaries contained sparse frontmatter (`key_files`, `key_decisions`, and `patterns_established` empty) despite rich narrative sections, so closeout synthesis had to read full summaries rather than relying only on metadata.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Frontmatter",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:1",
+      "label": "Use redaction-safe golden fixtures plus verifier CLIs for review-pipeline contracts so agents and operators can rerun checks without raw prompts, diffs, comments, candidates, model output, cache keys, fingerprints, tokens, or secrets.",
+      "type": "pattern",
+      "description": "Source: S01-SUMMARY.md/What Happened",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:2",
+      "label": "Use bounded status/reason vocabularies and deterministic totals for prompt budgets, cache states, continuation compaction, and visible projections so verifier output is stable and failure localization is machine-checkable.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:3",
+      "label": "Add final remediation verifiers for cross-slice boundary-map claims when validation depends on producer-to-consumer linkage, instead of relying on slice-summary prose alone.",
+      "type": "pattern",
+      "description": "Source: S07-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:4",
+      "label": "Separate token-efficiency proof from specialist-lane publication-safety proof; do not let a token-first milestone accidentally validate private/shadow specialist requirements it did not implement.",
+      "type": "pattern",
+      "description": "Source: S07-SUMMARY.md/Patterns Established",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:5",
+      "label": "Pair every operator-visible efficiency signal with an explicit redaction boundary and gate-preservation test before exposing it in Review Details or public review output.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:6",
+      "label": "The validation artifact remained `needs-attention` even after all slices were complete, because the original S02 summary did not itself record S01 consumption and S07 had to provide a later machine-checkable remediation bridge.",
+      "type": "pattern",
+      "description": "Source: M073-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:7",
+      "label": "The milestone achieved a 23.58% runtime-token reduction while keeping production-like latency under the rollout ceiling, showing that token-first optimization can address timeout pressure without relying only on headroom increases.",
+      "type": "pattern",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "pattern:M073:8",
+      "label": "Some slice summaries contained sparse frontmatter (`key_files`, `key_decisions`, and `patterns_established` empty) despite rich narrative sections, so closeout synthesis had to read full summaries rather than relying only on metadata.",
+      "type": "pattern",
+      "description": "Source: S05-SUMMARY.md/Frontmatter",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M073:1",
+      "label": "The validation artifact remained `needs-attention` even after all slices were complete, because the original S02 summary did not itself record S01 consumption and S07 had to provide a later machine-checkable remediation bridge.",
+      "type": "lesson",
+      "description": "Source: M073-VALIDATION.md/Cross-Slice Integration",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M073:2",
+      "label": "The milestone achieved a 23.58% runtime-token reduction while keeping production-like latency under the rollout ceiling, showing that token-first optimization can address timeout pressure without relying only on headroom increases.",
+      "type": "lesson",
+      "description": "Source: S06-SUMMARY.md/Verification",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
+    },
+    {
+      "id": "surprise:M073:3",
+      "label": "Some slice summaries contained sparse frontmatter (`key_files`, `key_decisions`, and `patterns_established` empty) despite rich narrative sections, so closeout synthesis had to read full summaries rather than relying only on metadata.",
+      "type": "lesson",
+      "description": "Source: S05-SUMMARY.md/Frontmatter",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/M073-LEARNINGS.md"
     }
   ],
   "edges": [
@@ -13026,6 +14020,396 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M073",
+      "to": "slice:M073:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S01",
+      "to": "task:M073:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S01",
+      "to": "task:M073:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S01",
+      "to": "task:M073:S01:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S02",
+      "to": "task:M073:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S02",
+      "to": "task:M073:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S02",
+      "to": "task:M073:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S03",
+      "to": "task:M073:S03:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S04",
+      "to": "task:M073:S04:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S05",
+      "to": "task:M073:S05:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S05",
+      "to": "task:M073:S05:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S05",
+      "to": "task:M073:S05:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S06",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S06",
+      "to": "task:M073:S06:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S06",
+      "to": "task:M073:S06:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S06",
+      "to": "task:M073:S06:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S06",
+      "to": "task:M073:S06:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "slice:M073:S07",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S07",
+      "to": "task:M073:S07:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S07",
+      "to": "task:M073:S07:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S07",
+      "to": "task:M073:S07:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S01",
+      "to": "task:M074:S01:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S01",
+      "to": "task:M074:S01:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S02",
+      "to": "task:M074:S02:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S02",
+      "to": "task:M074:S02:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S02",
+      "to": "task:M074:S02:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S02",
+      "to": "task:M074:S02:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S03",
+      "to": "task:M074:S03:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S03",
+      "to": "task:M074:S03:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S03",
+      "to": "task:M074:S03:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S03",
+      "to": "task:M074:S03:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S04",
+      "to": "task:M074:S04:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S04",
+      "to": "task:M074:S04:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S04",
+      "to": "task:M074:S04:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S04",
+      "to": "task:M074:S04:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S05",
+      "to": "task:M074:S05:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S05",
+      "to": "task:M074:S05:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S05",
+      "to": "task:M074:S05:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S05",
+      "to": "task:M074:S05:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S06",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S06",
+      "to": "task:M074:S06:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S06",
+      "to": "task:M074:S06:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S06",
+      "to": "task:M074:S06:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S06",
+      "to": "task:M074:S06:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M074",
+      "to": "slice:M074:S07",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -14500,7 +15884,439 @@
       "to": "surprise:M071:2",
       "type": "relates_to",
       "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "decision:M072:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "lesson:M072:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "pattern:M072:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "surprise:M072:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M072",
+      "to": "surprise:M072:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:13",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:14",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:15",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:16",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "decision:M073:17",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:9",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:10",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:11",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "lesson:M073:12",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:4",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:5",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:6",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:7",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "pattern:M073:8",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "surprise:M073:1",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "surprise:M073:2",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "milestone:M073",
+      "to": "surprise:M073:3",
+      "type": "relates_to",
+      "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-15T08:22:03.034Z"
+  "builtAt": "2026-05-19T09:02:25.523Z"
 }

@@ -20,6 +20,14 @@ export type ResolveGraphValidationPlanStatusInput = {
   finalValidationApplied?: boolean;
 };
 export type CandidateFindingMode = "unavailable" | "shadow" | "preferred";
+export type RepoDoctrinePlanStatus = "disabled" | "skipped" | "degraded" | "applied";
+export type RepoDoctrinePlanProjection = {
+  status: RepoDoctrinePlanStatus;
+  contractCount: number;
+  matchedCount: number;
+  omittedCount: number;
+  reasonCodes: string[];
+};
 export type ReviewPlanStatus = "ready";
 export type DegradedReviewPlanStatus = "degraded";
 
@@ -59,6 +67,7 @@ export type ReviewPlanInput = {
     mode: CandidateFindingMode;
     reason?: string;
   };
+  repoDoctrine?: Partial<RepoDoctrinePlanProjection> | null;
 };
 
 export type ReviewPlan = {
@@ -99,6 +108,7 @@ export type ReviewPlan = {
     mode: CandidateFindingMode;
     reason?: string;
   };
+  repoDoctrine: RepoDoctrinePlanProjection;
 };
 
 export type DegradedReviewPlan = {
@@ -186,6 +196,7 @@ export function buildReviewPlan(input: ReviewPlanInput): Extract<ReviewPlanBuild
     },
     graphValidation: normalizeGraphValidation(input.graphValidation),
     candidateFinding: normalizeCandidateFinding(input.candidateFinding),
+    repoDoctrine: normalizeRepoDoctrinePlan(input.repoDoctrine),
   };
   const hash = hashCanonical(planWithoutHash);
 
@@ -234,7 +245,7 @@ export function toReviewPlanDetailsSummary(plan: ReviewPlan | DegradedReviewPlan
       label: "Review plan",
       status: "degraded",
       hash: plan.hash,
-      text: boundSummary(`Review plan: degraded hash=${plan.hash} route=${route} reason=${reason} graph=skipped candidates=unavailable`),
+      text: boundSummary(`Review plan: degraded hash=${plan.hash} route=${route} reason=${reason} graph=skipped candidates=unavailable doctrine=degraded/0/0/0 reasons=review-plan-degraded`),
     };
   }
 
@@ -253,6 +264,7 @@ export function toReviewPlanDetailsSummary(plan: ReviewPlan | DegradedReviewPlan
       `publish=${sanitizeSummaryToken(plan.policy.publish)}`,
       `graph=${plan.graphValidation.status}`,
       `candidates=${plan.candidateFinding.mode}`,
+      `doctrine=${formatRepoDoctrinePlan(plan.repoDoctrine)}`,
     ].join(" ")),
   };
 }
@@ -304,6 +316,35 @@ function normalizeCandidateFinding(input: ReviewPlanInput["candidateFinding"]): 
     mode,
     ...(input?.reason === undefined ? {} : { reason: input.reason }),
   };
+}
+
+
+function normalizeRepoDoctrinePlan(input: ReviewPlanInput["repoDoctrine"]): RepoDoctrinePlanProjection {
+  const status = input?.status === "applied" || input?.status === "degraded" || input?.status === "disabled" || input?.status === "skipped"
+    ? input.status
+    : "skipped";
+  const reasonCodes = Array.isArray(input?.reasonCodes)
+    ? input.reasonCodes.map((reason) => sanitizeSummaryToken(String(reason))).filter(Boolean).slice(0, 8)
+    : [];
+  if (reasonCodes.length === 0) {
+    reasonCodes.push(status === "applied" ? "none" : status);
+  }
+
+  return {
+    status,
+    contractCount: normalizeCount(input?.contractCount),
+    matchedCount: normalizeCount(input?.matchedCount),
+    omittedCount: normalizeCount(input?.omittedCount),
+    reasonCodes,
+  };
+}
+
+function normalizeCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function formatRepoDoctrinePlan(doctrine: RepoDoctrinePlanProjection): string {
+  return `${doctrine.status}/${doctrine.contractCount}/${doctrine.matchedCount}/${doctrine.omittedCount} reasons=${doctrine.reasonCodes.slice(0, 4).join(",")}`;
 }
 
 function stripUndefinedObject<T extends Record<string, unknown>>(value: T): T {

@@ -34,6 +34,14 @@ describe("deploy.sh", () => {
     expect(deployScript).not.toContain('Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE');
   });
 
+  test("mirrors the Bun base image into ACR and builds from the mirror", () => {
+    expect(deployScript).toContain("BUN_BASE_SOURCE_IMAGE=${BUN_BASE_SOURCE_IMAGE:-docker.io/oven/bun:1-debian}");
+    expect(deployScript).toContain("BUN_BASE_ACR_IMAGE=${BUN_BASE_ACR_IMAGE:-base/oven-bun:1-debian}");
+    expect(deployScript).toContain('az acr import "${ACR_IMPORT_ARGS[@]}"');
+    expect(deployScript).toContain('ACR_IMPORT_ARGS+=(--username "$DOCKERHUB_USERNAME" --password "$DOCKERHUB_TOKEN")');
+    expect(deployScript).toContain('--build-arg "BUN_BASE_IMAGE=$BUN_BASE_IMAGE"');
+  });
+
   test("guards against using the rotating Claude login access token for deploy auth", () => {
     expect(deployScript).toContain('CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}');
     expect(deployScript).toContain('claudeAiOauth.accessToken');

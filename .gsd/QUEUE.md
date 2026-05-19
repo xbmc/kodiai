@@ -80,6 +80,12 @@
 - Summary: Backfill direct tests for central knowledge subsystem files and clarify the ownership boundary with M027 embedding-integrity work.
 - Context: GitHub issue #99
 
+### M074 — Clawpatch Inspired Review Workflow and Inline Fix Evidence
+- Status: queued
+- Added: 2026-05-18
+- Summary: Incorporate Clawpatch-inspired durable finding lifecycle, same-PR inline fix evidence, and validation/revalidation proof into Kodiai's existing review flow without porting Clawpatch or expanding default write authority.
+- Context: `.gsd/milestones/M074/M074-CONTEXT.md`
+
 ## Not Pending
 
 Completed milestone history is tracked in `.gsd/PROJECT.md` and each milestone's committed `.gsd/milestones/<MID>/` artifacts when present. Do not list completed milestones in the pending queue.

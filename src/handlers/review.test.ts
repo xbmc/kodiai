@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import { $ } from "bun";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, REVIEW_WORKSPACE_FETCH_DEPTH } from "./review.ts";
@@ -32,6 +32,11 @@ import {
 } from "../jobs/review-work-coordinator.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
+import {
+  evaluateM074S06Evidence,
+  parseM074S06Args,
+  type M074S06EvidenceSnapshot,
+} from "../../scripts/verify-m074-s06.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;
@@ -51,6 +56,7 @@ const noopTelemetryStore = {
   record: async () => {},
   recordRetrievalQuality: async () => {},
   recordRateLimitEvent: async () => {},
+  recordReviewCacheEvent: async () => {},
   recordResilienceEvent: async () => {},
   recordLlmCost: async () => {},
   recordPromptSections: async () => {},
@@ -61,25 +67,26 @@ const noopTelemetryStore = {
 };
 
 function createCaptureLogger() {
-  const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
-  const capture = (data: unknown, message?: string) => {
+  const entries: Array<{ level?: "info" | "warn" | "error" | "debug" | "trace" | "fatal"; message: string; data?: Record<string, unknown> }> = [];
+  const capture = (level: "info" | "warn" | "error" | "debug" | "trace" | "fatal") => (data: unknown, message?: string) => {
     if (typeof data === "string") {
-      entries.push({ message: data });
+      entries.push({ level, message: data });
       return;
     }
     entries.push({
+      level,
       message: message ?? "",
       data: (data ?? {}) as Record<string, unknown>,
     });
   };
 
   const logger = {
-    info: capture,
-    warn: capture,
-    error: capture,
-    debug: capture,
-    trace: capture,
-    fatal: capture,
+    info: capture("info"),
+    warn: capture("warn"),
+    error: capture("error"),
+    debug: capture("debug"),
+    trace: capture("trace"),
+    fatal: capture("fatal"),
     child: () => logger,
   } as unknown as Logger;
 
@@ -636,7 +643,7 @@ function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function createWorkspaceFixture(options: { autoApprove?: boolean; graphValidationEnabled?: boolean; extraChangedFiles?: number; maxComments?: number } = {}) {
+async function createWorkspaceFixture(options: { autoApprove?: boolean; graphValidationEnabled?: boolean; extraChangedFiles?: number; maxComments?: number; doctrineYaml?: string; featureFiles?: Record<string, string> } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
 
   await $`git -C ${dir} init --initial-branch=main`.quiet();
@@ -646,7 +653,7 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean; graphVal
   await Bun.write(join(dir, "README.md"), "base\n");
   await Bun.write(
     join(dir, ".kodiai.yml"),
-    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  maxComments: ${options.maxComments ?? 10}\n  graphValidation:\n    enabled: ${options.graphValidationEnabled ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  maxComments: ${options.maxComments ?? 10}\n  graphValidation:\n    enabled: ${options.graphValidationEnabled ? "true" : "false"}\n${options.doctrineYaml ?? ""}  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
   );
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -654,10 +661,15 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean; graphVal
   await $`git -C ${dir} checkout -b feature`.quiet();
 
   await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+  for (const [filePath, content] of Object.entries(options.featureFiles ?? {})) {
+    const absolutePath = join(dir, filePath);
+    await $`mkdir -p ${dirname(absolutePath)}`.quiet();
+    await Bun.write(absolutePath, content);
+  }
   for (let index = 0; index < (options.extraChangedFiles ?? 0); index += 1) {
     await Bun.write(join(dir, `feature-${index}.txt`), `feature ${index}\n`);
   }
-  await $`git -C ${dir} add README.md ${Array.from({ length: options.extraChangedFiles ?? 0 }, (_, index) => `feature-${index}.txt`)}`.quiet();
+  await $`git -C ${dir} add .`.quiet();
   await $`git -C ${dir} commit -m "feature"`.quiet();
   await $`git -C ${dir} remote add origin ${dir}`.quiet();
 
@@ -710,6 +722,142 @@ async function createNoMergeBaseFixture(options: { includePhase27Fields: boolean
     },
   };
 }
+
+describe("createReviewHandler repository doctrine wiring", () => {
+  test("threads bounded doctrine projection through automatic review prompt, reducer, details, and logs without raw canaries", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({
+      doctrineYaml: [
+        "  doctrine:",
+        "    enabled: true",
+        "    contracts:",
+        "      - id: api-contract",
+        "        type: api-compatibility",
+        "        paths: [\"src/api/**\"]",
+        "        severity: major",
+        "        category: correctness",
+        "        instructions: \"PROMPT_SECRET_DO_NOT_LEAK keep response wire compatible\"",
+        "        evidence: \"RAW_DOCTRINE_BODY_CANARY api clients depend on this\"",
+        "      - id: migration-contract",
+        "        type: migration",
+        "        paths: [\"db/migrations/**\"]",
+        "        severity: medium",
+        "        category: operability",
+        "        instructions: \"RAW_MIGRATION_CANARY verify rollback docs\"",
+        "        evidence: \"PROMPT_SECRET_DO_NOT_LEAK migration evidence\"",
+      ].join("\n") + "\n",
+      featureFiles: {
+        "src/api/routes.ts": "export const route = '/v2';\n",
+        "db/migrations/001.sql": "select 1;\n",
+      },
+    });
+    const { logger, entries } = createCaptureLogger();
+    let capturedPrompt = "";
+    let detailsCommentBody = "";
+    let capturedReducerInput: ReviewReducerInput | null = null;
+
+    try {
+      createReviewHandler({
+        eventRouter: {
+          register: (eventKey, handler) => {
+            handlers.set(eventKey, handler);
+          },
+          dispatch: async () => undefined,
+        },
+        jobQueue: {
+          enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+          getQueueSize: () => 0,
+          getPendingCount: () => 0,
+          getActiveJobs: getEmptyActiveJobs,
+        },
+        workspaceManager: {
+          create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+          cleanupStale: async () => 0,
+        },
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => ({
+            rest: {
+              pulls: {
+                listReviewComments: async () => ({ data: [] }),
+                listReviews: async () => ({ data: [] }),
+                listCommits: async () => ({ data: [] }),
+              },
+              issues: {
+                listComments: async () => ({ data: [] }),
+                createComment: async (params: { body: string }) => {
+                  detailsCommentBody = params.body;
+                  return { data: { id: 1234, body: params.body } };
+                },
+                updateComment: async (params: { body: string }) => {
+                  detailsCommentBody = params.body;
+                  return { data: { id: 1234, body: params.body } };
+                },
+              },
+              reactions: { createForIssue: async () => ({ data: {} }) },
+              search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+            },
+          }) as never,
+        } as unknown as GitHubApp,
+        executor: {
+          execute: async (context: { prompt: string }) => {
+            capturedPrompt = context.prompt;
+            return {
+              conclusion: "success",
+              published: false,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-repo-doctrine",
+            };
+          },
+        } as never,
+        telemetryStore: noopTelemetryStore,
+        reviewReducer: async (input) => {
+          capturedReducerInput = input;
+          return createDegradedReviewReducerResult({ findings: input.findings, reason: "fixture" });
+        },
+        logger,
+      });
+
+      const handler = handlers.get("pull_request.review_requested");
+      expect(handler).toBeDefined();
+      await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+
+    expect(capturedPrompt).toContain("## Repository Doctrine Contracts");
+    expect(capturedPrompt).toContain("api-contract type=api-compatibility");
+    expect(capturedPrompt).toContain("migration-contract type=migration");
+    expect(capturedPrompt).toContain("Only aggregate contract metadata is provided here");
+    expect(capturedPrompt).not.toContain("PROMPT_SECRET_DO_NOT_LEAK");
+    expect(capturedPrompt).not.toContain("RAW_DOCTRINE_BODY_CANARY");
+    expect(capturedPrompt).not.toContain("RAW_MIGRATION_CANARY");
+
+    expect(capturedReducerInput?.repoDoctrine).toMatchObject({
+      status: "applied",
+      contractCount: 2,
+      matchedCount: 2,
+      omittedCount: 0,
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(detailsCommentBody);
+    expect(detailsBlock).toContain("doctrine=applied/2/2/0");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET_DO_NOT_LEAK");
+    expect(detailsBlock).not.toContain("RAW_DOCTRINE_BODY_CANARY");
+    expect(detailsBlock).not.toContain("RAW_MIGRATION_CANARY");
+
+    const doctrineLog = entries.find((entry) => entry.message === "Resolved bounded repository doctrine projection");
+    expect(doctrineLog?.data).toMatchObject({
+      gate: "repo-doctrine",
+      gateResult: "applied",
+      repoDoctrineContractCount: 2,
+      repoDoctrineMatchedPathCandidateCount: 2,
+      repoDoctrineOmittedCount: 0,
+    });
+  });
+});
 
 function buildReviewRequestedEvent(
   payloadOverrides: Record<string, unknown>,
@@ -2269,6 +2417,30 @@ describe("createReviewHandler review_requested idempotency", () => {
             numTurns: 1,
             durationMs: 1,
             sessionId: "session-clean-comment-only",
+            promptSections: [
+              {
+                deliveryId: "delivery-123",
+                repo: "acme/repo",
+                taskType: "review",
+                promptKind: "review.user-prompt",
+                sections: [
+                  {
+                    sectionName: "review-change-context",
+                    sectionPosition: 0,
+                    charCount: 40,
+                    estimatedTokens: 10,
+                    budgetChars: 20,
+                    budgetTokens: 5,
+                    includedChars: 20,
+                    includedTokens: 5,
+                    trimmedChars: 20,
+                    trimmedTokens: 5,
+                    budgetStatus: "trimmed",
+                    budgetReason: "section-over-budget",
+                  },
+                ],
+              },
+            ],
             executorPhaseTimings: [
               { name: "executor handoff", status: "completed", durationMs: 50 },
               { name: "remote runtime", status: "completed", durationMs: 500 },
@@ -2292,6 +2464,8 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdIssueComments).toHaveLength(1);
     expect(createdIssueComments[0]).toContain("Decision: APPROVE");
     expect(createdIssueComments[0]).toContain("Issues: none");
+    expect(createdIssueComments[0]).toContain("Review scope note: output was scoped by prompt budget limits; Review Details include bounded counts only.");
+    expect(createdIssueComments[0]).toContain("Budget behavior: scoped (prompt-budget-limited).");
     expect(createdIssueComments[0]).toContain("<summary>Review Details</summary>");
     expect(createdIssueComments[0]).toContain(buildReviewOutputMarker(buildReviewOutputKey({
       installationId: 42,
@@ -5607,6 +5781,7 @@ describe("createReviewHandler finding extraction", () => {
     const recordedSuppressions: Array<Record<string, unknown>> = [];
     const deletedCommentIds: number[] = [];
     let detailsCommentBody: string | undefined;
+    const { logger, entries } = createCaptureLogger();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -5751,7 +5926,7 @@ describe("createReviewHandler finding extraction", () => {
           recordedSuppressions.push(...entries);
         },
       },
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("pull_request.review_requested");
@@ -5792,6 +5967,36 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).toMatch(/Lines changed: \+\d+ -\d+/);
     expect(detailsCommentBody).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
     expect(detailsCommentBody).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
+    expect(detailsCommentBody).toContain(`<!-- kodiai:review-details:${reviewOutputKey} -->`);
+    expect((detailsCommentBody?.match(/Review finding lifecycle:/g) ?? [])).toHaveLength(1);
+    expect(detailsCommentBody).toContain("Review finding lifecycle: status=normalized");
+    expect(detailsCommentBody).toContain("correlation=repo:y,pull:y,reviewOutputKey:y,deliveryId:y,commit:y");
+    expect(detailsCommentBody).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n");
+    expect(detailsCommentBody).not.toContain("RAW_PROMPT_CANARY");
+    expect(detailsCommentBody).not.toContain("RAW_MODEL_OUTPUT_CANARY");
+    expect(detailsCommentBody).not.toContain("CANDIDATE_BODY_CANARY");
+    expect(detailsCommentBody).not.toContain("TOOL_PAYLOAD_CANARY");
+    expect(detailsCommentBody).not.toContain("diff --git");
+
+    const lifecycleLog = entries.find((entry) => entry.data?.gate === "review-finding-lifecycle");
+    expect(lifecycleLog?.data).toMatchObject({
+      reviewOutputKey,
+      deliveryId: "delivery-123",
+      source: "automatic-review",
+      trigger: "pull_request",
+      normalizedStatus: "normalized",
+    });
+    expect(lifecycleLog?.data?.counts).toMatchObject({ input: 3, recorded: 3, rejected: 0 });
+    expect(lifecycleLog?.data?.redaction).toMatchObject({
+      privateOnly: true,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      candidateBodiesIncluded: false,
+      toolPayloadsIncluded: false,
+      diffsIncluded: false,
+    });
+    expect(JSON.stringify(lifecycleLog?.data)).not.toContain("RAW_PROMPT_CANARY");
+    expect(JSON.stringify(lifecycleLog?.data)).not.toContain("diff --git");
     expect(detailsCommentBody).not.toContain("Lines analyzed:");
     expect(detailsCommentBody).not.toContain("Suppressions applied:");
     expect(detailsCommentBody).not.toContain("Estimated review time saved:");
@@ -9532,6 +9737,30 @@ describe("createReviewHandler usageLimit and token wiring", () => {
           numTurns: 1,
           durationMs: 1,
           sessionId: "session-usage-wiring",
+          promptSections: [
+            {
+              deliveryId: "delivery-123",
+              repo: "acme/repo",
+              taskType: "review",
+              promptKind: "review.user-prompt",
+              sections: [
+                {
+                  sectionName: "review-change-context",
+                  sectionPosition: 0,
+                  charCount: 40,
+                  estimatedTokens: 10,
+                  budgetChars: 20,
+                  budgetTokens: 5,
+                  includedChars: 20,
+                  includedTokens: 5,
+                  trimmedChars: 20,
+                  trimmedTokens: 5,
+                  budgetStatus: "trimmed",
+                  budgetReason: "section-over-budget",
+                },
+              ],
+            },
+          ],
           usageLimit: {
             utilization: 0.8,
             rateLimitType: "seven_day",
@@ -9558,6 +9787,9 @@ describe("createReviewHandler usageLimit and token wiring", () => {
     expect(detailsCommentBody).toBeDefined();
     expect(detailsCommentBody).toContain("20% of seven_day limit remaining");
     expect(detailsCommentBody).toContain("in /");
+    expect(detailsCommentBody).toContain("Budget behavior: scoped (prompt-budget-limited).");
+    expect(detailsCommentBody).toContain("Prompt budget: 1 sections, 1 trimmed, 0 bypassed, 5 trimmed tokens.");
+    expect(detailsCommentBody).toContain("Cache behavior: 1 observations");
   });
 });
 
@@ -10129,7 +10361,7 @@ describe("createReviewHandler timeout resilience", () => {
     const partial = Array.from(issueComments.values()).find((body) => body.includes("**Bounded first-pass review**"));
     expect(partial).toBeDefined();
     expect(partial!).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
-    expect(partial!).toContain("follow-up review is pending (timeout budget: remote runtime 355s + infra overhead 180s = total 535s).");
+    expect(partial!).toContain("follow-up review is pending (timeout budget: remote runtime 505s + infra overhead 180s = total 685s).");
     expect(partial!).toContain("Found two issues before timeout.");
     expect(partial!).toContain("Scheduling a reduced-scope retry.");
     expect(partial!).toContain(buildReviewOutputMarker(buildReviewOutputKey({
@@ -13478,6 +13710,12 @@ describe("createReviewHandler review prompt section telemetry", () => {
       ]),
     );
     expect(promptSectionEntries[0]?.sections.some((section) => section.truncated === true)).toBeTrue();
+    const sectionWithBudgetMetadata = promptSectionEntries[0]?.sections.find((section) => section.sectionName === "review-instructions") as (typeof promptSectionEntries)[number]["sections"][number] & Record<string, unknown> | undefined;
+    expect(sectionWithBudgetMetadata?.budgetStatus).toBe("trimmed");
+    expect(sectionWithBudgetMetadata?.budgetReason).toBe("section-over-budget");
+    expect(sectionWithBudgetMetadata?.budgetChars).toBeGreaterThan(0);
+    expect(sectionWithBudgetMetadata?.includedChars).toBe(sectionWithBudgetMetadata?.budgetChars);
+    expect(sectionWithBudgetMetadata?.trimmedChars).toBeGreaterThan(0);
 
     await workspaceFixture.cleanup();
   });
@@ -13665,6 +13903,11 @@ describe("createReviewHandler review prompt section telemetry", () => {
         ]),
       );
       expect(entry.sections.some((section) => section.truncated === true)).toBeTrue();
+      const sectionWithBudgetMetadata = entry.sections.find((section) => section.sectionName === "review-instructions") as (typeof entry.sections)[number] & Record<string, unknown> | undefined;
+      expect(sectionWithBudgetMetadata?.budgetStatus).toBe("trimmed");
+      expect(sectionWithBudgetMetadata?.budgetReason).toBe("section-over-budget");
+      expect(sectionWithBudgetMetadata?.includedChars).toBe(sectionWithBudgetMetadata?.budgetChars);
+      expect(sectionWithBudgetMetadata?.trimmedChars).toBeGreaterThan(0);
     }
 
     await workspaceFixture.cleanup();
@@ -13691,8 +13934,110 @@ describe("review prompt derived cache", () => {
     });
   });
 
+  test("buildReviewPromptFingerprint invalidates bounded prompt safety inputs without exposing raw payloads", () => {
+    const baseContext = {
+      owner: "Acme",
+      repo: "Repo",
+      prNumber: 101,
+      prTitle: "Prompt fingerprint",
+      prBody: "Review this safely",
+      prAuthor: "octocat",
+      baseBranch: "main",
+      headBranch: "feature",
+      changedFiles: ["README.md", "src/a.ts"],
+      contextWindow: "budget-relevant context",
+      retrievalContext: {
+        maxChars: 240,
+        findings: [
+          {
+            findingText: "Prefer bounded cache telemetry.",
+            severity: "medium",
+            category: "observability",
+            path: "src/a.ts",
+            line: 12,
+            snippet: "bounded telemetry",
+            outcome: "accepted",
+            distance: 0.1234567,
+            sourceRepo: "ACME/Repo",
+          },
+        ],
+      },
+    };
+
+    const base = buildReviewPromptFingerprint(baseContext);
+    expect(base.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(base.missingSignals).toEqual([]);
+
+    const sameSemanticState = buildReviewPromptFingerprint({
+      ...baseContext,
+      owner: "acme",
+      repo: "repo",
+      changedFiles: ["src/a.ts", "README.md"],
+    });
+    expect(sameSemanticState.fingerprint).toBe(base.fingerprint);
+
+    const changedFiles = buildReviewPromptFingerprint({
+      ...baseContext,
+      changedFiles: ["README.md", "src/b.ts"],
+    });
+    const changedRetrievalFinding = buildReviewPromptFingerprint({
+      ...baseContext,
+      retrievalContext: {
+        ...baseContext.retrievalContext,
+        findings: [
+          {
+            ...baseContext.retrievalContext.findings[0]!,
+            findingText: "A different retrieval finding must not reuse the old prompt.",
+          },
+        ],
+      },
+    });
+    const changedBudgetContext = buildReviewPromptFingerprint({
+      ...baseContext,
+      contextWindow: "different budget-relevant context",
+    });
+
+    expect(changedFiles.fingerprint).not.toBe(base.fingerprint);
+    expect(changedRetrievalFinding.fingerprint).not.toBe(base.fingerprint);
+    expect(changedBudgetContext.fingerprint).not.toBe(base.fingerprint);
+    expect(JSON.stringify({ base, changedFiles, changedRetrievalFinding, changedBudgetContext })).not.toContain("Prefer bounded cache telemetry");
+  });
+
+  test("buildReviewPromptFingerprint bypasses malformed retrieval fingerprint state", () => {
+    const result = buildReviewPromptFingerprint({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      prTitle: "Prompt fingerprint",
+      prBody: "",
+      prAuthor: "octocat",
+      baseBranch: "main",
+      headBranch: "feature",
+      changedFiles: ["README.md"],
+      retrievalContext: {
+        maxChars: 240,
+        findings: [
+          {
+            findingText: "missing distance",
+            severity: "medium",
+            category: "observability",
+            path: "README.md",
+            outcome: "accepted",
+            sourceRepo: "acme/repo",
+          } as never,
+        ],
+      },
+    });
+
+    expect(result).toEqual({
+      fingerprint: null,
+      missingSignals: ["retrieval-fingerprint-data"],
+    });
+  });
+
   test("reuses identical review prompt artifacts across identical review state", async () => {
     const reuseTelemetry: Array<Record<string, unknown>> = [];
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
@@ -13772,6 +14117,9 @@ describe("review prompt derived cache", () => {
         recordRateLimitEvent: async (entry) => {
           reuseTelemetry.push(entry as Record<string, unknown>);
         },
+        recordReviewCacheEvent: async (entry) => {
+          reviewCacheTelemetry.push(entry as Record<string, unknown>);
+        },
       },
       reviewPromptBuilder: (context) => {
         promptBuilderCalls += 1;
@@ -13834,6 +14182,38 @@ describe("review prompt derived cache", () => {
       .filter((entry) => entry.eventType === "reuse.review-derived-prompt")
       .map((entry) => entry.degradationPath);
     expect(promptReuseStatuses).toEqual(["miss", "hit"]);
+    expect(reviewCacheTelemetry.map((entry) => ({
+      cacheSurface: entry.cacheSurface,
+      status: entry.status,
+      reason: entry.reason,
+      deliveryId: entry.deliveryId,
+      repo: entry.repo,
+      prNumber: entry.prNumber,
+      fingerprintVersion: entry.fingerprintVersion,
+      safetySignalNames: entry.safetySignalNames,
+    }))).toEqual([
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "miss",
+        reason: "cache-miss",
+        deliveryId: event.id,
+        repo: "acme/repo",
+        prNumber: 101,
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
+      },
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "hit",
+        reason: "safe-reuse",
+        deliveryId: event.id,
+        repo: "acme/repo",
+        prNumber: 101,
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
+      },
+    ]);
+    expect(JSON.stringify(reviewCacheTelemetry)).not.toContain("prompt:");
 
     await workspaceFixture.cleanup();
   });
@@ -13842,6 +14222,7 @@ describe("review prompt derived cache", () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
     let promptBuilderCalls = 0;
 
     const eventRouter: EventRouter = {
@@ -13909,7 +14290,12 @@ describe("review prompt derived cache", () => {
           stopReason: "end_turn",
         }),
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordReviewCacheEvent: async (entry) => {
+          reviewCacheTelemetry.push(entry as Record<string, unknown>);
+        },
+      },
       reviewPromptBuilder: (context) => {
         promptBuilderCalls += 1;
         return {
@@ -13981,6 +14367,28 @@ describe("review prompt derived cache", () => {
     }));
 
     expect(promptBuilderCalls).toBe(2);
+    expect(reviewCacheTelemetry.map((entry) => ({
+      cacheSurface: entry.cacheSurface,
+      status: entry.status,
+      reason: entry.reason,
+      fingerprintVersion: entry.fingerprintVersion,
+      safetySignalNames: entry.safetySignalNames,
+    }))).toEqual([
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "miss",
+        reason: "cache-miss",
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
+      },
+      {
+        cacheSurface: "review-derived-prompt",
+        status: "miss",
+        reason: "cache-miss",
+        fingerprintVersion: "review-prompt-v1",
+        safetySignalNames: ["prompt-cache-query-head-sha", "prompt-fingerprint-v1"],
+      },
+    ]);
 
     await workspaceFixture.cleanup();
   });
@@ -13990,6 +14398,7 @@ describe("review prompt derived cache", () => {
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
     const promptTexts: string[] = [];
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
     const { logger, entries } = createCaptureLogger();
     let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
     let promptBuilderCalls = 0;
@@ -14104,7 +14513,12 @@ describe("review prompt derived cache", () => {
           };
         },
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordReviewCacheEvent: async (entry) => {
+          reviewCacheTelemetry.push(entry as Record<string, unknown>);
+        },
+      },
       knowledgeStore: createKnowledgeStoreStub({
         getCheckpoint: async () => null,
         updateCheckpointCommentId: () => undefined,
@@ -14170,6 +14584,13 @@ describe("review prompt derived cache", () => {
     expect(
       entries.filter((entry) => entry.message === "Resolved review prompt derived-cache state").every((entry) => entry.data?.gateResult === "degraded"),
     ).toBeTrue();
+    expect(reviewCacheTelemetry.some((entry) =>
+      entry.cacheSurface === "review-derived-prompt"
+      && entry.status === "degraded"
+      && entry.reason === "bookkeeping-failure"
+      && typeof entry.bookkeepingErrorCount === "number"
+      && entry.bookkeepingErrorCount > 0
+    )).toBeTrue();
 
     await workspaceFixture.cleanup();
   });
@@ -14188,6 +14609,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
     telemetryStore?: {
       recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
+      recordReviewCacheEvent?: (entry: Record<string, unknown>) => void;
     };
   }): Promise<number> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
@@ -14355,6 +14777,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
     telemetryStore?: {
       recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
+      recordReviewCacheEvent?: (entry: Record<string, unknown>) => void;
     };
     knowledgeStoreOverrides?: Record<string, unknown>;
     configYaml?: string;
@@ -14791,6 +15214,73 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(searchTelemetryEvents[0]?.retryAttempts).toBe(1);
     expect(searchTelemetryEvents[0]?.skippedQueries).toBe(0);
     expect(searchTelemetryEvents[0]?.degradationPath).toBe("none");
+  });
+
+  test("records bounded retrieval embedding cache telemetry beside legacy rate-limit reuse telemetry", async () => {
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
+    const reviewCacheTelemetry: Array<Record<string, unknown>> = [];
+    const retriever = {
+      retrieve: async () => ({
+        findings: [],
+        reviewPrecedents: [],
+        wikiKnowledge: [],
+        unifiedResults: [],
+        contextWindow: "",
+        provenance: {
+          embeddingRequests: 1,
+          embeddingCacheHits: 2,
+        },
+      }),
+    };
+
+    const { executeCount } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => ({ data: { total_count: 5 } }),
+      retriever: retriever as never,
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+        recordReviewCacheEvent: (entry) => {
+          reviewCacheTelemetry.push(entry);
+        },
+      },
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "knowledge:",
+        "  retrieval:",
+        "    enabled: true",
+        "    topK: 2",
+        "    maxContextChars: 240",
+        "telemetry:",
+        "  enabled: true",
+        "",
+      ].join("\n"),
+    });
+
+    expect(executeCount).toBe(1);
+    expect(rateLimitEvents.some((event) => event.eventType === "reuse.retrieval-query-embedding.main")).toBeTrue();
+    const retrievalRows = reviewCacheTelemetry.filter((entry) => entry.cacheSurface === "retrieval-query-embedding");
+    expect(retrievalRows).toEqual([
+      {
+        deliveryId: "delivery-123",
+        repo: "acme/repo",
+        prNumber: 101,
+        cacheSurface: "retrieval-query-embedding",
+        status: "hit",
+        reason: "safe-reuse",
+        fingerprintVersion: "retrieval-query-embedding-v1",
+        safetySignalNames: ["embedding-cache-provenance"],
+      },
+    ]);
+    expect(JSON.stringify(reviewCacheTelemetry)).not.toContain("contextWindow");
   });
 
   test("degrades author-tier enrichment after second rate limit and adds partial disclaimer to prompt", async () => {
@@ -16110,6 +16600,7 @@ describe("createReviewHandler phase timing logging", () => {
 describe("createReviewHandler ReviewPlan wiring", () => {
   const candidateTitle = "Guard candidate publication";
   const candidateBody = "Publish this approved candidate through the shared inline publisher.";
+  const candidateFixReplacementText = "feature fixed by candidate";
 
   function sha256(value: string): string {
     return createHash("sha256").update(value).digest("hex");
@@ -16162,6 +16653,22 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     ].join("\n");
   }
 
+  function formattedCandidateFixSuggestionBody(params: {
+    severity: string;
+    category: string;
+    title: string;
+    fixReplacementText: string;
+  }): string {
+    return [
+      `**Fix suggestion:** ${params.title}`,
+      `Severity: ${params.severity} · Category: ${params.category}`,
+      "",
+      "```suggestion",
+      params.fixReplacementText,
+      "```",
+    ].join("\n");
+  }
+
   function publicationPolicyCandidateKey(params: {
     path: string;
     side: string;
@@ -16193,6 +16700,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       endLine?: number;
       severity?: string;
       category?: string;
+      fixReplacementText?: string;
     } = {},
   ) {
     return async (input: ShadowSpecialistSubflowInput): Promise<ShadowSpecialistSubflowResult> => {
@@ -16204,6 +16712,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       const endLine = candidate.endLine ?? line;
       const severity = candidate.severity ?? "major";
       const category = candidate.category ?? "correctness";
+      const fixReplacementText = candidate.fixReplacementText ?? candidateFixReplacementText;
       const fingerprint = reviewCandidateFingerprint({
         repo: "acme/repo",
         pullNumber: 101,
@@ -16221,11 +16730,11 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         ...(line === endLine ? { line } : { startLine: line, line: endLine }),
         reviewOutputKey: candidateReviewOutputKey(baseReviewOutputKey, fingerprint),
         deliveryId: String(input.deliveryId ?? ""),
-        body: formattedCandidateInlineBody({
+        body: formattedCandidateFixSuggestionBody({
           severity,
           category,
           title,
-          body,
+          fixReplacementText,
         }),
       });
       return {
@@ -16305,6 +16814,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           category: "correctness",
           title: candidateTitle,
           body: candidateBody,
+          fixReplacementText: candidateFixReplacementText,
         },
       ],
       rejections: [],
@@ -16345,6 +16855,12 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const recordFindingEntries: Array<Record<string, unknown>> = [];
     const createdReviewComments: Array<Record<string, unknown>> = [];
     const createdIssueComments: Array<Record<string, unknown>> = [];
+    const forbiddenSideEffects = {
+      botBranchCreated: 0,
+      separatePrCreated: 0,
+      directPushCount: 0,
+      unexpectedPublicCommentCount: 0,
+    };
 
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
@@ -16387,7 +16903,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     };
 
     let postExecuteReviewCommentListCalls = 0;
-    const octokit = {
+    const octokit: any = {
       rest: {
         pulls: {
           listReviewComments: async () => {
@@ -16413,6 +16929,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           createComment: async (commentParams: Record<string, unknown>) => {
             const id = 992 + createdIssueComments.length;
             createdIssueComments.push({ ...commentParams, id });
+            if (!String(commentParams.body ?? "").includes(buildReviewOutputMarker(reviewOutputKey))) {
+              forbiddenSideEffects.unexpectedPublicCommentCount += 1;
+            }
             return { data: { id } };
           },
           updateComment: async (updateParams: { body: string }) => {
@@ -16420,9 +16939,29 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             return { data: {} };
           },
         },
+        git: {
+          createRef: async () => {
+            forbiddenSideEffects.botBranchCreated += 1;
+            return { data: {} };
+          },
+          updateRef: async () => {
+            forbiddenSideEffects.directPushCount += 1;
+            return { data: {} };
+          },
+        },
+        repos: {
+          createOrUpdateFileContents: async () => {
+            forbiddenSideEffects.directPushCount += 1;
+            return { data: {} };
+          },
+        },
         reactions: { createForIssue: async () => ({ data: {} }) },
         search: { issuesAndPullRequests: async () => ({ data: { total_count: 4 } }) },
       },
+    };
+    octokit.rest.pulls.create = async () => {
+      forbiddenSideEffects.separatePrCreated += 1;
+      return { data: {} };
     };
 
     createReviewHandler({
@@ -16491,7 +17030,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
     await workspaceFixture.cleanup();
 
-    return { updatedSummaryBody, executeCalls, promptBuildContexts, recordReviewEntries, recordFindingEntries, createdReviewComments, createdIssueComments, logEntries: entries };
+    return { updatedSummaryBody, executeCalls, promptBuildContexts, recordReviewEntries, recordFindingEntries, createdReviewComments, createdIssueComments, forbiddenSideEffects, logEntries: entries };
   }
 
   function buildGraphBlastRadiusFixture(changedPaths: string[]): ReviewGraphBlastRadiusResult {
@@ -16606,6 +17145,12 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
     expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock.match(/Review validation truth:/g) ?? []).toHaveLength(1);
+    expect(detailsBlock).toContain("Review validation truth: status=empty");
+    expect(detailsBlock).toMatch(/counts=detected:\d+,suggested:\d+,validated:\d+,revalidated:\d+,resolved:\d+,blocked:\d+,degraded:\d+,open:\d+,uncertain:\d+,inputFindings:\d+,unsafeInputFields:\d+/);
+    expect(detailsBlock).toContain("evidence=fresh:");
+    expect(detailsBlock).toContain("correlation=reviewOutputKey:y,deliveryId:y");
+    expect(detailsBlock).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,replacementText:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n");
     expect(detailsBlock).toContain("Review candidates: shadow recorded=2 rejected=1 errors=0 artifact=present");
     expect(detailsBlock).not.toContain("RAW TITLE MUST NOT LEAK");
     expect(detailsBlock).not.toContain("RAW BODY MUST NOT LEAK");
@@ -16731,6 +17276,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(createdReviewComments[0]?.path).toBe("README.md");
     expect(createdReviewComments[0]?.line).toBe(2);
     expect(String(createdReviewComments[0]?.body)).toContain(candidateTitle);
+    expect(String(createdReviewComments[0]?.body)).toContain("```suggestion");
+    expect(String(createdReviewComments[0]?.body)).toContain(candidateFixReplacementText);
+    expect(String(createdReviewComments[0]?.body)).not.toContain(candidateBody);
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
     expect(recordFindingEntries).toHaveLength(1);
@@ -16745,6 +17293,47 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       fallbackEvidence: 0,
     }));
 
+    const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
+    expect(fixEligibilityLog?.data).toEqual(expect.objectContaining({
+      gateResult: "eligible",
+      reviewOutputKey: expect.any(String),
+      deliveryId: "delivery-123",
+      counts: expect.objectContaining({ input: 1, eligible: 1, blocked: 0 }),
+      reasonCounts: { eligible: 1 },
+      redaction: expect.objectContaining({
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        secretDetected: false,
+      }),
+    }));
+
+    const validationTruthLog = logEntries.find((entry) => entry.data?.gate === "review-validation-truth");
+    expect(validationTruthLog?.data).toEqual(expect.objectContaining({
+      gateResult: "normalized",
+      source: "automatic-review",
+      reviewOutputKey: expect.any(String),
+      deliveryId: "delivery-123",
+      counts: expect.objectContaining({ detected: 2, suggested: 2, resolved: 0, degraded: 0 }),
+      reasonCounts: expect.objectContaining({
+        "suggested-but-open": 2,
+        "validation-missing": 2,
+      }),
+      evidenceFreshness: expect.objectContaining({ missingValidation: 2, missingRevalidation: 2 }),
+      redaction: expect.objectContaining({
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        replacementTextIncluded: false,
+        toolPayloadsIncluded: false,
+        diffsIncluded: false,
+      }),
+    }));
+    expect(JSON.stringify(validationTruthLog?.data)).not.toContain(candidateBody);
+    expect(JSON.stringify(validationTruthLog?.data)).not.toContain(candidateFixReplacementText);
+
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
     expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("candidate-approved");
     expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
@@ -16753,6 +17342,215 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       hasFabricatedProcessedFindings: false,
     }));
     expect(JSON.stringify(configSnapshot)).not.toContain(candidateBody);
+  });
+
+  test("automatic review trigger emits bounded M074 S06 same-PR proof evidence", async () => {
+    const {
+      updatedSummaryBody,
+      executeCalls,
+      createdReviewComments,
+      createdIssueComments,
+      forbiddenSideEffects,
+      logEntries,
+    } = await runReviewPlanScenario({
+      executorPublished: true,
+      exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    const reviewOutputKey = String(executeCalls[0]?.reviewOutputKey ?? "");
+    const deliveryId = "delivery-123";
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    const validationTruthLineCount = detailsBlock.split("\n").filter((line) => line.includes("Review validation truth:")).length;
+    const lifecycleLog = logEntries.find((entry) => entry.data?.gate === "review-finding-lifecycle");
+    const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
+    const validationTruthLog = logEntries.find((entry) => entry.data?.gate === "review-validation-truth");
+    const createdSuggestion = createdReviewComments[0];
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(createdIssueComments).toHaveLength(0);
+    expect(createdSuggestion?.path).toBe("README.md");
+    expect(createdSuggestion?.line).toBe(2);
+    expect(String(createdSuggestion?.body)).toContain("```suggestion");
+    expect(String(createdSuggestion?.body)).toContain(candidateFixReplacementText);
+    expect(String(createdSuggestion?.body)).not.toContain(candidateBody);
+    expect(detailsBlock).toContain("Review validation truth:");
+    expect(detailsBlock).toContain("correlation=reviewOutputKey:y,deliveryId:y");
+
+    const evidence: M074S06EvidenceSnapshot = {
+      schema: "m074-s06-production-like-proof.v1",
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      source: {
+        mode: "production-like",
+        kind: "handler-log",
+        available: true,
+        externalWritesPerformed: false,
+      },
+      target: {
+        owner: "acme",
+        repo: "repo",
+        pr: 101,
+      },
+      reviewOutputKey,
+      deliveryId,
+      trigger: {
+        kind: "pull_request",
+        samePr: true,
+      },
+      samePrInlineSuggestion: {
+        attempted: true,
+        publishedOnSamePr: createdReviewComments.length === 1,
+        suggestionCount: createdReviewComments.length,
+        maxSuggestions: 1,
+        markerPresent: /<!--\s*kodiai:/.test(String(createdSuggestion?.body ?? "")),
+        suggestionBlockPresent: String(createdSuggestion?.body ?? "").includes("```suggestion"),
+        commentCheckIds: ["same-pr-suggestion-shape", "idempotency-already-published"],
+      },
+      gates: {
+        lifecycle: {
+          gate: "review-finding-lifecycle",
+          passed: lifecycleLog?.data?.gate === "review-finding-lifecycle",
+          statusCode: "m074_s02_ok",
+          checkIds: ["review-finding-lifecycle", "bounded-public-summary", "correlation-present"],
+          sourceAvailable: true,
+          correlationPresent: lifecycleLog?.data?.reviewOutputKey === reviewOutputKey && lifecycleLog?.data?.deliveryId === deliveryId,
+          counts: {
+            detected: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.detected ?? 1),
+            suggested: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.suggested ?? 1),
+            resolved: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.resolved ?? 0),
+            open: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.open ?? 1),
+          },
+        },
+        fixEligibility: {
+          gate: "review-fix-eligibility",
+          passed: fixEligibilityLog?.data?.gateResult === "eligible",
+          statusCode: "m074_s03_ok",
+          checkIds: ["review-fix-eligibility", "same-pr-suggestion-shape", "idempotency-already-published"],
+          sourceAvailable: true,
+          correlationPresent: fixEligibilityLog?.data?.reviewOutputKey === reviewOutputKey && fixEligibilityLog?.data?.deliveryId === deliveryId,
+          counts: fixEligibilityLog?.data?.counts as Record<string, number>,
+        },
+        validationTruth: {
+          gate: "review-validation-truth",
+          passed: validationTruthLog?.data?.gateResult === "normalized",
+          statusCode: "m074_s04_ok",
+          checkIds: ["review-validation-truth", "bounded-public-summary", "redaction-flags-and-canaries"],
+          sourceAvailable: true,
+          correlationPresent: validationTruthLog?.data?.reviewOutputKey === reviewOutputKey && validationTruthLog?.data?.deliveryId === deliveryId,
+          counts: validationTruthLog?.data?.counts as Record<string, number>,
+        },
+      },
+      reviewDetails: {
+        gate: "review-details-validation-truth",
+        passed: validationTruthLineCount === 1,
+        statusCode: "m074_s05_ok",
+        checkIds: ["review-details-validation-truth", "visible-volume-bounds", "diagnostic-correlation", "redaction-flags-and-canaries"],
+        sourceAvailable: true,
+        correlationPresent: detailsBlock.includes("correlation=reviewOutputKey:y,deliveryId:y"),
+        counts: { validationTruthLineCount },
+        validationTruthLineCount,
+        reviewOutputKeyPresent: detailsBlock.includes("reviewOutputKey:y"),
+        deliveryIdPresent: detailsBlock.includes("deliveryId:y"),
+        addedLines: validationTruthLineCount,
+        maxAddedLines: 1,
+        visibleCharDelta: detailsBlock.length,
+        maxVisibleCharDelta: 8_000,
+      },
+      validationTruth: {
+        suggestedOnlyResolvedCount: Number((validationTruthLog?.data?.evidenceFreshness as Record<string, unknown> | undefined)?.suggestedOnlyResolved ?? 0),
+        validationOnlyResolvedCount: 0,
+        freshRevalidationResolvedCount: 0,
+        staleValidationResolvedCount: 0,
+        failedValidationResolvedCount: 0,
+        blockedOrDegradedResolvedCount: 0,
+      },
+      visibleVolume: {
+        publicCommentCount: createdReviewComments.length + (updatedSummaryBody ? 1 : 0),
+        maxPublicCommentCount: 2,
+        inlineSuggestionCommentCount: createdReviewComments.length,
+        maxInlineSuggestionCommentCount: 1,
+        reviewDetailsLineCount: detailsBlock.split("\n").length,
+        maxReviewDetailsLineCount: 64,
+        reviewDetailsValidationTruthLineCount: validationTruthLineCount,
+      },
+      sideEffects: forbiddenSideEffects,
+      redaction: {
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        replacementTextIncluded: false,
+        toolPayloadsIncluded: false,
+        diffsIncluded: false,
+        secretLikeStringsIncluded: false,
+        unboundedArraysIncluded: false,
+        canariesAbsent: true,
+      },
+    };
+
+    const evaluation = evaluateM074S06Evidence(
+      evidence,
+      parseM074S06Args([
+        "--owner",
+        "acme",
+        "--repo",
+        "repo",
+        "--pr",
+        "101",
+        "--review-output-key",
+        reviewOutputKey,
+        "--delivery-id",
+        deliveryId,
+      ]),
+      true,
+    );
+
+    expect(evaluation.checks.filter((check) => check.status !== "pass")).toEqual([]);
+    expect(evaluation.observed).toEqual(expect.objectContaining({
+      sourceAvailable: true,
+      target: "acme/repo#101",
+      reviewOutputKeyPresent: true,
+      deliveryIdPresent: true,
+      samePrSuggestionCount: 1,
+    }));
+    expect(JSON.stringify(evidence)).not.toContain(candidateBody);
+    expect(JSON.stringify(evidence)).not.toContain(candidateFixReplacementText);
+    expect(forbiddenSideEffects).toEqual({
+      botBranchCreated: 0,
+      separatePrCreated: 0,
+      directPushCount: 0,
+      unexpectedPublicCommentCount: 0,
+    });
   });
 
   test("approved candidate findings are blocked when handler publication lacks matching verification evidence", async () => {
@@ -16797,6 +17595,8 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(recordFindingEntries).toHaveLength(0);
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.level).toBe("info");
+    expect(publicationLog?.message).toBe("Review candidate publication completed with expected policy block");
     expect(publicationLog?.data?.gateResult).toBe("blocked");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublished: 0,
@@ -16864,6 +17664,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
         title: "First capped candidate",
         body: "Publish only the strongest candidate after prioritization.",
+        fixReplacementText: "feature fixed by strongest candidate",
         severity: "critical",
         category: "security",
       }),
@@ -16883,6 +17684,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "security",
             title: "First capped candidate",
             body: "Publish only the strongest candidate after prioritization.",
+            fixReplacementText: "feature fixed by strongest candidate",
           },
           {
             filePath: "README.md",
@@ -16892,6 +17694,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "style",
             title: "Second capped candidate",
             body: "This candidate should be omitted by the max comment cap.",
+            fixReplacementText: "feature fixed by second candidate",
           },
           {
             filePath: "README.md",
@@ -16901,6 +17704,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "style",
             title: "Third capped candidate",
             body: "This candidate should also be omitted by the max comment cap.",
+            fixReplacementText: "feature fixed by third candidate",
           },
         ],
         rejections: [],
@@ -16936,6 +17740,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
         title: "Candidate published finding",
         body: "Keep candidate publication in bookkeeping too.",
+        fixReplacementText: candidateFixReplacementText,
       }),
       directReviewComments: [
         {
@@ -16972,6 +17777,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "correctness",
             title: "Candidate published finding",
             body: "Keep candidate publication in bookkeeping too.",
+            fixReplacementText: candidateFixReplacementText,
           },
         ],
         rejections: [],
@@ -17038,7 +17844,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(JSON.stringify(configSnapshot)).not.toContain("base\\nfeature");
   });
 
-  test("candidate publication blocks skipped publisher results without storing draft findings", async () => {
+  test("candidate publication blocks non-commentable fix suggestions without storing draft findings", async () => {
     const { recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: false,
@@ -17058,6 +17864,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "correctness",
             title: "Unpublishable candidate line",
             body: "This line is not commentable in the PR diff.",
+            fixReplacementText: "feature fixed on an unpublishable line",
           },
         ],
         rejections: [],
@@ -17100,9 +17907,17 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.data?.gateResult).toBe("blocked");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublishable: 0,
       candidatePublished: 0,
-      candidateFailed: 1,
+      candidateFailed: 0,
       convertedProcessedFindings: 0,
+    }));
+
+    const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
+    expect(fixEligibilityLog?.data).toEqual(expect.objectContaining({
+      gateResult: "blocked",
+      counts: expect.objectContaining({ input: 1, eligible: 0, blocked: 1 }),
+      reasonCounts: { "line-not-commentable": 1 },
     }));
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;

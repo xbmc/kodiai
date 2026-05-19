@@ -85,6 +85,11 @@ import {
   buildReviewOutputPublicationLogFields,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
+import {
+  attachReviewFindingLifecycle,
+  attachReviewValidationTruth,
+  type AttachReviewFindingLifecycleResult,
+} from "../review-lifecycle/handler-lifecycle.ts";
 import { collectDiffContext } from "./review.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 import {
@@ -722,6 +727,29 @@ export function createMentionHandler(deps: {
       ),
       "Kodiai couldn't publish the review result",
     );
+  }
+
+  function buildExplicitReviewLifecycleEvidenceLine(
+    lifecycleResult: AttachReviewFindingLifecycleResult | null | undefined,
+  ): string | null {
+    const projection = lifecycleResult?.projection;
+    if (!projection || projection.schema !== "review-finding-lifecycle.v1" || projection.status === "unavailable") {
+      return null;
+    }
+
+    const counts = projection.counts;
+    const statusCounts = counts.status;
+    const severityCounts = counts.severity;
+    const actionabilityCounts = counts.actionability;
+    return [
+      `Review finding lifecycle: status=${projection.status}`,
+      `counts=input:${counts.input},recorded:${counts.recorded},rejected:${counts.rejected},unsafeInputFields:${counts.unsafeInputFields}`,
+      `statuses=detected:${statusCounts.detected},open:${statusCounts.open},validated:${statusCounts.validated},degraded:${statusCounts.degraded}`,
+      `severity=critical:${severityCounts.critical},major:${severityCounts.major},medium:${severityCounts.medium},minor:${severityCounts.minor}`,
+      `actionability=actionable:${actionabilityCounts.actionable},needs-human-review:${actionabilityCounts["needs-human-review"]},blocked:${actionabilityCounts.blocked}`,
+      `rejected=${projection.rejectedReasonCodes.slice(0, 8).join(",") || "none"}`,
+      `redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:${projection.redaction.unsafeInputFieldCount}`,
+    ].join("; ");
   }
 
   function extractExplicitReviewResultFindingLines(resultText: string | undefined): string[] {
@@ -2637,6 +2665,8 @@ export function createMentionHandler(deps: {
         let explicitReviewDynamicTimeoutSeconds: number | undefined;
         let explicitReviewMaxTurnsOverride: number | undefined;
         let explicitReviewPrDiffForCommentValidation: string | undefined;
+        let explicitReviewHeadSha: string | undefined;
+        let explicitReviewBaseSha: string | undefined;
         let explicitReviewRouting: ReviewTaskRouting = {
           taskType: TASK_TYPES.REVIEW_FULL,
           routingReason: "standard",
@@ -2648,6 +2678,8 @@ export function createMentionHandler(deps: {
             repo: mention.repo,
             pull_number: explicitReviewPrNumber,
           });
+          explicitReviewHeadSha = explicitReviewPr.head.sha;
+          explicitReviewBaseSha = explicitReviewPr.base.sha;
 
           const promptDiffContext = mention.baseRef
             ? await collectPrReviewPromptDiff({
@@ -2796,6 +2828,8 @@ export function createMentionHandler(deps: {
               "mcp__github_comment__create_comment",
               "mcp__github_inline_comment__create_inline_comment",
             ],
+            candidateFindingToolName: "record_candidate_finding",
+            candidateFindingMode: "preferred",
           });
           prompt = reviewPromptResult.text;
           promptSections = [
@@ -2898,6 +2932,7 @@ export function createMentionHandler(deps: {
             formatterSuggestionRequest,
             totalFiles: explicitReviewPromptFileCount,
             enableInlineTools: explicitReviewRequest ? true : undefined,
+            enableCandidateFindingTool: explicitReviewRequest ? true : undefined,
             prDiffForCommentValidation: explicitReviewRequest ? explicitReviewPrDiffForCommentValidation : undefined,
           });
         } catch (err) {
@@ -2960,6 +2995,93 @@ export function createMentionHandler(deps: {
         let publishResolution: MentionPublishResolution = mentionOutputPublished ? "executor" : "none";
         let publishFailureCategory: ErrorCategory | null = null;
         let publishFallbackDelivery: MentionErrorDelivery | null = null;
+        const explicitReviewFindingLifecycleResult = explicitReviewRequest && mention.prNumber !== undefined && reviewOutputKey
+          ? attachReviewFindingLifecycle({
+              source: "mention",
+              trigger: event.name === "issue_comment"
+                ? "issue_comment"
+                : event.name === "pull_request_review_comment"
+                  ? "review_comment"
+                  : event.name === "pull_request_review"
+                    ? "review_comment"
+                    : "manual",
+              correlation: {
+                repo: `${mention.owner}/${mention.repo}`,
+                pullNumber: mention.prNumber,
+                reviewOutputKey,
+                deliveryId: event.id,
+                commitSha: explicitReviewHeadSha ?? mention.headRef,
+                headSha: explicitReviewHeadSha,
+                baseSha: explicitReviewBaseSha,
+                headRef: mention.headRef,
+                baseRef: mention.baseRef,
+              },
+              findings: [],
+              candidateFinding: result.candidateFinding,
+            })
+          : null;
+        if (explicitReviewFindingLifecycleResult) {
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              prNumber: mention.prNumber,
+              ...explicitReviewFindingLifecycleResult.logEvidence,
+              source: "explicit-mention-review",
+            },
+            "Projected explicit mention review finding lifecycle evidence",
+          );
+          try {
+            const explicitReviewValidationTruth = attachReviewValidationTruth({
+              lifecycle: explicitReviewFindingLifecycleResult.lifecycle,
+              correlation: {
+                repo: `${mention.owner}/${mention.repo}`,
+                pullNumber: mention.prNumber,
+                reviewOutputKey,
+                deliveryId: event.id,
+                commitSha: explicitReviewHeadSha ?? mention.headRef,
+                headSha: explicitReviewHeadSha,
+                baseSha: explicitReviewBaseSha,
+                headRef: mention.headRef,
+                baseRef: mention.baseRef,
+              },
+              publicationFixes: [],
+              requireRevalidation: true,
+            });
+            logger.info(
+              {
+                surface: mention.surface,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                ...explicitReviewValidationTruth.logEvidence,
+                gateResult: explicitReviewValidationTruth.status,
+                source: "explicit-mention-review",
+              },
+              "Projected explicit mention review validation truth evidence",
+            );
+          } catch (err) {
+            try {
+              logger.warn(
+                {
+                  err,
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  gate: "review-validation-truth",
+                  gateResult: "degraded",
+                  reviewOutputKey,
+                  deliveryId: event.id,
+                },
+                "Explicit mention review validation truth diagnostics failed; continuing review publication",
+              );
+            } catch {
+              // Diagnostics are fail-open for review execution and must not block publication.
+            }
+          }
+        }
         const explicitReviewResultFindingLines = extractExplicitReviewResultFindingLines(result.resultText);
         const explicitReviewHasUnpublishedFindings =
           explicitReviewRequest &&
@@ -3067,6 +3189,9 @@ export function createMentionHandler(deps: {
                 },
                 "Attempting explicit mention review approval publish",
               );
+              const explicitReviewLifecycleEvidenceLine = buildExplicitReviewLifecycleEvidenceLine(
+                explicitReviewFindingLifecycleResult,
+              );
               const approvalEvidence = [
                 typeof explicitReviewPromptFileCount === "number"
                   ? `Review prompt covered ${explicitReviewPromptFileCount} changed file${explicitReviewPromptFileCount === 1 ? "" : "s"}.`
@@ -3074,6 +3199,7 @@ export function createMentionHandler(deps: {
                 result.usedRepoInspectionTools === true
                   ? "Repo inspection tools were used to verify the changed code."
                   : null,
+                explicitReviewLifecycleEvidenceLine,
               ].filter((line): line is string => Boolean(line));
 
               if (!canPublishExplicitReviewOutput("explicit mention review publish", reviewOutputKey)) {

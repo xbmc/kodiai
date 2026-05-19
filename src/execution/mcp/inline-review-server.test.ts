@@ -3,13 +3,14 @@ import { publishInlineReviewComment } from "./inline-review-publisher.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 
 function createMockLogger() {
+  const infoCalls: unknown[][] = [];
   const warnCalls: unknown[][] = [];
   const logger = {
+    info: (...args: unknown[]) => infoCalls.push(args),
     warn: (...args: unknown[]) => warnCalls.push(args),
-    info: () => {},
     child: () => logger,
   };
-  return { logger, warnCalls };
+  return { logger, infoCalls, warnCalls };
 }
 
 function getToolHandler(server: ReturnType<typeof createInlineReviewServer>) {
@@ -283,7 +284,7 @@ describe("createInlineReviewServer validation diagnostics", () => {
       " context",
     ].join("\n");
 
-    const { logger, warnCalls } = createMockLogger();
+    const { logger, infoCalls, warnCalls } = createMockLogger();
     const server = createInlineReviewServer(
       async () => octokit as never,
       "acme",
@@ -310,8 +311,9 @@ describe("createInlineReviewServer validation diagnostics", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("src/file.ts");
     expect(result.content[0]?.text).toContain("RIGHT line 810 is not commentable");
-    expect(warnCalls).toHaveLength(1);
-    expect(warnCalls[0]?.[0]).toMatchObject({
+    expect(infoCalls).toHaveLength(1);
+    expect(warnCalls).toHaveLength(0);
+    expect(infoCalls[0]?.[0]).toMatchObject({
       deliveryId: "delivery-123",
       reviewOutputKey: "review-key",
       owner: "acme",

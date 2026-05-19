@@ -338,6 +338,145 @@ function buildContinuationScenarioPromptDetails() {
   return { firstPass, continuation, firstPassFiles, continuationFiles, disclosureSentence };
 }
 
+test("buildReviewPromptDetails renders compact retry inputs when compaction is safe", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    changedFiles: ["src/retry-a.ts", "src/retry-b.ts"],
+    retryPromptCompaction: {
+      observation: {
+        caseId: "retry-prompt-compaction",
+        deliveryId: "review-123",
+        repo: "acme/app",
+        attemptId: "attempt-2",
+        priorAttemptId: "attempt-1",
+        attemptOrdinal: 2,
+        status: "compacted",
+        reason: "safe-delta-reuse",
+        fallbackState: "none",
+        includedDeltaCount: 2,
+        reusedCheckpointCount: 1,
+        omittedScopeCount: 3,
+        remainingScopeCount: 2,
+        safetySignalNames: ["checkpoint.summary", "prompt-budget.included", "cache.safe-reuse"],
+        budgetSignalNames: ["prompt-budget.included"],
+        cacheSignalNames: ["cache.safe-reuse"],
+      },
+      checkpointSummaries: [
+        {
+          reviewOutputKey: "review-123",
+          filesReviewed: ["src/a.ts", "src/b.ts", "src/c.ts"],
+          findingCount: 1,
+          totalFiles: 5,
+          summaryDraft: "Reviewed auth setup and found one retry issue; remaining files are retry-a and retry-b.",
+        },
+      ],
+      promptBudgetOutcomes: [
+        {
+          sectionName: "review-change-context",
+          status: "included",
+          reason: "within-budget",
+          includedChars: 120,
+          trimmedChars: 0,
+        },
+      ],
+      cacheSafetySignalNames: ["cache.safe-reuse"],
+    },
+  }));
+
+  expect(result.text).toContain("## Retry Continuation Compaction");
+  expect(result.text).toContain("Status: compacted");
+  expect(result.text).toContain("Safe retry delta reuse is enabled");
+  expect(result.text).toContain("Prior checkpoint summaries:");
+  expect(result.text).toContain("review-123: reviewed 3/5 file(s), findings 1");
+  expect(result.text).toContain("Prompt budget outcomes reused for safety:");
+  expect(result.text).toContain("Cache safety signals: cache.safe-reuse");
+  expect(result.text).toContain("## Rules");
+  expect(result.text).toContain("Use inline comments for ALL code-specific issues");
+  expect(result.text).toContain("- src/retry-a.ts");
+  expect(result.sections.some((section) => section.sectionName === "review-size-context")).toBe(true);
+});
+
+test("buildReviewPromptDetails marks retry compaction fallback without checkpoint summary replay", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    retryPromptCompaction: {
+      observation: {
+        caseId: "retry-prompt-compaction",
+        deliveryId: "review-123",
+        repo: "acme/app",
+        attemptId: "attempt-2",
+        status: "fallback",
+        reason: "missing-budget-signal",
+        fallbackState: "fuller-context",
+        includedDeltaCount: 1,
+        reusedCheckpointCount: 0,
+        omittedScopeCount: 0,
+        remainingScopeCount: 1,
+        missingSignalNames: ["prompt-budget.included"],
+      },
+      checkpointSummaries: [
+        {
+          reviewOutputKey: "review-123",
+          filesReviewed: ["src/a.ts"],
+          findingCount: 0,
+          totalFiles: 1,
+          summaryDraft: "This summary must not be replayed when compaction is unsafe.",
+        },
+      ],
+      promptBudgetOutcomes: [],
+      cacheSafetySignalNames: [],
+    },
+  }));
+
+  expect(result.text).toContain("Status: fallback");
+  expect(result.text).toContain("Fallback state: fuller-context");
+  expect(result.text).toContain("Compaction is not safe for this retry. Use fuller context supplied by the caller");
+  expect(result.text).toContain("Missing safety signals: prompt-budget.included");
+  expect(result.text).not.toContain("This summary must not be replayed");
+});
+
+test("buildReviewPromptDetails marks degraded retry compaction as partial context without checkpoint summary replay", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    retryPromptCompaction: {
+      observation: {
+        caseId: "retry-prompt-compaction",
+        deliveryId: "review-123",
+        repo: "acme/app",
+        attemptId: "attempt-2",
+        priorAttemptId: "attempt-1",
+        attemptOrdinal: 2,
+        status: "degraded",
+        reason: "degraded-cache-signal",
+        fallbackState: "partial-context",
+        includedDeltaCount: 1,
+        reusedCheckpointCount: 1,
+        omittedScopeCount: 1,
+        remainingScopeCount: 1,
+        safetySignalNames: ["prompt-budget.included"],
+        budgetSignalNames: ["prompt-budget.included"],
+        cacheSignalNames: ["cache.bookkeeping-failure"],
+      },
+      checkpointSummaries: [
+        {
+          reviewOutputKey: "review-123",
+          filesReviewed: ["src/a.ts"],
+          findingCount: 0,
+          totalFiles: 2,
+          summaryDraft: "This degraded summary must not be replayed.",
+        },
+      ],
+      promptBudgetOutcomes: [],
+      cacheSafetySignalNames: ["cache.bookkeeping-failure"],
+    },
+  }));
+
+  expect(result.text).toContain("Status: degraded");
+  expect(result.text).toContain("Reason: degraded-cache-signal");
+  expect(result.text).toContain("Fallback state: partial-context");
+  expect(result.text).toContain("Prompt budget signals: prompt-budget.included");
+  expect(result.text).toContain("Cache safety signals: cache.bookkeeping-failure");
+  expect(result.text).toContain("Available safety signals: prompt-budget.included");
+  expect(result.text).not.toContain("This degraded summary must not be replayed");
+});
+
 test("buildReviewPromptDetails returns budgeted named prompt-section metrics", () => {
   const result = buildReviewPromptDetails(baseContext({
     changedFiles: Array.from({ length: 260 }, (_, index) => `src/file-${index}.ts`),
@@ -432,8 +571,73 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
   expect(result.sections.every((section) => section.charCount > 0)).toBe(true);
   expect(result.sections.every((section) => section.estimatedTokens === Math.ceil(section.charCount / 4))).toBe(true);
   expect(result.sections.some((section) => section.truncated === true)).toBe(true);
+  expect(result.sections.every((section) => section.budgetChars !== undefined)).toBe(true);
+  expect(result.sections.every((section) => section.includedChars !== undefined)).toBe(true);
+  expect(result.sections.every((section) => section.budgetStatus === "included" || section.budgetStatus === "trimmed")).toBe(true);
+  const trimmedSections = result.sections.filter((section) => section.budgetStatus === "trimmed");
+  expect(trimmedSections.length).toBeGreaterThan(0);
+  for (const section of trimmedSections) {
+    expect(section.budgetReason).toBe("section-over-budget");
+    expect(section.trimmedChars).toBeGreaterThan(0);
+    expect(section.trimmedTokens).toBeGreaterThan(0);
+    expect(section.includedChars).toBe(section.budgetChars);
+  }
   expect(result.text).toContain("You are reviewing pull request #42 in acme/app.");
   expect(result.text).toContain("## Knowledge Context");
+});
+
+test("buildReviewPromptDetails reports deterministic budget outcomes without raw overflow text", () => {
+  const oversizedChangedFiles = Array.from(
+    { length: 220 },
+    (_, index) => `src/${String(index).padStart(3, "0")}-${"change".repeat(18)}.ts`,
+  );
+  const omittedChangePath = oversizedChangedFiles.at(-1)!;
+  const diffOverflowSentinel = "DIFF_OVERFLOW_SENTINEL_SHOULD_NOT_APPEAR";
+  const instructionOverflowSentinel = "INSTRUCTION_OVERFLOW_SENTINEL_SHOULD_NOT_APPEAR";
+  const knowledgeOverflowSentinel = "KNOWLEDGE_OVERFLOW_SENTINEL_SHOULD_NOT_APPEAR";
+
+  const result = buildReviewPromptDetails(baseContext({
+    changedFiles: oversizedChangedFiles,
+    diffContent: `${"+diff line with enough context\n".repeat(700)}${diffOverflowSentinel}`,
+    customInstructions: `${"Investigate this custom instruction carefully. ".repeat(500)}${instructionOverflowSentinel}`,
+    linkedIssues: {
+      referencedIssues: Array.from({ length: 18 }, (_, index) => ({
+        issueNumber: index + 1,
+        repo: "acme/app",
+        title: `Linked issue ${index}`,
+        state: "open",
+        descriptionSummary: `${"knowledge summary ".repeat(40)}${index === 17 ? knowledgeOverflowSentinel : ""}`,
+        linkType: "referenced" as const,
+        keyword: "fixes",
+      })),
+      semanticMatches: [],
+    },
+  }));
+
+  const byName = new Map(result.sections.map((section) => [section.sectionName, section]));
+  for (const sectionName of [
+    "review-change-context",
+    "review-diff-context",
+    "review-knowledge-context",
+    "review-instructions",
+  ]) {
+    const section = byName.get(sectionName);
+    expect(section).toBeDefined();
+    expect(section?.budgetStatus).toBe("trimmed");
+    expect(section?.budgetReason).toBe("section-over-budget");
+    expect(section?.trimmedChars).toBeGreaterThan(0);
+    expect(section?.trimmedTokens).toBe(Math.ceil((section?.trimmedChars ?? 0) / 4));
+    expect(section?.includedChars).toBe(section?.budgetChars);
+    expect(section?.includedTokens).toBe(Math.ceil((section?.includedChars ?? 0) / 4));
+  }
+
+  expect(result.text).not.toContain(omittedChangePath);
+  expect(result.text).not.toContain(diffOverflowSentinel);
+  expect(result.text).not.toContain(instructionOverflowSentinel);
+  expect(result.text).not.toContain(knowledgeOverflowSentinel);
+  expect(JSON.stringify(result.sections)).not.toContain(diffOverflowSentinel);
+  expect(JSON.stringify(result.sections)).not.toContain(instructionOverflowSentinel);
+  expect(JSON.stringify(result.sections)).not.toContain(knowledgeOverflowSentinel);
 });
 
 test("default config includes severity classification guidelines", () => {

@@ -57,7 +57,7 @@ function logReactionFetchFailure(params: {
 }): void {
   const { logger, err, repo, commentId } = params;
   if (isReactionPermissionDenied(err)) {
-    logger.info(
+    logger.debug(
       { repo, commentId, reason: "reaction-permission-denied" },
       "Feedback sync reaction fetch skipped; app lacks reaction read permission",
     );

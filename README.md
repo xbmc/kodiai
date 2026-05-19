@@ -4,7 +4,7 @@ Kodiai  is an installable GitHub App that delivers AI-powered code review, conve
 
 Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
 
-37 milestones shipped (v0.1 through v0.37). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
+38 milestones shipped (v0.1 through v0.38). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
 
 ## Quick Start
 
@@ -56,6 +56,8 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 ## Features
 
 Recent shipped milestones include:
+- M074 review validation truth and same-PR finding lifecycle evidence, with explicit `@kodiai review` live proof on `xbmc/xbmc#28172` publishing real findings through the `interactive-review` lane
+- M073 review-budget and continuation hardening, including prompt-section budgeting, cache telemetry, continuation compaction, visible budget diagnostics, and remediation proof
 - M066 same-PR formatter suggestions for explicit `@kodiai format suggestions` and `@kodiai review format suggestions` requests, with default `git-clang-format` command support and live `m066_s05_ok` proof on `xbmc/xbmc#28259`
 - M051 manual rereview hardening around the explicit `@kodiai review` contract
 - M052 Slack webhook relay operations
@@ -68,7 +70,7 @@ Nightly maintenance workflows are part of the shipped operator surface:
 - both workflows support `workflow_dispatch` for manual retries
 - operators should inspect GitHub Actions workflow run status first when a nightly sync fails
 
-**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the dedicated `interactive-review` lane, explicit `@kodiai format suggestions` and `@kodiai review format suggestions` requests that publish same-PR committable formatter suggestions through the default `git-clang-format` command or a repo override, dependency bump deep-review, bounded shallow-clone diff fallback for both automatic and explicit review flows, risk-weighted file prioritization for large PRs, collapsed clean approvals, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
+**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the dedicated `interactive-review` lane, explicit `@kodiai format suggestions` and `@kodiai review format suggestions` requests that publish same-PR committable formatter suggestions through the default `git-clang-format` command or a repo override, dependency bump deep-review, bounded shallow-clone diff fallback for both automatic and explicit review flows, risk-weighted file prioritization for large PRs, prompt-budget and continuation diagnostics, same-PR finding lifecycle and validation-truth evidence, collapsed clean approvals, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
 
 **@kodiai Mentions** — Conversational responses to `@kodiai` across issue comments, PR comments, and review threads with context-aware follow-ups.
 

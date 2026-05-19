@@ -53,7 +53,39 @@ function reviewCandidatePublicationLineCount(body: string): number {
   return body.split("\n").filter((line) => line.includes("Review candidate publication:")).length;
 }
 
+function reviewFindingLifecycleLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review finding lifecycle:")).length;
+}
+
+function reviewValidationTruthLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review validation truth:")).length;
+}
+
 describe("formatReviewDetailsSummary", () => {
+  it("renders bounded doctrine counts in structured review plan details without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewPlanSummary: {
+        planHash: "abcdef1234567890",
+        route: { kind: "standard", taskType: "review.full", routingReason: "standard" },
+        scope: { changedFileCount: 2, reviewedFileCount: 2, totalLinesChanged: 20, representativePaths: ["src/index.ts"], omittedPathCount: 0 },
+        repoDoctrine: {
+          status: "applied",
+          contractCount: 3,
+          matchedCount: 2,
+          omittedCount: 1,
+          reasonCodes: ["redaction-applied", "PROMPT_SECRET TOKEN=abc123 diff --git", "oversized-instruction", "too-many-contracts", "unmatched-paths", "duplicate-id", "extra-reason"],
+        },
+      },
+    });
+
+    expect(result).toContain("doctrine=applied/3/2/1 reasons=redaction-applied");
+    expect(result).toContain("+1 omitted");
+    expect(result).not.toContain("TOKEN=abc123");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("PROMPT_SECRET");
+  });
+
   it("renders exactly one compact ready review plan line without dumping structured plan data", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
@@ -168,6 +200,251 @@ describe("formatReviewDetailsSummary", () => {
     expect(reviewCandidateLineCount(malformed)).toBe(0);
     expect(malformed).toContain("<summary>Review Details</summary>");
     expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("omits lifecycle details when absent or malformed without breaking Review Details", () => {
+    const omitted = formatReviewDetailsSummary({ ...BASE_PARAMS });
+    const malformed = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFindingLifecycle: {
+        schema: "review-finding-lifecycle.v1",
+        status: "normalized",
+        redaction: { privateOnly: false },
+      } as never,
+    });
+
+    expect(reviewFindingLifecycleLineCount(omitted)).toBe(0);
+    expect(reviewFindingLifecycleLineCount(malformed)).toBe(0);
+    expect(malformed).toContain("<summary>Review Details</summary>");
+    expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("renders a safe bounded lifecycle projection exactly once without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFindingLifecycle: {
+        schema: "review-finding-lifecycle.v1",
+        status: "normalized",
+        counts: {
+          input: 2,
+          recorded: 2,
+          rejected: 0,
+          unsafeInputFields: 3,
+          status: { detected: 2, open: 2, suggested: 0, validated: 0, revalidated: 0, resolved: 0, blocked: 0, degraded: 0 },
+          severity: { critical: 1, major: 1, medium: 0, minor: 0 },
+          category: { security: 1, correctness: 1, performance: 0, style: 0, documentation: 0 },
+          actionability: { actionable: 1, "needs-human-review": 1, "needs-reproduction": 0, blocked: 0, "not-actionable": 0 },
+          validationNeeds: { none: 0, "needs-tests": 1, "needs-reproduction": 0, "needs-security-review": 1, "needs-owner-confirmation": 0 },
+          revalidationState: { "not-required": 1, pending: 1, passed: 0, failed: 0, blocked: 0 },
+        },
+        correlation: {
+          repoPresent: true,
+          pullNumberPresent: true,
+          reviewOutputKeyPresent: true,
+          deliveryIdPresent: true,
+          commitIdentityPresent: true,
+        },
+        reasonCodes: ["automatic-review", "needs-tests"],
+        rejectedReasonCodes: [],
+        references: [],
+        omitted: { references: 0, reasonCodes: 0, rejectedReasonCodes: 0 },
+        redaction: {
+          privateOnly: true,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: false,
+          candidateBodiesIncluded: false,
+          toolPayloadsIncluded: false,
+          secretLikeStringsIncluded: false,
+          diffsIncluded: false,
+          unboundedArraysIncluded: false,
+          unsafeInputFieldCount: 3,
+        },
+      },
+    });
+
+    expect(reviewFindingLifecycleLineCount(result)).toBe(1);
+    expect(result).toContain("- Review finding lifecycle: status=normalized");
+    expect(result).toContain("counts=input:2,recorded:2,rejected:0,unsafeInputFields:3");
+    expect(result).toContain("correlation=repo:y,pull:y,reviewOutputKey:y,deliveryId:y,commit:y");
+    expect(result).toContain("severity=critical:1,major:1,medium:0,minor:0");
+    expect(result).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:3");
+    expect(result).not.toContain("RAW_PROMPT_CANARY");
+    expect(result).not.toContain("RAW_MODEL_OUTPUT_CANARY");
+    expect(result).not.toContain("CANDIDATE_BODY_CANARY");
+    expect(result).not.toContain("TOOL_PAYLOAD_CANARY");
+    expect(result).not.toContain("diff --git");
+  });
+
+
+  it("omits validation truth details when absent malformed or unsafe without breaking Review Details", () => {
+    const omitted = formatReviewDetailsSummary({ ...BASE_PARAMS });
+    const malformed = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewValidationTruth: {
+        schema: "review-validation-truth.v1",
+        gate: "wrong-gate",
+        status: "normalized",
+        redaction: { privateOnly: true },
+      } as never,
+    });
+    const unsafe = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewValidationTruth: {
+        schema: "review-validation-truth.v1",
+        gate: "review-validation-truth",
+        status: "normalized",
+        redaction: {
+          privateOnly: true,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: true,
+          candidateBodiesIncluded: false,
+          replacementTextIncluded: false,
+          toolPayloadsIncluded: false,
+          secretLikeStringsIncluded: false,
+          diffsIncluded: false,
+          unboundedArraysIncluded: false,
+        },
+      } as never,
+    });
+
+    expect(reviewValidationTruthLineCount(omitted)).toBe(0);
+    expect(reviewValidationTruthLineCount(malformed)).toBe(0);
+    expect(reviewValidationTruthLineCount(unsafe)).toBe(0);
+    expect(malformed).toContain("<summary>Review Details</summary>");
+    expect(unsafe).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("renders a safe bounded validation truth projection exactly once without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewValidationTruth: {
+        schema: "review-validation-truth.v1",
+        gate: "review-validation-truth",
+        reviewOutputKey: "review-output-abc123",
+        deliveryId: "delivery-001",
+        status: "normalized",
+        counts: {
+          detected: 4,
+          suggested: 2,
+          validated: 2,
+          revalidated: 1,
+          resolved: 1,
+          blocked: 1,
+          degraded: 0,
+          open: 1,
+          uncertain: 1,
+          inputFindings: 4,
+          unsafeInputFields: 6,
+        },
+        reasonCounts: {
+          "suggested-but-open": 1,
+          "validation-missing": 1,
+          "validation-passed": 2,
+          "revalidation-passed": 1,
+          blocked: 1,
+          resolved: 1,
+        },
+        evidenceFreshness: {
+          fresh: 2,
+          stale: 1,
+          missingValidation: 1,
+          missingRevalidation: 1,
+        },
+        references: [
+          { id: "finding-1", status: "open", reasonCodes: ["validation-missing"], hasSuggestedFix: false, validationPresent: false, revalidationPresent: false },
+          { id: "finding-2", status: "resolved", reasonCodes: ["validation-passed", "revalidation-passed", "resolved"], hasSuggestedFix: true, validationPresent: true, revalidationPresent: true },
+        ],
+        omitted: { references: 0, reasonCodes: 0 },
+        redaction: {
+          privateOnly: true,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: false,
+          candidateBodiesIncluded: false,
+          replacementTextIncluded: false,
+          toolPayloadsIncluded: false,
+          secretLikeStringsIncluded: false,
+          diffsIncluded: false,
+          unboundedArraysIncluded: false,
+          unsafeInputFieldCount: 6,
+        },
+        rawPrompt: "RAW_PROMPT_CANARY",
+        rawModelOutput: "RAW_MODEL_OUTPUT_CANARY",
+        candidateBody: "CANDIDATE_BODY_CANARY",
+        replacementText: "REPLACEMENT_TEXT_CANARY",
+        toolPayload: "TOOL_PAYLOAD_CANARY",
+        secret: "sk-secret-value",
+        diffText: "diff --git a/secret b/secret",
+      } as never,
+    });
+
+    expect(reviewValidationTruthLineCount(result)).toBe(1);
+    expect(result).toContain("- Review validation truth: status=normalized");
+    expect(result).toContain("counts=detected:4,suggested:2,validated:2,revalidated:1,resolved:1,blocked:1,degraded:0,open:1,uncertain:1,inputFindings:4,unsafeInputFields:6");
+    expect(result).toContain("evidence=fresh:2,stale:1,missingValidation:1,missingRevalidation:1");
+    expect(result).toContain("reasons=suggested-but-open:1,validation-missing:1,validation-passed:2,revalidation-passed:1,blocked:1,resolved:1");
+    expect(result).toContain("refs=finding-1:open:validation-missing:fix:n:validation:n:revalidation:n,finding-2:resolved:validation-passed+revalidation-passed+resolved:fix:y:validation:y:revalidation:y");
+    expect(result).toContain("correlation=reviewOutputKey:y,deliveryId:y");
+    expect(result).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,replacementText:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:6");
+    expect(result).not.toContain("RAW_PROMPT_CANARY");
+    expect(result).not.toContain("RAW_MODEL_OUTPUT_CANARY");
+    expect(result).not.toContain("CANDIDATE_BODY_CANARY");
+    expect(result).not.toContain("REPLACEMENT_TEXT_CANARY");
+    expect(result).not.toContain("TOOL_PAYLOAD_CANARY");
+    expect(result).not.toContain("sk-secret-value");
+    expect(result).not.toContain("diff --git");
+  });
+
+  it("caps validation truth reason and reference details with omitted counts", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewValidationTruth: {
+        schema: "review-validation-truth.v1",
+        gate: "review-validation-truth",
+        status: "degraded",
+        counts: { detected: 7, suggested: 1, validated: 2, revalidated: 1, resolved: 2, blocked: 1, degraded: 1, open: 1, uncertain: 1, inputFindings: 7, unsafeInputFields: 0 },
+        reasonCounts: {
+          "suggested-but-open": 1,
+          "validation-missing": 1,
+          "validation-passed": 2,
+          "validation-failed": 1,
+          "validation-stale": 1,
+          "revalidation-missing": 1,
+          "revalidation-passed": 1,
+          "revalidation-failed": 1,
+          degraded: 1,
+          blocked: 1,
+          resolved: 2,
+        },
+        evidenceFreshness: { fresh: 3, stale: 2, missingValidation: 1, missingRevalidation: 1 },
+        references: Array.from({ length: 7 }, (_, index) => ({
+          id: `finding-${index + 1}`,
+          status: index === 0 ? "degraded" : "open",
+          reasonCodes: ["validation-missing"],
+          hasSuggestedFix: index % 2 === 0,
+          validationPresent: index % 3 === 0,
+          revalidationPresent: false,
+        })),
+        omitted: { references: 2, reasonCodes: 3 },
+        redaction: {
+          privateOnly: true,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: false,
+          candidateBodiesIncluded: false,
+          replacementTextIncluded: false,
+          toolPayloadsIncluded: false,
+          secretLikeStringsIncluded: false,
+          diffsIncluded: false,
+          unboundedArraysIncluded: false,
+          unsafeInputFieldCount: 0,
+        },
+      },
+    });
+
+    expect(reviewValidationTruthLineCount(result)).toBe(1);
+    expect(result).toContain("reasons=suggested-but-open:1,validation-missing:1,validation-passed:2,validation-failed:1,validation-stale:1,revalidation-missing:1,revalidation-passed:1,revalidation-failed:1 +6 omitted");
+    expect(result).toContain("refs=finding-1:degraded:validation-missing:fix:y:validation:y:revalidation:n,finding-2:open:validation-missing:fix:n:validation:n:revalidation:n,finding-3:open:validation-missing:fix:y:validation:n:revalidation:n,finding-4:open:validation-missing:fix:n:validation:y:revalidation:n,finding-5:open:validation-missing:fix:y:validation:n:revalidation:n +4 omitted");
+    expect(result).not.toContain("finding-6");
+    expect(result).not.toContain("finding-7");
   });
 
   it("does not leak raw candidate title body diff prompt token or secret-like strings in public details", () => {

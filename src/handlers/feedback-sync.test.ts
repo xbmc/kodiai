@@ -74,12 +74,21 @@ function buildCandidate(overrides: Partial<FindingCommentCandidate> = {}): Findi
 
 function createCaptureLogger(): {
   logger: Logger;
+  debugs: Array<{ message: string; data?: Record<string, unknown> }>;
   infos: Array<{ message: string; data?: Record<string, unknown> }>;
   warnings: Array<{ message: string; data?: Record<string, unknown> }>;
 } {
+  const debugs: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const infos: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const noop = () => undefined;
+  const debug = (data: unknown, message?: string) => {
+    if (typeof data === "string") {
+      debugs.push({ message: data });
+      return;
+    }
+    debugs.push({ message: message ?? "", data: (data ?? {}) as Record<string, unknown> });
+  };
   const info = (data: unknown, message?: string) => {
     if (typeof data === "string") {
       infos.push({ message: data });
@@ -100,11 +109,12 @@ function createCaptureLogger(): {
       info,
       warn,
       error: noop,
-      debug: noop,
+      debug,
       trace: noop,
       fatal: noop,
       child: () => createNoopLogger(),
     } as unknown as Logger,
+    debugs,
     infos,
     warnings,
   };
@@ -310,8 +320,8 @@ describe("createFeedbackSyncHandler", () => {
     ).toBe(true);
   });
 
-  test("logs reaction permission denials as skipped diagnostics instead of warnings", async () => {
-    const { logger, infos, warnings } = createCaptureLogger();
+  test("logs reaction permission denials as debug diagnostics instead of production info/warnings", async () => {
+    const { logger, debugs, infos, warnings } = createCaptureLogger();
     const permissionError = Object.assign(new Error("Resource not accessible by integration"), {
       status: 403,
       response: { data: { message: "Resource not accessible by integration" } },
@@ -331,8 +341,9 @@ describe("createFeedbackSyncHandler", () => {
 
     expect(recorded).toHaveLength(0);
     expect(warnings).toHaveLength(0);
+    expect(infos).toHaveLength(0);
     expect(
-      infos.some((entry) =>
+      debugs.some((entry) =>
         entry.message.includes("Feedback sync reaction fetch skipped; app lacks reaction read permission")
       ),
     ).toBe(true);

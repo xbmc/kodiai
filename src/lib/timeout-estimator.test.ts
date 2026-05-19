@@ -68,6 +68,7 @@ describe("estimateTimeoutRisk", () => {
     });
 
     expect(result.riskLevel).toBe("low");
+    expect(result.dynamicTimeoutSeconds).toBeGreaterThanOrEqual(Math.round(baseTimeout * 0.75));
     expect(result.dynamicTimeoutSeconds).toBeLessThan(baseTimeout);
     expect(result.remoteRuntimeBudgetSeconds).toBe(result.dynamicTimeoutSeconds);
     expect(result.infraOverheadBudgetSeconds).toBe(DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS);
@@ -228,7 +229,7 @@ describe("estimateTimeoutRisk", () => {
     const maxRemoteRuntimeBudgetSeconds =
       MAX_TIMEOUT_BUDGET_SECONDS - DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS;
     const expectedRemoteRuntimeBudgetSeconds = Math.round(
-      Math.max(30, Math.min(baseTimeout * (0.5 + complexity), maxRemoteRuntimeBudgetSeconds)),
+      Math.max(30, Math.min(baseTimeout * (0.75 + complexity), maxRemoteRuntimeBudgetSeconds)),
     );
 
     expect(result.remoteRuntimeBudgetSeconds).toBe(expectedRemoteRuntimeBudgetSeconds);

@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-05-18T02:55:00.000Z",
+  "cacheTelemetryObservations": [
+    {
+      "cacheSurface": "review-derived-prompt",
+      "status": "hit",
+      "reason": "safe-reuse",
+      "deliveryId": "delivery-cache-001",
+      "repo": "octo/example",
+      "prNumber": 101,
+      "fingerprintVersion": "review-cache-fp-v1",
+      "safetySignalNames": ["base-ref", "head-ref", "prompt-schema", "repo-policy"]
+    },
+    {
+      "cacheSurface": "retrieval-query-embedding",
+      "status": "miss",
+      "reason": "cache-miss",
+      "deliveryId": "delivery-cache-002",
+      "repo": "octo/example",
+      "prNumber": 102,
+      "fingerprintVersion": "review-cache-fp-v1",
+      "safetySignalNames": ["base-ref", "head-ref", "retrieval-index"]
+    },
+    {
+      "cacheSurface": "review-derived-prompt",
+      "status": "degraded",
+      "reason": "bookkeeping-failure",
+      "deliveryId": "delivery-cache-003",
+      "repo": "octo/example",
+      "prNumber": 103,
+      "attemptOrdinal": 0,
+      "bookkeepingErrorCount": 1
+    },
+    {
+      "cacheSurface": "review-derived-prompt",
+      "status": "bypass",
+      "reason": "disabled-cache",
+      "deliveryId": "delivery-cache-003",
+      "repo": "octo/example",
+      "prNumber": 103,
+      "attemptOrdinal": 1
+    },
+    {
+      "cacheSurface": "retrieval-query-embedding",
+      "status": "bypass",
+      "reason": "unavailable-retrieval",
+      "deliveryId": "delivery-cache-004",
+      "repo": "octo/example",
+      "prNumber": 104
+    },
+    {
+      "cacheSurface": "retrieval-query-embedding",
+      "status": "miss",
+      "reason": "expired-stale-entry",
+      "deliveryId": "delivery-cache-005",
+      "repo": "octo/example",
+      "prNumber": 105,
+      "invalidationSignalNames": ["cache-ttl", "index-version"]
+    },
+    {
+      "cacheSurface": "retrieval-query-embedding",
+      "status": "degraded",
+      "reason": "incomplete-fingerprint",
+      "deliveryId": "delivery-cache-006",
+      "repo": "octo/example",
+      "prNumber": 106,
+      "missingSignalNames": ["base-ref", "tree-sha"]
+    }
+  ],
+  "cacheTelemetrySummary": {
+    "observationCount": 7,
+    "deliveryCount": 6,
+    "surfaceCounts": {
+      "review-derived-prompt": 3,
+      "retrieval-query-embedding": 4
+    },
+    "statusCounts": {
+      "hit": 1,
+      "miss": 2,
+      "degraded": 2,
+      "bypass": 2
+    },
+    "reasonCounts": {
+      "safe-reuse": 1,
+      "cache-miss": 1,
+      "bookkeeping-failure": 1,
+      "incomplete-fingerprint": 1,
+      "expired-stale-entry": 1,
+      "disabled-cache": 1,
+      "unavailable-retrieval": 1
+    },
+    "surfaceStatusCounts": {
+      "review-derived-prompt": {
+        "hit": 1,
+        "miss": 0,
+        "degraded": 1,
+        "bypass": 1
+      },
+      "retrieval-query-embedding": {
+        "hit": 0,
+        "miss": 2,
+        "degraded": 1,
+        "bypass": 1
+      }
+    },
+    "surfaceReasonCounts": {
+      "review-derived-prompt": {
+        "safe-reuse": 1,
+        "cache-miss": 0,
+        "bookkeeping-failure": 1,
+        "incomplete-fingerprint": 0,
+        "expired-stale-entry": 0,
+        "disabled-cache": 1,
+        "unavailable-retrieval": 0
+      },
+      "retrieval-query-embedding": {
+        "safe-reuse": 0,
+        "cache-miss": 1,
+        "bookkeeping-failure": 0,
+        "incomplete-fingerprint": 1,
+        "expired-stale-entry": 1,
+        "disabled-cache": 0,
+        "unavailable-retrieval": 1
+      }
+    },
+    "bookkeepingErrorCount": 1,
+    "missingSignalNames": ["base-ref", "tree-sha"],
+    "invalidationSignalNames": ["cache-ttl", "index-version"]
+  }
+}

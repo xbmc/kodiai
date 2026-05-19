@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { createAddonCheckHandler } from "./addon-check.ts";
+import { createAddonCheckHandler, ADDON_CHECK_RUNNER_TIME_BUDGET_MS } from "./addon-check.ts";
 import { buildAddonCheckMarker } from "../lib/addon-check-formatter.ts";
 import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.ts";
 import type { Logger } from "pino";
@@ -456,6 +456,10 @@ describe("createAddonCheckHandler", () => {
     expect(summary!.bindings.addonIds).toEqual(["plugin.audio.bar", "plugin.video.foo"]);
     // 1 ERROR finding per addon × 2 addons
     expect(summary!.bindings.totalFindings).toBe(2);
+  });
+
+  it("uses an expanded checker budget so production addon checks have more headroom", () => {
+    expect(ADDON_CHECK_RUNNER_TIME_BUDGET_MS).toBeGreaterThanOrEqual(240_000);
   });
 
   // ── workspace.cleanup called in finally ───────────────────────────────

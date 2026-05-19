@@ -98,6 +98,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
+### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
+- Class: integration
+- Status: validated
+- Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
+- Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
+- Source: issue #131
+- Primary owning slice: M074/S07
+- Supporting slices: M071/S06,M074/S07
+- Validation: Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication.
+- Notes: M074/S07 implemented the missing repo doctrine contract rather than rescoping it; M071 remains foundation-only context.
+
 ### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
 - Class: operability
 - Status: active
@@ -115,21 +126,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Specialist lanes must start in shadow/private mode and emit bounded aggregate evidence only until reducer and verification gates prove they are safe to publish.
 - Why it matters: Specialization should improve signal without uncontrolled parallelism, comment volume, or leakage of private candidate details.
 - Source: user
-- Primary owning slice: M073
+- Primary owning slice: specialist-lane-follow-up
 - Supporting slices: M072/S01,M072/S02,M072/S03,M073,M074
-- Validation: unmapped
-- Notes: M072 supports R131 by keeping bridge evidence private, bounded, and redacted while threading shadow candidate evidence before publication. Primary completion remains deferred to M073 specialist lane work.
-
-### R132 — Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
-- Class: core-capability
-- Status: active
-- Description: Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
-- Why it matters: Issue #131 is about making verification stronger than generation, not adding more unvetted comments.
-- Source: user
-- Primary owning slice: M074
-- Supporting slices: M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075
-- Validation: unmapped
-- Notes: M072 supports R132 by preserving fail-closed candidate publication policy and exposing reducer handoff input, but does not claim reducer-approved verification, dedupe, or disagreement handling; primary completion remains M074.
+- Validation: Unmapped for completion. M073/S07 validates only that token-first M073 proof does not claim R131 completion and that R131 is formally re-scoped; future bounded aggregate specialist-lane proof is required before R131 can be validated.
+- Notes: M072 supports R131 by keeping bridge evidence private, bounded, and redacted while threading shadow candidate evidence before publication. M073 provides supporting token-first, bounded-linkage, and non-publication evidence only. R131 private/shadow specialist-lane completion is formally re-scoped to specialist-lane-follow-up and requires a future bounded aggregate specialist-lane proof before validation.
 
 ### R133 — Final issue #131 closure must be backed by orchestration telemetry, rollout gates, and cost/noise controls.
 - Class: operability
@@ -141,6 +141,61 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M072/S01,M072/S03,M072/S04,M073,M074,M075
 - Validation: unmapped
 - Notes: M072 supports R133 through bounded bridge status, reason codes, and verifier evidence foundations. Final telemetry, rollout gates, and cost/noise closure remain M075.
+
+### R138 — Reviews must optimize for token cost before timeout headroom; timeout increases are not an acceptable primary solution for recurring review-runtime pressure.
+- Class: quality-attribute
+- Status: active
+- Description: Reviews must optimize for token cost before timeout headroom; timeout increases are not an acceptable primary solution for recurring review-runtime pressure.
+- Why it matters: The user explicitly disliked increasing addon-check and dynamic review timeout headroom as the long-term fix; Kodiai should do less wasteful review work instead of giving wasteful work more time.
+- Source: user
+- Primary owning slice: M073/S01
+- Supporting slices: M073/S02,M073/S03,M073/S04,M073/S05,M073/S06
+- Validation: mapped
+- Notes: Token reduction is the primary optimization constraint; latency improvements are expected to follow from reduced wasted work.
+
+### R139 — Review prompt and context assembly must expose section-level token budgets and deterministic overflow behavior for prompt, retrieval, candidate/reducer, and continuation inputs.
+- Class: core-capability
+- Status: active
+- Description: Review prompt and context assembly must expose section-level token budgets and deterministic overflow behavior for prompt, retrieval, candidate/reducer, and continuation inputs.
+- Why it matters: Without explicit budgets, token usage stays opaque and optimization can silently become shallow or inconsistent review behavior.
+- Source: user + inferred
+- Primary owning slice: M073/S02
+- Supporting slices: M073/S01,M073/S05,M073/S06
+- Validation: mapped
+- Notes: Overflow must be stable and explainable, not random prompt shrinkage.
+
+### R140 — Review pipeline caches must expose hit, miss, degraded, and bypass telemetry with safe invalidation boundaries so cached reuse saves tokens without silently reusing stale context.
+- Class: operability
+- Status: active
+- Description: Review pipeline caches must expose hit, miss, degraded, and bypass telemetry with safe invalidation boundaries so cached reuse saves tokens without silently reusing stale context.
+- Why it matters: The user explicitly added 'cache more'; caching only helps if operators can see when it is working and correctness is protected when it is unsafe.
+- Source: user
+- Primary owning slice: M073/S03
+- Supporting slices: M073/S01,M073/S04,M073/S06
+- Validation: mapped
+- Notes: Cache miss or degraded bookkeeping should rebuild directly; stale, incomplete, or weakly keyed entries must bypass with structured reasons.
+
+### R141 — Continuation and retry reviews must reuse compact deltas instead of blindly replaying full context when safety signals show compaction is valid.
+- Class: continuity
+- Status: active
+- Description: Continuation and retry reviews must reuse compact deltas instead of blindly replaying full context when safety signals show compaction is valid.
+- Why it matters: Timeout and retry paths can burn tokens by re-sending context already analyzed; compact deltas reduce waste while preserving continuity.
+- Source: inferred
+- Primary owning slice: M073/S04
+- Supporting slices: M073/S02,M073/S03,M073/S06
+- Validation: mapped
+- Notes: When compaction lacks required safety signals, the system must fall back to existing fuller context rather than guessing.
+
+### R142 — Visible review behavior changes caused by budgeting must be bounded, explainable, and preserve review correctness, candidate verification, reducer, publication, and secret-safety gates.
+- Class: failure-visibility
+- Status: active
+- Description: Visible review behavior changes caused by budgeting must be bounded, explainable, and preserve review correctness, candidate verification, reducer, publication, and secret-safety gates.
+- Why it matters: The user allowed visible changes to save tokens, but users and operators must understand when budgeting changes what was reviewed and safety gates cannot be weakened.
+- Source: user
+- Primary owning slice: M073/S05
+- Supporting slices: M073/S02,M073/S03,M073/S04,M073/S06
+- Validation: mapped
+- Notes: Review Details may expose bounded cost/efficiency signals and scoped-review disclosure, but must not leak raw prompts, raw candidates, or unsafe evidence.
 
 ## Validated
 
@@ -1190,6 +1245,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M072/S04 closeout ran `bun test scripts/verify-m072.test.ts` (13 pass), `bun run verify:m072 -- --json` (success with passing bridge/package/deferred-owner/report-safety checks), and the targeted S02/S03 integration regression suite (163 pass), proving candidate findings are captured before public GitHub publication and exposed through an explicit safe reducer handoff contract.
 - Notes: Validated by source-evidence verifier and integration tests only; live GitHub publication, reducer-approved publication, rollout metrics, and issue #131 final doctrine remain deferred to later milestones.
 
+### R132 — Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
+- Class: core-capability
+- Status: validated
+- Description: Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
+- Why it matters: Issue #131 is about making verification stronger than generation, not adding more unvetted comments.
+- Source: user
+- Primary owning slice: M074
+- Supporting slices: M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075
+- Validation: M074 validates candidate publication policy through S03 same-PR fix eligibility and S06 production-like handler proof: reducer-approved/candidate-approved same-PR suggestion evidence is required, dedupe/idempotency and disagreement/blocked reason codes are verified, validation-truth prevents suggested-only false resolution, and Review Details/verifier surfaces prove bounded redacted output with zero branch/PR/push side effects. Fresh closeout evidence: `bun test scripts/verify-m074-s02.test.ts scripts/verify-m074-s03.test.ts scripts/verify-m074-s04.test.ts scripts/verify-m074-s05.test.ts scripts/verify-m074-s06.test.ts src/handlers/review.test.ts src/handlers/mention.test.ts src/lib/review-utils.test.ts src/review-lifecycle/handler-lifecycle.test.ts src/review-lifecycle/validation-truth.test.ts` passed 435 tests / 2560 assertions; `bun run verify:m074:s01` through `verify:m074:s06 -- --fixture scripts/fixtures/m074-s06-production-like-proof.json` passed with samePrSuggestions=1/1, redaction=pass, sideEffects=0.
+- Notes: Validated during M074/S06 closeout. R131 and R133 remain broader follow-up requirements; S06 provides supporting bounded/private and rollout-diagnostic evidence only.
+
+### R143 — M073 completion requires live or production-like before/after evidence showing reduced token usage and acceptable latency without losing known important review behavior.
+- Class: launchability
+- Status: validated
+- Description: M073 completion requires live or production-like before/after evidence showing reduced token usage and acceptable latency without losing known important review behavior.
+- Why it matters: The milestone should not end with internal wiring alone; it must prove the budgeted pipeline actually helps on a realistic review path.
+- Source: user
+- Primary owning slice: M073/S06
+- Supporting slices: M073/S01,M073/S02,M073/S03,M073/S04,M073/S05
+- Validation: M073/S06 verifier passed via `bun run verify:m073:s06 --json` (gsd_exec 97ce5b8e-b010-4fb2-9c72-421012bb3c8b): statusCode `m073_s06_ok`, 5/5 upstream evidence rows passed, runtime tokens reduced 21,200 -> 16,200 (23.58%), live duration 138,000 ms under 210,000 ms ceiling, bounded visible projections present, rollback controls present, negative cases covered, and issues empty.
+- Notes: Validation is production-like/offline; no live GitHub write was performed because future live PR review writes require explicit user confirmation.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -1269,17 +1346,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Deferred to M068. M067 only creates a shadow-capable seam.
 
-### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
-- Class: integration
-- Status: deferred
-- Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
-- Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
-- Source: issue #131
-- Primary owning slice: M074/S01
-- Supporting slices: M071/S06
-- Validation: unmapped
-- Notes: Deferred to M074/S01 for repo-doctrine/specialist config contract implementation and proof. M071 supplies foundation-only ReviewPlan/verifier seams and a source-owned handoff contract in `src/issue-131/deferred-handoff.ts`; it does not implement or validate repo doctrine contracts.
-
 ### R119 — Provider/model failback and circuit-breaker policy are deferred outside M068.
 - Class: failure-visibility
 - Status: deferred
@@ -1323,6 +1389,28 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: unmapped
 - Notes: Public surfaces should use compact aggregate evidence and reducer-approved findings only.
+
+### R144 — Broad review-product redesign with new default modes and publication semantics is deferred unless it directly serves the token-first budgeted pipeline.
+- Class: constraint
+- Status: deferred
+- Description: Broad review-product redesign with new default modes and publication semantics is deferred unless it directly serves the token-first budgeted pipeline.
+- Why it matters: Keeping M073 focused avoids turning a performance/refactor milestone into a broad product rewrite.
+- Source: inferred
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: M073 may make bounded visible behavior changes for cost/latency, but does not own an open-ended review-product redesign.
+
+### R145 — Deep addon-check performance redesign outside the PR review token path is deferred unless execution evidence shows it is part of the same review-efficiency bottleneck.
+- Class: constraint
+- Status: deferred
+- Description: Deep addon-check performance redesign outside the PR review token path is deferred unless execution evidence shows it is part of the same review-efficiency bottleneck.
+- Why it matters: Addon-check timeout work may be valuable, but it should not distract from the user-requested review token/caching refactor.
+- Source: inferred
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: unmapped
+- Notes: The recent addon-check budget increase motivated the discussion, but M073's main scope is review token/caching behavior.
 
 ## Out of Scope
 
@@ -1469,6 +1557,28 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: n/a
 - Notes: No outward GitHub write action is part of the planning output; future GitHub actions require explicit confirmation.
 
+### R146 — Do not solve review timeout pressure by only increasing timeout or headroom budgets.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Do not solve review timeout pressure by only increasing timeout or headroom budgets.
+- Why it matters: The user explicitly identified this as the thing they do not like about the prior fix.
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Timeout/headroom changes may remain as fallback behavior, but cannot be the main M073 solution or proof.
+
+### R147 — Do not weaken publication, candidate-verification, reducer, or secret-safety gates to save tokens.
+- Class: compliance/security
+- Status: out-of-scope
+- Description: Do not weaken publication, candidate-verification, reducer, or secret-safety gates to save tokens.
+- Why it matters: A cheaper review is unacceptable if it publishes unsafe output, leaks raw evidence, or bypasses verification gates.
+- Source: inferred
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Cost optimization must fail open or bypass safely rather than bypassing security and correctness controls.
+
 ## Traceability
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
@@ -1576,7 +1686,7 @@ This file is the explicit capability and coverage contract for the project.
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
 | R102 | core-capability | validated | M070/S05 | M070/S01,M070/S02,M070/S03 | M070/S05 added deterministic production-like normal-review integration proof for docs/config truth specialist lanes through createReviewHandler, shadow aggregate classification, MCP publication gate, Review Details/runtime evidence projection, and M070 verifier evaluation. Fresh closeout evidence: `bun test ./src/handlers/review-candidate-verification-integration.test.ts ./scripts/verify-m070-s05.test.ts ./scripts/verify-m070.test.ts ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts ./src/handlers/review-candidate-verification-publication.test.ts ./src/handlers/review-candidate-verification-evidence.test.ts && bun run verify:m070 --json && bun run verify:m070:s05 --json` exited 0 (gsd_exec ec51400c-33f6-4522-a514-725d7b762589). The S05 verifier reported Review Details rows: 8, runtime log rows: 8, MCP evidence rows: 8, aggregateOnly:true, canaryLeakPresent:false, verifierJsonLeakPresent:false, and no issue categories. |
 | R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
-| R104 | integration | deferred | M074/S01 | M071/S06 | unmapped |
+| R104 | integration | validated | M074/S07 | M071/S06,M074/S07 | Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication. |
 | R105 | operability | active | M070/S03 | M070/S03 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
@@ -1603,17 +1713,27 @@ This file is the explicit capability and coverage contract for the project.
 | R128 | quality-attribute | validated | M071/S04 | M071/S02,M071/S05 | S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues. |
 | R129 | operability | validated | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | M071/S05 verified `verify:m071 -- --json` distinguishes complete, partial, missing, and deferred rows with repo-relative evidence paths and exact deferred ownership. The final report has six complete foundation rows, zero partial rows, zero missing rows, four deferred rows, and owner metadata for M072/S01 candidate publication bridge, M073/S01 reducer extraction, M074/S01 specialist lane proof, and M075/S01 metrics/tier closure. |
 | R130 | core-capability | validated | M072/S01 | M072/S02,M072/S03,M072/S04,M073,M074 | M072/S04 closeout ran `bun test scripts/verify-m072.test.ts` (13 pass), `bun run verify:m072 -- --json` (success with passing bridge/package/deferred-owner/report-safety checks), and the targeted S02/S03 integration regression suite (163 pass), proving candidate findings are captured before public GitHub publication and exposed through an explicit safe reducer handoff contract. |
-| R131 | core-capability | active | M073 | M072/S01,M072/S02,M072/S03,M073,M074 | unmapped |
-| R132 | core-capability | active | M074 | M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075 | unmapped |
+| R131 | core-capability | active | specialist-lane-follow-up | M072/S01,M072/S02,M072/S03,M073,M074 | Unmapped for completion. M073/S07 validates only that token-first M073 proof does not claim R131 completion and that R131 is formally re-scoped; future bounded aggregate specialist-lane proof is required before R131 can be validated. |
+| R132 | core-capability | validated | M074 | M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075 | M074 validates candidate publication policy through S03 same-PR fix eligibility and S06 production-like handler proof: reducer-approved/candidate-approved same-PR suggestion evidence is required, dedupe/idempotency and disagreement/blocked reason codes are verified, validation-truth prevents suggested-only false resolution, and Review Details/verifier surfaces prove bounded redacted output with zero branch/PR/push side effects. Fresh closeout evidence: `bun test scripts/verify-m074-s02.test.ts scripts/verify-m074-s03.test.ts scripts/verify-m074-s04.test.ts scripts/verify-m074-s05.test.ts scripts/verify-m074-s06.test.ts src/handlers/review.test.ts src/handlers/mention.test.ts src/lib/review-utils.test.ts src/review-lifecycle/handler-lifecycle.test.ts src/review-lifecycle/validation-truth.test.ts` passed 435 tests / 2560 assertions; `bun run verify:m074:s01` through `verify:m074:s06 -- --fixture scripts/fixtures/m074-s06-production-like-proof.json` passed with samePrSuggestions=1/1, redaction=pass, sideEffects=0. |
 | R133 | operability | active | M075 | M072/S01,M072/S03,M072/S04,M073,M074,M075 | unmapped |
 | R134 | constraint | deferred | none | none | unmapped |
 | R135 | constraint | deferred | none | none | unmapped |
 | R136 | anti-feature | out-of-scope | none | none | n/a |
 | R137 | anti-feature | out-of-scope | none | none | n/a |
+| R138 | quality-attribute | active | M073/S01 | M073/S02,M073/S03,M073/S04,M073/S05,M073/S06 | mapped |
+| R139 | core-capability | active | M073/S02 | M073/S01,M073/S05,M073/S06 | mapped |
+| R140 | operability | active | M073/S03 | M073/S01,M073/S04,M073/S06 | mapped |
+| R141 | continuity | active | M073/S04 | M073/S02,M073/S03,M073/S06 | mapped |
+| R142 | failure-visibility | active | M073/S05 | M073/S02,M073/S03,M073/S04,M073/S06 | mapped |
+| R143 | launchability | validated | M073/S06 | M073/S01,M073/S02,M073/S03,M073/S04,M073/S05 | M073/S06 verifier passed via `bun run verify:m073:s06 --json` (gsd_exec 97ce5b8e-b010-4fb2-9c72-421012bb3c8b): statusCode `m073_s06_ok`, 5/5 upstream evidence rows passed, runtime tokens reduced 21,200 -> 16,200 (23.58%), live duration 138,000 ms under 210,000 ms ceiling, bounded visible projections present, rollback controls present, negative cases covered, and issues empty. |
+| R144 | constraint | deferred | none | none | unmapped |
+| R145 | constraint | deferred | none | none | unmapped |
+| R146 | anti-feature | out-of-scope | none | none | n/a |
+| R147 | compliance/security | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 13
-- Mapped to slices: 13
-- Validated: 98 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130)
+- Active requirements: 18
+- Mapped to slices: 18
+- Validated: 100 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130, R132, R143)
 - Unmapped active requirements: 0

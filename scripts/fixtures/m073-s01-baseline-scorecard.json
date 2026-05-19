@@ -1,0 +1,181 @@
+{
+  "generatedAt": "2026-05-17T15:00:00.000Z",
+  "cases": [
+    {
+      "caseId": "normal-full-review",
+      "label": "Normal full review",
+      "repo": "octo/example",
+      "scenario": "normal",
+      "deliveryIds": ["delivery-normal-001"]
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "label": "Timeout retry review",
+      "repo": "octo/example",
+      "scenario": "retry",
+      "deliveryIds": ["delivery-retry-parent-001", "delivery-retry-child-001"]
+    }
+  ],
+  "promptSections": [
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-normal-001",
+      "repo": "octo/example",
+      "taskType": "review",
+      "promptKind": "system",
+      "sections": [
+        { "sectionName": "persona", "sectionPosition": 0, "charCount": 420, "estimatedTokens": 105 },
+        { "sectionName": "review-rules", "sectionPosition": 1, "charCount": 1200, "estimatedTokens": 300 }
+      ]
+    },
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-normal-001",
+      "repo": "octo/example",
+      "taskType": "review",
+      "promptKind": "user",
+      "sections": [
+        { "sectionName": "pr-metadata", "sectionPosition": 0, "charCount": 500, "estimatedTokens": 125 },
+        { "sectionName": "changed-files-summary", "sectionPosition": 1, "charCount": 2400, "estimatedTokens": 600, "truncated": true }
+      ]
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-parent-001",
+      "repo": "octo/example",
+      "taskType": "review",
+      "promptKind": "user",
+      "sections": [
+        { "sectionName": "pr-metadata", "sectionPosition": 0, "charCount": 480, "estimatedTokens": 120 },
+        { "sectionName": "changed-files-summary", "sectionPosition": 1, "charCount": 3600, "estimatedTokens": 900, "truncated": true }
+      ]
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-child-001",
+      "repo": "octo/example",
+      "taskType": "review.retry",
+      "promptKind": "user",
+      "sections": [
+        { "sectionName": "retry-scope", "sectionPosition": 0, "charCount": 900, "estimatedTokens": 225 },
+        { "sectionName": "checkpoint-summary", "sectionPosition": 1, "charCount": 700, "estimatedTokens": 175 }
+      ]
+    }
+  ],
+  "retrievalCache": [
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-normal-001",
+      "evidenceType": "retrieval.query-embedding",
+      "status": "hit",
+      "cacheHitRate": 0.75,
+      "reusedUnits": 3,
+      "primaryWorkUnits": 4,
+      "skippedQueries": 1,
+      "retryAttempts": 0
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-parent-001",
+      "evidenceType": "retrieval.query-embedding",
+      "status": "miss",
+      "cacheHitRate": 0,
+      "reusedUnits": 0,
+      "primaryWorkUnits": 5,
+      "skippedQueries": 0,
+      "retryAttempts": 0
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-child-001",
+      "evidenceType": "review.derived-prompt",
+      "status": "hit",
+      "cacheHitRate": 1,
+      "reusedUnits": 2,
+      "primaryWorkUnits": 2,
+      "skippedQueries": 2,
+      "retryAttempts": 1
+    }
+  ],
+  "continuations": [
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-normal-001",
+      "kind": "initial",
+      "checkpointFilesReviewed": 0
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-parent-001",
+      "kind": "initial",
+      "checkpointFilesReviewed": 6
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-child-001",
+      "kind": "retry",
+      "parentDeliveryId": "delivery-retry-parent-001",
+      "retryScopeRatio": 0.4,
+      "checkpointFilesReviewed": 6,
+      "retryFilesCount": 2
+    }
+  ],
+  "runtimeUsage": [
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-normal-001",
+      "taskType": "review",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "sdk": "agent",
+      "inputTokens": 6200,
+      "outputTokens": 1100,
+      "cacheReadTokens": 3000,
+      "cacheWriteTokens": 500,
+      "estimatedCostUsd": 0.081,
+      "durationMs": 42000,
+      "usedFallback": false
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-parent-001",
+      "taskType": "review",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "sdk": "agent",
+      "inputTokens": 9000,
+      "outputTokens": 800,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 900,
+      "estimatedCostUsd": 0.102,
+      "durationMs": 120000,
+      "usedFallback": false
+    },
+    {
+      "caseId": "retry-timeout-review",
+      "deliveryId": "delivery-retry-child-001",
+      "taskType": "review.retry",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "sdk": "agent",
+      "inputTokens": 3200,
+      "outputTokens": 900,
+      "cacheReadTokens": 1600,
+      "cacheWriteTokens": 200,
+      "estimatedCostUsd": 0.044,
+      "durationMs": 36000,
+      "usedFallback": false
+    }
+  ],
+  "phaseLatencies": [
+    { "caseId": "normal-full-review", "deliveryId": "delivery-normal-001", "phase": "queue wait", "status": "completed", "durationMs": 1000 },
+    { "caseId": "normal-full-review", "deliveryId": "delivery-normal-001", "phase": "workspace preparation", "status": "completed", "durationMs": 3500 },
+    { "caseId": "normal-full-review", "deliveryId": "delivery-normal-001", "phase": "retrieval/context assembly", "status": "completed", "durationMs": 4500 },
+    { "caseId": "normal-full-review", "deliveryId": "delivery-normal-001", "phase": "executor handoff", "status": "completed", "durationMs": 1200 },
+    { "caseId": "normal-full-review", "deliveryId": "delivery-normal-001", "phase": "remote runtime", "status": "completed", "durationMs": 42000 },
+    { "caseId": "normal-full-review", "deliveryId": "delivery-normal-001", "phase": "publication", "status": "completed", "durationMs": 2500 },
+    { "caseId": "retry-timeout-review", "deliveryId": "delivery-retry-parent-001", "phase": "remote runtime", "status": "degraded", "durationMs": 120000 },
+    { "caseId": "retry-timeout-review", "deliveryId": "delivery-retry-child-001", "phase": "remote runtime", "status": "completed", "durationMs": 36000 },
+    { "caseId": "retry-timeout-review", "deliveryId": "delivery-retry-child-001", "phase": "publication", "status": "completed", "durationMs": 3000 }
+  ]
+}

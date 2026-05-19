@@ -1,9 +1,11 @@
 import type { PromptSectionMetric, PromptSectionRecord } from "../telemetry/types.ts";
+import type { PromptBudgetOutcome } from "./prompt-budget.ts";
 
 export type PromptSectionInput = {
   sectionName: string;
   text: string;
   truncated?: boolean;
+  budgetOutcome?: PromptBudgetOutcome;
 };
 
 export type PromptBuildResult = {
@@ -22,12 +24,25 @@ export function buildPromptSectionMetrics(
   return sections.map((section, index) => {
     const separatorChars = index < sections.length - 1 ? separator.length : 0;
     const charCount = section.text.length + separatorChars;
+    const budgetOutcome = section.budgetOutcome;
     return {
       sectionName: section.sectionName,
       sectionPosition: index,
       charCount,
       estimatedTokens: estimatePromptTokens(charCount),
       ...(section.truncated ? { truncated: true } : {}),
+      ...(budgetOutcome
+        ? {
+            budgetChars: budgetOutcome.budgetChars,
+            budgetTokens: budgetOutcome.budgetTokens,
+            includedChars: budgetOutcome.includedChars,
+            includedTokens: budgetOutcome.includedTokens,
+            trimmedChars: budgetOutcome.trimmedChars,
+            trimmedTokens: budgetOutcome.trimmedTokens,
+            budgetStatus: budgetOutcome.status,
+            budgetReason: budgetOutcome.reason,
+          }
+        : {}),
     };
   });
 }

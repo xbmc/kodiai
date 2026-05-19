@@ -1,0 +1,262 @@
+{
+  "generatedAt": "2026-05-18T05:00:00.000Z",
+  "visibleBudgetProjections": [
+    {
+      "scenario": "happy-path",
+      "visibleStatus": "complete",
+      "visibleReason": "within-budget",
+      "promptBudget": {
+        "observationCount": 0,
+        "sectionCount": 0,
+        "statusCounts": {
+          "included": 0,
+          "trimmed": 0,
+          "bypassed": 0
+        },
+        "reasonCounts": {
+          "within-budget": 0,
+          "section-over-budget": 0,
+          "zero-budget": 0
+        },
+        "totalBudgetTokens": 0,
+        "totalIncludedTokens": 0,
+        "totalTrimmedTokens": 0
+      },
+      "cache": {
+        "observationCount": 0,
+        "statusCounts": {
+          "hit": 0,
+          "miss": 0,
+          "degraded": 0,
+          "bypass": 0
+        },
+        "reasonCounts": {
+          "safe-reuse": 0,
+          "cache-miss": 0,
+          "bookkeeping-failure": 0,
+          "incomplete-fingerprint": 0,
+          "expired-stale-entry": 0,
+          "disabled-cache": 0,
+          "unavailable-retrieval": 0
+        },
+        "bookkeepingErrorCount": 0,
+        "missingSignalCount": 0,
+        "invalidationSignalCount": 0
+      },
+      "continuation": {
+        "observationCount": 0,
+        "statusCounts": {
+          "compacted": 0,
+          "fallback": 0,
+          "degraded": 0,
+          "bypass": 0
+        },
+        "reasonCounts": {
+          "safe-delta-reuse": 0,
+          "missing-checkpoint": 0,
+          "missing-budget-signal": 0,
+          "degraded-cache-signal": 0,
+          "unsafe-cache-state": 0,
+          "malformed-prior-state": 0,
+          "no-remaining-scope": 0
+        },
+        "fallbackStateCounts": {
+          "none": 0,
+          "fuller-context": 0,
+          "partial-context": 0
+        },
+        "includedDeltaCount": 0,
+        "reusedCheckpointCount": 0,
+        "omittedScopeCount": 0,
+        "remainingScopeCount": 0,
+        "safetySignalCount": 0,
+        "budgetSignalCount": 0,
+        "cacheSignalCount": 0,
+        "missingSignalCount": 0
+      }
+    },
+    {
+      "scenario": "scoped-review",
+      "visibleStatus": "scoped",
+      "visibleReason": "prompt-budget-limited",
+      "promptBudget": {
+        "observationCount": 2,
+        "sectionCount": 5,
+        "statusCounts": {
+          "included": 2,
+          "trimmed": 2,
+          "bypassed": 1
+        },
+        "reasonCounts": {
+          "within-budget": 2,
+          "section-over-budget": 2,
+          "zero-budget": 1
+        },
+        "totalBudgetTokens": 975,
+        "totalIncludedTokens": 925,
+        "totalTrimmedTokens": 350
+      },
+      "cache": {
+        "observationCount": 7,
+        "statusCounts": {
+          "hit": 1,
+          "miss": 2,
+          "degraded": 2,
+          "bypass": 2
+        },
+        "reasonCounts": {
+          "safe-reuse": 1,
+          "cache-miss": 1,
+          "bookkeeping-failure": 1,
+          "incomplete-fingerprint": 1,
+          "expired-stale-entry": 1,
+          "disabled-cache": 1,
+          "unavailable-retrieval": 1
+        },
+        "bookkeepingErrorCount": 1,
+        "missingSignalCount": 2,
+        "invalidationSignalCount": 2
+      },
+      "continuation": {
+        "observationCount": 0,
+        "statusCounts": {
+          "compacted": 0,
+          "fallback": 0,
+          "degraded": 0,
+          "bypass": 0
+        },
+        "reasonCounts": {
+          "safe-delta-reuse": 0,
+          "missing-checkpoint": 0,
+          "missing-budget-signal": 0,
+          "degraded-cache-signal": 0,
+          "unsafe-cache-state": 0,
+          "malformed-prior-state": 0,
+          "no-remaining-scope": 0
+        },
+        "fallbackStateCounts": {
+          "none": 0,
+          "fuller-context": 0,
+          "partial-context": 0
+        },
+        "includedDeltaCount": 0,
+        "reusedCheckpointCount": 0,
+        "omittedScopeCount": 0,
+        "remainingScopeCount": 0,
+        "safetySignalCount": 0,
+        "budgetSignalCount": 0,
+        "cacheSignalCount": 0,
+        "missingSignalCount": 0
+      }
+    },
+    {
+      "scenario": "fallback-review",
+      "visibleStatus": "fallback",
+      "visibleReason": "continuation-fallback",
+      "promptBudget": {
+        "observationCount": 0,
+        "sectionCount": 0,
+        "statusCounts": {
+          "included": 0,
+          "trimmed": 0,
+          "bypassed": 0
+        },
+        "reasonCounts": {
+          "within-budget": 0,
+          "section-over-budget": 0,
+          "zero-budget": 0
+        },
+        "totalBudgetTokens": 0,
+        "totalIncludedTokens": 0,
+        "totalTrimmedTokens": 0
+      },
+      "cache": {
+        "observationCount": 0,
+        "statusCounts": {
+          "hit": 0,
+          "miss": 0,
+          "degraded": 0,
+          "bypass": 0
+        },
+        "reasonCounts": {
+          "safe-reuse": 0,
+          "cache-miss": 0,
+          "bookkeeping-failure": 0,
+          "incomplete-fingerprint": 0,
+          "expired-stale-entry": 0,
+          "disabled-cache": 0,
+          "unavailable-retrieval": 0
+        },
+        "bookkeepingErrorCount": 0,
+        "missingSignalCount": 0,
+        "invalidationSignalCount": 0
+      },
+      "continuation": {
+        "observationCount": 7,
+        "statusCounts": {
+          "compacted": 1,
+          "fallback": 4,
+          "degraded": 1,
+          "bypass": 1
+        },
+        "reasonCounts": {
+          "safe-delta-reuse": 1,
+          "missing-checkpoint": 1,
+          "missing-budget-signal": 1,
+          "degraded-cache-signal": 1,
+          "unsafe-cache-state": 1,
+          "malformed-prior-state": 1,
+          "no-remaining-scope": 1
+        },
+        "fallbackStateCounts": {
+          "none": 2,
+          "fuller-context": 4,
+          "partial-context": 1
+        },
+        "includedDeltaCount": 29,
+        "reusedCheckpointCount": 3,
+        "omittedScopeCount": 15,
+        "remainingScopeCount": 29,
+        "safetySignalCount": 3,
+        "budgetSignalCount": 2,
+        "cacheSignalCount": 5,
+        "missingSignalCount": 2
+      }
+    }
+  ],
+  "visibleBudgetSummary": {
+    "projectionCount": 3,
+    "scenarioCounts": {
+      "happy-path": 1,
+      "scoped-review": 1,
+      "fallback-review": 1
+    },
+    "statusCounts": {
+      "complete": 1,
+      "scoped": 1,
+      "fallback": 1
+    },
+    "reasonCounts": {
+      "within-budget": 1,
+      "prompt-budget-limited": 1,
+      "continuation-compacted": 0,
+      "continuation-fallback": 1,
+      "cache-degraded": 0
+    },
+    "promptObservationCount": 2,
+    "promptSectionCount": 5,
+    "promptTrimmedSectionCount": 2,
+    "promptBypassedSectionCount": 1,
+    "promptTrimmedTokenCount": 350,
+    "cacheObservationCount": 7,
+    "cacheHitCount": 1,
+    "cacheMissCount": 2,
+    "cacheDegradedCount": 2,
+    "cacheBypassCount": 2,
+    "continuationObservationCount": 7,
+    "continuationCompactedCount": 1,
+    "continuationFallbackCount": 4,
+    "continuationDegradedCount": 1,
+    "continuationBypassCount": 1
+  }
+}

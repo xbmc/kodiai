@@ -92,6 +92,8 @@ async function upsertAddonCheckComment(params: {
   }
 }
 
+export const ADDON_CHECK_RUNNER_TIME_BUDGET_MS = 240_000;
+
 export function createAddonCheckHandler(deps: {
   eventRouter: EventRouter;
   githubApp: GitHubApp;
@@ -225,7 +227,7 @@ export function createAddonCheckHandler(deps: {
               const result = await runAddonChecker({
                 addonDir,
                 branch: kodiVersion,
-                timeBudgetMs: 120_000,
+                timeBudgetMs: ADDON_CHECK_RUNNER_TIME_BUDGET_MS,
                 __runSubprocessForTests,
               });
 
@@ -236,7 +238,7 @@ export function createAddonCheckHandler(deps: {
               }
 
               if (result.timedOut) {
-                handlerLogger.warn({ addonId }, "addon-check: runner timed out");
+                handlerLogger.info({ addonId, timeBudgetMs: ADDON_CHECK_RUNNER_TIME_BUDGET_MS }, "addon-check: runner skipped after budget");
                 continue;
               }
 
