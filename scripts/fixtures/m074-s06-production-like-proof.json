@@ -1,0 +1,159 @@
+{
+  "schema": "m074-s06-production-like-proof.v1",
+  "generatedAt": "2026-05-18T18:30:00.000Z",
+  "source": {
+    "mode": "production-like",
+    "kind": "fixture",
+    "available": true,
+    "externalWritesPerformed": false
+  },
+  "target": {
+    "owner": "acme",
+    "repo": "widgets",
+    "pr": 74
+  },
+  "reviewOutputKey": "m074-s06-review-output",
+  "deliveryId": "delivery-m074-s06",
+  "trigger": {
+    "kind": "pull_request",
+    "samePr": true
+  },
+  "samePrInlineSuggestion": {
+    "attempted": true,
+    "publishedOnSamePr": true,
+    "suggestionCount": 1,
+    "maxSuggestions": 1,
+    "markerPresent": true,
+    "suggestionBlockPresent": true,
+    "commentCheckIds": [
+      "same-pr-suggestion-shape",
+      "idempotency-already-published"
+    ]
+  },
+  "gates": {
+    "lifecycle": {
+      "gate": "review-finding-lifecycle",
+      "passed": true,
+      "statusCode": "m074_s02_ok",
+      "checkIds": [
+        "lifecycle-record-shape",
+        "correlation-present",
+        "bounded-public-summary"
+      ],
+      "sourceAvailable": true,
+      "correlationPresent": true,
+      "counts": {
+        "detected": 27,
+        "suggested": 2,
+        "resolved": 1,
+        "open": 21,
+        "blocked": 1,
+        "degraded": 1
+      }
+    },
+    "fixEligibility": {
+      "gate": "review-fix-eligibility",
+      "passed": true,
+      "statusCode": "m074_s03_ok",
+      "checkIds": [
+        "reason-code-coverage",
+        "same-pr-suggestion-shape",
+        "idempotency-already-published",
+        "commentability-negative"
+      ],
+      "sourceAvailable": true,
+      "correlationPresent": true,
+      "counts": {
+        "eligible": 1,
+        "blocked": 7,
+        "capped": 1,
+        "alreadyPublished": 1
+      }
+    },
+    "validationTruth": {
+      "gate": "review-validation-truth",
+      "passed": true,
+      "statusCode": "m074_s04_ok",
+      "checkIds": [
+        "lifecycle-closure-semantics",
+        "reason-code-coverage",
+        "bounded-public-summary",
+        "redaction-flags-and-canaries"
+      ],
+      "sourceAvailable": true,
+      "correlationPresent": true,
+      "counts": {
+        "detected": 27,
+        "suggested": 2,
+        "validated": 3,
+        "revalidated": 1,
+        "resolved": 1,
+        "blocked": 1,
+        "degraded": 1,
+        "open": 21,
+        "uncertain": 2
+      }
+    }
+  },
+  "reviewDetails": {
+    "gate": "review-details-validation-truth",
+    "passed": true,
+    "statusCode": "m074_s05_ok",
+    "checkIds": [
+      "review-details-wording-and-caps",
+      "visible-volume-bounds",
+      "diagnostic-correlation",
+      "redaction-flags-and-canaries"
+    ],
+    "sourceAvailable": true,
+    "correlationPresent": true,
+    "counts": {
+      "validationTruthLineCount": 1,
+      "projectedReferences": 5,
+      "omittedReferences": 22,
+      "projectedReasonCodes": 8,
+      "omittedReasonCodes": 3
+    },
+    "validationTruthLineCount": 1,
+    "reviewOutputKeyPresent": true,
+    "deliveryIdPresent": true,
+    "addedLines": 1,
+    "maxAddedLines": 1,
+    "visibleCharDelta": 913,
+    "maxVisibleCharDelta": 1400
+  },
+  "validationTruth": {
+    "suggestedOnlyResolvedCount": 0,
+    "validationOnlyResolvedCount": 0,
+    "freshRevalidationResolvedCount": 1,
+    "staleValidationResolvedCount": 0,
+    "failedValidationResolvedCount": 0,
+    "blockedOrDegradedResolvedCount": 0
+  },
+  "visibleVolume": {
+    "publicCommentCount": 2,
+    "maxPublicCommentCount": 2,
+    "inlineSuggestionCommentCount": 1,
+    "maxInlineSuggestionCommentCount": 1,
+    "reviewDetailsLineCount": 9,
+    "maxReviewDetailsLineCount": 12,
+    "reviewDetailsValidationTruthLineCount": 1
+  },
+  "sideEffects": {
+    "botBranchCreated": 0,
+    "separatePrCreated": 0,
+    "directPushCount": 0,
+    "unexpectedPublicCommentCount": 0
+  },
+  "redaction": {
+    "rawPromptsIncluded": false,
+    "rawModelOutputIncluded": false,
+    "candidateBodiesIncluded": false,
+    "replacementTextIncluded": false,
+    "toolPayloadsIncluded": false,
+    "diffsIncluded": false,
+    "secretLikeStringsIncluded": false,
+    "unboundedArraysIncluded": false,
+    "canariesAbsent": true
+  }
+}
