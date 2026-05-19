@@ -67,12 +67,24 @@ describe("verify-m074-s02", () => {
       "automatic-mention-equivalence",
       "gate-log-evidence",
       "stable-id-determinism",
-      "bounded-references",
+      "bounded-references-and-reason-codes",
       "redaction-flags-and-canaries",
       "missing-correlation-negative",
       "package-wiring",
     ]);
-    expect(JSON.stringify(report)).not.toContain("PRIVATE_BODY_CANARY");
+    for (const forbidden of [
+      "PRIVATE_BODY_CANARY",
+      "RAW_PROMPT_CANARY",
+      "RAW_MODEL_OUTPUT_CANARY",
+      "CANDIDATE_BODY_CANARY",
+      "TOOL_PAYLOAD_CANARY",
+      "SECRET_TOKEN_CANARY",
+      "sk-supersecret12345",
+      "DIFF_TEXT_CANARY",
+      "diff --git",
+    ]) {
+      expect(JSON.stringify(report)).not.toContain(forbidden);
+    }
   });
 
   test("fails closed when package wiring is absent without leaking raw fixture payloads", async () => {

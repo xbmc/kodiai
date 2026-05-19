@@ -199,6 +199,18 @@ export async function evaluateM074S02Contract(options: M074S02EvaluationOptions 
       finding(21),
     ],
   });
+  const cappedResult = attachReviewFindingLifecycle({
+    source: "automatic",
+    trigger: "pull_request",
+    correlation: CORRELATION,
+    findings: Array.from({ length: 7 }, (_, index) => finding(30 + index, {
+      reasonCodes: Array.from({ length: 4 }, (_unused, reasonIndex) => `bounded-reason-${index}-${reasonIndex}`),
+      evidenceRefs: Array.from({ length: 6 }, (_unused, refIndex) => ({
+        kind: "log" as const,
+        ref: `bounded-log-${index}-${refIndex}`,
+      })),
+    })),
+  });
 
   const packageJsonText = await readPackageJsonText();
   const automatic = summarizeTrigger(automaticResult);
@@ -209,9 +221,15 @@ export async function evaluateM074S02Contract(options: M074S02EvaluationOptions 
   const stableIdDeterministic = automaticResult.lifecycle.records[0]?.id === repeatResult.lifecycle.records[0]?.id;
   const boundedReferences = automaticResult.projection.references.length <= 5
     && mentionResult.projection.references.length <= 5
+    && cappedResult.projection.references.length === 5
+    && cappedResult.projection.omitted.references === 2
     && automaticResult.projection.reasonCodes.length <= 8
-    && mentionResult.projection.reasonCodes.length <= 8;
-  const safeProjectionJson = JSON.stringify({ automatic, mention, unsafe: unsafeResult.projection });
+    && mentionResult.projection.reasonCodes.length <= 8
+    && cappedResult.projection.reasonCodes.length === 8
+    && cappedResult.projection.omitted.reasonCodes > 0
+    && cappedResult.projection.references.every((reference) => reference.reasonCodes.length <= 4)
+    && cappedResult.projection.references.every((reference) => reference.evidenceRefs.length <= 4);
+  const safeProjectionJson = JSON.stringify({ automatic, mention, unsafe: unsafeResult.projection, capped: cappedResult.projection });
   const forbiddenCanariesAbsent = FORBIDDEN_CANARIES.every((canary) => !safeProjectionJson.includes(canary));
   const missingCorrelationFailsClosed = missingCorrelationResult.status === "unavailable"
     && missingCorrelationResult.lifecycle.records.length === 0
@@ -239,9 +257,9 @@ export async function evaluateM074S02Contract(options: M074S02EvaluationOptions 
       detail: `stableIds=${stableIdDeterministic ? "pass" : "fail"}`,
     },
     {
-      id: "bounded-references",
+      id: "bounded-references-and-reason-codes",
       passed: boundedReferences,
-      detail: `automaticRefs=${automatic.referenceCount} mentionRefs=${mention.referenceCount}`,
+      detail: `automaticRefs=${automatic.referenceCount} mentionRefs=${mention.referenceCount} cappedRefs=${cappedResult.projection.references.length} omittedRefs=${cappedResult.projection.omitted.references} cappedReasons=${cappedResult.projection.reasonCodes.length} omittedReasons=${cappedResult.projection.omitted.reasonCodes}`,
     },
     {
       id: "redaction-flags-and-canaries",
