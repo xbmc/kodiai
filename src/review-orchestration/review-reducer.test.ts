@@ -87,6 +87,27 @@ describe("buildReviewReducerCounts", () => {
   });
 });
 
+describe("repo doctrine reducer projection", () => {
+  test("accepts bounded doctrine input and exposes only aggregate details", async () => {
+    const result = await reduceReviewFindings({
+      ...minimalReducerInput([baseFinding()]),
+      repoDoctrine: {
+        status: "applied",
+        contractCount: 3,
+        matchedCount: 2,
+        omittedCount: 1,
+        reasonCodes: ["redaction-applied", "PROMPT_SECRET TOKEN=abc123 diff --git"],
+      },
+    });
+
+    expect(result.status).toBe("ready");
+    expect(result.visibleFindings).toHaveLength(1);
+    expect(result.detailsSummary.text).toContain("doctrine=applied/3/2/1 reasons=redaction-applied");
+    expect(result.detailsSummary.text).not.toContain("TOKEN=abc123");
+    expect(result.detailsSummary.text).not.toContain("diff --git");
+  });
+});
+
 describe("toReviewReducerDetailsSummary", () => {
   test("projects a compact public-safe ready summary", () => {
     const result: Pick<ReviewReducerResult, "status" | "counts"> = {

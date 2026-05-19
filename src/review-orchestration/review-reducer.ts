@@ -20,6 +20,14 @@ import { validateGraphAmplifiedFindings as defaultValidateGraphAmplifiedFindings
 import type { LanguageRulesConfig } from "../enforcement/types.ts";
 
 export type ReviewReducerStatus = "ready" | "degraded";
+export type RepoDoctrineReducerStatus = "disabled" | "skipped" | "degraded" | "applied";
+export type RepoDoctrineReducerProjection = {
+  status: RepoDoctrineReducerStatus;
+  contractCount: number;
+  matchedCount: number;
+  omittedCount: number;
+  reasonCodes: string[];
+};
 
 export type ReviewReducerFindingAction =
   | "kept"
@@ -171,6 +179,7 @@ export type ReviewReducerInput = {
   guardrailAuditStore?: GuardrailAuditStore;
   guardrailStrictness?: "standard" | "strict" | "lenient";
   graphValidationLLM?: ValidationLLM | null;
+  repoDoctrine?: Partial<RepoDoctrineReducerProjection> | null;
   runGuardrailPipeline?: ReviewGuardrailRunner;
   validateGraphAmplifiedFindings?: GraphValidationRunner;
 };
@@ -301,6 +310,7 @@ export function createDegradedReviewReducerResult(input: DegradedReviewReducerIn
 
 export async function reduceReviewFindings(input: ReviewReducerInput): Promise<ReviewReducerResult> {
   const audit: ReviewReducerAuditEvent[] = [];
+  const repoDoctrine = normalizeRepoDoctrineReducerProjection(input.repoDoctrine);
 
   try {
     const enforcedFindings = input.findings.length > 0
@@ -727,7 +737,7 @@ if (finding.suppressed || (typeof finding.confidence === "number" && Number.isFi
       prioritizationStats,
       counts,
       audit,
-      detailsSummary: toReviewReducerDetailsSummary({ status: "ready", counts }),
+      detailsSummary: toReviewReducerDetailsSummary({ status: "ready", counts, repoDoctrine }),
     };
 
     return result;
@@ -742,11 +752,13 @@ export function toReviewReducerDetailsSummary(resultLike: {
   status: ReviewReducerStatus;
   counts: ReviewReducerCounts;
   reason?: string;
+  repoDoctrine?: Partial<RepoDoctrineReducerProjection> | null;
 }): ReviewReducerDetailsSummary {
   const { counts } = resultLike;
   const reason = resultLike.status === "degraded"
     ? ` reason=${sanitizeSummaryToken(resultLike.reason ?? "unknown")}`
     : "";
+  const repoDoctrine = normalizeRepoDoctrineReducerProjection(resultLike.repoDoctrine);
 
   return {
     label: "Review reducer",
@@ -763,8 +775,35 @@ export function toReviewReducerDetailsSummary(resultLike: {
       `severityDemoted=${formatCount(counts.severityDemoted)}`,
       `graphValidated=${formatCount(counts.graphValidated)}`,
       `graphUncertain=${formatCount(counts.graphUncertain)}${reason}`,
+      `doctrine=${formatRepoDoctrineReducerProjection(repoDoctrine)}`,
     ].join(" ")),
   };
+}
+
+
+function normalizeRepoDoctrineReducerProjection(input: Partial<RepoDoctrineReducerProjection> | null | undefined): RepoDoctrineReducerProjection {
+  const status = input?.status === "applied" || input?.status === "degraded" || input?.status === "disabled" || input?.status === "skipped"
+    ? input.status
+    : "skipped";
+  const reasonCodes = Array.isArray(input?.reasonCodes)
+    ? input.reasonCodes.map((reason) => sanitizeSummaryToken(String(reason))).filter(Boolean).slice(0, 8)
+    : [];
+  if (reasonCodes.length === 0) reasonCodes.push(status === "applied" ? "none" : status);
+  return {
+    status,
+    contractCount: normalizeReducerCount(input?.contractCount),
+    matchedCount: normalizeReducerCount(input?.matchedCount),
+    omittedCount: normalizeReducerCount(input?.omittedCount),
+    reasonCodes,
+  };
+}
+
+function normalizeReducerCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function formatRepoDoctrineReducerProjection(doctrine: RepoDoctrineReducerProjection): string {
+  return `${doctrine.status}/${doctrine.contractCount}/${doctrine.matchedCount}/${doctrine.omittedCount} reasons=${doctrine.reasonCodes.slice(0, 4).join(",")}`;
 }
 
 function formatCount(value: number): string {

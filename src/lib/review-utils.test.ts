@@ -62,6 +62,30 @@ function reviewValidationTruthLineCount(body: string): number {
 }
 
 describe("formatReviewDetailsSummary", () => {
+  it("renders bounded doctrine counts in structured review plan details without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewPlanSummary: {
+        planHash: "abcdef1234567890",
+        route: { kind: "standard", taskType: "review.full", routingReason: "standard" },
+        scope: { changedFileCount: 2, reviewedFileCount: 2, totalLinesChanged: 20, representativePaths: ["src/index.ts"], omittedPathCount: 0 },
+        repoDoctrine: {
+          status: "applied",
+          contractCount: 3,
+          matchedCount: 2,
+          omittedCount: 1,
+          reasonCodes: ["redaction-applied", "PROMPT_SECRET TOKEN=abc123 diff --git", "oversized-instruction", "too-many-contracts", "unmatched-paths", "duplicate-id", "extra-reason"],
+        },
+      },
+    });
+
+    expect(result).toContain("doctrine=applied/3/2/1 reasons=redaction-applied");
+    expect(result).toContain("+1 omitted");
+    expect(result).not.toContain("TOKEN=abc123");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("PROMPT_SECRET");
+  });
+
   it("renders exactly one compact ready review plan line without dumping structured plan data", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,

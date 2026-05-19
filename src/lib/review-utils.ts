@@ -21,7 +21,7 @@ import { summarizeStructuralImpactDegradation } from "../structural-impact/degra
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import type { ReviewBoundednessContract } from "./review-boundedness.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
-import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-plan.ts";
+import type { ReviewPlanDetailsSummary, RepoDoctrinePlanProjection } from "../review-orchestration/review-plan.ts";
 import type { ReviewReducerDetailsSummary } from "../review-orchestration/review-reducer.ts";
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
@@ -139,6 +139,7 @@ export type ReviewPlanReviewDetailsFormatterSummary = {
     inlineComments?: unknown;
     candidateVerificationRequired?: unknown;
   } | null;
+  repoDoctrine?: Partial<RepoDoctrinePlanProjection> | null;
 };
 
 
@@ -300,6 +301,22 @@ function formatReviewPlanDetailsRepresentativeList(
   return entries.length > 0 ? entries.join(",") : "none";
 }
 
+function formatReviewPlanDoctrineDetails(summary?: Partial<RepoDoctrinePlanProjection> | null): string {
+  if (typeof summary !== "object" || summary === null || Array.isArray(summary)) {
+    return "skipped/0/0/0 reasons=skipped";
+  }
+  const statusRaw = sanitizeReviewPlanDetailsValue(summary.status, 24) ?? "skipped";
+  const status = ["disabled", "skipped", "degraded", "applied"].includes(statusRaw) ? statusRaw : "degraded";
+  const allReasons = Array.isArray(summary.reasonCodes)
+    ? summary.reasonCodes.map((reason) => sanitizeReviewPlanDetailsValue(reason, 48)).filter((reason): reason is string => Boolean(reason))
+    : [];
+  const reasons = allReasons.slice(0, 6);
+  if (reasons.length === 0) reasons.push(status === "applied" ? "none" : status);
+  const omittedReasons = Math.max(0, allReasons.length - reasons.length);
+  const reasonText = omittedReasons > 0 ? `${reasons.join(",")} +${omittedReasons} omitted` : reasons.join(",");
+  return `${status}/${sanitizeReviewPlanDetailsCount(summary.contractCount)}/${sanitizeReviewPlanDetailsCount(summary.matchedCount)}/${sanitizeReviewPlanDetailsCount(summary.omittedCount)} reasons=${reasonText}`;
+}
+
 function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsFormatterSummary | null): string | null {
   try {
     if (typeof summary !== "object" || summary === null || Array.isArray(summary)) return null;
@@ -311,6 +328,7 @@ function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsForm
     const gates = typeof summary.gates === "object" && summary.gates !== null && !Array.isArray(summary.gates) ? summary.gates : {};
     const budgets = typeof summary.budgets === "object" && summary.budgets !== null && !Array.isArray(summary.budgets) ? summary.budgets : {};
     const publishPolicy = typeof summary.publishPolicy === "object" && summary.publishPolicy !== null && !Array.isArray(summary.publishPolicy) ? summary.publishPolicy : {};
+    const repoDoctrine = typeof summary.repoDoctrine === "object" && summary.repoDoctrine !== null && !Array.isArray(summary.repoDoctrine) ? summary.repoDoctrine : null;
 
     const routeParts = [
       sanitizeReviewPlanDetailsValue(route.kind, 32) ?? "unknown",
@@ -331,6 +349,7 @@ function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsForm
       `gates=${sanitizeReviewPlanDetailsCount(gates.totalCount)} gates/${sanitizeReviewPlanDetailsCount(gates.totalFindingCount)} findings/${formatReviewPlanDetailsStatusCounts(gates.statusCounts)}; reps=${formatReviewPlanDetailsRepresentativeList(gates.representatives, { kind: "gate" })}${omittedSuffix(omittedGates)}`,
       `budget=maxComments:${sanitizeReviewPlanDetailsCount(budgets.maxComments)},maxTurns:${sanitizeReviewPlanDetailsCount(budgets.maxTurns)},timeoutSeconds:${sanitizeReviewPlanDetailsCount(budgets.timeoutSeconds)},tokenBudget:${sanitizeReviewPlanDetailsCount(budgets.tokenBudget)}`,
       `publish=${sanitizeReviewPlanDetailsValue(publishPolicy.mode, 32) ?? "unknown"},autoApprove:${sanitizeReviewPlanDetailsBoolean(publishPolicy.autoApprove)},details:${sanitizeReviewPlanDetailsBoolean(publishPolicy.publishReviewDetails)},inline:${sanitizeReviewPlanDetailsBoolean(publishPolicy.inlineComments)},candidateVerification:${sanitizeReviewPlanDetailsBoolean(publishPolicy.candidateVerificationRequired)}`,
+      `doctrine=${formatReviewPlanDoctrineDetails(repoDoctrine)}`,
     ].join("; ");
   } catch {
     return null;

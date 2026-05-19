@@ -210,6 +210,46 @@ describe("buildReviewPlan", () => {
     expect(buildReviewPlan(reorderedInput).plan.hash).toBe(ordered.hash);
   });
 
+  test("projects bounded repo doctrine into the stable plan hash and details summary", () => {
+    const withoutDoctrine = buildReviewPlan(baseInput()).plan;
+    const withDoctrine = buildReviewPlan({
+      ...baseInput(),
+      repoDoctrine: {
+        status: "applied",
+        contractCount: 2,
+        matchedCount: 1,
+        omittedCount: 3,
+        reasonCodes: ["oversized-instruction", "PROMPT_SECRET TOKEN=abc123 diff --git"],
+      },
+    }).plan;
+
+    const summary = toReviewPlanDetailsSummary(withDoctrine);
+
+    expect(withDoctrine.repoDoctrine).toEqual({
+      status: "applied",
+      contractCount: 2,
+      matchedCount: 1,
+      omittedCount: 3,
+      reasonCodes: ["oversized-instruction", "PROMPT_SECRET-TOKEN-abc123-diff---git"],
+    });
+    expect(withDoctrine.hash).not.toBe(withoutDoctrine.hash);
+    expect(summary.text).toContain("doctrine=applied/2/1/3");
+    expect(summary.text).toContain("oversized-instruction");
+    expect(summary.text).not.toContain("TOKEN=abc123");
+    expect(summary.text).not.toContain("diff --git");
+  });
+
+  test("normalizes malformed or absent doctrine to skipped without blocking planning", () => {
+    const absent = buildReviewPlan(baseInput()).plan;
+    const malformed = buildReviewPlan({
+      ...baseInput(),
+      repoDoctrine: { status: "raw prompt", contractCount: -1, matchedCount: Number.POSITIVE_INFINITY, reasonCodes: ["unknown reason with spaces"] },
+    } as unknown as ReviewPlanInput).plan;
+
+    expect(absent.repoDoctrine).toEqual({ status: "skipped", contractCount: 0, matchedCount: 0, omittedCount: 0, reasonCodes: ["skipped"] });
+    expect(malformed.repoDoctrine).toEqual({ status: "skipped", contractCount: 0, matchedCount: 0, omittedCount: 0, reasonCodes: ["unknown-reason-with-spaces"] });
+  });
+
   test("changes the stable hash when meaningful routing or policy inputs change", () => {
     const standard = buildReviewPlan(baseInput()).plan.hash;
     const tinyDiff = buildReviewPlan({
