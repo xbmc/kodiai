@@ -2,7 +2,11 @@ import {
   normalizeFindingLifecycle,
   toFindingLifecyclePublicProjection,
   type ReviewFindingInput,
+  type ReviewFindingLifecycleInput,
   type ReviewFindingLifecyclePublicProjection,
+  type ReviewFindingLifecycleRecord,
+  type ReviewFindingLifecycleResult,
+  type ReviewFindingLifecycleStatus,
 } from "../src/review-lifecycle/finding-lifecycle.ts";
 
 export const COMMAND_NAME = "verify:m074:s01" as const;
@@ -33,6 +37,7 @@ export type M074S01Report = {
     readonly reasonCodeCount: number;
     readonly omittedReasonCodes: number;
   };
+  readonly cappedReasonCodes: readonly string[];
   readonly checks: readonly M074S01Check[];
   readonly issues: readonly string[];
 };
@@ -40,6 +45,14 @@ export type M074S01Report = {
 export type M074S01Args = {
   readonly json: boolean;
   readonly help: boolean;
+};
+
+export type M074S01EvaluationOptions = {
+  readonly generatedAt?: string;
+  readonly readPackageJsonText?: () => Promise<string>;
+  readonly projectPrimary?: (result: ReviewFindingLifecycleResult) => ReviewFindingLifecyclePublicProjection;
+  readonly missingCorrelationInput?: ReviewFindingLifecycleInput;
+  readonly malformedStatusInput?: ReviewFindingLifecycleInput;
 };
 
 const HELP_TEXT = `Usage: bun scripts/verify-m074-s01.ts [--json] [--help]\n\nVerifies the M074/S01 pure review finding lifecycle contract with an in-memory fixture.\n`;
@@ -50,6 +63,30 @@ const BASE_UNIT = {
   reviewOutputKey: "m074-s01-review-output",
   deliveryId: "delivery-m074-s01",
   commitSha: "abc123def456",
+};
+
+const FORBIDDEN_PUBLIC_CANARIES = [
+  "RAW_PROMPT_CANARY",
+  "RAW_MODEL_OUTPUT_CANARY",
+  "CANDIDATE_BODY_CANARY",
+  "TOOL_PAYLOAD_CANARY",
+  "SECRET_TOKEN_CANARY",
+  "sk-supersecret12345",
+  "DIFF_TEXT_CANARY",
+  "diff --git",
+  "Private safe body omitted",
+  "Private fixture body omitted",
+] as const;
+
+const STATUS_ORDER: Record<ReviewFindingLifecycleStatus, number> = {
+  detected: 0,
+  open: 1,
+  suggested: 2,
+  validated: 3,
+  revalidated: 4,
+  resolved: 5,
+  blocked: 5,
+  degraded: 5,
 };
 
 function finding(index: number, overrides: Partial<ReviewFindingInput> = {}): ReviewFindingInput {
@@ -92,9 +129,10 @@ export function parseM074S01Args(args: readonly string[]): M074S01Args {
   return { json, help };
 }
 
-export async function evaluateM074S01Contract(options: { generatedAt?: string; readPackageJsonText?: () => Promise<string> } = {}): Promise<M074S01Report> {
+export async function evaluateM074S01Contract(options: M074S01EvaluationOptions = {}): Promise<M074S01Report> {
   const generatedAt = options.generatedAt ?? new Date().toISOString();
   const readPackageJsonText = options.readPackageJsonText ?? (() => Bun.file("package.json").text());
+  const projectPrimary = options.projectPrimary ?? toFindingLifecyclePublicProjection;
   const findings = Array.from({ length: 40 }, (_, index) => finding(index));
   const result = normalizeFindingLifecycle({ ...BASE_UNIT, findings });
   const duplicateA = normalizeFindingLifecycle({ ...BASE_UNIT, findings: [finding(0, { body: "private A" })] });
@@ -113,23 +151,38 @@ export async function evaluateM074S01Contract(options: { generatedAt?: string; r
       finding(100, { body: "Private safe body omitted" }),
     ],
   });
-  const projection = toFindingLifecyclePublicProjection(result);
+  const missingCorrelationResult = normalizeFindingLifecycle(options.missingCorrelationInput ?? {
+    ...BASE_UNIT,
+    reviewOutputKey: "",
+    findings: [finding(200), finding(201)],
+  });
+  const malformedStatusResult = normalizeFindingLifecycle(options.malformedStatusInput ?? {
+    ...BASE_UNIT,
+    findings: [
+      finding(300, {
+        statusHistory: [
+          { status: "resolved", reasonCode: "resolved" },
+          { status: "detected", reasonCode: "regressed-out-of-order" },
+        ],
+      }),
+    ],
+  });
+  const projection = projectPrimary(result);
   const unsafeProjectionJson = JSON.stringify(toFindingLifecyclePublicProjection(unsafeResult));
+  const primaryProjectionJson = JSON.stringify(projection);
   const packageJsonText = await readPackageJsonText();
 
-  const forbiddenCanariesAbsent = [
-    "RAW_PROMPT_CANARY",
-    "RAW_MODEL_OUTPUT_CANARY",
-    "CANDIDATE_BODY_CANARY",
-    "TOOL_PAYLOAD_CANARY",
-    "SECRET_TOKEN_CANARY",
-    "sk-supersecret12345",
-    "DIFF_TEXT_CANARY",
-    "diff --git",
-    "Private safe body omitted",
-  ].every((canary) => !unsafeProjectionJson.includes(canary));
-
+  const unsafeFixtureCanariesAbsent = FORBIDDEN_PUBLIC_CANARIES.every((canary) => !unsafeProjectionJson.includes(canary));
+  const primaryProjectionSafe = isProjectionStructurallySafe(projection) && FORBIDDEN_PUBLIC_CANARIES.every((canary) => !primaryProjectionJson.includes(canary));
   const stableIdDeterministic = duplicateA.records[0]?.id === duplicateB.records[0]?.id;
+  const missingCorrelationFailsClosed = missingCorrelationResult.status === "unavailable"
+    && missingCorrelationResult.records.length === 0
+    && missingCorrelationResult.rejections.length === (missingCorrelationResult.counts.input || 0)
+    && missingCorrelationResult.rejections.every((rejection) => rejection.reason === "missing-correlation");
+  const malformedStatusDetected = hasMalformedStatusTransition(malformedStatusResult.records);
+
+  const packageWiringPresent = hasExpectedPackageScript(packageJsonText);
+
   const checks: M074S01Check[] = [
     {
       id: "lifecycle-record-counts",
@@ -153,14 +206,16 @@ export async function evaluateM074S01Contract(options: { generatedAt?: string; r
         && projection.redaction.rawModelOutputIncluded === false
         && projection.redaction.candidateBodiesIncluded === false
         && projection.redaction.toolPayloadsIncluded === false
+        && projection.redaction.secretLikeStringsIncluded === false
         && projection.redaction.diffsIncluded === false
-        && forbiddenCanariesAbsent,
-      detail: `privateOnly=${projection.redaction.privateOnly} canariesAbsent=${forbiddenCanariesAbsent}`,
+        && primaryProjectionSafe
+        && unsafeFixtureCanariesAbsent,
+      detail: `redaction=${primaryProjectionSafe && unsafeFixtureCanariesAbsent ? "pass" : "fail"}`,
     },
     {
       id: "stable-id-determinism",
       passed: stableIdDeterministic,
-      detail: `stableIdDeterministic=${stableIdDeterministic}`,
+      detail: `stableIds=${stableIdDeterministic ? "pass" : "fail"}`,
     },
     {
       id: "bounded-projection",
@@ -168,8 +223,18 @@ export async function evaluateM074S01Contract(options: { generatedAt?: string; r
       detail: `references=${projection.references.length} omittedReferences=${projection.omitted.references} reasonCodes=${projection.reasonCodes.length}`,
     },
     {
+      id: "missing-correlation-negative",
+      passed: missingCorrelationFailsClosed,
+      detail: `status=${missingCorrelationResult.status} rejected=${missingCorrelationResult.counts.rejected}`,
+    },
+    {
+      id: "malformed-status-transition-negative",
+      passed: malformedStatusDetected,
+      detail: `malformedTransitionDetected=${malformedStatusDetected}`,
+    },
+    {
       id: "package-wiring",
-      passed: packageJsonText.includes(`"${COMMAND_NAME}": "${EXPECTED_PACKAGE_SCRIPT}"`),
+      passed: packageWiringPresent,
       detail: `expected=${COMMAND_NAME} -> ${EXPECTED_PACKAGE_SCRIPT}`,
     },
   ];
@@ -194,9 +259,47 @@ export async function evaluateM074S01Contract(options: { generatedAt?: string; r
       reasonCodeCount: projection.reasonCodes.length,
       omittedReasonCodes: projection.omitted.reasonCodes,
     },
+    cappedReasonCodes: projection.reasonCodes,
     checks,
     issues,
   };
+}
+
+function hasExpectedPackageScript(packageJsonText: string): boolean {
+  try {
+    const parsed = JSON.parse(packageJsonText) as { scripts?: Record<string, unknown> };
+    return parsed.scripts?.[COMMAND_NAME] === EXPECTED_PACKAGE_SCRIPT;
+  } catch {
+    return packageJsonText.includes(`"${COMMAND_NAME}": "${EXPECTED_PACKAGE_SCRIPT}"`)
+      || packageJsonText.includes(`"${COMMAND_NAME}":"${EXPECTED_PACKAGE_SCRIPT}"`);
+  }
+}
+
+function isProjectionStructurallySafe(projection: ReviewFindingLifecyclePublicProjection): boolean {
+  return projection.schema === "review-finding-lifecycle.v1"
+    && projection.references.length <= 5
+    && projection.reasonCodes.length <= 8
+    && projection.rejectedReasonCodes.length <= 8
+    && projection.redaction.privateOnly === true
+    && projection.redaction.rawPromptsIncluded === false
+    && projection.redaction.rawModelOutputIncluded === false
+    && projection.redaction.candidateBodiesIncluded === false
+    && projection.redaction.toolPayloadsIncluded === false
+    && projection.redaction.secretLikeStringsIncluded === false
+    && projection.redaction.diffsIncluded === false
+    && projection.redaction.unboundedArraysIncluded === false;
+}
+
+function hasMalformedStatusTransition(records: readonly ReviewFindingLifecycleRecord[]): boolean {
+  return records.some((record) => {
+    let previous = -1;
+    for (const entry of record.statusHistory) {
+      const current = STATUS_ORDER[entry.status];
+      if (current < previous) return true;
+      previous = current;
+    }
+    return false;
+  });
 }
 
 export async function main(args = Bun.argv.slice(2)): Promise<number> {
@@ -205,7 +308,7 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
     parsed = parseM074S01Args(args);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid_cli_args";
-    console.error(JSON.stringify({ command: COMMAND_NAME, success: false, statusCode: "m074_s01_invalid_arg", issues: [message] }, null, 2));
+    process.stderr.write(`${JSON.stringify({ command: COMMAND_NAME, success: false, statusCode: "m074_s01_invalid_arg", issues: [message] }, null, 2)}\n`);
     return 2;
   }
 
@@ -225,8 +328,9 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
       `actionabilityCounts=${JSON.stringify(report.actionabilityCounts)}`,
       `validationNeedCounts=${JSON.stringify(report.validationNeedCounts)}`,
       `revalidationStateCounts=${JSON.stringify(report.revalidationStateCounts)}`,
-      `redactionFlags=${JSON.stringify(report.redactionFlags)}`,
-      `stableIdDeterministic=${report.stableIdDeterministic}`,
+      `reasonCodes=${JSON.stringify(report.cappedReasonCodes)}`,
+      `redaction=${report.checks.find((check) => check.id === "redaction-flags-and-canaries")?.passed ? "pass" : "fail"}`,
+      `stableIds=${report.stableIdDeterministic ? "pass" : "fail"}`,
       `boundedProjection=${JSON.stringify(report.boundedProjection)}`,
       ...(report.issues.length > 0 ? [`issues=${report.issues.join("; ")}`] : []),
       "",
