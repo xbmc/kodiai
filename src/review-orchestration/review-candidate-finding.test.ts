@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   MAX_REVIEW_CANDIDATE_BODY_LENGTH,
   MAX_REVIEW_CANDIDATE_EVIDENCE_LENGTH,
+  MAX_REVIEW_CANDIDATE_FIX_REPLACEMENT_LENGTH,
   MAX_REVIEW_CANDIDATE_TITLE_LENGTH,
   createDegradedReviewCandidateFindingResult,
   createReviewCandidateFindingExecutionResult,
@@ -36,6 +37,7 @@ describe("review candidate finding contract", () => {
           title: "  Validate auth callback  ",
           body: "The callback trusts an unsigned state value.",
           evidence: "Only derived metadata is stored in public details.",
+          fixReplacementText: "return validateSignedState(callbackState);\n",
         },
         {
           filePath: "src/app.ts",
@@ -64,6 +66,8 @@ describe("review candidate finding contract", () => {
       category: "security",
       title: "Validate auth callback",
       body: "The callback trusts an unsigned state value.",
+      evidence: "Only derived metadata is stored in public details.",
+      fixReplacementText: "return validateSignedState(callbackState);",
     });
     expect(result.findings[0]!.fingerprint).toMatch(/^rcf-[a-f0-9]{16}$/);
     expect(result.findings[1]!.fingerprint).toMatch(/^rcf-[a-f0-9]{16}-2$/);
@@ -155,6 +159,24 @@ describe("review candidate finding contract", () => {
     expect(result.findings[0]!.body).toHaveLength(MAX_REVIEW_CANDIDATE_BODY_LENGTH);
     expect(result.findings[0]!.evidence).toHaveLength(MAX_REVIEW_CANDIDATE_EVIDENCE_LENGTH);
     expect(result.rejections[0]!.reason).toBe("field-too-long");
+  });
+
+  it("normalizes optional fix replacement text and rejects oversized or unsafe replacements", () => {
+    const exactReplacement = "R".repeat(MAX_REVIEW_CANDIDATE_FIX_REPLACEMENT_LENGTH);
+    const result = createReviewCandidateFindingExecutionResult({
+      ...BASE_INPUT,
+      candidates: [
+        { filePath: "src/app.ts", title: "No replacement", body: "Valid body" },
+        { filePath: "src/app.ts", title: "Exact replacement", body: "Valid body", fixReplacementText: exactReplacement },
+        { filePath: "src/app.ts", title: "Oversized replacement", body: "Valid body", fixReplacementText: `${exactReplacement}x` },
+        { filePath: "src/app.ts", title: "Unsafe replacement", body: "Valid body", fixReplacementText: "const token = 'ghp_123456789012345678901234567890123456';" },
+      ],
+    });
+
+    expect(result.counts).toEqual({ input: 4, recorded: 2, rejected: 2, errors: 0 });
+    expect(result.findings[0]!.fixReplacementText).toBeUndefined();
+    expect(result.findings[1]!.fixReplacementText).toHaveLength(MAX_REVIEW_CANDIDATE_FIX_REPLACEMENT_LENGTH);
+    expect(result.rejections.map((rejection) => rejection.reason)).toEqual(["field-too-long", "unsafe-text"]);
   });
 
   it("creates degraded fail-open results when local normalization fails", () => {

@@ -5,6 +5,13 @@ import type {
   InlineReviewPublicationStatus,
   PublishInlineReviewCommentInput,
 } from "../execution/mcp/inline-review-publisher.ts";
+import {
+  reduceSamePrFixEligibility,
+  type SamePrFixEligibilityOutcome,
+  type SamePrFixEligibilitySummary,
+  type SamePrFixOwnedRange,
+  type SamePrFixDraft,
+} from "../review-lifecycle/same-pr-fix-eligibility.ts";
 import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
 import type {
   ReviewCandidateApprovalCandidateReference,
@@ -56,6 +63,11 @@ export type ReviewCandidatePublicationAdapterSkipped = {
   endLine?: number;
 };
 
+export type ReviewCandidatePublicationFixEligibilityOutcome = SamePrFixEligibilityOutcome & {
+  fingerprint: string;
+  lifecycle: ReviewCandidatePublicationLifecycle;
+};
+
 export type ReviewCandidatePublicationAdapterSummary = {
   counts: {
     input: number;
@@ -66,6 +78,8 @@ export type ReviewCandidatePublicationAdapterSummary = {
   };
   skipped: ReviewCandidatePublicationAdapterSkipped[];
   fingerprints: string[];
+  fixEligibility: SamePrFixEligibilitySummary;
+  fixOutcomes: ReviewCandidatePublicationFixEligibilityOutcome[];
 };
 
 export type ReviewCandidatePublicationAdapterDetailsSummary = {
@@ -112,6 +126,10 @@ export function buildCandidateReviewOutputKey(reviewOutputKey: string, candidate
 export function adaptApprovedCandidatesForInlinePublication(input: {
   approval: ReviewCandidateApprovalResult;
   reducer: Pick<ReviewReducerResult, "visibleFindings">;
+  prDiffText?: string | null;
+  formatterOwnedRanges?: ReadonlyArray<SamePrFixOwnedRange | null | undefined> | null;
+  maxFixSuggestions?: number;
+  seenFixIdentities?: Iterable<string> | null;
   logger?: {
     warn: (obj: unknown, msg: string) => void;
   };
@@ -121,7 +139,12 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
     ...input.approval.approvedCandidates,
     ...input.approval.rewrittenCandidates,
   ];
-  const payloads: PublishableReviewCandidateInlinePayload[] = [];
+  const eligibleInputs: Array<{
+    reference: ReviewCandidateApprovalCandidateReference;
+    candidate: ReviewCandidateFinding;
+    joinedFinding?: ProcessedReviewFinding;
+    finding: ProcessedReviewFindingDraft;
+  }> = [];
   const skipped: ReviewCandidatePublicationAdapterSkipped[] = [];
 
   for (const reference of candidates) {
@@ -167,17 +190,61 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
     }
 
     const sourceFinding = joinedFinding ?? candidate;
-    const finding = toProcessedFindingDraft(sourceFinding, candidate, reference);
-    const body = formatReviewCandidateInlineBody(finding);
-    payloads.push({
-      candidateFingerprint: reference.fingerprint,
-      candidatePublicationLifecycle: reference.lifecycle,
-      ...(reference.reason ? { sourceReason: reference.reason } : {}),
-      source: joinedFinding ? "reducer-visible-finding" : "candidate",
-      publication: { location: location.location, body },
-      finding,
+    eligibleInputs.push({
+      reference,
+      candidate,
+      ...(joinedFinding ? { joinedFinding } : {}),
+      finding: toProcessedFindingDraft(sourceFinding, candidate, reference),
     });
   }
+
+  const fixEligibility = reduceSamePrFixEligibility({
+    reviewOutputKey: eligibleInputs[0]?.candidate.reviewOutputKey,
+    deliveryId: eligibleInputs[0]?.candidate.deliveryId,
+    prDiffText: input.prDiffText ?? "",
+    formatterOwnedRanges: input.formatterOwnedRanges,
+    maxSuggestions: input.maxFixSuggestions ?? Number.POSITIVE_INFINITY,
+    seenIdentities: input.seenFixIdentities,
+    candidates: eligibleInputs.map(({ reference, candidate, joinedFinding }) => ({
+      filePath: candidate.filePath,
+      startLine: candidate.startLine,
+      endLine: candidate.endLine,
+      title: joinedFinding?.title ?? candidate.title,
+      severity: joinedFinding?.severity ?? candidate.severity,
+      category: joinedFinding?.category ?? candidate.category,
+      replacementText: extractFixReplacementText(joinedFinding) ?? candidate.fixReplacementText,
+      candidateApproved: reference.reason === "candidate-rejected" ? false : true,
+      reducerApproved: isReducerDeniedReason(reference.reason) ? false : true,
+      findingIdentity: reference.fingerprint,
+      candidateFingerprint: reference.fingerprint,
+      reducerFingerprint: typeof joinedFinding?.candidateFingerprint === "string" ? joinedFinding.candidateFingerprint : undefined,
+      lifecycleId: reference.lifecycle,
+      rawCandidateBody: candidate.body,
+    })),
+  });
+  const draftsByIdentity = new Map<string, SamePrFixDraft>(fixEligibility.drafts.map((draft) => [draft.identity, draft]));
+  const payloads: PublishableReviewCandidateInlinePayload[] = [];
+
+  fixEligibility.outcomes.forEach((outcome, index) => {
+    if (outcome.reason !== "eligible") return;
+    const draft = draftsByIdentity.get(outcome.identity);
+    const eligibleInput = eligibleInputs[index];
+    if (!draft || !eligibleInput) return;
+    payloads.push({
+      candidateFingerprint: eligibleInput.reference.fingerprint,
+      candidatePublicationLifecycle: eligibleInput.reference.lifecycle,
+      ...(eligibleInput.reference.reason ? { sourceReason: eligibleInput.reference.reason } : {}),
+      source: eligibleInput.joinedFinding ? "reducer-visible-finding" : "candidate",
+      publication: { location: toDraftInlineCommentLocation(draft), body: draft.body },
+      finding: eligibleInput.finding,
+    });
+  });
+
+  const fixOutcomes: ReviewCandidatePublicationFixEligibilityOutcome[] = fixEligibility.outcomes.map((outcome, index) => ({
+    ...outcome,
+    fingerprint: sanitizeSummaryToken(eligibleInputs[index]?.reference.fingerprint ?? outcome.identity),
+    lifecycle: eligibleInputs[index]?.reference.lifecycle ?? "approved",
+  }));
 
   const summary: ReviewCandidatePublicationAdapterSummary = {
     counts: {
@@ -189,6 +256,8 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
     },
     skipped,
     fingerprints: payloads.map((payload) => payload.candidateFingerprint).slice(0, MAX_SUMMARY_ITEMS),
+    fixEligibility: fixEligibility.summary,
+    fixOutcomes,
   };
 
   return { payloads, summary };
@@ -266,6 +335,7 @@ export function toReviewCandidatePublicationAdapterSummary(
   summary: ReviewCandidatePublicationAdapterSummary,
 ): ReviewCandidatePublicationAdapterDetailsSummary {
   const reasons = Array.from(new Set(summary.skipped.map((item) => item.reason))).slice(0, MAX_SUMMARY_ITEMS);
+  const fixReasons = Object.keys(summary.fixEligibility.reasonCounts).slice(0, MAX_SUMMARY_ITEMS);
   const fingerprints = summary.fingerprints.slice(0, MAX_SUMMARY_ITEMS).map(sanitizeSummaryToken);
   const text = boundSummary([
     "Review candidate publication adapter:",
@@ -274,7 +344,11 @@ export function toReviewCandidatePublicationAdapterSummary(
     `skipped=${formatCount(summary.counts.skipped)}`,
     `approved=${formatCount(summary.counts.approved)}`,
     `rewritten=${formatCount(summary.counts.rewritten)}`,
+    `fixEligible=${formatCount(summary.fixEligibility.counts.eligible)}`,
+    `fixBlocked=${formatCount(summary.fixEligibility.counts.blocked)}`,
+    `fixCapped=${formatCount(summary.fixEligibility.counts.capped)}`,
     `reasons=${reasons.length > 0 ? reasons.map(sanitizeSummaryToken).join(",") : "none"}`,
+    `fixReasons=${fixReasons.length > 0 ? fixReasons.map(sanitizeSummaryToken).join(",") : "none"}`,
     `fingerprints=${fingerprints.length > 0 ? fingerprints.join(",") : "none"}`,
   ].join(" "));
 
@@ -301,6 +375,29 @@ export function formatReviewCandidateInlineBody(
     "",
     body,
   ].join("\n");
+}
+
+function toDraftInlineCommentLocation(draft: SamePrFixDraft): InlineCommentLocation {
+  return {
+    path: draft.path,
+    ...(typeof draft.startLine === "number" ? { startLine: draft.startLine } : {}),
+    line: draft.line,
+    side: draft.side,
+  };
+}
+
+function extractFixReplacementText(finding: ProcessedReviewFinding | undefined): string | undefined {
+  if (!finding) return undefined;
+  const replacement = finding.fixReplacementText ?? finding.replacementText;
+  return typeof replacement === "string" ? replacement : undefined;
+}
+
+function isReducerDeniedReason(reason: ReviewCandidateApprovalReason | undefined): boolean {
+  return reason === "reducer-suppressed"
+    || reason === "reducer-low-confidence"
+    || reason === "reducer-deprioritized"
+    || reason === "missing-reducer-visibility"
+    || reason === "reducer-degraded-fail-open";
 }
 
 function buildVisibleFindingJoin(findings: ReadonlyArray<ProcessedReviewFinding>): Map<string, ProcessedReviewFinding> {

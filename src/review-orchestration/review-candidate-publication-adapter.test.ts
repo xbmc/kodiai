@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { parseInlineCommentMetadata } from "../lib/review-utils.ts";
 import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
@@ -32,6 +31,57 @@ const BASE_INPUT = {
   deliveryId: "delivery-001",
 };
 
+const PR_DIFF = [
+  "diff --git a/src/approved.ts b/src/approved.ts",
+  "--- a/src/approved.ts",
+  "+++ b/src/approved.ts",
+  "@@ -20,1 +20,1 @@",
+  "+approved line",
+  "diff --git a/src/rewrite.ts b/src/rewrite.ts",
+  "--- a/src/rewrite.ts",
+  "+++ b/src/rewrite.ts",
+  "@@ -30,4 +30,4 @@",
+  "+rewrite 30",
+  "+rewrite 31",
+  "+rewrite 32",
+  "+rewrite 33",
+  "diff --git a/src/secret.ts b/src/secret.ts",
+  "--- a/src/secret.ts",
+  "+++ b/src/secret.ts",
+  "@@ -10,1 +10,1 @@",
+  "+secret line",
+  "diff --git a/src/published.ts b/src/published.ts",
+  "--- a/src/published.ts",
+  "+++ b/src/published.ts",
+  "@@ -10,1 +10,1 @@",
+  "+published line",
+  "diff --git a/src/non-commentable.ts b/src/non-commentable.ts",
+  "--- a/src/non-commentable.ts",
+  "+++ b/src/non-commentable.ts",
+  "@@ -11,1 +11,1 @@",
+  "+adapter-commentable-publisher-fixture",
+  "diff --git a/src/skipped.ts b/src/skipped.ts",
+  "--- a/src/skipped.ts",
+  "+++ b/src/skipped.ts",
+  "@@ -10,1 +10,1 @@",
+  "+skipped line",
+  "diff --git a/src/malformed.ts b/src/malformed.ts",
+  "--- a/src/malformed.ts",
+  "+++ b/src/malformed.ts",
+  "@@ -30,1 +30,1 @@",
+  "+malformed line",
+  "diff --git a/src/first.ts b/src/first.ts",
+  "--- a/src/first.ts",
+  "+++ b/src/first.ts",
+  "@@ -10,1 +10,1 @@",
+  "+first line",
+  "diff --git a/src/second.ts b/src/second.ts",
+  "--- a/src/second.ts",
+  "+++ b/src/second.ts",
+  "@@ -20,1 +20,1 @@",
+  "+second line",
+].join("\n");
+
 describe("review candidate publication adapter", () => {
   test("adapts only approved and rewritten candidates into inline publisher payloads with parseable YAML metadata", () => {
     const candidates = candidateResult([
@@ -49,7 +99,8 @@ describe("review candidate publication adapter", () => {
       category: "security",
       filterAction: "rewritten",
       originalTitle: rewrittenCandidate.title,
-      body: "Rewritten reducer body should be published.",
+      body: "Rewritten reducer body should stay private outside approved suggestion blocks.",
+      fixReplacementText: "Rewritten reducer replacement",
     });
     const approval = coordinateReviewCandidateApproval({
       candidates,
@@ -69,10 +120,15 @@ describe("review candidate publication adapter", () => {
       }),
     });
 
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult({ visibleFindings: [rewrittenVisible] }) });
+    const adapted = adaptApprovedCandidatesForInlinePublication({
+      approval,
+      reducer: reducerResult({ visibleFindings: [rewrittenVisible] }),
+      prDiffText: PR_DIFF,
+    });
 
     expect(adapted.payloads).toHaveLength(2);
     expect(adapted.summary.counts).toMatchObject({ input: 2, publishable: 2, skipped: 0, approved: 1, rewritten: 1 });
+    expect(adapted.summary.fixEligibility.counts).toMatchObject({ input: 2, eligible: 2, blocked: 0, omitted: 0, capped: 0 });
     expect(adapted.payloads.map((payload) => payload.candidatePublicationLifecycle)).toEqual(["approved", "rewritten"]);
     expect(adapted.payloads.map((payload) => payload.candidateFingerprint)).toEqual([
       approvedCandidate.fingerprint,
@@ -81,11 +137,9 @@ describe("review candidate publication adapter", () => {
     expect(adapted.payloads[0]!.publication.location).toEqual({ path: "src/approved.ts", line: 20, side: "RIGHT" });
     expect(adapted.payloads[1]!.publication.location).toEqual({ path: "src/rewrite.ts", startLine: 30, line: 33, side: "RIGHT" });
 
-    const approvedMetadata = parseInlineCommentMetadata(adapted.payloads[0]!.publication.body);
-    expect(approvedMetadata).toEqual({ severity: "major", category: "correctness", title: "Approved candidate" });
-    const rewrittenMetadata = parseInlineCommentMetadata(adapted.payloads[1]!.publication.body);
-    expect(rewrittenMetadata).toEqual({ severity: "critical", category: "security", title: "Rewritten reducer title" });
-    expect(adapted.payloads[1]!.publication.body).toContain("Rewritten reducer body should be published.");
+    expect(adapted.payloads[0]!.publication.body).toContain("```suggestion\nApproved candidate replacement\n```");
+    expect(adapted.payloads[1]!.publication.body).toContain("```suggestion\nRewritten reducer replacement\n```");
+    expect(adapted.payloads[1]!.publication.body).toContain("**Fix suggestion:** Rewritten reducer title");
     expect(adapted.payloads[1]!.publication.body).not.toContain("Stale rewrite title body is safe and grounded.");
   });
 
@@ -111,7 +165,7 @@ describe("review candidate publication adapter", () => {
 
     const warnings: unknown[] = [];
     const logger = { warn: (...args: unknown[]) => warnings.push(args) };
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), logger: logger as never });
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF, logger: logger as never });
 
     expect(warnings).toEqual([
       expect.arrayContaining([
@@ -156,7 +210,7 @@ describe("review candidate publication adapter", () => {
       }),
     });
 
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult() });
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF });
     const summary = toReviewCandidatePublicationAdapterSummary(adapted.summary);
 
     expect(summary.label).toBe("Review candidate publication adapter");
@@ -168,10 +222,59 @@ describe("review candidate publication adapter", () => {
     }
   });
 
+  test("summarizes fix eligibility blocks without exposing raw replacements or candidate bodies", () => {
+    const candidates = candidateResult([
+      candidateInput("src/approved.ts", "Missing replacement", { startLine: 20, endLine: 20, fixReplacementText: undefined }),
+      candidateInput("src/approved.ts", "Duplicate one", { startLine: 20, endLine: 20, fixReplacementText: "same replacement" }),
+      candidateInput("src/approved.ts", "Duplicate two", { startLine: 20, endLine: 20, fixReplacementText: "same replacement" }),
+      candidateInput("src/rewrite.ts", "Formatter owned", { startLine: 31, endLine: 31, fixReplacementText: "formatter owned replacement" }),
+      candidateInput("src/secret.ts", "Secret replacement", { startLine: 10, endLine: 10, fixReplacementText: "safe candidate replacement" }),
+      candidateInput("src/first.ts", "Over cap", { startLine: 10, endLine: 10, fixReplacementText: "over cap replacement" }),
+    ]);
+    const reducerVisibleFindings = candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, {
+      candidateFingerprint: candidate.fingerprint,
+      ...(index === 4 ? { fixReplacementText: "const key = 'AKIA1234567890ABCDEF';" } : {}),
+    }));
+    const approval = coordinateReviewCandidateApproval({
+      candidates,
+      reducer: reducerResult({
+        findings: reducerVisibleFindings,
+        visibleFindings: reducerVisibleFindings,
+      }),
+    });
+    approval.approvedCandidates.splice(2, 0, approval.approvedCandidates[1]!);
+
+    const adapted = adaptApprovedCandidatesForInlinePublication({
+      approval,
+      reducer: reducerResult({ visibleFindings: reducerVisibleFindings }),
+      prDiffText: PR_DIFF,
+      formatterOwnedRanges: [{ path: "src/rewrite.ts", startLine: 31, endLine: 31 }],
+      maxFixSuggestions: 1,
+    });
+    const summary = toReviewCandidatePublicationAdapterSummary(adapted.summary);
+
+    expect(adapted.payloads).toHaveLength(1);
+    expect(adapted.summary.fixEligibility.reasonCounts).toMatchObject({
+      "missing-replacement": 1,
+      eligible: 1,
+      "duplicate-fix": 1,
+      "formatter-owned": 1,
+      "secret-detected": 1,
+      "max-fixes-exceeded": 2,
+    });
+    expect(adapted.summary.fixEligibility.counts).toMatchObject({ input: 7, eligible: 1, blocked: 4, omitted: 2, capped: 2 });
+    expect(summary.text).toContain("fixEligible=1");
+    expect(summary.text).toContain("fixBlocked=4");
+    expect(summary.text).toContain("fixCapped=2");
+    for (const privateText of ["same replacement", "formatter owned replacement", "over cap replacement", "AKIA1234567890ABCDEF", "body is safe and grounded"]) {
+      expect(summary.text).not.toContain(privateText);
+    }
+  });
+
   test("creates processed findings only for successful publisher results with numeric comment IDs", () => {
     const candidates = candidateResult([
       candidateInput("src/published.ts", "Published candidate", { startLine: 10, endLine: 10 }),
-      candidateInput("src/skipped.ts", "Skipped candidate", { startLine: 20, endLine: 20 }),
+      candidateInput("src/skipped.ts", "Skipped candidate", { startLine: 10, endLine: 10 }),
       candidateInput("src/malformed.ts", "Malformed publisher result", { startLine: 30, endLine: 30 }),
     ]);
     const approval = coordinateReviewCandidateApproval({
@@ -181,7 +284,7 @@ describe("review candidate publication adapter", () => {
         visibleFindings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
       }),
     });
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult() });
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF });
 
     const converted = convertPublishedCandidateResultsToProcessedFindings({
       payloads: adapted.payloads,
@@ -217,17 +320,26 @@ describe("review candidate publication adapter", () => {
       candidateInput("src/secret.ts", "Secret candidate", {
         startLine: 10,
         endLine: 10,
-        body: "Credential-like fixture AKIA1234567890123456 must be blocked before GitHub create.",
+        body: "Candidate body stays private even when fix eligibility blocks replacement text.",
+        fixReplacementText: "safe candidate replacement",
       }),
     ]);
+    const reducerVisibleFindings = candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, {
+      candidateFingerprint: candidate.fingerprint,
+      ...(index === 3 ? { fixReplacementText: "const key = 'AKIA1234567890ABCDEF';" } : {}),
+    }));
     const approval = coordinateReviewCandidateApproval({
       candidates,
       reducer: reducerResult({
-        findings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
-        visibleFindings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
+        findings: reducerVisibleFindings,
+        visibleFindings: reducerVisibleFindings,
       }),
     });
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult() });
+    const adapted = adaptApprovedCandidatesForInlinePublication({
+      approval,
+      reducer: reducerResult({ visibleFindings: reducerVisibleFindings }),
+      prDiffText: PR_DIFF,
+    });
     const payloadByPath = new Map(adapted.payloads.map((payload) => [payload.publication.location.path, payload]));
     const publishedBodies: string[] = [];
     let createReviewCommentCalls = 0;
@@ -284,13 +396,13 @@ describe("review candidate publication adapter", () => {
         "+commentable",
       ].join("\n"),
     });
-    const blocked = await publishPath("src/secret.ts");
 
+    expect(payloadByPath.has("src/secret.ts")).toBe(false);
+    expect(adapted.summary.fixEligibility.reasonCounts["secret-detected"]).toBe(1);
     expect(published.status).toBe("published");
     expect(published.commentId).toBe(9001);
     expect(skipped).toMatchObject({ status: "skipped", reason: "already-published" });
     expect(nonCommentable).toMatchObject({ status: "failed", reason: "line-not-commentable-in-pr-diff" });
-    expect(blocked).toMatchObject({ status: "blocked", reason: "secret-detected" });
     expect(createReviewCommentCalls).toBe(1);
     expect(publishedBodies[0]).not.toContain("@kodiai");
     expect(publishedBodies[0]).toContain("kodiai publishable candidate");
@@ -301,7 +413,6 @@ describe("review candidate publication adapter", () => {
         [payloadByPath.get("src/published.ts")!.candidateFingerprint, published],
         [payloadByPath.get("src/skipped.ts")!.candidateFingerprint, skipped],
         [payloadByPath.get("src/non-commentable.ts")!.candidateFingerprint, nonCommentable],
-        [payloadByPath.get("src/secret.ts")!.candidateFingerprint, blocked],
       ]),
     });
 
@@ -311,12 +422,11 @@ describe("review candidate publication adapter", () => {
       filePath: "src/published.ts",
       publicationStatus: "published",
     });
-    expect(converted.summary.counts).toMatchObject({ input: 4, processed: 1, skipped: 1, blocked: 1, failed: 1, malformed: 0 });
+    expect(converted.summary.counts).toMatchObject({ input: 3, processed: 1, skipped: 1, blocked: 0, failed: 1, malformed: 0 });
     expect(converted.summary.results.map((result) => result.reason)).toEqual([
       "published",
       "already-published",
       "line-not-commentable-in-pr-diff",
-      "secret-detected",
     ]);
   });
 
@@ -332,7 +442,7 @@ describe("review candidate publication adapter", () => {
         visibleFindings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
       }),
     });
-    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult() });
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF });
     const publishedBodies: string[] = [];
     let createReviewCommentCalls = 0;
     const octokit = {
@@ -406,6 +516,7 @@ function candidateInput(filePath: string, title: string, overrides: Record<strin
     category: "correctness",
     title,
     body: `${title} body is safe and grounded.`,
+    fixReplacementText: `${title} replacement`,
     ...overrides,
   };
 }

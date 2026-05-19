@@ -16,6 +16,7 @@ export type ReviewCandidateFindingRejectionReason =
 export const MAX_REVIEW_CANDIDATE_TITLE_LENGTH = 160;
 export const MAX_REVIEW_CANDIDATE_BODY_LENGTH = 2_000;
 export const MAX_REVIEW_CANDIDATE_EVIDENCE_LENGTH = 1_000;
+export const MAX_REVIEW_CANDIDATE_FIX_REPLACEMENT_LENGTH = 8_000;
 export const MAX_REVIEW_CANDIDATE_FILE_PATH_LENGTH = 512;
 export const MAX_REVIEW_CANDIDATE_SUMMARY_LENGTH = 260;
 
@@ -43,6 +44,7 @@ export type ReviewCandidateFindingCandidateInput = {
   title?: string | null;
   body?: string | null;
   evidence?: string | null;
+  fixReplacementText?: string | null;
 };
 
 export type ReviewCandidateFinding = {
@@ -59,6 +61,7 @@ export type ReviewCandidateFinding = {
   title: string;
   body: string;
   evidence?: string;
+  fixReplacementText?: string;
 };
 
 export type ReviewCandidateFindingCounts = {
@@ -319,11 +322,13 @@ function normalizeCandidate(input: {
   }
 
   const evidence = normalizeOptionalString(input.candidate.evidence);
+  const fixReplacementText = normalizeOptionalMultilineString(input.candidate.fixReplacementText);
   if (
     filePath.length > MAX_REVIEW_CANDIDATE_FILE_PATH_LENGTH
     || title.length > MAX_REVIEW_CANDIDATE_TITLE_LENGTH
     || body.length > MAX_REVIEW_CANDIDATE_BODY_LENGTH
     || (evidence?.length ?? 0) > MAX_REVIEW_CANDIDATE_EVIDENCE_LENGTH
+    || (fixReplacementText?.length ?? 0) > MAX_REVIEW_CANDIDATE_FIX_REPLACEMENT_LENGTH
   ) {
     return { reason: "field-too-long" };
   }
@@ -333,7 +338,7 @@ function normalizeCandidate(input: {
     return { reason: "invalid-line-range" };
   }
 
-  const unsafeText = [filePath, title, body, evidence]
+  const unsafeText = [filePath, title, body, evidence, fixReplacementText]
     .filter((value): value is string => typeof value === "string")
     .some((value) => input.unsafeTextDetector(value));
   if (unsafeText) {
@@ -352,6 +357,7 @@ function normalizeCandidate(input: {
     title,
     body,
     ...(evidence ? { evidence } : {}),
+    ...(fixReplacementText ? { fixReplacementText } : {}),
   } satisfies Omit<ReviewCandidateFinding, "fingerprint">;
 
   return {
@@ -369,6 +375,17 @@ function normalizeRequiredString(value: unknown): string {
 function normalizeOptionalString(value: unknown): string | undefined {
   const normalized = normalizeRequiredString(value);
   return normalized || undefined;
+}
+
+function normalizeOptionalMultilineString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
+    .replace(/[\t ]+$/gm, "")
+    .replace(/\n+$/g, "");
+  return normalized.trim().length > 0 ? normalized : undefined;
 }
 
 function normalizeLineRange(
