@@ -15,16 +15,18 @@ Kodiai must provide trustworthy PR review signal without wasting model tokens, e
 
 ## Current State
 
-The review system already supports phase timing, Review Details, retrieval context, derived prompt caching, candidate finding/reducer flows, publication safety gates, continuation/retry behavior, and production log visibility. A recent fix increased addon-check and dynamic review timeout headroom, but M073 treats that as a stopgap rather than the desired long-term design.
+The review system supports phase timing, Review Details, retrieval context, derived prompt caching, candidate finding/reducer flows, publication safety gates, continuation/retry behavior, production log visibility, bounded finding lifecycle evidence, same-PR inline fix evidence, validation-truth status, and `.kodiai.yml` repo doctrine contracts. M074 closed the Clawpatch-inspired review workflow via production-like proof with bounded public output and no branch/PR/push side effects. M073 remains the next planned token-first efficiency milestone.
 
 ## Architecture / Key Patterns
 
 - TypeScript/Bun service with Hono routes, GitHub App handlers, Azure Container Apps execution, and structured pino logging.
-- `src/handlers/review.ts` orchestrates review lifecycle, queueing, prompt construction, timeout estimation, continuation, Review Details, and publication coordination.
+- `src/handlers/review.ts` orchestrates review lifecycle, queueing, prompt construction, timeout estimation, continuation, Review Details, lifecycle/fix/validation-truth projections, and publication coordination.
 - `src/execution/review-prompt.ts` builds review prompts and exposes prompt-section metrics.
 - `src/lib/search-cache.ts` provides TTL cache plus in-flight coalescing for derived/search-like data.
 - `src/knowledge/*retrieval*.ts` provides review context retrieval across knowledge corpora.
 - `src/review-orchestration/*` contains candidate/reducer/review-plan helpers that must stay bounded and safe.
+- `src/review-lifecycle/*` contains bounded finding lifecycle, same-PR fix eligibility, and validation-truth reducers used to keep public review evidence compact, correlated, and redaction-safe.
+- `src/repo-doctrine/*` plus `.kodiai.yml` `review.doctrine` config support repository-owned review invariant contracts.
 - Safety and publication gates outrank cost optimization.
 
 ## Capability Contract
@@ -34,3 +36,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - [ ] M073: Token-First Review Efficiency — refactor the review pipeline into a budgeted, cache-aware path that uses fewer tokens first and proves live effectiveness without relying on timeout headroom.
+- [x] M074: Clawpatch Inspired Review Workflow and Inline Fix Evidence — delivered stable finding lifecycle evidence, bounded same-PR inline fix suggestions, validation-truth status, compact Review Details/operator evidence, production-like trigger proof, and `.kodiai.yml` repo doctrine contract remediation.

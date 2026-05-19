@@ -6235,6 +6235,43 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M074:S07",
+      "label": "S07: R104 Requirement Coverage Remediation",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M074/slices/S07/S07-PLAN.md"
+    },
+    {
+      "id": "task:M074:S07:T01",
+      "label": "T01: Add typed repo doctrine config contract and projection tests",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T02",
+      "label": "T02: Wire doctrine contracts into ReviewPlan, prompt, reducer input, and Review Details",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T03",
+      "label": "T03: Integrate doctrine wiring through review and explicit review handler fixtures",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T04",
+      "label": "T04: Add S07 verifier, fixture, package script, and operator proof document",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M074:S07:T05",
+      "label": "T05: Update configuration docs, R104 validation metadata, and closeout regression bundle",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "decision:M053:1",
       "label": "Deliver formatter fixes as GitHub fenced `suggestion` blocks in inline review comments on the existing PR, not as a separate formatting PR or bot-pushed branch.",
       "type": "decision",
@@ -14337,6 +14374,42 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M074",
+      "to": "slice:M074:S07",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T04",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M074:S07",
+      "to": "task:M074:S07:T05",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -16245,5 +16318,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-19T08:02:06.645Z"
+  "builtAt": "2026-05-19T09:02:25.523Z"
 }

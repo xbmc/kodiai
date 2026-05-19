@@ -98,6 +98,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: mapped
 - Notes: Live proof requirement for the redesign track.
 
+### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
+- Class: integration
+- Status: validated
+- Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
+- Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
+- Source: issue #131
+- Primary owning slice: M074/S07
+- Supporting slices: M071/S06,M074/S07
+- Validation: Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication.
+- Notes: M074/S07 implemented the missing repo doctrine contract rather than rescoping it; M071 remains foundation-only context.
+
 ### R105 — Shadow rollout metrics and tiered review modes: run lanes in shadow mode, collect hard metrics, then graduate Fast/Standard/Deep/Critical review tiers based on measured cost, latency, coverage, and signal.
 - Class: operability
 - Status: active
@@ -1335,17 +1346,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Deferred to M068. M067 only creates a shadow-capable seam.
 
-### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
-- Class: integration
-- Status: active
-- Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
-- Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
-- Source: issue #131
-- Primary owning slice: M074/S07
-- Supporting slices: M071/S06,M074/S07
-- Validation: Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication.
-- Notes: M074/S07 supersedes the earlier M074/S01 placeholder ownership for the repo-doctrine portion of issue #131. M071 remains foundation-only; R104 coverage now depends on bounded aggregate doctrine projections, fail-open malformed-doctrine handling, and the M074/S07 verifier contract.
-
 ### R119 — Provider/model failback and circuit-breaker policy are deferred outside M068.
 - Class: failure-visibility
 - Status: deferred
@@ -1686,7 +1686,7 @@ This file is the explicit capability and coverage contract for the project.
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
 | R102 | core-capability | validated | M070/S05 | M070/S01,M070/S02,M070/S03 | M070/S05 added deterministic production-like normal-review integration proof for docs/config truth specialist lanes through createReviewHandler, shadow aggregate classification, MCP publication gate, Review Details/runtime evidence projection, and M070 verifier evaluation. Fresh closeout evidence: `bun test ./src/handlers/review-candidate-verification-integration.test.ts ./scripts/verify-m070-s05.test.ts ./scripts/verify-m070.test.ts ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts ./src/handlers/review-candidate-verification-publication.test.ts ./src/handlers/review-candidate-verification-evidence.test.ts && bun run verify:m070 --json && bun run verify:m070:s05 --json` exited 0 (gsd_exec ec51400c-33f6-4522-a514-725d7b762589). The S05 verifier reported Review Details rows: 8, runtime log rows: 8, MCP evidence rows: 8, aggregateOnly:true, canaryLeakPresent:false, verifierJsonLeakPresent:false, and no issue categories. |
 | R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
-| R104 | integration | deferred | M074/S01 | M071/S06 | unmapped |
+| R104 | integration | validated | M074/S07 | M071/S06,M074/S07 | Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication. |
 | R105 | operability | active | M070/S03 | M070/S03 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
@@ -1733,7 +1733,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 17
-- Mapped to slices: 17
+- Active requirements: 18
+- Mapped to slices: 18
 - Validated: 100 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130, R132, R143)
 - Unmapped active requirements: 0
