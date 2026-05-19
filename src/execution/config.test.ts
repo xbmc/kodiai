@@ -4,6 +4,126 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+test("defaults review.doctrine to disabled with no contracts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.doctrine).toEqual({ enabled: false, contracts: [] });
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses bounded review.doctrine contracts from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  doctrine:",
+        "    enabled: true",
+        "    contracts:",
+        "      - id: api-public-contract",
+        "        type: api-compatibility",
+        "        paths:",
+        "          - src/api/**",
+        "        severity: major",
+        "        category: correctness",
+        "        instructions: Preserve API compatibility unless migration evidence exists.",
+        "        evidence: Link migration evidence or compatibility notes.",
+        "      - id: migration-contract",
+        "        type: migration",
+        "        paths:",
+        "          - migrations/**",
+        "        severity: critical",
+        "        category: operability",
+        "        instructions: Include rollback-safe migration reasoning.",
+        "        evidence: Show reversible migration or explicit irreversible rationale.",
+        "",
+      ].join("\n"),
+    );
+
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.doctrine.enabled).toBe(true);
+    expect(config.review.doctrine.contracts.map((contract) => contract.id)).toEqual([
+      "api-public-contract",
+      "migration-contract",
+    ]);
+    expect(config.review.doctrine.contracts[0]!.type).toBe("api-compatibility");
+    expect(config.review.doctrine.contracts[1]!.category).toBe("operability");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("malformed review.doctrine falls back to default doctrine without discarding other review fields", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  maxComments: 12",
+        "  doctrine:",
+        "    enabled: true",
+        "    contracts:",
+        "      - id: api-public-contract",
+        "        type: unknown-kind",
+        "        paths:",
+        "          - src/api/**",
+        "        instructions: Preserve API compatibility.",
+        "        evidence: Show evidence.",
+        "",
+      ].join("\n"),
+    );
+
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.maxComments).toBe(12);
+    expect(config.review.doctrine).toEqual({ enabled: false, contracts: [] });
+    expect(warnings.some((warning) =>
+      warning.section === "review.doctrine"
+      && warning.issues.some((issue) => issue.includes("doctrine.contracts.0.type")),
+    )).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("empty doctrine IDs and oversized instructions fail open to default doctrine with warnings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  doctrine:",
+        "    enabled: true",
+        "    contracts:",
+        "      - id: ''",
+        "        type: forbidden-pattern",
+        "        paths:",
+        "          - src/**",
+        "        instructions: " + "x".repeat(501),
+        "        evidence: Show absence of forbidden pattern.",
+        "",
+      ].join("\n"),
+    );
+
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.doctrine).toEqual({ enabled: false, contracts: [] });
+    expect(warnings.some((warning) => warning.section === "review.doctrine")).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 test("returns defaults when no .kodiai.yml exists", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {

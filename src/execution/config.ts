@@ -1,5 +1,11 @@
 import { z } from "zod";
 import yaml from "js-yaml";
+import {
+  REPO_DOCTRINE_CATEGORIES,
+  REPO_DOCTRINE_CONTRACT_TYPES,
+  REPO_DOCTRINE_LIMITS,
+  REPO_DOCTRINE_SEVERITIES,
+} from "../repo-doctrine/contracts.ts";
 
 const writeSecretScanSchema = z
   .object({
@@ -129,6 +135,27 @@ const graphValidationSchema = z
   })
   .default({ enabled: false });
 
+const repoDoctrineContractSchema = z.object({
+  id: z.string().trim().min(1).max(REPO_DOCTRINE_LIMITS.maxIdLength),
+  type: z.enum(REPO_DOCTRINE_CONTRACT_TYPES),
+  paths: z.array(
+    z.string().trim().min(1).max(REPO_DOCTRINE_LIMITS.maxGlobLength),
+  ).min(1).max(REPO_DOCTRINE_LIMITS.maxPathGlobsPerContract),
+  severity: z.enum(REPO_DOCTRINE_SEVERITIES).default("medium"),
+  category: z.enum(REPO_DOCTRINE_CATEGORIES).default("correctness"),
+  instructions: z.string().min(1).max(REPO_DOCTRINE_LIMITS.maxInstructionLength),
+  evidence: z.string().min(1).max(REPO_DOCTRINE_LIMITS.maxEvidenceLength),
+});
+
+const repoDoctrineSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    contracts: z.array(repoDoctrineContractSchema)
+      .max(REPO_DOCTRINE_LIMITS.maxContracts)
+      .default([]),
+  })
+  .default({ enabled: false, contracts: [] });
+
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -180,6 +207,7 @@ const reviewSchema = z
     prioritization: findingPrioritizationWeightsSchema,
     formatterSuggestions: formatterSuggestionsSchema,
     graphValidation: graphValidationSchema,
+    doctrine: repoDoctrineSchema,
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
     /** Output language for review prose. Free-form string (ISO code or full name). Default: "en". */
@@ -224,6 +252,7 @@ const reviewSchema = z
       maxSuggestions: 10,
     },
     graphValidation: { enabled: false },
+    doctrine: { enabled: false, contracts: [] },
     pathInstructions: [],
     outputLanguage: "en",
   });
@@ -686,6 +715,46 @@ function collectConfigCompatibilityWarnings(
   }];
 }
 
+function doctrineIssues(error: z.ZodError): string[] {
+  return error.issues.map((issue) => {
+    const path = ["doctrine", ...issue.path.map(String)].join(".");
+    return `${path}: ${issue.message}; using default disabled doctrine`;
+  });
+}
+
+function sanitizeParsedDoctrine(parsed: unknown): {
+  parsed: unknown;
+  warnings: ConfigWarning[];
+} {
+  if (!isConfigRecord(parsed)) {
+    return { parsed, warnings: [] };
+  }
+
+  const review = parsed.review;
+  if (!isConfigRecord(review) || !Object.prototype.hasOwnProperty.call(review, "doctrine")) {
+    return { parsed, warnings: [] };
+  }
+
+  const result = repoDoctrineSchema.safeParse(review.doctrine);
+  if (result.success) {
+    return { parsed, warnings: [] };
+  }
+
+  return {
+    parsed: {
+      ...parsed,
+      review: {
+        ...review,
+        doctrine: repoDoctrineSchema.parse({}),
+      },
+    },
+    warnings: [{
+      section: "review.doctrine",
+      issues: doctrineIssues(result.error),
+    }],
+  };
+}
+
 export async function loadRepoConfig(
   workspaceDir: string,
 ): Promise<LoadConfigResult> {
@@ -707,12 +776,18 @@ export async function loadRepoConfig(
     );
   }
 
+  const doctrineSanitized = sanitizeParsedDoctrine(parsed);
+  parsed = doctrineSanitized.parsed;
+
   // Pass 1 (fast path): try full schema parse
   const fullResult = repoConfigSchema.safeParse(parsed);
   if (fullResult.success) {
     return {
       config: fullResult.data,
-      warnings: collectConfigCompatibilityWarnings(parsed, fullResult.data),
+      warnings: [
+        ...doctrineSanitized.warnings,
+        ...collectConfigCompatibilityWarnings(parsed, fullResult.data),
+      ],
     };
   }
 
@@ -720,7 +795,7 @@ export async function loadRepoConfig(
   const isObject = typeof parsed === "object" && parsed !== null;
   const obj = isObject ? (parsed as Record<string, unknown>) : {};
 
-  const warnings: ConfigWarning[] = [];
+  const warnings: ConfigWarning[] = [...doctrineSanitized.warnings];
 
   if (!isObject) {
     warnings.push({
