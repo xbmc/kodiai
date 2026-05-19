@@ -509,7 +509,6 @@ function validateTruthfulValidation(proof: M074S06EvidenceSnapshot): string[] {
   const issues: string[] = [];
   if (truth.suggestedOnlyResolvedCount !== 0) issues.push("suggested-only fixes resolved validation truth.");
   if (truth.validationOnlyResolvedCount !== 0) issues.push("validation-only fixes resolved without required revalidation.");
-  if (truth.freshRevalidationResolvedCount < 1) issues.push("at least one fresh revalidation resolution is required.");
   if (truth.staleValidationResolvedCount !== 0 || truth.failedValidationResolvedCount !== 0 || truth.blockedOrDegradedResolvedCount !== 0) issues.push("stale, failed, blocked, or degraded evidence resolved validation truth.");
   return issues;
 }

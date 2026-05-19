@@ -32,6 +32,11 @@ import {
 } from "../jobs/review-work-coordinator.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { ShadowSpecialistSubflowInput, ShadowSpecialistSubflowResult } from "../specialists/shadow-specialist-subflow.ts";
+import {
+  evaluateM074S06Evidence,
+  parseM074S06Args,
+  type M074S06EvidenceSnapshot,
+} from "../../scripts/verify-m074-s06.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;
@@ -16709,6 +16714,12 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const recordFindingEntries: Array<Record<string, unknown>> = [];
     const createdReviewComments: Array<Record<string, unknown>> = [];
     const createdIssueComments: Array<Record<string, unknown>> = [];
+    const forbiddenSideEffects = {
+      botBranchCreated: 0,
+      separatePrCreated: 0,
+      directPushCount: 0,
+      unexpectedPublicCommentCount: 0,
+    };
 
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
@@ -16751,7 +16762,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     };
 
     let postExecuteReviewCommentListCalls = 0;
-    const octokit = {
+    const octokit: any = {
       rest: {
         pulls: {
           listReviewComments: async () => {
@@ -16777,6 +16788,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           createComment: async (commentParams: Record<string, unknown>) => {
             const id = 992 + createdIssueComments.length;
             createdIssueComments.push({ ...commentParams, id });
+            if (!String(commentParams.body ?? "").includes(buildReviewOutputMarker(reviewOutputKey))) {
+              forbiddenSideEffects.unexpectedPublicCommentCount += 1;
+            }
             return { data: { id } };
           },
           updateComment: async (updateParams: { body: string }) => {
@@ -16784,9 +16798,29 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             return { data: {} };
           },
         },
+        git: {
+          createRef: async () => {
+            forbiddenSideEffects.botBranchCreated += 1;
+            return { data: {} };
+          },
+          updateRef: async () => {
+            forbiddenSideEffects.directPushCount += 1;
+            return { data: {} };
+          },
+        },
+        repos: {
+          createOrUpdateFileContents: async () => {
+            forbiddenSideEffects.directPushCount += 1;
+            return { data: {} };
+          },
+        },
         reactions: { createForIssue: async () => ({ data: {} }) },
         search: { issuesAndPullRequests: async () => ({ data: { total_count: 4 } }) },
       },
+    };
+    octokit.rest.pulls.create = async () => {
+      forbiddenSideEffects.separatePrCreated += 1;
+      return { data: {} };
     };
 
     createReviewHandler({
@@ -16855,7 +16889,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
     await workspaceFixture.cleanup();
 
-    return { updatedSummaryBody, executeCalls, promptBuildContexts, recordReviewEntries, recordFindingEntries, createdReviewComments, createdIssueComments, logEntries: entries };
+    return { updatedSummaryBody, executeCalls, promptBuildContexts, recordReviewEntries, recordFindingEntries, createdReviewComments, createdIssueComments, forbiddenSideEffects, logEntries: entries };
   }
 
   function buildGraphBlastRadiusFixture(changedPaths: string[]): ReviewGraphBlastRadiusResult {
@@ -17167,6 +17201,215 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       hasFabricatedProcessedFindings: false,
     }));
     expect(JSON.stringify(configSnapshot)).not.toContain(candidateBody);
+  });
+
+  test("automatic review trigger emits bounded M074 S06 same-PR proof evidence", async () => {
+    const {
+      updatedSummaryBody,
+      executeCalls,
+      createdReviewComments,
+      createdIssueComments,
+      forbiddenSideEffects,
+      logEntries,
+    } = await runReviewPlanScenario({
+      executorPublished: true,
+      exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified"),
+      candidateFindingResult: candidateFindingResult(),
+      reviewReducer: async (input) => {
+        const visible = input.findings.filter((finding) => typeof finding.candidateFingerprint === "string");
+        return {
+          status: "ready",
+          findings: visible,
+          visibleFindings: visible,
+          filteredInlineFindings: [],
+          lowConfidenceFindings: [],
+          suppressionMatchCounts: new Map(),
+          filterRecords: [],
+          counts: {
+            input: input.findings.length,
+            kept: visible.length,
+            suppressed: 0,
+            rewritten: 0,
+            deprioritized: 0,
+            lowConfidence: 0,
+            auditEvents: 0,
+            severityDemoted: 0,
+            graphValidated: 0,
+            graphUncertain: 0,
+          },
+          audit: [],
+          detailsSummary: {
+            label: "Review reducer",
+            status: "ready",
+            text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+          },
+        };
+      },
+    });
+
+    const reviewOutputKey = String(executeCalls[0]?.reviewOutputKey ?? "");
+    const deliveryId = "delivery-123";
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    const validationTruthLineCount = detailsBlock.split("\n").filter((line) => line.includes("Review validation truth:")).length;
+    const lifecycleLog = logEntries.find((entry) => entry.data?.gate === "review-finding-lifecycle");
+    const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
+    const validationTruthLog = logEntries.find((entry) => entry.data?.gate === "review-validation-truth");
+    const createdSuggestion = createdReviewComments[0];
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(createdIssueComments).toHaveLength(0);
+    expect(createdSuggestion?.path).toBe("README.md");
+    expect(createdSuggestion?.line).toBe(2);
+    expect(String(createdSuggestion?.body)).toContain("```suggestion");
+    expect(String(createdSuggestion?.body)).toContain(candidateFixReplacementText);
+    expect(String(createdSuggestion?.body)).not.toContain(candidateBody);
+    expect(detailsBlock).toContain("Review validation truth:");
+    expect(detailsBlock).toContain("correlation=reviewOutputKey:y,deliveryId:y");
+
+    const evidence: M074S06EvidenceSnapshot = {
+      schema: "m074-s06-production-like-proof.v1",
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      source: {
+        mode: "production-like",
+        kind: "handler-log",
+        available: true,
+        externalWritesPerformed: false,
+      },
+      target: {
+        owner: "acme",
+        repo: "repo",
+        pr: 101,
+      },
+      reviewOutputKey,
+      deliveryId,
+      trigger: {
+        kind: "pull_request",
+        samePr: true,
+      },
+      samePrInlineSuggestion: {
+        attempted: true,
+        publishedOnSamePr: createdReviewComments.length === 1,
+        suggestionCount: createdReviewComments.length,
+        maxSuggestions: 1,
+        markerPresent: /<!--\s*kodiai:/.test(String(createdSuggestion?.body ?? "")),
+        suggestionBlockPresent: String(createdSuggestion?.body ?? "").includes("```suggestion"),
+        commentCheckIds: ["same-pr-suggestion-shape", "idempotency-already-published"],
+      },
+      gates: {
+        lifecycle: {
+          gate: "review-finding-lifecycle",
+          passed: lifecycleLog?.data?.gate === "review-finding-lifecycle",
+          statusCode: "m074_s02_ok",
+          checkIds: ["review-finding-lifecycle", "bounded-public-summary", "correlation-present"],
+          sourceAvailable: true,
+          correlationPresent: lifecycleLog?.data?.reviewOutputKey === reviewOutputKey && lifecycleLog?.data?.deliveryId === deliveryId,
+          counts: {
+            detected: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.detected ?? 1),
+            suggested: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.suggested ?? 1),
+            resolved: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.resolved ?? 0),
+            open: Number((lifecycleLog?.data?.statusSummary as Record<string, unknown> | undefined)?.open ?? 1),
+          },
+        },
+        fixEligibility: {
+          gate: "review-fix-eligibility",
+          passed: fixEligibilityLog?.data?.gateResult === "eligible",
+          statusCode: "m074_s03_ok",
+          checkIds: ["review-fix-eligibility", "same-pr-suggestion-shape", "idempotency-already-published"],
+          sourceAvailable: true,
+          correlationPresent: fixEligibilityLog?.data?.reviewOutputKey === reviewOutputKey && fixEligibilityLog?.data?.deliveryId === deliveryId,
+          counts: fixEligibilityLog?.data?.counts as Record<string, number>,
+        },
+        validationTruth: {
+          gate: "review-validation-truth",
+          passed: validationTruthLog?.data?.gateResult === "normalized",
+          statusCode: "m074_s04_ok",
+          checkIds: ["review-validation-truth", "bounded-public-summary", "redaction-flags-and-canaries"],
+          sourceAvailable: true,
+          correlationPresent: validationTruthLog?.data?.reviewOutputKey === reviewOutputKey && validationTruthLog?.data?.deliveryId === deliveryId,
+          counts: validationTruthLog?.data?.counts as Record<string, number>,
+        },
+      },
+      reviewDetails: {
+        gate: "review-details-validation-truth",
+        passed: validationTruthLineCount === 1,
+        statusCode: "m074_s05_ok",
+        checkIds: ["review-details-validation-truth", "visible-volume-bounds", "diagnostic-correlation", "redaction-flags-and-canaries"],
+        sourceAvailable: true,
+        correlationPresent: detailsBlock.includes("correlation=reviewOutputKey:y,deliveryId:y"),
+        counts: { validationTruthLineCount },
+        validationTruthLineCount,
+        reviewOutputKeyPresent: detailsBlock.includes("reviewOutputKey:y"),
+        deliveryIdPresent: detailsBlock.includes("deliveryId:y"),
+        addedLines: validationTruthLineCount,
+        maxAddedLines: 1,
+        visibleCharDelta: detailsBlock.length,
+        maxVisibleCharDelta: 8_000,
+      },
+      validationTruth: {
+        suggestedOnlyResolvedCount: Number((validationTruthLog?.data?.evidenceFreshness as Record<string, unknown> | undefined)?.suggestedOnlyResolved ?? 0),
+        validationOnlyResolvedCount: 0,
+        freshRevalidationResolvedCount: 0,
+        staleValidationResolvedCount: 0,
+        failedValidationResolvedCount: 0,
+        blockedOrDegradedResolvedCount: 0,
+      },
+      visibleVolume: {
+        publicCommentCount: createdReviewComments.length + (updatedSummaryBody ? 1 : 0),
+        maxPublicCommentCount: 2,
+        inlineSuggestionCommentCount: createdReviewComments.length,
+        maxInlineSuggestionCommentCount: 1,
+        reviewDetailsLineCount: detailsBlock.split("\n").length,
+        maxReviewDetailsLineCount: 64,
+        reviewDetailsValidationTruthLineCount: validationTruthLineCount,
+      },
+      sideEffects: forbiddenSideEffects,
+      redaction: {
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        replacementTextIncluded: false,
+        toolPayloadsIncluded: false,
+        diffsIncluded: false,
+        secretLikeStringsIncluded: false,
+        unboundedArraysIncluded: false,
+        canariesAbsent: true,
+      },
+    };
+
+    const evaluation = evaluateM074S06Evidence(
+      evidence,
+      parseM074S06Args([
+        "--owner",
+        "acme",
+        "--repo",
+        "repo",
+        "--pr",
+        "101",
+        "--review-output-key",
+        reviewOutputKey,
+        "--delivery-id",
+        deliveryId,
+      ]),
+      true,
+    );
+
+    expect(evaluation.checks.filter((check) => check.status !== "pass")).toEqual([]);
+    expect(evaluation.observed).toEqual(expect.objectContaining({
+      sourceAvailable: true,
+      target: "acme/repo#101",
+      reviewOutputKeyPresent: true,
+      deliveryIdPresent: true,
+      samePrSuggestionCount: 1,
+    }));
+    expect(JSON.stringify(evidence)).not.toContain(candidateBody);
+    expect(JSON.stringify(evidence)).not.toContain(candidateFixReplacementText);
+    expect(forbiddenSideEffects).toEqual({
+      botBranchCreated: 0,
+      separatePrCreated: 0,
+      directPushCount: 0,
+      unexpectedPublicCommentCount: 0,
+    });
   });
 
   test("approved candidate findings are blocked when handler publication lacks matching verification evidence", async () => {

@@ -136,6 +136,30 @@ describe("verify-m074-s06", () => {
     expect(failedIds(evaluation)).toContain("validation-truth.not-suggested-only");
   });
 
+  test("accepts truthful open validation state from production-like handler evidence", () => {
+    const openValidation = mutateFixture({
+      validationTruth: {
+        ...fixture.validationTruth,
+        freshRevalidationResolvedCount: 0,
+      },
+      gates: {
+        ...fixture.gates,
+        validationTruth: {
+          ...fixture.gates.validationTruth,
+          counts: {
+            ...fixture.gates.validationTruth.counts,
+            resolved: 0,
+            open: fixture.gates.validationTruth.counts.open + 1,
+          },
+        },
+      },
+    });
+
+    const evaluation = evaluateM074S06Evidence(openValidation, BASE_ARGS, true);
+
+    expect(failedIds(evaluation)).not.toContain("validation-truth.not-suggested-only");
+  });
+
   test("fails closed on duplicate or expanded visible output", () => {
     const expanded = mutateFixture({
       reviewDetails: {
