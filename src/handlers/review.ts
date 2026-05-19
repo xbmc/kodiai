@@ -5376,6 +5376,8 @@ export function createReviewHandler(deps: {
           adaptApprovedCandidatesForInlinePublication({
             approval: reviewCandidateApprovalResult,
             reducer: reducerResult,
+            prDiffText: diffContext.diffContent,
+            maxFixSuggestions: resolvedMaxComments,
             logger,
           });
 
@@ -5504,11 +5506,26 @@ export function createReviewHandler(deps: {
         logger.info(
           {
             ...baseLog,
+            gate: "review-fix-eligibility",
+            gateResult: reviewCandidatePublicationAdapter.summary.fixEligibility.status,
+            reviewOutputKey,
+            deliveryId: event.id,
+            counts: reviewCandidatePublicationAdapter.summary.fixEligibility.counts,
+            reasonCounts: reviewCandidatePublicationAdapter.summary.fixEligibility.reasonCounts,
+            omittedReasonCounts: reviewCandidatePublicationAdapter.summary.fixEligibility.omittedReasonCounts,
+            redaction: reviewCandidatePublicationAdapter.summary.fixEligibility.redaction,
+          },
+          "Review fix eligibility summarized",
+        );
+        logger.info(
+          {
+            ...baseLog,
             gate: "review-candidate-publication-adapter",
             gateResult: reviewCandidatePublicationAdapter.summary.counts.publishable > 0 ? "publishable" : "skipped",
             counts: reviewCandidatePublicationAdapter.summary.counts,
             skipped: reviewCandidatePublicationAdapter.summary.skipped,
             payloadFingerprints: reviewCandidatePublicationAdapter.summary.fingerprints,
+            fixEligibility: reviewCandidatePublicationAdapter.summary.fixEligibility,
             details: reviewCandidatePublicationAdapterDetailsSummary.text,
           },
           "Review candidate publication adapter summarized",

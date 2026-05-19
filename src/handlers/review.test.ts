@@ -16454,6 +16454,7 @@ describe("createReviewHandler phase timing logging", () => {
 describe("createReviewHandler ReviewPlan wiring", () => {
   const candidateTitle = "Guard candidate publication";
   const candidateBody = "Publish this approved candidate through the shared inline publisher.";
+  const candidateFixReplacementText = "feature fixed by candidate";
 
   function sha256(value: string): string {
     return createHash("sha256").update(value).digest("hex");
@@ -16506,6 +16507,22 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     ].join("\n");
   }
 
+  function formattedCandidateFixSuggestionBody(params: {
+    severity: string;
+    category: string;
+    title: string;
+    fixReplacementText: string;
+  }): string {
+    return [
+      `**Fix suggestion:** ${params.title}`,
+      `Severity: ${params.severity} · Category: ${params.category}`,
+      "",
+      "```suggestion",
+      params.fixReplacementText,
+      "```",
+    ].join("\n");
+  }
+
   function publicationPolicyCandidateKey(params: {
     path: string;
     side: string;
@@ -16537,6 +16554,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       endLine?: number;
       severity?: string;
       category?: string;
+      fixReplacementText?: string;
     } = {},
   ) {
     return async (input: ShadowSpecialistSubflowInput): Promise<ShadowSpecialistSubflowResult> => {
@@ -16548,6 +16566,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       const endLine = candidate.endLine ?? line;
       const severity = candidate.severity ?? "major";
       const category = candidate.category ?? "correctness";
+      const fixReplacementText = candidate.fixReplacementText ?? candidateFixReplacementText;
       const fingerprint = reviewCandidateFingerprint({
         repo: "acme/repo",
         pullNumber: 101,
@@ -16565,11 +16584,11 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         ...(line === endLine ? { line } : { startLine: line, line: endLine }),
         reviewOutputKey: candidateReviewOutputKey(baseReviewOutputKey, fingerprint),
         deliveryId: String(input.deliveryId ?? ""),
-        body: formattedCandidateInlineBody({
+        body: formattedCandidateFixSuggestionBody({
           severity,
           category,
           title,
-          body,
+          fixReplacementText,
         }),
       });
       return {
@@ -16649,6 +16668,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           category: "correctness",
           title: candidateTitle,
           body: candidateBody,
+          fixReplacementText: candidateFixReplacementText,
         },
       ],
       rejections: [],
@@ -17075,6 +17095,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(createdReviewComments[0]?.path).toBe("README.md");
     expect(createdReviewComments[0]?.line).toBe(2);
     expect(String(createdReviewComments[0]?.body)).toContain(candidateTitle);
+    expect(String(createdReviewComments[0]?.body)).toContain("```suggestion");
+    expect(String(createdReviewComments[0]?.body)).toContain(candidateFixReplacementText);
+    expect(String(createdReviewComments[0]?.body)).not.toContain(candidateBody);
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
     expect(recordFindingEntries).toHaveLength(1);
@@ -17087,6 +17110,22 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       candidatePublished: 1,
       directPublished: 0,
       fallbackEvidence: 0,
+    }));
+
+    const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
+    expect(fixEligibilityLog?.data).toEqual(expect.objectContaining({
+      gateResult: "eligible",
+      reviewOutputKey: expect.any(String),
+      deliveryId: "delivery-123",
+      counts: expect.objectContaining({ input: 1, eligible: 1, blocked: 0 }),
+      reasonCounts: { eligible: 1 },
+      redaction: expect.objectContaining({
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        secretDetected: false,
+      }),
     }));
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
@@ -17210,6 +17249,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
         title: "First capped candidate",
         body: "Publish only the strongest candidate after prioritization.",
+        fixReplacementText: "feature fixed by strongest candidate",
         severity: "critical",
         category: "security",
       }),
@@ -17229,6 +17269,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "security",
             title: "First capped candidate",
             body: "Publish only the strongest candidate after prioritization.",
+            fixReplacementText: "feature fixed by strongest candidate",
           },
           {
             filePath: "README.md",
@@ -17238,6 +17279,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "style",
             title: "Second capped candidate",
             body: "This candidate should be omitted by the max comment cap.",
+            fixReplacementText: "feature fixed by second candidate",
           },
           {
             filePath: "README.md",
@@ -17247,6 +17289,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "style",
             title: "Third capped candidate",
             body: "This candidate should also be omitted by the max comment cap.",
+            fixReplacementText: "feature fixed by third candidate",
           },
         ],
         rejections: [],
@@ -17282,6 +17325,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
         title: "Candidate published finding",
         body: "Keep candidate publication in bookkeeping too.",
+        fixReplacementText: candidateFixReplacementText,
       }),
       directReviewComments: [
         {
@@ -17318,6 +17362,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "correctness",
             title: "Candidate published finding",
             body: "Keep candidate publication in bookkeeping too.",
+            fixReplacementText: candidateFixReplacementText,
           },
         ],
         rejections: [],
@@ -17384,7 +17429,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(JSON.stringify(configSnapshot)).not.toContain("base\\nfeature");
   });
 
-  test("candidate publication blocks skipped publisher results without storing draft findings", async () => {
+  test("candidate publication blocks non-commentable fix suggestions without storing draft findings", async () => {
     const { recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: false,
@@ -17404,6 +17449,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             category: "correctness",
             title: "Unpublishable candidate line",
             body: "This line is not commentable in the PR diff.",
+            fixReplacementText: "feature fixed on an unpublishable line",
           },
         ],
         rejections: [],
@@ -17446,9 +17492,17 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.data?.gateResult).toBe("blocked");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublishable: 0,
       candidatePublished: 0,
-      candidateFailed: 1,
+      candidateFailed: 0,
       convertedProcessedFindings: 0,
+    }));
+
+    const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
+    expect(fixEligibilityLog?.data).toEqual(expect.objectContaining({
+      gateResult: "blocked",
+      counts: expect.objectContaining({ input: 1, eligible: 0, blocked: 1 }),
+      reasonCounts: { "line-not-commentable": 1 },
     }));
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
