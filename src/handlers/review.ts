@@ -143,6 +143,10 @@ import {
   computeContentHash,
 } from "../knowledge/code-snippet-chunker.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
+import {
+  normalizeRepoDoctrineProjection,
+  type RepoDoctrineProjection,
+} from "../repo-doctrine/contracts.ts";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
@@ -2295,8 +2299,45 @@ type ReviewPlanConfigSnapshot = {
   routingReason?: string;
   graphValidationStatus: ReviewPlan["graphValidation"]["status"] | DegradedReviewPlan["graphValidation"]["status"];
   candidateFindingMode: ReviewPlan["candidateFinding"]["mode"] | DegradedReviewPlan["candidateFinding"]["mode"];
+  repoDoctrine?: ReturnType<typeof toRepoDoctrineReviewSurfaceProjection>;
   degradedReason?: string;
 };
+
+function toRepoDoctrineReviewSurfaceProjection(doctrine: RepoDoctrineProjection) {
+  const status = !doctrine.enabled
+    ? "disabled"
+    : doctrine.consumedContractCount > 0
+      ? "applied"
+      : doctrine.reasonCodes.length > 0
+        ? "degraded"
+        : "skipped";
+  const omittedCount = doctrine.omittedContractCount + doctrine.omittedMatchedPathCandidateCount;
+  const reasonCodes = doctrine.reasonCodes.length > 0
+    ? doctrine.reasonCodes
+    : status === "applied"
+      ? ["none"]
+      : [status];
+
+  return {
+    status,
+    contractCount: doctrine.contractCount,
+    matchedCount: doctrine.matchedPathCandidateCount,
+    omittedCount,
+    reasonCodes,
+  };
+}
+
+function buildRepoDoctrineLogFields(doctrine: RepoDoctrineProjection): Record<string, unknown> {
+  const projection = toRepoDoctrineReviewSurfaceProjection(doctrine);
+  return {
+    repoDoctrineStatus: projection.status,
+    repoDoctrineContractCount: projection.contractCount,
+    repoDoctrineConsumedContractCount: doctrine.consumedContractCount,
+    repoDoctrineMatchedPathCandidateCount: projection.matchedCount,
+    repoDoctrineOmittedCount: projection.omittedCount,
+    repoDoctrineReasonCodes: projection.reasonCodes.slice(0, 8),
+  };
+}
 
 function toReviewPlanConfigSnapshot(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanConfigSnapshot {
   if (plan.status === "degraded") {
@@ -2318,6 +2359,7 @@ function toReviewPlanConfigSnapshot(plan: ReviewPlan | DegradedReviewPlan): Revi
     routingReason: plan.task.routingReason,
     graphValidationStatus: plan.graphValidation.status,
     candidateFindingMode: plan.candidateFinding.mode,
+    repoDoctrine: plan.repoDoctrine,
   };
 }
 
@@ -4405,6 +4447,18 @@ export function createReviewHandler(deps: {
           ? matchPathInstructions(config.review.pathInstructions, changedFiles)
           : [];
 
+        const repoDoctrineProjection = normalizeRepoDoctrineProjection(config.review.doctrine, changedFiles);
+        const repoDoctrineReviewSurface = toRepoDoctrineReviewSurfaceProjection(repoDoctrineProjection);
+        logger.info(
+          {
+            ...baseLog,
+            gate: "repo-doctrine",
+            gateResult: repoDoctrineReviewSurface.status,
+            ...buildRepoDoctrineLogFields(repoDoctrineProjection),
+          },
+          "Resolved bounded repository doctrine projection",
+        );
+
         // Prior finding dedup context (REV-02)
         let priorFindingCtx: PriorFindingContext | null = null;
         let priorFindings: PriorFinding[] = [];
@@ -4838,14 +4892,16 @@ export function createReviewHandler(deps: {
                 "diff-analysis",
                 ...(retrievalCtx ? ["retrieval"] : []),
                 ...(matchedPathInstructions.length > 0 ? ["path-instructions"] : []),
+                ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
                 ...(reviewBoundedness ? ["review-boundedness"] : []),
               ],
             },
             gates: {
-              enabled: ["review-routing", "timeout-estimation", "review-boundedness"],
+              enabled: ["review-routing", "timeout-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
               current: [
                 "review-routing",
                 "timeout-estimation",
+                ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
                 ...(reviewBoundedness ? ["review-boundedness"] : []),
               ],
             },
@@ -4858,6 +4914,7 @@ export function createReviewHandler(deps: {
             candidateFinding: {
               mode: "preferred",
             },
+            repoDoctrine: repoDoctrineReviewSurface,
           }).plan;
           logger.info(
             {
@@ -4871,6 +4928,7 @@ export function createReviewHandler(deps: {
               boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
               graphValidationStatus: reviewPlan.graphValidation.status,
               candidateFindingMode: reviewPlan.candidateFinding.mode,
+              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
             },
             "Review plan ready",
           );
@@ -4893,6 +4951,7 @@ export function createReviewHandler(deps: {
               boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
               graphValidationStatus: reviewPlan.graphValidation.status,
               candidateFindingMode: reviewPlan.candidateFinding.mode,
+              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
               error: serializeReviewPlanBuilderError(err),
             },
             "Review plan builder failed; continuing with degraded plan metadata",
@@ -5092,6 +5151,7 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
+          repoDoctrine: repoDoctrineProjection,
           smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
         } satisfies ReviewPromptBuildContext;
         const reviewPromptCacheState: ReviewPromptCacheState = {
@@ -5340,6 +5400,7 @@ export function createReviewHandler(deps: {
           guardrailAuditStore,
           guardrailStrictness: config.guardrails?.strictness ?? "standard",
           graphValidationLLM,
+          repoDoctrine: repoDoctrineReviewSurface,
         };
 
         let reducerResult: ReviewReducerResult;
@@ -5731,6 +5792,7 @@ export function createReviewHandler(deps: {
               surfaceKind: params.surfaceKind,
               hasCommentId: typeof params.commentId === "number",
               hasReviewId: typeof params.reviewId === "number",
+              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
             },
             "Review Details publication completed",
           );
@@ -6911,6 +6973,7 @@ export function createReviewHandler(deps: {
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
+                      repoDoctrine: repoDoctrineProjection,
                       smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
                       retryPromptCompaction: retryPlan.continuationCompaction
                         ? {

@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import { $ } from "bun";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, formatTimeoutErrorDetail, resolveAuthorTierFromSources, REVIEW_WORKSPACE_FETCH_DEPTH } from "./review.ts";
@@ -643,7 +643,7 @@ function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function createWorkspaceFixture(options: { autoApprove?: boolean; graphValidationEnabled?: boolean; extraChangedFiles?: number; maxComments?: number } = {}) {
+async function createWorkspaceFixture(options: { autoApprove?: boolean; graphValidationEnabled?: boolean; extraChangedFiles?: number; maxComments?: number; doctrineYaml?: string; featureFiles?: Record<string, string> } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
 
   await $`git -C ${dir} init --initial-branch=main`.quiet();
@@ -653,7 +653,7 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean; graphVal
   await Bun.write(join(dir, "README.md"), "base\n");
   await Bun.write(
     join(dir, ".kodiai.yml"),
-    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  maxComments: ${options.maxComments ?? 10}\n  graphValidation:\n    enabled: ${options.graphValidationEnabled ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  maxComments: ${options.maxComments ?? 10}\n  graphValidation:\n    enabled: ${options.graphValidationEnabled ? "true" : "false"}\n${options.doctrineYaml ?? ""}  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
   );
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -661,10 +661,15 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean; graphVal
   await $`git -C ${dir} checkout -b feature`.quiet();
 
   await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+  for (const [filePath, content] of Object.entries(options.featureFiles ?? {})) {
+    const absolutePath = join(dir, filePath);
+    await $`mkdir -p ${dirname(absolutePath)}`.quiet();
+    await Bun.write(absolutePath, content);
+  }
   for (let index = 0; index < (options.extraChangedFiles ?? 0); index += 1) {
     await Bun.write(join(dir, `feature-${index}.txt`), `feature ${index}\n`);
   }
-  await $`git -C ${dir} add README.md ${Array.from({ length: options.extraChangedFiles ?? 0 }, (_, index) => `feature-${index}.txt`)}`.quiet();
+  await $`git -C ${dir} add .`.quiet();
   await $`git -C ${dir} commit -m "feature"`.quiet();
   await $`git -C ${dir} remote add origin ${dir}`.quiet();
 
@@ -717,6 +722,142 @@ async function createNoMergeBaseFixture(options: { includePhase27Fields: boolean
     },
   };
 }
+
+describe("createReviewHandler repository doctrine wiring", () => {
+  test("threads bounded doctrine projection through automatic review prompt, reducer, details, and logs without raw canaries", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({
+      doctrineYaml: [
+        "  doctrine:",
+        "    enabled: true",
+        "    contracts:",
+        "      - id: api-contract",
+        "        type: api-compatibility",
+        "        paths: [\"src/api/**\"]",
+        "        severity: major",
+        "        category: correctness",
+        "        instructions: \"PROMPT_SECRET_DO_NOT_LEAK keep response wire compatible\"",
+        "        evidence: \"RAW_DOCTRINE_BODY_CANARY api clients depend on this\"",
+        "      - id: migration-contract",
+        "        type: migration",
+        "        paths: [\"db/migrations/**\"]",
+        "        severity: medium",
+        "        category: operability",
+        "        instructions: \"RAW_MIGRATION_CANARY verify rollback docs\"",
+        "        evidence: \"PROMPT_SECRET_DO_NOT_LEAK migration evidence\"",
+      ].join("\n") + "\n",
+      featureFiles: {
+        "src/api/routes.ts": "export const route = '/v2';\n",
+        "db/migrations/001.sql": "select 1;\n",
+      },
+    });
+    const { logger, entries } = createCaptureLogger();
+    let capturedPrompt = "";
+    let detailsCommentBody = "";
+    let capturedReducerInput: ReviewReducerInput | null = null;
+
+    try {
+      createReviewHandler({
+        eventRouter: {
+          register: (eventKey, handler) => {
+            handlers.set(eventKey, handler);
+          },
+          dispatch: async () => undefined,
+        },
+        jobQueue: {
+          enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+          getQueueSize: () => 0,
+          getPendingCount: () => 0,
+          getActiveJobs: getEmptyActiveJobs,
+        },
+        workspaceManager: {
+          create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+          cleanupStale: async () => 0,
+        },
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => ({
+            rest: {
+              pulls: {
+                listReviewComments: async () => ({ data: [] }),
+                listReviews: async () => ({ data: [] }),
+                listCommits: async () => ({ data: [] }),
+              },
+              issues: {
+                listComments: async () => ({ data: [] }),
+                createComment: async (params: { body: string }) => {
+                  detailsCommentBody = params.body;
+                  return { data: { id: 1234, body: params.body } };
+                },
+                updateComment: async (params: { body: string }) => {
+                  detailsCommentBody = params.body;
+                  return { data: { id: 1234, body: params.body } };
+                },
+              },
+              reactions: { createForIssue: async () => ({ data: {} }) },
+              search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+            },
+          }) as never,
+        } as unknown as GitHubApp,
+        executor: {
+          execute: async (context: { prompt: string }) => {
+            capturedPrompt = context.prompt;
+            return {
+              conclusion: "success",
+              published: false,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-repo-doctrine",
+            };
+          },
+        } as never,
+        telemetryStore: noopTelemetryStore,
+        reviewReducer: async (input) => {
+          capturedReducerInput = input;
+          return createDegradedReviewReducerResult({ findings: input.findings, reason: "fixture" });
+        },
+        logger,
+      });
+
+      const handler = handlers.get("pull_request.review_requested");
+      expect(handler).toBeDefined();
+      await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+
+    expect(capturedPrompt).toContain("## Repository Doctrine Contracts");
+    expect(capturedPrompt).toContain("api-contract type=api-compatibility");
+    expect(capturedPrompt).toContain("migration-contract type=migration");
+    expect(capturedPrompt).toContain("Only aggregate contract metadata is provided here");
+    expect(capturedPrompt).not.toContain("PROMPT_SECRET_DO_NOT_LEAK");
+    expect(capturedPrompt).not.toContain("RAW_DOCTRINE_BODY_CANARY");
+    expect(capturedPrompt).not.toContain("RAW_MIGRATION_CANARY");
+
+    expect(capturedReducerInput?.repoDoctrine).toMatchObject({
+      status: "applied",
+      contractCount: 2,
+      matchedCount: 2,
+      omittedCount: 0,
+    });
+
+    const detailsBlock = extractReviewDetailsBlock(detailsCommentBody);
+    expect(detailsBlock).toContain("doctrine=applied/2/2/0");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET_DO_NOT_LEAK");
+    expect(detailsBlock).not.toContain("RAW_DOCTRINE_BODY_CANARY");
+    expect(detailsBlock).not.toContain("RAW_MIGRATION_CANARY");
+
+    const doctrineLog = entries.find((entry) => entry.message === "Resolved bounded repository doctrine projection");
+    expect(doctrineLog?.data).toMatchObject({
+      gate: "repo-doctrine",
+      gateResult: "applied",
+      repoDoctrineContractCount: 2,
+      repoDoctrineMatchedPathCandidateCount: 2,
+      repoDoctrineOmittedCount: 0,
+    });
+  });
+});
 
 function buildReviewRequestedEvent(
   payloadOverrides: Record<string, unknown>,
