@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-19T04:14:18Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-19T04:14:18Z","fingerprint":"4a791a2e788fd91296a5dc4c8ce725fe788943e1","fileCount":500,"truncated":true} -->
+Generated: 2026-05-19T08:52:05Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-19T08:52:05Z","fingerprint":"50a0efc2e83aa33022dcb89d3b5cfcbb47bab2d5","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -37,6 +37,8 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/issue-intelligence.md`
 - `docs/knowledge-system.md`
 - `docs/m029-s04-ops-runbook.md`
+- `docs/m074-s06-production-like-proof.md`
+- `docs/m074-s07-repo-doctrine-proof.md`
 - `docs/README.md`
 
 ### docs/operations/
@@ -93,7 +95,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(266 files: 261 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(280 files: 275 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -105,6 +107,8 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `scripts/fixtures/m073-s05-visible-budget.json`
 - `scripts/fixtures/m073-s06-live-proof.json`
 - `scripts/fixtures/m073-s07-remediation.json`
+- `scripts/fixtures/m074-s06-production-like-proof.json`
+- `scripts/fixtures/m074-s07-repo-doctrine-proof.json`
 
 ### src/
 - `src/config.test.ts`
@@ -148,23 +152,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/execution/env.test.ts`
 - `src/execution/env.ts`
 - `src/execution/executor.test.ts`
-- `src/execution/executor.ts`
-- `src/execution/formatter-suggestion-publisher.test.ts`
-- `src/execution/formatter-suggestion-publisher.ts`
-- `src/execution/formatter-suggestions.test.ts`
-- `src/execution/formatter-suggestions.ts`
-- `src/execution/issue-code-context.test.ts`
-- `src/execution/issue-code-context.ts`
-
-### src/execution/mcp/
-- `src/execution/mcp/candidate-finding-server.test.ts`
-- `src/execution/mcp/candidate-finding-server.ts`
-- `src/execution/mcp/checkpoint-server.test.ts`
-- `src/execution/mcp/checkpoint-server.ts`
-- `src/execution/mcp/ci-status-server.ts`
-- `src/execution/mcp/comment-server.test.ts`
-- `src/execution/mcp/comment-server.ts`
-- `src/execution/mcp/http-server.test.ts`
-- `src/execution/mcp/http-server.ts`
-- `src/execution/mcp/index.test.ts`
-- `src/execution/mcp/index.ts`

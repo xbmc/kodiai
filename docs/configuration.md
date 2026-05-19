@@ -25,6 +25,10 @@ review:
   graphValidation:
     # Optional second-pass validation for graph-amplified findings; disabled by default.
     enabled: false
+  doctrine:
+    # Optional repository invariant contracts; disabled by default.
+    enabled: false
+    contracts: []
   triggers:
     onOpened: true
     onReadyForReview: true
@@ -250,6 +254,107 @@ review:
 ```
 
 Do not use this setting as a hard gate. The validation path is intentionally best-effort and fail-open so review behavior remains available when graph context or validation dependencies are missing.
+
+### `review.doctrine`
+
+Repository doctrine lets a repository declare bounded review invariant contracts in `.kodiai.yml`. Kodiai consumes these contracts as review input, ReviewPlan metadata, reducer metadata, Review Details diagnostics, and verifier evidence, but public/operator-facing output is intentionally aggregate-only.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Enables repository doctrine contract consumption for review. |
+| `contracts` | `DoctrineContract[]` | `[]` | Bounded list of invariant contracts. Maximum `25` contracts. |
+
+**DoctrineContract fields:**
+
+| Field | Type | Required | Bounds / default | Description |
+|---|---|---|---|---|
+| `id` | `string` | Yes | `1–64` chars | Stable safe identifier shown in aggregate diagnostics. Keep it non-secret and human-readable. |
+| `type` | `"api-compatibility" \| "migration" \| "performance-budget" \| "forbidden-pattern" \| "tracing" \| "feature-flag" \| "docs-update"` | Yes | One of the seven supported types below | Invariant family used for coverage and diagnostics. |
+| `paths` | `string[]` | Yes | `1–8` globs, each `1–160` chars | File globs that scope the contract. |
+| `severity` | `"critical" \| "major" \| "medium" \| "minor"` | No | Default `"medium"` | Severity hint for the invariant. |
+| `category` | `"security" \| "correctness" \| "performance" \| "style" \| "documentation" \| "operability"` | No | Default `"correctness"` | Review category hint for the invariant. |
+| `instructions` | `string` | Yes | `1–500` chars | Private review instruction for the invariant. Do not include secrets. |
+| `evidence` | `string` | Yes | `1–500` chars | Private guidance about acceptable proof. Do not include secrets, raw prompts, or sensitive payloads. |
+
+Supported contract `type` values cover the R104 invariant families:
+
+| Type | Use when changed code must prove... |
+|---|---|
+| `api-compatibility` | Public or internal API compatibility, deprecation, or migration notes. |
+| `migration` | Database/data migrations are reversible, safe, or explicitly justified. |
+| `performance-budget` | Runtime, query, bundle, memory, or latency budgets stay bounded. |
+| `forbidden-pattern` | Known-bad calls, imports, paths, patterns, or anti-patterns are absent. |
+| `tracing` | Logs, metrics, spans, request IDs, or Review Details diagnostics remain present. |
+| `feature-flag` | Rollout, kill-switch, default-off, or compatibility flag behavior is preserved. |
+| `docs-update` | User/operator/developer documentation is updated with behavior changes. |
+
+Example covering all seven invariant families:
+
+```yaml
+review:
+  doctrine:
+    enabled: true
+    contracts:
+      - id: api-public-contract
+        type: api-compatibility
+        paths: ["src/api/**", "src/public/**"]
+        severity: major
+        category: correctness
+        instructions: "Check that public API changes preserve compatibility or include migration notes."
+        evidence: "Look for compatibility tests, changelog notes, or explicit migration guidance."
+      - id: reversible-migrations
+        type: migration
+        paths: ["migrations/**", "src/db/**"]
+        severity: critical
+        category: operability
+        instructions: "Check migrations for rollback safety or clearly justified irreversible changes."
+        evidence: "Look for down migrations, backfill guards, and operational notes."
+      - id: hot-path-budget
+        type: performance-budget
+        paths: ["src/review-orchestration/**", "src/handlers/**"]
+        severity: major
+        category: performance
+        instructions: "Check hot paths for unbounded loops, large payload expansion, or avoidable serial I/O."
+        evidence: "Look for caps, batching, tests, or measured limits."
+      - id: no-raw-publication
+        type: forbidden-pattern
+        paths: ["src/**/*.ts"]
+        severity: critical
+        category: security
+        instructions: "Reject public surfaces that expose raw prompts, model output, diffs, tool payloads, or secrets."
+        evidence: "Look for aggregate-only projections and redaction tests."
+      - id: review-details-tracing
+        type: tracing
+        paths: ["src/handlers/**", "src/review-orchestration/**"]
+        severity: medium
+        category: operability
+        instructions: "Check that Review Details or logs preserve bounded diagnostic status and reason codes."
+        evidence: "Look for structured aggregate status, counts, and failure reason codes."
+      - id: rollout-flag-required
+        type: feature-flag
+        paths: ["src/**/*.ts", ".kodiai.yml"]
+        severity: major
+        category: operability
+        instructions: "Check risky behavior changes for default-safe flags or documented rollout controls."
+        evidence: "Look for default-off config, rollout gates, or rollback notes."
+      - id: operator-docs-updated
+        type: docs-update
+        paths: ["src/**", "docs/**"]
+        severity: medium
+        category: documentation
+        instructions: "Check whether operator-facing behavior changes update docs or runbooks."
+        evidence: "Look for documentation updates covering configuration, diagnostics, and verification."
+```
+
+Safety and failure behavior:
+
+- Doctrine is **disabled by default**. Omitted `review.doctrine` loads as `{ enabled: false, contracts: [] }`.
+- Malformed doctrine fails open to the disabled default for `review.doctrine` while preserving other valid `review` fields; Kodiai emits a `review.doctrine` config warning rather than disabling all review behavior.
+- Public and operator-visible surfaces expose only bounded aggregate evidence: status (`applied`, `disabled`, `skipped`, or `degraded`), contract counts, consumed/omitted counts, matched-path candidate counts, contract IDs/types/severity/category, and bounded reason codes.
+- Raw doctrine `instructions`, raw `evidence`, prompts, model output, tool payloads, full diffs, and secret-like strings must not be published in Review Details, verifier output, logs, or GitHub comments.
+- Boundaries are enforced by caps: maximum `25` contracts, `8` globs per contract, `20` matched path candidates in aggregate projection, `25` reason codes, `500` chars each for `instructions` and `evidence`, and `160` chars per glob.
+- Redaction scans for common token/API-key/email patterns. If redaction is applied, aggregate reason codes can include `redaction-applied`; if redaction cannot keep the projection safe, verification fails closed rather than publishing raw content.
+- Relevant reason/failure states include disabled/skipped doctrine, parse fallback, malformed contracts, unconsumed contracts, unmatched paths, cap truncation, and redaction failures. Use `bun run verify:m074:s07` for source-backed aggregate proof of the R104 doctrine contract path.
 
 ### `review.prompt`
 

@@ -131,6 +131,22 @@
       "doneMilestones": 59,
       "totalMilestones": 60,
       "phase": "pre-planning"
+    },
+    {
+      "filename": "M073-2026-05-19T04-26-29.html",
+      "generatedAt": "2026-05-19T04:26:29.188Z",
+      "milestoneId": "M073",
+      "milestoneTitle": "Token-First Review Efficiency",
+      "label": "M073: Token-First Review Efficiency",
+      "kind": "milestone",
+      "totalCost": 1565.6059068000004,
+      "totalTokens": 2437115748,
+      "totalDuration": 408440500,
+      "doneSlices": 243,
+      "totalSlices": 243,
+      "doneMilestones": 61,
+      "totalMilestones": 62,
+      "phase": "pre-planning"
     }
   ]
 }

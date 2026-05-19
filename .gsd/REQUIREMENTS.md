@@ -120,17 +120,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Unmapped for completion. M073/S07 validates only that token-first M073 proof does not claim R131 completion and that R131 is formally re-scoped; future bounded aggregate specialist-lane proof is required before R131 can be validated.
 - Notes: M072 supports R131 by keeping bridge evidence private, bounded, and redacted while threading shadow candidate evidence before publication. M073 provides supporting token-first, bounded-linkage, and non-publication evidence only. R131 private/shadow specialist-lane completion is formally re-scoped to specialist-lane-follow-up and requires a future bounded aggregate specialist-lane proof before validation.
 
-### R132 — Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
-- Class: core-capability
-- Status: active
-- Description: Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
-- Why it matters: Issue #131 is about making verification stronger than generation, not adding more unvetted comments.
-- Source: user
-- Primary owning slice: M074
-- Supporting slices: M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075
-- Validation: unmapped
-- Notes: M072 supports R132 by preserving fail-closed candidate publication policy and exposing reducer handoff input, but does not claim reducer-approved verification, dedupe, or disagreement handling; primary completion remains M074.
-
 ### R133 — Final issue #131 closure must be backed by orchestration telemetry, rollout gates, and cost/noise controls.
 - Class: operability
 - Status: active
@@ -1245,6 +1234,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M072/S04 closeout ran `bun test scripts/verify-m072.test.ts` (13 pass), `bun run verify:m072 -- --json` (success with passing bridge/package/deferred-owner/report-safety checks), and the targeted S02/S03 integration regression suite (163 pass), proving candidate findings are captured before public GitHub publication and exposed through an explicit safe reducer handoff contract.
 - Notes: Validated by source-evidence verifier and integration tests only; live GitHub publication, reducer-approved publication, rollout metrics, and issue #131 final doctrine remain deferred to later milestones.
 
+### R132 — Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
+- Class: core-capability
+- Status: validated
+- Description: Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
+- Why it matters: Issue #131 is about making verification stronger than generation, not adding more unvetted comments.
+- Source: user
+- Primary owning slice: M074
+- Supporting slices: M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075
+- Validation: M074 validates candidate publication policy through S03 same-PR fix eligibility and S06 production-like handler proof: reducer-approved/candidate-approved same-PR suggestion evidence is required, dedupe/idempotency and disagreement/blocked reason codes are verified, validation-truth prevents suggested-only false resolution, and Review Details/verifier surfaces prove bounded redacted output with zero branch/PR/push side effects. Fresh closeout evidence: `bun test scripts/verify-m074-s02.test.ts scripts/verify-m074-s03.test.ts scripts/verify-m074-s04.test.ts scripts/verify-m074-s05.test.ts scripts/verify-m074-s06.test.ts src/handlers/review.test.ts src/handlers/mention.test.ts src/lib/review-utils.test.ts src/review-lifecycle/handler-lifecycle.test.ts src/review-lifecycle/validation-truth.test.ts` passed 435 tests / 2560 assertions; `bun run verify:m074:s01` through `verify:m074:s06 -- --fixture scripts/fixtures/m074-s06-production-like-proof.json` passed with samePrSuggestions=1/1, redaction=pass, sideEffects=0.
+- Notes: Validated during M074/S06 closeout. R131 and R133 remain broader follow-up requirements; S06 provides supporting bounded/private and rollout-diagnostic evidence only.
+
 ### R143 — M073 completion requires live or production-like before/after evidence showing reduced token usage and acceptable latency without losing known important review behavior.
 - Class: launchability
 - Status: validated
@@ -1337,14 +1337,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Class: integration
-- Status: deferred
+- Status: active
 - Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
 - Source: issue #131
-- Primary owning slice: M074/S01
-- Supporting slices: M071/S06
-- Validation: unmapped
-- Notes: Deferred to M074/S01 for repo-doctrine/specialist config contract implementation and proof. M071 supplies foundation-only ReviewPlan/verifier seams and a source-owned handoff contract in `src/issue-131/deferred-handoff.ts`; it does not implement or validate repo doctrine contracts.
+- Primary owning slice: M074/S07
+- Supporting slices: M071/S06,M074/S07
+- Validation: Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication.
+- Notes: M074/S07 supersedes the earlier M074/S01 placeholder ownership for the repo-doctrine portion of issue #131. M071 remains foundation-only; R104 coverage now depends on bounded aggregate doctrine projections, fail-open malformed-doctrine handling, and the M074/S07 verifier contract.
 
 ### R119 — Provider/model failback and circuit-breaker policy are deferred outside M068.
 - Class: failure-visibility
@@ -1714,7 +1714,7 @@ This file is the explicit capability and coverage contract for the project.
 | R129 | operability | validated | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | M071/S05 verified `verify:m071 -- --json` distinguishes complete, partial, missing, and deferred rows with repo-relative evidence paths and exact deferred ownership. The final report has six complete foundation rows, zero partial rows, zero missing rows, four deferred rows, and owner metadata for M072/S01 candidate publication bridge, M073/S01 reducer extraction, M074/S01 specialist lane proof, and M075/S01 metrics/tier closure. |
 | R130 | core-capability | validated | M072/S01 | M072/S02,M072/S03,M072/S04,M073,M074 | M072/S04 closeout ran `bun test scripts/verify-m072.test.ts` (13 pass), `bun run verify:m072 -- --json` (success with passing bridge/package/deferred-owner/report-safety checks), and the targeted S02/S03 integration regression suite (163 pass), proving candidate findings are captured before public GitHub publication and exposed through an explicit safe reducer handoff contract. |
 | R131 | core-capability | active | specialist-lane-follow-up | M072/S01,M072/S02,M072/S03,M073,M074 | Unmapped for completion. M073/S07 validates only that token-first M073 proof does not claim R131 completion and that R131 is formally re-scoped; future bounded aggregate specialist-lane proof is required before R131 can be validated. |
-| R132 | core-capability | active | M074 | M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075 | unmapped |
+| R132 | core-capability | validated | M074 | M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075 | M074 validates candidate publication policy through S03 same-PR fix eligibility and S06 production-like handler proof: reducer-approved/candidate-approved same-PR suggestion evidence is required, dedupe/idempotency and disagreement/blocked reason codes are verified, validation-truth prevents suggested-only false resolution, and Review Details/verifier surfaces prove bounded redacted output with zero branch/PR/push side effects. Fresh closeout evidence: `bun test scripts/verify-m074-s02.test.ts scripts/verify-m074-s03.test.ts scripts/verify-m074-s04.test.ts scripts/verify-m074-s05.test.ts scripts/verify-m074-s06.test.ts src/handlers/review.test.ts src/handlers/mention.test.ts src/lib/review-utils.test.ts src/review-lifecycle/handler-lifecycle.test.ts src/review-lifecycle/validation-truth.test.ts` passed 435 tests / 2560 assertions; `bun run verify:m074:s01` through `verify:m074:s06 -- --fixture scripts/fixtures/m074-s06-production-like-proof.json` passed with samePrSuggestions=1/1, redaction=pass, sideEffects=0. |
 | R133 | operability | active | M075 | M072/S01,M072/S03,M072/S04,M073,M074,M075 | unmapped |
 | R134 | constraint | deferred | none | none | unmapped |
 | R135 | constraint | deferred | none | none | unmapped |
@@ -1733,7 +1733,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 18
-- Mapped to slices: 18
-- Validated: 99 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130, R143)
+- Active requirements: 17
+- Mapped to slices: 17
+- Validated: 100 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130, R132, R143)
 - Unmapped active requirements: 0
