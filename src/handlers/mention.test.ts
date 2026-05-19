@@ -13071,6 +13071,33 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       },
     });
     expect(JSON.stringify(lifecycleLog?.bindings)).not.toContain(rawCanary);
+
+    const validationTruthLog = result.infoCalls.find(
+      (entry) => entry.message === "Projected explicit mention review validation truth evidence",
+    );
+    expect(validationTruthLog?.bindings).toMatchObject({
+      gate: "review-validation-truth",
+      gateResult: "normalized",
+      source: "explicit-mention-review",
+      reviewOutputKey: result.capturedContext?.reviewOutputKey,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      counts: { detected: 1, suggested: 0, validated: 0, revalidated: 0, resolved: 0, blocked: 0, degraded: 0, open: 1, uncertain: 0, inputFindings: 1, unsafeInputFields: 0 },
+      reasonCounts: { "validation-missing": 1 },
+      evidenceFreshness: { fresh: 0, stale: 0, missingValidation: 1, missingRevalidation: 1 },
+      redaction: {
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        replacementTextIncluded: false,
+        toolPayloadsIncluded: false,
+        secretLikeStringsIncluded: false,
+        diffsIncluded: false,
+        unboundedArraysIncluded: false,
+        unsafeInputFieldCount: 0,
+      },
+    });
+    expect(JSON.stringify(validationTruthLog?.bindings)).not.toContain(rawCanary);
   });
 
   test("explicit clean review bridge adds one bounded lifecycle evidence line without duplicate output", async () => {

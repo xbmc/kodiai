@@ -17128,6 +17128,31 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       }),
     }));
 
+    const validationTruthLog = logEntries.find((entry) => entry.data?.gate === "review-validation-truth");
+    expect(validationTruthLog?.data).toEqual(expect.objectContaining({
+      gateResult: "normalized",
+      source: "automatic-review",
+      reviewOutputKey: expect.any(String),
+      deliveryId: "delivery-123",
+      counts: expect.objectContaining({ detected: 2, suggested: 2, resolved: 0, degraded: 0 }),
+      reasonCounts: expect.objectContaining({
+        "suggested-but-open": 2,
+        "validation-missing": 2,
+      }),
+      evidenceFreshness: expect.objectContaining({ missingValidation: 2, missingRevalidation: 2 }),
+      redaction: expect.objectContaining({
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        replacementTextIncluded: false,
+        toolPayloadsIncluded: false,
+        diffsIncluded: false,
+      }),
+    }));
+    expect(JSON.stringify(validationTruthLog?.data)).not.toContain(candidateBody);
+    expect(JSON.stringify(validationTruthLog?.data)).not.toContain(candidateFixReplacementText);
+
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
     expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("candidate-approved");
     expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({

@@ -196,6 +196,7 @@ import {
   adaptApprovedCandidatesForInlinePublication,
   buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
+  convertPublishedCandidateResultsToValidationTruthFixes,
   toReviewCandidatePublicationAdapterSummary,
   type ReviewCandidatePublishedFindingResult,
   type ReviewCandidatePublicationAdapterResult,
@@ -274,7 +275,11 @@ import {
 import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
 import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
 import type { PromptBudgetOutcome } from "../execution/prompt-budget.ts";
-import { attachReviewFindingLifecycle, type AttachReviewFindingLifecycleResult } from "../review-lifecycle/handler-lifecycle.ts";
+import {
+  attachReviewFindingLifecycle,
+  attachReviewValidationTruth,
+  type AttachReviewFindingLifecycleResult,
+} from "../review-lifecycle/handler-lifecycle.ts";
 
 
 
@@ -5503,6 +5508,54 @@ export function createReviewHandler(deps: {
           },
           "Projected review finding lifecycle evidence",
         );
+        try {
+          const reviewValidationTruth = attachReviewValidationTruth({
+            lifecycle: reviewFindingLifecycleResult.lifecycle,
+            correlation: {
+              repo: `${apiOwner}/${apiRepo}`,
+              pullNumber: pr.number,
+              reviewOutputKey,
+              deliveryId: event.id,
+              commitSha: pr.head.sha,
+              headSha: pr.head.sha,
+              baseSha: pr.base.sha,
+              headRef: pr.head.ref,
+              baseRef: pr.base.ref,
+            },
+            publicationFixes: convertPublishedCandidateResultsToValidationTruthFixes({
+              payloads: reviewCandidatePublicationAdapter.payloads,
+              results: candidatePublisherResults,
+              reviewOutputKey,
+              deliveryId: event.id,
+            }),
+            requireRevalidation: true,
+          });
+          logger.info(
+            {
+              ...baseLog,
+              ...reviewValidationTruth.logEvidence,
+              gateResult: reviewValidationTruth.status,
+              source: "automatic-review",
+            },
+            "Projected review validation truth evidence",
+          );
+        } catch (err) {
+          try {
+            logger.warn(
+              {
+                ...baseLog,
+                err,
+                gate: "review-validation-truth",
+                gateResult: "degraded",
+                reviewOutputKey,
+                deliveryId: event.id,
+              },
+              "Review validation truth diagnostics failed; continuing review publication",
+            );
+          } catch {
+            // Diagnostics are fail-open for review execution and must not block publication.
+          }
+        }
         logger.info(
           {
             ...baseLog,
