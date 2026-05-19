@@ -1,0 +1,138 @@
+{
+  "schema": "m074-s07-repo-doctrine-proof.v1",
+  "generatedAt": "2026-05-18T19:20:00.000Z",
+  "source": {
+    "mode": "source-fixture",
+    "kind": "fixture",
+    "available": true,
+    "externalWritesPerformed": false
+  },
+  "config": {
+    "status": "applied",
+    "consumed": true,
+    "aggregateOnly": true,
+    "contractCount": 7,
+    "matchedCount": 3,
+    "omittedCount": 0,
+    "reasonCodes": [
+      "none"
+    ],
+    "schemaSupported": true,
+    "parseFallbackCovered": true,
+    "malformedContractFallbackCovered": true
+  },
+  "doctrine": {
+    "enabled": true,
+    "contractCount": 7,
+    "consumedContractCount": 7,
+    "omittedContractCount": 0,
+    "matchedPathCandidateCount": 3,
+    "omittedMatchedPathCandidateCount": 0,
+    "contractTypes": [
+      "api-compatibility",
+      "migration",
+      "performance-budget",
+      "forbidden-pattern",
+      "tracing",
+      "feature-flag",
+      "docs-update"
+    ],
+    "maxContracts": 25,
+    "maxPromptContracts": 8,
+    "maxReasonCodes": 25,
+    "reasonCodes": [
+      "none",
+      "redaction-applied",
+      "malformed-contract",
+      "parse-fallback",
+      "disabled",
+      "skipped",
+      "unconsumed-contract"
+    ]
+  },
+  "reviewPlan": {
+    "status": "applied",
+    "consumed": true,
+    "aggregateOnly": true,
+    "contractCount": 7,
+    "matchedCount": 3,
+    "omittedCount": 0,
+    "reasonCodes": [
+      "none"
+    ],
+    "detailsSummaryContainsDoctrine": true
+  },
+  "prompt": {
+    "status": "applied",
+    "consumed": true,
+    "aggregateOnly": true,
+    "contractCount": 7,
+    "matchedCount": 3,
+    "omittedCount": 0,
+    "reasonCodes": [
+      "none"
+    ],
+    "boundedContractLines": 7,
+    "rawDoctrineTextIncluded": false
+  },
+  "reducer": {
+    "status": "applied",
+    "consumed": true,
+    "aggregateOnly": true,
+    "contractCount": 7,
+    "matchedCount": 3,
+    "omittedCount": 0,
+    "reasonCodes": [
+      "none"
+    ],
+    "detailsSummaryContainsDoctrine": true
+  },
+  "reviewDetails": {
+    "status": "applied",
+    "consumed": true,
+    "aggregateOnly": true,
+    "correlationPresent": true,
+    "contractCount": 7,
+    "matchedCount": 3,
+    "omittedCount": 0,
+    "reasonCodes": [
+      "none"
+    ],
+    "statusLineCount": 2,
+    "maxStatusLineCount": 4,
+    "rawDoctrineTextIncluded": false
+  },
+  "handler": {
+    "status": "applied",
+    "consumed": true,
+    "aggregateOnly": true,
+    "correlationPresent": true,
+    "contractCount": 7,
+    "matchedCount": 3,
+    "omittedCount": 0,
+    "reasonCodes": [
+      "none"
+    ],
+    "logGate": "repo-doctrine",
+    "reviewPlanProjectionPresent": true,
+    "promptProjectionPresent": true,
+    "reducerProjectionPresent": true,
+    "reviewDetailsProjectionPresent": true
+  },
+  "sideEffects": {
+    "botBranchCreated": 0,
+    "separatePrCreated": 0,
+    "directPushCount": 0,
+    "publicCommentCreated": 0
+  },
+  "redaction": {
+    "rawPromptsIncluded": false,
+    "rawDoctrineTextIncluded": false,
+    "rawModelOutputIncluded": false,
+    "toolPayloadsIncluded": false,
+    "diffsIncluded": false,
+    "secretLikeStringsIncluded": false,
+    "unboundedArraysIncluded": false,
+    "canariesAbsent": true
+  }
+}
