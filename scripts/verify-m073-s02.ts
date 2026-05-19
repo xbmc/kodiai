@@ -1,8 +1,22 @@
 export const COMMAND_NAME = "verify:m073:s02" as const;
 export const DEFAULT_FIXTURE_PATH = "scripts/fixtures/m073-s02-prompt-budget.json";
+export const DEFAULT_BASELINE_FIXTURE_PATH = "scripts/fixtures/m073-s01-baseline-scorecard.json";
 
 export type PromptBudgetEvidenceStatus = "included" | "trimmed" | "bypassed";
 export type PromptBudgetEvidenceReason = "within-budget" | "section-over-budget" | "zero-budget";
+export type PromptBudgetBaselineSourceReason = "s01-baseline" | "new-budget-section";
+
+export type PromptBudgetBaselineSource = {
+  readonly reason: PromptBudgetBaselineSourceReason;
+  readonly sourceFixturePath?: string;
+  readonly sourceId?: string;
+  readonly caseId?: string;
+  readonly deliveryId?: string;
+  readonly promptKind?: string;
+  readonly sectionName?: string;
+  readonly baselineChars?: number;
+  readonly baselineEstimatedTokens?: number;
+};
 
 export type PromptBudgetEvidenceSection = {
   readonly sectionName: string;
@@ -15,6 +29,7 @@ export type PromptBudgetEvidenceSection = {
   readonly trimmedTokens: number;
   readonly budgetStatus: PromptBudgetEvidenceStatus;
   readonly budgetReason: PromptBudgetEvidenceReason;
+  readonly baselineSource: PromptBudgetBaselineSource;
 };
 
 export type PromptBudgetEvidenceObservation = {
@@ -50,6 +65,7 @@ export type M073S02CheckId =
   | "budget-evidence.present"
   | "budget-outcomes.valid"
   | "overflow-totals.deterministic"
+  | "baseline-linkage.valid"
   | "redaction.safe";
 
 export type M073S02Check = {
@@ -73,6 +89,11 @@ export type M073S02ObservedTotals = PromptBudgetOverflowSummary & {
   readonly sectionNames: readonly string[];
   readonly statuses: readonly PromptBudgetEvidenceStatus[];
   readonly reasons: readonly PromptBudgetEvidenceReason[];
+  readonly baselineLinkedSections: number;
+  readonly baselineNewSections: number;
+  readonly baselineBypassedSections: number;
+  readonly baselineFixturePaths: readonly string[];
+  readonly baselineSourceIds: readonly string[];
 };
 
 export type M073S02Report = {
@@ -106,6 +127,8 @@ export type M073S02MainOptions = {
 export type EvaluateM073S02Options = {
   readonly generatedAt?: string;
   readonly readFixtureText?: (fixturePath: string) => Promise<string>;
+  readonly readBaselineFixtureText?: (fixturePath: string) => Promise<string>;
+  readonly baselineFixturePath?: string;
 };
 
 const HELP_TEXT = `Usage: bun scripts/verify-m073-s02.ts [--fixture <path>] [--json] [--help]\n\nVerifies the M073/S02 prompt-budget fixture without live services.\n\nOptions:\n  --fixture <path>  Local JSON fixture path (default: ${DEFAULT_FIXTURE_PATH})\n  --json            Emit machine-readable JSON only\n  --help, -h        Show this help\n`;
@@ -179,7 +202,11 @@ export async function evaluateM073S02Fixture(fixturePath = DEFAULT_FIXTURE_PATH,
     });
   }
 
-  const checks = evaluatePromptBudgetFixture(fixture);
+  const baselineFixturePath = options.baselineFixturePath ?? DEFAULT_BASELINE_FIXTURE_PATH;
+  const readBaselineFixtureText = options.readBaselineFixtureText ?? readFixtureText;
+  const baselineRows = await readBaselineRows(baselineFixturePath, readBaselineFixtureText);
+
+  const checks = evaluatePromptBudgetFixture(fixture, baselineFixturePath, baselineRows);
   const failedChecks = checks.filter((check) => check.status === "fail");
   const observedTotals = buildObservedTotals(fixture);
   const issues = boundIssues(failedChecks.flatMap((check) => check.issues.length > 0 ? check.issues : [check.message]));
@@ -229,7 +256,7 @@ export async function main(args = Bun.argv.slice(2), options: M073S02MainOptions
   return report.overallPassed ? 0 : 1;
 }
 
-function evaluatePromptBudgetFixture(fixture: unknown): M073S02Check[] {
+function evaluatePromptBudgetFixture(fixture: unknown, baselineFixturePath: string, baselineRows: readonly S01BaselineSectionRow[]): M073S02Check[] {
   const checks: M073S02Check[] = [];
   const shapeIssues = validateFixtureShape(fixture);
   checks.push(shapeIssues.length === 0
@@ -250,6 +277,11 @@ function evaluatePromptBudgetFixture(fixture: unknown): M073S02Check[] {
   checks.push(overflowIssues.length === 0
     ? pass("overflow-totals.deterministic", "Overflow totals match deterministic sums from section outcomes.")
     : fail("overflow-totals.deterministic", "Overflow totals do not match deterministic section sums.", overflowIssues));
+
+  const baselineIssues = validateBaselineLinkage(observations, baselineFixturePath, baselineRows);
+  checks.push(baselineIssues.length === 0
+    ? pass("baseline-linkage.valid", "Prompt-budget sections cite bounded S01 baseline inputs or explicit new-section reasons.")
+    : fail("baseline-linkage.valid", "Prompt-budget baseline linkage is invalid.", baselineIssues));
 
   const redactionIssues = validateRedaction(fixture);
   checks.push(redactionIssues.length === 0
@@ -340,6 +372,106 @@ function validateSection(section: PromptBudgetEvidenceSection, sectionPrefix: st
   }
 }
 
+type S01BaselineSectionRow = {
+  readonly sourceFixturePath: string;
+  readonly sourceId: string;
+  readonly caseId: string;
+  readonly deliveryId: string;
+  readonly promptKind: string;
+  readonly sectionName: string;
+  readonly baselineChars: number;
+  readonly baselineEstimatedTokens: number;
+};
+
+async function readBaselineRows(baselineFixturePath: string, readText: (fixturePath: string) => Promise<string>): Promise<S01BaselineSectionRow[]> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readText(baselineFixturePath));
+  } catch {
+    return [];
+  }
+  if (!isPlainObject(parsed) || !Array.isArray(parsed.promptSections)) {
+    return [];
+  }
+  const rows: S01BaselineSectionRow[] = [];
+  parsed.promptSections.filter(isPlainObject).forEach((promptSection) => {
+    if (!isNonEmptyString(promptSection.caseId) || !isNonEmptyString(promptSection.deliveryId) || !isNonEmptyString(promptSection.promptKind) || !Array.isArray(promptSection.sections)) {
+      return;
+    }
+    promptSection.sections.filter(isPlainObject).forEach((section) => {
+      if (!isNonEmptyString(section.sectionName) || !isFiniteNonNegativeInteger(section.charCount) || !isFiniteNonNegativeInteger(section.estimatedTokens)) {
+        return;
+      }
+      const row = {
+        sourceFixturePath: baselineFixturePath,
+        sourceId: `${promptSection.caseId}:${promptSection.deliveryId}:${promptSection.promptKind}:${section.sectionName}`,
+        caseId: promptSection.caseId,
+        deliveryId: promptSection.deliveryId,
+        promptKind: promptSection.promptKind,
+        sectionName: section.sectionName,
+        baselineChars: section.charCount,
+        baselineEstimatedTokens: section.estimatedTokens,
+      };
+      rows.push(row);
+    });
+  });
+  return rows;
+}
+
+function validateBaselineLinkage(observations: readonly PromptBudgetEvidenceObservation[], baselineFixturePath: string, baselineRows: readonly S01BaselineSectionRow[]): string[] {
+  const issues: string[] = [];
+  observations.forEach((observation, observationIndex) => {
+    observation.sections.forEach((section, sectionIndex) => {
+      const sectionPrefix = `promptBudgetEvidence[${observationIndex}].sections[${sectionIndex}]`;
+      const source = section.baselineSource;
+      if (!isPlainObject(source)) {
+        issues.push(`${sectionPrefix}.baselineSource is required.`);
+        return;
+      }
+      if (source.reason !== "s01-baseline" && source.reason !== "new-budget-section") {
+        issues.push(`${sectionPrefix}.baselineSource.reason is not allowed.`);
+        return;
+      }
+      if (source.reason === "new-budget-section") {
+        if (source.sourceFixturePath !== undefined || source.sourceId !== undefined || source.baselineChars !== undefined || source.baselineEstimatedTokens !== undefined) {
+          issues.push(`${sectionPrefix}.baselineSource new-budget-section must not claim S01 fixture ids or baseline counts.`);
+        }
+        return;
+      }
+
+      const sourcePrefix = `${sectionPrefix}.baselineSource`;
+      if (source.sourceFixturePath !== baselineFixturePath) issues.push(`${sourcePrefix}.sourceFixturePath must be ${baselineFixturePath}.`);
+      if (!isNonEmptyString(source.sourceId)) issues.push(`${sourcePrefix}.sourceId is required.`);
+      if (source.caseId !== observation.caseId) issues.push(`${sourcePrefix}.caseId must match ${observation.caseId}.`);
+      if (!isNonEmptyString(source.deliveryId)) issues.push(`${sourcePrefix}.deliveryId is required.`);
+      if (source.promptKind !== observation.promptKind) issues.push(`${sourcePrefix}.promptKind must match ${observation.promptKind}.`);
+      if (source.sectionName !== section.sectionName) issues.push(`${sourcePrefix}.sectionName must match ${section.sectionName}.`);
+      if (!isFiniteNonNegativeInteger(source.baselineChars)) issues.push(`${sourcePrefix}.baselineChars must be a non-negative integer.`);
+      if (!isFiniteNonNegativeInteger(source.baselineEstimatedTokens)) issues.push(`${sourcePrefix}.baselineEstimatedTokens must be a non-negative integer.`);
+
+      const matchingBaseline = baselineRows.find((row) => row.sourceId === source.sourceId);
+      if (!matchingBaseline) {
+        issues.push(`${sourcePrefix}.sourceId does not match an S01 baseline row.`);
+        return;
+      }
+      if (matchingBaseline.sourceFixturePath !== source.sourceFixturePath) issues.push(`${sourcePrefix}.sourceFixturePath does not match S01 baseline row.`);
+      if (matchingBaseline.caseId !== source.caseId) issues.push(`${sourcePrefix}.caseId does not match S01 baseline row.`);
+      if (matchingBaseline.deliveryId !== source.deliveryId) issues.push(`${sourcePrefix}.deliveryId does not match S01 baseline row.`);
+      if (matchingBaseline.promptKind !== source.promptKind) issues.push(`${sourcePrefix}.promptKind does not match S01 baseline row.`);
+      if (matchingBaseline.sectionName !== source.sectionName) issues.push(`${sourcePrefix}.sectionName does not match S01 baseline row.`);
+      if (matchingBaseline.baselineChars !== source.baselineChars) issues.push(`${sourcePrefix}.baselineChars does not match S01 baseline row.`);
+      if (matchingBaseline.baselineEstimatedTokens !== source.baselineEstimatedTokens) issues.push(`${sourcePrefix}.baselineEstimatedTokens does not match S01 baseline row.`);
+      if (matchingBaseline.baselineChars < section.includedChars) {
+        issues.push(`${sourcePrefix}.baselineChars must be at least includedChars for ${section.sectionName}.`);
+      }
+      if (matchingBaseline.baselineEstimatedTokens < section.includedTokens) {
+        issues.push(`${sourcePrefix}.baselineEstimatedTokens must be at least includedTokens for ${section.sectionName}.`);
+      }
+    });
+  });
+  return issues;
+}
+
 function validateOverflowSummary(fixture: unknown, observations: readonly PromptBudgetEvidenceObservation[]): string[] {
   if (!isPlainObject(fixture) || !isPlainObject(fixture.overflowSummary)) {
     return ["overflowSummary is required to prove deterministic totals."];
@@ -424,6 +556,7 @@ function buildObservedTotals(fixture: unknown): M073S02ObservedTotals {
   const deliveryIds = observations.map((observation) => observation.deliveryId).filter(isNonEmptyString);
   const promptKinds = observations.map((observation) => observation.promptKind).filter(isNonEmptyString);
   const sections = observations.flatMap((observation) => [...observation.sections]);
+  const baselineSources = sections.map((section) => section.baselineSource).filter(isPlainObject);
   return {
     ...summary,
     observationCount: observations.length,
@@ -432,6 +565,11 @@ function buildObservedTotals(fixture: unknown): M073S02ObservedTotals {
     sectionNames: uniqueSorted(sections.map((section) => section.sectionName).filter(isNonEmptyString)),
     statuses: uniqueSorted(sections.map((section) => section.budgetStatus).filter(isPromptBudgetEvidenceStatus)),
     reasons: uniqueSorted(sections.map((section) => section.budgetReason).filter(isPromptBudgetEvidenceReason)),
+    baselineLinkedSections: baselineSources.filter((source) => source.reason === "s01-baseline").length,
+    baselineNewSections: baselineSources.filter((source) => source.reason === "new-budget-section").length,
+    baselineBypassedSections: sections.filter((section) => section.budgetStatus === "bypassed").length,
+    baselineFixturePaths: uniqueSorted(baselineSources.map((source) => typeof source.sourceFixturePath === "string" ? source.sourceFixturePath : "").filter(isNonEmptyString)),
+    baselineSourceIds: uniqueSorted(baselineSources.map((source) => typeof source.sourceId === "string" ? source.sourceId : "").filter(isNonEmptyString)),
   };
 }
 
@@ -457,6 +595,7 @@ function readObservations(fixture: unknown): PromptBudgetEvidenceObservation[] {
           trimmedTokens: typeof section.trimmedTokens === "number" ? section.trimmedTokens : -1,
           budgetStatus: section.budgetStatus as PromptBudgetEvidenceStatus,
           budgetReason: section.budgetReason as PromptBudgetEvidenceReason,
+          baselineSource: isPlainObject(section.baselineSource) ? section.baselineSource as PromptBudgetBaselineSource : {} as PromptBudgetBaselineSource,
         }))
       : [],
   }));
@@ -492,6 +631,11 @@ function emptyObservedTotals(): M073S02ObservedTotals {
     sectionNames: [],
     statuses: [],
     reasons: [],
+    baselineLinkedSections: 0,
+    baselineNewSections: 0,
+    baselineBypassedSections: 0,
+    baselineFixturePaths: [],
+    baselineSourceIds: [],
     sectionCount: 0,
     includedSections: 0,
     trimmedSections: 0,
@@ -525,6 +669,9 @@ function writeReport(report: M073S02Report, options: {
     `trimmedSections: ${report.observedTotals.trimmedSections}`,
     `totalTrimmedChars: ${report.observedTotals.totalTrimmedChars}`,
     `totalTrimmedTokens: ${report.observedTotals.totalTrimmedTokens}`,
+    `baselineLinkedSections: ${report.observedTotals.baselineLinkedSections}`,
+    `baselineNewSections: ${report.observedTotals.baselineNewSections}`,
+    `baselineBypassedSections: ${report.observedTotals.baselineBypassedSections}`,
   ];
   if (!report.overallPassed && report.issues.length > 0) {
     lines.push("issues:", ...report.issues.map((issue) => `- ${issue}`));

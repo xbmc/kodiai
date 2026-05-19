@@ -18,11 +18,31 @@
           "trimmedChars": 0,
           "trimmedTokens": 0,
           "budgetStatus": "included",
-          "budgetReason": "within-budget"
-        },
+          "budgetReason": "within-budget",
+          "baselineSource": {
+            "reason": "s01-baseline",
+            "sourceFixturePath": "scripts/fixtures/m073-s01-baseline-scorecard.json",
+            "sourceId": "normal-full-review:delivery-normal-001:system:persona",
+            "caseId": "normal-full-review",
+            "deliveryId": "delivery-normal-001",
+            "promptKind": "system",
+            "sectionName": "persona",
+            "baselineChars": 420,
+            "baselineEstimatedTokens": 105
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "normal-full-review",
+      "deliveryId": "delivery-budget-001",
+      "repo": "octo/example",
+      "taskType": "review",
+      "promptKind": "user",
+      "sections": [
         {
           "sectionName": "pr-metadata",
-          "sectionPosition": 1,
+          "sectionPosition": 0,
           "budgetChars": 500,
           "budgetTokens": 125,
           "includedChars": 500,
@@ -30,11 +50,22 @@
           "trimmedChars": 0,
           "trimmedTokens": 0,
           "budgetStatus": "included",
-          "budgetReason": "within-budget"
+          "budgetReason": "within-budget",
+          "baselineSource": {
+            "reason": "s01-baseline",
+            "sourceFixturePath": "scripts/fixtures/m073-s01-baseline-scorecard.json",
+            "sourceId": "normal-full-review:delivery-normal-001:user:pr-metadata",
+            "caseId": "normal-full-review",
+            "deliveryId": "delivery-normal-001",
+            "promptKind": "user",
+            "sectionName": "pr-metadata",
+            "baselineChars": 500,
+            "baselineEstimatedTokens": 125
+          }
         },
         {
           "sectionName": "changed-files-summary",
-          "sectionPosition": 2,
+          "sectionPosition": 1,
           "budgetChars": 1200,
           "budgetTokens": 300,
           "includedChars": 1200,
@@ -42,7 +73,18 @@
           "trimmedChars": 600,
           "trimmedTokens": 150,
           "budgetStatus": "trimmed",
-          "budgetReason": "section-over-budget"
+          "budgetReason": "section-over-budget",
+          "baselineSource": {
+            "reason": "s01-baseline",
+            "sourceFixturePath": "scripts/fixtures/m073-s01-baseline-scorecard.json",
+            "sourceId": "normal-full-review:delivery-normal-001:user:changed-files-summary",
+            "caseId": "normal-full-review",
+            "deliveryId": "delivery-normal-001",
+            "promptKind": "user",
+            "sectionName": "changed-files-summary",
+            "baselineChars": 2400,
+            "baselineEstimatedTokens": 600
+          }
         }
       ]
     },
@@ -63,7 +105,10 @@
           "trimmedChars": 0,
           "trimmedTokens": 0,
           "budgetStatus": "bypassed",
-          "budgetReason": "zero-budget"
+          "budgetReason": "zero-budget",
+          "baselineSource": {
+            "reason": "new-budget-section"
+          }
         },
         {
           "sectionName": "code-context",
@@ -75,7 +120,10 @@
           "trimmedChars": 800,
           "trimmedTokens": 200,
           "budgetStatus": "trimmed",
-          "budgetReason": "section-over-budget"
+          "budgetReason": "section-over-budget",
+          "baselineSource": {
+            "reason": "new-budget-section"
+          }
         }
       ]
     }
