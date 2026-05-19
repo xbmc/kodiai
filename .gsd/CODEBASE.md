@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-19T03:50:07Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-19T03:50:07Z","fingerprint":"024dea61aa56d53d3b84c2c491c03bd5e3a16fea","fileCount":500,"truncated":true} -->
+Generated: 2026-05-19T04:14:18Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-19T04:14:18Z","fingerprint":"4a791a2e788fd91296a5dc4c8ce725fe788943e1","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -67,6 +67,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `docs/smoke/m066-formatter-suggestions.md`
 - `docs/smoke/m068-candidate-publication.md`
 - `docs/smoke/m073-live-proof.md`
+- `docs/smoke/m073-s07-remediation.md`
 - `docs/smoke/phase27-uat-notes.md`
 - `docs/smoke/phase72-telemetry-follow-through.md`
 - `docs/smoke/phase74-reliability-regression-gate.md`
@@ -92,7 +93,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(264 files: 259 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(266 files: 261 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -103,6 +104,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `scripts/fixtures/m073-s04-continuation-compaction.json`
 - `scripts/fixtures/m073-s05-visible-budget.json`
 - `scripts/fixtures/m073-s06-live-proof.json`
+- `scripts/fixtures/m073-s07-remediation.json`
 
 ### src/
 - `src/config.test.ts`
@@ -166,7 +168,3 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/execution/mcp/http-server.ts`
 - `src/execution/mcp/index.test.ts`
 - `src/execution/mcp/index.ts`
-- `src/execution/mcp/inline-review-publisher.ts`
-- `src/execution/mcp/inline-review-server.test.ts`
-- `src/execution/mcp/inline-review-server.ts`
-- `src/execution/mcp/issue-comment-server.test.ts`

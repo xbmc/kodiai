@@ -115,10 +115,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Specialist lanes must start in shadow/private mode and emit bounded aggregate evidence only until reducer and verification gates prove they are safe to publish.
 - Why it matters: Specialization should improve signal without uncontrolled parallelism, comment volume, or leakage of private candidate details.
 - Source: user
-- Primary owning slice: M073
+- Primary owning slice: specialist-lane-follow-up
 - Supporting slices: M072/S01,M072/S02,M072/S03,M073,M074
-- Validation: unmapped
-- Notes: M072 supports R131 by keeping bridge evidence private, bounded, and redacted while threading shadow candidate evidence before publication. Primary completion remains deferred to M073 specialist lane work.
+- Validation: Unmapped for completion. M073/S07 validates only that token-first M073 proof does not claim R131 completion and that R131 is formally re-scoped; future bounded aggregate specialist-lane proof is required before R131 can be validated.
+- Notes: M072 supports R131 by keeping bridge evidence private, bounded, and redacted while threading shadow candidate evidence before publication. M073 provides supporting token-first, bounded-linkage, and non-publication evidence only. R131 private/shadow specialist-lane completion is formally re-scoped to specialist-lane-follow-up and requires a future bounded aggregate specialist-lane proof before validation.
 
 ### R132 — Candidate publication must require reducer-approved verification status, dedupe, and disagreement handling before public GitHub output.
 - Class: core-capability
@@ -1713,7 +1713,7 @@ This file is the explicit capability and coverage contract for the project.
 | R128 | quality-attribute | validated | M071/S04 | M071/S02,M071/S05 | S04 closeout verified typed review.graphValidation config parsing/documentation and truthful ReviewPlan/runtime status surfacing. Evidence: `bun test src/execution/config.test.ts src/review-graph/graph-validation-status.test.ts src/review-plan/review-plan.test.ts src/handlers/review.test.ts src/issue-131/evidence-matrix.test.ts scripts/verify-m071.test.ts` passed (314 tests, 1582 expects), and `bun run verify:m071 -- --json` reported complete=6 partial=0 missing=0 deferred=4 with no issues. |
 | R129 | operability | validated | M071/S05 | M071/S01,M071/S02,M071/S03,M071/S04 | M071/S05 verified `verify:m071 -- --json` distinguishes complete, partial, missing, and deferred rows with repo-relative evidence paths and exact deferred ownership. The final report has six complete foundation rows, zero partial rows, zero missing rows, four deferred rows, and owner metadata for M072/S01 candidate publication bridge, M073/S01 reducer extraction, M074/S01 specialist lane proof, and M075/S01 metrics/tier closure. |
 | R130 | core-capability | validated | M072/S01 | M072/S02,M072/S03,M072/S04,M073,M074 | M072/S04 closeout ran `bun test scripts/verify-m072.test.ts` (13 pass), `bun run verify:m072 -- --json` (success with passing bridge/package/deferred-owner/report-safety checks), and the targeted S02/S03 integration regression suite (163 pass), proving candidate findings are captured before public GitHub publication and exposed through an explicit safe reducer handoff contract. |
-| R131 | core-capability | active | M073 | M072/S01,M072/S02,M072/S03,M073,M074 | unmapped |
+| R131 | core-capability | active | specialist-lane-follow-up | M072/S01,M072/S02,M072/S03,M073,M074 | Unmapped for completion. M073/S07 validates only that token-first M073 proof does not claim R131 completion and that R131 is formally re-scoped; future bounded aggregate specialist-lane proof is required before R131 can be validated. |
 | R132 | core-capability | active | M074 | M072/S01,M072/S02,M072/S03,M072/S04,M073,M074,M075 | unmapped |
 | R133 | operability | active | M075 | M072/S01,M072/S03,M072/S04,M073,M074,M075 | unmapped |
 | R134 | constraint | deferred | none | none | unmapped |

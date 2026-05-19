@@ -6029,6 +6029,31 @@
       "confidence": "EXTRACTED"
     },
     {
+      "id": "slice:M073:S07",
+      "label": "S07: S07 R131 evidence and S01 S02 linkage remediation",
+      "type": "slice",
+      "confidence": "EXTRACTED",
+      "sourceFile": "milestones/M073/slices/S07/S07-PLAN.md"
+    },
+    {
+      "id": "task:M073:S07:T01",
+      "label": "T01: Make S02 budget evidence cite S01 baseline inputs",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S07:T02",
+      "label": "T02: Add S07 remediation verifier for linkage and R131 disposition",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "task:M073:S07:T03",
+      "label": "T03: Wire S07 proof into scripts docs and requirement disposition",
+      "type": "task",
+      "confidence": "EXTRACTED"
+    },
+    {
       "id": "milestone:M074",
       "label": "M074: M074",
       "type": "milestone",
@@ -13626,6 +13651,30 @@
       "confidence": "EXTRACTED"
     },
     {
+      "from": "milestone:M073",
+      "to": "slice:M073:S07",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S07",
+      "to": "task:M073:S07:T01",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S07",
+      "to": "task:M073:S07:T02",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "slice:M073:S07",
+      "to": "task:M073:S07:T03",
+      "type": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
       "from": "milestone:M053",
       "to": "decision:M053:1",
       "type": "relates_to",
@@ -15294,5 +15343,5 @@
       "confidence": "EXTRACTED"
     }
   ],
-  "builtAt": "2026-05-18T23:54:26.578Z"
+  "builtAt": "2026-05-19T04:16:11.878Z"
 }
