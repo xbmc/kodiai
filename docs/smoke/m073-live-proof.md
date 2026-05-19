@@ -11,6 +11,7 @@ This smoke artifact records the production-like S06 proof for the token-first re
 | `scripts/fixtures/m073-s01-baseline-scorecard.json` | Replay baseline | bounded case IDs, aggregate runtime usage, phase latency rows |
 | `scripts/fixtures/m073-s05-visible-budget.json` | Visible projection proof | bounded projection counts, statuses, reasons, prompt/cache/continuation summaries |
 | `scripts/fixtures/m073-s06-live-proof.json` | S06 live-proof fixture | upstream pass status, before/after totals, latency ceiling, rollback controls, negative cases |
+| `docs/smoke/m073-s07-remediation.md` | S07 remediation bridge | S01/S02 linkage totals, formal R131 re-scope status, non-live/non-publication boundary |
 
 ## Production-like proof summary
 
@@ -65,6 +66,10 @@ The S06 fixture localizes unsafe rollout evidence through stable verifier check 
 - `visible-projection.compatible`
 
 Negative cases in `scripts/fixtures/m073-s06-live-proof.json` prove that token regression, latency regression, rollback gaps, and unsafe payload field names fail closed without requiring live GitHub writes.
+
+## S07 remediation boundary
+
+S06 proves production-like token reduction and bounded visible disclosure. It does not complete R131 specialist-lane ownership. Use `docs/smoke/m073-s07-remediation.md` and `bun run verify:m073:s07 --json` to prove S01/S02 baseline linkage and the formal R131 re-scope before milestone validation.
 
 ## Verification command
 

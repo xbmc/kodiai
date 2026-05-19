@@ -161,6 +161,16 @@ Start with `failedCheckIds`, then inspect bounded `issues`. Do not add raw promp
 
 Later slices should consume S02 evidence through `observedTotals`, stable check IDs, and section-level budget outcome fields. The safe handoff answers: which sections were included, trimmed, or bypassed; how much budget was configured; how much was included; and how much overflow was removed. It does **not** authorize reconstructing prompt text, publishing raw fixture rows with additional fields, or treating estimated tokens as billed model usage.
 
+## S07 linkage and R131 remediation
+
+S07 is the validation bridge for S01-to-S02 baseline consumption and R131 disposition. Run it after S02 and before final M073 validation:
+
+```sh
+bun run verify:m073:s07 --json
+```
+
+Successful S07 output proves that S02 `baselineSource` rows match S01 prompt-section rows by bounded identifiers and counts, and that R131 is formally re-scoped instead of completed by M073 token-first evidence. See `docs/smoke/m073-s07-remediation.md` for the latest totals and the pending requirement-record update.
+
 ## Scorecard inputs and interpretation
 
 The source contract lives in `src/review-cost-baseline/scorecard.ts`. The verifier projects that contract through `scripts/verify-m073-s01.ts`.

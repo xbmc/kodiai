@@ -119,6 +119,16 @@ Do not assert on exact human-readable Review Details wording. Wording may change
 
 For live proof, S06 should map live Review Details/operator evidence into the same shape used by `scripts/fixtures/m073-s05-visible-budget.json`, run the S05 verifier or equivalent checks, and separately verify that existing safety gates still block raw prompts, cache keys, candidates, diffs, and model output from public surfaces.
 
+## S07 remediation handoff
+
+Before final M073 validation, run the S07 remediation proof:
+
+```sh
+bun run verify:m073:s07 --json
+```
+
+S07 links S02 budget rows back to S01 baseline rows and records that R131 is formally re-scoped rather than completed by M073. Operators should read `docs/smoke/m073-s07-remediation.md` for the latest linkage totals, R131 disposition, and non-publication boundary. This runbook remains the S05 visible-disclosure contract; it should not be used as standalone R131 validation.
+
 ## Quick interpretation checklist
 
 - If `overallPassed` is true, the fixture satisfies the bounded visible budget disclosure contract.
