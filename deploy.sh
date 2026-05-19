@@ -79,6 +79,9 @@ LOCATION="eastus"
 ENVIRONMENT="cae-kodiai"
 APP_NAME="ca-kodiai"
 ACR_NAME="kodiairegistry"          # Must be globally unique, alphanumeric only
+BUN_BASE_SOURCE_IMAGE=${BUN_BASE_SOURCE_IMAGE:-docker.io/oven/bun:1-debian}
+BUN_BASE_ACR_IMAGE=${BUN_BASE_ACR_IMAGE:-base/oven-bun:1-debian}
+BUN_BASE_IMAGE="${ACR_NAME}.azurecr.io/${BUN_BASE_ACR_IMAGE}"
 IDENTITY_NAME="id-kodiai"
 KEY_VAULT_NAME=${KEY_VAULT_NAME:-}
 BUILD_CONTEXT_DIR=$(mktemp -d)
@@ -200,6 +203,19 @@ if ! az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --output 
     --output none
 fi
 
+echo "==> Mirroring Bun base image into ACR: $BUN_BASE_SOURCE_IMAGE -> $BUN_BASE_ACR_IMAGE..."
+ACR_IMPORT_ARGS=(
+  --name "$ACR_NAME"
+  --source "$BUN_BASE_SOURCE_IMAGE"
+  --image "$BUN_BASE_ACR_IMAGE"
+  --force
+  --output none
+)
+if [[ -n "${DOCKERHUB_USERNAME:-}" && -n "${DOCKERHUB_TOKEN:-}" ]]; then
+  ACR_IMPORT_ARGS+=(--username "$DOCKERHUB_USERNAME" --password "$DOCKERHUB_TOKEN")
+fi
+az acr import "${ACR_IMPORT_ARGS[@]}"
+
 # -- Managed Identity ---------------------------------------------------------
 echo "==> Creating managed identity: $IDENTITY_NAME..."
 if ! az identity show --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
@@ -240,6 +256,7 @@ echo "==> Building and pushing image via ACR (remote build)..."
 APP_IMAGE_DIGEST=$(az acr build \
   --registry "$ACR_NAME" \
   --image kodiai:latest \
+  --build-arg "BUN_BASE_IMAGE=$BUN_BASE_IMAGE" \
   --no-logs \
   "$BUILD_CONTEXT_DIR" \
   --query 'outputImages[0].digest' \
@@ -309,6 +326,7 @@ ACA_JOB_IMAGE_DIGEST=$(az acr build \
   --registry "$ACR_NAME" \
   --image kodiai-agent:latest \
   --file Dockerfile.agent \
+  --build-arg "BUN_BASE_IMAGE=$BUN_BASE_IMAGE" \
   --no-logs \
   "$BUILD_CONTEXT_DIR" \
   --query 'outputImages[0].digest' \
