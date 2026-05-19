@@ -12,6 +12,7 @@ import {
   type M074S06Args,
   type M074S06EvidenceSnapshot,
 } from "./verify-m074-s06.ts";
+import { buildApprovedReviewBody, buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
 
 const VALID_PACKAGE = `{"scripts":{"${COMMAND_NAME}":"${EXPECTED_PACKAGE_SCRIPT}"}}`;
 const BASE_ARGS = parseM074S06Args([
@@ -28,6 +29,67 @@ const BASE_ARGS = parseM074S06Args([
   "--delivery-id",
   "delivery-m074-s06",
 ]);
+
+const LIVE_REVIEW_OUTPUT_KEY = buildReviewOutputKey({
+  installationId: 42,
+  owner: "acme",
+  repo: "widgets",
+  prNumber: 74,
+  action: "mention-review",
+  deliveryId: "delivery-live-s06",
+  headSha: "abc123",
+});
+const LIVE_ARGS = parseM074S06Args([
+  "--owner",
+  "acme",
+  "--repo",
+  "widgets",
+  "--pr",
+  "74",
+  "--review-output-key",
+  LIVE_REVIEW_OUTPUT_KEY,
+  "--delivery-id",
+  "delivery-live-s06",
+]);
+
+function liveCollection(overrides: Partial<{ total: number; source: "review" | "issue-comment" | "review-comment"; reviewState: string | null; body: string | null }> = {}) {
+  const total = overrides.total ?? 1;
+  const artifact = {
+    prNumber: 74,
+    prUrl: "https://github.com/acme/widgets/pull/74",
+    source: overrides.source ?? "review",
+    sourceUrl: "https://github.com/acme/widgets/pull/74#pullrequestreview-1",
+    updatedAt: "2026-05-18T18:45:00Z",
+    reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY,
+    lane: "explicit",
+    action: "mention-review",
+    body: overrides.body ?? buildApprovedReviewBody({ reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY }),
+    reviewState: overrides.reviewState ?? "APPROVED",
+  } as const;
+  return {
+    requestedReviewOutputKey: LIVE_REVIEW_OUTPUT_KEY,
+    prUrl: "https://github.com/acme/widgets/pull/74",
+    artifactCounts: {
+      reviewComments: overrides.source === "review-comment" ? total : 0,
+      issueComments: overrides.source === "issue-comment" ? total : 0,
+      reviews: overrides.source === "review" || !overrides.source ? total : 0,
+      total,
+    },
+    artifacts: Array.from({ length: total }, () => artifact),
+  };
+}
+
+const LIVE_RUNTIME_ROW = {
+  timeGenerated: "2026-05-18T18:45:00Z",
+  rawLog: JSON.stringify({ reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY, deliveryId: "delivery-live-s06", msg: "review-validation-truth" }),
+  malformed: false,
+  deliveryId: "delivery-live-s06",
+  reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY,
+  message: "review-validation-truth",
+  revisionName: "kodiai--live",
+  containerAppName: "kodiai",
+  parsedLog: { reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY, deliveryId: "delivery-live-s06", msg: "review-validation-truth" },
+};
 
 describe("verify-m074-s06", () => {
   test("parses CLI args and rejects unsafe fixture paths", () => {
@@ -231,8 +293,109 @@ describe("verify-m074-s06", () => {
     });
 
     expect(report.success).toBe(false);
-    expect(report.statusCode).toBe("m074_s06_source_blocked");
+    expect(report.statusCode).toBe("m074_s06_live_source_blocked");
+    expect(report.failedCheckIds).toContain("correlation.exact");
+  });
+
+
+  test("matches injected live exact-key GitHub artifacts and runtime correlation without exposing raw bodies", async () => {
+    const rawCanary = "RAW_PROMPT_CANARY diff --git SECRET_TOKEN_CANARY";
+    const report = await evaluateM074S06Contract(LIVE_ARGS, {
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      readPackageJsonText: async () => VALID_PACKAGE,
+      liveCollectors: {
+        collectGithubArtifacts: async () => ({ availability: "matched", collection: liveCollection({ body: `${buildApprovedReviewBody({ reviewOutputKey: LIVE_REVIEW_OUTPUT_KEY })}\n${rawCanary}` }) }),
+        queryRuntimeLogs: async () => ({ availability: "matched", rows: [LIVE_RUNTIME_ROW], workspaceCount: 1 }),
+      },
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.statusCode).toBe("m074_s06_ok");
+    expect(report.observed.liveSource).toBe("matched");
+    expect(report.observed.liveGithubArtifactCounts).toMatchObject({ reviews: 1, total: 1 });
+    expect(report.observed.liveRuntimeCorrelation).toMatchObject({ matchedRows: 1, malformedRows: 0, missingCorrelationRows: 0, workspaceCount: 1, queried: true });
+    expect(JSON.stringify(report)).not.toContain(rawCanary);
+    expect(JSON.stringify(report)).not.toContain("diff --git");
+  });
+
+  test("reports live-source blocked when credentials and injected collectors are absent", async () => {
+    const report = await evaluateM074S06Contract(LIVE_ARGS, {
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      readPackageJsonText: async () => VALID_PACKAGE,
+      liveCollectors: {},
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.statusCode).toBe("m074_s06_live_source_blocked");
+    expect(report.observed.liveSource).toBe("blocked");
     expect(report.failedCheckIds).toContain("source.available");
+  });
+
+  test("supports allow-blocked expect-status for live-source blocked diagnostics", async () => {
+    const report = await evaluateM074S06Contract({ ...LIVE_ARGS, allowBlocked: true, expectStatus: "m074_s06_live_source_blocked" }, {
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      readPackageJsonText: async () => VALID_PACKAGE,
+      liveCollectors: {},
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.statusCode).toBe("m074_s06_live_source_blocked");
+  });
+
+  test("reports live-source unavailable when configured collectors fail", async () => {
+    const report = await evaluateM074S06Contract(LIVE_ARGS, {
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      readPackageJsonText: async () => VALID_PACKAGE,
+      liveCollectors: {
+        collectGithubArtifacts: async () => ({ availability: "unavailable", reason: "github timeout" }),
+        queryRuntimeLogs: async () => ({ availability: "matched", rows: [LIVE_RUNTIME_ROW], workspaceCount: 1 }),
+      },
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.statusCode).toBe("m074_s06_live_source_unavailable");
+    expect(report.observed.liveSource).toBe("unavailable");
+    expect(report.issues.join("\n")).toContain("github timeout");
+  });
+
+  test("fails live exact-key proof on duplicate, wrong, or stale artifacts", async () => {
+    for (const collection of [
+      liveCollection({ total: 2 }),
+      liveCollection({ source: "issue-comment" }),
+      liveCollection({ reviewState: "COMMENTED" }),
+    ]) {
+      const report = await evaluateM074S06Contract(LIVE_ARGS, {
+        generatedAt: "2026-05-18T18:45:00.000Z",
+        readPackageJsonText: async () => VALID_PACKAGE,
+        liveCollectors: {
+          collectGithubArtifacts: async () => ({ availability: "matched", collection }),
+          queryRuntimeLogs: async () => ({ availability: "matched", rows: [LIVE_RUNTIME_ROW], workspaceCount: 1 }),
+        },
+      });
+
+      expect(report.success).toBe(false);
+      expect(report.statusCode).toBe("m074_s06_live_exact_key_failed");
+      expect(report.failedCheckIds).toContain("visible-volume.bounded");
+    }
+  });
+
+  test("fails live mode when runtime correlation is missing or malformed", async () => {
+    const report = await evaluateM074S06Contract(LIVE_ARGS, {
+      generatedAt: "2026-05-18T18:45:00.000Z",
+      readPackageJsonText: async () => VALID_PACKAGE,
+      liveCollectors: {
+        collectGithubArtifacts: async () => ({ availability: "matched", collection: liveCollection() }),
+        queryRuntimeLogs: async () => ({
+          availability: "matched",
+          workspaceCount: 1,
+          rows: [{ ...LIVE_RUNTIME_ROW, deliveryId: "wrong", rawLog: "not-json", malformed: true }],
+        }),
+      },
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.statusCode).toBe("m074_s06_live_runtime_correlation_missing");
+    expect(report.observed.liveRuntimeCorrelation).toMatchObject({ matchedRows: 0, malformedRows: 1, missingCorrelationRows: 1 });
   });
 
   test("supports expect-status for negative verification", async () => {
@@ -250,10 +413,13 @@ describe("verify-m074-s06", () => {
         checks: [],
         observed: {
           sourceAvailable: true,
+          liveSource: "not-requested",
           target: "acme/widgets#74",
           reviewOutputKeyPresent: true,
           deliveryIdPresent: true,
           samePrSuggestionCount: 1,
+          liveGithubArtifactCounts: { reviewComments: 0, issueComments: 0, reviews: 0, total: 0, capped: false },
+          liveRuntimeCorrelation: { matchedRows: 0, malformedRows: 0, missingCorrelationRows: 0, workspaceCount: 0, queried: false },
           lifecycleStatusCode: "ok",
           fixEligibilityStatusCode: "ok",
           validationTruthStatusCode: "ok",

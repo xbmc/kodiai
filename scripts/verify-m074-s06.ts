@@ -1,5 +1,9 @@
 import { dirname, isAbsolute, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createGitHubApp } from "../src/auth/github-app.ts";
+import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { collectReviewOutputArtifacts, type ReviewOutputArtifactCollection, type ReviewOutputArtifactsOctokit } from "../src/review-audit/review-output-artifacts.ts";
+import { discoverLogAnalyticsWorkspaceIds, queryReviewAuditLogs, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 
 export const COMMAND_NAME = "verify:m074:s06" as const;
 export const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m074-s06.ts" as const;
@@ -28,6 +32,10 @@ export type M074S06StatusCode =
   | "m074_s06_contract_failed"
   | "m074_s06_malformed_evidence"
   | "m074_s06_source_blocked"
+  | "m074_s06_live_source_blocked"
+  | "m074_s06_live_source_unavailable"
+  | "m074_s06_live_exact_key_failed"
+  | "m074_s06_live_runtime_correlation_missing"
   | "m074_s06_fixture_read_failed"
   | "m074_s06_invalid_json"
   | "m074_s06_invalid_arg";
@@ -144,10 +152,13 @@ type GateEvidence = {
 
 export type M074S06Observed = {
   readonly sourceAvailable: boolean;
+  readonly liveSource: "not-requested" | "blocked" | "unavailable" | "matched" | "failed";
   readonly target: string;
   readonly reviewOutputKeyPresent: boolean;
   readonly deliveryIdPresent: boolean;
   readonly samePrSuggestionCount: number;
+  readonly liveGithubArtifactCounts: { readonly reviewComments: number; readonly issueComments: number; readonly reviews: number; readonly total: number; readonly capped: boolean };
+  readonly liveRuntimeCorrelation: { readonly matchedRows: number; readonly malformedRows: number; readonly missingCorrelationRows: number; readonly workspaceCount: number; readonly queried: boolean };
   readonly lifecycleStatusCode: string;
   readonly fixEligibilityStatusCode: string;
   readonly validationTruthStatusCode: string;
@@ -174,10 +185,25 @@ export type M074S06EvidenceSource = {
   readonly load: (args: M074S06Args) => Promise<{ readonly available: true; readonly text: string; readonly fixturePath?: string } | { readonly available: false; readonly reason: string }>;
 };
 
+export type M074S06LiveAvailability = "blocked" | "unavailable" | "matched";
+export type M074S06LiveGithubResult =
+  | { readonly availability: "blocked"; readonly reason: string }
+  | { readonly availability: "unavailable"; readonly reason: string; readonly counts?: Partial<M074S06Observed["liveGithubArtifactCounts"]> }
+  | { readonly availability: "matched"; readonly collection: ReviewOutputArtifactCollection; readonly capped?: boolean };
+export type M074S06LiveRuntimeResult =
+  | { readonly availability: "blocked"; readonly reason: string; readonly workspaceCount?: number }
+  | { readonly availability: "unavailable"; readonly reason: string; readonly rows?: readonly NormalizedLogAnalyticsRow[]; readonly workspaceCount?: number }
+  | { readonly availability: "matched"; readonly rows: readonly NormalizedLogAnalyticsRow[]; readonly workspaceCount: number; readonly queried?: boolean };
+export type M074S06LiveCollectors = {
+  readonly collectGithubArtifacts?: (args: M074S06Args) => Promise<M074S06LiveGithubResult>;
+  readonly queryRuntimeLogs?: (args: M074S06Args) => Promise<M074S06LiveRuntimeResult>;
+};
+
 export type EvaluateM074S06Options = {
   readonly generatedAt?: string;
   readonly source?: M074S06EvidenceSource;
   readonly readPackageJsonText?: () => Promise<string>;
+  readonly liveCollectors?: M074S06LiveCollectors;
 };
 
 export type M074S06Writer = { readonly write: (chunk: string) => unknown };
@@ -200,12 +226,17 @@ const REQUIRED_GATE_CHECKS = {
 } as const;
 const FORBIDDEN_RAW_KEY = /(^|_)(rawPrompt|rawPrompts|prompt|promptText|rawModelOutput|modelOutput|candidate|candidateBody|candidateBodies|replacement|replacementText|toolPayload|toolPayloads|diff|diffText|patch|hunk|secret|token|apiKey|body|commentBody|content|text)$/i;
 const FORBIDDEN_RAW_VALUE = /(RAW_PROMPT_CANARY|RAW_MODEL_OUTPUT_CANARY|CANDIDATE_BODY_CANARY|TOOL_PAYLOAD_CANARY|RAW_PAYLOAD_CANARY|REPLACEMENT_CANARY|SECRET_TOKEN_CANARY|DIFF_TEXT_CANARY|PRIVATE_CANDIDATE_BODY|diff --git|ghp_|github_pat_|sk-[a-z0-9]|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i;
+const EMPTY_LIVE_GITHUB_COUNTS: M074S06Observed["liveGithubArtifactCounts"] = { reviewComments: 0, issueComments: 0, reviews: 0, total: 0, capped: false };
+const EMPTY_LIVE_RUNTIME_CORRELATION: M074S06Observed["liveRuntimeCorrelation"] = { matchedRows: 0, malformedRows: 0, missingCorrelationRows: 0, workspaceCount: 0, queried: false };
 const EMPTY_OBSERVED: M074S06Observed = {
   sourceAvailable: false,
+  liveSource: "not-requested",
   target: "unknown/unknown#0",
   reviewOutputKeyPresent: false,
   deliveryIdPresent: false,
   samePrSuggestionCount: 0,
+  liveGithubArtifactCounts: EMPTY_LIVE_GITHUB_COUNTS,
+  liveRuntimeCorrelation: EMPTY_LIVE_RUNTIME_CORRELATION,
   lifecycleStatusCode: "missing",
   fixEligibilityStatusCode: "missing",
   validationTruthStatusCode: "missing",
@@ -288,6 +319,10 @@ export async function evaluateM074S06Contract(args: M074S06Args = parseM074S06Ar
     packageJsonText = await readPackageJsonText();
   } catch {
     packageJsonText = "{}";
+  }
+
+  if (!args.fixturePath) {
+    return evaluateM074S06LiveContract(args, { generatedAt, readPackageJsonText: async () => packageJsonText, liveCollectors: options.liveCollectors });
   }
 
   const loaded = await source.load(args);
@@ -421,10 +456,13 @@ function buildReadFailure(generatedAt: string, fixturePath: string | undefined, 
 function buildObserved(proof: M074S06EvidenceSnapshot, forbiddenCanariesAbsent: boolean): M074S06Observed {
   return {
     sourceAvailable: proof.source.available,
+    liveSource: proof.source.mode === "live" ? "matched" : "not-requested",
     target: `${proof.target.owner}/${proof.target.repo}#${proof.target.pr}`,
     reviewOutputKeyPresent: proof.reviewOutputKey.length > 0,
     deliveryIdPresent: proof.deliveryId.length > 0,
     samePrSuggestionCount: proof.samePrInlineSuggestion.suggestionCount,
+    liveGithubArtifactCounts: EMPTY_LIVE_GITHUB_COUNTS,
+    liveRuntimeCorrelation: EMPTY_LIVE_RUNTIME_CORRELATION,
     lifecycleStatusCode: proof.gates.lifecycle.statusCode,
     fixEligibilityStatusCode: proof.gates.fixEligibility.statusCode,
     validationTruthStatusCode: proof.gates.validationTruth.statusCode,
@@ -630,12 +668,12 @@ function uniqueSorted<T extends string>(values: readonly T[]): readonly T[] {
 }
 
 function isStatusCode(value: string): value is M074S06StatusCode {
-  return ["m074_s06_ok", "m074_s06_contract_failed", "m074_s06_malformed_evidence", "m074_s06_source_blocked", "m074_s06_fixture_read_failed", "m074_s06_invalid_json", "m074_s06_invalid_arg"].includes(value);
+  return ["m074_s06_ok", "m074_s06_contract_failed", "m074_s06_malformed_evidence", "m074_s06_source_blocked", "m074_s06_live_source_blocked", "m074_s06_live_source_unavailable", "m074_s06_live_exact_key_failed", "m074_s06_live_runtime_correlation_missing", "m074_s06_fixture_read_failed", "m074_s06_invalid_json", "m074_s06_invalid_arg"].includes(value);
 }
 
 function finalizeReport(report: M074S06Report, args: M074S06Args): M074S06Report {
   const expectedStatusPass = !args.expectStatus || report.statusCode === args.expectStatus;
-  const allowBlockedPass = report.statusCode !== "m074_s06_source_blocked" || args.allowBlocked;
+  const allowBlockedPass = !["m074_s06_source_blocked", "m074_s06_live_source_blocked"].includes(report.statusCode) || args.allowBlocked;
   return {
     ...report,
     success: expectedStatusPass && allowBlockedPass && (report.success || Boolean(args.expectStatus)),
@@ -645,6 +683,237 @@ function finalizeReport(report: M074S06Report, args: M074S06Args): M074S06Report
       ...(allowBlockedPass ? [] : ["source.available: blocked status requires --allow-blocked"]),
     ]),
   };
+}
+
+
+export async function evaluateM074S06LiveContract(
+  args: M074S06Args,
+  options: Pick<EvaluateM074S06Options, "generatedAt" | "readPackageJsonText" | "liveCollectors"> = {},
+): Promise<M074S06Report> {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const packageJsonText = await (options.readPackageJsonText ?? (() => Bun.file("package.json").text()))().catch(() => "{}");
+  const packageCheck = packageWiringCheck(hasExpectedPackageScript(packageJsonText));
+  const parsed = typeof args.reviewOutputKey === "string" ? parseReviewOutputKey(args.reviewOutputKey) : null;
+  const expectedDeliveryId = args.deliveryId ?? parsed?.effectiveDeliveryId ?? null;
+  const target = parsed ? `${parsed.owner}/${parsed.repo}#${parsed.prNumber}` : `${args.owner ?? "unknown"}/${args.repo ?? "unknown"}#${args.pr ?? 0}`;
+
+  if (!parsed || !expectedDeliveryId) {
+    return finalizeReport({
+      command: COMMAND_NAME,
+      generatedAt,
+      success: false,
+      statusCode: "m074_s06_live_source_blocked",
+      ...(args.expectStatus ? { expectedStatus: args.expectStatus } : {}),
+      failedCheckIds: ["correlation.exact"],
+      checks: [blocked("correlation.exact", "Live exact-key mode requires a parseable reviewOutputKey and deliveryId.", ["reviewOutputKey is missing, malformed, or lacks delivery correlation."]), packageCheck],
+      observed: { ...EMPTY_OBSERVED, liveSource: "blocked", target, reviewOutputKeyPresent: Boolean(args.reviewOutputKey), deliveryIdPresent: Boolean(expectedDeliveryId) },
+      issues: ["correlation.exact: live mode requires parseable reviewOutputKey and deliveryId"],
+    }, args);
+  }
+
+  const collectors = options.liveCollectors ?? buildDefaultLiveCollectors();
+  if (!collectors.collectGithubArtifacts && !collectors.queryRuntimeLogs) {
+    return finalizeReport({
+      command: COMMAND_NAME,
+      generatedAt,
+      success: false,
+      statusCode: "m074_s06_live_source_blocked",
+      ...(args.expectStatus ? { expectedStatus: args.expectStatus } : {}),
+      failedCheckIds: ["source.available"],
+      checks: [blocked("source.available", "No live collectors are available.", ["GitHub credentials/log configuration unavailable or no collectors were injected."]), packageCheck],
+      observed: { ...EMPTY_OBSERVED, liveSource: "blocked", target, sourceAvailable: false, reviewOutputKeyPresent: true, deliveryIdPresent: true },
+      issues: ["source.available: live collectors blocked or not configured"],
+    }, args);
+  }
+
+  const github = collectors.collectGithubArtifacts
+    ? await collectors.collectGithubArtifacts(args).catch((error): M074S06LiveGithubResult => ({ availability: "unavailable", reason: compactError(error) }))
+    : { availability: "blocked", reason: "github collector not configured" } as const;
+  const runtime = collectors.queryRuntimeLogs
+    ? await collectors.queryRuntimeLogs(args).catch((error): M074S06LiveRuntimeResult => ({ availability: "unavailable", reason: compactError(error) }))
+    : { availability: "blocked", reason: "runtime collector not configured" } as const;
+
+  const githubCounts = summarizeGithubResult(github);
+  const runtimeCorrelation = summarizeRuntimeResult(runtime, args.reviewOutputKey!, expectedDeliveryId);
+  const checks: M074S06Check[] = [];
+  checks.push(github.availability === "matched" || runtime.availability === "matched"
+    ? pass("source.available", "At least one live source returned bounded evidence.")
+    : github.availability === "unavailable" || runtime.availability === "unavailable"
+      ? fail("source.available", "A configured live source was unavailable.", [github.reason, runtime.reason].filter(Boolean))
+      : blocked("source.available", "Live sources are blocked by missing configuration.", [github.reason, runtime.reason].filter(Boolean)));
+
+  const correlationIssues: string[] = [];
+  if (args.owner && args.owner.toLowerCase() !== parsed.owner) correlationIssues.push("owner does not match reviewOutputKey.");
+  if (args.repo && args.repo.toLowerCase() !== parsed.repo) correlationIssues.push("repo does not match reviewOutputKey.");
+  if (args.pr && args.pr !== parsed.prNumber) correlationIssues.push("pr does not match reviewOutputKey.");
+  if (expectedDeliveryId !== parsed.effectiveDeliveryId) correlationIssues.push("deliveryId does not match reviewOutputKey effective delivery.");
+  checks.push(correlationIssues.length === 0 ? pass("correlation.exact", "Live key target and delivery correlation match.") : fail("correlation.exact", "Live key target or delivery correlation drifted.", correlationIssues));
+
+  const githubIssues = validateLiveGithub(github);
+  checks.push(githubIssues.length === 0 ? pass("visible-volume.bounded", "Live GitHub artifacts match exactly one bounded review output.") : fail("visible-volume.bounded", "Live GitHub artifacts are missing, duplicated, wrong, stale, or unbounded.", githubIssues));
+
+  const runtimeIssues = validateLiveRuntime(runtime, runtimeCorrelation);
+  checks.push(runtimeIssues.length === 0 ? pass("validation-truth.rows.passed", "Runtime logs include exact key and delivery correlation.") : fail("validation-truth.rows.passed", "Runtime logs are missing exact key/delivery correlation.", runtimeIssues));
+  checks.push(pass("side-effects.absent", "Live verifier is read-only and performs no writes."));
+  checks.push(pass("redaction.safe", "Live verifier reports aggregate metadata only; raw artifact bodies/log payloads are discarded."));
+  checks.push(packageCheck);
+
+  const failed = checks.filter((check) => check.status !== "pass");
+  const liveSource = failed.length === 0 ? "matched" : github.availability === "unavailable" || runtime.availability === "unavailable" ? "unavailable" : checks[0]?.status === "blocked" ? "blocked" : "failed";
+  const statusCode: M074S06StatusCode = failed.length === 0
+    ? "m074_s06_ok"
+    : liveSource === "blocked"
+      ? "m074_s06_live_source_blocked"
+      : liveSource === "unavailable"
+        ? "m074_s06_live_source_unavailable"
+        : runtimeCorrelation.matchedRows < 1
+          ? "m074_s06_live_runtime_correlation_missing"
+          : "m074_s06_live_exact_key_failed";
+
+  return finalizeReport({
+    command: COMMAND_NAME,
+    generatedAt,
+    success: failed.length === 0,
+    statusCode,
+    ...(args.expectStatus ? { expectedStatus: args.expectStatus } : {}),
+    failedCheckIds: uniqueSorted(failed.map((check) => check.id)),
+    checks,
+    observed: {
+      ...EMPTY_OBSERVED,
+      sourceAvailable: liveSource === "matched",
+      liveSource,
+      target,
+      reviewOutputKeyPresent: true,
+      deliveryIdPresent: true,
+      liveGithubArtifactCounts: githubCounts,
+      liveRuntimeCorrelation: runtimeCorrelation,
+      visibleVolume: { ...EMPTY_OBSERVED.visibleVolume, publicCommentCount: githubCounts.issueComments + githubCounts.reviews, inlineSuggestionCommentCount: githubCounts.reviewComments, reviewDetailsLineCount: githubCounts.total, maxPublicCommentCount: 1, maxInlineSuggestionCommentCount: 1, maxReviewDetailsLineCount: 3 },
+      redaction: { ...EMPTY_OBSERVED.redaction, canariesAbsent: true, forbiddenCanariesAbsent: true },
+    },
+    issues: boundIssues(failed.flatMap((check) => check.issues.length > 0 ? check.issues.map((issue) => `${check.id}: ${issue}`) : [`${check.id}: ${check.message}`])),
+  }, args);
+}
+
+function validateLiveGithub(result: M074S06LiveGithubResult): string[] {
+  if (result.availability !== "matched") return [result.reason];
+  const { collection } = result;
+  const issues: string[] = [];
+  if (collection.artifactCounts.total !== 1) issues.push(`expected exactly one artifact, found ${collection.artifactCounts.total}.`);
+  const artifact = collection.artifacts[0];
+  if (!artifact) return issues;
+  if (artifact.prNumber <= 0 || !artifact.prUrl) issues.push("artifact target metadata is missing.");
+  if (artifact.source !== "review") issues.push(`expected review artifact, found ${artifact.source}.`);
+  if (artifact.reviewState !== "APPROVED") issues.push(`expected APPROVED review state, found ${artifact.reviewState ?? "missing"}.`);
+  if (!artifact.sourceUrl || !artifact.updatedAt) issues.push("artifact source URL or timestamp is missing.");
+  return issues;
+}
+
+function validateLiveRuntime(result: M074S06LiveRuntimeResult, correlation: M074S06Observed["liveRuntimeCorrelation"]): string[] {
+  if (result.availability === "blocked") return [result.reason];
+  if (result.availability === "unavailable") return [result.reason];
+  const issues: string[] = [];
+  if (correlation.matchedRows < 1) issues.push("no runtime rows contained both reviewOutputKey and deliveryId.");
+  if (correlation.malformedRows > 0) issues.push("malformed runtime rows were returned.");
+  if (correlation.missingCorrelationRows > 0) issues.push("some runtime rows missed exact key or delivery correlation.");
+  return issues;
+}
+
+function summarizeGithubResult(result: M074S06LiveGithubResult): M074S06Observed["liveGithubArtifactCounts"] {
+  if (result.availability === "matched") return { ...result.collection.artifactCounts, capped: Boolean(result.capped) };
+  return { ...EMPTY_LIVE_GITHUB_COUNTS, ...("counts" in result ? result.counts : {}), capped: false };
+}
+
+function summarizeRuntimeResult(result: M074S06LiveRuntimeResult, reviewOutputKey: string, deliveryId: string): M074S06Observed["liveRuntimeCorrelation"] {
+  const rows = result.availability === "matched" || result.availability === "unavailable" ? (result.rows ?? []) : [];
+  let matchedRows = 0;
+  let missingCorrelationRows = 0;
+  let malformedRows = 0;
+  for (const row of rows) {
+    if (row.malformed) malformedRows += 1;
+    const keyMatches = row.reviewOutputKey === reviewOutputKey || row.rawLog?.includes(reviewOutputKey) === true;
+    const deliveryMatches = row.deliveryId === deliveryId || row.rawLog?.includes(deliveryId) === true;
+    if (keyMatches && deliveryMatches && !row.malformed) matchedRows += 1;
+    else missingCorrelationRows += 1;
+  }
+  return { matchedRows, malformedRows, missingCorrelationRows, workspaceCount: result.workspaceCount ?? 0, queried: result.availability !== "blocked" && (result.availability === "matched" ? result.queried !== false : true) };
+}
+
+function buildDefaultLiveCollectors(): M074S06LiveCollectors {
+  const githubCollector = hasGithubEnv(process.env)
+    ? async (args: M074S06Args): Promise<M074S06LiveGithubResult> => {
+      const parsed = parseReviewOutputKey(args.reviewOutputKey ?? "");
+      if (!parsed) return { availability: "blocked", reason: "missing or malformed reviewOutputKey" };
+      const githubApp = createGitHubApp(buildGitHubAppConfig(readGithubPrivateKey(process.env), process.env) as never, silentLogger());
+      await githubApp.initialize({ requestTimeoutMs: 15_000 });
+      const octokit = await githubApp.getInstallationOctokit(parsed.installationId, { requestTimeoutMs: 15_000 }) as unknown as ReviewOutputArtifactsOctokit;
+      const collection = await collectReviewOutputArtifacts({ octokit, reviewOutputKey: parsed.reviewOutputKey });
+      return { availability: "matched", collection };
+    }
+    : undefined;
+
+  const runtimeCollector = hasLogEnv(process.env)
+    ? async (args: M074S06Args): Promise<M074S06LiveRuntimeResult> => {
+      const workspaceIds = await resolveWorkspaceIds(process.env);
+      if (workspaceIds.length === 0) return { availability: "blocked", reason: "missing Log Analytics workspace ids", workspaceCount: 0 };
+      const result = await queryReviewAuditLogs({ workspaceIds, reviewOutputKey: args.reviewOutputKey, deliveryId: args.deliveryId, limit: 100, timespan: process.env.M074_S06_LOG_TIMESPAN ?? "P7D" });
+      return { availability: "matched", rows: result.rows, workspaceCount: workspaceIds.length, queried: true };
+    }
+    : undefined;
+  return { collectGithubArtifacts: githubCollector, queryRuntimeLogs: runtimeCollector };
+}
+
+function hasGithubEnv(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.GITHUB_APP_ID && (env.GITHUB_PRIVATE_KEY || env.GITHUB_PRIVATE_KEY_BASE64));
+}
+
+function readGithubPrivateKey(env: NodeJS.ProcessEnv): string {
+  const key = env.GITHUB_PRIVATE_KEY ?? (env.GITHUB_PRIVATE_KEY_BASE64 ? Buffer.from(env.GITHUB_PRIVATE_KEY_BASE64, "base64").toString("utf8") : "");
+  return key;
+}
+
+function buildGitHubAppConfig(privateKey: string, env: NodeJS.ProcessEnv) {
+  return {
+    githubAppId: env.GITHUB_APP_ID!,
+    githubPrivateKey: privateKey,
+    webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "unused-for-read-only-verifier",
+    botUsername: env.BOT_USERNAME ?? "kodiai",
+    port: 0,
+  };
+}
+
+function hasLogEnv(env: NodeJS.ProcessEnv): boolean {
+  return splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_ID).length > 0
+    || splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_IDS).length > 0
+    || splitList(env.LOG_ANALYTICS_WORKSPACE_ID).length > 0
+    || splitList(env.LOG_ANALYTICS_WORKSPACE_IDS).length > 0
+    || Boolean(env.AZURE_RESOURCE_GROUP ?? env.ACA_RESOURCE_GROUP ?? env.RESOURCE_GROUP);
+}
+
+async function resolveWorkspaceIds(env: NodeJS.ProcessEnv): Promise<string[]> {
+  const explicit = [
+    ...splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_ID),
+    ...splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_IDS),
+    ...splitList(env.LOG_ANALYTICS_WORKSPACE_ID),
+    ...splitList(env.LOG_ANALYTICS_WORKSPACE_IDS),
+  ];
+  if (explicit.length > 0) return [...new Set(explicit)];
+  const resourceGroup = env.AZURE_RESOURCE_GROUP ?? env.ACA_RESOURCE_GROUP ?? env.RESOURCE_GROUP;
+  if (!resourceGroup) return [];
+  return discoverLogAnalyticsWorkspaceIds({ resourceGroup });
+}
+
+function splitList(value: string | undefined): string[] {
+  return value?.split(/[;,\s]+/).map((item) => item.trim()).filter(Boolean) ?? [];
+}
+
+function silentLogger() {
+  const noop = () => undefined;
+  return { info: noop, warn: noop, error: noop, debug: noop, trace: noop, fatal: noop, child: () => silentLogger() };
+}
+
+function compactError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/(GITHUB_PRIVATE_KEY|GITHUB_PRIVATE_KEY_BASE64|github_pat_|ghp_|sk-)[^\s,;]*/gi, "$1[redacted]").slice(0, 180);
 }
 
 export async function main(rawArgs = Bun.argv.slice(2), options: M074S06MainOptions = {}): Promise<number> {
@@ -669,8 +938,10 @@ export async function main(rawArgs = Bun.argv.slice(2), options: M074S06MainOpti
     stdout.write([
       `${COMMAND_NAME}: ${report.success ? "PASS" : "FAIL"}`,
       `statusCode=${report.statusCode}${report.expectedStatus ? ` expected=${report.expectedStatus}` : ""}`,
-      `sourceAvailable=${report.observed.sourceAvailable} target=${report.observed.target}`,
+      `sourceAvailable=${report.observed.sourceAvailable} liveSource=${report.observed.liveSource} target=${report.observed.target}`,
       `correlation=reviewOutputKey:${report.observed.reviewOutputKeyPresent ? "y" : "n"},deliveryId:${report.observed.deliveryIdPresent ? "y" : "n"}`,
+      `liveGithubArtifacts=reviewComments:${report.observed.liveGithubArtifactCounts.reviewComments},issueComments:${report.observed.liveGithubArtifactCounts.issueComments},reviews:${report.observed.liveGithubArtifactCounts.reviews},total:${report.observed.liveGithubArtifactCounts.total},capped:${report.observed.liveGithubArtifactCounts.capped ? "y" : "n"}`,
+      `liveRuntime=queried:${report.observed.liveRuntimeCorrelation.queried ? "y" : "n"},workspaces:${report.observed.liveRuntimeCorrelation.workspaceCount},matched:${report.observed.liveRuntimeCorrelation.matchedRows},malformed:${report.observed.liveRuntimeCorrelation.malformedRows},missingCorrelation:${report.observed.liveRuntimeCorrelation.missingCorrelationRows}`,
       `gates=lifecycle:${report.observed.lifecycleStatusCode},fix:${report.observed.fixEligibilityStatusCode},validation:${report.observed.validationTruthStatusCode},reviewDetails:${report.observed.reviewDetailsStatusCode}`,
       `samePrSuggestions=${report.observed.samePrSuggestionCount}/${report.observed.visibleVolume.maxInlineSuggestionCommentCount}`,
       `visibleVolume=public:${report.observed.visibleVolume.publicCommentCount}/${report.observed.visibleVolume.maxPublicCommentCount},detailsLines:${report.observed.visibleVolume.reviewDetailsLineCount}/${report.observed.visibleVolume.maxReviewDetailsLineCount}`,

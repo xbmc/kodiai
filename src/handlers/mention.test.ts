@@ -13181,6 +13181,77 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     expect(["submitted-approval", "submitted-comment"]).toContain(publishLog?.bindings.publishAttemptOutcome);
   });
 
+  test("explicit @kodiai review preserves one visible outcome while S06 diagnostics stay private and bounded", async () => {
+    const rawCanary = "RAW_PROMPT_CANARY PRIVATE_CANDIDATE_BODY diff --git ghp_secret";
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review",
+      executorResult: {
+        conclusion: "success",
+        published: false,
+        resultText: "Decision: APPROVE\nNo blocking issues found.",
+        usedRepoInspectionTools: true,
+        toolUseNames: ["Read", "record_candidate_finding"],
+        candidateFinding: {
+          status: "shadow",
+          repo: "acme/repo",
+          pullNumber: 109,
+          reviewOutputKey: "candidate-sidecar-key",
+          deliveryId: "delivery-pr-issue-comment-mention",
+          artifactPresent: true,
+          artifactBasename: "review-candidate-findings.json",
+          findings: [{
+            fingerprint: "candidate-fp-r043",
+            repo: "acme/repo",
+            pullNumber: 109,
+            reviewOutputKey: "candidate-sidecar-key",
+            deliveryId: "delivery-pr-issue-comment-mention",
+            filePath: "src/r043.ts",
+            startLine: 5,
+            severity: "minor",
+            category: "correctness",
+            title: "Bounded R043 parity evidence",
+            body: rawCanary,
+            evidence: rawCanary,
+          }],
+          rejections: [],
+          counts: { input: 1, recorded: 1, rejected: 0, errors: 0 },
+        },
+      },
+    });
+
+    const visibleBodies = [...result.reviewBodies, ...result.commentBodies];
+    expect(visibleBodies).toHaveLength(1);
+    expect(result.reviewBodies.length + result.commentBodies.length).toBe(1);
+    expect(visibleBodies[0]).toContain("Decision: APPROVE");
+    expect(visibleBodies[0]).toContain("<!-- kodiai:review-output-key:");
+    expect(visibleBodies[0]).not.toContain("Review validation truth:");
+    expect(visibleBodies[0]).not.toContain(rawCanary);
+    expect(JSON.stringify(visibleBodies)).not.toContain("diff --git");
+
+    const lifecycleLog = result.infoCalls.find((entry) => entry.message === "Projected explicit mention review finding lifecycle evidence");
+    const validationTruthLog = result.infoCalls.find((entry) => entry.message === "Projected explicit mention review validation truth evidence");
+    expect(lifecycleLog?.bindings).toMatchObject({
+      gate: "review-finding-lifecycle",
+      source: "explicit-mention-review",
+      reviewOutputKey: result.capturedContext?.reviewOutputKey,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      counts: { input: 1, recorded: 1, rejected: 0, unsafeInputFields: 0 },
+      redaction: expect.objectContaining({ privateOnly: true, candidateBodiesIncluded: false, rawPromptsIncluded: false, rawModelOutputIncluded: false, diffsIncluded: false }),
+    });
+    expect(validationTruthLog?.bindings).toMatchObject({
+      gate: "review-validation-truth",
+      source: "explicit-mention-review",
+      reviewOutputKey: result.capturedContext?.reviewOutputKey,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      counts: expect.objectContaining({ detected: 1, resolved: 0, open: 1 }),
+      redaction: expect.objectContaining({ privateOnly: true, candidateBodiesIncluded: false, replacementTextIncluded: false, toolPayloadsIncluded: false, diffsIncluded: false }),
+    });
+    expect(JSON.stringify([lifecycleLog?.bindings, validationTruthLog?.bindings])).not.toContain(rawCanary);
+
+    const reviewDetailsNoise = result.infoCalls.filter((entry) => String(entry.bindings.gate ?? "").includes("review-details"));
+    expect(reviewDetailsNoise).toHaveLength(0);
+  });
+
   test("@kodiai review & format suggestions preserves review routing and runs formatter subflow independently", async () => {
     const result = await runPrFormatterMention({
       commentBody: "@kodiai review & format suggestions",
