@@ -1,0 +1,50 @@
+{
+  "generatedAt": "2026-05-18T16:20:00.000Z",
+  "evidencePaths": {
+    "s01FixturePath": "scripts/fixtures/m073-s01-baseline-scorecard.json",
+    "s02FixturePath": "scripts/fixtures/m073-s02-prompt-budget.json",
+    "s06FixturePath": "scripts/fixtures/m073-s06-live-proof.json"
+  },
+  "remediationScope": {
+    "sliceId": "S07",
+    "milestoneId": "M073",
+    "linkageExpectation": "S02 bounded baselineSource rows must match S01 section ids and bounded counts.",
+    "dispositionExpectation": "R131 must be explicit and not inferred from token-first evidence."
+  },
+  "r131Disposition": {
+    "requirementId": "R131",
+    "status": "formally-rescoped",
+    "owner": "specialist-lane-follow-up",
+    "followUp": "Track private specialist lane ownership in a dedicated follow-up outside M073 token-efficiency validation.",
+    "rationale": "M073 proves token-budget behavior and safe visible projection, not private specialist lane ownership.",
+    "nonCompletionWording": "R131 is not complete in M073; it is formally rescoped to a bounded specialist-lane follow-up.",
+    "m073PublishesSpecialistLaneOutputs": false
+  },
+  "negativeCoverage": [
+    {
+      "caseId": "mismatched-s01-source-id",
+      "description": "A S02 baselineSource sourceId that does not match any S01 section row fails linkage.",
+      "expectedFailedCheckIds": ["s01-s02-linkage.cross-checked"]
+    },
+    {
+      "caseId": "source-token-count-mismatch",
+      "description": "A S02 baselineSource bounded token count that differs from S01 fails linkage.",
+      "expectedFailedCheckIds": ["s01-s02-linkage.cross-checked"]
+    },
+    {
+      "caseId": "missing-r131-owner-follow-up",
+      "description": "A disposition without owner or follow-up fails explicit disposition.",
+      "expectedFailedCheckIds": ["r131-disposition.explicit"]
+    },
+    {
+      "caseId": "false-r131-completion-wording",
+      "description": "A disposition that claims R131 is done without bounded specialist evidence fails explicit disposition.",
+      "expectedFailedCheckIds": ["r131-disposition.explicit"]
+    },
+    {
+      "caseId": "unsafe-raw-payload-field",
+      "description": "A fixture containing raw payload field names or secret-like values fails redaction.",
+      "expectedFailedCheckIds": ["redaction.safe"]
+    }
+  ]
+}
