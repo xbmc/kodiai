@@ -10666,7 +10666,8 @@ describe("createMentionHandler review command", () => {
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedTriggerBody).toBe("review");
     expect(capturedPrompt).toContain("You are reviewing pull request #102 in acme/repo.");
-    expect(capturedPrompt).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+    expect(capturedPrompt).toContain("Candidate-Preferred Finding Capture");
+    expect(capturedPrompt).toContain("record_candidate_finding");
     expect(capturedPrompt).toContain("## Tiny-diff scope contract");
     expect(capturedPrompt).not.toContain("You MUST post a reply when you are mentioned.");
     expect(capturedMaxTurnsOverride).toBeUndefined();
@@ -12667,6 +12668,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     taskType?: string;
     reviewOutputKey?: string;
     enableInlineTools?: boolean;
+    enableCandidateFindingTool?: boolean;
+    prompt?: string;
   };
 
   async function runPrFormatterMention(params: {
@@ -12686,6 +12689,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       stopReason?: string;
       usedRepoInspectionTools?: boolean;
       toolUseNames?: string[];
+      candidateFinding?: unknown;
     };
     executorThrows?: Error;
   }): Promise<{
@@ -12693,6 +12697,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     executorCalls: CapturedFormatterMentionContext[];
     formatterSubflowCalls: FormatterSuggestionSubflowOptions[];
     commentBodies: string[];
+    reviewBodies: string[];
     infoCalls: LogCall[];
     warnCalls: LogCall[];
     errorCalls: LogCall[];
@@ -12719,6 +12724,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     const executorCalls: CapturedFormatterMentionContext[] = [];
     const formatterSubflowCalls: FormatterSuggestionSubflowOptions[] = [];
     const commentBodies: string[] = [];
+    const reviewBodies: string[] = [];
     const { logger, infoCalls, warnCalls, errorCalls } = createMockLogger();
 
     const eventRouter: EventRouter = {
@@ -12758,6 +12764,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         },
         pulls: {
           list: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
           get: async () => ({
             data: {
               number: prNumber,
@@ -12770,14 +12778,19 @@ describe("createMentionHandler formatter suggestion intent context", () => {
               user: { login: "octocat" },
               head: {
                 ref: "feature",
+                sha: featureSha,
                 repo: {
                   name: "repo",
                   owner: { login: "acme" },
                 },
               },
-              base: { ref: "main" },
+              base: { ref: "main", sha: "base-sha" },
             },
           }),
+          createReview: async (params: { body: string }) => {
+            reviewBodies.push(params.body);
+            return { data: {} };
+          },
           createReplyForReviewComment: async () => ({ data: {} }),
         },
       },
@@ -12799,6 +12812,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
             taskType: ctx.taskType,
             reviewOutputKey: ctx.reviewOutputKey,
             enableInlineTools: ctx.enableInlineTools,
+            enableCandidateFindingTool: ctx.enableCandidateFindingTool,
+            prompt: ctx.prompt,
           };
           executorCalls.push(capturedContext);
           if (params.executorThrows) {
@@ -12842,7 +12857,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
           commentId: params.commentId,
         }),
       );
-      return { capturedContext, executorCalls, formatterSubflowCalls, commentBodies, infoCalls, warnCalls, errorCalls };
+      return { capturedContext, executorCalls, formatterSubflowCalls, commentBodies, reviewBodies, infoCalls, warnCalls, errorCalls };
     } finally {
       await workspaceFixture.cleanup();
     }
@@ -12981,6 +12996,140 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       commandStatus: "success",
       visibleReplyPosted: false,
     });
+  });
+
+  test("@kodiai review enables candidate capture and logs bounded lifecycle evidence", async () => {
+    const rawCanary = "BEGIN PROMPT token=ghp_secretcandidate raw model output diff --git candidate body";
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review",
+      executorResult: {
+        conclusion: "success",
+        published: true,
+        resultText: "No blocking issues found. Ready to merge.",
+        usedRepoInspectionTools: true,
+        toolUseNames: ["Read", "record_candidate_finding"],
+        candidateFinding: {
+          status: "shadow",
+          repo: "acme/repo",
+          pullNumber: 109,
+          reviewOutputKey: "candidate-sidecar-key",
+          deliveryId: "delivery-pr-issue-comment-mention",
+          artifactPresent: true,
+          artifactBasename: "review-candidate-findings.json",
+          findings: [
+            {
+              fingerprint: "candidate-fp-1",
+              repo: "acme/repo",
+              pullNumber: 109,
+              reviewOutputKey: "candidate-sidecar-key",
+              deliveryId: "delivery-pr-issue-comment-mention",
+              filePath: "src/example.ts",
+              startLine: 7,
+              severity: "major",
+              category: "correctness",
+              title: "Validate lifecycle candidate",
+              body: rawCanary,
+              evidence: rawCanary,
+            },
+          ],
+          rejections: [],
+          counts: { input: 1, recorded: 1, rejected: 0, errors: 0 },
+        },
+      },
+    });
+
+    expect(result.executorCalls).toHaveLength(1);
+    expect(result.capturedContext?.enableCandidateFindingTool).toBe(true);
+    expect(result.capturedContext?.enableInlineTools).toBe(true);
+    expect(result.capturedContext?.prompt).toContain("record_candidate_finding");
+    expect(result.capturedContext?.prompt).toContain("Candidate-Preferred Finding Capture");
+    expect(result.commentBodies).toHaveLength(0);
+    expect(result.reviewBodies).toHaveLength(0);
+
+    const lifecycleLog = result.infoCalls.find(
+      (entry) => entry.message === "Projected explicit mention review finding lifecycle evidence",
+    );
+    expect(lifecycleLog?.bindings).toMatchObject({
+      gate: "review-finding-lifecycle",
+      source: "explicit-mention-review",
+      trigger: "issue_comment",
+      normalizedStatus: "normalized",
+      reviewOutputKey: result.capturedContext?.reviewOutputKey,
+      deliveryId: "delivery-pr-issue-comment-mention",
+      counts: { input: 1, recorded: 1, rejected: 0, unsafeInputFields: 0 },
+      severitySummary: { major: 1 },
+      actionabilitySummary: { "needs-human-review": 1 },
+      redaction: {
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        toolPayloadsIncluded: false,
+        secretLikeStringsIncluded: false,
+        diffsIncluded: false,
+        unboundedArraysIncluded: false,
+      },
+    });
+    expect(JSON.stringify(lifecycleLog?.bindings)).not.toContain(rawCanary);
+  });
+
+  test("explicit clean review bridge adds one bounded lifecycle evidence line without duplicate output", async () => {
+    const rawCanary = "BEGIN PROMPT token=ghp_secretcandidate raw model output diff --git candidate body";
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review",
+      executorResult: {
+        conclusion: "success",
+        published: false,
+        resultText: "Decision: APPROVE\nNo blocking issues found.",
+        usedRepoInspectionTools: true,
+        toolUseNames: ["Read", "record_candidate_finding"],
+        candidateFinding: {
+          status: "shadow",
+          repo: "acme/repo",
+          pullNumber: 109,
+          reviewOutputKey: "candidate-sidecar-key",
+          deliveryId: "delivery-pr-issue-comment-mention",
+          artifactPresent: true,
+          artifactBasename: "review-candidate-findings.json",
+          findings: [
+            {
+              fingerprint: "candidate-fp-2",
+              repo: "acme/repo",
+              pullNumber: 109,
+              reviewOutputKey: "candidate-sidecar-key",
+              deliveryId: "delivery-pr-issue-comment-mention",
+              filePath: "src/clean.ts",
+              startLine: 3,
+              severity: "minor",
+              category: "documentation",
+              title: "Document clean lifecycle",
+              body: rawCanary,
+              evidence: rawCanary,
+            },
+          ],
+          rejections: [],
+          counts: { input: 1, recorded: 1, rejected: 0, errors: 0 },
+        },
+      },
+    });
+
+    const visibleBodies = [...result.reviewBodies, ...result.commentBodies];
+    expect(visibleBodies).toHaveLength(1);
+    const body = visibleBodies[0] ?? "";
+    expect(body).toContain("Decision: APPROVE");
+    expect(body).toContain("Review finding lifecycle: status=normalized");
+    expect(body).toContain("counts=input:1,recorded:1,rejected:0,unsafeInputFields:0");
+    expect(body).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:0");
+    expect(body).toContain("<!-- kodiai:review-output-key:");
+    expect(body).not.toContain(rawCanary);
+
+    const publishLog = result.infoCalls.find(
+      (entry) => entry.message === "Submitted approval review for explicit mention request"
+        || entry.message === "Submitted approval-shaped comment for explicit mention request",
+    );
+    expect(publishLog?.bindings.reviewOutputKey).toBe(result.capturedContext?.reviewOutputKey);
+    expect(["submitted-approval", "published-comment-approval"]).toContain(publishLog?.bindings.outcome);
+    expect(["submitted-approval", "submitted-comment"]).toContain(publishLog?.bindings.publishAttemptOutcome);
   });
 
   test("@kodiai review & format suggestions preserves review routing and runs formatter subflow independently", async () => {
