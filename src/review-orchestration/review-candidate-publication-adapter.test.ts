@@ -21,6 +21,7 @@ import {
   adaptApprovedCandidatesForInlinePublication,
   buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
+  convertPublishedCandidateResultsToValidationTruthFixes,
   toReviewCandidatePublicationAdapterSummary,
 } from "./review-candidate-publication-adapter.ts";
 
@@ -428,6 +429,48 @@ describe("review candidate publication adapter", () => {
       "already-published",
       "line-not-commentable-in-pr-diff",
     ]);
+  });
+
+  test("converts publisher results into bounded validation-truth fix evidence", () => {
+    const candidates = candidateResult([
+      candidateInput("src/published.ts", "Published candidate", { startLine: 10, endLine: 10 }),
+      candidateInput("src/skipped.ts", "Idempotent candidate", { startLine: 10, endLine: 10 }),
+      candidateInput("src/malformed.ts", "Malformed publisher result", { startLine: 30, endLine: 30 }),
+      candidateInput("src/non-commentable.ts", "Blocked candidate", { startLine: 11, endLine: 11 }),
+    ]);
+    const approval = coordinateReviewCandidateApproval({
+      candidates,
+      reducer: reducerResult({
+        findings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
+        visibleFindings: candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, { candidateFingerprint: candidate.fingerprint })),
+      }),
+    });
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF });
+
+    const evidence = convertPublishedCandidateResultsToValidationTruthFixes({
+      payloads: adapted.payloads,
+      results: new Map<string, InlineReviewPublicationResult>([
+        [candidates.findings[0]!.fingerprint, { status: "published", commentId: 1234, content: [{ type: "text", text: "{\"private\":true}" }] }],
+        [candidates.findings[1]!.fingerprint, { status: "skipped", reason: "already-published", content: [{ type: "text", text: "{}" }] }],
+        [candidates.findings[2]!.fingerprint, { status: "published", content: [{ type: "text", text: "{}" }] }],
+        [candidates.findings[3]!.fingerprint, { status: "blocked", reason: "m070-candidate-verification-denied", content: [{ type: "text", text: "{}" }] }],
+      ]),
+      reviewOutputKey: BASE_INPUT.reviewOutputKey,
+      deliveryId: BASE_INPUT.deliveryId,
+    });
+
+    expect(evidence.map((item) => [item.publicationStatus, item.publicationReason, item.status, item.suggested])).toEqual([
+      ["published", "published", "suggested", true],
+      ["skipped", "already-published", "suggested", true],
+      ["malformed", "missing-comment-id", "degraded", false],
+      ["blocked", "m070-candidate-verification-denied", "blocked", false],
+    ]);
+    expect(evidence[0]?.commentArtifactRef).toBe("comment:1234");
+    const publicJson = JSON.stringify(evidence);
+    for (const forbidden of ["{\"private\":true}", "Published candidate replacement", "body is safe and grounded", "diff --git"]) {
+      expect(publicJson).not.toContain(forbidden);
+    }
+    expect(evidence.every((item) => item.redaction.privateOnly)).toBe(true);
   });
 
   test("uses candidate-specific review output keys so distinct candidates publish once and replays skip", async () => {

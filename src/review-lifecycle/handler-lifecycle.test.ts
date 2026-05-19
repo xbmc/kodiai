@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
 import {
   attachReviewFindingLifecycle,
+  attachReviewValidationTruth,
   type AttachReviewFindingLifecycleInput,
   type BoundedReviewFindingSummary,
   type ReviewLifecycleHandlerCorrelation,
@@ -198,5 +199,130 @@ describe("attachReviewFindingLifecycle", () => {
     ]);
     expect(result.projection.rejectedReasonCodes).toEqual(["missing-correlation"]);
     expect(result.logEvidence.normalizedStatus).toBe("unavailable");
+  });
+
+  test("composes published same-PR suggestions into non-resolved validation truth", () => {
+    const lifecycle = attach({
+      findings: [boundedFinding({ candidateFingerprint: "rcf-1234567890abcdef", commentId: 9876 })],
+    });
+
+    const truth = attachReviewValidationTruth({
+      lifecycle: lifecycle.lifecycle,
+      correlation,
+      publicationFixes: [
+        {
+          reviewOutputKey: correlation.reviewOutputKey,
+          deliveryId: correlation.deliveryId,
+          candidateFingerprint: "rcf-1234567890abcdef",
+          publicationStatus: "published",
+          publicationReason: "published",
+          commentArtifactRef: "comment:9876",
+          status: "suggested",
+          suggested: true,
+          redaction: {
+            privateOnly: true,
+            rawPublicationPayloadIncluded: false,
+            candidateBodyIncluded: false,
+            replacementTextIncluded: false,
+          },
+        },
+      ],
+      requireRevalidation: true,
+    });
+
+    expect(truth.status).toBe("normalized");
+    expect(truth.validationTruth.records[0]).toMatchObject({
+      status: "suggested",
+      hasSuggestedFix: true,
+      reasonCodes: ["suggested-but-open", "validation-missing"],
+    });
+    expect(truth.projection.counts).toMatchObject({ detected: 1, suggested: 1, resolved: 0, degraded: 0 });
+    expect(truth.logEvidence).toMatchObject({
+      gate: "review-validation-truth",
+      reviewOutputKey: correlation.reviewOutputKey,
+      deliveryId: correlation.deliveryId,
+    });
+    const publicJson = JSON.stringify(truth.projection);
+    expect(publicJson).not.toContain("raw replacement canary");
+    expect(publicJson).not.toContain("raw candidate body canary");
+  });
+
+  test("keeps blocked, malformed, and unmatched publication evidence fail-closed", () => {
+    const blockedLifecycle = attach({
+      findings: [boundedFinding({ candidateFingerprint: "rcf-aaaaaaaaaaaaaaaa" })],
+    });
+    const blockedTruth = attachReviewValidationTruth({
+      lifecycle: blockedLifecycle.lifecycle,
+      correlation,
+      publicationFixes: [
+        {
+          reviewOutputKey: correlation.reviewOutputKey,
+          deliveryId: correlation.deliveryId,
+          candidateFingerprint: "rcf-aaaaaaaaaaaaaaaa",
+          publicationStatus: "blocked",
+          publicationReason: "m070-candidate-verification-denied",
+          status: "blocked",
+          suggested: false,
+          redaction: {
+            privateOnly: true,
+            rawPublicationPayloadIncluded: false,
+            candidateBodyIncluded: false,
+            replacementTextIncluded: false,
+          },
+        },
+      ],
+    });
+
+    expect(blockedTruth.validationTruth.records[0]).toMatchObject({ status: "blocked", reasonCodes: ["blocked"] });
+    expect(blockedTruth.projection.counts).toMatchObject({ blocked: 1, resolved: 0 });
+
+    const malformedTruth = attachReviewValidationTruth({
+      lifecycle: blockedLifecycle.lifecycle,
+      correlation,
+      publicationFixes: [
+        {
+          reviewOutputKey: correlation.reviewOutputKey,
+          deliveryId: correlation.deliveryId,
+          candidateFingerprint: "rcf-aaaaaaaaaaaaaaaa",
+          publicationStatus: "malformed",
+          publicationReason: "missing-comment-id",
+          status: "degraded",
+          suggested: false,
+          redaction: {
+            privateOnly: true,
+            rawPublicationPayloadIncluded: false,
+            candidateBodyIncluded: false,
+            replacementTextIncluded: false,
+          },
+        },
+      ],
+    });
+    expect(malformedTruth.validationTruth.records[0]).toMatchObject({ status: "degraded", reasonCodes: ["degraded"] });
+    expect(malformedTruth.projection.counts).toMatchObject({ degraded: 1, resolved: 0 });
+
+    const unmatchedTruth = attachReviewValidationTruth({
+      lifecycle: blockedLifecycle.lifecycle,
+      correlation,
+      publicationFixes: [
+        {
+          reviewOutputKey: correlation.reviewOutputKey,
+          deliveryId: correlation.deliveryId,
+          candidateFingerprint: "rcf-bbbbbbbbbbbbbbbb",
+          publicationStatus: "published",
+          publicationReason: "published",
+          commentArtifactRef: "comment:1111",
+          status: "suggested",
+          suggested: true,
+          redaction: {
+            privateOnly: true,
+            rawPublicationPayloadIncluded: false,
+            candidateBodyIncluded: false,
+            replacementTextIncluded: false,
+          },
+        },
+      ],
+    });
+    expect(unmatchedTruth.validationTruth.records[0]).toMatchObject({ status: "degraded", reasonCodes: ["degraded"], hasSuggestedFix: false });
+    expect(unmatchedTruth.projection.counts).toMatchObject({ degraded: 1, resolved: 0, suggested: 0 });
   });
 });

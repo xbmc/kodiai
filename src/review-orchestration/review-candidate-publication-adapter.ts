@@ -12,6 +12,7 @@ import {
   type SamePrFixOwnedRange,
   type SamePrFixDraft,
 } from "../review-lifecycle/same-pr-fix-eligibility.ts";
+import type { SamePrFixTruthEvidence } from "../review-lifecycle/validation-truth.ts";
 import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
 import type {
   ReviewCandidateApprovalCandidateReference,
@@ -112,6 +113,19 @@ export type ReviewCandidatePublishedResultSummary = {
 export type ReviewCandidatePublishedFindingResult = {
   findings: ProcessedReviewFinding[];
   summary: ReviewCandidatePublishedResultSummary;
+};
+
+export type ReviewCandidatePublicationTruthEvidence = SamePrFixTruthEvidence & {
+  candidateFingerprint: string;
+  publicationStatus: InlineReviewPublicationStatus | "missing" | "malformed";
+  publicationReason: ReviewCandidatePublisherResultReason;
+  commentArtifactRef?: string;
+  redaction: {
+    privateOnly: true;
+    rawPublicationPayloadIncluded: false;
+    candidateBodyIncluded: false;
+    replacementTextIncluded: false;
+  };
 };
 
 const MAX_SUMMARY_LENGTH = 280;
@@ -331,6 +345,36 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
   };
 }
 
+export function convertPublishedCandidateResultsToValidationTruthFixes(input: {
+  payloads: ReadonlyArray<PublishableReviewCandidateInlinePayload>;
+  results: ReadonlyMap<string, InlineReviewPublicationResult>;
+  reviewOutputKey?: string | null;
+  deliveryId?: string | null;
+}): ReviewCandidatePublicationTruthEvidence[] {
+  return input.payloads.map((payload) => {
+    const result = input.results.get(payload.candidateFingerprint);
+    const normalized = normalizePublicationTruthResult(result);
+    const commentId = normalized.commentId;
+    return {
+      reviewOutputKey: input.reviewOutputKey,
+      deliveryId: input.deliveryId,
+      candidateFingerprint: sanitizeSummaryToken(payload.candidateFingerprint),
+      findingIdentityHash: sanitizeSummaryToken(payload.candidateFingerprint),
+      status: normalized.truthStatus,
+      suggested: normalized.truthStatus === "suggested",
+      publicationStatus: normalized.publicationStatus,
+      publicationReason: normalized.reason,
+      ...(typeof commentId === "number" ? { commentArtifactRef: `comment:${commentId}` } : {}),
+      redaction: {
+        privateOnly: true,
+        rawPublicationPayloadIncluded: false,
+        candidateBodyIncluded: false,
+        replacementTextIncluded: false,
+      },
+    };
+  });
+}
+
 export function toReviewCandidatePublicationAdapterSummary(
   summary: ReviewCandidatePublicationAdapterSummary,
 ): ReviewCandidatePublicationAdapterDetailsSummary {
@@ -375,6 +419,38 @@ export function formatReviewCandidateInlineBody(
     "",
     body,
   ].join("\n");
+}
+
+function normalizePublicationTruthResult(result: InlineReviewPublicationResult | undefined): {
+  truthStatus: NonNullable<SamePrFixTruthEvidence["status"]>;
+  publicationStatus: ReviewCandidatePublicationTruthEvidence["publicationStatus"];
+  reason: ReviewCandidatePublisherResultReason;
+  commentId?: number;
+} {
+  if (!result) {
+    return { truthStatus: "degraded", publicationStatus: "missing", reason: "missing-publisher-result" };
+  }
+  if (result.status === "published") {
+    if (!Number.isFinite(result.commentId)) {
+      return { truthStatus: "degraded", publicationStatus: "malformed", reason: "missing-comment-id" };
+    }
+    return {
+      truthStatus: "suggested",
+      publicationStatus: "published",
+      reason: "published",
+      commentId: Math.floor(result.commentId!),
+    };
+  }
+  if (result.status === "skipped" && result.reason === "already-published") {
+    return { truthStatus: "suggested", publicationStatus: "skipped", reason: "already-published" };
+  }
+  if (result.status === "blocked") {
+    return { truthStatus: "blocked", publicationStatus: "blocked", reason: result.reason ?? "blocked" };
+  }
+  if (result.status === "skipped") {
+    return { truthStatus: "blocked", publicationStatus: "skipped", reason: result.reason ?? "skipped" };
+  }
+  return { truthStatus: "degraded", publicationStatus: "failed", reason: result.reason ?? "failed" };
 }
 
 function toDraftInlineCommentLocation(draft: SamePrFixDraft): InlineCommentLocation {

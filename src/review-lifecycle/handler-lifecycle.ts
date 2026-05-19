@@ -7,6 +7,14 @@ import {
   type ReviewFindingLifecyclePublicProjection,
   type ReviewFindingLifecycleResult,
 } from "./finding-lifecycle.ts";
+import {
+  reduceValidationTruth,
+  type SamePrFixTruthEvidence,
+  type ValidationTruthEvidence,
+  type ValidationTruthProjection,
+  type ValidationTruthResult,
+} from "./validation-truth.ts";
+import type { ReviewCandidatePublicationTruthEvidence } from "../review-orchestration/review-candidate-publication-adapter.ts";
 import type { ReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
 import type { ProcessedReviewFinding } from "../review-orchestration/review-reducer.ts";
 
@@ -80,6 +88,63 @@ export type AttachReviewFindingLifecycleResult = {
   logEvidence: ReviewFindingLifecycleLogEvidence;
 };
 
+export type AttachReviewValidationTruthInput = {
+  lifecycle: ReviewFindingLifecycleResult;
+  correlation?: ReviewLifecycleHandlerCorrelation | null;
+  publicationFixes?: ReadonlyArray<ReviewCandidatePublicationTruthEvidence | SamePrFixTruthEvidence | null | undefined> | null;
+  validations?: ReadonlyArray<ValidationTruthEvidence | null | undefined> | null;
+  revalidations?: ReadonlyArray<ValidationTruthEvidence | null | undefined> | null;
+  requireRevalidation?: boolean | null;
+};
+
+export type ReviewValidationTruthLogEvidence = {
+  gate: "review-validation-truth";
+  reviewOutputKey: string;
+  deliveryId?: string;
+  counts: ValidationTruthProjection["counts"];
+  reasonCounts: ValidationTruthProjection["reasonCounts"];
+  evidenceFreshness: ValidationTruthProjection["evidenceFreshness"];
+  redaction: ValidationTruthProjection["redaction"];
+};
+
+export type AttachReviewValidationTruthResult = {
+  status: ValidationTruthResult["projection"]["status"];
+  validationTruth: ValidationTruthResult;
+  projection: ValidationTruthProjection;
+  logEvidence: ReviewValidationTruthLogEvidence;
+};
+
+export function attachReviewValidationTruth(input: AttachReviewValidationTruthInput): AttachReviewValidationTruthResult {
+  const correlation = input.correlation ?? input.lifecycle;
+  const samePrFixes = composeSamePrFixTruthEvidence(input.lifecycle, input.publicationFixes, correlation);
+  const validationTruth = reduceValidationTruth({
+    repo: correlation.repo ?? input.lifecycle.repo,
+    pullNumber: correlation.pullNumber ?? input.lifecycle.pullNumber,
+    reviewOutputKey: correlation.reviewOutputKey ?? input.lifecycle.reviewOutputKey,
+    deliveryId: correlation.deliveryId ?? input.lifecycle.deliveryId,
+    findings: input.lifecycle.records,
+    samePrFixes,
+    validations: input.validations,
+    revalidations: input.revalidations,
+    requireRevalidation: input.requireRevalidation,
+  });
+
+  return {
+    status: validationTruth.projection.status,
+    validationTruth,
+    projection: validationTruth.projection,
+    logEvidence: {
+      gate: "review-validation-truth",
+      reviewOutputKey: validationTruth.projection.reviewOutputKey ?? input.lifecycle.reviewOutputKey,
+      ...(validationTruth.projection.deliveryId ? { deliveryId: validationTruth.projection.deliveryId } : {}),
+      counts: validationTruth.projection.counts,
+      reasonCounts: validationTruth.projection.reasonCounts,
+      evidenceFreshness: validationTruth.projection.evidenceFreshness,
+      redaction: validationTruth.projection.redaction,
+    },
+  };
+}
+
 export function attachReviewFindingLifecycle(
   input: AttachReviewFindingLifecycleInput,
 ): AttachReviewFindingLifecycleResult {
@@ -109,6 +174,80 @@ export function attachReviewFindingLifecycle(
       redaction: projection.redaction,
     },
   };
+}
+
+function composeSamePrFixTruthEvidence(
+  lifecycle: ReviewFindingLifecycleResult,
+  publicationFixes: AttachReviewValidationTruthInput["publicationFixes"],
+  correlation: ReviewLifecycleHandlerCorrelation | ReviewFindingLifecycleResult,
+): SamePrFixTruthEvidence[] {
+  const inputs = (Array.isArray(publicationFixes) ? publicationFixes : []).filter(
+    (evidence): evidence is ReviewCandidatePublicationTruthEvidence | SamePrFixTruthEvidence => Boolean(evidence),
+  );
+  const matchedRecordIds = new Set<string>();
+  const samePrFixes: SamePrFixTruthEvidence[] = [];
+  let unmatchedPublicationEvidence = false;
+
+  for (const evidence of inputs) {
+    const matchedRecord = findLifecycleRecordForPublicationEvidence(lifecycle, evidence);
+    if (!matchedRecord) {
+      unmatchedPublicationEvidence = true;
+      continue;
+    }
+    matchedRecordIds.add(matchedRecord.id);
+    samePrFixes.push({
+      reviewOutputKey: correlation.reviewOutputKey ?? lifecycle.reviewOutputKey,
+      deliveryId: correlation.deliveryId ?? lifecycle.deliveryId,
+      findingId: matchedRecord.id,
+      findingIdentityHash: matchedRecord.identityHash,
+      lifecycleId: matchedRecord.id,
+      status: normalizeSamePrFixTruthStatus(evidence.status),
+      suggested: evidence.suggested === true || evidence.status === "suggested",
+    });
+  }
+
+  if (unmatchedPublicationEvidence) {
+    for (const record of lifecycle.records) {
+      if (matchedRecordIds.has(record.id)) continue;
+      samePrFixes.push({
+        reviewOutputKey: correlation.reviewOutputKey ?? lifecycle.reviewOutputKey,
+        deliveryId: correlation.deliveryId ?? lifecycle.deliveryId,
+        findingId: record.id,
+        findingIdentityHash: record.identityHash,
+        lifecycleId: record.id,
+        status: "degraded",
+        suggested: false,
+      });
+    }
+  }
+
+  return samePrFixes;
+}
+
+function findLifecycleRecordForPublicationEvidence(
+  lifecycle: ReviewFindingLifecycleResult,
+  evidence: ReviewCandidatePublicationTruthEvidence | SamePrFixTruthEvidence,
+): ReviewFindingLifecycleResult["records"][number] | undefined {
+  const candidateFingerprint = sanitizeRefToken((evidence as ReviewCandidatePublicationTruthEvidence).candidateFingerprint);
+  const commentArtifactRef = sanitizeRefToken((evidence as ReviewCandidatePublicationTruthEvidence).commentArtifactRef);
+  const findingId = sanitizeRefToken(evidence.findingId ?? evidence.lifecycleId);
+  const identityHash = typeof evidence.findingIdentityHash === "string" ? evidence.findingIdentityHash.trim() : "";
+  return lifecycle.records.find((record) => {
+    if (findingId && (record.id === findingId || record.identityHash === findingId)) return true;
+    if (identityHash && record.identityHash === identityHash) return true;
+    if (candidateFingerprint && hasEvidenceRef(record, `candidate:${candidateFingerprint}`)) return true;
+    if (commentArtifactRef && hasEvidenceRef(record, commentArtifactRef)) return true;
+    return false;
+  });
+}
+
+function hasEvidenceRef(record: ReviewFindingLifecycleResult["records"][number], ref: string): boolean {
+  return record.evidenceRefs.some((evidenceRef) => evidenceRef.kind === "artifact" && evidenceRef.ref === ref);
+}
+
+function normalizeSamePrFixTruthStatus(status: SamePrFixTruthEvidence["status"]): NonNullable<SamePrFixTruthEvidence["status"]> {
+  if (status === "suggested" || status === "blocked" || status === "degraded") return status;
+  return "open";
 }
 
 function toLifecycleInput(input: AttachReviewFindingLifecycleInput): ReviewFindingLifecycleInput {
