@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.38 (2026-05-19)
+
+Review-budget reliability, validation-truth evidence, and deploy base-image hardening.
+
+### Added
+
+- Review prompt-section budgeting now records baseline-linked, new, trimmed, and bypassed section outcomes so operators can see what review context was preserved or reduced.
+- Review cache telemetry now records hit, miss, degraded, bypass, and bookkeeping-error outcomes for mention/review context reuse.
+- Continuation compaction now preserves checkpoint deltas, reused checkpoint counts, omitted scope counts, and fallback/degraded/bypass outcomes for bounded retry flows.
+- Review Details now includes bounded same-PR finding lifecycle and validation-truth projections without exposing raw prompts, model output, candidate bodies, tool payloads, diffs, or secret-like strings.
+- Repository doctrine config now has typed contracts and bounded ReviewPlan/Review Details projections so repo-specific review instructions are visible without leaking raw doctrine payloads.
+
+### Changed
+
+- Explicit `@kodiai review` runs now emit machine-checkable lifecycle and validation-truth evidence for detected, open, suggested, validated, revalidated, resolved, blocked, and degraded finding states.
+- Candidate publication and same-PR fix eligibility now feed validation-truth evidence so Review Details can distinguish suggested-but-unvalidated findings from validated or revalidated outcomes.
+- Deploys now mirror the Bun base image into ACR and build app/job images from that ACR mirror, avoiding Docker Hub anonymous pull limits during Azure remote builds. Optional Docker Hub credentials may be supplied for the import step.
+
+### Verification
+
+- PR #174 CI passed.
+- Local deploy-script regression passed with `bun test scripts/deploy.test.ts` and `bash -n deploy.sh`.
+- Deployed revision `ca-kodiai--deploy-20260519-125410` passed `/healthz` and `/readiness`.
+- Live explicit `@kodiai review` proof on `xbmc/xbmc#28172` ran on `lane=interactive-review`, `taskType=review.full`, used repo inspection tools, completed ACA job `caj-kodiai-agent-28yydul`, and published real findings in comment `4491652552`.
+
 ## v0.37 (2026-05-05)
 
 Same-PR formatter suggestions.

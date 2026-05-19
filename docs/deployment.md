@@ -28,6 +28,7 @@ Key properties:
 
 - Idempotent: safe to re-run
 - Remote build: uses `az acr build` (Docker not required locally)
+- Base image mirror: imports the Bun base image into ACR before app and job builds, then builds from the ACR mirror to avoid Docker Hub anonymous pull limits
 - Managed identity: used for ACR pull (`AcrPull` role)
 - Probes: liveness/readiness/startup are configured in the app template
 - Existing app updates are single-shot full YAML updates: image, env, probes, secrets, scale, ingress, and volume mounts are rendered together for `az containerapp update --yaml`
@@ -66,6 +67,7 @@ Optional:
 - `DEPLOYER_OBJECT_ID` / `DEPLOYER_PRINCIPAL_TYPE` (optional; override Key Vault secret-write role assignment principal for non-interactive deploys)
 - `BOT_USER_PAT` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_LOGIN`)
 - `BOT_USER_LOGIN` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_PAT`)
+- `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` (optional; used only by `az acr import` when Docker Hub anonymous pull limits block importing the Bun base image)
 
 Notes:
 
@@ -75,6 +77,7 @@ Notes:
 - `KEY_VAULT_NAME` must satisfy Azure Key Vault naming rules: 3-24 characters, alphanumerics and hyphens, start with a letter, and do not end with a hyphen.
 - For non-interactive Azure deploys, set `DEPLOYER_OBJECT_ID` and `DEPLOYER_PRINCIPAL_TYPE` when the CLI account cannot resolve its own object ID. `DEPLOYER_PRINCIPAL_TYPE` should be `User` or `ServicePrincipal`.
 - Structural-impact output depends on the review-graph and canonical-code substrates being reachable in the deployed environment.
+- `deploy.sh` imports the Bun base image into ACR before running remote app and job builds. When Docker Hub anonymous pull limits are exhausted, set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; those values are passed only to `az acr import` and are not synced into Key Vault or injected into the runtime containers.
 
 ### Run
 
@@ -172,6 +175,7 @@ These are the fastest operator checks after a deploy:
 - `GET /healthz`
 - `GET /readiness`
 - Deploy output showing the exact proof URLs that were just probed
+- A live explicit `@kodiai review` smoke on a known PR when validating review-publication behavior
 - `bun run verify:m052` when Slack webhook relay is enabled
 
 ## Operational Runbooks

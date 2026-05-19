@@ -21,10 +21,14 @@ const PASSING_README = `# Kodiai
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional .kodiai.yml file.
 
-31 milestones shipped (v0.1 through v0.31). See [CHANGELOG.md](CHANGELOG.md) for release history.
+38 milestones shipped (v0.1 through v0.38). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Recent Shipped Milestones
 
+- **M074 — review validation truth:** explicit @kodiai review live proof on xbmc/xbmc#28172 publishes real findings with bounded lifecycle and validation truth evidence.
+- **M073 — review-budget reliability:** review-budget, cache telemetry, and continuation compaction diagnostics are shipped.
+
+- **M066 — same-PR formatter suggestions:** explicit format requests publish committable same-PR formatter suggestions.
 - **M051 — manual rereview truthfulness:** @kodiai review is the only supported manual rereview trigger.
 - **M052 — Slack webhook relay:** Kodiai can accept authenticated inbound relay payloads.
 - **M053 — no dynamic evaluators in src/:** shipped code removes the committed helper that used new Function() and carries bun run verify:m053 as the durable proof command for the invariant.
@@ -41,6 +45,22 @@ Both workflows also support manual workflow_dispatch runs for testing, and any f
 `;
 
 const PASSING_CHANGELOG = `# Changelog
+
+## v0.38 (2026-05-19)
+
+Review Validation Truth.
+
+### Added
+
+- Explicit @kodiai review live proof on xbmc/xbmc#28172.
+
+## v0.37 (2026-05-05)
+
+Same-PR formatter suggestions.
+
+## v0.36 (2026-04-30)
+
+Production log failure cleanup.
 
 ## v0.31 (2026-04-21)
 
@@ -144,7 +164,7 @@ describe("verify m055 s01 docs truth harness", () => {
       readTextFile: async (filePath: string) => {
         if (filePath.endsWith("README.md")) {
           return PASSING_README
-            .replace("31 milestones shipped (v0.1 through v0.31).", "30 milestones shipped (v0.1 through v0.30).")
+            .replace("38 milestones shipped (v0.1 through v0.38).", "37 milestones shipped (v0.1 through v0.37).")
             .replace("Slack webhook relay", "Slack integration")
             .replace("nightly-reaction-sync runs bun scripts/sync-triage-reactions.ts shortly after issue sync.", "Nightly workflows keep things current.");
         }
@@ -189,11 +209,12 @@ describe("verify m055 s01 docs truth harness", () => {
         status_code: "package_wiring_missing",
       }),
     ]);
-    expect(report.checks[0]?.detail).toContain("31 milestones shipped");
+    expect(report.checks[0]?.detail).toContain("38 milestones shipped");
     expect(report.checks[1]?.detail).toContain("Slack webhook relay");
     expect(report.checks[2]?.detail).toContain("nightly-reaction-sync");
-    expect(report.checks[3]?.detail).toContain("v0.30");
-    expect(report.checks[3]?.detail).toContain("v0.31");
+    expect(report.checks[3]?.detail).toContain("v0.38");
+    expect(report.checks[3]?.detail).toContain("v0.37");
+    expect(report.checks[3]?.detail).toContain("v0.36");
     expect(report.checks[4]?.detail).toContain("verify:m055:s01");
     expect(stderr.join(" ")).toContain("readme_shipped_count_stale");
     expect(stderr.join(" ")).toContain("readme_recent_features_missing");
