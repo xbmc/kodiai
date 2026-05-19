@@ -5635,6 +5635,7 @@ describe("createReviewHandler finding extraction", () => {
     const recordedSuppressions: Array<Record<string, unknown>> = [];
     const deletedCommentIds: number[] = [];
     let detailsCommentBody: string | undefined;
+    const { logger, entries } = createCaptureLogger();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -5779,7 +5780,7 @@ describe("createReviewHandler finding extraction", () => {
           recordedSuppressions.push(...entries);
         },
       },
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("pull_request.review_requested");
@@ -5820,6 +5821,36 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).toMatch(/Lines changed: \+\d+ -\d+/);
     expect(detailsCommentBody).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
     expect(detailsCommentBody).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
+    expect(detailsCommentBody).toContain(`<!-- kodiai:review-details:${reviewOutputKey} -->`);
+    expect((detailsCommentBody?.match(/Review finding lifecycle:/g) ?? [])).toHaveLength(1);
+    expect(detailsCommentBody).toContain("Review finding lifecycle: status=normalized");
+    expect(detailsCommentBody).toContain("correlation=repo:y,pull:y,reviewOutputKey:y,deliveryId:y,commit:y");
+    expect(detailsCommentBody).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n");
+    expect(detailsCommentBody).not.toContain("RAW_PROMPT_CANARY");
+    expect(detailsCommentBody).not.toContain("RAW_MODEL_OUTPUT_CANARY");
+    expect(detailsCommentBody).not.toContain("CANDIDATE_BODY_CANARY");
+    expect(detailsCommentBody).not.toContain("TOOL_PAYLOAD_CANARY");
+    expect(detailsCommentBody).not.toContain("diff --git");
+
+    const lifecycleLog = entries.find((entry) => entry.data?.gate === "review-finding-lifecycle");
+    expect(lifecycleLog?.data).toMatchObject({
+      reviewOutputKey,
+      deliveryId: "delivery-123",
+      source: "automatic-review",
+      trigger: "pull_request",
+      normalizedStatus: "normalized",
+    });
+    expect(lifecycleLog?.data?.counts).toMatchObject({ input: 3, recorded: 3, rejected: 0 });
+    expect(lifecycleLog?.data?.redaction).toMatchObject({
+      privateOnly: true,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      candidateBodiesIncluded: false,
+      toolPayloadsIncluded: false,
+      diffsIncluded: false,
+    });
+    expect(JSON.stringify(lifecycleLog?.data)).not.toContain("RAW_PROMPT_CANARY");
+    expect(JSON.stringify(lifecycleLog?.data)).not.toContain("diff --git");
     expect(detailsCommentBody).not.toContain("Lines analyzed:");
     expect(detailsCommentBody).not.toContain("Suppressions applied:");
     expect(detailsCommentBody).not.toContain("Estimated review time saved:");

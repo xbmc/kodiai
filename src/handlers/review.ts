@@ -274,6 +274,7 @@ import {
 import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
 import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
 import type { PromptBudgetOutcome } from "../execution/prompt-budget.ts";
+import { attachReviewFindingLifecycle, type AttachReviewFindingLifecycleResult } from "../review-lifecycle/handler-lifecycle.ts";
 
 
 
@@ -5475,6 +5476,31 @@ export function createReviewHandler(deps: {
         const reviewReducerDetailsSummary = reducerResult.detailsSummary;
         const reviewCandidatePublicationAdapterDetailsSummary =
           toReviewCandidatePublicationAdapterSummary(reviewCandidatePublicationAdapter.summary);
+        const reviewFindingLifecycleResult: AttachReviewFindingLifecycleResult = attachReviewFindingLifecycle({
+          source: "automatic",
+          trigger: "pull_request",
+          correlation: {
+            repo: `${apiOwner}/${apiRepo}`,
+            pullNumber: pr.number,
+            reviewOutputKey,
+            deliveryId: event.id,
+            commitSha: pr.head.sha,
+            headSha: pr.head.sha,
+            baseSha: pr.base.sha,
+            headRef: pr.head.ref,
+            baseRef: pr.base.ref,
+          },
+          findings: processedFindings,
+          candidateFinding: reviewCandidateFindingResult,
+        });
+        logger.info(
+          {
+            ...baseLog,
+            ...reviewFindingLifecycleResult.logEvidence,
+            source: "automatic-review",
+          },
+          "Projected review finding lifecycle evidence",
+        );
         logger.info(
           {
             ...baseLog,
@@ -5581,6 +5607,7 @@ export function createReviewHandler(deps: {
             reviewReducer: reviewReducerDetailsSummary,
             reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
             reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
+            reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
             phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
               phases: reviewPhaseTimings,
               publicationPhaseStartedAt,

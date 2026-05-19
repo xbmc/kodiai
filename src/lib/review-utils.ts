@@ -25,6 +25,7 @@ import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-pl
 import type { ReviewReducerDetailsSummary } from "../review-orchestration/review-reducer.ts";
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -615,6 +616,80 @@ function formatCandidateVerificationPublicationEvidenceLine(
   return `- M070 candidate verification publication: status=${status}; counts=${counts}; verification=${verification}; candidateVerification=${candidateCounts}; denialCounts=${formatReasonCountFields(evidence.publicationDenialCounts)}; reasons=${formatStringArray(evidence.reasonCategories)}; metadata=${formatCandidateVerificationMetadata(evidence.metadata)}; redaction=${formatRedactionFlags(evidence.redactionFlags)}`;
 }
 
+
+function formatReviewFindingLifecycleDetailsLine(
+  lifecycle?: ReviewFindingLifecyclePublicProjection | null,
+): string | null {
+  try {
+    if (typeof lifecycle !== "object" || lifecycle === null || Array.isArray(lifecycle)) return null;
+    if (lifecycle.schema !== "review-finding-lifecycle.v1") return null;
+    const status = boundedBridgeToken(lifecycle.status, "unavailable", 32);
+    if (status !== "normalized" && status !== "degraded" && status !== "unavailable") return null;
+
+    const redaction = typeof lifecycle.redaction === "object" && lifecycle.redaction !== null && !Array.isArray(lifecycle.redaction)
+      ? lifecycle.redaction as Record<string, unknown>
+      : null;
+    if (
+      !redaction
+      || redaction.privateOnly !== true
+      || redaction.rawPromptsIncluded !== false
+      || redaction.rawModelOutputIncluded !== false
+      || redaction.candidateBodiesIncluded !== false
+      || redaction.toolPayloadsIncluded !== false
+      || redaction.secretLikeStringsIncluded !== false
+      || redaction.diffsIncluded !== false
+      || redaction.unboundedArraysIncluded !== false
+    ) {
+      return null;
+    }
+
+    const counts = formatCountFields(lifecycle.counts, ["input", "recorded", "rejected", "unsafeInputFields"])
+      ?? "input:0,recorded:0,rejected:0,unsafeInputFields:0";
+    const statusCounts = formatCountFields(lifecycle.counts?.status, ["detected", "open", "suggested", "validated", "revalidated", "resolved", "blocked", "degraded"])
+      ?? "detected:0,open:0,suggested:0,validated:0,revalidated:0,resolved:0,blocked:0,degraded:0";
+    const severityCounts = formatCountFields(lifecycle.counts?.severity, ["critical", "major", "medium", "minor"])
+      ?? "critical:0,major:0,medium:0,minor:0";
+    const actionabilityCounts = formatCountFields(lifecycle.counts?.actionability, ["actionable", "needs-human-review", "needs-reproduction", "blocked", "not-actionable"])
+      ?? "actionable:0,needs-human-review:0,needs-reproduction:0,blocked:0,not-actionable:0";
+    const correlation = typeof lifecycle.correlation === "object" && lifecycle.correlation !== null && !Array.isArray(lifecycle.correlation)
+      ? lifecycle.correlation as Record<string, unknown>
+      : {};
+    const correlationText = [
+      `repo:${correlation.repoPresent === true ? "y" : "n"}`,
+      `pull:${correlation.pullNumberPresent === true ? "y" : "n"}`,
+      `reviewOutputKey:${correlation.reviewOutputKeyPresent === true ? "y" : "n"}`,
+      `deliveryId:${correlation.deliveryIdPresent === true ? "y" : "n"}`,
+      `commit:${correlation.commitIdentityPresent === true ? "y" : "n"}`,
+    ].join(",");
+
+    const redactionText = [
+      "privateOnly:y",
+      "rawPrompts:n",
+      "rawModelOutput:n",
+      "candidateBodies:n",
+      "toolPayloads:n",
+      "secretLike:n",
+      "diffs:n",
+      "unboundedArrays:n",
+      `unsafeFields:${readNonNegativeCount(redaction, "unsafeInputFieldCount")}`,
+    ].join(",");
+
+    return [
+      `- Review finding lifecycle: status=${status}`,
+      `counts=${counts}`,
+      `correlation=${correlationText}`,
+      `statuses=${statusCounts}`,
+      `severity=${severityCounts}`,
+      `actionability=${actionabilityCounts}`,
+      `reasons=${formatStringArray(lifecycle.reasonCodes, 8)}`,
+      `rejected=${formatStringArray(lifecycle.rejectedReasonCodes, 8)}`,
+      `redaction=${redactionText}`,
+    ].join("; ");
+  } catch {
+    return null;
+  }
+}
+
 export type ReviewRetryFailureClassification = {
   category: "retry-infra-failure" | "retry-execution-failure";
   reason: "workspace-prep-terminated" | "unknown";
@@ -1119,6 +1194,7 @@ export function formatReviewDetailsSummary(params: {
   reviewReducer?: ReviewReducerDetailsSummary | null;
   reviewCandidateFinding?: ReviewCandidateFindingDetailsSummary | null;
   reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null;
+  reviewFindingLifecycle?: ReviewFindingLifecyclePublicProjection | null;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -1165,6 +1241,7 @@ export function formatReviewDetailsSummary(params: {
     reviewReducer,
     reviewCandidateFinding,
     reviewCandidatePublication,
+    reviewFindingLifecycle,
     prioritization,
     usageLimit,
     tokenUsage,
@@ -1250,6 +1327,16 @@ export function formatReviewDetailsSummary(params: {
     // Keep Review Details fail-open; malformed diagnostic projections must not block publication.
   }
 
+  const reviewFindingLifecycleLines: string[] = [];
+  try {
+    const line = formatReviewFindingLifecycleDetailsLine(reviewFindingLifecycle);
+    if (line) {
+      reviewFindingLifecycleLines.push(line);
+    }
+  } catch {
+    // Keep Review Details fail-open; malformed lifecycle projections must not block publication.
+  }
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
@@ -1286,6 +1373,7 @@ export function formatReviewDetailsSummary(params: {
     ...reviewPlanDetailsLines,
     ...candidatePublicationBridgeLines,
     ...candidateVerificationPublicationEvidenceLines,
+    ...reviewFindingLifecycleLines,
     `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
   ];
 

@@ -53,6 +53,10 @@ function reviewCandidatePublicationLineCount(body: string): number {
   return body.split("\n").filter((line) => line.includes("Review candidate publication:")).length;
 }
 
+function reviewFindingLifecycleLineCount(body: string): number {
+  return body.split("\n").filter((line) => line.includes("Review finding lifecycle:")).length;
+}
+
 describe("formatReviewDetailsSummary", () => {
   it("renders exactly one compact ready review plan line without dumping structured plan data", () => {
     const result = formatReviewDetailsSummary({
@@ -168,6 +172,79 @@ describe("formatReviewDetailsSummary", () => {
     expect(reviewCandidateLineCount(malformed)).toBe(0);
     expect(malformed).toContain("<summary>Review Details</summary>");
     expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("omits lifecycle details when absent or malformed without breaking Review Details", () => {
+    const omitted = formatReviewDetailsSummary({ ...BASE_PARAMS });
+    const malformed = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFindingLifecycle: {
+        schema: "review-finding-lifecycle.v1",
+        status: "normalized",
+        redaction: { privateOnly: false },
+      } as never,
+    });
+
+    expect(reviewFindingLifecycleLineCount(omitted)).toBe(0);
+    expect(reviewFindingLifecycleLineCount(malformed)).toBe(0);
+    expect(malformed).toContain("<summary>Review Details</summary>");
+    expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+  });
+
+  it("renders a safe bounded lifecycle projection exactly once without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewFindingLifecycle: {
+        schema: "review-finding-lifecycle.v1",
+        status: "normalized",
+        counts: {
+          input: 2,
+          recorded: 2,
+          rejected: 0,
+          unsafeInputFields: 3,
+          status: { detected: 2, open: 2, suggested: 0, validated: 0, revalidated: 0, resolved: 0, blocked: 0, degraded: 0 },
+          severity: { critical: 1, major: 1, medium: 0, minor: 0 },
+          category: { security: 1, correctness: 1, performance: 0, style: 0, documentation: 0 },
+          actionability: { actionable: 1, "needs-human-review": 1, "needs-reproduction": 0, blocked: 0, "not-actionable": 0 },
+          validationNeeds: { none: 0, "needs-tests": 1, "needs-reproduction": 0, "needs-security-review": 1, "needs-owner-confirmation": 0 },
+          revalidationState: { "not-required": 1, pending: 1, passed: 0, failed: 0, blocked: 0 },
+        },
+        correlation: {
+          repoPresent: true,
+          pullNumberPresent: true,
+          reviewOutputKeyPresent: true,
+          deliveryIdPresent: true,
+          commitIdentityPresent: true,
+        },
+        reasonCodes: ["automatic-review", "needs-tests"],
+        rejectedReasonCodes: [],
+        references: [],
+        omitted: { references: 0, reasonCodes: 0, rejectedReasonCodes: 0 },
+        redaction: {
+          privateOnly: true,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: false,
+          candidateBodiesIncluded: false,
+          toolPayloadsIncluded: false,
+          secretLikeStringsIncluded: false,
+          diffsIncluded: false,
+          unboundedArraysIncluded: false,
+          unsafeInputFieldCount: 3,
+        },
+      },
+    });
+
+    expect(reviewFindingLifecycleLineCount(result)).toBe(1);
+    expect(result).toContain("- Review finding lifecycle: status=normalized");
+    expect(result).toContain("counts=input:2,recorded:2,rejected:0,unsafeInputFields:3");
+    expect(result).toContain("correlation=repo:y,pull:y,reviewOutputKey:y,deliveryId:y,commit:y");
+    expect(result).toContain("severity=critical:1,major:1,medium:0,minor:0");
+    expect(result).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:3");
+    expect(result).not.toContain("RAW_PROMPT_CANARY");
+    expect(result).not.toContain("RAW_MODEL_OUTPUT_CANARY");
+    expect(result).not.toContain("CANDIDATE_BODY_CANARY");
+    expect(result).not.toContain("TOOL_PAYLOAD_CANARY");
+    expect(result).not.toContain("diff --git");
   });
 
   it("does not leak raw candidate title body diff prompt token or secret-like strings in public details", () => {
