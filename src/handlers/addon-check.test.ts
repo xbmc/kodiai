@@ -204,6 +204,29 @@ function makeCheckerSubprocess(output: string) {
   }));
 }
 
+function makeCheckerSubprocessByAddon(outputs: Record<string, string | "__TIMEOUT__" | "__TOOL_NOT_FOUND__">) {
+  return mock(async (p: { addonDir: string; branch: string }) => {
+    const addonId = p.addonDir.split("/").pop() ?? p.addonDir;
+    const output = outputs[addonId] ?? "";
+    if (output === "__TIMEOUT__") {
+      return await new Promise<never>(() => {});
+    }
+    if (output === "__TOOL_NOT_FOUND__") {
+      const err = new Error("not found") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    }
+    return {
+      exitCode: output.includes("ERROR:") || output.includes("WARN:") ? 1 : 0,
+      stdout: output,
+    };
+  });
+}
+
+function findClassificationLog(infoCalls: InfoCall[]) {
+  return infoCalls.find((c) => c.message === "addon-check: classification");
+}
+
 function makePrEvent(
   repoFullName: string,
   prNumber: number = 42,
@@ -460,6 +483,203 @@ describe("createAddonCheckHandler", () => {
 
   it("uses an expanded checker budget so production addon checks have more headroom", () => {
     expect(ADDON_CHECK_RUNNER_TIME_BUDGET_MS).toBeGreaterThanOrEqual(240_000);
+  });
+
+  it("emits bounded all-timeout classification and avoids a misleading clean comment", async () => {
+    const files = ["plugin.video.foo/addon.xml", "plugin.audio.bar/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocessByAddon({
+      "plugin.audio.bar": "__TIMEOUT__",
+      "plugin.video.foo": "__TIMEOUT__",
+    });
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __addonCheckTimeBudgetMsForTests: 1,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    const gateLog = findClassificationLog(infoCalls);
+    expect(gateLog).toBeDefined();
+    expect(gateLog!.bindings).toMatchObject({
+      gate: "addon-check-classification",
+      gateResult: "actionable-diagnostic",
+      classification: "actionable-diagnostic",
+      mode: "all-timeout",
+      addonCount: 2,
+      completedCount: 0,
+      timedOutCount: 2,
+      toolNotFoundCount: 0,
+      findingCount: 0,
+      timeBudgetMs: 1,
+      deliveryId: "delivery-pr-1",
+      repo: "xbmc/repo-plugins",
+      prNumber: 42,
+    });
+    expect(gateLog!.bindings.reasonCodes).toContain("all-timeout");
+    expect(gateLog!.bindings.redaction).toMatchObject({
+      rawCheckerOutputOmitted: true,
+      workspacePathsOmitted: true,
+      githubPayloadOmitted: true,
+      addonIdentifiersOmitted: true,
+    });
+    expect(JSON.stringify(gateLog!.bindings)).not.toContain("plugin.video.foo");
+    expect(JSON.stringify(gateLog!.bindings)).not.toContain("/tmp/test-workspace");
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("Mode: `all-timeout`");
+    expect(commentBody).toContain("`all-timeout`");
+    expect(commentBody).not.toContain("✅ No issues found");
+    expect(commentBody).not.toContain("plugin.video.foo");
+  });
+
+  it("distinguishes partial timeout with findings from clean completion", async () => {
+    const files = ["plugin.video.foo/addon.xml", "plugin.audio.bar/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocessByAddon({
+      "plugin.audio.bar": "__TIMEOUT__",
+      "plugin.video.foo": "ERROR: missing changelog\nWARN: old icon\n",
+    });
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __addonCheckTimeBudgetMsForTests: 1,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    const gateLog = findClassificationLog(infoCalls);
+    expect(gateLog).toBeDefined();
+    expect(gateLog!.bindings).toMatchObject({
+      gate: "addon-check-classification",
+      classification: "actionable-diagnostic",
+      mode: "partial-timeout",
+      addonCount: 2,
+      completedCount: 1,
+      timedOutCount: 1,
+      findingCount: 2,
+      errorCount: 1,
+      warningCount: 1,
+    });
+    expect(gateLog!.bindings.reasonCodes).toContain("partial-timeout");
+    expect(gateLog!.bindings.reasonCodes).toContain("findings-present");
+    expect(gateLog!.bindings.mode).not.toBe("completed-clean");
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("missing changelog");
+    expect(commentBody).not.toContain("Mode: `completed-clean`");
+  });
+
+  it("emits tool-unavailable classification without posting a comment", async () => {
+    const files = ["plugin.video.foo/addon.xml", "plugin.audio.bar/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocessByAddon({
+      "plugin.audio.bar": "__TOOL_NOT_FOUND__",
+      "plugin.video.foo": "__TOOL_NOT_FOUND__",
+    });
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    const gateLog = findClassificationLog(infoCalls);
+    expect(gateLog).toBeDefined();
+    expect(gateLog!.bindings).toMatchObject({
+      gate: "addon-check-classification",
+      classification: "expected-bounded-outcome",
+      mode: "tool-unavailable",
+      addonCount: 2,
+      completedCount: 0,
+      timedOutCount: 0,
+      toolNotFoundCount: 2,
+      findingCount: 0,
+    });
+    expect(gateLog!.bindings.reasonCodes).toContain("tool-unavailable");
+    expect(octokit._createCommentMock).not.toHaveBeenCalled();
+    expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+  });
+
+  it("emits completed-clean classification for clean runs without raw workspace leakage in the gate", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocessByAddon({
+      "plugin.video.foo": "BEGIN CHECKER /tmp/test-workspace raw detail that must stay out of the classification gate\n",
+    });
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    const gateLog = findClassificationLog(infoCalls);
+    expect(gateLog).toBeDefined();
+    expect(gateLog!.bindings).toMatchObject({
+      gate: "addon-check-classification",
+      classification: "expected-bounded-outcome",
+      mode: "completed-clean",
+      addonCount: 1,
+      completedCount: 1,
+      timedOutCount: 0,
+      toolNotFoundCount: 0,
+      findingCount: 0,
+    });
+    expect(gateLog!.bindings.reasonCodes).toContain("completed-clean");
+    const serializedGate = JSON.stringify(gateLog!.bindings);
+    expect(serializedGate).not.toContain("/tmp/test-workspace");
+    expect(serializedGate).not.toContain("raw detail");
+    expect(serializedGate).not.toContain("plugin.video.foo");
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
   });
 
   // ── workspace.cleanup called in finally ───────────────────────────────
