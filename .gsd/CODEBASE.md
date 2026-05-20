@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-20T14:34:38Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-20T14:34:38Z","fingerprint":"50a0efc2e83aa33022dcb89d3b5cfcbb47bab2d5","fileCount":500,"truncated":true} -->
+Generated: 2026-05-20T18:24:47Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-20T18:24:47Z","fingerprint":"277b8f235d093b5264253bf54b6fde6d7e9cdfd4","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -43,6 +43,10 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### docs/operations/
 - `docs/operations/embedding-integrity.md`
+- `docs/operations/m075-addon-check-classification.md`
+- `docs/operations/m075-final-production-proof.md`
+- `docs/operations/m075-production-log-baseline.md`
+- `docs/operations/m075-review-timeout-classification.md`
 
 ### docs/runbooks/
 - `docs/runbooks/aca-job-debugging.md`
@@ -95,7 +99,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/slack-webhook-relay/suppressed.json`
 
 ### scripts/
-- *(280 files: 275 .ts, 3 .sh, 1 .py, 1 .md)*
+- *(294 files: 289 .ts, 3 .sh, 1 .py, 1 .md)*
 
 ### scripts/fixtures/
 - `scripts/fixtures/m068-candidate-approved-proof.json`
@@ -109,6 +113,11 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `scripts/fixtures/m073-s07-remediation.json`
 - `scripts/fixtures/m074-s06-production-like-proof.json`
 - `scripts/fixtures/m074-s07-repo-doctrine-proof.json`
+- `scripts/fixtures/m075-s01-production-log-baseline.json`
+- `scripts/fixtures/m075-s03-non-inlineable-review-details.json`
+- `scripts/fixtures/m075-s04-publication-reason-contract.json`
+- `scripts/fixtures/m075-s05-review-timeout-classification.json`
+- `scripts/fixtures/m075-s06-addon-check-classification.json`
 
 ### src/
 - `src/config.test.ts`
@@ -130,25 +139,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/db/migrate.ts`
 
 ### src/db/migrations/
-- *(86 files: 86 .sql)*
-
-### src/enforcement/
-- `src/enforcement/index.ts`
-- `src/enforcement/severity-floors.test.ts`
-- `src/enforcement/severity-floors.ts`
-- `src/enforcement/tooling-detection.test.ts`
-- `src/enforcement/tooling-detection.ts`
-- `src/enforcement/tooling-suppression.test.ts`
-- `src/enforcement/tooling-suppression.ts`
-- `src/enforcement/types.ts`
-
-### src/execution/
-- `src/execution/agent-entrypoint.test.ts`
-- `src/execution/agent-entrypoint.ts`
-- `src/execution/config.test.ts`
-- `src/execution/config.ts`
-- `src/execution/diff-analysis.test.ts`
-- `src/execution/diff-analysis.ts`
-- `src/execution/env.test.ts`
-- `src/execution/env.ts`
-- `src/execution/executor.test.ts`
+- *(80 files: 80 .sql)*
