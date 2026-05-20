@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewCandidateApprovalResult } from "./review-candidate-approval.ts";
 import type {
+  ReviewCandidateMovedToDetailsSummary,
   ReviewCandidatePublicationAdapterSummary,
   ReviewCandidatePublishedResultSummary,
 } from "./review-candidate-publication-adapter.ts";
@@ -72,6 +73,66 @@ describe("review candidate publication runtime classifier", () => {
     expect(result.mode).toBe("direct-fallback");
     expect(result.counts).toMatchObject({ candidatePublished: 0, directPublished: 2, fallbackEvidence: 2 });
     expect(result.reasons).toEqual(expect.arrayContaining(["missing-shared-publisher-results", "direct-fallback-published"]));
+  });
+
+  test("classifies safe details-only preservation as moved-to-details without direct fallback evidence", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 1 }),
+      adapter: adapter({ input: 1, publishable: 0, approved: 0, detailsOnlyFindings: 1, movedToDetails: 1 }),
+      publisher: publisher([]),
+      convertedProcessedFindingCount: 0,
+    }));
+
+    expect(result.mode).toBe("moved-to-details");
+    expect(result.counts).toMatchObject({
+      candidatePublished: 0,
+      candidateMovedToDetails: 1,
+      candidateDetailsOnlyFindings: 1,
+      fallbackEvidence: 0,
+      directPublished: 0,
+      malformed: 0,
+    });
+    expect(result.reasons).toContain("candidate-moved-to-details");
+    expect(result.reasons).not.toContain("direct-fallback-published");
+    expect(result.detailsSummary.text).toContain("movedToDetails=1");
+  });
+
+  test("degrades and omits finding projection when moved-to-details metadata has unsafe redaction", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 1 }),
+      adapter: {
+        ...adapter({ input: 1, publishable: 0, detailsOnlyFindings: 1, movedToDetails: 1 }),
+        detailsOnlyFindings: [{
+          fingerprint: "rcf-0000000000000001",
+          lifecycle: "approved",
+          severity: "major",
+          category: "security",
+          title: "Should not render",
+          location: { path: "src/file.ts", line: 42 },
+          reason: "line-not-commentable",
+          excerpt: "secret sk-unsafe diff --git",
+        }],
+        movedToDetails: {
+          ...emptyMovedToDetailsSummary(),
+          counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: false,
+            rawModelOutputIncluded: false,
+            diffsIncluded: true,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        } as never,
+      },
+    }));
+
+    expect(result.mode).toBe("degraded");
+    expect(result.reasons).toContain("malformed-moved-to-details");
+    expect(result.detailsOnlyFindings).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("sk-unsafe");
   });
 
   test("classifies attempted fallback as disallowed when policy blocks direct publication", () => {
@@ -256,7 +317,7 @@ function publisher(results: ReviewCandidatePublishedResultSummary["results"]): R
   };
 }
 
-function emptyMovedToDetailsSummary(): ReviewCandidatePublishedResultSummary["movedToDetails"] {
+function emptyMovedToDetailsSummary(): ReviewCandidateMovedToDetailsSummary {
   return {
     counts: { total: 0, fromFixEligibility: 0, fromPublisherResult: 0, omitted: 0 },
     reasonCounts: {},

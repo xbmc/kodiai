@@ -548,7 +548,7 @@ describe("review candidate publication adapter", () => {
       reason: "line-not-commentable-in-pr-diff",
     })]);
     expect(converted.summary.counts).toMatchObject({ input: 3, processed: 1, skipped: 1, blocked: 0, failed: 1, malformed: 0, detailsOnlyFindings: 1, movedToDetails: 1, detailsOnlyOmitted: 0 });
-    expect(converted.summary.movedToDetails.counts).toMatchObject({ total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 });
+    expect(converted.summary.movedToDetails?.counts).toMatchObject({ total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 });
     expect(converted.summary.results.map((result) => result.reason)).toEqual([
       "published",
       "already-published",

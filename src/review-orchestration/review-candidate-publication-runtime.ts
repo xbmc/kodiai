@@ -1,6 +1,8 @@
 import type { InlineReviewPublicationStatus } from "../execution/mcp/inline-review-publisher.ts";
 import type { ReviewCandidateApprovalResult } from "./review-candidate-approval.ts";
 import type {
+  ReviewCandidateDetailsOnlyFinding,
+  ReviewCandidateMovedToDetailsSummary,
   ReviewCandidatePublicationAdapterSummary,
   ReviewCandidatePublishedResultSummary,
 } from "./review-candidate-publication-adapter.ts";
@@ -8,6 +10,7 @@ import type {
 export type ReviewCandidatePublicationRuntimeMode =
   | "candidate-approved"
   | "candidate-approved-partial"
+  | "moved-to-details"
   | "direct-fallback"
   | "fallback-disallowed"
   | "blocked"
@@ -21,6 +24,8 @@ export type ReviewCandidatePublicationRuntimeReason =
   | "candidate-publisher-failed"
   | "candidate-publisher-malformed"
   | "candidate-publisher-missing"
+  | "candidate-moved-to-details"
+  | "malformed-moved-to-details"
   | "missing-shared-publisher-results"
   | "direct-fallback-attempted"
   | "direct-fallback-published"
@@ -46,6 +51,9 @@ export type ReviewCandidatePublicationRuntimeCounts = {
   candidateBlocked: number;
   candidateFailed: number;
   candidateMalformed: number;
+  candidateMovedToDetails: number;
+  candidateDetailsOnlyFindings: number;
+  candidateDetailsOnlyOmitted: number;
   convertedProcessedFindings: number;
   directAttempted: number;
   directPublished: number;
@@ -72,6 +80,8 @@ export type ReviewCandidatePublicationRuntimeInput = {
 export type ReviewCandidatePublicationRuntimeDetailsSummary = {
   label: "Review candidate publication runtime";
   text: string;
+  detailsOnlyFindings?: ReviewCandidateDetailsOnlyFinding[];
+  movedToDetails?: ReviewCandidateMovedToDetailsSummary;
 };
 
 export type ReviewCandidatePublicationRuntimeConfigSnapshot = {
@@ -94,6 +104,8 @@ export type ReviewCandidatePublicationRuntimeResult = {
   detailsSummary: ReviewCandidatePublicationRuntimeDetailsSummary;
   safeConfigSnapshot: ReviewCandidatePublicationRuntimeConfigSnapshot;
   publisherResultSample: ReviewCandidatePublicationRuntimePublisherSample[];
+  detailsOnlyFindings: ReviewCandidateDetailsOnlyFinding[];
+  movedToDetails?: ReviewCandidateMovedToDetailsSummary;
 };
 
 export type CandidatePublicationFlowEvidence = {
@@ -128,6 +140,14 @@ export function classifyReviewCandidatePublicationRuntime(
   const approvedReferences = approvalCounts.approved + approvalCounts.rewritten;
   const candidatePublishable = adapterCounts.publishable;
   const candidatePublished = publisher.published;
+  const movedToDetails = adapterCounts.movedToDetails + publisher.movedToDetails;
+  const detailsOnlyFindings = adapterCounts.detailsOnlyFindings + publisher.detailsOnlyFindings;
+  const detailsOnlyOmitted = adapterCounts.detailsOnlyOmitted + publisher.detailsOnlyOmitted;
+  const detailsOnlyProjection = mergeDetailsOnlyFindings(input.adapter, input.publisher);
+  if (detailsOnlyProjection.malformed > 0) {
+    malformed += detailsOnlyProjection.malformed;
+    pushReason(reasons, "malformed-moved-to-details");
+  }
   const directPublished = direct.published;
   const fallbackDisallowed = approvalCounts.fallbackDisallowed > 0 || (direct.attempted && direct.allowed === false) ? 1 : 0;
 
@@ -138,6 +158,7 @@ export function classifyReviewCandidatePublicationRuntime(
   if (publisher.failed > 0) pushReason(reasons, "candidate-publisher-failed");
   if (publisher.candidateMalformed > 0) pushReason(reasons, "candidate-publisher-malformed");
   if (publisher.missing > 0) pushReason(reasons, "candidate-publisher-missing");
+  if (movedToDetails > 0) pushReason(reasons, "candidate-moved-to-details");
 
   if (direct.attempted) pushReason(reasons, "direct-fallback-attempted");
   if (directPublished > 0) pushReason(reasons, "direct-fallback-published");
@@ -162,6 +183,9 @@ export function classifyReviewCandidatePublicationRuntime(
     candidateBlocked: publisher.blocked,
     candidateFailed: publisher.failed,
     candidateMalformed: publisher.candidateMalformed,
+    candidateMovedToDetails: movedToDetails,
+    candidateDetailsOnlyFindings: detailsOnlyFindings,
+    candidateDetailsOnlyOmitted: detailsOnlyOmitted,
     convertedProcessedFindings,
     directAttempted: direct.attempted ? 1 : 0,
     directPublished,
@@ -176,6 +200,8 @@ export function classifyReviewCandidatePublicationRuntime(
     counts,
     reasons: reasons.slice(0, MAX_REASON_CODES),
     publisherResultSample,
+    detailsOnlyFindings: detailsOnlyProjection.findings,
+    ...(detailsOnlyProjection.summary ? { movedToDetails: detailsOnlyProjection.summary } : {}),
   };
   const detailsSummary = toReviewCandidatePublicationRuntimeDetailsSummary(resultWithoutDerived);
   const safeConfigSnapshot = toReviewCandidatePublicationRuntimeConfigSnapshot(resultWithoutDerived);
@@ -183,7 +209,7 @@ export function classifyReviewCandidatePublicationRuntime(
   return { ...resultWithoutDerived, detailsSummary, safeConfigSnapshot };
 }
 
-export function toReviewCandidatePublicationRuntimeDetailsSummary(result: Pick<ReviewCandidatePublicationRuntimeResult, "mode" | "counts" | "reasons">): ReviewCandidatePublicationRuntimeDetailsSummary {
+export function toReviewCandidatePublicationRuntimeDetailsSummary(result: Pick<ReviewCandidatePublicationRuntimeResult, "mode" | "counts" | "reasons"> & Partial<Pick<ReviewCandidatePublicationRuntimeResult, "detailsOnlyFindings" | "movedToDetails">>): ReviewCandidatePublicationRuntimeDetailsSummary {
   const counts = result.counts;
   const text = boundSummary([
     `Review candidate publication runtime: ${result.mode}`,
@@ -194,13 +220,23 @@ export function toReviewCandidatePublicationRuntimeDetailsSummary(result: Pick<R
     `skipped=${formatCount(counts.candidateSkipped)}`,
     `blocked=${formatCount(counts.candidateBlocked)}`,
     `failed=${formatCount(counts.candidateFailed)}`,
+    `movedToDetails=${formatCount(counts.candidateMovedToDetails)}`,
+    `detailsOnly=${formatCount(counts.candidateDetailsOnlyFindings)}`,
+    `detailsOmitted=${formatCount(counts.candidateDetailsOnlyOmitted)}`,
     `directPublished=${formatCount(counts.directPublished)}`,
     `fallbackEvidence=${formatCount(counts.fallbackEvidence)}`,
     `malformed=${formatCount(counts.malformed)}`,
     `reasons=${result.reasons.length > 0 ? result.reasons.map(sanitizeSummaryToken).join(",") : "none"}`,
   ].join(" "));
 
-  return { label: "Review candidate publication runtime", text };
+  return {
+    label: "Review candidate publication runtime",
+    text,
+    ...(Array.isArray(result.detailsOnlyFindings) && result.detailsOnlyFindings.length > 0
+      ? { detailsOnlyFindings: result.detailsOnlyFindings.slice(0, MAX_RESULT_SAMPLE) }
+      : {}),
+    ...(result.movedToDetails ? { movedToDetails: result.movedToDetails } : {}),
+  };
 }
 
 export function toReviewCandidatePublicationRuntimeConfigSnapshot(
@@ -254,6 +290,9 @@ function classifyMode(input: {
   if (counts.candidatePublished > 0) {
     return "candidate-approved-partial";
   }
+  if (counts.candidateMovedToDetails > 0) {
+    return "moved-to-details";
+  }
   if (counts.directPublished > 0 || (input.directAttempted && !input.publisherPresent)) {
     return "direct-fallback";
   }
@@ -289,11 +328,19 @@ function normalizeApprovalCounts(
 function normalizeAdapterCounts(
   adapter: ReviewCandidatePublicationAdapterSummary | null | undefined,
   reasons: ReviewCandidatePublicationRuntimeReason[],
-): { input: number; publishable: number; skipped: number; malformed: number } {
+): {
+  input: number;
+  publishable: number;
+  skipped: number;
+  movedToDetails: number;
+  detailsOnlyFindings: number;
+  detailsOnlyOmitted: number;
+  malformed: number;
+} {
   const counts = adapter?.counts;
   if (!isRecord(counts)) {
     pushReason(reasons, "malformed-adapter-summary");
-    return { input: 0, publishable: 0, skipped: 0, malformed: 1 };
+    return { input: 0, publishable: 0, skipped: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, malformed: 1 };
   }
   const skippedItems = Array.isArray(adapter?.skipped) ? adapter.skipped : [];
   const malformedSkipReasons = skippedItems.some((item) => !isRecord(item) || sanitizeSummaryToken(String(item.reason ?? "unknown")) === "unknown");
@@ -302,7 +349,10 @@ function normalizeAdapterCounts(
     input: normalizeCount(counts.input),
     publishable: normalizeCount(counts.publishable),
     skipped: normalizeCount(counts.skipped),
-    malformed: hasMalformedCount([counts.input, counts.publishable, counts.skipped]) || malformedSkipReasons ? 1 : 0,
+    movedToDetails: normalizeCount(counts.movedToDetails),
+    detailsOnlyFindings: normalizeCount(counts.detailsOnlyFindings),
+    detailsOnlyOmitted: normalizeCount(counts.detailsOnlyOmitted),
+    malformed: hasMalformedCount([counts.input, counts.publishable, counts.skipped]) || hasOptionalMalformedCount([counts.movedToDetails, counts.detailsOnlyFindings, counts.detailsOnlyOmitted]) || malformedSkipReasons ? 1 : 0,
   };
 }
 
@@ -317,14 +367,17 @@ function normalizePublisherSummary(
   failed: number;
   candidateMalformed: number;
   missing: number;
+  movedToDetails: number;
+  detailsOnlyFindings: number;
+  detailsOnlyOmitted: number;
   malformed: number;
 } {
   if (!publisher) {
-    return { published: 0, skipped: 0, blocked: 0, failed: 0, candidateMalformed: 0, missing: 0, malformed: 0 };
+    return { published: 0, skipped: 0, blocked: 0, failed: 0, candidateMalformed: 0, missing: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, malformed: 0 };
   }
   if (!Array.isArray(publisher.results)) {
     pushReason(reasons, "malformed-publisher-summary");
-    return { published: 0, skipped: 0, blocked: 0, failed: 0, candidateMalformed: 0, missing: 0, malformed: 1 };
+    return { published: 0, skipped: 0, blocked: 0, failed: 0, candidateMalformed: 0, missing: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, malformed: 1 };
   }
 
   let published = 0;
@@ -341,6 +394,13 @@ function normalizePublisherSummary(
     publisher.counts?.failed,
     publisher.counts?.malformed,
   ]) ? 1 : 0;
+  if (hasOptionalMalformedCount([
+    publisher.counts?.detailsOnlyFindings,
+    publisher.counts?.movedToDetails,
+    publisher.counts?.detailsOnlyOmitted,
+  ])) {
+    malformed += 1;
+  }
 
   for (const raw of publisher.results) {
     if (!isRecord(raw)) {
@@ -392,7 +452,101 @@ function normalizePublisherSummary(
     }
   }
 
-  return { published, skipped, blocked, failed, candidateMalformed, missing, malformed };
+  return {
+    published,
+    skipped,
+    blocked,
+    failed,
+    candidateMalformed,
+    missing,
+    movedToDetails: normalizeCount(publisher.counts?.movedToDetails),
+    detailsOnlyFindings: normalizeCount(publisher.counts?.detailsOnlyFindings),
+    detailsOnlyOmitted: normalizeCount(publisher.counts?.detailsOnlyOmitted),
+    malformed,
+  };
+}
+
+function mergeDetailsOnlyFindings(
+  adapter: ReviewCandidatePublicationAdapterSummary | null | undefined,
+  publisher: ReviewCandidatePublishedResultSummary | null | undefined,
+): { findings: ReviewCandidateDetailsOnlyFinding[]; summary?: ReviewCandidateMovedToDetailsSummary; malformed: number } {
+  const sources = [adapter, publisher];
+  const findings: ReviewCandidateDetailsOnlyFinding[] = [];
+  let malformed = 0;
+  let total = 0;
+  let fromFixEligibility = 0;
+  let fromPublisherResult = 0;
+  let omitted = 0;
+  const reasonCounts: Partial<Record<ReviewCandidateMovedToDetailsSummary["reasonCounts"] extends Partial<Record<infer K, number>> ? K : never, number>> = {};
+
+  for (const source of sources) {
+    if (!source) continue;
+    const summary = source.movedToDetails;
+    const counts = source.counts;
+    if (normalizeCount(counts.movedToDetails) > 0 && !isSafeMovedToDetailsSummary(summary)) {
+      malformed += 1;
+      continue;
+    }
+    total += normalizeCount(summary?.counts?.total ?? counts.movedToDetails);
+    fromFixEligibility += normalizeCount(summary?.counts?.fromFixEligibility);
+    fromPublisherResult += normalizeCount(summary?.counts?.fromPublisherResult);
+    omitted += normalizeCount(summary?.counts?.omitted ?? counts.detailsOnlyOmitted);
+    if (isRecord(summary?.reasonCounts)) {
+      for (const [rawReason, rawCount] of Object.entries(summary.reasonCounts)) {
+        const reason = sanitizeSummaryToken(rawReason);
+        if (!reason || reason === "unknown") continue;
+        reasonCounts[reason as keyof typeof reasonCounts] = (reasonCounts[reason as keyof typeof reasonCounts] ?? 0) + normalizeCount(rawCount);
+      }
+    }
+    if ("detailsOnlyFindings" in source && Array.isArray(source.detailsOnlyFindings)) {
+      for (const finding of source.detailsOnlyFindings) {
+        if (findings.length >= MAX_RESULT_SAMPLE) {
+          omitted += 1;
+          continue;
+        }
+        findings.push(finding);
+      }
+    } else if (normalizeCount(counts.detailsOnlyFindings) > 0) {
+      malformed += 1;
+    }
+  }
+
+  const summary = total > 0 || findings.length > 0
+    ? {
+        counts: { total, fromFixEligibility, fromPublisherResult, omitted },
+        reasonCounts,
+        redaction: {
+          rawCandidatePayloadsIncluded: false,
+          rawPromptsIncluded: false,
+          rawModelOutputIncluded: false,
+          diffsIncluded: false,
+          replacementTextIncluded: false,
+          githubResponsePayloadsIncluded: false,
+          secretLikeValuesIncluded: false,
+          bounded: true,
+        },
+      } satisfies ReviewCandidateMovedToDetailsSummary
+    : undefined;
+
+  return { findings: malformed > 0 ? [] : findings, ...(summary ? { summary } : {}), malformed };
+}
+
+function isSafeMovedToDetailsSummary(summary: unknown): summary is ReviewCandidateMovedToDetailsSummary {
+  if (!isRecord(summary) || !isRecord(summary.counts) || !isRecord(summary.redaction)) return false;
+  return summary.redaction.rawCandidatePayloadsIncluded === false
+    && summary.redaction.rawPromptsIncluded === false
+    && summary.redaction.rawModelOutputIncluded === false
+    && summary.redaction.diffsIncluded === false
+    && summary.redaction.replacementTextIncluded === false
+    && summary.redaction.githubResponsePayloadsIncluded === false
+    && summary.redaction.secretLikeValuesIncluded === false
+    && summary.redaction.bounded === true
+    && !hasMalformedCount([
+      summary.counts.total,
+      summary.counts.fromFixEligibility,
+      summary.counts.fromPublisherResult,
+      summary.counts.omitted,
+    ]);
 }
 
 function normalizeDirectEvidence(value: ReviewCandidatePublicationDirectEvidence | null | undefined): {
@@ -422,6 +576,10 @@ function normalizeCount(value: unknown): number {
 
 function hasMalformedCount(values: ReadonlyArray<unknown>): boolean {
   return values.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0);
+}
+
+function hasOptionalMalformedCount(values: ReadonlyArray<unknown>): boolean {
+  return values.some((value) => value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value < 0));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

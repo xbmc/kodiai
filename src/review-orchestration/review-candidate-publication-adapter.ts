@@ -116,9 +116,9 @@ export type ReviewCandidatePublicationAdapterSummary = {
     skipped: number;
     approved: number;
     rewritten: number;
-    detailsOnlyFindings: number;
-    movedToDetails: number;
-    detailsOnlyOmitted: number;
+    detailsOnlyFindings?: number;
+    movedToDetails?: number;
+    detailsOnlyOmitted?: number;
   };
   skipped: ReviewCandidatePublicationAdapterSkipped[];
   fingerprints: string[];
@@ -146,9 +146,9 @@ export type ReviewCandidatePublishedResultSummary = {
     blocked: number;
     failed: number;
     malformed: number;
-    detailsOnlyFindings: number;
-    movedToDetails: number;
-    detailsOnlyOmitted: number;
+    detailsOnlyFindings?: number;
+    movedToDetails?: number;
+    detailsOnlyOmitted?: number;
   };
   results: Array<{
     fingerprint: string;
@@ -156,7 +156,7 @@ export type ReviewCandidatePublishedResultSummary = {
     reason: ReviewCandidatePublisherResultReason;
     commentId?: number;
   }>;
-  movedToDetails: ReviewCandidateMovedToDetailsSummary;
+  movedToDetails?: ReviewCandidateMovedToDetailsSummary;
 };
 
 export type ReviewCandidatePublishedFindingResult = {
@@ -578,8 +578,8 @@ function fromPayloadDetailsFinding(
 function toDetailsOnlyFinding(input: {
   fingerprint: string;
   lifecycle: ReviewCandidatePublicationLifecycle;
-  severity: FindingSeverity;
-  category: FindingCategory;
+  severity: unknown;
+  category: unknown;
   title: unknown;
   body?: unknown;
   filePath?: unknown;
@@ -833,8 +833,8 @@ function isUnsafeFilePath(value: string): boolean {
   return value.startsWith("/") || value.includes("..") || /^[a-zA-Z]:[\\/]/.test(value);
 }
 
-function formatCount(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return "0";
+function formatCount(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "0";
   return Math.floor(value).toString();
 }
 

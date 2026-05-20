@@ -491,6 +491,134 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("Review candidate publication runtime:");
   });
 
+  it("renders moved-to-details publication status plus bounded details-only findings", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: moved-to-details approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff",
+        movedToDetails: {
+          counts: { total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 },
+          reasonCounts: { "line-not-commentable-in-pr-diff": 1 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: false,
+            rawModelOutputIncluded: false,
+            diffsIncluded: false,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        },
+        detailsOnlyFindings: [{
+          fingerprint: "rcf-0000000000000001",
+          lifecycle: "approved",
+          severity: "major",
+          category: "correctness",
+          title: "Guard null payload before enqueue",
+          location: { path: "src/worker.ts", line: 42 },
+          reason: "line-not-commentable-in-pr-diff",
+          excerpt: "The enqueue path dereferences payload before validating it.",
+        }],
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("- Review candidate publication: mode=moved-to-details approved=1 rewritten=0 published=0 directFallback=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff movedToDetails=1 detailsOmitted=0");
+    expect(result).toContain("- Moved review candidates preserved in details:");
+    expect(result).toContain("  - [major/correctness] Guard null payload before enqueue (src/worker.ts:42, reason=line-not-commentable-in-pr-diff) — The enqueue path dereferences payload before validating it.");
+    expect(result).not.toContain("direct-fallback-published");
+  });
+
+  it("bounds and sanitizes moved-to-details finding lines while reporting omitted count", () => {
+    const findings = Array.from({ length: 12 }, (_, index) => ({
+      fingerprint: `rcf-${index.toString(16).padStart(16, "0")}`,
+      lifecycle: "approved" as const,
+      severity: "major" as const,
+      category: "security" as const,
+      title: `Safe title ${index} sk-secret-value ghp_secret_token_value BEGIN PROMPT diff --git`,
+      location: { path: `src/file-${index}.ts`, line: 10 + index },
+      reason: index === 0 ? "line-not-commentable-in-pr-diff" as const : "line-not-commentable" as const,
+      excerpt: `short excerpt ${index} TOKEN=abc123 secret=value \`\`\`suggestion\nreplacement text\n\`\`\` diff --git prompt text`,
+    }));
+
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: moved-to-details approvedRefs=12 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=12 detailsOnly=12 detailsOmitted=7 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six,oversized reason seven",
+        movedToDetails: {
+          counts: { total: 12, fromFixEligibility: 12, fromPublisherResult: 0, omitted: 7 },
+          reasonCounts: { "line-not-commentable": 11, "line-not-commentable-in-pr-diff": 1 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: false,
+            rawModelOutputIncluded: false,
+            diffsIncluded: false,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        },
+        detailsOnlyFindings: findings,
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(result).toContain("movedToDetails=12 detailsOmitted=7");
+    expect(result).toContain("+2 more");
+    expect(result).toContain("  - ...and 7 more omitted (bounded-details-only)");
+    expect(result).toContain("Safe title 0 redacted redacted prompt-redacted");
+    expect(result).toContain("[fix-redacted]");
+    expect(result).not.toContain("Safe title 5");
+    for (const unsafe of ["sk-secret-value", "ghp_secret_token_value", "BEGIN PROMPT", "TOKEN=abc123", "secret=value", "replacement text", "diff --git"] as const) {
+      expect(result).not.toContain(unsafe);
+    }
+  });
+
+  it("degrades moved-to-details metadata and omits findings when projection is malformed or unsafe", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: not-a-real-mode approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=BEGIN PROMPT,diff --git,unknown reason",
+        movedToDetails: {
+          counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
+          reasonCounts: { "unknown unsafe reason": 1 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: true,
+            rawModelOutputIncluded: false,
+            diffsIncluded: false,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        },
+        detailsOnlyFindings: [{
+          fingerprint: "rcf-0000000000000001",
+          lifecycle: "approved",
+          severity: "major",
+          category: "security",
+          title: "MUST_NOT_RENDER sk-secret-value",
+          location: { path: "src/secret.ts", line: 1 },
+          reason: "line-not-commentable",
+          excerpt: "PROMPT_SECRET diff --git",
+        }],
+      } as never,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("mode=degraded");
+    expect(result).toContain("prompt-redacted,diff-redacted,unknown-reason");
+    expect(result).not.toContain("Moved review candidates preserved in details");
+    expect(result).not.toContain("MUST_NOT_RENDER");
+    expect(result).not.toContain("sk-secret-value");
+    expect(result).not.toContain("diff --git");
+  });
+
   it("renders direct fallback publication state as audited fallback evidence", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
