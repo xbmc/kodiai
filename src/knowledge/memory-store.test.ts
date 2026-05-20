@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { createLearningMemoryStore, normalizeSafeInteger } from "./memory-store.ts";
+import { createLearningMemoryStore, normalizeSafeInteger, prepareLearningMemoryRecordForSql } from "./memory-store.ts";
 import { createDbClient, type Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import type { LearningMemoryStore, LearningMemoryRecord } from "./types.ts";
@@ -74,6 +74,74 @@ function makeEmbedding(seed: number = 42): Float32Array {
   for (let i = 0; i < 1024; i++) arr[i] = arr[i]! / norm;
   return arr;
 }
+
+describe("prepareLearningMemoryRecordForSql", () => {
+  test("rejects undefined required fields locally before SQL binding", async () => {
+    const requiredUndefinedCases: Array<["repo" | "findingId" | "findingText", LearningMemoryRecord]> = [
+      ["repo", makeRecord({ repo: undefined as unknown as string })],
+      ["findingId", makeRecord({ findingId: undefined as unknown as number })],
+      ["findingText", makeRecord({ findingText: undefined as unknown as string })],
+    ];
+
+    for (const [field, record] of requiredUndefinedCases) {
+      const calls: unknown[][] = [];
+      const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+        calls.push(values);
+        return Promise.resolve([]);
+      }) as unknown as Sql;
+      const store = createLearningMemoryStore({ sql, logger: mockLogger });
+
+      await expect(store.writeMemory(record, makeEmbedding(7))).rejects.toThrow(
+        `LearningMemoryRecord.${field} is undefined before SQL binding`,
+      );
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  test("normalizes optional undefined fields to null without changing required values", () => {
+    const prepared = prepareLearningMemoryRecordForSql(
+      makeRecord({
+        id: undefined,
+        language: undefined,
+        createdAt: undefined,
+      }),
+    );
+
+    expect(prepared.id).toBeNull();
+    expect(prepared.language).toBeNull();
+    expect(prepared.createdAt).toBeNull();
+    expect(prepared.repo).toBe("owner/repo-a");
+    expect(prepared.findingId).toBe(1001);
+    expect(prepared.findingText).toBe("Potential null pointer dereference");
+    expect(Object.values(prepared)).not.toContain(undefined);
+  });
+
+  test("writeMemory derives fallback language and never passes undefined SQL parameters", async () => {
+    const calls: unknown[][] = [];
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push(values);
+      return Promise.resolve([]);
+    }) as unknown as Sql;
+    const store = createLearningMemoryStore({ sql, logger: mockLogger });
+
+    await store.writeMemory(makeRecord({ language: undefined, filePath: "src/utils.ts" }), makeEmbedding(8));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).not.toContain(undefined);
+    expect(calls[0]).toContain("typescript");
+  });
+
+  test("required-field validation errors do not depend on postgres UNDEFINED_VALUE", async () => {
+    const sql = (() => {
+      throw new Error("UNDEFINED_VALUE should not be reached");
+    }) as unknown as Sql;
+    const store = createLearningMemoryStore({ sql, logger: mockLogger });
+
+    await expect(
+      store.writeMemory(makeRecord({ repo: undefined as unknown as string }), makeEmbedding(9)),
+    ).rejects.toThrow("LearningMemoryRecord.repo is undefined before SQL binding");
+  });
+});
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
