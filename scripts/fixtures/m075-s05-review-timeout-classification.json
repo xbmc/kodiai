@@ -1,0 +1,248 @@
+{
+  "schema": "m075-s05-review-timeout-classification.v1",
+  "generatedAt": "2026-05-20T13:55:00.000Z",
+  "scenarios": [
+    {
+      "name": "bounded partial timeout with checkpoint evidence",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "bounded-partial-timeout",
+        "reasonCodes": ["partial-timeout", "checkpoint-present"],
+        "counts": { "checkpointFilesReviewed": 4, "checkpointFilesInspected": 6, "checkpointFindingCount": 2, "checkpointTotalFiles": 12 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-001",
+        "reviewOutputKey": "review/xbmc/xbmc/101/delivery-s05-001"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "bounded-partial-timeout",
+        "reasonCodes": ["partial-timeout", "checkpoint-present"],
+        "deliveryId": "delivery-s05-001",
+        "reviewOutputKey": "review/xbmc/xbmc/101/delivery-s05-001"
+      },
+      "telemetry": {
+        "timeoutClassification": "expected-bounded-outcome",
+        "timeoutClassificationMode": "bounded-partial-timeout",
+        "timeoutClassificationReasons": ["partial-timeout", "checkpoint-present"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.expected-bounded-outcome", "actionable": false }
+    },
+    {
+      "name": "zero evidence timeout is hard failure",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "zero-evidence-hard-timeout",
+        "reasonCodes": ["zero-evidence", "timeout"],
+        "counts": { "checkpointFilesReviewed": 0, "checkpointFilesInspected": 0, "checkpointFindingCount": 0 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-002",
+        "reviewOutputKey": "review/xbmc/xbmc/102/delivery-s05-002"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "zero-evidence-hard-timeout",
+        "reasonCodes": ["zero-evidence", "timeout"],
+        "deliveryId": "delivery-s05-002",
+        "reviewOutputKey": "review/xbmc/xbmc/102/delivery-s05-002"
+      },
+      "telemetry": {
+        "timeoutClassification": "hard-failure",
+        "timeoutClassificationMode": "zero-evidence-hard-timeout",
+        "timeoutClassificationReasons": ["zero-evidence", "timeout"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.hard-failure", "actionable": true }
+    },
+    {
+      "name": "max turns continuation remains bounded",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "max-turns-continuation",
+        "reasonCodes": ["max-turns", "continuation-pending"],
+        "counts": { "checkpointFilesReviewed": 7, "checkpointTotalFiles": 20 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-003",
+        "reviewOutputKey": "review/xbmc/xbmc/103/delivery-s05-003"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "max-turns-continuation",
+        "reasonCodes": ["max-turns", "continuation-pending"],
+        "deliveryId": "delivery-s05-003",
+        "reviewOutputKey": "review/xbmc/xbmc/103/delivery-s05-003"
+      },
+      "telemetry": {
+        "timeoutClassification": "expected-bounded-outcome",
+        "timeoutClassificationMode": "max-turns-continuation",
+        "timeoutClassificationReasons": ["max-turns", "continuation-pending"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.expected-bounded-outcome", "actionable": false }
+    },
+    {
+      "name": "chronic timeout skip is actionable",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "chronic-timeout-skip",
+        "reasonCodes": ["chronic-timeout", "continuation-skipped"],
+        "counts": { "recentTimeouts": 5 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-004",
+        "reviewOutputKey": "review/xbmc/xbmc/104/delivery-s05-004"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "chronic-timeout-skip",
+        "reasonCodes": ["chronic-timeout", "continuation-skipped"],
+        "deliveryId": "delivery-s05-004",
+        "reviewOutputKey": "review/xbmc/xbmc/104/delivery-s05-004"
+      },
+      "telemetry": {
+        "timeoutClassification": "hard-failure",
+        "timeoutClassificationMode": "chronic-timeout-skip",
+        "timeoutClassificationReasons": ["chronic-timeout", "continuation-skipped"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.hard-failure", "actionable": true }
+    },
+    {
+      "name": "retry enqueued is bounded continuation",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "retry-enqueued",
+        "reasonCodes": ["retry-enqueued"],
+        "counts": { "retryFilesCount": 3, "retryAttemptCount": 1 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-005",
+        "reviewOutputKey": "review/xbmc/xbmc/105/delivery-s05-005"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "retry-enqueued",
+        "reasonCodes": ["retry-enqueued"],
+        "deliveryId": "delivery-s05-005",
+        "reviewOutputKey": "review/xbmc/xbmc/105/delivery-s05-005"
+      },
+      "telemetry": {
+        "timeoutClassification": "expected-bounded-outcome",
+        "timeoutClassificationMode": "retry-enqueued",
+        "timeoutClassificationReasons": ["retry-enqueued"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.expected-bounded-outcome", "actionable": false }
+    },
+    {
+      "name": "retry completed has results",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "retry-completed",
+        "reasonCodes": ["retry-completed", "retry-has-results"],
+        "counts": { "retryFilesCount": 3, "retryAttemptCount": 1, "retryCompletedCount": 1 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-006",
+        "reviewOutputKey": "review/xbmc/xbmc/106/delivery-s05-006"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "retry-completed",
+        "reasonCodes": ["retry-completed", "retry-has-results"],
+        "deliveryId": "delivery-s05-006",
+        "reviewOutputKey": "review/xbmc/xbmc/106/delivery-s05-006"
+      },
+      "telemetry": {
+        "timeoutClassification": "expected-bounded-outcome",
+        "timeoutClassificationMode": "retry-completed",
+        "timeoutClassificationReasons": ["retry-completed", "retry-has-results"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.expected-bounded-outcome", "actionable": false }
+    },
+    {
+      "name": "retry failed remains actionable",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "retry-failed",
+        "reasonCodes": ["retry-failed"],
+        "counts": { "retryFilesCount": 2, "retryAttemptCount": 2, "retryFailedCount": 1 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-007",
+        "reviewOutputKey": "review/xbmc/xbmc/107/delivery-s05-007"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "retry-failed",
+        "reasonCodes": ["retry-failed"],
+        "deliveryId": "delivery-s05-007",
+        "reviewOutputKey": "review/xbmc/xbmc/107/delivery-s05-007"
+      },
+      "telemetry": {
+        "timeoutClassification": "hard-failure",
+        "timeoutClassificationMode": "retry-failed",
+        "timeoutClassificationReasons": ["retry-failed"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.hard-failure", "actionable": true }
+    },
+    {
+      "name": "long-run threshold is actionable threshold regression",
+      "runtime": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "long-run-threshold-exceeded",
+        "reasonCodes": ["long-run-threshold-exceeded"],
+        "counts": { "longRunDurationSeconds": 1900, "longRunThresholdSeconds": 1800 },
+        "redaction": { "rawPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false },
+        "deliveryId": "delivery-s05-008",
+        "reviewOutputKey": "review/xbmc/xbmc/108/delivery-s05-008"
+      },
+      "log": {
+        "gate": "review-timeout-classification",
+        "classification": "hard-failure",
+        "gateResult": "hard-failure",
+        "mode": "long-run-threshold-exceeded",
+        "reasonCodes": ["long-run-threshold-exceeded"],
+        "deliveryId": "delivery-s05-008",
+        "reviewOutputKey": "review/xbmc/xbmc/108/delivery-s05-008"
+      },
+      "telemetry": {
+        "timeoutClassification": "hard-failure",
+        "timeoutClassificationMode": "long-run-threshold-exceeded",
+        "timeoutClassificationReasons": ["long-run-threshold-exceeded"]
+      },
+      "taxonomy": { "classId": "review-timeout-classification.long-run-threshold", "actionable": true }
+    }
+  ],
+  "negativeControls": {
+    "invalidJsonRejected": true,
+    "missingFixtureRejected": true,
+    "ignoredPathRejected": true,
+    "rawCanariesRejected": true,
+    "unsafeReasonCodesRejected": true,
+    "emptyReasonsRejected": true,
+    "unboundedArraysRejected": true,
+    "boundedSuccessNotHardFailure": true
+  }
+}

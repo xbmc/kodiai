@@ -46,7 +46,10 @@ These are query shapes only. Do not paste raw `Log_s` payloads into docs, fixtur
 | `knowledge-store.undefined-write` | app-actionable | S02 | 0 | 0 | historical taxonomy class | none |
 | `inline-publication.line-not-commentable` | app-actionable | S03 | 0 | 0 | historical taxonomy class | none |
 | `candidate-publication.non-approved-missing-reason` | app-actionable | S04 | 1 | 0 | current in last-12h | `2026-05-20T09:27:51.0183944Z` |
-| `review.timeout-or-long-run` | transient | S05 | 0 | 0 | historical taxonomy class | none |
+| `review-timeout-classification.expected-bounded-outcome` | transient | S05 | 0 | 0 | structured S05 taxonomy class | none |
+| `review-timeout-classification.hard-failure` | app-actionable | S05 | 0 | 0 | structured S05 taxonomy class | none |
+| `review-timeout-classification.long-run-threshold` | app-actionable | S05 | 0 | 0 | structured S05 taxonomy class | none |
+| `review.timeout-or-long-run` | transient | S05 | 0 | 0 | raw ambiguous fallback class | none |
 | `addon-check.timeout` | transient | S06 | 0 | 0 | historical taxonomy class | none |
 | `azure.platform-noise` | azure-platform | none | 4 | 4 | platform/transient | last12h `2026-05-20T09:25:47.77131Z` to `2026-05-20T09:25:48.6440884Z`; last7d `2026-05-13T15:37:58.1450233Z` to `2026-05-13T15:37:58.9511078Z` |
 
@@ -59,14 +62,17 @@ App-actionable and Kodiai-owned transient classes intentionally map to the follo
 | `knowledge-store.undefined-write` | S02 | Eliminate undefined payload writes before they reach the knowledge persistence boundary. |
 | `inline-publication.line-not-commentable` | S03 | Reduce approved inline findings targeting GitHub lines that cannot accept comments. |
 | `candidate-publication.non-approved-missing-reason` | S04 | Ensure non-approved candidate publication outcomes carry safe reason/mode evidence. |
-| `review.timeout-or-long-run` | S05 | Separate and reduce review timeout or chronic long-run behavior. |
+| `review-timeout-classification.expected-bounded-outcome` | S05 | Structured timeout handling succeeded with bounded partial, max-turns, or retry continuation evidence; track volume separately from failures. |
+| `review-timeout-classification.hard-failure` | S05 | Structured timeout handling found zero-evidence, retry-failed, chronic-timeout, or malformed-evidence hard failures that remain actionable. |
+| `review-timeout-classification.long-run-threshold` | S05 | Structured timeout handling crossed the long-run threshold and should remain actionable for regression triage. |
+| `review.timeout-or-long-run` | S05 | Raw or ambiguous fallback class for legacy timeout/long-run text before structured classification is available. |
 | `addon-check.timeout` | S06 | Separate and reduce addon-check timeout behavior. |
 | `azure.platform-noise` | none | Azure/Container Apps platform signals are separated from app-fix work and must not receive an app owner. |
 
 ## Operator interpretation
 
 - `app-actionable` means the class represents Kodiai behavior that a downstream slice must reduce or explain.
-- `transient` means Kodiai owns better classification or mitigation, but the specific event may be load/timing dependent.
+- `transient` means Kodiai owns better classification or mitigation, but the specific event may be load/timing dependent. For S05, `review-timeout-classification.expected-bounded-outcome` is the expected structured timeout-handling bucket, while `review.timeout-or-long-run` is reserved for raw ambiguous legacy text.
 - `azure-platform` means the row is platform noise. It is tracked for separation only and has no app-fix owner.
 - `historical taxonomy class` with count `0` is retained so future verifiers can detect regressions without losing the M075 taxonomy shape.
 

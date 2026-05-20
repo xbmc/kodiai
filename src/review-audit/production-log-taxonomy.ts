@@ -10,6 +10,9 @@ export type ProductionLogIssueClassId =
   | "knowledge-store.undefined-write"
   | "inline-publication.line-not-commentable"
   | "candidate-publication.non-approved-missing-reason"
+  | "review-timeout-classification.expected-bounded-outcome"
+  | "review-timeout-classification.hard-failure"
+  | "review-timeout-classification.long-run-threshold"
   | "review.timeout-or-long-run"
   | "addon-check.timeout"
   | "azure.platform-noise";
@@ -107,9 +110,27 @@ const ISSUE_CLASS_DEFINITIONS: Record<ProductionLogIssueClassId, Omit<Production
     classification: "app-actionable",
     downstreamOwner: "S04",
   },
+  "review-timeout-classification.expected-bounded-outcome": {
+    id: "review-timeout-classification.expected-bounded-outcome",
+    title: "Review timeout classification reported an expected bounded outcome",
+    classification: "transient",
+    downstreamOwner: "S05",
+  },
+  "review-timeout-classification.hard-failure": {
+    id: "review-timeout-classification.hard-failure",
+    title: "Review timeout classification reported an actionable hard failure",
+    classification: "app-actionable",
+    downstreamOwner: "S05",
+  },
+  "review-timeout-classification.long-run-threshold": {
+    id: "review-timeout-classification.long-run-threshold",
+    title: "Review timeout classification crossed the long-run threshold",
+    classification: "app-actionable",
+    downstreamOwner: "S05",
+  },
   "review.timeout-or-long-run": {
     id: "review.timeout-or-long-run",
-    title: "Review timed out or exceeded long-run threshold",
+    title: "Raw or ambiguous review timeout or long-run noise",
     classification: "transient",
     downstreamOwner: "S05",
   },
@@ -255,9 +276,38 @@ function hasMissingSafeReason(row: NormalizedLogAnalyticsRow): boolean {
   });
 }
 
+function classifyStructuredReviewTimeout(row: NormalizedLogAnalyticsRow): ProductionLogIssueClassId | null {
+  const parsed = row.parsedLog;
+  if (!parsed || readPath(parsed, ["gate"]) !== "review-timeout-classification") {
+    return null;
+  }
+
+  const classification = safeString(readPath(parsed, ["classification", "gateResult"]));
+  const mode = safeString(readPath(parsed, ["mode"]));
+
+  if (mode === "long-run-threshold-exceeded") {
+    return "review-timeout-classification.long-run-threshold";
+  }
+
+  if (classification === "expected-bounded-outcome") {
+    return "review-timeout-classification.expected-bounded-outcome";
+  }
+
+  if (classification === "hard-failure" || mode === "zero-evidence-hard-timeout" || mode === "unknown-malformed-evidence") {
+    return "review-timeout-classification.hard-failure";
+  }
+
+  return null;
+}
+
 export function classifyProductionLogRow(row: NormalizedLogAnalyticsRow): ProductionLogIssueClassId | null {
   if (row.malformed) {
     return null;
+  }
+
+  const structuredReviewTimeout = classifyStructuredReviewTimeout(row);
+  if (structuredReviewTimeout) {
+    return structuredReviewTimeout;
   }
 
   const text = textForClassification(row);

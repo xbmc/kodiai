@@ -1,100 +1,197 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   COMMAND_NAME,
+  DEFAULT_FIXTURE_PATH,
   EXPECTED_PACKAGE_SCRIPT,
+  evaluateEvidence,
   evaluateM075S05Contract,
+  main,
   parseM075S05Args,
-  renderM075S05Report,
+  type M075S05EvidenceSnapshot,
 } from "./verify-m075-s05.ts";
 
-const FILES: Record<string, string> = {
-  "package.json": JSON.stringify({ scripts: { [COMMAND_NAME]: EXPECTED_PACKAGE_SCRIPT } }, null, 2),
-  "src/handlers/review.ts": `
-    import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
-    const timeoutClassification = classifyReviewTimeoutOutcome({});
-    logger.info(
-      {
-        ...baseLog,
-        gate: timeoutClassification.gate,
-        gateResult: timeoutClassification.classification,
-        classification: timeoutClassification.classification,
-        mode: timeoutClassification.mode,
-        reasonCodes: timeoutClassification.reasonCodes,
-        deliveryId: event.id,
-        reviewOutputKey,
-        checkpointFilesReviewed: timeoutClassification.counts.checkpointFilesReviewed ?? null,
-        checkpointFilesInspected: timeoutClassification.counts.checkpointFilesInspected ?? null,
-        checkpointFindingCount: timeoutClassification.counts.checkpointFindingCount ?? null,
-        checkpointTotalFiles: timeoutClassification.counts.checkpointTotalFiles ?? null,
-        retryFilesCount: timeoutClassification.counts.retryFilesCount ?? null,
-        recentTimeouts: timeoutClassification.counts.recentTimeouts ?? null,
-        longRunThresholdSeconds: timeoutClassification.counts.longRunThresholdSeconds ?? null,
-        redaction: timeoutClassification.redaction,
-      },
-      "Review timeout classification",
-    );
-  `,
-  "src/handlers/review.test.ts": `
-    test("logs bounded partial timeout classification", () => undefined);
-    expect(mode).toBe("zero-evidence-hard-timeout");
-    expect(mode).toBe("chronic-timeout-skip");
-    expect(mode).toBe("max-turns-continuation");
-    expect(message).toBe("Resilience telemetry write failed (non-blocking)");
-  `,
-  "src/telemetry/types.ts": `
-    timeoutClassification?: string;
-    timeoutClassificationMode?: string;
-    timeoutClassificationReasons?: string[];
-  `,
-  "src/telemetry/store.ts": `
-    timeout_classification, timeout_classification_mode, timeout_classification_reasons
-    entry.timeoutClassificationReasons ?? []
-    timeout_classification_reasons = EXCLUDED.timeout_classification_reasons
-  `,
-  "src/telemetry/store.test.ts": `test("writes timeout classification fields without raw payloads", () => undefined);`,
-  "src/db/migrations/044-review-timeout-classification.sql": `
-    ADD COLUMN IF NOT EXISTS timeout_classification TEXT,
-    ADD COLUMN IF NOT EXISTS timeout_classification_mode TEXT,
-    ADD COLUMN IF NOT EXISTS timeout_classification_reasons TEXT[]
-  `,
-  "src/db/migrations/044-review-timeout-classification.down.sql": `
-    DROP COLUMN IF EXISTS timeout_classification_reasons,
-    DROP COLUMN IF EXISTS timeout_classification_mode,
-    DROP COLUMN IF EXISTS timeout_classification
-  `,
-};
+function packageJson(script = EXPECTED_PACKAGE_SCRIPT): string {
+  return JSON.stringify({ scripts: { [COMMAND_NAME]: script } });
+}
+
+const taxonomyText = [
+  "review-timeout-classification.expected-bounded-outcome",
+  "review-timeout-classification.hard-failure",
+  "review-timeout-classification.long-run-threshold",
+].join("\n");
+
+async function fixture(overrides: (copy: M075S05EvidenceSnapshot) => void = () => undefined): Promise<M075S05EvidenceSnapshot> {
+  const loaded = await Bun.file(DEFAULT_FIXTURE_PATH).json() as M075S05EvidenceSnapshot;
+  const copy = JSON.parse(JSON.stringify(loaded)) as M075S05EvidenceSnapshot;
+  overrides(copy);
+  return copy;
+}
+
+async function reportFor(copy: M075S05EvidenceSnapshot) {
+  return evaluateM075S05Contract(parseM075S05Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+    readFileText: async () => JSON.stringify(copy),
+    readPackageJsonText: async () => packageJson(),
+    readTaxonomyText: async () => taxonomyText,
+  });
+}
 
 describe("verify-m075-s05", () => {
-  test("parses cli args", () => {
+  test("parses fixture-only CLI arguments and rejects unsafe inputs", () => {
     expect(parseM075S05Args([])).toEqual({ json: false, help: false });
-    expect(parseM075S05Args(["--json"])).toEqual({ json: true, help: false });
+    expect(parseM075S05Args(["--json", "--fixture", DEFAULT_FIXTURE_PATH])).toEqual({ json: true, help: false, fixturePath: DEFAULT_FIXTURE_PATH });
     expect(parseM075S05Args(["--help"])).toEqual({ json: false, help: true });
-    expect(() => parseM075S05Args(["--fixture", ".gsd/secret.json"])).toThrow(/invalid_cli_args/);
+    expect(() => parseM075S05Args(["--live"])).toThrow(/fixture-only/);
+    expect(() => parseM075S05Args(["--fixture", ".gsd/raw.json"])).toThrow(/must not read ignored/);
+    expect(() => parseM075S05Args(["--fixture", "../raw.json"])).toThrow(/must not traverse/);
+    expect(() => parseM075S05Args(["--fixture", "/tmp/raw.json"])).toThrow(/repo-relative/);
+    expect(() => parseM075S05Args(["--bogus"])).toThrow(/invalid_cli_args/);
   });
 
-  test("passes when tracked runtime, telemetry, migration, test, and package surfaces are present", async () => {
-    const report = await evaluateM075S05Contract({
-      generatedAt: "2026-05-20T00:00:00.000Z",
-      readTextFile: async (path) => FILES[path] ?? "",
+  test("fixture verification succeeds for bounded timeout classification evidence", async () => {
+    const report = await evaluateM075S05Contract(parseM075S05Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+      generatedAt: "2026-05-20T16:30:00.000Z",
+      readPackageJsonText: async () => packageJson(),
+      readTaxonomyText: async () => taxonomyText,
     });
 
-    expect(report.success).toBe(true);
-    expect(report.statusCode).toBe("m075_s05_ok");
+    expect(report).toMatchObject({
+      command: "verify:m075:s05",
+      generatedAt: "2026-05-20T16:30:00.000Z",
+      success: true,
+      statusCode: "m075_s05_ok",
+      fixturePath: DEFAULT_FIXTURE_PATH,
+      observed: {
+        scenarioCount: 8,
+        modeCount: 8,
+        expectedBoundedCount: 4,
+        hardFailureCount: 4,
+        actionableCount: 4,
+      },
+    });
     expect(report.failedCheckIds).toEqual([]);
-    expect(report.checks.every((check) => check.status === "pass")).toBe(true);
-    expect(renderM075S05Report(report)).toContain("M075/S05 timeout classification verifier: PASS");
+    expect(JSON.stringify(report)).not.toContain("RAW_PROMPT_CANARY");
+    expect(JSON.stringify(report)).not.toContain("diff --git");
   });
 
-  test("fails closed when raw canary names appear in the runtime classification log", async () => {
-    const report = await evaluateM075S05Contract({
-      generatedAt: "2026-05-20T00:00:00.000Z",
-      readTextFile: async (path) => path === "src/handlers/review.ts"
-        ? FILES[path]!.replace("reviewOutputKey,", "rawPrompt,\n        reviewOutputKey,")
-        : FILES[path] ?? "",
+  test("fails closed when required mode coverage is missing", async () => {
+    const copy = await fixture((next) => {
+      next.scenarios = next.scenarios.filter((scenario) => scenario.runtime.mode !== "retry-failed");
     });
+    const report = await reportFor(copy);
 
     expect(report.success).toBe(false);
-    expect(report.failedCheckIds).toContain("redaction.raw-canaries-absent");
-    expect(report.issues.join("\n")).toContain("Raw prompt/model/candidate/diff/GitHub payload/log canary");
+    expect(report.failedCheckIds).toContain("mode-coverage.present");
+    expect(report.issues.join("\n")).toContain("retry-failed");
+  });
+
+  test("fails closed when reason codes are empty, unsafe, mismatched, or unbounded", async () => {
+    const empty = await fixture((next) => {
+      next.scenarios[0]!.runtime.reasonCodes = [];
+      next.scenarios[0]!.log.reasonCodes = [];
+    });
+    const unsafe = await fixture((next) => {
+      next.scenarios[0]!.runtime.reasonCodes = ["RAW_PROMPT_CANARY"];
+      next.scenarios[0]!.log.reasonCodes = ["RAW_PROMPT_CANARY"];
+    });
+    const mismatch = await fixture((next) => {
+      next.scenarios[0]!.log.reasonCodes = ["timeout"];
+    });
+    const unbounded = await fixture((next) => {
+      next.scenarios[0]!.runtime.reasonCodes = Array.from({ length: 9 }, (_, index) => `reason-${index}`);
+      next.scenarios[0]!.log.reasonCodes = Array.from({ length: 9 }, (_, index) => `reason-${index}`);
+    });
+
+    expect((await reportFor(empty)).failedCheckIds).toContain("reason-codes.safe");
+    expect((await reportFor(unsafe)).failedCheckIds).toContain("reason-codes.safe");
+    expect((await reportFor(mismatch)).failedCheckIds).toContain("reason-codes.safe");
+    expect((await reportFor(unbounded)).failedCheckIds).toContain("reason-codes.safe");
+  });
+
+  test("fails closed for raw keys, raw canaries, secret-like values, and unsafe redaction flags without echoing raw values", async () => {
+    const copy = await fixture((next) => {
+      next.scenarios[0]!.runtime.redaction.rawPayloadOmitted = false;
+      next.scenarios[0]!.runtime.redaction.boundedReasonCodes = false;
+      (next.scenarios[0]!.telemetry as Record<string, unknown>).candidateBody = "SECRET_TOKEN_CANARY";
+      (next.scenarios[0]!.log as Record<string, unknown>).message = "TOKEN=abc123 diff --git";
+    });
+    const report = await reportFor(copy);
+
+    expect(report.success).toBe(false);
+    expect(report.failedCheckIds).toContain("runtime-signals.present");
+    expect(report.failedCheckIds).toContain("redaction.safe");
+    expect(report.issues.join("\n")).toContain("forbidden raw key/value");
+    expect(report.issues.join("\n")).not.toContain("SECRET_TOKEN_CANARY");
+    expect(report.issues.join("\n")).not.toContain("TOKEN=abc123");
+  });
+
+  test("fails closed when telemetry or taxonomy mappings collapse bounded outcomes into ambiguous timeout noise", async () => {
+    const boundedAsHardFailure = await fixture((next) => {
+      next.scenarios[0]!.taxonomy.classId = "review-timeout-classification.hard-failure";
+      next.scenarios[0]!.taxonomy.actionable = true;
+    });
+    const longRunWrongClass = await fixture((next) => {
+      const scenario = next.scenarios.find((entry) => entry.runtime.mode === "long-run-threshold-exceeded")!;
+      scenario.taxonomy.classId = "review-timeout-classification.hard-failure";
+    });
+    const telemetryDrift = await fixture((next) => {
+      next.scenarios[0]!.telemetry.timeoutClassificationMode = "zero-evidence-hard-timeout";
+    });
+
+    expect((await reportFor(boundedAsHardFailure)).failedCheckIds).toContain("telemetry-taxonomy.present");
+    expect((await reportFor(longRunWrongClass)).failedCheckIds).toContain("telemetry-taxonomy.present");
+    expect((await reportFor(telemetryDrift)).failedCheckIds).toContain("telemetry-taxonomy.present");
+  });
+
+  test("fails closed when scenario output or issue output is unbounded", async () => {
+    const copy = await fixture((next) => {
+      next.scenarios = Array.from({ length: 17 }, (_, index) => ({
+        ...JSON.parse(JSON.stringify(next.scenarios[0])),
+        name: `scenario-${index}`,
+      }));
+    });
+    const report = await reportFor(copy);
+
+    expect(report.success).toBe(false);
+    expect(report.failedCheckIds).toContain("mode-coverage.present");
+    expect(report.failedCheckIds).toContain("output.bounded");
+    expect(report.issues.length).toBeLessThanOrEqual(24);
+    expect(report.issues.every((issue) => issue.length <= 240)).toBe(true);
+  });
+
+  test("package wiring, invalid JSON, unreadable fixture, taxonomy drift, and main invalid args fail safely", async () => {
+    const drifted = await evaluateM075S05Contract(parseM075S05Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+      readPackageJsonText: async () => JSON.stringify({ scripts: {} }),
+      readTaxonomyText: async () => taxonomyText,
+    });
+    const invalidJson = await evaluateM075S05Contract(parseM075S05Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+      readFileText: async () => "{not-json",
+      readPackageJsonText: async () => packageJson(),
+      readTaxonomyText: async () => taxonomyText,
+    });
+    const missing = await evaluateM075S05Contract(parseM075S05Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+      readFileText: async () => { throw new Error("missing"); },
+      readPackageJsonText: async () => packageJson(),
+      readTaxonomyText: async () => taxonomyText,
+    });
+    const missingTaxonomy = await evaluateM075S05Contract(parseM075S05Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+      readPackageJsonText: async () => packageJson(),
+      readTaxonomyText: async () => "review.timeout-or-long-run",
+    });
+
+    expect(drifted.success).toBe(false);
+    expect(drifted.failedCheckIds).toContain("package-wiring.present");
+    expect(invalidJson.statusCode).toBe("m075_s05_invalid_json");
+    expect(missing.statusCode).toBe("m075_s05_fixture_read_failed");
+    expect(missingTaxonomy.failedCheckIds).toContain("telemetry-taxonomy.present");
+    expect(await main(["--invalid"], { stdout: { write: () => undefined }, stderr: { write: () => undefined } })).toBe(2);
+  });
+
+  test("evaluateEvidence can be reused by later S07 aggregation", async () => {
+    const copy = await fixture();
+    const result = evaluateEvidence(copy, { id: "package-wiring.present", status: "pass", message: "ok", issues: [] }, taxonomyText);
+
+    expect(result.checks.every((check) => check.status === "pass")).toBe(true);
+    expect(result.observed).toMatchObject({ scenarioCount: 8, modeCount: 8, actionableCount: 4 });
   });
 });

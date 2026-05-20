@@ -119,6 +119,72 @@ describe("production log taxonomy", () => {
     });
   });
 
+  test("classifies structured S05 timeout outcomes separately from ambiguous timeout noise", () => {
+    const bounded = row({
+      msg: "Review timeout classification",
+      parsedLog: {
+        msg: "Review timeout classification",
+        gate: "review-timeout-classification",
+        gateResult: "expected-bounded-outcome",
+        classification: "expected-bounded-outcome",
+        mode: "bounded-partial-timeout",
+        reasonCodes: ["partial-timeout", "checkpoint-present"],
+        repo: "xbmc/xbmc",
+        prNumber: 701,
+        deliveryId: "delivery-701",
+        reviewOutputKey: reviewOutputKey(701),
+      },
+      prNumber: 701,
+    });
+    const zeroEvidence = row({
+      msg: "Review timeout classification",
+      parsedLog: {
+        msg: "Review timeout classification",
+        gate: "review-timeout-classification",
+        gateResult: "hard-failure",
+        classification: "hard-failure",
+        mode: "zero-evidence-hard-timeout",
+        reasonCodes: ["zero-evidence", "timeout"],
+        repo: "xbmc/xbmc",
+        prNumber: 702,
+        deliveryId: "delivery-702",
+        reviewOutputKey: reviewOutputKey(702),
+      },
+      prNumber: 702,
+    });
+    const longRun = row({
+      msg: "Review timeout classification",
+      parsedLog: {
+        msg: "Review timeout classification",
+        gate: "review-timeout-classification",
+        gateResult: "hard-failure",
+        classification: "hard-failure",
+        mode: "long-run-threshold-exceeded",
+        reasonCodes: ["long-run-threshold-exceeded"],
+        repo: "xbmc/xbmc",
+        prNumber: 703,
+        deliveryId: "delivery-703",
+        reviewOutputKey: reviewOutputKey(703),
+      },
+      prNumber: 703,
+    });
+    const ambiguous = row({ msg: "Review execution timeout after remote runtime budget exceeded", prNumber: 704 });
+
+    expect(classifyProductionLogRow(bounded)).toBe("review-timeout-classification.expected-bounded-outcome");
+    expect(classifyProductionLogRow(zeroEvidence)).toBe("review-timeout-classification.hard-failure");
+    expect(classifyProductionLogRow(longRun)).toBe("review-timeout-classification.long-run-threshold");
+    expect(classifyProductionLogRow(ambiguous)).toBe("review.timeout-or-long-run");
+
+    const report = buildBaselineWindowFromRows({ window: "last12h", rows: [bounded, zeroEvidence, longRun, ambiguous] });
+    expect(count(report, "review-timeout-classification.expected-bounded-outcome")).toBe(1);
+    expect(count(report, "review-timeout-classification.hard-failure")).toBe(1);
+    expect(count(report, "review-timeout-classification.long-run-threshold")).toBe(1);
+    expect(count(report, "review.timeout-or-long-run")).toBe(1);
+    expect(findProductionLogIssueClass(report, "review-timeout-classification.expected-bounded-outcome").classification).toBe("transient");
+    expect(findProductionLogIssueClass(report, "review-timeout-classification.hard-failure").classification).toBe("app-actionable");
+    expect(findProductionLogIssueClass(report, "review-timeout-classification.long-run-threshold").classification).toBe("app-actionable");
+  });
+
   test("separates Azure and ACA platform noise from app-actionable classes", () => {
     const azureRow = row({
       msg: "ACA Job completed status=succeeded revision ca-kodiai--0000076",
@@ -166,7 +232,7 @@ describe("production log taxonomy", () => {
     expect(emptyReport.windows.last12h.source.availability).toBe("missing");
     expect(emptyReport.windows.last12h.totalRowCount).toBe(0);
     expect(emptyReport.windows.last7d.source.availability).toBe("missing");
-    expect(emptyReport.windows.last7d.issueClasses).toHaveLength(6);
+    expect(emptyReport.windows.last7d.issueClasses).toHaveLength(9);
   });
 
   test("caps examples per class while counts continue to scale with volume", () => {
