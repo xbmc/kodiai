@@ -90,7 +90,14 @@ Run the canonical fixture verifier:
 bun run verify:m075:s01 -- --fixture scripts/fixtures/m075-s01-production-log-baseline.json --json
 ```
 
-Expected result:
+For the final M075 proof gate, operators should use the aggregate local and live commands documented in `docs/operations/m075-final-production-proof.md`:
+
+```sh
+bun run verify:m075 -- --json
+bun run verify:m075 -- --live --json
+```
+
+Expected fixture result:
 
 - `success: true`
 - `statusCode: m075_s01_ok`
@@ -99,3 +106,13 @@ Expected result:
 - Kodiai transient classes have S05-S06 owners
 - Azure/platform class has `downstreamOwner: null`
 - redaction passes with `rawPayloadsExcluded: true` and no violations
+
+Expected aggregate live result for R156 validation:
+
+- `success: true`
+- `statusCode: m075_ok`
+- health/readiness check ids pass with live source configured
+- `live-source.available`, `raw-regression.absent`, `structured-reclassification.visible`, and `live-redaction.safe` pass
+- raw targeted issue classes are zero
+- Azure platform noise remains separated from app-owned classes
+- structured expected-bounded outcomes are allowed, while structured hard/actionable outcomes remain visible for triage
