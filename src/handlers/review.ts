@@ -25,7 +25,7 @@ import type {
   ContinuationFamilyFinalStopReason,
   ContinuationFamilyProjectionStatus,
 } from "../knowledge/types.ts";
-import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
+import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
@@ -101,6 +101,10 @@ import {
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
+import {
+  buildReviewLearningMemoryRecord,
+  isReviewLearningMemorySkip,
+} from "./review-learning-memory.ts";
 import {
   type ReviewArea,
   type FindingSeverity,
@@ -6232,62 +6236,94 @@ export function createReviewHandler(deps: {
             const repo = `${apiOwner}/${apiRepo}`;
             let written = 0;
             let failed = 0;
+            let skipped = 0;
+            const skipReasons: Record<string, number> = {};
 
             for (const finding of processedFindings) {
+              const decision = buildReviewLearningMemoryRecord({
+                finding,
+                owner,
+                repo,
+                reviewId,
+                prNumber: pr.number,
+                // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
+                language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
+              });
+
+              if (isReviewLearningMemorySkip(decision)) {
+                skipped++;
+                skipReasons[decision.reason] = (skipReasons[decision.reason] ?? 0) + 1;
+                logger.info(
+                  {
+                    ...baseLog,
+                    gate: decision.gate,
+                    gateResult: decision.gateResult,
+                    reason: decision.reason,
+                    filePath: decision.filePath,
+                    findingTitle: decision.findingTitle,
+                  },
+                  'Learning memory write skipped for finding',
+                );
+                continue;
+              }
+
               try {
-                // Determine outcome from finding state
-                const outcome: string = finding.suppressed ? 'suppressed' : 'accepted';
-
-                // Build embedding text: finding title + severity + category + file path for context
-                const embeddingText = [
-                  `[${finding.severity}] [${finding.category}]`,
-                  finding.title,
-                  `File: ${finding.filePath}`,
-                ].join('\n');
-
-                const embeddingResult = await embeddingProvider.generate(embeddingText, 'document');
+                const embeddingResult = await embeddingProvider.generate(decision.embeddingText, 'document');
                 if (!embeddingResult) {
                   // Embedding failed (already logged by provider), skip this finding
                   failed++;
                   continue;
                 }
 
-                const memoryRecord: LearningMemoryRecord = {
-                  repo,
-                  owner,
-                  findingId: finding.commentId, // Use comment ID as finding reference
-                  reviewId: reviewId ?? 0,       // reviewId from knowledge store recordReview above
-                  sourceRepo: repo,
-                  findingText: finding.title,
-                  severity: finding.severity,
-                  category: finding.category,
-                  filePath: finding.filePath,
-                  outcome: outcome as LearningMemoryRecord["outcome"],
-                  embeddingModel: embeddingResult.model,
-                  embeddingDim: embeddingResult.dimensions,
-                  stale: false,
-                  // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
-                  language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
-                };
+                const memoryRecord = decision.toRecord({
+                  model: embeddingResult.model,
+                  dimensions: embeddingResult.dimensions,
+                });
+                if (isReviewLearningMemorySkip(memoryRecord)) {
+                  skipped++;
+                  skipReasons[memoryRecord.reason] = (skipReasons[memoryRecord.reason] ?? 0) + 1;
+                  logger.info(
+                    {
+                      ...baseLog,
+                      gate: memoryRecord.gate,
+                      gateResult: memoryRecord.gateResult,
+                      reason: memoryRecord.reason,
+                      filePath: memoryRecord.filePath,
+                      findingTitle: memoryRecord.findingTitle,
+                    },
+                    'Learning memory write skipped for finding',
+                  );
+                  continue;
+                }
 
                 await learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);
                 written++;
               } catch (err) {
                 failed++;
                 logger.warn(
-                  { err, findingTitle: finding.title, filePath: finding.filePath },
+                  {
+                    ...baseLog,
+                    gate: 'learning-memory-write',
+                    gateResult: 'failed',
+                    err,
+                    findingTitle: finding.title,
+                    filePath: finding.filePath,
+                  },
                   'Learning memory write failed for finding (fail-open)',
                 );
               }
             }
 
-            if (written > 0 || failed > 0) {
+            if (written > 0 || failed > 0 || skipped > 0) {
               logger.info(
                 {
                   ...baseLog,
                   gate: 'learning-memory-write',
+                  gateResult: failed > 0 ? 'failed' : 'completed',
                   written,
                   failed,
+                  skipped,
+                  skipReasons,
                   total: processedFindings.length,
                 },
                 'Learning memory write batch complete',
