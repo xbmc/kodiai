@@ -2,32 +2,24 @@
 
 ## What This Is
 
-Kodiai is a GitHub App and review automation service that reviews pull requests, publishes GitHub review outcomes, uses retrieval/knowledge context, and records operational evidence for agents and operators. The current project has a mature review pipeline with review orchestration, retrieval, candidate/reducer publication gates, phase timing, and production deployment on Azure Container Apps.
+Kodiai is a production GitHub review bot for Kodi/XBMC repositories. It receives webhook and mention-triggered review requests, prepares review context, runs an agent in an isolated Azure Container Apps job, publishes bounded Review Details and review comments, records operational telemetry, and uses candidate-publication safety gates to prevent unsafe or unapproved output from reaching public GitHub surfaces.
 
 ## Core Value
 
-Kodiai must provide trustworthy PR review signal without wasting model tokens, exceeding runtime budgets, or hiding what it did.
+Kodiai must provide useful, safe PR review signal in production while preserving publication safety: no unapproved candidate output, no secret leakage, no silent publication failure, and operator-visible evidence when review or publication behavior degrades.
 
 ## Project Shape
 
 - **Complexity:** complex
-- **Why:** The work crosses review orchestration, prompt construction, retrieval, cache invalidation, continuation behavior, GitHub publication, production telemetry, and live proof requirements.
+- **Why:** The project spans GitHub webhooks/review APIs, Azure Container Apps jobs, Log Analytics, database-backed knowledge capture, candidate publication policy, Review Details output, and production rollout verification.
 
 ## Current State
 
-The review system supports phase timing, Review Details, retrieval context, derived prompt caching, candidate finding/reducer flows, publication safety gates, continuation/retry behavior, production log visibility, bounded finding lifecycle evidence, same-PR inline fix evidence, validation-truth status, and `.kodiai.yml` repo doctrine contracts. M074 closed the Clawpatch-inspired review workflow via production-like proof with bounded public output and no branch/PR/push side effects. M073 remains the next planned token-first efficiency milestone.
+Kodiai is deployed in Azure Container Apps and currently reports healthy `/healthz` and `/readiness` endpoints. v0.38 has been released and production verification showed explicit review handling works for `xbmc/xbmc#28172`. The most recent production-log audit found app-level issue classes that need cleanup: undefined knowledge-store writes, inline comment publication failures for non-commentable GitHub diff lines, candidate publication blocked states with incomplete reason detail, timeout/addon-check ambiguity, and the need to separate Azure platform transient signals from Kodiai-actionable failures.
 
 ## Architecture / Key Patterns
 
-- TypeScript/Bun service with Hono routes, GitHub App handlers, Azure Container Apps execution, and structured pino logging.
-- `src/handlers/review.ts` orchestrates review lifecycle, queueing, prompt construction, timeout estimation, continuation, Review Details, lifecycle/fix/validation-truth projections, and publication coordination.
-- `src/execution/review-prompt.ts` builds review prompts and exposes prompt-section metrics.
-- `src/lib/search-cache.ts` provides TTL cache plus in-flight coalescing for derived/search-like data.
-- `src/knowledge/*retrieval*.ts` provides review context retrieval across knowledge corpora.
-- `src/review-orchestration/*` contains candidate/reducer/review-plan helpers that must stay bounded and safe.
-- `src/review-lifecycle/*` contains bounded finding lifecycle, same-PR fix eligibility, and validation-truth reducers used to keep public review evidence compact, correlated, and redaction-safe.
-- `src/repo-doctrine/*` plus `.kodiai.yml` `review.doctrine` config support repository-owned review invariant contracts.
-- Safety and publication gates outrank cost optimization.
+Kodiai is TypeScript/Bun. The main review path runs through webhook/mention handlers, review orchestration, an Azure Container Apps job executor, MCP publication tools, candidate publication policy/runtime evidence, Review Details rendering, and Log Analytics-backed operational verification. Existing safety patterns include bounded Review Details, candidate-approved publication, direct-fallback evidence rejection, secret/redaction gates, idempotency markers, and verifier scripts that consume fixture or production-shaped evidence.
 
 ## Capability Contract
 
@@ -35,5 +27,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 ## Milestone Sequence
 
-- [ ] M073: Token-First Review Efficiency — refactor the review pipeline into a budgeted, cache-aware path that uses fewer tokens first and proves live effectiveness without relying on timeout headroom.
-- [x] M074: Clawpatch Inspired Review Workflow and Inline Fix Evidence — delivered stable finding lifecycle evidence, bounded same-PR inline fix suggestions, validation-truth status, compact Review Details/operator evidence, production-like trigger proof, and `.kodiai.yml` repo doctrine contract remediation.
+- [ ] M075: Production Log Cleanup and Publication Reliability — Clean up production-log issue classes from the last audit, redesign unsafe/noisy publication outcomes where needed, and prove the result with tests plus post-change production log evidence.
