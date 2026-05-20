@@ -591,6 +591,9 @@ describe("createAddonCheckHandler", () => {
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("Addon check incomplete");
+    expect(commentBody).toContain("Mode: `partial-timeout`");
+    expect(commentBody).toContain("`findings-present`");
     expect(commentBody).toContain("missing changelog");
     expect(commentBody).not.toContain("Mode: `completed-clean`");
   });

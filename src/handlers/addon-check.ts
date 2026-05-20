@@ -20,7 +20,6 @@ import {
 } from "../lib/addon-checker-runner.ts";
 import {
   classifyAddonCheckOutcome,
-  type AddonCheckClassificationResult,
 } from "../lib/addon-check-classification.ts";
 import {
   buildAddonCheckMarker,
@@ -117,27 +116,6 @@ function countFindings(findings: AddonFinding[]): {
     errorCount: findings.filter((finding) => finding.level === "ERROR").length,
     warningCount: findings.filter((finding) => finding.level === "WARN").length,
   };
-}
-
-function formatAddonCheckDiagnosticComment(
-  classification: AddonCheckClassificationResult,
-  marker: string,
-): string {
-  const lines: string[] = [];
-  lines.push(marker);
-  lines.push("## Kodiai Addon Check");
-  lines.push("");
-  lines.push("⚠️ kodi-addon-checker did not complete for every changed addon.");
-  lines.push("");
-  lines.push(`Mode: \`${classification.mode}\``);
-  lines.push(`Reasons: ${classification.reasonCodes.map((reason) => `\`${reason}\``).join(", ")}`);
-  lines.push(
-    `Checked addons: ${classification.counts.completedCount}/${classification.counts.addonCount}; timed out: ${classification.counts.timedOutCount}; tool unavailable: ${classification.counts.toolNotFoundCount}.`,
-  );
-  lines.push(`Time budget: ${classification.counts.timeBudgetMs}ms per addon.`);
-  lines.push("");
-  lines.push("Raw checker output and workspace paths are omitted from this diagnostic.");
-  return lines.join("\n");
 }
 
 export function createAddonCheckHandler(deps: {
@@ -349,9 +327,7 @@ export function createAddonCheckHandler(deps: {
               handlerLogger.warn("addon-check: all addons returned toolNotFound, skipping comment");
             } else {
               const marker = buildAddonCheckMarker(owner, repoName, prNumber);
-              const body = allFindings.length === 0 && classification.actionableDiagnostic
-                ? formatAddonCheckDiagnosticComment(classification, marker)
-                : formatAddonCheckComment(allFindings, marker);
+              const body = formatAddonCheckComment(allFindings, marker, classification);
               await upsertAddonCheckComment({
                 octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
                 owner,
