@@ -1,0 +1,131 @@
+{
+  "schema": "m075-s01-production-log-baseline.v1",
+  "generatedAt": "2026-05-20T13:30:00.000Z",
+  "queryMetadata": {
+    "mode": "fixture",
+    "source": "fixture",
+    "windows": {
+      "last12h": { "timespan": "PT12H", "query": null, "limit": 200 },
+      "last7d": { "timespan": "P7D", "query": null, "limit": 200 }
+    }
+  },
+  "report": {
+    "generatedAt": "2026-05-20T13:30:00.000Z",
+    "windows": {
+      "last12h": {
+        "window": "last12h",
+        "source": { "availability": "present", "workspaceCount": 1, "queryWindow": "last12h" },
+        "totalRowCount": 12,
+        "malformedRowCount": 1,
+        "issueClasses": [
+          {
+            "id": "knowledge-store.undefined-write",
+            "title": "Knowledge store write received undefined payload data",
+            "classification": "app-actionable",
+            "downstreamOwner": "S02",
+            "count": 2,
+            "examples": [{ "timeGenerated": "2026-05-20T12:00:00.000Z", "repo": "xbmc/xbmc", "prNumber": 101, "reviewOutputKey": "fixture-review-output-101", "deliveryId": "delivery-101" }]
+          },
+          {
+            "id": "inline-publication.line-not-commentable",
+            "title": "Approved inline finding targets a GitHub line that is not commentable",
+            "classification": "app-actionable",
+            "downstreamOwner": "S03",
+            "count": 1,
+            "examples": [{ "timeGenerated": "2026-05-20T12:05:00.000Z", "repo": "xbmc/xbmc", "prNumber": 102, "reviewOutputKey": "fixture-review-output-102", "deliveryId": "delivery-102" }]
+          },
+          {
+            "id": "candidate-publication.non-approved-missing-reason",
+            "title": "Candidate publication completed in non-approved mode without a safe reason",
+            "classification": "app-actionable",
+            "downstreamOwner": "S04",
+            "count": 1,
+            "examples": [{ "timeGenerated": "2026-05-20T12:10:00.000Z", "repo": "xbmc/xbmc", "prNumber": 103, "reviewOutputKey": "fixture-review-output-103", "deliveryId": "delivery-103" }]
+          },
+          {
+            "id": "review.timeout-or-long-run",
+            "title": "Review timed out or exceeded long-run threshold",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 3,
+            "examples": [{ "timeGenerated": "2026-05-20T12:15:00.000Z", "repo": "xbmc/xbmc", "prNumber": 104, "reviewOutputKey": "fixture-review-output-104", "deliveryId": "delivery-104" }]
+          },
+          {
+            "id": "addon-check.timeout",
+            "title": "Addon check timed out",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 2,
+            "examples": [{ "timeGenerated": "2026-05-20T12:20:00.000Z", "repo": "xbmc/xbmc", "prNumber": 105, "reviewOutputKey": "fixture-review-output-105", "deliveryId": "delivery-105" }]
+          },
+          {
+            "id": "azure.platform-noise",
+            "title": "Azure or Container Apps platform signal separated from Kodiai application issues",
+            "classification": "azure-platform",
+            "downstreamOwner": null,
+            "count": 3,
+            "examples": [{ "timeGenerated": "2026-05-20T12:25:00.000Z", "repo": null, "prNumber": null, "reviewOutputKey": null, "deliveryId": null }]
+          }
+        ],
+        "redaction": { "passed": true, "rawPayloadsExcluded": true, "maxExamplesPerClass": 3, "violations": [] }
+      },
+      "last7d": {
+        "window": "last7d",
+        "source": { "availability": "present", "workspaceCount": 1, "queryWindow": "last7d" },
+        "totalRowCount": 64,
+        "malformedRowCount": 4,
+        "issueClasses": [
+          {
+            "id": "knowledge-store.undefined-write",
+            "title": "Knowledge store write received undefined payload data",
+            "classification": "app-actionable",
+            "downstreamOwner": "S02",
+            "count": 9,
+            "examples": [{ "timeGenerated": "2026-05-19T12:00:00.000Z", "repo": "xbmc/xbmc", "prNumber": 201, "reviewOutputKey": "fixture-review-output-201", "deliveryId": "delivery-201" }]
+          },
+          {
+            "id": "inline-publication.line-not-commentable",
+            "title": "Approved inline finding targets a GitHub line that is not commentable",
+            "classification": "app-actionable",
+            "downstreamOwner": "S03",
+            "count": 5,
+            "examples": [{ "timeGenerated": "2026-05-19T12:05:00.000Z", "repo": "xbmc/xbmc", "prNumber": 202, "reviewOutputKey": "fixture-review-output-202", "deliveryId": "delivery-202" }]
+          },
+          {
+            "id": "candidate-publication.non-approved-missing-reason",
+            "title": "Candidate publication completed in non-approved mode without a safe reason",
+            "classification": "app-actionable",
+            "downstreamOwner": "S04",
+            "count": 4,
+            "examples": [{ "timeGenerated": "2026-05-19T12:10:00.000Z", "repo": "xbmc/xbmc", "prNumber": 203, "reviewOutputKey": "fixture-review-output-203", "deliveryId": "delivery-203" }]
+          },
+          {
+            "id": "review.timeout-or-long-run",
+            "title": "Review timed out or exceeded long-run threshold",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 16,
+            "examples": [{ "timeGenerated": "2026-05-19T12:15:00.000Z", "repo": "xbmc/xbmc", "prNumber": 204, "reviewOutputKey": "fixture-review-output-204", "deliveryId": "delivery-204" }]
+          },
+          {
+            "id": "addon-check.timeout",
+            "title": "Addon check timed out",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 12,
+            "examples": [{ "timeGenerated": "2026-05-19T12:20:00.000Z", "repo": "xbmc/xbmc", "prNumber": 205, "reviewOutputKey": "fixture-review-output-205", "deliveryId": "delivery-205" }]
+          },
+          {
+            "id": "azure.platform-noise",
+            "title": "Azure or Container Apps platform signal separated from Kodiai application issues",
+            "classification": "azure-platform",
+            "downstreamOwner": null,
+            "count": 18,
+            "examples": [{ "timeGenerated": "2026-05-19T12:25:00.000Z", "repo": null, "prNumber": null, "reviewOutputKey": null, "deliveryId": null }]
+          }
+        ],
+        "redaction": { "passed": true, "rawPayloadsExcluded": true, "maxExamplesPerClass": 3, "violations": [] }
+      }
+    }
+  }
+}
