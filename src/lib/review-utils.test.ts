@@ -491,6 +491,66 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("Review candidate publication runtime:");
   });
 
+  it("renders compact publication outcome buckets without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: candidate-approved-partial approvedRefs=7 rewrittenRefs=0 publishable=5 candidatePublished=1 skipped=1 blocked=1 failed=1 movedToDetails=2 detailsOnly=2 detailsOmitted=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-published,candidate-publisher-skipped,candidate-publisher-blocked,candidate-publisher-failed,candidate-moved-to-details,direct-fallback-disallowed,candidate-publisher-malformed",
+        outcomeBuckets: {
+          published: { mode: "published", count: 1, reasons: ["candidate-publisher-published", "RAW_PROMPT_CANARY"] },
+          skipped: { mode: "skipped", count: 1, reasons: ["candidate-publisher-skipped", "diff --git"] },
+          blocked: { mode: "blocked", count: 1, reasons: ["candidate-publisher-blocked", "sk-secret-value"] },
+          failed: { mode: "failed", count: 1, reasons: ["candidate-publisher-failed", "TOKEN=abc123"] },
+          movedToDetails: { mode: "moved-to-details", count: 2, reasons: ["candidate-moved-to-details"] },
+          fallbackDisallowed: { mode: "fallback-disallowed", count: 1, reasons: ["direct-fallback-disallowed"] },
+          degraded: { mode: "degraded", count: 1, reasons: ["candidate-publisher-malformed"] },
+        },
+      } as never,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("buckets=published:1:candidate-publisher-published");
+    expect(result).toContain("skipped:1:candidate-publisher-skipped");
+    expect(result).toContain("blocked:1:candidate-publisher-blocked");
+    expect(result).toContain("failed:1:candidate-publisher-failed");
+    expect(result).toContain("moved-to-details:2:candidate-moved-to-details");
+    expect(result).toContain("fallback-disallowed:1:direct-fallback-disallowed");
+    expect(result).toContain("degraded:1:candidate-publisher-malformed");
+    expect(result).not.toContain("RAW_PROMPT_CANARY");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("sk-secret-value");
+    expect(result).not.toContain("TOKEN=abc123");
+  });
+
+  it("caps compact publication outcome bucket text and redacts unsafe bucket reasons", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: degraded approvedRefs=240 rewrittenRefs=0 publishable=240 candidatePublished=60 skipped=60 blocked=60 failed=60 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-partial",
+        outcomeBuckets: {
+          published: { mode: "published", count: 60, reasons: ["candidate-publisher-published", ...Array.from({ length: 20 }, (_, index) => `unsafe published ${index} diff --git sk-secret`)] },
+          skipped: { mode: "skipped", count: 60, reasons: ["candidate-publisher-skipped"] },
+          blocked: { mode: "blocked", count: 60, reasons: ["candidate-publisher-blocked"] },
+          failed: { mode: "failed", count: 60, reasons: ["candidate-publisher-failed"] },
+          degraded: { mode: "degraded", count: 1, reasons: ["malformed-publisher-result", "BEGIN PROMPT hidden instructions"] },
+        },
+      } as never,
+    });
+
+    const line = result.split("\n").find((entry) => entry.includes("Review candidate publication:")) ?? "";
+    expect(line).toContain("buckets=published:60:candidate-publisher-published");
+    expect(line).toContain("+20 bucketReasonsOmitted");
+    expect(line.length).toBeLessThanOrEqual(520);
+    expect(result).not.toContain("unsafe published");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("sk-secret");
+    expect(result).not.toContain("BEGIN PROMPT");
+    expect(result).not.toContain("hidden instructions");
+  });
+
+
   it("renders moved-to-details publication status plus bounded details-only findings", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
