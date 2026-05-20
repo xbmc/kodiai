@@ -705,6 +705,7 @@ describe("formatReviewDetailsSummary", () => {
     expect(reviewCandidatePublicationLineCount(omitted)).toBe(0);
     expect(reviewCandidatePublicationLineCount(malformed)).toBe(1);
     expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
+    expect(malformed).toContain("buckets=degraded:1:malformed-runtime-summary");
     expect(malformed).toContain("<summary>Review Details</summary>");
     expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
   });

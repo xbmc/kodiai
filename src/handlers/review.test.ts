@@ -17607,6 +17607,13 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       candidateBlocked: 1,
       directPublished: 0,
     }));
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      blocked: expect.objectContaining({
+        mode: "blocked",
+        count: 1,
+        reasons: expect.arrayContaining(["candidate-publisher-blocked"]),
+      }),
+    }));
   });
 
   test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
@@ -17833,6 +17840,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(detailsBlock).toContain("Review candidate publication: mode=direct-fallback");
     expect(detailsBlock).toContain("published=0");
     expect(detailsBlock).toContain("directFallback=1");
+    expect(detailsBlock).toContain("buckets=blocked:1:approval-blocked+no-candidate-publication-path,direct-fallback:1:direct-fallback-attempted+direct-fallback-published+direct-fallback-audited");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.data?.gateResult).toBe("direct-fallback");
@@ -17841,6 +17849,15 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       directPublished: 1,
       fallbackEvidence: 1,
     }));
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      directFallback: expect.objectContaining({
+        mode: "direct-fallback",
+        count: 1,
+        reasons: expect.arrayContaining(["direct-fallback-attempted", "direct-fallback-published", "direct-fallback-audited"]),
+      }),
+    }));
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("safe test prompt");
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("base\\nfeature");
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
     expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("direct-fallback");
@@ -17930,6 +17947,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(detailsBlock).toContain("directFallback=0");
     expect(detailsBlock).toContain("movedToDetails=1");
     expect(detailsBlock).toContain("Moved review candidates preserved in details:");
+    expect(detailsBlock).toContain("buckets=moved-to-details:1:candidate-moved-to-details+line-not-commentable");
     expect(detailsBlock).toContain("[major/correctness] Unpublishable candidate line (README.md:999, reason=line-not-commentable)");
     expect(detailsBlock).not.toContain("PROMPT_SECRET");
     expect(detailsBlock).not.toContain("TOKEN=abc123");
@@ -17948,6 +17966,15 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       convertedProcessedFindings: 0,
       directPublished: 0,
     }));
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      movedToDetails: expect.objectContaining({
+        mode: "moved-to-details",
+        count: 1,
+        reasons: expect.arrayContaining(["candidate-moved-to-details", "line-not-commentable"]),
+      }),
+    }));
+    expect(JSON.stringify(publicationLog?.data)).not.toContain(rawBodyCanary);
+    expect(JSON.stringify(publicationLog?.data)).not.toContain(rawFixCanary);
     expect(publicationLog?.data?.movedToDetails).toEqual(expect.objectContaining({
       counts: expect.objectContaining({ total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 }),
       reasonCounts: { "line-not-commentable": 1 },
@@ -18051,6 +18078,17 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       directPublished: 0,
     }));
     expect(publicationLog?.data?.reasons).toContain("candidate-publisher-failed");
+    expect(publicationLog?.level).toBe("warn");
+    expect(publicationLog?.message).toBe("Review candidate publication completed with non-approved mode");
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      failed: expect.objectContaining({
+        mode: "failed",
+        count: 1,
+        reasons: expect.arrayContaining(["candidate-publisher-failed", "github-error"]),
+      }),
+    }));
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("This candidate targets a commentable diff line");
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("feature fixed on a commentable line");
     expect(publicationLog?.data?.movedToDetails).toBeUndefined();
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;

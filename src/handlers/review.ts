@@ -2649,36 +2649,62 @@ function logReviewCandidatePublicationRuntime(params: {
   baseLog: Record<string, unknown>;
   runtime: ReviewCandidatePublicationRuntimeResult;
 }): void {
-  const payload = {
-    ...params.baseLog,
-    gate: "review-candidate-publication",
-    gateResult: params.runtime.mode,
-    mode: params.runtime.mode,
-    counts: params.runtime.counts,
-    reasons: params.runtime.reasons,
-    publisherResultSample: params.runtime.publisherResultSample,
-    movedToDetails: params.runtime.movedToDetails,
-  };
+  try {
+    const payload = {
+      ...params.baseLog,
+      gate: "review-candidate-publication",
+      gateResult: params.runtime.mode,
+      mode: params.runtime.mode,
+      counts: params.runtime.counts,
+      reasons: params.runtime.reasons,
+      outcomeBuckets: params.runtime.outcomeBuckets,
+      publisherResultSample: params.runtime.publisherResultSample,
+      movedToDetails: params.runtime.movedToDetails,
+    };
 
-  const expectedPolicyBlocked = params.runtime.mode === "blocked"
-    && params.runtime.counts.candidateBlocked > 0
-    && params.runtime.counts.candidateFailed === 0
-    && params.runtime.counts.candidateMalformed === 0
-    && params.runtime.counts.directPublished === 0
-    && params.runtime.counts.malformed === 0
-    && params.runtime.reasons.every((reason) => reason === "candidate-publisher-blocked");
+    const expectedPolicyBlocked = isExpectedCandidatePublicationPolicyBlock(params.runtime);
 
-  if (expectedPolicyBlocked) {
-    params.logger.info(payload, "Review candidate publication completed with expected policy block");
-    return;
+    if (expectedPolicyBlocked) {
+      params.logger.info(payload, "Review candidate publication completed with expected policy block");
+      return;
+    }
+
+    if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
+      params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
+      return;
+    }
+
+    params.logger.info(payload, "Review candidate publication completed");
+  } catch (error) {
+    params.logger.warn(
+      {
+        ...params.baseLog,
+        gate: "review-candidate-publication",
+        gateResult: "degraded",
+        mode: "degraded",
+        reasons: ["malformed-runtime-summary"],
+        logError: error instanceof Error ? error.message : String(error),
+      },
+      "Review candidate publication runtime log degraded",
+    );
   }
+}
 
-  if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
-    params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
-    return;
-  }
+function isExpectedCandidatePublicationPolicyBlock(runtime: ReviewCandidatePublicationRuntimeResult): boolean {
+  if (runtime.mode !== "blocked") return false;
+  if (runtime.counts.candidateBlocked <= 0) return false;
+  if (runtime.counts.candidateFailed !== 0) return false;
+  if (runtime.counts.candidateMalformed !== 0) return false;
+  if (runtime.counts.directPublished !== 0) return false;
+  if (runtime.counts.malformed !== 0) return false;
+  if (!runtime.reasons.every((reason) => reason === "candidate-publisher-blocked")) return false;
 
-  params.logger.info(payload, "Review candidate publication completed");
+  const blockedBucket = runtime.outcomeBuckets.blocked;
+  return blockedBucket?.mode === "blocked"
+    && blockedBucket.count > 0
+    && Array.isArray(blockedBucket.reasons)
+    && blockedBucket.reasons.length > 0
+    && blockedBucket.reasons.every((reason) => typeof reason === "string" && reason.trim().length > 0);
 }
 
 export function createReviewHandler(deps: {
