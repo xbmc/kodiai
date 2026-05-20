@@ -214,6 +214,7 @@ import {
   createCandidatePublicationFlowEvidence,
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
@@ -6680,6 +6681,88 @@ export function createReviewHandler(deps: {
               }
             }
 
+            const retryClassificationInput = retryPlan?.decision === "schedule-continuation"
+              ? {
+                  enqueued: true,
+                  filesCount: retryPlan.continuationFiles.length,
+                  scopeRatio: retryPlan.scopeRatio,
+                  timeoutSeconds: retryPlan.timeoutSeconds,
+                  checkpointEnabled: retryPlan.checkpointEnabled,
+                  riskLevel: retryPlan.timeoutEstimate.riskLevel,
+                }
+              : {
+                  enqueued: false,
+                  filesCount: 0,
+                };
+            const timeoutClassification = classifyReviewTimeoutOutcome({
+              deliveryId: event.id,
+              reviewOutputKey,
+              outcome: {
+                isTimeout: result.isTimeout,
+                stopReason: result.stopReason,
+                failureSubtype: result.failureSubtype,
+              },
+              firstPass: timeoutFirstPass
+                ? {
+                    state: timeoutFirstPass.state,
+                    boundedReason: timeoutFirstPass.boundedReason,
+                    evidenceSource: timeoutFirstPass.evidenceSource,
+                    continuationPending: timeoutFirstPass.continuationPending,
+                    zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
+                  }
+                : null,
+              checkpoint: checkpoint
+                ? {
+                    filesReviewed: timeoutReviewedFiles.length,
+                    filesInspected: timeoutInspectedFiles.length,
+                    findingCount: timeoutFindingCount,
+                    totalFiles: timeoutTotalFiles,
+                  }
+                : null,
+              retry: retryClassificationInput,
+              continuation: retryPlan
+                ? { decision: retryPlan.decision, reason: retryPlan.reason }
+                : null,
+              chronicTimeout: isChronicTimeout,
+              recentTimeouts,
+              longRun: {
+                thresholdExceeded: false,
+                durationSeconds: typeof result.durationMs === "number" ? Math.floor(result.durationMs / 1000) : undefined,
+                thresholdSeconds: timeoutDuration,
+              },
+            });
+            const timeoutClassificationTelemetry = {
+              timeoutClassification: timeoutClassification.classification,
+              timeoutClassificationMode: timeoutClassification.mode,
+              timeoutClassificationReasons: timeoutClassification.reasonCodes,
+            };
+
+            logger.info(
+              {
+                ...baseLog,
+                gate: timeoutClassification.gate,
+                gateResult: timeoutClassification.classification,
+                classification: timeoutClassification.classification,
+                mode: timeoutClassification.mode,
+                reasonCodes: timeoutClassification.reasonCodes,
+                deliveryId: event.id,
+                reviewOutputKey,
+                prNumber: pr.number,
+                checkpointFilesReviewed: timeoutClassification.counts.checkpointFilesReviewed ?? null,
+                checkpointFilesInspected: timeoutClassification.counts.checkpointFilesInspected ?? null,
+                checkpointFindingCount: timeoutClassification.counts.checkpointFindingCount ?? null,
+                checkpointTotalFiles: timeoutClassification.counts.checkpointTotalFiles ?? null,
+                retryFilesCount: timeoutClassification.counts.retryFilesCount ?? null,
+                recentTimeouts: timeoutClassification.counts.recentTimeouts ?? null,
+                longRunDurationSeconds: timeoutClassification.counts.longRunDurationSeconds ?? null,
+                longRunThresholdSeconds: timeoutClassification.counts.longRunThresholdSeconds ?? null,
+                chronicTimeout: isChronicTimeout,
+                retryEnqueued: retryPlan?.decision === "schedule-continuation",
+                redaction: timeoutClassification.redaction,
+              },
+              "Review timeout classification",
+            );
+
             // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
             const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines
               ? "Review stopped after GitHub-visible findings were already posted."
@@ -6874,6 +6957,7 @@ export function createReviewHandler(deps: {
                     recentTimeouts,
                     chronicTimeout: isChronicTimeout,
                     retryEnqueued: false,
+                    ...timeoutClassificationTelemetry,
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
@@ -6951,6 +7035,7 @@ export function createReviewHandler(deps: {
                     retryTimeoutSeconds: retryTimeout,
                     retryRiskLevel: retryTimeoutEstimate.riskLevel,
                     retryCheckpointEnabled,
+                    ...timeoutClassificationTelemetry,
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
@@ -7224,6 +7309,29 @@ export function createReviewHandler(deps: {
                       const retryHasResults =
                         (retryCheckpoint?.findingCount ?? 0) >= 1 ||
                         (retryResult.published ?? false);
+                      const retryTimeoutClassification = classifyReviewTimeoutOutcome({
+                        deliveryId: retryDeliveryId,
+                        reviewOutputKey: retryReviewOutputKey,
+                        outcome: {
+                          isTimeout: retryResult.isTimeout,
+                          stopReason: retryResult.stopReason,
+                          failureSubtype: retryResult.failureSubtype,
+                        },
+                        checkpoint: retryCheckpoint
+                          ? {
+                              filesReviewed: retryCheckpoint.filesReviewed?.length,
+                              filesInspected: retryCheckpoint.filesInspected?.length,
+                              findingCount: retryCheckpoint.findingCount,
+                              totalFiles: timeoutTotalFiles,
+                            }
+                          : null,
+                        retry: {
+                          completed: retryResult.conclusion === "success" || retryHasResults,
+                          failed: retryResult.conclusion !== "success" && !retryHasResults,
+                          hasResults: retryHasResults,
+                          filesCount: retryFiles.length,
+                        },
+                      });
 
                       if (config.telemetry.enabled) {
                         try {
@@ -7262,6 +7370,9 @@ export function createReviewHandler(deps: {
                             retryTimeoutSeconds: retryTimeout,
                             retryRiskLevel: retryTimeoutEstimate.riskLevel,
                             retryCheckpointEnabled,
+                            timeoutClassification: retryTimeoutClassification.classification,
+                            timeoutClassificationMode: retryTimeoutClassification.mode,
+                            timeoutClassificationReasons: retryTimeoutClassification.reasonCodes,
                           });
                         } catch (err) {
                           logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");

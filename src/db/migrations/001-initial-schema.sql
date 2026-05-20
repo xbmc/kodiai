@@ -267,7 +267,10 @@ CREATE TABLE IF NOT EXISTS resilience_events (
   retry_timeout_seconds INTEGER,
   retry_risk_level TEXT,
   retry_checkpoint_enabled BOOLEAN,
-  retry_has_results BOOLEAN
+  retry_has_results BOOLEAN,
+  timeout_classification TEXT,
+  timeout_classification_mode TEXT,
+  timeout_classification_reasons TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
 );
 
 CREATE INDEX IF NOT EXISTS idx_resilience_events_repo_created

@@ -19350,6 +19350,16 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(retryLog?.data?.retryTimeout).toEqual(expect.any(Number));
     expect(retryLog!.data!.retryTimeout as number).toBeGreaterThan(30);
 
+    const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
+    expect(classificationLog?.data).toMatchObject({
+      gateResult: "expected-bounded-outcome",
+      classification: "expected-bounded-outcome",
+      mode: "max-turns-continuation",
+      deliveryId: "delivery-123",
+      retryEnqueued: true,
+    });
+    expect(classificationLog?.data?.reasonCodes).toContain("max-turns");
+
     await workspaceFixture.cleanup();
   });
 
@@ -19594,6 +19604,183 @@ describe("createReviewHandler failure fallback publication", () => {
     ).toBeFalse();
 
     await workspaceFixture.cleanup();
+  });
+
+  test("logs bounded partial timeout classification and fail-opens when resilience telemetry write fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+    const resilienceEvents: unknown[] = [];
+
+    createReviewHandler({
+      eventRouter: { register: (eventKey, handler) => void handlers.set(eventKey, handler), dispatch: async () => undefined },
+      jobQueue: {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }), listCommits: async () => ({ data: [] }), createReview: async () => ({ data: {} }) },
+            issues: { listComments: async () => ({ data: [] }), createComment: async () => ({ data: { id: 812 } }), updateComment: async () => ({ data: {} }) },
+            reactions: { createForIssue: async () => ({ data: {} }) },
+            search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "error",
+          published: false,
+          isTimeout: true,
+          durationMs: 12_000,
+          numTurns: 7,
+          sessionId: "session-bounded-timeout-classification",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordResilienceEvent: async (entry: unknown) => {
+          resilienceEvents.push(entry);
+          throw new Error("forced resilience write failure");
+        },
+      },
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          filesInspected: ["README.md"],
+          findingCount: 1,
+          summaryDraft: "Found one issue before timeout.",
+          totalFiles: 1,
+        }),
+        saveCheckpoint: async () => undefined,
+        updateCheckpointCommentId: async () => undefined,
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+    await expect(handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }))).resolves.toBeUndefined();
+
+    const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
+    expect(classificationLog?.data).toMatchObject({
+      gateResult: "expected-bounded-outcome",
+      mode: "bounded-partial-timeout",
+      retryEnqueued: false,
+      checkpointFilesReviewed: 1,
+      checkpointFilesInspected: 1,
+    });
+    expect(classificationLog?.data?.reasonCodes).toEqual(expect.arrayContaining(["partial-timeout", "checkpoint-present"]));
+    expect(entries.some((entry) => entry.message === "Resilience telemetry write failed (non-blocking)")).toBeTrue();
+    expect(resilienceEvents[0]).toMatchObject({
+      timeoutClassification: "expected-bounded-outcome",
+      timeoutClassificationMode: "bounded-partial-timeout",
+      timeoutClassificationReasons: ["partial-timeout", "checkpoint-present"],
+    });
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("logs zero-evidence and chronic-timeout classifications without requiring telemetry", async () => {
+    async function runScenario(options: { recentTimeouts: number; checkpoint: unknown; expectedMode: string; expectedReasons: string[] }) {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const workspaceFixture = await createWorkspaceFixture();
+      const { logger, entries } = createCaptureLogger();
+
+      createReviewHandler({
+        eventRouter: { register: (eventKey, handler) => void handlers.set(eventKey, handler), dispatch: async () => undefined },
+        jobQueue: {
+          enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>, context?: { action?: string }) => {
+            if (context?.action === "review-retry") return undefined as T;
+            return fn(createQueueRunMetadata());
+          },
+          getQueueSize: () => 0,
+          getPendingCount: () => 0,
+          getActiveJobs: getEmptyActiveJobs,
+        } as unknown as JobQueue,
+        workspaceManager: { create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }), cleanupStale: async () => 0 } as WorkspaceManager,
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => ({
+            rest: {
+              pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }), listCommits: async () => ({ data: [] }), createReview: async () => ({ data: {} }) },
+              issues: { listComments: async () => ({ data: [] }), createComment: async () => ({ data: { id: 901 } }), updateComment: async () => ({ data: {} }) },
+              reactions: { createForIssue: async () => ({ data: {} }) },
+              search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+            },
+          }) as never,
+        } as unknown as GitHubApp,
+        executor: { execute: async () => ({ conclusion: "error", published: false, isTimeout: true, durationMs: 1, numTurns: 1, sessionId: "session-timeout-classification", costUsd: 0 }) } as never,
+        telemetryStore: { ...noopTelemetryStore, countRecentTimeouts: async () => options.recentTimeouts },
+        knowledgeStore: createKnowledgeStoreStub({ getCheckpoint: async () => options.checkpoint }) as never,
+        diffContextCollector: async () => ({
+          changedFiles: ["README.md", "src/a.ts"],
+          numstatLines: [],
+          diffContent: undefined,
+          strategy: "github-file-list-fallback",
+          mergeBaseRecovered: false,
+          deepenAttempts: 0,
+          unshallowAttempted: false,
+          diffRange: "github-api:file-list",
+        }),
+        logger,
+      });
+
+      const handler = handlers.get("pull_request.review_requested");
+      expect(handler).toBeDefined();
+      await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+      await workspaceFixture.cleanup();
+      return entries.find((entry) => entry.data?.gate === "review-timeout-classification")?.data;
+    }
+
+    const zeroEvidence = await runScenario({
+      recentTimeouts: 0,
+      checkpoint: null,
+      expectedMode: "zero-evidence-hard-timeout",
+      expectedReasons: ["zero-evidence", "timeout"],
+    });
+    expect(zeroEvidence?.mode).toBe("zero-evidence-hard-timeout");
+    expect(zeroEvidence?.reasonCodes).toEqual(expect.arrayContaining(["zero-evidence", "timeout"]));
+
+    const chronic = await runScenario({
+      recentTimeouts: 3,
+      checkpoint: {
+        reviewOutputKey: "unused-in-test",
+        repo: "acme/repo",
+        prNumber: 101,
+        filesReviewed: ["README.md"],
+        findingCount: 0,
+        summaryDraft: "Reviewed README before timeout.",
+        totalFiles: 2,
+      },
+      expectedMode: "chronic-timeout-skip",
+      expectedReasons: ["chronic-timeout", "continuation-skipped"],
+    });
+    expect(chronic?.mode).toBe("chronic-timeout-skip");
+    expect(chronic?.reasonCodes).toEqual(expect.arrayContaining(["chronic-timeout", "continuation-skipped"]));
+    expect(chronic?.chronicTimeout).toBe(true);
   });
 
 

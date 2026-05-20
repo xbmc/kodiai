@@ -135,7 +135,8 @@ export function createTelemetryStore(opts: {
           checkpoint_files_reviewed, checkpoint_files_inspected, checkpoint_finding_count, checkpoint_total_files, partial_comment_id,
           recent_timeouts, chronic_timeout,
           retry_enqueued, retry_files_count, retry_scope_ratio, retry_timeout_seconds,
-          retry_risk_level, retry_checkpoint_enabled, retry_has_results
+          retry_risk_level, retry_checkpoint_enabled, retry_has_results,
+          timeout_classification, timeout_classification_mode, timeout_classification_reasons
         ) VALUES (
           ${entry.deliveryId}, ${entry.repo}, ${entry.prNumber ?? null}, ${entry.prAuthor ?? null},
           ${entry.eventType}, ${entry.kind},
@@ -150,7 +151,9 @@ export function createTelemetryStore(opts: {
           ${entry.retryFilesCount ?? null}, ${entry.retryScopeRatio ?? null},
           ${entry.retryTimeoutSeconds ?? null}, ${entry.retryRiskLevel ?? null},
           ${entry.retryCheckpointEnabled === undefined ? null : entry.retryCheckpointEnabled},
-          ${entry.retryHasResults === undefined ? null : entry.retryHasResults}
+          ${entry.retryHasResults === undefined ? null : entry.retryHasResults},
+          ${entry.timeoutClassification ?? null}, ${entry.timeoutClassificationMode ?? null},
+          ${entry.timeoutClassificationReasons ?? []}
         )
         ON CONFLICT (delivery_id)
         DO UPDATE SET
@@ -176,7 +179,10 @@ export function createTelemetryStore(opts: {
           retry_timeout_seconds = EXCLUDED.retry_timeout_seconds,
           retry_risk_level = EXCLUDED.retry_risk_level,
           retry_checkpoint_enabled = EXCLUDED.retry_checkpoint_enabled,
-          retry_has_results = EXCLUDED.retry_has_results
+          retry_has_results = EXCLUDED.retry_has_results,
+          timeout_classification = EXCLUDED.timeout_classification,
+          timeout_classification_mode = EXCLUDED.timeout_classification_mode,
+          timeout_classification_reasons = EXCLUDED.timeout_classification_reasons
       `;
     },
 

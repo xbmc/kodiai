@@ -120,6 +120,36 @@ async function truncateAll(): Promise<void> {
     CASCADE`;
 }
 
+
+test("recordResilienceEvent() writes timeout classification fields without raw payloads", async () => {
+  const calls: Array<{ text: string; values: unknown[] }> = [];
+  const fakeSql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ text: strings.join("?"), values });
+    return Promise.resolve([]);
+  }) as unknown as Sql;
+  const storeWithFakeSql = createTelemetryStore({ sql: fakeSql, logger: mockLogger });
+
+  await storeWithFakeSql.recordResilienceEvent?.(
+    makeResilienceEventRecord({
+      deliveryId: "res-classification-001",
+      reviewOutputKey: "rok-classification",
+      timeoutClassification: "expected-bounded-outcome",
+      timeoutClassificationMode: "bounded-partial-timeout",
+      timeoutClassificationReasons: ["partial-timeout", "checkpoint-present"],
+    }),
+  );
+
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.text).toContain("timeout_classification");
+  expect(calls[0]?.text).toContain("timeout_classification_mode");
+  expect(calls[0]?.text).toContain("timeout_classification_reasons");
+  expect(calls[0]?.values).toContain("expected-bounded-outcome");
+  expect(calls[0]?.values).toContain("bounded-partial-timeout");
+  expect(calls[0]?.values).toContainEqual(["partial-timeout", "checkpoint-present"]);
+  expect(JSON.stringify(calls)).not.toContain("BEGIN PROMPT");
+  expect(JSON.stringify(calls)).not.toContain("diff --git");
+});
+
 describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
   beforeAll(async () => {
     sql = postgres(TEST_DB_URL!, { max: 5, idle_timeout: 20, connect_timeout: 10 });

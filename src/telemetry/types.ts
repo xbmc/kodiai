@@ -62,6 +62,10 @@ export type ResilienceEventRecord = {
   retryRiskLevel?: string;
   retryCheckpointEnabled?: boolean;
   retryHasResults?: boolean;
+
+  timeoutClassification?: string;
+  timeoutClassificationMode?: string;
+  timeoutClassificationReasons?: string[];
 };
 
 /**
