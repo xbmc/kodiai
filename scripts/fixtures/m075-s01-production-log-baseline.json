@@ -85,6 +85,42 @@
             "sourceEvidence": "live-sanitized-projection"
           },
           {
+            "id": "review-timeout-classification.expected-bounded-outcome",
+            "title": "Review timeout classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.hard-failure",
+            "title": "Review timeout classification reported an actionable hard failure",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.long-run-threshold",
+            "title": "Review timeout classification crossed the long-run threshold",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
             "id": "review.timeout-or-long-run",
             "title": "Review timed out or exceeded long-run threshold",
             "classification": "transient",
@@ -94,6 +130,42 @@
             "firstSeenAt": null,
             "lastSeenAt": null,
             "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.expected-bounded-outcome",
+            "title": "Addon check classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.actionable-diagnostic",
+            "title": "Addon check classification reported an actionable diagnostic",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.malformed-evidence",
+            "title": "Addon check classification failed closed on malformed evidence",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
             "sourceEvidence": "live-sanitized-projection"
           },
           {
@@ -197,6 +269,42 @@
             "sourceEvidence": "live-sanitized-projection"
           },
           {
+            "id": "review-timeout-classification.expected-bounded-outcome",
+            "title": "Review timeout classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.hard-failure",
+            "title": "Review timeout classification reported an actionable hard failure",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.long-run-threshold",
+            "title": "Review timeout classification crossed the long-run threshold",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
             "id": "review.timeout-or-long-run",
             "title": "Review timed out or exceeded long-run threshold",
             "classification": "transient",
@@ -206,6 +314,42 @@
             "firstSeenAt": null,
             "lastSeenAt": null,
             "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.expected-bounded-outcome",
+            "title": "Addon check classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.actionable-diagnostic",
+            "title": "Addon check classification reported an actionable diagnostic",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.malformed-evidence",
+            "title": "Addon check classification failed closed on malformed evidence",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
             "sourceEvidence": "live-sanitized-projection"
           },
           {

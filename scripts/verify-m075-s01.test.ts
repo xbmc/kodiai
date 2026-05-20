@@ -46,6 +46,11 @@ describe("verify-m075-s01", () => {
     expect(parseM075S01Args(["--help"])).toEqual({ json: false, help: true, live: false, allowBlocked: false });
     expect(() => parseM075S01Args(["--live", "--fixture", DEFAULT_FIXTURE_PATH])).toThrow(/choose either --live or --fixture/);
     expect(() => parseM075S01Args(["--fixture", ".gsd/secret.json"])).toThrow(/must not read ignored/);
+    expect(() => parseM075S01Args(["--fixture", ".planning/secret.json"])).toThrow(/must not read ignored/);
+    expect(() => parseM075S01Args(["--fixture", ".audits/secret.json"])).toThrow(/must not read ignored/);
+    expect(() => parseM075S01Args(["--fixture", "live-only/secret.json"])).toThrow(/must not read ignored/);
+    expect(() => parseM075S01Args(["--fixture", "../secret.json"])).toThrow(/must not traverse/);
+    expect(() => parseM075S01Args(["--fixture", "scripts/fixtures/not-json.txt"])).toThrow(/must be a JSON file/);
     expect(() => parseM075S01Args(["--bogus"])).toThrow(/invalid_cli_args/);
   });
 
@@ -64,10 +69,53 @@ describe("verify-m075-s01", () => {
       observed: { sourceAvailability: "present", workspaceCount: 21, windowsPresent: ["last12h", "last7d"], malformedRows: 1 },
     });
     expect(report.failedCheckIds).toEqual([]);
+    expect(Object.keys(report.observed.classCounts)).toEqual([
+      "knowledge-store.undefined-write",
+      "inline-publication.line-not-commentable",
+      "candidate-publication.non-approved-missing-reason",
+      "review-timeout-classification.expected-bounded-outcome",
+      "review-timeout-classification.hard-failure",
+      "review-timeout-classification.long-run-threshold",
+      "review.timeout-or-long-run",
+      "addon-check-classification.expected-bounded-outcome",
+      "addon-check-classification.actionable-diagnostic",
+      "addon-check-classification.malformed-evidence",
+      "addon-check.timeout",
+      "azure.platform-noise",
+    ]);
+    expect(report.observed.classCounts["review-timeout-classification.expected-bounded-outcome"].last12h).toBe(0);
+    expect(report.observed.classCounts["review-timeout-classification.hard-failure"].last7d).toBe(0);
+    expect(report.observed.classCounts["addon-check-classification.expected-bounded-outcome"].last12h).toBe(0);
+    expect(report.observed.classCounts["addon-check-classification.malformed-evidence"].last7d).toBe(0);
     expect(report.observed.classCounts["candidate-publication.non-approved-missing-reason"].last12h).toBe(1);
     expect(report.observed.classCounts["knowledge-store.undefined-write"].last12h).toBe(0);
     expect(report.observed.classCounts["azure.platform-noise"].last7d).toBe(4);
     expect(JSON.stringify(report)).not.toContain('"Log_s":');
+  });
+
+  test("fails when legacy six-class fixture omits structured S05 and S06 taxonomy classes", async () => {
+    const fixture = await asyncFixture((copy) => {
+      const legacyIds = new Set([
+        "knowledge-store.undefined-write",
+        "inline-publication.line-not-commentable",
+        "candidate-publication.non-approved-missing-reason",
+        "review.timeout-or-long-run",
+        "addon-check.timeout",
+        "azure.platform-noise",
+      ]);
+      for (const window of ["last12h", "last7d"] as const) {
+        copy.report.windows[window].issueClasses = copy.report.windows[window].issueClasses.filter((issueClass) => legacyIds.has(issueClass.id));
+      }
+    });
+    const report = await evaluateM075S01Contract(parseM075S01Args(["--fixture", DEFAULT_FIXTURE_PATH]), {
+      readFileText: async () => JSON.stringify(fixture),
+      readPackageJsonText: async () => packageJson(),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.failedCheckIds).toEqual(expect.arrayContaining(["classes.required", "output.bounded"]));
+    expect(report.issues.join("\n")).toContain("last12h missing review-timeout-classification.expected-bounded-outcome");
+    expect(report.issues.join("\n")).toContain("last7d class count expected 12 got 6");
   });
 
   test("fails when last7d window is missing", async () => {

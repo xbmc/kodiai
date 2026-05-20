@@ -1,6 +1,6 @@
 import { dirname, isAbsolute, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildProductionLogBaselineReport, type ProductionLogBaselineReport, type ProductionLogBaselineWindowReport, type ProductionLogDownstreamOwner, type ProductionLogIssueClassId, type ProductionLogIssueClassification, type ProductionLogObservation, type ProductionLogSourceAvailability, type ProductionLogWindowId } from "../src/review-audit/production-log-taxonomy.ts";
+import { buildProductionLogBaselineReport, PRODUCTION_LOG_ISSUE_CLASS_IDS, type ProductionLogBaselineReport, type ProductionLogBaselineWindowReport, type ProductionLogDownstreamOwner, type ProductionLogIssueClassId, type ProductionLogIssueClassification, type ProductionLogObservation, type ProductionLogSourceAvailability, type ProductionLogWindowId } from "../src/review-audit/production-log-taxonomy.ts";
 import { discoverLogAnalyticsWorkspaceIds, queryReviewAuditLogs, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 
 export const COMMAND_NAME = "verify:m075:s01" as const;
@@ -87,19 +87,18 @@ const MAX_ISSUES = 24;
 const LIVE_LIMIT = 200;
 const WINDOWS: readonly ProductionLogWindowId[] = ["last12h", "last7d"];
 const TIMESPAAN_BY_WINDOW: Record<ProductionLogWindowId, "PT12H" | "P7D"> = { last12h: "PT12H", last7d: "P7D" };
-const REQUIRED_CLASSES: readonly ProductionLogIssueClassId[] = [
-  "knowledge-store.undefined-write",
-  "inline-publication.line-not-commentable",
-  "candidate-publication.non-approved-missing-reason",
-  "review.timeout-or-long-run",
-  "addon-check.timeout",
-  "azure.platform-noise",
-];
+const REQUIRED_CLASSES: readonly ProductionLogIssueClassId[] = PRODUCTION_LOG_ISSUE_CLASS_IDS;
 const REQUIRED_OWNER_MAPPING: Record<ProductionLogIssueClassId, { readonly classification: ProductionLogIssueClassification; readonly owner: ProductionLogDownstreamOwner }> = {
   "knowledge-store.undefined-write": { classification: "app-actionable", owner: "S02" },
   "inline-publication.line-not-commentable": { classification: "app-actionable", owner: "S03" },
   "candidate-publication.non-approved-missing-reason": { classification: "app-actionable", owner: "S04" },
+  "review-timeout-classification.expected-bounded-outcome": { classification: "transient", owner: "S05" },
+  "review-timeout-classification.hard-failure": { classification: "app-actionable", owner: "S05" },
+  "review-timeout-classification.long-run-threshold": { classification: "app-actionable", owner: "S05" },
   "review.timeout-or-long-run": { classification: "transient", owner: "S05" },
+  "addon-check-classification.expected-bounded-outcome": { classification: "transient", owner: "S06" },
+  "addon-check-classification.actionable-diagnostic": { classification: "app-actionable", owner: "S06" },
+  "addon-check-classification.malformed-evidence": { classification: "app-actionable", owner: "S06" },
   "addon-check.timeout": { classification: "transient", owner: "S06" },
   "azure.platform-noise": { classification: "azure-platform", owner: null },
 };

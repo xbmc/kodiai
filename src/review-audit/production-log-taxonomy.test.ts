@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildReviewOutputKey } from "../handlers/review-idempotency.ts";
 import type { NormalizedLogAnalyticsRow } from "./log-analytics.ts";
 import {
+  PRODUCTION_LOG_ISSUE_CLASS_IDS,
   buildBaselineWindowFromObservations,
   buildBaselineWindowFromRows,
   buildProductionLogBaselineReport,
@@ -296,6 +297,7 @@ describe("production log taxonomy", () => {
     expect(emptyReport.windows.last12h.totalRowCount).toBe(0);
     expect(emptyReport.windows.last7d.source.availability).toBe("missing");
     expect(emptyReport.windows.last7d.issueClasses).toHaveLength(12);
+    expect(emptyReport.windows.last7d.issueClasses.map((issueClass) => issueClass.id)).toEqual(PRODUCTION_LOG_ISSUE_CLASS_IDS);
   });
 
   test("caps examples per class while counts continue to scale with volume", () => {

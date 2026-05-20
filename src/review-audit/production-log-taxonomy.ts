@@ -169,7 +169,9 @@ const ISSUE_CLASS_DEFINITIONS: Record<ProductionLogIssueClassId, Omit<Production
   },
 };
 
-const ISSUE_CLASS_ORDER = Object.keys(ISSUE_CLASS_DEFINITIONS) as ProductionLogIssueClassId[];
+export const PRODUCTION_LOG_ISSUE_CLASS_IDS = Object.keys(ISSUE_CLASS_DEFINITIONS) as ProductionLogIssueClassId[];
+
+const ISSUE_CLASS_ORDER = PRODUCTION_LOG_ISSUE_CLASS_IDS;
 
 const UNSAFE_KEY_PATTERNS: Array<[RegExp, ProductionLogRedactionViolation["reason"]]> = [
   [/^(log_s|rawlog|raw_log)$/i, "raw-log-output"],
