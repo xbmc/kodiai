@@ -61,12 +61,13 @@ describe("verify-m075-s01", () => {
       success: true,
       statusCode: "m075_s01_ok",
       fixturePath: DEFAULT_FIXTURE_PATH,
-      observed: { sourceAvailability: "present", workspaceCount: 1, windowsPresent: ["last12h", "last7d"], malformedRows: 5 },
+      observed: { sourceAvailability: "present", workspaceCount: 21, windowsPresent: ["last12h", "last7d"], malformedRows: 1 },
     });
     expect(report.failedCheckIds).toEqual([]);
-    expect(report.observed.classCounts["knowledge-store.undefined-write"].last12h).toBe(2);
-    expect(report.observed.classCounts["azure.platform-noise"].last7d).toBe(18);
-    expect(JSON.stringify(report)).not.toContain("Log_s");
+    expect(report.observed.classCounts["candidate-publication.non-approved-missing-reason"].last12h).toBe(1);
+    expect(report.observed.classCounts["knowledge-store.undefined-write"].last12h).toBe(0);
+    expect(report.observed.classCounts["azure.platform-noise"].last7d).toBe(4);
+    expect(JSON.stringify(report)).not.toContain('"Log_s":');
   });
 
   test("fails when last7d window is missing", async () => {
