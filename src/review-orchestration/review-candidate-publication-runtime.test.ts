@@ -222,9 +222,20 @@ function adapter(overrides: Partial<ReviewCandidatePublicationAdapterSummary["co
     skipped: 0,
     approved: 0,
     rewritten: 0,
+    detailsOnlyFindings: 0,
+    movedToDetails: 0,
+    detailsOnlyOmitted: 0,
     ...overrides,
   };
-  return { counts, skipped: [], fingerprints: [] };
+  return {
+    counts,
+    skipped: [],
+    fingerprints: [],
+    fixEligibility: emptyFixEligibilitySummary(),
+    fixOutcomes: [],
+    detailsOnlyFindings: [],
+    movedToDetails: emptyMovedToDetailsSummary(),
+  };
 }
 
 function publisher(results: ReviewCandidatePublishedResultSummary["results"]): ReviewCandidatePublishedResultSummary {
@@ -236,8 +247,49 @@ function publisher(results: ReviewCandidatePublishedResultSummary["results"]): R
       blocked: results.filter((result) => result.status === "blocked").length,
       failed: results.filter((result) => result.status === "failed").length,
       malformed: results.filter((result) => result.status === "malformed").length,
+      detailsOnlyFindings: 0,
+      movedToDetails: 0,
+      detailsOnlyOmitted: 0,
     },
     results,
+    movedToDetails: emptyMovedToDetailsSummary(),
+  };
+}
+
+function emptyMovedToDetailsSummary(): ReviewCandidatePublishedResultSummary["movedToDetails"] {
+  return {
+    counts: { total: 0, fromFixEligibility: 0, fromPublisherResult: 0, omitted: 0 },
+    reasonCounts: {},
+    redaction: {
+      rawCandidatePayloadsIncluded: false,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      diffsIncluded: false,
+      replacementTextIncluded: false,
+      githubResponsePayloadsIncluded: false,
+      secretLikeValuesIncluded: false,
+      bounded: true,
+    },
+  };
+}
+
+function emptyFixEligibilitySummary(): ReviewCandidatePublicationAdapterSummary["fixEligibility"] {
+  return {
+    schema: "same-pr-fix-eligibility.v1",
+    status: "empty",
+    counts: { input: 0, eligible: 0, blocked: 0, omitted: 0, capped: 0 },
+    reasonCounts: {},
+    omittedReasonCounts: {},
+    redaction: {
+      privateOnly: true,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      candidateBodiesIncluded: false,
+      toolPayloadsIncluded: false,
+      diffsIncluded: false,
+      unboundedDiffsIncluded: false,
+      secretDetected: false,
+    },
   };
 }
 

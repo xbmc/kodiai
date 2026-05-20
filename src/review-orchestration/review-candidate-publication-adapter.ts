@@ -14,6 +14,7 @@ import {
 } from "../review-lifecycle/same-pr-fix-eligibility.ts";
 import type { SamePrFixTruthEvidence } from "../review-lifecycle/validation-truth.ts";
 import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
+import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 import type {
   ReviewCandidateApprovalCandidateReference,
   ReviewCandidateApprovalReason,
@@ -32,6 +33,10 @@ export type ReviewCandidatePublicationSkipReason =
   | "missing-line"
   | "invalid-line-range"
   | "missing-rewrite-visible-finding";
+
+export type ReviewCandidateMovedToDetailsReason =
+  | "line-not-commentable"
+  | "line-not-commentable-in-pr-diff";
 
 export type ReviewCandidatePublisherResultReason =
   | "published"
@@ -52,6 +57,41 @@ export type PublishableReviewCandidateInlinePayload = {
   source: "candidate" | "reducer-visible-finding";
   publication: PublishInlineReviewCommentInput;
   finding: ProcessedReviewFindingDraft;
+};
+
+export type ReviewCandidateDetailsOnlyFinding = {
+  fingerprint: string;
+  lifecycle: ReviewCandidatePublicationLifecycle;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  title: string;
+  location: {
+    path: string;
+    startLine?: number;
+    line: number;
+  };
+  reason: ReviewCandidateMovedToDetailsReason;
+  excerpt?: string;
+};
+
+export type ReviewCandidateMovedToDetailsSummary = {
+  counts: {
+    total: number;
+    fromFixEligibility: number;
+    fromPublisherResult: number;
+    omitted: number;
+  };
+  reasonCounts: Partial<Record<ReviewCandidateMovedToDetailsReason, number>>;
+  redaction: {
+    rawCandidatePayloadsIncluded: false;
+    rawPromptsIncluded: false;
+    rawModelOutputIncluded: false;
+    diffsIncluded: false;
+    replacementTextIncluded: false;
+    githubResponsePayloadsIncluded: false;
+    secretLikeValuesIncluded: false;
+    bounded: true;
+  };
 };
 
 export type ReviewCandidatePublicationAdapterSkipped = {
@@ -76,11 +116,16 @@ export type ReviewCandidatePublicationAdapterSummary = {
     skipped: number;
     approved: number;
     rewritten: number;
+    detailsOnlyFindings: number;
+    movedToDetails: number;
+    detailsOnlyOmitted: number;
   };
   skipped: ReviewCandidatePublicationAdapterSkipped[];
   fingerprints: string[];
   fixEligibility: SamePrFixEligibilitySummary;
   fixOutcomes: ReviewCandidatePublicationFixEligibilityOutcome[];
+  detailsOnlyFindings: ReviewCandidateDetailsOnlyFinding[];
+  movedToDetails: ReviewCandidateMovedToDetailsSummary;
 };
 
 export type ReviewCandidatePublicationAdapterDetailsSummary = {
@@ -101,6 +146,9 @@ export type ReviewCandidatePublishedResultSummary = {
     blocked: number;
     failed: number;
     malformed: number;
+    detailsOnlyFindings: number;
+    movedToDetails: number;
+    detailsOnlyOmitted: number;
   };
   results: Array<{
     fingerprint: string;
@@ -108,10 +156,12 @@ export type ReviewCandidatePublishedResultSummary = {
     reason: ReviewCandidatePublisherResultReason;
     commentId?: number;
   }>;
+  movedToDetails: ReviewCandidateMovedToDetailsSummary;
 };
 
 export type ReviewCandidatePublishedFindingResult = {
   findings: ProcessedReviewFinding[];
+  detailsOnlyFindings: ReviewCandidateDetailsOnlyFinding[];
   summary: ReviewCandidatePublishedResultSummary;
 };
 
@@ -130,6 +180,9 @@ export type ReviewCandidatePublicationTruthEvidence = SamePrFixTruthEvidence & {
 
 const MAX_SUMMARY_LENGTH = 280;
 const MAX_SUMMARY_ITEMS = 20;
+const MAX_DETAILS_ONLY_FINDINGS = 20;
+const MAX_DETAILS_ONLY_TITLE_LENGTH = 120;
+const MAX_DETAILS_ONLY_EXCERPT_LENGTH = 240;
 
 export function buildCandidateReviewOutputKey(reviewOutputKey: string, candidateFingerprint: string): string {
   const baseKey = typeof reviewOutputKey === "string" ? reviewOutputKey.trim() : "";
@@ -238,11 +291,16 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
   });
   const draftsByIdentity = new Map<string, SamePrFixDraft>(fixEligibility.drafts.map((draft) => [draft.identity, draft]));
   const payloads: PublishableReviewCandidateInlinePayload[] = [];
+  const detailsProjection = createDetailsOnlyProjection();
 
   fixEligibility.outcomes.forEach((outcome, index) => {
+    const eligibleInput = eligibleInputs[index];
+    if (outcome.reason === "line-not-commentable" && eligibleInput) {
+      detailsProjection.add(fromEligibleInputDetailsFinding(eligibleInput, outcome, "line-not-commentable"), "fromFixEligibility");
+      return;
+    }
     if (outcome.reason !== "eligible") return;
     const draft = draftsByIdentity.get(outcome.identity);
-    const eligibleInput = eligibleInputs[index];
     if (!draft || !eligibleInput) return;
     payloads.push({
       candidateFingerprint: eligibleInput.reference.fingerprint,
@@ -267,11 +325,16 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
       skipped: skipped.length,
       approved: payloads.filter((payload) => payload.candidatePublicationLifecycle === "approved").length,
       rewritten: payloads.filter((payload) => payload.candidatePublicationLifecycle === "rewritten").length,
+      detailsOnlyFindings: detailsProjection.findings.length,
+      movedToDetails: detailsProjection.summary.counts.total,
+      detailsOnlyOmitted: detailsProjection.summary.counts.omitted,
     },
     skipped,
     fingerprints: payloads.map((payload) => payload.candidateFingerprint).slice(0, MAX_SUMMARY_ITEMS),
     fixEligibility: fixEligibility.summary,
     fixOutcomes,
+    detailsOnlyFindings: detailsProjection.findings,
+    movedToDetails: detailsProjection.summary,
   };
 
   return { payloads, summary };
@@ -282,6 +345,7 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
   results: ReadonlyMap<string, InlineReviewPublicationResult>;
 }): ReviewCandidatePublishedFindingResult {
   const findings: ProcessedReviewFinding[] = [];
+  const detailsProjection = createDetailsOnlyProjection();
   const results: ReviewCandidatePublishedResultSummary["results"] = [];
 
   for (const payload of input.payloads) {
@@ -296,11 +360,15 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
     }
 
     if (result.status !== "published") {
+      const reason = result.reason ?? result.status;
       results.push({
         fingerprint: payload.candidateFingerprint,
         status: result.status,
-        reason: result.reason ?? result.status,
+        reason,
       });
+      if (result.status === "failed" && result.reason === "line-not-commentable-in-pr-diff") {
+        detailsProjection.add(fromPayloadDetailsFinding(payload, "line-not-commentable-in-pr-diff"), "fromPublisherResult");
+      }
       continue;
     }
 
@@ -331,6 +399,7 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
 
   return {
     findings,
+    detailsOnlyFindings: detailsProjection.findings,
     summary: {
       counts: {
         input: input.payloads.length,
@@ -339,8 +408,12 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
         blocked: results.filter((result) => result.status === "blocked").length,
         failed: results.filter((result) => result.status === "failed").length,
         malformed: results.filter((result) => result.status === "malformed").length,
+        detailsOnlyFindings: detailsProjection.findings.length,
+        movedToDetails: detailsProjection.summary.counts.total,
+        detailsOnlyOmitted: detailsProjection.summary.counts.omitted,
       },
       results,
+      movedToDetails: detailsProjection.summary,
     },
   };
 }
@@ -388,6 +461,9 @@ export function toReviewCandidatePublicationAdapterSummary(
     `skipped=${formatCount(summary.counts.skipped)}`,
     `approved=${formatCount(summary.counts.approved)}`,
     `rewritten=${formatCount(summary.counts.rewritten)}`,
+    `detailsOnly=${formatCount(summary.counts.detailsOnlyFindings)}`,
+    `movedToDetails=${formatCount(summary.counts.movedToDetails)}`,
+    `detailsOmitted=${formatCount(summary.counts.detailsOnlyOmitted)}`,
     `fixEligible=${formatCount(summary.fixEligibility.counts.eligible)}`,
     `fixBlocked=${formatCount(summary.fixEligibility.counts.blocked)}`,
     `fixCapped=${formatCount(summary.fixEligibility.counts.capped)}`,
@@ -419,6 +495,164 @@ export function formatReviewCandidateInlineBody(
     "",
     body,
   ].join("\n");
+}
+
+function createDetailsOnlyProjection(): {
+  findings: ReviewCandidateDetailsOnlyFinding[];
+  summary: ReviewCandidateMovedToDetailsSummary;
+  add: (finding: ReviewCandidateDetailsOnlyFinding | undefined, source: "fromFixEligibility" | "fromPublisherResult") => void;
+} {
+  const findings: ReviewCandidateDetailsOnlyFinding[] = [];
+  const reasonCounts: Partial<Record<ReviewCandidateMovedToDetailsReason, number>> = {};
+  let omitted = 0;
+  let fromFixEligibility = 0;
+  let fromPublisherResult = 0;
+
+  const summary: ReviewCandidateMovedToDetailsSummary = {
+    counts: { total: 0, fromFixEligibility: 0, fromPublisherResult: 0, omitted: 0 },
+    reasonCounts,
+    redaction: detailsOnlyRedaction(),
+  };
+
+  return {
+    findings,
+    summary,
+    add(finding, source) {
+      if (!finding) return;
+      summary.counts.total += 1;
+      if (source === "fromFixEligibility") {
+        fromFixEligibility += 1;
+        summary.counts.fromFixEligibility = fromFixEligibility;
+      } else {
+        fromPublisherResult += 1;
+        summary.counts.fromPublisherResult = fromPublisherResult;
+      }
+      reasonCounts[finding.reason] = (reasonCounts[finding.reason] ?? 0) + 1;
+      if (findings.length >= MAX_DETAILS_ONLY_FINDINGS) {
+        omitted += 1;
+        summary.counts.omitted = omitted;
+        return;
+      }
+      findings.push(finding);
+    },
+  };
+}
+
+function fromEligibleInputDetailsFinding(
+  input: { reference: ReviewCandidateApprovalCandidateReference; candidate: ReviewCandidateFinding; finding: ProcessedReviewFindingDraft },
+  outcome: SamePrFixEligibilityOutcome,
+  reason: ReviewCandidateMovedToDetailsReason,
+): ReviewCandidateDetailsOnlyFinding | undefined {
+  return toDetailsOnlyFinding({
+    fingerprint: input.reference.fingerprint,
+    lifecycle: input.reference.lifecycle,
+    severity: input.finding.severity,
+    category: input.finding.category,
+    title: input.finding.title,
+    body: input.finding.body,
+    filePath: outcome.path ?? input.candidate.filePath,
+    startLine: outcome.startLine ?? input.candidate.startLine,
+    line: outcome.line ?? input.candidate.endLine ?? input.candidate.startLine,
+    reason,
+  });
+}
+
+function fromPayloadDetailsFinding(
+  payload: PublishableReviewCandidateInlinePayload,
+  reason: ReviewCandidateMovedToDetailsReason,
+): ReviewCandidateDetailsOnlyFinding | undefined {
+  return toDetailsOnlyFinding({
+    fingerprint: payload.candidateFingerprint,
+    lifecycle: payload.candidatePublicationLifecycle,
+    severity: payload.finding.severity,
+    category: payload.finding.category,
+    title: payload.finding.title,
+    body: payload.finding.body,
+    filePath: payload.publication.location.path,
+    startLine: payload.publication.location.startLine ?? payload.finding.startLine,
+    line: payload.publication.location.line ?? payload.finding.endLine ?? payload.finding.startLine,
+    reason,
+  });
+}
+
+function toDetailsOnlyFinding(input: {
+  fingerprint: string;
+  lifecycle: ReviewCandidatePublicationLifecycle;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  title: unknown;
+  body?: unknown;
+  filePath?: unknown;
+  startLine?: unknown;
+  line?: unknown;
+  reason: ReviewCandidateMovedToDetailsReason;
+}): ReviewCandidateDetailsOnlyFinding | undefined {
+  const path = normalizeDetailsPath(input.filePath);
+  const line = normalizePositiveInteger(input.line);
+  const startLine = normalizePositiveInteger(input.startLine ?? input.line);
+  if (!path || !line || !startLine || startLine > line) return undefined;
+  const title = sanitizePublicText(input.title, "Untitled finding", MAX_DETAILS_ONLY_TITLE_LENGTH);
+  const excerpt = sanitizeOptionalExcerpt(input.body);
+  return {
+    fingerprint: sanitizeSummaryToken(input.fingerprint),
+    lifecycle: input.lifecycle,
+    severity: normalizeSeverity(input.severity),
+    category: normalizeCategory(input.category),
+    title,
+    location: {
+      path,
+      ...(startLine === line ? {} : { startLine }),
+      line,
+    },
+    reason: input.reason,
+    ...(excerpt ? { excerpt } : {}),
+  };
+}
+
+function normalizeDetailsPath(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^b\//, "").slice(0, 512);
+  if (!normalized || isUnsafeFilePath(normalized)) return undefined;
+  return normalized;
+}
+
+function sanitizeOptionalExcerpt(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) return undefined;
+  const sanitized = sanitizePublicText(value, "", MAX_DETAILS_ONLY_EXCERPT_LENGTH);
+  return sanitized || undefined;
+}
+
+function sanitizePublicText(value: unknown, fallback: string, maxLength: number): string {
+  if (typeof value !== "string") return fallback;
+  const normalized = sanitizeContent(value)
+    .replace(/```suggestion[\s\S]*?```/gi, "[fix-redacted]")
+    .replace(/diff --git[\s\S]*/gi, "diff-redacted")
+    .replace(/BEGIN\s+PROMPT[\s\S]*/gi, "prompt-redacted")
+    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
+    .replace(/TOKEN\s*[:=]\s*[^\s]+/gi, "token-redacted")
+    .replace(/secret\s*[:=]\s*[^\s]+/gi, "secret-redacted")
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
+    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
+    .replace(/AKIA[0-9A-Z]{16}/g, "redacted")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return fallback;
+  if (scanOutgoingForSecrets(normalized).blocked) return "[redacted]";
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function detailsOnlyRedaction(): ReviewCandidateMovedToDetailsSummary["redaction"] {
+  return {
+    rawCandidatePayloadsIncluded: false,
+    rawPromptsIncluded: false,
+    rawModelOutputIncluded: false,
+    diffsIncluded: false,
+    replacementTextIncluded: false,
+    githubResponsePayloadsIncluded: false,
+    secretLikeValuesIncluded: false,
+    bounded: true,
+  };
 }
 
 function normalizePublicationTruthResult(result: InlineReviewPublicationResult | undefined): {
