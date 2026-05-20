@@ -16838,6 +16838,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     executorPublished?: boolean;
     exposeSummaryComment?: boolean;
     shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+    createReviewComment?: (commentParams: Record<string, unknown>) => Promise<{ data: Record<string, unknown> }>;
   } = {}) {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({
@@ -16919,6 +16920,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           listCommits: async () => ({ data: [] }),
           get: async () => ({ data: { head: { sha: "abcdef1234567890" } } }),
           createReviewComment: async (commentParams: Record<string, unknown>) => {
+            if (params.createReviewComment) {
+              return params.createReviewComment(commentParams);
+            }
             const id = 1200 + createdReviewComments.length;
             createdReviewComments.push({ ...commentParams, id });
             return { data: { id, path: commentParams.path, html_url: `https://example.test/comment/${id}` } };
@@ -16932,7 +16936,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             if (!String(commentParams.body ?? "").includes(buildReviewOutputMarker(reviewOutputKey))) {
               forbiddenSideEffects.unexpectedPublicCommentCount += 1;
             }
-            return { data: { id } };
+            return { data: { id, body: commentParams.body } };
           },
           updateComment: async (updateParams: { body: string }) => {
             updatedSummaryBody = updateParams.body;
@@ -17844,10 +17848,21 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(JSON.stringify(configSnapshot)).not.toContain("base\\nfeature");
   });
 
-  test("candidate publication blocks non-commentable fix suggestions without storing draft findings", async () => {
-    const { recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+  test("candidate publication preserves non-commentable approved findings in Review Details without storing draft findings", async () => {
+    const rawBodyCanary = "This line is not commentable in the PR diff, but the explanation is safe to summarize.";
+    const rawFixCanary = "feature fixed safely on an unpublishable line";
+    const { createdIssueComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Unpublishable candidate line",
+        body: rawBodyCanary,
+        line: 999,
+        endLine: 999,
+        severity: "major",
+        category: "correctness",
+        fixReplacementText: rawFixCanary,
+      }),
       candidateFindingResult: {
         status: "shadow",
         repo: "acme/repo",
@@ -17863,8 +17878,8 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             severity: "major",
             category: "correctness",
             title: "Unpublishable candidate line",
-            body: "This line is not commentable in the PR diff.",
-            fixReplacementText: "feature fixed on an unpublishable line",
+            body: rawBodyCanary,
+            fixReplacementText: rawFixCanary,
           },
         ],
         rejections: [],
@@ -17903,14 +17918,49 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
     expect(recordFindingEntries).toHaveLength(0);
+    expect(createdIssueComments.length).toBeGreaterThanOrEqual(1);
+
+    const movedDetailsBody = createdIssueComments
+      .map((comment) => String(comment.body ?? ""))
+      .find((body) => body.includes("Review candidate publication: mode=moved-to-details"));
+    expect(movedDetailsBody).toBeDefined();
+    const detailsBlock = extractReviewDetailsBlock(movedDetailsBody ?? "");
+    expect(detailsBlock).toContain("Review candidate publication: mode=moved-to-details");
+    expect(detailsBlock).toContain("published=0");
+    expect(detailsBlock).toContain("directFallback=0");
+    expect(detailsBlock).toContain("movedToDetails=1");
+    expect(detailsBlock).toContain("Moved review candidates preserved in details:");
+    expect(detailsBlock).toContain("[major/correctness] Unpublishable candidate line (README.md:999, reason=line-not-commentable)");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET");
+    expect(detailsBlock).not.toContain("TOKEN=abc123");
+    expect(detailsBlock).not.toContain("diff --git");
+    expect(detailsBlock).not.toContain("feature fixed on an unpublishable line");
+    expect(detailsBlock).not.toContain("sk-test-secret");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
-    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.gateResult).toBe("moved-to-details");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublishable: 0,
       candidatePublished: 0,
       candidateFailed: 0,
+      candidateMovedToDetails: 1,
+      candidateDetailsOnlyFindings: 1,
       convertedProcessedFindings: 0,
+      directPublished: 0,
+    }));
+    expect(publicationLog?.data?.movedToDetails).toEqual(expect.objectContaining({
+      counts: expect.objectContaining({ total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 }),
+      reasonCounts: { "line-not-commentable": 1 },
+      redaction: expect.objectContaining({
+        rawCandidatePayloadsIncluded: false,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        diffsIncluded: false,
+        replacementTextIncluded: false,
+        githubResponsePayloadsIncluded: false,
+        secretLikeValuesIncluded: false,
+        bounded: true,
+      }),
     }));
 
     const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
@@ -17920,14 +17970,93 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       reasonCounts: { "line-not-commentable": 1 },
     }));
 
+    const detailsLog = logEntries.find((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "completed");
+    expect(detailsLog?.data).toEqual(expect.objectContaining({
+      reviewDetailsPublished: true,
+      publicationMode: "canonical",
+      surfaceKind: "issue_comment",
+    }));
+
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
-    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("blocked");
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("moved-to-details");
     expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
       publishedCommentIds: [],
       convertedProcessedFindingCount: 0,
       hasFabricatedProcessedFindings: false,
     }));
+    expect(JSON.stringify(configSnapshot)).toContain("candidateMovedToDetails");
     expect(JSON.stringify(configSnapshot)).not.toContain("This line is not commentable");
+    expect(JSON.stringify(configSnapshot)).not.toContain("PROMPT_SECRET");
+    expect(JSON.stringify(configSnapshot)).not.toContain("feature fixed on an unpublishable line");
+  });
+
+  test("generic inline publisher failures stay degraded instead of moving candidates to Review Details", async () => {
+    const { createdIssueComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Commentable candidate that hits GitHub API failure",
+        body: "This candidate targets a commentable diff line but GitHub rejects the request.",
+        line: 2,
+        endLine: 2,
+        severity: "major",
+        category: "correctness",
+        fixReplacementText: "feature fixed on a commentable line",
+      }),
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: "Commentable candidate that hits GitHub API failure",
+            body: "This candidate targets a commentable diff line but GitHub rejects the request.",
+            fixReplacementText: "feature fixed on a commentable line",
+          },
+        ],
+        rejections: [],
+      },
+      createReviewComment: async () => {
+        const err = new Error("Validation Failed: generic GitHub API validation failure");
+        (err as Error & { status?: number }).status = 422;
+        throw err;
+      },
+    });
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+    for (const comment of createdIssueComments) {
+      const body = String(comment.body ?? "");
+      expect(body).not.toContain("mode=moved-to-details");
+      expect(body).not.toContain("Moved review candidates preserved in details");
+    }
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublishable: 1,
+      candidatePublished: 0,
+      candidateFailed: 1,
+      candidateMovedToDetails: 0,
+      candidateDetailsOnlyFindings: 0,
+      convertedProcessedFindings: 0,
+      directPublished: 0,
+    }));
+    expect(publicationLog?.data?.reasons).toContain("candidate-publisher-failed");
+    expect(publicationLog?.data?.movedToDetails).toBeUndefined();
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("blocked");
+    expect(JSON.stringify(configSnapshot)).not.toContain("This candidate targets a commentable diff line");
+    expect(JSON.stringify(configSnapshot)).not.toContain("feature fixed on a commentable line");
   });
   test("missing candidate metadata keeps Review Details publication fail-open with unavailable snapshot", async () => {
     const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
