@@ -8,6 +8,7 @@ import {
   parseM075Args,
   type M075ChildReport,
 } from "./verify-m075.ts";
+import type { NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 import { COMMAND_NAME as S01_COMMAND_NAME, EXPECTED_PACKAGE_SCRIPT as S01_EXPECTED_PACKAGE_SCRIPT } from "./verify-m075-s01.ts";
 import { COMMAND_NAME as S02_COMMAND_NAME, EXPECTED_PACKAGE_SCRIPT as S02_EXPECTED_PACKAGE_SCRIPT } from "./verify-m075-s02.ts";
 import { COMMAND_NAME as S03_COMMAND_NAME, EXPECTED_PACKAGE_SCRIPT as S03_EXPECTED_PACKAGE_SCRIPT } from "./verify-m075-s03.ts";
@@ -61,13 +62,58 @@ function childReport(child: "s01" | "s02" | "s03" | "s04" | "s05" | "s06", overr
   } as M075ChildReport;
 }
 
+function liveRows(messages: readonly string[]): readonly NormalizedLogAnalyticsRow[] {
+  return messages.map((message, index) => ({
+    timeGenerated: `2026-05-20T16:00:0${index}.000Z`,
+    rawLog: JSON.stringify({ msg: message, reviewOutputKey: "owner/repo#1:abc", deliveryId: `delivery-${index}` }),
+    malformed: false,
+    deliveryId: `delivery-${index}`,
+    reviewOutputKey: "owner/repo#1:abc",
+    message,
+    revisionName: "kodiai--abc",
+    containerAppName: "kodiai",
+    parsedLog: { msg: message, reviewOutputKey: "owner/repo#1:abc", deliveryId: `delivery-${index}` },
+  }));
+}
+
+function structuredRow(gate: "review-timeout-classification" | "addon-check-classification", classification: string): NormalizedLogAnalyticsRow {
+  return {
+    timeGenerated: "2026-05-20T16:00:00.000Z",
+    rawLog: JSON.stringify({ gate, classification, reviewOutputKey: "owner/repo#1:abc", deliveryId: "delivery-structured" }),
+    malformed: false,
+    deliveryId: "delivery-structured",
+    reviewOutputKey: "owner/repo#1:abc",
+    message: `${gate} ${classification}`,
+    revisionName: "kodiai--abc",
+    containerAppName: "kodiai",
+    parsedLog: { gate, classification, reviewOutputKey: "owner/repo#1:abc", deliveryId: "delivery-structured" },
+  };
+}
+
+function liveCollectors(rows: readonly NormalizedLogAnalyticsRow[] = []) {
+  return {
+    discoverWorkspaces: async () => ["workspace-1"],
+    queryLogs: async ({ timespan }: { timespan: "PT12H" | "P7D" }) => ({ query: `take 200 ${timespan}`, rows }),
+  };
+}
+
+function healthFetcher(overrides: Record<string, { status: number; json: unknown }> = {}) {
+  return async (url: string) => {
+    if (url.endsWith("/healthz")) return overrides.healthz ?? { status: 200, json: { status: "ok" } };
+    if (url.endsWith("/readiness")) return overrides.readiness ?? { status: 200, json: { status: "ready" } };
+    throw new Error("unexpected url");
+  };
+}
+
 describe("verify-m075 aggregate local proof", () => {
-  test("parses aggregate-only CLI arguments and rejects fixture/live overrides", () => {
-    expect(parseM075Args([])).toEqual({ json: false, help: false });
-    expect(parseM075Args(["--json"])).toEqual({ json: true, help: false });
-    expect(parseM075Args(["--help"])).toEqual({ json: false, help: true });
+  test("parses local and live CLI arguments while rejecting fixture overrides", () => {
+    expect(parseM075Args([])).toEqual({ json: false, help: false, live: false, allowBlocked: false });
+    expect(parseM075Args(["--json"])).toEqual({ json: true, help: false, live: false, allowBlocked: false });
+    expect(parseM075Args(["--help"])).toEqual({ json: false, help: true, live: false, allowBlocked: false });
+    expect(parseM075Args(["--live", "--base-url", "https://kodiai.example", "--allow-blocked"])).toEqual({ json: false, help: false, live: true, allowBlocked: true, baseUrl: "https://kodiai.example" });
     expect(() => parseM075Args(["--fixture"])).toThrow(/not supported/);
-    expect(() => parseM075Args(["--live"])).toThrow(/not supported/);
+    expect(() => parseM075Args(["--base-url", "https:\/\/kodiai.example"])).toThrow(/requires --live/);
+    expect(() => parseM075Args(["--allow-blocked"])).toThrow(/requires --live/);
     expect(() => parseM075Args(["--bogus"])).toThrow(/invalid_cli_args/);
   });
 
@@ -220,6 +266,114 @@ describe("verify-m075 aggregate local proof", () => {
     expect(fixtureOverride.issues.join("\n")).toContain("fixturePaths");
     expect(invalidEvaluator.success).toBe(false);
     expect(invalidEvaluator.issues.join("\n")).toContain("must be a function");
+  });
+
+  test("live mode passes healthy production-like health and bounded structured reclassification evidence", async () => {
+    const report = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: false, baseUrl: "https://kodiai.example" }, {
+      readPackageJsonText: async () => packageJson(),
+      healthFetcher: healthFetcher(),
+      s01LiveCollectors: liveCollectors([
+        structuredRow("review-timeout-classification", "expected-bounded-outcome"),
+        structuredRow("addon-check-classification", "expected-bounded-outcome"),
+      ]),
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.observed.mode).toBe("live");
+    expect(report.failedCheckIds).toEqual([]);
+    expect(report.checks.find((check) => check.id === "health.available")?.status).toBe("pass");
+    expect(report.checks.find((check) => check.id === "readiness.available")?.status).toBe("pass");
+    expect(report.checks.find((check) => check.id === "raw-regression.absent")?.status).toBe("pass");
+    expect(report.observed.liveLogs?.structuredReclassificationCounts["review-timeout-classification.expected-bounded-outcome"]).toBe(2);
+  });
+
+  test("live readiness can be degraded but ready", async () => {
+    const report = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: false, baseUrl: "https://kodiai.example" }, {
+      readPackageJsonText: async () => packageJson(),
+      healthFetcher: healthFetcher({ readiness: { status: 200, json: { status: "ready", github: "degraded", reason: "GitHub API unreachable" } } }),
+      s01LiveCollectors: liveCollectors([
+        structuredRow("review-timeout-classification", "expected-bounded-outcome"),
+      ]),
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.observed.health?.readinessDegraded).toBe(true);
+    expect(report.checks.find((check) => check.id === "readiness.available")?.status).toBe("pass");
+  });
+
+  test("live mode reports blocked base URL and blocked Azure source without counting it as success", async () => {
+    const report = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: true }, {
+      readPackageJsonText: async () => packageJson(),
+      env: {},
+      s01LiveCollectors: { discoverWorkspaces: async () => [] },
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.statusCode).toBe("m075_live_blocked");
+    expect(report.failedCheckIds).toContain("health.source.blocked");
+    expect(report.failedCheckIds).toContain("live-log-source.blocked");
+    expect(report.failedCheckIds).toContain("live-source.available");
+  });
+
+  test("live mode fails when raw regression evidence is present", async () => {
+    const report = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: false, baseUrl: "https://kodiai.example" }, {
+      readPackageJsonText: async () => packageJson(),
+      healthFetcher: healthFetcher(),
+      s01LiveCollectors: liveCollectors(liveRows(["review timeout exceeded budget"])),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.failedCheckIds).toContain("raw-regression.absent");
+    expect(report.observed.liveLogs?.rawRegressionCounts["review.timeout-or-long-run"]).toBe(2);
+  });
+
+  test("live mode fails closed on health HTTP errors, invalid JSON, Azure query errors, and redaction failures", async () => {
+    const badHealth = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: false, baseUrl: "https://kodiai.example" }, {
+      readPackageJsonText: async () => packageJson(),
+      healthFetcher: healthFetcher({ healthz: { status: 500, json: { status: "down" } }, readiness: { status: 200, json: "not-json" } }),
+      s01LiveCollectors: liveCollectors(),
+    });
+    const queryError = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: false, baseUrl: "https://kodiai.example" }, {
+      readPackageJsonText: async () => packageJson(),
+      healthFetcher: healthFetcher(),
+      s01LiveCollectors: { discoverWorkspaces: async () => ["workspace-1"], queryLogs: async () => { throw new Error("query failed"); } },
+    });
+    const unsafe = await evaluateM075Contract({ json: true, help: false, live: true, allowBlocked: false, baseUrl: "https://kodiai.example" }, {
+      readPackageJsonText: async () => packageJson(),
+      healthFetcher: healthFetcher(),
+      s01LiveCollectors: liveCollectors([{
+        ...structuredRow("review-timeout-classification", "expected-bounded-outcome"),
+        parsedLog: { gate: "review-timeout-classification", classification: "expected-bounded-outcome", rawLog: "RAW_PROMPT_CANARY" },
+      }]),
+    });
+
+    expect(badHealth.failedCheckIds).toContain("health.available");
+    expect(badHealth.failedCheckIds).toContain("readiness.available");
+    expect(queryError.failedCheckIds).toContain("live-log-source.unavailable");
+    expect(unsafe.failedCheckIds).toContain("live-redaction.safe");
+    expect(JSON.stringify(unsafe)).not.toContain("RAW_PROMPT_CANARY");
+  });
+
+  test("main exits zero for allowed blocked live evidence while preserving blocked JSON status", async () => {
+    let output = "";
+    const exitCode = await main(["--live", "--allow-blocked", "--json"], {
+      stdout: { write: (chunk) => { output += String(chunk); } },
+      stderr: { write: () => undefined },
+      evaluate: async () => ({
+        command: COMMAND_NAME,
+        generatedAt: "2026-05-20T16:00:00.000Z",
+        success: false,
+        statusCode: "m075_live_blocked",
+        failedCheckIds: ["health.source.blocked"],
+        checks: [{ id: "health.source.blocked", status: "blocked", message: "blocked", issues: [] }],
+        observed: { mode: "live", childCount: 6, passedChildCount: 6, failedChildCount: 0, blockedChildCount: 0, packageScriptsChecked: [] },
+        children: [],
+        issues: [],
+      }),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output).success).toBe(false);
   });
 
   test("main emits JSON success and returns nonzero for invalid args", async () => {
