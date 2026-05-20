@@ -14,6 +14,9 @@ export type ProductionLogIssueClassId =
   | "review-timeout-classification.hard-failure"
   | "review-timeout-classification.long-run-threshold"
   | "review.timeout-or-long-run"
+  | "addon-check-classification.expected-bounded-outcome"
+  | "addon-check-classification.actionable-diagnostic"
+  | "addon-check-classification.malformed-evidence"
   | "addon-check.timeout"
   | "azure.platform-noise";
 
@@ -133,6 +136,24 @@ const ISSUE_CLASS_DEFINITIONS: Record<ProductionLogIssueClassId, Omit<Production
     title: "Raw or ambiguous review timeout or long-run noise",
     classification: "transient",
     downstreamOwner: "S05",
+  },
+  "addon-check-classification.expected-bounded-outcome": {
+    id: "addon-check-classification.expected-bounded-outcome",
+    title: "Addon check classification reported an expected bounded outcome",
+    classification: "transient",
+    downstreamOwner: "S06",
+  },
+  "addon-check-classification.actionable-diagnostic": {
+    id: "addon-check-classification.actionable-diagnostic",
+    title: "Addon check classification reported an actionable diagnostic",
+    classification: "app-actionable",
+    downstreamOwner: "S06",
+  },
+  "addon-check-classification.malformed-evidence": {
+    id: "addon-check-classification.malformed-evidence",
+    title: "Addon check classification failed closed on malformed evidence",
+    classification: "app-actionable",
+    downstreamOwner: "S06",
   },
   "addon-check.timeout": {
     id: "addon-check.timeout",
@@ -300,6 +321,30 @@ function classifyStructuredReviewTimeout(row: NormalizedLogAnalyticsRow): Produc
   return null;
 }
 
+function classifyStructuredAddonCheck(row: NormalizedLogAnalyticsRow): ProductionLogIssueClassId | null {
+  const parsed = row.parsedLog;
+  if (!parsed || readPath(parsed, ["gate"]) !== "addon-check-classification") {
+    return null;
+  }
+
+  const classification = safeString(readPath(parsed, ["classification", "gateResult"]));
+  const mode = safeString(readPath(parsed, ["mode"]));
+
+  if (classification === "unknown" || mode === "unknown-malformed-evidence") {
+    return "addon-check-classification.malformed-evidence";
+  }
+
+  if (classification === "actionable-diagnostic") {
+    return "addon-check-classification.actionable-diagnostic";
+  }
+
+  if (classification === "expected-bounded-outcome") {
+    return "addon-check-classification.expected-bounded-outcome";
+  }
+
+  return null;
+}
+
 export function classifyProductionLogRow(row: NormalizedLogAnalyticsRow): ProductionLogIssueClassId | null {
   if (row.malformed) {
     return null;
@@ -308,6 +353,11 @@ export function classifyProductionLogRow(row: NormalizedLogAnalyticsRow): Produc
   const structuredReviewTimeout = classifyStructuredReviewTimeout(row);
   if (structuredReviewTimeout) {
     return structuredReviewTimeout;
+  }
+
+  const structuredAddonCheck = classifyStructuredAddonCheck(row);
+  if (structuredAddonCheck) {
+    return structuredAddonCheck;
   }
 
   const text = textForClassification(row);

@@ -1,0 +1,258 @@
+{
+  "schema": "m075-s06-addon-check-classification.v1",
+  "generatedAt": "2026-05-20T15:20:00.000Z",
+  "scenarios": [
+    {
+      "name": "completed clean addon check",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "completed-clean",
+        "reasonCodes": ["completed-clean"],
+        "counts": { "addonCount": 2, "completedCount": 2, "timedOutCount": 0, "toolNotFoundCount": 0, "findingCount": 0, "errorCount": 0, "warningCount": 0, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-001",
+        "repo": "xbmc/xbmc",
+        "prNumber": 201
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "completed-clean",
+        "reasonCodes": ["completed-clean"],
+        "deliveryId": "delivery-s06-001",
+        "repo": "xbmc/xbmc",
+        "prNumber": 201
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "expected-bounded-outcome",
+        "mode": "completed-clean",
+        "reasonCodes": ["completed-clean"],
+        "actionableDiagnostic": false,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.expected-bounded-outcome", "actionable": false }
+    },
+    {
+      "name": "completed with findings",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "completed-with-findings",
+        "reasonCodes": ["findings-present"],
+        "counts": { "addonCount": 3, "completedCount": 3, "timedOutCount": 0, "toolNotFoundCount": 0, "findingCount": 4, "errorCount": 1, "warningCount": 3, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-002",
+        "repo": "xbmc/xbmc",
+        "prNumber": 202
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "completed-with-findings",
+        "reasonCodes": ["findings-present"],
+        "deliveryId": "delivery-s06-002",
+        "repo": "xbmc/xbmc",
+        "prNumber": 202
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "mode": "completed-with-findings",
+        "reasonCodes": ["findings-present"],
+        "actionableDiagnostic": true,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.actionable-diagnostic", "actionable": true }
+    },
+    {
+      "name": "partial timeout with bounded findings",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "partial-timeout",
+        "reasonCodes": ["partial-timeout", "findings-present"],
+        "counts": { "addonCount": 4, "completedCount": 3, "timedOutCount": 1, "toolNotFoundCount": 0, "findingCount": 2, "errorCount": 0, "warningCount": 2, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-003",
+        "repo": "xbmc/xbmc",
+        "prNumber": 203
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "partial-timeout",
+        "reasonCodes": ["partial-timeout", "findings-present"],
+        "deliveryId": "delivery-s06-003",
+        "repo": "xbmc/xbmc",
+        "prNumber": 203
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "mode": "partial-timeout",
+        "reasonCodes": ["partial-timeout", "findings-present"],
+        "actionableDiagnostic": true,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.actionable-diagnostic", "actionable": true }
+    },
+    {
+      "name": "all addons timed out",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "all-timeout",
+        "reasonCodes": ["all-timeout"],
+        "counts": { "addonCount": 2, "completedCount": 0, "timedOutCount": 2, "toolNotFoundCount": 0, "findingCount": 0, "errorCount": 0, "warningCount": 0, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-004",
+        "repo": "xbmc/xbmc",
+        "prNumber": 204
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "all-timeout",
+        "reasonCodes": ["all-timeout"],
+        "deliveryId": "delivery-s06-004",
+        "repo": "xbmc/xbmc",
+        "prNumber": 204
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "mode": "all-timeout",
+        "reasonCodes": ["all-timeout"],
+        "actionableDiagnostic": true,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.actionable-diagnostic", "actionable": true }
+    },
+    {
+      "name": "mixed incomplete timeout and tool unavailable",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "mixed-incomplete",
+        "reasonCodes": ["mixed-incomplete", "tool-unavailable"],
+        "counts": { "addonCount": 4, "completedCount": 2, "timedOutCount": 1, "toolNotFoundCount": 1, "findingCount": 0, "errorCount": 0, "warningCount": 0, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-005",
+        "repo": "xbmc/xbmc",
+        "prNumber": 205
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "gateResult": "actionable-diagnostic",
+        "mode": "mixed-incomplete",
+        "reasonCodes": ["mixed-incomplete", "tool-unavailable"],
+        "deliveryId": "delivery-s06-005",
+        "repo": "xbmc/xbmc",
+        "prNumber": 205
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "actionable-diagnostic",
+        "mode": "mixed-incomplete",
+        "reasonCodes": ["mixed-incomplete", "tool-unavailable"],
+        "actionableDiagnostic": true,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.actionable-diagnostic", "actionable": true }
+    },
+    {
+      "name": "tool unavailable for all addons",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "tool-unavailable",
+        "reasonCodes": ["tool-unavailable"],
+        "counts": { "addonCount": 2, "completedCount": 0, "timedOutCount": 0, "toolNotFoundCount": 2, "findingCount": 0, "errorCount": 0, "warningCount": 0, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": false, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-006",
+        "repo": "xbmc/xbmc",
+        "prNumber": 206
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "expected-bounded-outcome",
+        "gateResult": "expected-bounded-outcome",
+        "mode": "tool-unavailable",
+        "reasonCodes": ["tool-unavailable"],
+        "deliveryId": "delivery-s06-006",
+        "repo": "xbmc/xbmc",
+        "prNumber": 206
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "expected-bounded-outcome",
+        "mode": "tool-unavailable",
+        "reasonCodes": ["tool-unavailable"],
+        "actionableDiagnostic": false,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.expected-bounded-outcome", "actionable": false }
+    },
+    {
+      "name": "unknown malformed evidence fails closed",
+      "runtime": {
+        "gate": "addon-check-classification",
+        "classification": "unknown",
+        "gateResult": "unknown",
+        "mode": "unknown-malformed-evidence",
+        "reasonCodes": ["unknown-evidence", "safe-degraded"],
+        "counts": { "addonCount": 1, "completedCount": 0, "timedOutCount": 0, "toolNotFoundCount": 0, "findingCount": 0, "errorCount": 0, "warningCount": 0, "timeBudgetMs": 120000 },
+        "redaction": { "rawCheckerOutputOmitted": true, "workspacePathsOmitted": true, "githubPayloadOmitted": true, "boundedReasonCodes": true, "unsafeInputOmitted": true, "rawCanaryDetected": false, "addonIdentifiersOmitted": true },
+        "deliveryId": "delivery-s06-007",
+        "repo": "xbmc/xbmc",
+        "prNumber": 207
+      },
+      "log": {
+        "gate": "addon-check-classification",
+        "classification": "unknown",
+        "gateResult": "unknown",
+        "mode": "unknown-malformed-evidence",
+        "reasonCodes": ["unknown-evidence", "safe-degraded"],
+        "deliveryId": "delivery-s06-007",
+        "repo": "xbmc/xbmc",
+        "prNumber": 207
+      },
+      "comment": {
+        "summaryKind": "addon-check-classification",
+        "classification": "unknown",
+        "mode": "unknown-malformed-evidence",
+        "reasonCodes": ["unknown-evidence", "safe-degraded"],
+        "actionableDiagnostic": false,
+        "bounded": true
+      },
+      "taxonomy": { "classId": "addon-check-classification.malformed-evidence", "actionable": true }
+    }
+  ],
+  "negativeControls": {
+    "invalidJsonRejected": true,
+    "missingFixtureRejected": true,
+    "ignoredPathRejected": true,
+    "liveModeRejected": true,
+    "missingModeRejected": true,
+    "rawCanariesRejected": true,
+    "unsafeReasonCodesRejected": true,
+    "emptyReasonsRejected": true,
+    "unboundedArraysRejected": true,
+    "unboundedCountsRejected": true,
+    "taxonomyCollapseRejected": true,
+    "packageWiringDriftRejected": true
+  }
+}

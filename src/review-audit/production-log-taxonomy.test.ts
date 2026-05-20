@@ -185,6 +185,69 @@ describe("production log taxonomy", () => {
     expect(findProductionLogIssueClass(report, "review-timeout-classification.long-run-threshold").classification).toBe("app-actionable");
   });
 
+  test("classifies structured S06 addon-check outcomes separately from legacy timeout noise", () => {
+    const bounded = row({
+      msg: "Addon check classification",
+      parsedLog: {
+        msg: "Addon check classification",
+        gate: "addon-check-classification",
+        gateResult: "expected-bounded-outcome",
+        classification: "expected-bounded-outcome",
+        mode: "completed-clean",
+        reasonCodes: ["completed-clean"],
+        repo: "xbmc/xbmc",
+        prNumber: 801,
+        deliveryId: "delivery-801",
+      },
+      prNumber: 801,
+    });
+    const actionable = row({
+      msg: "Addon check classification timeout",
+      parsedLog: {
+        msg: "Addon check classification timeout",
+        gate: "addon-check-classification",
+        gateResult: "actionable-diagnostic",
+        classification: "actionable-diagnostic",
+        mode: "all-timeout",
+        reasonCodes: ["all-timeout"],
+        repo: "xbmc/xbmc",
+        prNumber: 802,
+        deliveryId: "delivery-802",
+      },
+      prNumber: 802,
+    });
+    const malformed = row({
+      msg: "Addon check classification malformed evidence",
+      parsedLog: {
+        msg: "Addon check classification malformed evidence",
+        gate: "addon-check-classification",
+        gateResult: "unknown",
+        classification: "unknown",
+        mode: "unknown-malformed-evidence",
+        reasonCodes: ["unknown-evidence", "safe-degraded"],
+        repo: "xbmc/xbmc",
+        prNumber: 803,
+        deliveryId: "delivery-803",
+      },
+      prNumber: 803,
+    });
+    const legacy = row({ msg: "addon-check timed out while waiting for checks", prNumber: 804 });
+
+    expect(classifyProductionLogRow(bounded)).toBe("addon-check-classification.expected-bounded-outcome");
+    expect(classifyProductionLogRow(actionable)).toBe("addon-check-classification.actionable-diagnostic");
+    expect(classifyProductionLogRow(malformed)).toBe("addon-check-classification.malformed-evidence");
+    expect(classifyProductionLogRow(legacy)).toBe("addon-check.timeout");
+
+    const report = buildBaselineWindowFromRows({ window: "last12h", rows: [bounded, actionable, malformed, legacy] });
+    expect(count(report, "addon-check-classification.expected-bounded-outcome")).toBe(1);
+    expect(count(report, "addon-check-classification.actionable-diagnostic")).toBe(1);
+    expect(count(report, "addon-check-classification.malformed-evidence")).toBe(1);
+    expect(count(report, "addon-check.timeout")).toBe(1);
+    expect(findProductionLogIssueClass(report, "addon-check-classification.expected-bounded-outcome").classification).toBe("transient");
+    expect(findProductionLogIssueClass(report, "addon-check-classification.actionable-diagnostic").classification).toBe("app-actionable");
+    expect(findProductionLogIssueClass(report, "addon-check-classification.malformed-evidence").classification).toBe("app-actionable");
+  });
+
   test("separates Azure and ACA platform noise from app-actionable classes", () => {
     const azureRow = row({
       msg: "ACA Job completed status=succeeded revision ca-kodiai--0000076",
@@ -232,7 +295,7 @@ describe("production log taxonomy", () => {
     expect(emptyReport.windows.last12h.source.availability).toBe("missing");
     expect(emptyReport.windows.last12h.totalRowCount).toBe(0);
     expect(emptyReport.windows.last7d.source.availability).toBe("missing");
-    expect(emptyReport.windows.last7d.issueClasses).toHaveLength(9);
+    expect(emptyReport.windows.last7d.issueClasses).toHaveLength(12);
   });
 
   test("caps examples per class while counts continue to scale with volume", () => {
