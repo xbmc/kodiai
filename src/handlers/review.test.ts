@@ -18909,7 +18909,7 @@ describe("createReviewHandler bounded review disclosure", () => {
     return updatedSummaryBody;
   }
 
-  test("injects one large-PR disclosure and records explicit-profile timeout skips in Review Details", async () => {
+  test("auto-reduces explicit high-risk strict reviews to prevent max-turn exhaustion", async () => {
     const updatedSummaryBody = await runPublishedBoundedReviewScenario({
       configYaml: [
         "review:",
@@ -18938,14 +18938,14 @@ describe("createReviewHandler bounded review disclosure", () => {
 
     expect(updatedSummaryBody).toBeDefined();
     expect(updatedSummaryBody).toContain(
-      "- Requested strict review; effective review remained strict and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
+      "- Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
     );
     expect(
-      (updatedSummaryBody?.match(/Requested strict review; effective review remained strict and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
+      (updatedSummaryBody?.match(/Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
     ).toBe(1);
     expect(updatedSummaryBody).toContain("- Requested profile: strict (manual config)");
-    expect(updatedSummaryBody).toContain("- Effective profile: strict");
-    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: skipped (explicit profile)");
+    expect(updatedSummaryBody).toContain("- Effective profile: minimal");
+    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: applied");
   });
 
   test("injects one timeout auto-reduction disclosure when a high-risk auto strict review is reduced", async () => {

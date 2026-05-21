@@ -41,6 +41,7 @@ import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } fro
 import {
   computeFileRiskScores,
   triageFilesByRisk,
+  capTieredFilesForPromptBudget,
   applyGraphAwareSelection,
   type TieredFiles,
   type FileRiskScore,
@@ -4447,7 +4448,7 @@ export function createReviewHandler(deps: {
         // Triage uses changedFiles.length (full PR size) for threshold check,
         // not reviewFiles.length (which may be filtered for incremental mode).
         // Per pitfall 3 in research: check full PR, triage review set.
-        const tieredFiles = triageFilesByRisk({
+        let tieredFiles = triageFilesByRisk({
           riskScores: graphSelection.riskScores,
           fileThreshold: config.largePR.fileThreshold,
           fullReviewCount: config.largePR.fullReviewCount,
@@ -4455,8 +4456,9 @@ export function createReviewHandler(deps: {
           totalFileCount: changedFiles.length,
         });
 
-        // Build the file list for the prompt: only full + abbreviated tier files
-        const promptFiles = tieredFiles.isLargePR
+        // Build the file list for the prompt: only full + abbreviated tier files.
+        // Timeout safety may tighten these tiers below, so keep this derived list mutable.
+        let promptFiles = tieredFiles.isLargePR
           ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
           : reviewFiles;
 
@@ -4792,60 +4794,13 @@ export function createReviewHandler(deps: {
           timeoutEstimate.riskLevel === "medium" ||
           timeoutEstimate.riskLevel === "high";
 
-        // TMO-02: Scope reduction for high-risk auto-profile PRs
+        // TMO-02: Scope reduction for high-risk PRs. Explicit strict profiles are
+        // still bounded here because otherwise the executor can exhaust max turns
+        // before publishing any result.
         const requestedProfileSelection = { ...profileSelection };
         let timeoutReductionApplied = false;
         let timeoutReductionSkippedReason: "explicit-profile" | "config-disabled" | null = null;
-        if (
-          timeoutEstimate.shouldReduceScope &&
-          profileSelection.source === "auto" &&
-          config.timeout.autoReduceScope !== false
-        ) {
-          // Override to minimal profile
-          profileSelection.selectedProfile = "minimal";
-          const minimalPreset = PROFILE_PRESETS["minimal"];
-          if (minimalPreset) {
-            resolvedSeverityMinLevel = minimalPreset.severityMinLevel;
-            resolvedMaxComments = minimalPreset.maxComments;
-            resolvedFocusAreas = [...minimalPreset.focusAreas];
-            resolvedIgnoredAreas = [...minimalPreset.ignoredAreas];
-          }
-
-          // Cap file count if needed
-          if (
-            timeoutEstimate.reducedFileCount !== null &&
-            tieredFiles.full.length > timeoutEstimate.reducedFileCount
-          ) {
-            const excess = tieredFiles.full.splice(timeoutEstimate.reducedFileCount);
-            tieredFiles.abbreviated.push(...excess);
-          }
-
-          timeoutReductionApplied = true;
-          logger.info(
-            {
-              ...baseLog,
-              gate: "timeout-scope-reduction",
-              originalProfile: requestedProfileSelection.selectedProfile,
-              reducedProfile: "minimal",
-              originalFileCount: tieredFiles.full.length + (tieredFiles.abbreviated.length - (timeoutEstimate.reducedFileCount !== null ? tieredFiles.abbreviated.length : 0)),
-              reducedFileCount: timeoutEstimate.reducedFileCount,
-            },
-            "Auto-reduced review scope for high timeout risk",
-          );
-        } else if (timeoutEstimate.shouldReduceScope && profileSelection.source !== "auto") {
-          timeoutReductionSkippedReason = "explicit-profile";
-          logger.info(
-            {
-              ...baseLog,
-              gate: "timeout-scope-reduction",
-              gateResult: "skipped",
-              skipReason: timeoutReductionSkippedReason,
-              profile: profileSelection.selectedProfile,
-              source: profileSelection.source,
-            },
-            "Skipping scope reduction: user explicitly configured profile",
-          );
-        } else if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
+        if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
           timeoutReductionSkippedReason = "config-disabled";
           logger.info(
             {
@@ -4857,6 +4812,47 @@ export function createReviewHandler(deps: {
               source: profileSelection.source,
             },
             "Skipping scope reduction because timeout auto-reduction is disabled",
+          );
+        } else if (timeoutEstimate.shouldReduceScope) {
+          const originalPromptFileCount = tieredFiles.isLargePR
+            ? tieredFiles.full.length + tieredFiles.abbreviated.length
+            : promptFiles.length;
+
+          // Override to minimal profile.
+          profileSelection.selectedProfile = "minimal";
+          const minimalPreset = PROFILE_PRESETS["minimal"];
+          if (minimalPreset) {
+            resolvedSeverityMinLevel = minimalPreset.severityMinLevel;
+            resolvedMaxComments = minimalPreset.maxComments;
+            resolvedFocusAreas = [...minimalPreset.focusAreas];
+            resolvedIgnoredAreas = [...minimalPreset.ignoredAreas];
+          }
+
+          if (timeoutEstimate.reducedFileCount !== null) {
+            tieredFiles = capTieredFilesForPromptBudget(
+              tieredFiles,
+              timeoutEstimate.reducedFileCount,
+            );
+            promptFiles = tieredFiles.isLargePR
+              ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
+              : promptFiles.slice(0, timeoutEstimate.reducedFileCount);
+          }
+
+          timeoutReductionApplied = true;
+          logger.info(
+            {
+              ...baseLog,
+              gate: "timeout-scope-reduction",
+              originalProfile: requestedProfileSelection.selectedProfile,
+              requestedProfileSource: requestedProfileSelection.source,
+              reducedProfile: "minimal",
+              originalFileCount: originalPromptFileCount,
+              reducedFileCount: promptFiles.length,
+              reductionReason: requestedProfileSelection.source === "auto"
+                ? "auto-profile-high-timeout-risk"
+                : "explicit-profile-high-timeout-risk",
+            },
+            "Auto-reduced review scope for high timeout risk",
           );
         }
 

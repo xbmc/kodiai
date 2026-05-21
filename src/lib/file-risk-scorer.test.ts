@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeFileRiskScores,
   triageFilesByRisk,
+  capTieredFilesForPromptBudget,
   applyGraphAwareSelection,
   DEFAULT_RISK_WEIGHTS,
   type RiskWeights,
@@ -328,5 +329,40 @@ describe("triageFilesByRisk", () => {
     expect(result.abbreviated).toHaveLength(0);
     expect(result.mentionOnly).toHaveLength(0);
     expect(result.totalFiles).toBe(0);
+  });
+
+  test("caps combined full and abbreviated prompt files for timeout budget", () => {
+    const tiered = triageFilesByRisk({
+      riskScores: makeFakeScores(100),
+      fileThreshold: 50,
+      fullReviewCount: 30,
+      abbreviatedCount: 20,
+    });
+
+    const result = capTieredFilesForPromptBudget(tiered, 25);
+
+    expect(result.full).toHaveLength(25);
+    expect(result.abbreviated).toHaveLength(0);
+    expect(result.mentionOnly).toHaveLength(75);
+    expect(result.totalFiles).toBe(100);
+    expect(result.isLargePR).toBe(true);
+    expect(result.full.map((file) => file.filePath)).toEqual(
+      Array.from({ length: 25 }, (_, i) => `src/file-${i}.ts`),
+    );
+  });
+
+  test("does not expand an already bounded prompt set", () => {
+    const tiered = triageFilesByRisk({
+      riskScores: makeFakeScores(10),
+      fileThreshold: 50,
+      fullReviewCount: 30,
+      abbreviatedCount: 20,
+    });
+
+    const result = capTieredFilesForPromptBudget(tiered, 25);
+
+    expect(result.full).toHaveLength(10);
+    expect(result.abbreviated).toHaveLength(0);
+    expect(result.mentionOnly).toHaveLength(0);
   });
 });
