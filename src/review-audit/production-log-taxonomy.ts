@@ -434,7 +434,7 @@ function isSafeTelemetryField(leaf: string, value: unknown, path: string): boole
     return value === false;
   }
   if (leaf.endsWith("Omitted") && typeof value === "boolean") {
-    return true;
+    return value === true;
   }
   if (leaf === "diffRange") {
     return typeof value === "string" && /^[A-Za-z0-9/_-]+\.{2,3}[A-Za-z0-9/_-]+$/.test(value);

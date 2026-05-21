@@ -357,7 +357,7 @@ describe("production log taxonomy", () => {
     expect(report.redaction.violations).toEqual([]);
   });
 
-  test("redaction rejects unsafe included flags and secret-like path values", () => {
+  test("redaction rejects unsafe included flags, omitted flags, and secret-like path values", () => {
     const includedReport = buildBaselineWindowFromRows({
       window: "last12h",
       rows: [
@@ -374,6 +374,9 @@ describe("production log taxonomy", () => {
               rawModelOutputIncluded: true,
               diffsIncluded: true,
               unboundedDiffsIncluded: true,
+              rawPromptsOmitted: false,
+              rawModelOutputOmitted: false,
+              diffsOmitted: false,
             },
           },
           prNumber: 391,
@@ -387,6 +390,9 @@ describe("production log taxonomy", () => {
       "rows[0].parsedLog.redaction.rawModelOutputIncluded",
       "rows[0].parsedLog.redaction.diffsIncluded",
       "rows[0].parsedLog.redaction.unboundedDiffsIncluded",
+      "rows[0].parsedLog.redaction.rawPromptsOmitted",
+      "rows[0].parsedLog.redaction.rawModelOutputOmitted",
+      "rows[0].parsedLog.redaction.diffsOmitted",
     ]));
 
     const pathReport = buildBaselineWindowFromRows({
