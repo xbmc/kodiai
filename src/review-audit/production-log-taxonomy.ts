@@ -181,12 +181,21 @@ const UNSAFE_KEY_PATTERNS: Array<[RegExp, ProductionLogRedactionViolation["reaso
   [/(diff|patch|hunk)/i, "raw-diff-output"],
 ];
 
-const SECRET_VALUE_PATTERNS = [
+const EXPLICIT_SECRET_VALUE_PATTERNS = [
   /\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{20,}\b/,
   /\b(?:sk|pk)_[A-Za-z0-9]{20,}\b/,
-  /\b[A-Za-z0-9+/]{32,}={0,2}\b/,
   /(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/i,
 ];
+const OPAQUE_IDENTIFIER_VALUE_PATTERN = /\b[A-Za-z0-9+/]{32,}={0,2}\b/;
+const SAFE_OPAQUE_IDENTIFIER_LEAFS = new Set([
+  "reviewOutputKey",
+  "review_output_key",
+  "runKey",
+  "supersededRunKeys",
+  "planHash",
+  "candidatePublicationBridgeRecordKey",
+  "candidatePublicationBridgeCorrelationKey",
+]);
 
 function emptyClassSummary(id: ProductionLogIssueClassId): ProductionLogIssueClassSummary {
   return {
@@ -400,6 +409,53 @@ function addViolationOnce(
   }
 }
 
+function isSafeSourcePath(value: unknown): boolean {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 240
+    && /^[A-Za-z0-9._/-]+$/.test(value)
+    && !value.includes("..");
+}
+
+function isSafeOpaqueIdentifierPath(path: string): boolean {
+  const leaf = path.split(/[.[\]]/).filter(Boolean).at(-1) ?? path;
+  const parent = path.split(/[.[\]]/).filter(Boolean).at(-2);
+  return SAFE_OPAQUE_IDENTIFIER_LEAFS.has(leaf) || parent === "supersededRunKeys";
+}
+
+function isSafeTelemetryField(leaf: string, value: unknown, path: string): boolean {
+  if (leaf === "path") {
+    return isSafeSourcePath(value);
+  }
+  if (leaf.endsWith("FieldCount") || leaf.endsWith("LinesChanged") || leaf.endsWith("Attempts") || leaf === "hunkCount") {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0;
+  }
+  if (leaf.endsWith("Included") && typeof value === "boolean") {
+    return value === false;
+  }
+  if (leaf.endsWith("Omitted") && typeof value === "boolean") {
+    return true;
+  }
+  if (leaf === "diffRange") {
+    return typeof value === "string" && /^[A-Za-z0-9/_-]+\.{2,3}[A-Za-z0-9/_-]+$/.test(value);
+  }
+  if (leaf === "diffCollectionStrategy") {
+    return typeof value === "string" && /^[a-z][a-z0-9-]{0,40}$/.test(value);
+  }
+  return false;
+}
+
+function hasSecretLikeString(value: string, path: string): boolean {
+  const leaf = path.split(/[.[\]]/).filter(Boolean).at(-1) ?? path;
+  if (EXPLICIT_SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
+    return true;
+  }
+  if (leaf === "path" && isSafeSourcePath(value)) {
+    return false;
+  }
+  return OPAQUE_IDENTIFIER_VALUE_PATTERN.test(value) && !isSafeOpaqueIdentifierPath(path);
+}
+
 function inspectValueForRedaction(
   value: unknown,
   path: string,
@@ -407,13 +463,13 @@ function inspectValueForRedaction(
 ): void {
   const leaf = path.split(".").at(-1) ?? path;
   for (const [pattern, reason] of UNSAFE_KEY_PATTERNS) {
-    if (pattern.test(leaf)) {
+    if (pattern.test(leaf) && !isSafeTelemetryField(leaf, value, path)) {
       addViolationOnce(violations, { reason, path });
     }
   }
 
   if (typeof value === "string") {
-    if (SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
+    if (hasSecretLikeString(value, path)) {
       addViolationOnce(violations, { reason: "secret-like-string", path });
     }
     return;

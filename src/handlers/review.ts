@@ -4834,7 +4834,7 @@ export function createReviewHandler(deps: {
           );
         } else if (timeoutEstimate.shouldReduceScope && profileSelection.source !== "auto") {
           timeoutReductionSkippedReason = "explicit-profile";
-          logger.warn(
+          logger.info(
             {
               ...baseLog,
               gate: "timeout-scope-reduction",

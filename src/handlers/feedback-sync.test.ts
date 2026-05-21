@@ -349,6 +349,41 @@ describe("createFeedbackSyncHandler", () => {
     ).toBe(true);
   });
 
+  test("stops fetching remaining reactions after a permission-denied response", async () => {
+    const { logger, debugs, warnings } = createCaptureLogger();
+    let reactionFetchCalls = 0;
+    const permissionError = Object.assign(new Error("Resource not accessible by integration"), {
+      status: 403,
+      response: { data: { message: "Resource not accessible by integration" } },
+    });
+    const { handlers, recorded } = createHarness({
+      candidates: [
+        buildCandidate({ findingId: 1, commentId: 31 }),
+        buildCandidate({ findingId: 2, commentId: 32 }),
+        buildCandidate({ findingId: 3, commentId: 33 }),
+      ],
+      listReactions: async () => {
+        reactionFetchCalls += 1;
+        throw permissionError;
+      },
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!(buildPullRequestOpenedEvent());
+
+    expect(reactionFetchCalls).toBe(1);
+    expect(recorded).toHaveLength(0);
+    expect(warnings).toHaveLength(0);
+    expect(
+      debugs.some((entry) =>
+        entry.message.includes("Feedback sync reaction fetch skipped; app lacks reaction read permission")
+      ),
+    ).toBe(true);
+  });
+
   test("ignores non-PR issue comments and avoids write-mode side effects", async () => {
     let reactionsListCalls = 0;
     const { handlers, recorded } = createHarness({

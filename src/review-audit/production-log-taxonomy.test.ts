@@ -319,6 +319,101 @@ describe("production log taxonomy", () => {
     expect(JSON.stringify(report)).not.toContain("undefined persistence payload");
   });
 
+  test("redaction allows bounded production telemetry metadata without requiring raw row publication", () => {
+    const report = buildBaselineWindowFromRows({
+      window: "last12h",
+      rows: [
+        row({
+          msg: "Candidate publication telemetry recorded bounded metadata",
+          parsedLog: {
+            msg: "Candidate publication telemetry recorded bounded metadata",
+            repo: "xbmc/xbmc",
+            prNumber: 390,
+            deliveryId: "delivery-390",
+            reviewOutputKey: reviewOutputKey(390),
+            runKey: "kodiai-run-390",
+            planHash: "c53d8224474f3e26852857398f68f6701d6acea3e2d93c65449674e8c31021ca",
+            candidateBodyFieldCount: 0,
+            rawModelOutputIncluded: false,
+            diffRange: "origin/master...HEAD",
+            diffAnalysisLinesChanged: 8,
+            diffCollectionStrategy: "triple-dot",
+            diffCollectionAttempts: 0,
+            candidatePublicationBridgeCorrelationKey: "candidate-publication:kodiai-review-output:v1:inst-42:xbmc/xbmc:pr-390:action-review_requested:delivery-delivery-390:head-head-390",
+            path: "xbmc/filesystem/AudioBookFileDirectory.cpp",
+            redaction: {
+              rawPromptsIncluded: false,
+              rawModelOutputIncluded: false,
+              diffsIncluded: false,
+              unboundedDiffsIncluded: false,
+            },
+          },
+          prNumber: 390,
+        }),
+      ],
+    });
+
+    expect(report.redaction.passed).toBe(true);
+    expect(report.redaction.violations).toEqual([]);
+  });
+
+  test("redaction rejects unsafe included flags and secret-like path values", () => {
+    const includedReport = buildBaselineWindowFromRows({
+      window: "last12h",
+      rows: [
+        row({
+          msg: "Unsafe redaction flags reported",
+          parsedLog: {
+            msg: "Unsafe redaction flags reported",
+            repo: "xbmc/xbmc",
+            prNumber: 391,
+            deliveryId: "delivery-391",
+            reviewOutputKey: reviewOutputKey(391),
+            redaction: {
+              rawPromptsIncluded: true,
+              rawModelOutputIncluded: true,
+              diffsIncluded: true,
+              unboundedDiffsIncluded: true,
+            },
+          },
+          prNumber: 391,
+        }),
+      ],
+    });
+
+    expect(includedReport.redaction.passed).toBe(false);
+    expect(includedReport.redaction.violations.map((violation) => violation.path)).toEqual(expect.arrayContaining([
+      "rows[0].parsedLog.redaction.rawPromptsIncluded",
+      "rows[0].parsedLog.redaction.rawModelOutputIncluded",
+      "rows[0].parsedLog.redaction.diffsIncluded",
+      "rows[0].parsedLog.redaction.unboundedDiffsIncluded",
+    ]));
+
+    const pathReport = buildBaselineWindowFromRows({
+      window: "last12h",
+      rows: [
+        row({
+          msg: "Unsafe path-like payload reported",
+          parsedLog: {
+            msg: "Unsafe path-like payload reported",
+            repo: "xbmc/xbmc",
+            prNumber: 392,
+            deliveryId: "delivery-392",
+            reviewOutputKey: reviewOutputKey(392),
+            path: "ghp_123456789012345678901234567890123456",
+          },
+          prNumber: 392,
+        }),
+      ],
+    });
+
+    expect(pathReport.redaction.passed).toBe(false);
+    expect(pathReport.redaction.violations).toContainEqual({
+      reason: "secret-like-string",
+      path: "rows[0].parsedLog.path",
+    });
+  });
+
   test("redaction canaries fail the redaction check without copying unsafe payloads into examples", () => {
     const report = buildBaselineWindowFromRows({
       window: "last12h",
