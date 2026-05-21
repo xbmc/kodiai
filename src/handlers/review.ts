@@ -1479,6 +1479,21 @@ async function upsertDegradedReviewDetailsFallbackComment(params: {
   return response.data.id;
 }
 
+function ensureVisibleApprovalDecision(summaryBody: string): string {
+  if (!summaryBody.includes("Decision: APPROVE")) {
+    return summaryBody;
+  }
+
+  if (summaryBody.trimStart().startsWith("Decision: APPROVE")) {
+    return summaryBody;
+  }
+
+  const leadingWhitespaceLength = summaryBody.length - summaryBody.trimStart().length;
+  const leadingWhitespace = summaryBody.slice(0, leadingWhitespaceLength);
+  const rest = summaryBody.slice(leadingWhitespaceLength);
+  return `${leadingWhitespace}Decision: APPROVE\n\n${rest}`;
+}
+
 function mergeReviewDetailsIntoSummaryBody(params: {
   summaryBody: string;
   reviewDetailsBlock: string;
@@ -1486,9 +1501,11 @@ function mergeReviewDetailsIntoSummaryBody(params: {
   reviewBoundedness?: ReviewBoundednessContract | null;
 }): string {
   let updatedReviewDetails = params.reviewDetailsBlock;
-  let summaryBody = ensureReviewBoundednessDisclosureInSummary(
-    params.summaryBody,
-    params.reviewBoundedness,
+  let summaryBody = ensureVisibleApprovalDecision(
+    ensureReviewBoundednessDisclosureInSummary(
+      params.summaryBody,
+      params.reviewBoundedness,
+    ),
   );
   if (params.requireDegradationDisclosure) {
     summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
@@ -7918,42 +7935,66 @@ export function createReviewHandler(deps: {
                 },
                 "Skipping auto-approval because review output marker was published",
               );
-              if (
-                canonicalReviewDetailsBody &&
-                canPublishVisibleOutput("degraded Review Details fallback comment")
-              ) {
-                setReviewWorkPhase("publish");
-                const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
-                  octokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  body: canonicalReviewDetailsBody,
-                  botHandles: [appSlug, "claude"],
-                  recheckCanPublish: () =>
-                    canPublishVisibleOutput("degraded Review Details fallback comment"),
-                });
-
-                if (typeof reviewDetailsCommentId === "number") {
-                  logReviewDetailsPublicationCompleted({
-                    surfaceKind: "issue_comment",
-                    commentId: reviewDetailsCommentId,
-                    publicationMode: "degraded-fallback",
-                  });
-                }
-
-                finalizePublicationPhaseTiming();
+              if (canonicalReviewDetailsBody) {
                 if (
-                  reviewDetailsCommentId !== undefined &&
-                  canPublishVisibleOutput("finalized Review Details timing update")
+                  idempotencyCheck.existingLocation !== "review-comment" &&
+                  canPublishVisibleOutput("clean review canonical Review Details merge")
                 ) {
-                  await octokit.rest.issues.updateComment({
+                  setReviewWorkPhase("publish");
+                  const canonicalSurfaceKind: CanonicalSurfaceKind = idempotencyCheck.existingLocation === "review"
+                    ? "pull_review"
+                    : "issue_comment";
+                  const finalizedExistingReviewDetails = await upsertCanonicalReviewSurface({
+                    octokit,
                     owner: apiOwner,
                     repo: apiRepo,
-                    comment_id: reviewDetailsCommentId,
-                    body: sanitizeOutgoingMentions(canonicalReviewDetailsBody, [appSlug, "claude"]),
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    preferredKind: canonicalSurfaceKind,
+                    reviewDetailsBlock: canonicalReviewDetailsBody,
+                    botHandles: [appSlug, "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
+                    ...(canonicalSurfaceKind === "pull_review" ? { pullReviewEvent: "APPROVE" as const } : {}),
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("clean review canonical Review Details merge"),
                   });
+                  logCanonicalReviewDetailsPublicationCompleted(finalizedExistingReviewDetails);
+                  finalizePublicationPhaseTiming();
+                } else if (canPublishVisibleOutput("degraded Review Details fallback comment")) {
+                  setReviewWorkPhase("publish");
+                  const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
+                    octokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    body: canonicalReviewDetailsBody,
+                    botHandles: [appSlug, "claude"],
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("degraded Review Details fallback comment"),
+                  });
+
+                  if (typeof reviewDetailsCommentId === "number") {
+                    logReviewDetailsPublicationCompleted({
+                      surfaceKind: "issue_comment",
+                      commentId: reviewDetailsCommentId,
+                      publicationMode: "degraded-fallback",
+                    });
+                  }
+
+                  finalizePublicationPhaseTiming();
+                  if (
+                    reviewDetailsCommentId !== undefined &&
+                    canPublishVisibleOutput("finalized Review Details timing update")
+                  ) {
+                    await octokit.rest.issues.updateComment({
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      comment_id: reviewDetailsCommentId,
+                      body: sanitizeOutgoingMentions(canonicalReviewDetailsBody, [appSlug, "claude"]),
+                    });
+                  }
                 }
               }
               return;
