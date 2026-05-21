@@ -56,6 +56,8 @@ export function computeLanguageComplexity(
  * Remote runtime timeout = baseTimeoutSeconds * (0.75 + complexity), clamped [30, 1800].
  * Total timeout = remote runtime timeout + fixed infra overhead cushion.
  */
+export const HIGH_RISK_REDUCED_FILE_COUNT = 25;
+
 export function estimateTimeoutRisk(params: {
   fileCount: number;
   linesChanged: number;
@@ -103,7 +105,9 @@ export function estimateTimeoutRisk(params: {
 
   // Scope reduction
   const shouldReduceScope = riskLevel === "high";
-  const reducedFileCount = shouldReduceScope ? Math.min(fileCount, 50) : null;
+  const reducedFileCount = shouldReduceScope
+    ? Math.min(fileCount, HIGH_RISK_REDUCED_FILE_COUNT)
+    : null;
 
   const langPercent = Math.round(langScore * 100);
   const reasoning =

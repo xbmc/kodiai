@@ -2595,7 +2595,130 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     expect(updatedReviewId).toBe(777);
     expect(issueCommentCreateCount).toBe(0);
-    expect(existingApprovalReview.body).toContain("Decision: APPROVE");
+    expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
+    expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
+    expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
+    expect(existingApprovalReview.body).toContain("publication:");
+  });
+
+  test("published approval review receives Review Details when executor reports success without published flag", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+
+    let issueCommentCreateCount = 0;
+    let updatedReviewId: number | undefined;
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const existingApprovalReview = {
+      id: 778,
+      body: `<details>\n<summary>kodiai response</summary>\n\nDecision: APPROVE\nIssues: none\n\nEvidence:\n- Agent-published clean approval.\n\n</details>\n\n${marker}`,
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [existingApprovalReview] }),
+          createReview: async () => {
+            throw new Error("auto-approval should not create a second review when output marker already exists");
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            issueCommentCreateCount += 1;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+      request: async (
+        route: string,
+        params: { review_id: number; body: string },
+      ) => {
+        expect(route).toBe("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}");
+        updatedReviewId = params.review_id;
+        existingApprovalReview.body = params.body;
+        return { data: {} };
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-unflagged-published-approval-details",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(updatedReviewId).toBe(778);
+    expect(issueCommentCreateCount).toBe(0);
+    expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
+    expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
     expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
     expect(existingApprovalReview.body).toContain("publication:");
   });
@@ -18909,7 +19032,7 @@ describe("createReviewHandler bounded review disclosure", () => {
     return updatedSummaryBody;
   }
 
-  test("injects one large-PR disclosure and records explicit-profile timeout skips in Review Details", async () => {
+  test("auto-reduces explicit high-risk strict reviews to prevent max-turn exhaustion", async () => {
     const updatedSummaryBody = await runPublishedBoundedReviewScenario({
       configYaml: [
         "review:",
@@ -18938,14 +19061,14 @@ describe("createReviewHandler bounded review disclosure", () => {
 
     expect(updatedSummaryBody).toBeDefined();
     expect(updatedSummaryBody).toContain(
-      "- Requested strict review; effective review remained strict and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
+      "- Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
     );
     expect(
-      (updatedSummaryBody?.match(/Requested strict review; effective review remained strict and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
+      (updatedSummaryBody?.match(/Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
     ).toBe(1);
     expect(updatedSummaryBody).toContain("- Requested profile: strict (manual config)");
-    expect(updatedSummaryBody).toContain("- Effective profile: strict");
-    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: skipped (explicit profile)");
+    expect(updatedSummaryBody).toContain("- Effective profile: minimal");
+    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: applied");
   });
 
   test("injects one timeout auto-reduction disclosure when a high-risk auto strict review is reduced", async () => {
