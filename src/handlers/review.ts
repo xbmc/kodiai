@@ -1490,7 +1490,10 @@ function ensureVisibleApprovalDecision(summaryBody: string): string {
 
   const leadingWhitespaceLength = summaryBody.length - summaryBody.trimStart().length;
   const leadingWhitespace = summaryBody.slice(0, leadingWhitespaceLength);
-  const rest = summaryBody.slice(leadingWhitespaceLength);
+  const rest = summaryBody
+    .slice(leadingWhitespaceLength)
+    .replace(/(^|\n)Decision: APPROVE\n*/g, "$1")
+    .trimStart();
   return `${leadingWhitespace}Decision: APPROVE\n\n${rest}`;
 }
 
@@ -4852,7 +4855,7 @@ export function createReviewHandler(deps: {
             );
             promptFiles = tieredFiles.isLargePR
               ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
-              : promptFiles.slice(0, timeoutEstimate.reducedFileCount);
+              : tieredFiles.full.map(f => f.filePath);
           }
 
           timeoutReductionApplied = true;

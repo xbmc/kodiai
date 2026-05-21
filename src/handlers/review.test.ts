@@ -2596,6 +2596,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(updatedReviewId).toBe(777);
     expect(issueCommentCreateCount).toBe(0);
     expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
+    expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
     expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
     expect(existingApprovalReview.body).toContain("publication:");
   });
@@ -2717,6 +2718,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(updatedReviewId).toBe(778);
     expect(issueCommentCreateCount).toBe(0);
     expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
+    expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
     expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
     expect(existingApprovalReview.body).toContain("publication:");
   });
