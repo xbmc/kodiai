@@ -229,7 +229,7 @@ describe("suggestIdentityLink", () => {
         : (init?.headers as Record<string, string> | undefined)?.authorization;
       if (authHeader === "Bearer xoxb-missing-scope" && missingScopeForFirstToken) {
         missingScopeForFirstToken = false;
-        return jsonResponse({ ok: false, error: "missing_scope" });
+        return jsonResponse({ ok: false, error: "missing_scope" }, { status: 403 });
       }
       return jsonResponse({ ok: true, members: [] });
     });

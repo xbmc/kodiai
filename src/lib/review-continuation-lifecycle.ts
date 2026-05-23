@@ -358,7 +358,10 @@ export function planReviewContinuation(
   }
 
   const continuationFiles = retryScope.filesToReview.map((file) => file.filePath);
-  const continuationTimeoutSeconds = Math.max(30, Math.floor(params.timeoutSeconds / 2));
+  const retryCoversAllRemaining = retryScope.scopeRatio >= 1;
+  const continuationTimeoutSeconds = retryCoversAllRemaining
+    ? params.timeoutSeconds
+    : Math.max(30, Math.floor(params.timeoutSeconds / 2));
   const timeoutEstimate = params.estimateContinuationTimeout({
     timeoutSeconds: continuationTimeoutSeconds,
     files: continuationFiles,

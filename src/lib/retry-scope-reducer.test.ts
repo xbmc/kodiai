@@ -37,7 +37,18 @@ describe("computeRetryScope", () => {
     expect(res.filesToReview[0]!.filePath).toBe("b.ts");
   });
 
-  test("at 0% reviewed: scope = 50% of remaining", () => {
+  test("small PR retries all remaining files when the first pass reviewed none", () => {
+    const allFiles = makeScores(["a.py", "b.py", "c.py", "d.py"], [10, 40, 20, 30]);
+    const res = computeRetryScope({
+      allFiles,
+      filesAlreadyReviewed: [],
+      totalFiles: 4,
+    });
+    expect(res.scopeRatio).toBe(1);
+    expect(res.filesToReview.map((file) => file.filePath)).toEqual(["b.py", "d.py", "c.py", "a.py"]);
+  });
+
+  test("at 0% reviewed: scope = 50% of remaining for larger PRs", () => {
     const allFiles = makeScores(
       ["a.ts", "b.ts", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts", "h.ts", "i.ts", "j.ts"],
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
