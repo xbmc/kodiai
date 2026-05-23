@@ -60,6 +60,16 @@ describe("createMcpJobRegistry", () => {
     expect(reg.hasToken("tok-2")).toBe(false);
   });
 
+  test("unregistering an unknown token does not mark it retired", () => {
+    const reg = createMcpJobRegistry();
+    reg.unregister("never-registered");
+
+    expect(reg.inspectToken("never-registered")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+  });
+
   test("getFactory returns undefined for unknown server", () => {
     const reg = createMcpJobRegistry();
     reg.register("tok-3", { test_server: makeFactory() });

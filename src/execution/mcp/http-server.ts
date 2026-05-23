@@ -74,8 +74,9 @@ export function createMcpJobRegistry() {
     },
 
     unregister(token: string): void {
-      registry.delete(token);
-      markRetired(token);
+      if (registry.delete(token)) {
+        markRetired(token);
+      }
     },
 
     inspectToken,
