@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cp, mkdir, writeFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { $ } from "bun";
@@ -760,7 +761,7 @@ export function createExecutor(deps: {
           {
             executionName,
             workspaceDir,
-            mcpTokenPrefix: mcpBearerToken.slice(0, 8),
+            mcpTokenLogId: createHash("sha256").update(mcpBearerToken).digest("hex").slice(0, 16),
             timeoutMs,
           },
           "ACA Job launched, polling for completion",

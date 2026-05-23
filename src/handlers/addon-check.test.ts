@@ -488,7 +488,7 @@ describe("createAddonCheckHandler", () => {
   it("emits bounded all-timeout classification and avoids a misleading clean comment", async () => {
     const files = ["plugin.video.foo/addon.xml", "plugin.audio.bar/addon.xml"];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
-    const { logger, infoCalls } = createMockLogger();
+    const { logger, infoCalls, warnCalls } = createMockLogger();
     const subprocess = makeCheckerSubprocessByAddon({
       "plugin.audio.bar": "__TIMEOUT__",
       "plugin.video.foo": "__TIMEOUT__",
@@ -510,6 +510,13 @@ describe("createAddonCheckHandler", () => {
     await router.captured[0]!.handler(
       makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
     );
+
+    const rawTimeoutWarning = warnCalls.find((c) => c.message === "addon-check: runner timed out");
+    expect(rawTimeoutWarning).toBeUndefined();
+
+    const budgetSkipLogs = infoCalls.filter((c) => c.message === "addon-check: runner skipped after budget");
+    expect(budgetSkipLogs).toHaveLength(2);
+    expect(budgetSkipLogs.every((c) => c.bindings.timeBudgetMs === 1)).toBe(true);
 
     const gateLog = findClassificationLog(infoCalls);
     expect(gateLog).toBeDefined();

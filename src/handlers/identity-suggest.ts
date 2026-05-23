@@ -63,11 +63,7 @@ async function fetchSlackMembers(
     signal: AbortSignal.timeout(10_000),
   });
 
-  if (!response.ok) {
-    throw new Error(`Slack users.list HTTP ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
+  let data: {
     ok?: boolean;
     error?: string;
     members?: Array<{
@@ -76,10 +72,23 @@ async function fetchSlackMembers(
       is_bot?: boolean;
       profile?: { display_name?: string; real_name?: string };
     }>;
-  };
+  } | null = null;
 
-  if (!data.ok) {
-    const errorCode = data.error ?? "unknown";
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    if (!response.ok) {
+      throw new Error(`Slack users.list HTTP ${response.status}`);
+    }
+    throw new Error("Slack users.list returned malformed JSON");
+  }
+
+  if (!response.ok && data?.error !== "missing_scope") {
+    throw new Error(`Slack users.list HTTP ${response.status}`);
+  }
+
+  if (!data?.ok) {
+    const errorCode = data?.error ?? "unknown";
     if (errorCode === "missing_scope") {
       slackMemberLookupDisabledReasonsByToken.set(botToken, errorCode);
       if (slackMemberLookupDisabledReasonsByToken.size > MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS) {
@@ -89,7 +98,7 @@ async function fetchSlackMembers(
         }
       }
       logger.info(
-        { reason: errorCode },
+        { reason: errorCode, httpStatus: response.status },
         "Slack member lookup disabled; missing users.list scope",
       );
       return [];

@@ -1841,22 +1841,29 @@ async function buildDiffCollectionFallback(params: {
     const changedFiles = uniqueFiles.map((file) => file.filename);
     const numstatLines = buildFallbackNumstatLines(uniqueFiles);
     const diffContent = buildFallbackPatchDiff(uniqueFiles);
+    const patchFilesCount = uniqueFiles.filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0).length;
+    const hasCompletePatchFallback = uniqueFiles.length > 0 && patchFilesCount === uniqueFiles.length && diffContent !== undefined;
+    const logFallback = hasCompletePatchFallback ? logger.info.bind(logger) : logger.warn.bind(logger);
 
-    logger.warn(
+    logFallback(
       {
         ...baseLog,
         gate: "diff-collection",
         stage,
         reason,
         strategy: "github-pr-files-fallback",
+        fallbackEvidenceQuality: hasCompletePatchFallback ? "patch-complete" : "patch-partial",
         deepenAttempts,
         unshallowAttempted,
         mergeBaseRecovered,
         diffRange,
         changedFilesCount: changedFiles.length,
-        patchFilesCount: uniqueFiles.filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0).length,
+        patchFilesCount,
+        diffContentAvailable: diffContent !== undefined,
       },
-      "Diff collection degraded to GitHub PR files fallback",
+      hasCompletePatchFallback
+        ? "Diff collection used GitHub PR files fallback with patch evidence"
+        : "Diff collection degraded to GitHub PR files fallback",
     );
 
     return {
@@ -7322,7 +7329,11 @@ export function createReviewHandler(deps: {
                     });
 
                       const retryCheckpoint = (await knowledgeStore?.getCheckpoint?.(retryReviewOutputKey)) ?? null;
+                      const retryHasStructuredProgress =
+                        (retryCheckpoint?.filesReviewed?.length ?? 0) > 0 ||
+                        (retryCheckpoint?.filesInspected?.length ?? 0) > 0;
                       const retryHasResults =
+                        retryHasStructuredProgress ||
                         (retryCheckpoint?.findingCount ?? 0) >= 1 ||
                         (retryResult.published ?? false);
                       const retryTimeoutClassification = classifyReviewTimeoutOutcome({

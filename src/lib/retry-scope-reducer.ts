@@ -1,5 +1,7 @@
 import type { FileRiskScore } from "./file-risk-scorer.ts";
 
+const SMALL_PR_RETRY_ALL_REMAINING_FILE_COUNT = 5;
+
 export type RetryScopeParams = {
   allFiles: FileRiskScore[];
   filesAlreadyReviewed: string[];
@@ -21,6 +23,14 @@ export function computeRetryScope(params: RetryScopeParams): RetryScopeResult {
 
   if (remaining.length === 0) {
     return { filesToReview: [], scopeRatio: 0 };
+  }
+
+  if (
+    totalFiles > 0
+    && totalFiles <= SMALL_PR_RETRY_ALL_REMAINING_FILE_COUNT
+    && filesAlreadyReviewed.length === 0
+  ) {
+    return { filesToReview: remaining, scopeRatio: 1 };
   }
 
   const reviewedFraction = totalFiles > 0 ? filesAlreadyReviewed.length / totalFiles : 0;

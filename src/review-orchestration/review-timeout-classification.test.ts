@@ -148,6 +148,29 @@ describe("classifyReviewTimeoutOutcome", () => {
     expect(JSON.stringify(result)).not.toContain("delivery-123");
   });
 
+  test("classifies retry checkpoint progress without findings as bounded retry output", () => {
+    const result = classify({
+      retry: { completed: true, hasResults: true, filesCount: 2 },
+      checkpoint: {
+        filesReviewed: 2,
+        filesInspected: 2,
+        findingCount: 0,
+        totalFiles: 4,
+      },
+    });
+
+    expect(result.mode).toBe("retry-completed");
+    expect(result.classification).toBe("expected-bounded-outcome");
+    expect(result.reasonCodes).toEqual(expect.arrayContaining(["retry-completed", "retry-has-results"]));
+    expect(result.counts).toMatchObject({
+      retryFilesCount: 2,
+      checkpointFilesReviewed: 2,
+      checkpointFilesInspected: 2,
+      checkpointFindingCount: 0,
+      checkpointTotalFiles: 4,
+    });
+  });
+
   test("returns only bounded count fields and clamps invalid optional counts", () => {
     const result = classify({
       outcome: { isTimeout: true },

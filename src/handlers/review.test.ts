@@ -5510,9 +5510,9 @@ describe("createReviewHandler diff collection resilience", () => {
     }
   });
 
-  test("uses GitHub PR file metadata when merge-base recovery times out", async () => {
+  test("warns when GitHub PR file metadata fallback has partial patch coverage", async () => {
     const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
-    const { logger } = createCaptureLogger();
+    const { logger, entries } = createCaptureLogger();
 
     try {
       const result = await collectDiffContext({
@@ -5558,6 +5558,61 @@ describe("createReviewHandler diff collection resilience", () => {
       expect(result.diffContent).toContain("--- a/src/api/old-phase27-uat-example.ts");
       expect(result.diffContent).toContain("+++ b/src/api/phase27-uat-example.ts");
       expect(result.diffContent).toContain("@@ -1 +1 @@");
+      const fallbackLog = entries.find((entry) =>
+        entry.message === "Diff collection degraded to GitHub PR files fallback"
+      );
+      expect(fallbackLog?.data?.fallbackEvidenceQuality).toBe("patch-partial");
+      expect(fallbackLog?.data?.patchFilesCount).toBe(1);
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  });
+
+  test("logs patch-complete GitHub PR file metadata fallback below warning level", async () => {
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
+    const { logger, entries } = createCaptureLogger();
+
+    try {
+      const result = await collectDiffContext({
+        workspaceDir: workspaceFixture.dir,
+        baseRef: "main",
+        maxFilesForFullDiff: 200,
+        logger,
+        baseLog: { deliveryId: "delivery-123", prNumber: 101 },
+        runGitCommand: async () => ({
+          exitCode: 124,
+          stdout: "",
+          stderr: "timed out",
+          timedOut: true,
+        }),
+        fallbackDiffProvider: async () => [
+          {
+            filename: "src/api/phase27-uat-example.ts",
+            status: "modified",
+            additions: 7,
+            deletions: 2,
+            patch: "@@ -1 +1 @@\n-old\n+new",
+          },
+          {
+            filename: "docs/phase27-note.md",
+            status: "added",
+            additions: 1,
+            deletions: 0,
+            patch: "@@ -0,0 +1 @@\n+note",
+          },
+        ],
+      });
+
+      expect(result.strategy).toBe("github-pr-files-fallback");
+      expect(result.diffContent).toContain("diff --git a/src/api/phase27-uat-example.ts b/src/api/phase27-uat-example.ts");
+      const infoLog = entries.find((entry) =>
+        entry.message === "Diff collection used GitHub PR files fallback with patch evidence"
+      );
+      expect(infoLog?.data?.fallbackEvidenceQuality).toBe("patch-complete");
+      expect(infoLog?.data?.patchFilesCount).toBe(2);
+      expect(entries.find((entry) =>
+        entry.message === "Diff collection degraded to GitHub file-list fallback"
+      )).toBeUndefined();
     } finally {
       await workspaceFixture.cleanup();
     }
