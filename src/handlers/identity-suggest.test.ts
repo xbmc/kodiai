@@ -265,6 +265,35 @@ describe("suggestIdentityLink", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  test("production-shaped Slack users.list missing_scope response disables identity suggestions without warning", async () => {
+    const logger = createMockLogger();
+    const fetchMock = mock(async () =>
+      jsonResponse(
+        { ok: false, error: "missing_scope: users:read required" },
+        { status: 403 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "scope-missing-production-shape",
+      githubDisplayName: "Scope Missing Production Shape",
+      slackBotToken: "xoxb-production-shape",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "missing_scope",
+        slackError: "missing_scope: users:read required",
+        httpStatus: 403,
+      }),
+      "Slack member lookup disabled; missing users.list scope",
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
   test("missing Slack users.list scope disable cache evicts old token entries", async () => {
     const logger = createMockLogger();
     const requests: string[] = [];

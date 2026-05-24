@@ -1479,6 +1479,13 @@ async function upsertDegradedReviewDetailsFallbackComment(params: {
   return response.data.id;
 }
 
+function unwrapKodiaiResponseDetails(summaryBody: string): string {
+  return summaryBody.replace(
+    /\n?<details>\s*\n?<summary>kodiai response<\/summary>\s*\n+([\s\S]*?)\n<\/details>\n?/,
+    (_match, inner: string) => `\n${inner.trim()}\n`,
+  ).trim();
+}
+
 function ensureVisibleApprovalDecision(summaryBody: string): string {
   if (!summaryBody.includes("Decision: APPROVE")) {
     return summaryBody;
@@ -1505,9 +1512,11 @@ function mergeReviewDetailsIntoSummaryBody(params: {
 }): string {
   let updatedReviewDetails = params.reviewDetailsBlock;
   let summaryBody = ensureVisibleApprovalDecision(
-    ensureReviewBoundednessDisclosureInSummary(
-      params.summaryBody,
-      params.reviewBoundedness,
+    unwrapKodiaiResponseDetails(
+      ensureReviewBoundednessDisclosureInSummary(
+        params.summaryBody,
+        params.reviewBoundedness,
+      ),
     ),
   );
   if (params.requireDegradationDisclosure) {
@@ -1883,14 +1892,17 @@ async function buildDiffCollectionFallback(params: {
   }
 
   const changedFiles = Array.from(new Set(await fallbackFileProvider()));
+  const boundedFilenameOnlyFallback = changedFiles.length <= 10;
+  const logFallback = boundedFilenameOnlyFallback ? logger.info.bind(logger) : logger.warn.bind(logger);
 
-  logger.warn(
+  logFallback(
     {
       ...baseLog,
       gate: "diff-collection",
       stage,
       reason,
       strategy: "github-file-list-fallback",
+      fallbackEvidenceQuality: boundedFilenameOnlyFallback ? "filename-only-small" : "filename-only",
       deepenAttempts,
       unshallowAttempted,
       mergeBaseRecovered,
@@ -3208,6 +3220,38 @@ export function createReviewHandler(deps: {
         "executor phase timings unavailable",
       );
       let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
+      let reviewExecutionLogged = false;
+      let reviewOutputPublished = false;
+      let reviewExecutorPublished = false;
+      let reviewPublishResolution = "none";
+      let reviewPublishFallbackDelivery: string | undefined;
+
+      function describeErrorCommentDelivery(status: Awaited<ReturnType<typeof postOrUpdateErrorComment>>): string {
+        if (!status.ok) return "error-comment-failed";
+        return status.resolution === "updated" ? "error-comment-updated" : "error-comment-created";
+      }
+
+      function logReviewExecutionCompleted(): void {
+        if (!executorResult || reviewExecutionLogged) return;
+        reviewExecutionLogged = true;
+        logger.info(
+          {
+            prNumber: pr.number,
+            conclusion: executorResult.conclusion,
+            published: reviewOutputPublished,
+            executorPublished: reviewExecutorPublished,
+            publishResolution: reviewPublishResolution,
+            publishFallbackDelivery: reviewPublishFallbackDelivery,
+            failureSubtype: executorResult.failureSubtype,
+            stopReason: executorResult.stopReason,
+            costUsd: executorResult.costUsd,
+            numTurns: executorResult.numTurns,
+            durationMs: executorResult.durationMs,
+            sessionId: executorResult.sessionId,
+          },
+          "Review execution completed",
+        );
+      }
 
       function setReviewWorkPhaseForAttempt(
         attemptId: string,
@@ -5290,6 +5334,9 @@ export function createReviewHandler(deps: {
           maxTurnsOverride: reviewMaxTurnsOverride,
         });
         executorResult = result;
+        reviewExecutorPublished = result.published ?? false;
+        reviewOutputPublished = result.published ?? false;
+        reviewPublishResolution = reviewOutputPublished ? "executor" : "none";
         visiblePromptSectionRecords = result.promptSections ?? visiblePromptSectionRecords;
         refreshReviewVisibleBudgetProjection();
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
@@ -5299,19 +5346,6 @@ export function createReviewHandler(deps: {
           reviewPhaseTimings.set(phase.name, phase);
         }
         publicationPhaseStartedAt = Date.now();
-
-        logger.info(
-          {
-            prNumber: pr.number,
-            conclusion: result.conclusion,
-            published: result.published,
-            costUsd: result.costUsd,
-            numTurns: result.numTurns,
-            durationMs: result.durationMs,
-            sessionId: result.sessionId,
-          },
-          "Review execution completed",
-        );
 
         if (result.candidateVerificationPublicationEvidence) {
           logger.info(
@@ -7869,11 +7903,18 @@ export function createReviewHandler(deps: {
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
             if (canPublishVisibleOutput("error comment")) {
               setReviewWorkPhase("publish");
-              await postOrUpdateErrorComment(octokit, {
+              const publicationStatus = await postOrUpdateErrorComment(octokit, {
                 owner: apiOwner,
                 repo: apiRepo,
                 issueNumber: pr.number,
               }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+              reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
+              if (publicationStatus.ok) {
+                reviewOutputPublished = true;
+                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback" : "error-fallback";
+              } else {
+                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-failed" : "error-comment-failed";
+              }
             }
           }
         }
@@ -7892,7 +7933,7 @@ export function createReviewHandler(deps: {
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {
             setReviewWorkPhase("publish");
-            await postOrUpdateErrorComment(
+            const publicationStatus = await postOrUpdateErrorComment(
               octokit,
               {
                 owner: apiOwner,
@@ -7902,6 +7943,13 @@ export function createReviewHandler(deps: {
               sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
               logger,
             );
+            reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
+            if (publicationStatus.ok) {
+              reviewOutputPublished = true;
+              reviewPublishResolution = "failure-fallback";
+            } else {
+              reviewPublishResolution = "failure-fallback-failed";
+            }
           }
         }
 
@@ -8082,6 +8130,9 @@ export function createReviewHandler(deps: {
               logCanonicalReviewDetailsPublicationCompleted(finalizedCleanReviewDetails);
             }
 
+            reviewOutputPublished = true;
+            reviewPublishResolution = config.review.autoApprove ? "auto-approval" : "clean-review-comment";
+
             logger.info(
               {
                 evidenceType: "review",
@@ -8208,6 +8259,8 @@ export function createReviewHandler(deps: {
           );
         }
 
+        logReviewExecutionCompleted();
+
         const shouldLogPhaseSummary =
           workspacePhaseStartedAt !== undefined ||
           retrievalPhaseStartedAt !== undefined ||
@@ -8231,7 +8284,9 @@ export function createReviewHandler(deps: {
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
                 conclusion: executorResult?.conclusion,
-                published: executorResult?.published,
+                published: executorResult ? reviewOutputPublished : undefined,
+                publishResolution: executorResult ? reviewPublishResolution : undefined,
+                publishFallbackDelivery: reviewPublishFallbackDelivery,
                 totalDurationMs,
                 phases,
               },

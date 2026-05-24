@@ -176,7 +176,7 @@ describe("review idempotency helpers", () => {
     expect(result).toBe(reviewOutputKey);
   });
 
-  test("buildApprovedReviewBody emits collapsed markdown with bounded evidence bullets and marker continuity", () => {
+  test("buildApprovedReviewBody emits visible response first with bounded evidence bullets and marker continuity", () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -199,10 +199,9 @@ describe("review idempotency helpers", () => {
       approvalConfidence: "  :green_circle: **Merge Confidence: High** — Safe to merge.  ",
     });
 
-    expect(result).toContain("<details>");
-    expect(result).toContain("<summary>kodiai response</summary>");
+    expect(result).not.toContain("<summary>kodiai response</summary>");
+    expect(result.trimStart()).toStartWith("Decision: APPROVE\n\nIssues: none");
     expect(result).toContain("Decision: APPROVE");
-    expect(result.indexOf("Decision: APPROVE")).toBeLessThan(result.indexOf("<details>"));
     expect(result).toContain("Issues: none");
     expect(result).toContain("Evidence:");
     expect(result).toContain(marker);
@@ -240,8 +239,8 @@ describe("review idempotency helpers", () => {
     expect(extractEvidenceBullets(result)).toEqual([
       "- No actionable issues were identified in the reviewed changes.",
     ]);
-    expect(result).toContain("<details>");
-    expect(result).toContain("<summary>kodiai response</summary>");
+    expect(result).not.toContain("<details>");
+    expect(result).not.toContain("<summary>kodiai response</summary>");
   });
 
   test("buildApprovedReviewBody can inline Review Details while preserving canonical marker discovery", () => {
@@ -272,6 +271,9 @@ describe("review idempotency helpers", () => {
     });
 
     expect(result).toContain("Decision: APPROVE");
+    expect(result.trimStart()).toStartWith("Decision: APPROVE\n\nIssues: none");
+    expect(result).not.toContain("<summary>kodiai response</summary>");
+    expect(result.indexOf("Decision: APPROVE")).toBeLessThan(result.indexOf("<summary>Review Details</summary>"));
     expect(result).toContain("<summary>Review Details</summary>");
     expect(result).toContain(`<!-- kodiai:review-details:${reviewOutputKey} -->`);
     expect(extractReviewOutputKey(result)).toBe(reviewOutputKey);
@@ -303,8 +305,8 @@ describe("review idempotency helpers", () => {
       "- Tests relevant to touched files are already green.",
     ]);
     expect(result).toContain(buildReviewOutputMarker(reviewOutputKey));
-    expect(result).toContain("<details>");
-    expect(result).toContain("<summary>kodiai response</summary>");
+    expect(result).not.toContain("<details>");
+    expect(result).not.toContain("<summary>kodiai response</summary>");
   });
 
   test("ensureReviewOutputNotPublished returns skip decision when marker exists in review comments", async () => {

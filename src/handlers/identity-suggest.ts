@@ -36,6 +36,14 @@ export function resetIdentitySuggestionStateForTests(): void {
   suggestedUsernames.clear();
 }
 
+function normalizeSlackErrorCode(error: unknown): string {
+  return typeof error === "string" && error.length > 0 ? error : "unknown";
+}
+
+function isSlackMissingScopeError(error: unknown): boolean {
+  return /(?:^|\b)missing_scope(?:\b|$)/.test(normalizeSlackErrorCode(error));
+}
+
 async function fetchSlackMembers(
   botToken: string,
   logger: Logger,
@@ -83,14 +91,15 @@ async function fetchSlackMembers(
     throw new Error("Slack users.list returned malformed JSON");
   }
 
-  if (!response.ok && data?.error !== "missing_scope") {
+  if (!response.ok && !isSlackMissingScopeError(data?.error)) {
     throw new Error(`Slack users.list HTTP ${response.status}`);
   }
 
   if (!data?.ok) {
-    const errorCode = data?.error ?? "unknown";
-    if (errorCode === "missing_scope") {
-      slackMemberLookupDisabledReasonsByToken.set(botToken, errorCode);
+    const errorCode = normalizeSlackErrorCode(data?.error);
+    if (isSlackMissingScopeError(errorCode)) {
+      const disabledReason = "missing_scope";
+      slackMemberLookupDisabledReasonsByToken.set(botToken, disabledReason);
       if (slackMemberLookupDisabledReasonsByToken.size > MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS) {
         const oldestToken = slackMemberLookupDisabledReasonsByToken.keys().next().value;
         if (oldestToken !== undefined) {
@@ -98,7 +107,7 @@ async function fetchSlackMembers(
         }
       }
       logger.info(
-        { reason: errorCode, httpStatus: response.status },
+        { reason: disabledReason, slackError: errorCode, httpStatus: response.status },
         "Slack member lookup disabled; missing users.list scope",
       );
       return [];
