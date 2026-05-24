@@ -11,7 +11,7 @@ import {
 } from "./recent-review-sample.ts";
 
 const DEFAULT_PER_PAGE = 100;
-const REQUIRED_DETAILS_WRAPPER = "<summary>kodiai response</summary>";
+const LEGACY_DETAILS_WRAPPER = "<summary>kodiai response</summary>";
 
 export type ReviewOutputArtifact = {
   prNumber: number;
@@ -362,17 +362,23 @@ export function validateCollapsedApproveReviewBody(params: {
     };
   }
 
-  const hasDetailsWrapper = body.includes(REQUIRED_DETAILS_WRAPPER)
+  const hasDetailsWrapper = body.includes(LEGACY_DETAILS_WRAPPER)
     && body.includes("<details>")
     && body.includes("</details>");
   const hasExactMarker = body.includes(marker);
   const lines = body.split("\n");
   const start = lines.findIndex((line) => line.trim() === "<details>");
   const end = lines.findIndex((line) => line.trim() === "</details>");
-  const wrappedContent = start !== -1 && end !== -1 && end > start
+  const legacyWrappedContent = hasDetailsWrapper && start !== -1 && end !== -1 && end > start
     ? lines.slice(start + 1, end)
-    : lines;
-  const content = wrappedContent
+    : null;
+  const visibleResponseEnd = lines.findIndex((line) => {
+    const trimmed = line.trim();
+    return trimmed === "<details>" || trimmed === marker;
+  });
+  const visibleResponseContent = lines.slice(0, visibleResponseEnd === -1 ? lines.length : visibleResponseEnd);
+  const contentSource = legacyWrappedContent ?? visibleResponseContent;
+  const content = contentSource
     .map((line) => line.trimEnd())
     .filter((line) => line.trim().length > 0)
     .filter((line) => !line.trim().startsWith("<summary>"))
@@ -387,8 +393,8 @@ export function validateCollapsedApproveReviewBody(params: {
   const evidenceBulletCount = evidenceLines.filter((line) => line.startsWith("- ")).length;
 
   const issues: string[] = [];
-  if (!hasDetailsWrapper) {
-    issues.push("Approval body must use collapsed <details> wrapper text.");
+  if (hasDetailsWrapper) {
+    issues.push("Approval body must keep the response visible; legacy <details> response wrappers are no longer allowed.");
   }
   if (!hasDecisionApprove) {
     issues.push("Approval body must start with 'Decision: APPROVE'.");

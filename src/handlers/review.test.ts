@@ -2597,6 +2597,8 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(issueCommentCreateCount).toBe(0);
     expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
     expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
+    expect(existingApprovalReview.body).not.toContain("<summary>kodiai response</summary>");
+    expect(existingApprovalReview.body.indexOf("Issues: none")).toBeLessThan(existingApprovalReview.body.indexOf("<summary>Review Details</summary>"));
     expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
     expect(existingApprovalReview.body).toContain("publication:");
   });
@@ -2719,6 +2721,8 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(issueCommentCreateCount).toBe(0);
     expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
     expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
+    expect(existingApprovalReview.body).not.toContain("<summary>kodiai response</summary>");
+    expect(existingApprovalReview.body.indexOf("Issues: none")).toBeLessThan(existingApprovalReview.body.indexOf("<summary>Review Details</summary>"));
     expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
     expect(existingApprovalReview.body).toContain("publication:");
   });
@@ -5462,8 +5466,10 @@ describe("createReviewHandler diff collection resilience", () => {
         entry.message === "Diff collection degraded to GitHub file-list fallback"
       );
       expect(fallbackLog).toBeDefined();
+      expect(fallbackLog?.level).toBe("info");
       expect(fallbackLog?.data?.stage).toBe("merge-base-recovery");
       expect(fallbackLog?.data?.strategy).toBe("github-file-list-fallback");
+      expect(fallbackLog?.data?.fallbackEvidenceQuality).toBe("filename-only-small");
     } finally {
       await workspaceFixture.cleanup();
     }
@@ -19304,6 +19310,132 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(combinedBodies).not.toContain("**Bounded first-pass review**");
     expect(combinedBodies).not.toContain("stopped at max-turns");
     expect(combinedBodies).not.toContain("follow-up review is pending");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("logs turn-limit fallback publication after normal review fallback comment posts", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const createdCommentBodies: string[] = [];
+    const { logger, entries } = createCaptureLogger();
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        ) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: { id: 502 } };
+              },
+              updateComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 0 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "tool_use",
+          failureSubtype: "error_max_turns",
+          durationMs: 263_331,
+          numTurns: 26,
+          sessionId: "session-normal-review-turn-limit-fallback",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        countRecentTimeouts: async () => 3,
+      },
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => null,
+        upsertContinuationFamilyState: async () => undefined,
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(createdCommentBodies.join("\n")).toContain("Kodiai ran out of steps while reviewing this PR");
+
+    const completionLog = entries.find((entry) => entry.message === "Review execution completed");
+    expect(completionLog?.data).toMatchObject({
+      prNumber: 101,
+      conclusion: "failure",
+      executorPublished: false,
+      published: true,
+      publishResolution: "turn-limit-fallback",
+      publishFallbackDelivery: "error-comment-created",
+      failureSubtype: "error_max_turns",
+    });
+
+    const phaseSummaryLog = entries.find((entry) => entry.message === "Review phase timing summary");
+    expect(phaseSummaryLog?.data).toMatchObject({
+      prNumber: 101,
+      conclusion: "failure",
+      published: true,
+      publishResolution: "turn-limit-fallback",
+      publishFallbackDelivery: "error-comment-created",
+    });
 
     await workspaceFixture.cleanup();
   });

@@ -122,7 +122,13 @@ type MentionPublishResolution =
   | "idempotency-skip"
   | "duplicate-suppressed"
   | "publish-failure-fallback"
-  | "publish-failure-comment-failed";
+  | "publish-failure-comment-failed"
+  | "error-fallback"
+  | "error-comment-failed"
+  | "turn-limit-fallback"
+  | "turn-limit-fallback-failed"
+  | "failure-fallback"
+  | "failure-fallback-failed";
 type MentionErrorDelivery =
   | "review-thread-reply"
   | "error-comment-created"
@@ -3375,41 +3381,50 @@ export function createMentionHandler(deps: {
         const mentionFailureSubtype = result.failureSubtype
           ?? classifyMentionExecutionFailureSubtype(result.errorMessage);
 
-        logger.info(
-          {
-            surface: mention.surface,
-            issueNumber: mention.issueNumber,
-            conclusion: result.conclusion,
-            published: mentionOutputPublished,
-            executorPublished: result.published,
-            publishResolution,
-            publishFailureCategory,
-            publishFallbackDelivery,
-            writeEnabled,
-            costUsd: result.costUsd,
-            numTurns: result.numTurns,
-            durationMs: result.durationMs,
-            sessionId: result.sessionId,
-            stopReason: result.stopReason,
-            failureSubtype: mentionFailureSubtype,
-            errorCategory: mentionExecutionErrorCategory,
-            usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
-            toolUseNames: result.toolUseNames ?? [],
-            mentionDerivedContextCacheStatus,
-            ...(mentionDerivedContextCacheReason
-              ? { mentionDerivedContextCacheReason }
-              : {}),
-            ...(explicitReviewRequest
-              ? {
-                explicitReviewRequest: true,
-                taskType: "review.full",
-                lane: "interactive-review",
-              }
-              : {}),
-            ...(reviewOutputKey ? { reviewOutputKey } : {}),
-          },
-          "Mention execution completed",
-        );
+        const logMentionExecutionCompleted = (): void => {
+          logger.info(
+            {
+              surface: mention.surface,
+              issueNumber: mention.issueNumber,
+              conclusion: result.conclusion,
+              published: mentionOutputPublished,
+              executorPublished: result.published,
+              publishResolution,
+              publishFailureCategory,
+              publishFallbackDelivery,
+              writeEnabled,
+              costUsd: result.costUsd,
+              numTurns: result.numTurns,
+              durationMs: result.durationMs,
+              sessionId: result.sessionId,
+              stopReason: result.stopReason,
+              failureSubtype: mentionFailureSubtype,
+              errorCategory: mentionExecutionErrorCategory,
+              usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
+              toolUseNames: result.toolUseNames ?? [],
+              mentionDerivedContextCacheStatus,
+              ...(mentionDerivedContextCacheReason
+                ? { mentionDerivedContextCacheReason }
+                : {}),
+              ...(explicitReviewRequest
+                ? {
+                  explicitReviewRequest: true,
+                  taskType: "review.full",
+                  lane: "interactive-review",
+                }
+                : {}),
+              ...(reviewOutputKey ? { reviewOutputKey } : {}),
+            },
+            "Mention execution completed",
+          );
+        };
+        const shouldDeferMentionCompletionLog =
+          !mentionOutputPublished
+          && !reviewPublishRightsLost
+          && (result.conclusion === "failure" || result.conclusion === "error");
+        if (!shouldDeferMentionCompletionLog) {
+          logMentionExecutionCompleted();
+        }
 
         if (mention.inReplyToId !== undefined && result.conclusion === "success") {
           const conversationKey = `${mention.owner}/${mention.repo}#${mention.prNumber ?? mention.issueNumber}`;
@@ -4307,7 +4322,15 @@ export function createMentionHandler(deps: {
             !explicitReviewRequest
             || canPublishExplicitReviewOutput("explicit mention review error fallback", reviewOutputKey)
           ) {
-            await postMentionError(errorBody);
+            const fallbackResult = await postMentionError(errorBody);
+            publishFallbackDelivery = fallbackResult.delivery;
+            if (fallbackResult.posted) {
+              mentionOutputPublished = true;
+              publishResolution = "error-fallback";
+            } else {
+              mentionOutputPublished = false;
+              publishResolution = "error-comment-failed";
+            }
           }
         }
 
@@ -4340,7 +4363,15 @@ export function createMentionHandler(deps: {
                 !explicitReviewRequest
                 || canPublishExplicitReviewOutput("explicit mention review failure fallback", reviewOutputKey)
               ) {
-                await postMentionError(turnLimitBody);
+                const fallbackResult = await postMentionError(turnLimitBody);
+                publishFallbackDelivery = fallbackResult.delivery;
+                if (fallbackResult.posted) {
+                  mentionOutputPublished = true;
+                  publishResolution = "turn-limit-fallback";
+                } else {
+                  mentionOutputPublished = false;
+                  publishResolution = "turn-limit-fallback-failed";
+                }
               }
             } catch (postErr) {
               logger.warn(
@@ -4368,7 +4399,15 @@ export function createMentionHandler(deps: {
                 !explicitReviewRequest
                 || canPublishExplicitReviewOutput("explicit mention review failure fallback", reviewOutputKey)
               ) {
-                await postMentionError(failureBody);
+                const fallbackResult = await postMentionError(failureBody);
+                publishFallbackDelivery = fallbackResult.delivery;
+                if (fallbackResult.posted) {
+                  mentionOutputPublished = true;
+                  publishResolution = "failure-fallback";
+                } else {
+                  mentionOutputPublished = false;
+                  publishResolution = "failure-fallback-failed";
+                }
               }
             } catch (postErr) {
               logger.warn(
@@ -4377,6 +4416,10 @@ export function createMentionHandler(deps: {
               );
             }
           }
+        }
+
+        if (shouldDeferMentionCompletionLog) {
+          logMentionExecutionCompleted();
         }
 
         if (isCombinedFormatterSuggestionRequest) {
