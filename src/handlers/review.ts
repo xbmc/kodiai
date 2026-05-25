@@ -213,6 +213,7 @@ import {
 import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
+  isExpectedCandidatePublicationPolicyBlock,
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
@@ -2729,23 +2730,6 @@ function logReviewCandidatePublicationRuntime(params: {
       "Review candidate publication runtime log degraded",
     );
   }
-}
-
-function isExpectedCandidatePublicationPolicyBlock(runtime: ReviewCandidatePublicationRuntimeResult): boolean {
-  if (runtime.mode !== "blocked") return false;
-  if (runtime.counts.candidateBlocked <= 0) return false;
-  if (runtime.counts.candidateFailed !== 0) return false;
-  if (runtime.counts.candidateMalformed !== 0) return false;
-  if (runtime.counts.directPublished !== 0) return false;
-  if (runtime.counts.malformed !== 0) return false;
-  if (!runtime.reasons.every((reason) => reason === "candidate-publisher-blocked")) return false;
-
-  const blockedBucket = runtime.outcomeBuckets.blocked;
-  return blockedBucket?.mode === "blocked"
-    && blockedBucket.count > 0
-    && Array.isArray(blockedBucket.reasons)
-    && blockedBucket.reasons.length > 0
-    && blockedBucket.reasons.every((reason) => typeof reason === "string" && reason.trim().length > 0);
 }
 
 export function createReviewHandler(deps: {

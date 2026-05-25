@@ -460,6 +460,9 @@ function normalizeReviewCandidatePublicationDetailsText(
   const mode = REVIEW_CANDIDATE_PUBLICATION_MODES.has(rawMode) ? rawMode : "degraded";
   const approved = extractCandidatePublicationCount(text, "approvedRefs");
   const rewritten = extractCandidatePublicationCount(text, "rewrittenRefs");
+  const publishable = extractCandidatePublicationCount(text, "publishable");
+  const nonPublishable = extractCandidatePublicationCount(text, "nonPublishable");
+  const fixBlocked = extractCandidatePublicationCount(text, "fixBlocked");
   const published = extractCandidatePublicationCount(text, "candidatePublished");
   const movedToDetails = extractCandidatePublicationCount(text, "movedToDetails");
   const detailsOmitted = extractCandidatePublicationCount(text, "detailsOmitted");
@@ -470,7 +473,7 @@ function normalizeReviewCandidatePublicationDetailsText(
   const reasons = formatReviewCandidatePublicationReasons(text);
   const buckets = formatReviewCandidatePublicationOutcomeBuckets(reviewCandidatePublication);
 
-  return `Review candidate publication: mode=${mode} approved=${approved} rewritten=${rewritten} published=${published} directFallback=${directFallback} reasons=${reasons} movedToDetails=${movedToDetails} detailsOmitted=${detailsOmitted}${buckets ? ` buckets=${buckets}` : ""}`;
+  return `Review candidate publication: mode=${mode} approved=${approved} rewritten=${rewritten} publishable=${publishable} nonPublishable=${nonPublishable} fixBlocked=${fixBlocked} published=${published} directFallback=${directFallback} reasons=${reasons} movedToDetails=${movedToDetails} detailsOmitted=${detailsOmitted}${buckets ? ` buckets=${buckets}` : ""}`;
 }
 
 
@@ -613,7 +616,7 @@ function readPositiveInteger(value: unknown): number | null {
 }
 
 function formatMalformedReviewCandidatePublicationDetailsLine(): string {
-  return "- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary movedToDetails=0 detailsOmitted=0 buckets=degraded:1:malformed-runtime-summary";
+  return "- Review candidate publication: mode=degraded approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=malformed-runtime-summary movedToDetails=0 detailsOmitted=0 buckets=degraded:1:malformed-runtime-summary";
 }
 
 function extractCandidatePublicationCount(text: string, key: string): number {

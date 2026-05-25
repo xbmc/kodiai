@@ -31,6 +31,7 @@ export type ReviewCandidatePublicationRuntimeReason =
   | "direct-fallback-published"
   | "direct-fallback-disallowed"
   | "fallback-policy-blocked"
+  | "fix-eligibility-blocked"
   | "no-candidate-publication-path"
   | "adapter-skipped-all"
   | "approval-blocked"
@@ -54,6 +55,8 @@ export type ReviewCandidatePublicationRuntimeCounts = {
   candidateMovedToDetails: number;
   candidateDetailsOnlyFindings: number;
   candidateDetailsOnlyOmitted: number;
+  fixEligibilityBlocked: number;
+  nonPublishableReferences: number;
   convertedProcessedFindings: number;
   directAttempted: number;
   directPublished: number;
@@ -162,6 +165,7 @@ export function classifyReviewCandidatePublicationRuntime(
 
   const approvedReferences = approvalCounts.approved + approvalCounts.rewritten;
   const candidatePublishable = adapterCounts.publishable;
+  const fixEligibilityBlocked = adapterCounts.fixEligibilityBlocked;
   const candidatePublished = publisher.published;
   const candidateSkipped = publisher.skipped + adapterCounts.skipped;
   const movedToDetails = adapterCounts.movedToDetails + publisher.movedToDetails;
@@ -194,6 +198,7 @@ export function classifyReviewCandidatePublicationRuntime(
   if (directPublished > 0) pushReason(reasons, "direct-fallback-published");
   if (direct.attempted && direct.allowed === false) pushReason(reasons, "direct-fallback-disallowed");
   if (!input.publisher && candidatePublishable > 0) pushReason(reasons, "missing-shared-publisher-results");
+  if (fixEligibilityBlocked > 0) pushReason(reasons, "fix-eligibility-blocked");
   if (candidatePublishable === 0 && approvedReferences === 0) pushReason(reasons, "no-candidate-publication-path");
   if (adapterCounts.input > 0 && candidatePublishable === 0 && adapterCounts.skipped > 0) pushReason(reasons, "adapter-skipped-all");
   if (approvalCounts.approved === 0 && approvalCounts.rewritten === 0 && approvalCounts.suppressed + approvalCounts.rejected > 0) {
@@ -216,6 +221,8 @@ export function classifyReviewCandidatePublicationRuntime(
     candidateMovedToDetails: movedToDetails,
     candidateDetailsOnlyFindings: detailsOnlyFindings,
     candidateDetailsOnlyOmitted: detailsOnlyOmitted,
+    fixEligibilityBlocked,
+    nonPublishableReferences: Math.max(0, approvedReferences - candidatePublishable),
     convertedProcessedFindings,
     directAttempted: direct.attempted ? 1 : 0,
     directPublished,
@@ -249,6 +256,8 @@ export function toReviewCandidatePublicationRuntimeDetailsSummary(result: Pick<R
     `approvedRefs=${formatCount(counts.approvedReferences)}`,
     `rewrittenRefs=${formatCount(counts.rewrittenReferences)}`,
     `publishable=${formatCount(counts.candidatePublishable)}`,
+    `nonPublishable=${formatCount(counts.nonPublishableReferences)}`,
+    `fixBlocked=${formatCount(counts.fixEligibilityBlocked)}`,
     `candidatePublished=${formatCount(counts.candidatePublished)}`,
     `skipped=${formatCount(counts.candidateSkipped)}`,
     `blocked=${formatCount(counts.candidateBlocked)}`,
@@ -312,13 +321,13 @@ function createOutcomeBuckets(
   bucketReasons: OutcomeBucketReasonCollector,
 ): ReviewCandidatePublicationRuntimeOutcomeBuckets {
   const buckets: ReviewCandidatePublicationRuntimeOutcomeBuckets = {};
-  const blockedCount = counts.candidateBlocked > 0 || hasAnyReason(reasons, ["adapter-skipped-all", "approval-blocked", "no-candidate-publication-path"])
-    ? Math.max(1, counts.candidateBlocked)
+  const blockedCount = counts.candidateBlocked > 0 || hasAnyReason(reasons, ["adapter-skipped-all", "approval-blocked", "no-candidate-publication-path", "fix-eligibility-blocked"])
+    ? Math.max(1, counts.candidateBlocked, counts.fixEligibilityBlocked)
     : 0;
 
   addOutcomeBucket(buckets, "published", "published", counts.candidatePublished, reasons, ["candidate-publisher-published"], bucketReasons.published);
   addOutcomeBucket(buckets, "skipped", "skipped", counts.candidateSkipped, reasons, ["candidate-publisher-skipped", "candidate-publisher-missing", "malformed-adapter-summary"], bucketReasons.skipped);
-  addOutcomeBucket(buckets, "blocked", "blocked", blockedCount, reasons, ["candidate-publisher-blocked", "adapter-skipped-all", "approval-blocked", "no-candidate-publication-path"], bucketReasons.blocked);
+  addOutcomeBucket(buckets, "blocked", "blocked", blockedCount, reasons, ["candidate-publisher-blocked", "adapter-skipped-all", "approval-blocked", "no-candidate-publication-path", "fix-eligibility-blocked"], bucketReasons.blocked);
   addOutcomeBucket(buckets, "failed", "failed", counts.candidateFailed, reasons, ["candidate-publisher-failed"], bucketReasons.failed);
   addOutcomeBucket(buckets, "movedToDetails", "moved-to-details", counts.candidateMovedToDetails, reasons, ["candidate-moved-to-details"], bucketReasons.movedToDetails);
   addOutcomeBucket(buckets, "directFallback", "direct-fallback", counts.fallbackEvidence, reasons, ["direct-fallback-attempted", "direct-fallback-published", "missing-shared-publisher-results"], bucketReasons.directFallback);
@@ -392,6 +401,39 @@ function classifyMode(input: {
   return "blocked";
 }
 
+export function isExpectedCandidatePublicationPolicyBlock(runtime: Pick<ReviewCandidatePublicationRuntimeResult, "mode" | "counts" | "reasons" | "outcomeBuckets">): boolean {
+  if (runtime.mode !== "blocked") return false;
+  if (runtime.counts.candidateFailed !== 0) return false;
+  if (runtime.counts.candidateMalformed !== 0) return false;
+  if (runtime.counts.directPublished !== 0) return false;
+  if (runtime.counts.malformed !== 0) return false;
+
+  const publisherBlocked = runtime.counts.candidateBlocked > 0
+    && runtime.reasons.every((reason) => reason === "candidate-publisher-blocked")
+    && runtime.outcomeBuckets.blocked?.mode === "blocked"
+    && (runtime.outcomeBuckets.blocked?.count ?? 0) > 0;
+
+  const fixEligibilityBlocked = runtime.counts.fixEligibilityBlocked > 0
+    && runtime.counts.candidatePublishable === 0
+    && runtime.counts.candidatePublished === 0
+    && runtime.reasons.every((reason) => reason === "fix-eligibility-blocked")
+    && runtime.outcomeBuckets.blocked?.mode === "blocked"
+    && (runtime.outcomeBuckets.blocked?.count ?? 0) === runtime.counts.fixEligibilityBlocked;
+
+  const zeroCandidatePublicationPath = runtime.counts.approvedReferences === 0
+    && runtime.counts.rewrittenReferences === 0
+    && runtime.counts.candidatePublishable === 0
+    && runtime.counts.candidatePublished === 0
+    && runtime.counts.candidateBlocked === 0
+    && runtime.reasons.includes("approval-blocked")
+    && runtime.reasons.includes("no-candidate-publication-path")
+    && runtime.reasons.every((reason) => reason === "approval-blocked" || reason === "no-candidate-publication-path")
+    && runtime.outcomeBuckets.blocked?.mode === "blocked"
+    && (runtime.outcomeBuckets.blocked?.count ?? 0) === 1;
+
+  return publisherBlocked || fixEligibilityBlocked || zeroCandidatePublicationPath;
+}
+
 function normalizeApprovalCounts(
   approval: ReviewCandidateApprovalResult | null | undefined,
   reasons: ReviewCandidatePublicationRuntimeReason[],
@@ -429,12 +471,13 @@ function normalizeAdapterCounts(
   movedToDetails: number;
   detailsOnlyFindings: number;
   detailsOnlyOmitted: number;
+  fixEligibilityBlocked: number;
   malformed: number;
 } {
   const counts = adapter?.counts;
   if (!isRecord(counts)) {
     pushReason(reasons, "malformed-adapter-summary");
-    return { input: 0, publishable: 0, skipped: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, malformed: 1 };
+    return { input: 0, publishable: 0, skipped: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, fixEligibilityBlocked: 0, malformed: 1 };
   }
   const skippedItems = Array.isArray(adapter?.skipped) ? adapter.skipped : [];
   for (const item of skippedItems) {
@@ -442,6 +485,14 @@ function normalizeAdapterCounts(
   }
   const malformedSkipReasons = skippedItems.some((item) => !isRecord(item) || sanitizeSummaryToken(String(item.reason ?? "unknown")) === "unknown");
   if (malformedSkipReasons) pushReason(reasons, "malformed-adapter-summary");
+  const fixEligibilityBlocked = countBlockingFixEligibilityReasons(adapter?.fixEligibility?.reasonCounts);
+  if (fixEligibilityBlocked > 0 && isRecord(adapter?.fixEligibility?.reasonCounts)) {
+    for (const [reason, count] of Object.entries(adapter.fixEligibility.reasonCounts)) {
+      const normalizedReason = sanitizeSummaryToken(reason);
+      if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable") continue;
+      if (normalizeCount(count) > 0) addBucketReason(bucketReasons.blocked, reason, "fix-eligibility-blocked");
+    }
+  }
   return {
     input: normalizeCount(counts.input),
     publishable: normalizeCount(counts.publishable),
@@ -449,8 +500,20 @@ function normalizeAdapterCounts(
     movedToDetails: normalizeCount(counts.movedToDetails),
     detailsOnlyFindings: normalizeCount(counts.detailsOnlyFindings),
     detailsOnlyOmitted: normalizeCount(counts.detailsOnlyOmitted),
+    fixEligibilityBlocked,
     malformed: hasMalformedCount([counts.input, counts.publishable, counts.skipped]) || hasOptionalMalformedCount([counts.movedToDetails, counts.detailsOnlyFindings, counts.detailsOnlyOmitted]) || malformedSkipReasons ? 1 : 0,
   };
+}
+
+function countBlockingFixEligibilityReasons(reasonCounts: unknown): number {
+  if (!isRecord(reasonCounts)) return 0;
+  let total = 0;
+  for (const [reason, count] of Object.entries(reasonCounts)) {
+    const normalizedReason = sanitizeSummaryToken(reason);
+    if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable") continue;
+    total += normalizeCount(count);
+  }
+  return total;
 }
 
 function normalizePublisherSummary(
