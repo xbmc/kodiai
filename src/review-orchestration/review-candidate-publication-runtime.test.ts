@@ -8,6 +8,7 @@ import type {
 import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
+  isExpectedCandidatePublicationPolicyBlock,
   toReviewCandidatePublicationRuntimeConfigSnapshot,
   toReviewCandidatePublicationRuntimeDetailsSummary,
   type ReviewCandidatePublicationRuntimeInput,
@@ -169,6 +170,67 @@ describe("review candidate publication runtime classifier", () => {
 
     expect(blockedOnly.mode).toBe("blocked");
     expect(blockedOnly.counts.candidateBlocked).toBe(2);
+    expect(isExpectedCandidatePublicationPolicyBlock(blockedOnly)).toBe(true);
+  });
+
+  test("treats zero-candidate no-publication paths as expected policy blocks", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 0, suppressed: 0, rejected: 1 }),
+      adapter: adapter({ input: 0, publishable: 0, skipped: 0 }),
+      publisher: publisher([]),
+    }));
+
+    expect(result.mode).toBe("blocked");
+    expect(result.counts).toMatchObject({
+      approvedReferences: 0,
+      candidatePublishable: 0,
+      candidatePublished: 0,
+      candidateBlocked: 0,
+      candidateFailed: 0,
+      malformed: 0,
+    });
+    expect(result.reasons).toEqual(expect.arrayContaining(["no-candidate-publication-path", "approval-blocked"]));
+    expect(result.outcomeBuckets.blocked).toMatchObject({
+      mode: "blocked",
+      count: 1,
+      reasons: expect.arrayContaining(["approval-blocked", "no-candidate-publication-path"]),
+    });
+    expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(true);
+  });
+
+  test("surfaces approved but non-publishable fix candidates as expected fix eligibility blocks", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 3 }),
+      adapter: {
+        ...adapter({ input: 3, publishable: 0, approved: 0 }),
+        fixEligibility: {
+          ...emptyFixEligibilitySummary(),
+          status: "blocked",
+          counts: { input: 3, eligible: 0, blocked: 3, omitted: 0, capped: 0 },
+          reasonCounts: { "missing-replacement": 3 },
+        },
+      },
+      publisher: publisher([]),
+    }));
+
+    expect(result.mode).toBe("blocked");
+    expect(result.counts).toMatchObject({
+      approvedReferences: 3,
+      candidatePublishable: 0,
+      candidatePublished: 0,
+      candidateBlocked: 0,
+    });
+    expect(result.reasons).toContain("fix-eligibility-blocked");
+    expect(result.outcomeBuckets.blocked).toMatchObject({
+      mode: "blocked",
+      count: 3,
+      reasons: expect.arrayContaining(["fix-eligibility-blocked", "missing-replacement"]),
+    });
+    expect(result.detailsSummary.text).toContain("publishable=0");
+    expect(result.detailsSummary.text).toContain("nonPublishable=3");
+    expect(result.detailsSummary.text).toContain("fixBlocked=3");
+    expect(result.detailsSummary.text).toContain("reasons=fix-eligibility-blocked");
+    expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(true);
   });
 
   test("degrades instead of throwing on malformed summaries and unknown publisher status or reason values", () => {

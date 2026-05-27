@@ -276,7 +276,7 @@ export function createAddonCheckHandler(deps: {
 
               for (const finding of result.findings) {
                 handlerLogger.info(
-                  { addonId: finding.addonId, level: finding.level, message: finding.message },
+                  { addonId: finding.addonId, findingLevel: finding.level, message: finding.message },
                   "addon-check: finding",
                 );
                 allFindings.push(finding);

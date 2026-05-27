@@ -487,7 +487,7 @@ describe("formatReviewDetailsSummary", () => {
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result.indexOf("Review candidates:")).toBeLessThan(result.indexOf("Review candidate publication:"));
-    expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 published=3 directFallback=0 reasons=candidate-publisher-published");
+    expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 publishable=3 nonPublishable=0 fixBlocked=0 published=3 directFallback=0 reasons=candidate-publisher-published");
     expect(result).not.toContain("Review candidate publication runtime:");
   });
 
@@ -585,7 +585,7 @@ describe("formatReviewDetailsSummary", () => {
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
-    expect(result).toContain("- Review candidate publication: mode=moved-to-details approved=1 rewritten=0 published=0 directFallback=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff movedToDetails=1 detailsOmitted=0");
+    expect(result).toContain("- Review candidate publication: mode=moved-to-details approved=1 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff movedToDetails=1 detailsOmitted=0");
     expect(result).toContain("- Moved review candidates preserved in details:");
     expect(result).toContain("  - [major/correctness] Guard null payload before enqueue (src/worker.ts:42, reason=line-not-commentable-in-pr-diff) — The enqueue path dereferences payload before validating it.");
     expect(result).not.toContain("direct-fallback-published");
@@ -689,7 +689,7 @@ describe("formatReviewDetailsSummary", () => {
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
-    expect(result).toContain("- Review candidate publication: mode=direct-fallback approved=0 rewritten=0 published=0 directFallback=2 reasons=direct-fallback-attempted,direct-fallback-published");
+    expect(result).toContain("- Review candidate publication: mode=direct-fallback approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=2 reasons=direct-fallback-attempted,direct-fallback-published");
   });
 
   it("omits missing candidate publication metadata and degrades malformed metadata without breaking Review Details", () => {
@@ -704,7 +704,7 @@ describe("formatReviewDetailsSummary", () => {
 
     expect(reviewCandidatePublicationLineCount(omitted)).toBe(0);
     expect(reviewCandidatePublicationLineCount(malformed)).toBe(1);
-    expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
+    expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
     expect(malformed).toContain("buckets=degraded:1:malformed-runtime-summary");
     expect(malformed).toContain("<summary>Review Details</summary>");
     expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
@@ -720,7 +720,7 @@ describe("formatReviewDetailsSummary", () => {
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
-    expect(result).toContain("- Review candidate publication: mode=degraded approved=1 rewritten=0 published=0 directFallback=0 reasons=candidate-publisher-failed,redacted,redacted,prompt-redacted,diff-redacted,prompt-redacted");
+    expect(result).toContain("- Review candidate publication: mode=degraded approved=1 rewritten=0 publishable=1 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=candidate-publisher-failed,redacted,redacted,prompt-redacted,diff-redacted,prompt-redacted");
     expect(result).toContain("+6 more");
     expect(result).not.toContain("sk-secret-value");
     expect(result).not.toContain("ghp_secret_token_value");

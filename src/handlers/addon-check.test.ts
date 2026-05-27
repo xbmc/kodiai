@@ -420,7 +420,7 @@ describe("createAddonCheckHandler", () => {
 
   // ── Findings logged with structured bindings ──────────────────────────
 
-  it("findings logged with addonId, level, message bindings", async () => {
+  it("findings logged with addonId, findingLevel, and message bindings without clobbering logger severity", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app } = createMockGithubApp(files);
     const { logger, infoCalls } = createMockLogger();
@@ -444,9 +444,11 @@ describe("createAddonCheckHandler", () => {
 
     const findingLogs = infoCalls.filter((c) => c.message === "addon-check: finding");
     expect(findingLogs.length).toBe(2);
-    expect(findingLogs[0]!.bindings.level).toBe("ERROR");
+    expect(findingLogs[0]!.bindings.findingLevel).toBe("ERROR");
+    expect(findingLogs[0]!.bindings.level).toBeUndefined();
     expect(findingLogs[0]!.bindings.message).toBe("missing changelog");
-    expect(findingLogs[1]!.bindings.level).toBe("WARN");
+    expect(findingLogs[1]!.bindings.findingLevel).toBe("WARN");
+    expect(findingLogs[1]!.bindings.level).toBeUndefined();
     expect(findingLogs[1]!.bindings.message).toBe("old icon");
   });
 

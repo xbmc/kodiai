@@ -17851,6 +17851,85 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     }));
   });
 
+  test("missing-replacement candidates are expected policy blocks with reason-aware Review Details", async () => {
+    const { updatedSummaryBody, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: true,
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: "Candidate without replacement",
+            body: "This candidate has no safe replacement text and must stay private.",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => ({
+        status: "ready",
+        findings: input.findings,
+        visibleFindings: input.findings,
+        filteredInlineFindings: [],
+        lowConfidenceFindings: [],
+        suppressionMatchCounts: new Map(),
+        filterRecords: [],
+        counts: {
+          input: input.findings.length,
+          kept: input.findings.length,
+          suppressed: 0,
+          rewritten: 0,
+          deprioritized: 0,
+          lowConfidence: 0,
+          auditEvents: 0,
+          severityDemoted: 0,
+          graphValidated: 0,
+          graphUncertain: 0,
+        },
+        audit: [],
+        detailsSummary: {
+          label: "Review reducer",
+          status: "ready",
+          text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+        },
+      }),
+    });
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("Review candidate publication: mode=blocked");
+    expect(detailsBlock).toContain("approved=1");
+    expect(detailsBlock).toContain("publishable=0");
+    expect(detailsBlock).toContain("nonPublishable=1");
+    expect(detailsBlock).toContain("fixBlocked=1");
+    expect(detailsBlock).toContain("reasons=fix-eligibility-blocked");
+    expect(detailsBlock).toContain("buckets=blocked:1:fix-eligibility-blocked+missing-replacement");
+    expect(detailsBlock).not.toContain("This candidate has no safe replacement text");
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.level).toBe("info");
+    expect(publicationLog?.message).toBe("Review candidate publication completed with expected policy block");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      approvedReferences: 1,
+      candidatePublishable: 0,
+      candidatePublished: 0,
+      fixEligibilityBlocked: 1,
+      nonPublishableReferences: 1,
+    }));
+    expect(publicationLog?.data?.reasons).toEqual(["fix-eligibility-blocked"]);
+  });
+
   test("candidate draft prioritization respects maxComments before inline publication", async () => {
     const { createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
