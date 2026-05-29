@@ -339,6 +339,7 @@ describe("production log taxonomy", () => {
             diffAnalysisLinesChanged: 8,
             diffCollectionStrategy: "triple-dot",
             diffCollectionAttempts: 0,
+            chunksWritten: 1,
             candidatePublicationBridgeCorrelationKey: "candidate-publication:kodiai-review-output:v1:inst-42:xbmc/xbmc:pr-390:action-review_requested:delivery-delivery-390:head-head-390",
             path: "xbmc/filesystem/AudioBookFileDirectory.cpp",
             redaction: {

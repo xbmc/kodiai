@@ -427,7 +427,11 @@ function isSafeTelemetryField(leaf: string, value: unknown, path: string): boole
   if (leaf === "path") {
     return isSafeSourcePath(value);
   }
-  if (leaf.endsWith("FieldCount") || leaf.endsWith("LinesChanged") || leaf.endsWith("Attempts") || leaf === "hunkCount") {
+  if (leaf.endsWith("FieldCount")
+    || leaf.endsWith("LinesChanged")
+    || leaf.endsWith("Attempts")
+    || leaf === "hunkCount"
+    || leaf === "chunksWritten") {
     return typeof value === "number" && Number.isFinite(value) && value >= 0;
   }
   if (leaf.endsWith("Included") && typeof value === "boolean") {

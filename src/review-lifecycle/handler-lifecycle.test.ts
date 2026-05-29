@@ -76,6 +76,7 @@ describe("attachReviewFindingLifecycle", () => {
       trigger: "pull_request",
       normalizedStatus: "normalized",
     });
+    expect(JSON.stringify(automatic.logEvidence)).not.toMatch(/failed|error/i);
     expect(mention.logEvidence).toMatchObject({
       gate: "review-finding-lifecycle",
       source: "mention",
