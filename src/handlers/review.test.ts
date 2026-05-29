@@ -6170,7 +6170,8 @@ describe("createReviewHandler finding extraction", () => {
       trigger: "pull_request",
       normalizedStatus: "normalized",
     });
-    expect(lifecycleLog?.data?.counts).toMatchObject({ input: 3, recorded: 3, rejected: 0 });
+    expect(lifecycleLog?.data?.counts).toMatchObject({ input: 3, recorded: 3 });
+    expect(lifecycleLog?.data?.counts).not.toHaveProperty("rejected");
     expect(lifecycleLog?.data?.redaction).toMatchObject({
       privateOnly: true,
       rawPromptsIncluded: false,
