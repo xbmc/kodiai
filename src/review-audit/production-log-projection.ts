@@ -169,6 +169,19 @@ export function toProductionLogAddonCheckReasonCode(reasonCode: AddonCheckReason
   return ADDON_CHECK_REASON_ALIASES[reasonCode] ?? reasonCode;
 }
 
+export type ProductionLogAddonCheckFindingSeverity = "severe" | "advisory" | "info";
+
+export function toProductionLogAddonCheckFindingSeverity(level: string): ProductionLogAddonCheckFindingSeverity {
+  switch (level) {
+    case "ERROR":
+      return "severe";
+    case "WARN":
+      return "advisory";
+    default:
+      return "info";
+  }
+}
+
 export function toProductionLogReviewTimeoutMode(mode: ReviewTimeoutClassificationMode): string {
   return REVIEW_TIMEOUT_MODE_ALIASES[mode] ?? mode;
 }

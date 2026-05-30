@@ -24,6 +24,7 @@ import {
 import {
   toProductionLogAddonCheckMode,
   toProductionLogAddonCheckReasonCode,
+  toProductionLogAddonCheckFindingSeverity,
 } from "../review-audit/production-log-projection.ts";
 import {
   buildAddonCheckMarker,
@@ -279,9 +280,12 @@ export function createAddonCheckHandler(deps: {
               addonSummaries.push({ completed: true, ...findingCounts });
 
               for (const finding of result.findings) {
-                handlerLogger.info(
-                  { addonId: finding.addonId, findingLevel: finding.level, message: finding.message },
-                  "addon-check: finding",
+                handlerLogger.debug(
+                  {
+                    severity: toProductionLogAddonCheckFindingSeverity(finding.level),
+                    message: finding.message,
+                  },
+                  "addon-check: finding detail",
                 );
                 allFindings.push(finding);
               }
@@ -299,7 +303,6 @@ export function createAddonCheckHandler(deps: {
               {
                 gate: classification.gate,
                 gateResult: classification.classification,
-                classification: classification.classification,
                 mode: toProductionLogAddonCheckMode(classification.mode),
                 reasonCodes: classification.reasonCodes.map(toProductionLogAddonCheckReasonCode),
                 actionableDiagnostic: classification.actionableDiagnostic,

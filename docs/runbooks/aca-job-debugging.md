@@ -1,5 +1,10 @@
 # ACA Job Debugging
 
+## Trust model
+
+- MCP HTTP auth, token lifecycle, and ingress assumptions: [MCP ingress trust model](./mcp-ingress-trust.md)
+- Formatter command shell execution trust boundary: [Formatter suggestions](./formatter-suggestions.md#trust-model-repo-controlled-shell)
+
 ## When to use
 Use this when an Azure Container Apps job fails, stalls, or times out.
 

@@ -50,6 +50,7 @@ import { createSlackWriteRunner } from "./slack/write-runner.ts";
 import { deliverWebhookRelayEvent } from "./slack/webhook-relay-delivery.ts";
 import { createRequestTracker } from "./lifecycle/request-tracker.ts";
 import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
+import { registerFatalShutdownHandlers } from "./lifecycle/fatal-shutdown-handlers.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
 
@@ -611,14 +612,7 @@ app.onError((err, c) => {
 // Start shutdown manager (SIGTERM/SIGINT handlers)
 shutdownManager.start();
 
-process.on("uncaughtException", (err) => {
-  logger.fatal({ err }, "uncaughtException");
-  shutdownManager.requestShutdown("uncaughtException");
-});
-process.on("unhandledRejection", (reason) => {
-  logger.fatal({ reason }, "unhandledRejection");
-  shutdownManager.requestShutdown("unhandledRejection");
-});
+registerFatalShutdownHandlers({ logger, shutdownManager });
 
 // Startup webhook queue replay: process any webhooks queued during previous shutdown
 const startupReplayStart = Date.now();

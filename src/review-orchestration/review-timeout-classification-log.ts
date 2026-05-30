@@ -39,7 +39,6 @@ export function logReviewTimeoutClassification(params: {
       ...params.baseLog,
       gate: params.classification.gate,
       gateResult: params.classification.classification,
-      classification: params.classification.classification,
       mode: toProductionLogReviewTimeoutMode(params.classification.mode),
       reasonCodes: params.classification.reasonCodes.map(toProductionLogReviewTimeoutReasonCode),
       deliveryId: params.deliveryId,

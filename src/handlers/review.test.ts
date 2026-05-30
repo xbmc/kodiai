@@ -19756,7 +19756,6 @@ describe("createReviewHandler failure fallback publication", () => {
     const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
     expect(classificationLog?.data).toMatchObject({
       gateResult: "expected-bounded-outcome",
-      classification: "expected-bounded-outcome",
       mode: "max-turns-continuation",
       deliveryId: "delivery-123",
       retryEnqueued: true,

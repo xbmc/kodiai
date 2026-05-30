@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+Priority-stack hardening for production observability, module boundaries, and runtime safety.
+
+### Added
+
+- Shared production-log projection module with unit tests for addon-check, review-timeout, candidate publication, and migration labels.
+- Extracted review-timeout classification logging and fatal shutdown handler registration for testability.
+- Operator trust-model runbooks for repo-controlled formatter shell execution and MCP ingress (`docs/runbooks/mcp-ingress-trust.md`).
+
+### Changed
+
+- Addon-check per-finding detail moved to debug logs with production-safe `severity` bindings (no addon IDs or `ERROR`/`WARN` tokens at info level).
+- Structured classification logs now emit `gateResult` only (removed duplicate `classification` field).
+- Fatal `uncaughtException` / `unhandledRejection` handlers trigger graceful shutdown instead of log-and-continue.
+- Malformed signed GitHub webhook JSON returns HTTP 400 before dispatch.
+- `review-idempotency` moved from `handlers/` to `review-orchestration/`.
+
 ## v0.39 (2026-05-30)
 
 Production log cleanup and M075 review-publication evidence.

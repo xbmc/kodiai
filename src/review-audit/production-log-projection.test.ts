@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   toProductionLogAddonCheckMode,
   toProductionLogAddonCheckReasonCode,
+  toProductionLogAddonCheckFindingSeverity,
   toProductionLogBudgetReasoning,
   toProductionLogCandidateFindingCounts,
   toProductionLogMigrationLabel,
@@ -34,6 +35,12 @@ describe("production-log-projection", () => {
   test("projects addon-check timeout modes and reasons", () => {
     expect(toProductionLogAddonCheckMode("all-timeout")).toBe("all-budget-exhausted");
     expect(toProductionLogAddonCheckReasonCode("partial-timeout")).toBe("partial-budget-exhausted");
+  });
+
+  test("projects addon-check finding severity without error tokens", () => {
+    expect(toProductionLogAddonCheckFindingSeverity("ERROR")).toBe("severe");
+    expect(toProductionLogAddonCheckFindingSeverity("WARN")).toBe("advisory");
+    expect(toProductionLogAddonCheckFindingSeverity("INFO")).toBe("info");
   });
 
   test("projects review-timeout modes, reasons, and counts", () => {

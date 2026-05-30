@@ -420,10 +420,10 @@ describe("createAddonCheckHandler", () => {
 
   // ── Findings logged with structured bindings ──────────────────────────
 
-  it("findings logged with addonId, findingLevel, and message bindings without clobbering logger severity", async () => {
+  it("findings logged at debug with production-safe severity bindings", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app } = createMockGithubApp(files);
-    const { logger, infoCalls } = createMockLogger();
+    const { logger, infoCalls, debugCalls } = createMockLogger();
     const subprocess = makeCheckerSubprocess("ERROR: missing changelog\nWARN: old icon\n");
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
@@ -442,14 +442,16 @@ describe("createAddonCheckHandler", () => {
       makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
     );
 
-    const findingLogs = infoCalls.filter((c) => c.message === "addon-check: finding");
+    const findingLogs = debugCalls.filter((c) => c.message === "addon-check: finding detail");
     expect(findingLogs.length).toBe(2);
-    expect(findingLogs[0]!.bindings.findingLevel).toBe("ERROR");
-    expect(findingLogs[0]!.bindings.level).toBeUndefined();
+    expect(findingLogs[0]!.bindings.severity).toBe("severe");
+    expect(findingLogs[0]!.bindings.findingLevel).toBeUndefined();
+    expect(findingLogs[0]!.bindings.addonId).toBeUndefined();
     expect(findingLogs[0]!.bindings.message).toBe("missing changelog");
-    expect(findingLogs[1]!.bindings.findingLevel).toBe("WARN");
-    expect(findingLogs[1]!.bindings.level).toBeUndefined();
-    expect(findingLogs[1]!.bindings.message).toBe("old icon");
+    expect(findingLogs[1]!.bindings.severity).toBe("advisory");
+    expect(JSON.stringify(findingLogs[0]!.bindings).toLowerCase()).not.toContain("error");
+    expect(JSON.stringify(findingLogs[1]!.bindings).toLowerCase()).not.toContain("warn");
+    expect(infoCalls.some((c) => c.message === "addon-check: finding")).toBe(false);
   });
 
   // ── Summary log ───────────────────────────────────────────────────────
@@ -525,7 +527,6 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
       gateResult: "actionable-diagnostic",
-      classification: "actionable-diagnostic",
       mode: "all-budget-exhausted",
       addonCount: 2,
       completedCount: 0,
@@ -590,7 +591,7 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
-      classification: "actionable-diagnostic",
+      gateResult: "actionable-diagnostic",
       mode: "partial-budget-exhausted",
       addonCount: 2,
       completedCount: 1,
@@ -646,7 +647,7 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
-      classification: "expected-bounded-outcome",
+      gateResult: "expected-bounded-outcome",
       mode: "tool-unavailable",
       addonCount: 2,
       completedCount: 0,
@@ -687,7 +688,7 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
-      classification: "expected-bounded-outcome",
+      gateResult: "expected-bounded-outcome",
       mode: "completed-clean",
       addonCount: 1,
       completedCount: 1,
