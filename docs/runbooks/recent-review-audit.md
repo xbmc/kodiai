@@ -1,6 +1,6 @@
 # Recent Review Audit Runbook
 
-Use this runbook to audit the most recent Kodiai-reviewed `xbmc/xbmc` pull requests and determine whether approval-shaped outcomes are genuinely clean reviews, published finding reviews, visible publish failures, suspicious approvals, or still indeterminate.
+Use this runbook to audit the most recent Kodiai-reviewed `xbmc/xbmc` pull requests and determine whether approval-shaped outcomes are genuinely clean reviews, published finding reviews, expected bounded outcomes, visible publish failures, suspicious approvals, or still indeterminate.
 
 ## Command
 
@@ -71,7 +71,7 @@ Explicit `@kodiai review` lane:
 - `publishResolution="duplicate-suppressed"` → clean-valid duplicate-safe recovery
 - `publishResolution="publish-failure-fallback"` → publish-failure
 - `publishResolution="publish-failure-comment-failed"` → publish-failure
-- `publishResolution="turn-limit-fallback"` → publish-failure / expected bounded turn-limit notice delivered
+- `publishResolution="turn-limit-fallback"` → expected-bounded turn-limit notice delivered
 - `publishResolution="turn-limit-fallback-undelivered"` → publish-failure / expected bounded turn-limit notice not delivered
 - `publishResolution="executor"` → findings-published
 
@@ -131,8 +131,14 @@ The audit found a real publish-failure path, not a quiet clean review.
 Examples:
 - explicit lane `publishResolution=publish-failure-fallback`
 - explicit lane `publishResolution=publish-failure-comment-failed`
-- explicit lane `publishResolution=turn-limit-fallback`
 - explicit lane `publishResolution=turn-limit-fallback-undelivered`
+
+### `expected-bounded`
+
+The explicit review exhausted its turn budget but delivered the expected bounded notice, so this is not a quiet clean review and not a publish failure.
+
+Examples:
+- explicit lane `publishResolution=turn-limit-fallback`
 
 ### `suspicious-approval`
 
@@ -199,6 +205,7 @@ Check which source was unavailable:
 A healthy recent sample can legitimately contain:
 - many `clean-valid` verdicts
 - some `findings-published`
+- occasional `expected-bounded` verdicts when a visible turn-limit notice was delivered
 - zero `publish-failure`
 - zero `suspicious-approval`
 

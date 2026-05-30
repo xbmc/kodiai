@@ -182,18 +182,19 @@ describe("verify-m044-s01", () => {
       },
       selection: {
         scannedPullRequests: 10,
-        collectedArtifacts: 4,
+        collectedArtifacts: 5,
         perLaneLimit: 6,
         totalLimit: 12,
-        candidateLaneCounts: { automatic: 3, explicit: 1 },
-        selectedLaneCounts: { automatic: 3, explicit: 1 },
+        candidateLaneCounts: { automatic: 3, explicit: 2 },
+        selectedLaneCounts: { automatic: 3, explicit: 2 },
         fillCount: 0,
       },
       summary: {
-        totalArtifacts: 4,
+        totalArtifacts: 5,
         verdictCounts: {
           "clean-valid": 3,
           "findings-published": 1,
+          "expected-bounded": 1,
           "publish-failure": 0,
           "suspicious-approval": 0,
           "indeterminate": 0,
@@ -205,7 +206,7 @@ describe("verify-m044-s01", () => {
 
     const human = renderM044S01Report(report);
 
-    expect(human).toContain("Summary: total=4 clean-valid=3 findings-published=1");
+    expect(human).toContain("Summary: total=5 clean-valid=3 findings-published=1 expected-bounded=1");
   });
 
   test("main returns exit code 1 and JSON when GitHub access is unavailable", async () => {
