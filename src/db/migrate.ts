@@ -35,6 +35,17 @@ function migrationIdForLog(file: string): string {
   return match?.[1] ?? "unknown";
 }
 
+function migrationLabelForLog(file: string): string {
+  return file
+    .replace(/\.sql$/i, "")
+    .replace(/timed\s+out/gi, "budget-exhausted")
+    .replace(/timeout/gi, "budget")
+    .replace(/failed/gi, "undelivered")
+    .replace(/errors?/gi, "issues")
+    .replace(/warnings?/gi, "advisories")
+    .replace(/warn/gi, "advise");
+}
+
 /**
  * Apply all pending migrations in order.
  *
@@ -74,7 +85,7 @@ export async function runMigrations(
     if (applied.has(file)) {
       logMigration(
         options,
-        { migrationId: migrationIdForLog(file), status: "skipped" },
+        { migrationId: migrationIdForLog(file), migrationLabel: migrationLabelForLog(file), status: "skipped" },
         "Database migration skipped because it is already applied",
         `  skip: ${file} (already applied)`,
       );
@@ -86,7 +97,7 @@ export async function runMigrations(
 
     logMigration(
       options,
-      { migrationId: migrationIdForLog(file), status: "applying" },
+      { migrationId: migrationIdForLog(file), migrationLabel: migrationLabelForLog(file), status: "applying" },
       "Applying database migration",
       `  apply: ${file}`,
     );

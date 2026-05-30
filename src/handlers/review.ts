@@ -214,6 +214,7 @@ import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
   isExpectedCandidatePublicationPolicyBlock,
+  type ReviewCandidatePublicationRuntimeOutcomeBucket,
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
@@ -2491,59 +2492,104 @@ type ReviewCandidateFindingSafeSnapshot = {
   status: ReviewCandidateFindingExecutionResult["status"];
   recorded: number;
   rejected: number;
-  issueCount: number;
+  errors: number;
   artifactPresent: boolean;
   reason?: string;
 };
 
-function sanitizeProductionLogIssueTerms(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sanitizeProductionLogIssueTerms);
-  }
+type ReviewCandidateFindingProductionLogSnapshot = Omit<ReviewCandidateFindingSafeSnapshot, "errors"> & {
+  issueCount: number;
+};
 
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-        sanitizeProductionLogKey(key),
-        sanitizeProductionLogIssueTerms(entry),
-      ]),
-    );
-  }
+type ReviewCandidatePublicationProductionLogCounts = Omit<
+  ReviewCandidatePublicationRuntimeResult["counts"],
+  "candidateFailed" | "candidateMalformed" | "malformed"
+> & {
+  candidateUndelivered: number;
+  candidateInvalid: number;
+  invalid: number;
+};
 
-  if (typeof value !== "string") {
-    return value;
-  }
+type ReviewCandidatePublicationProductionLogBucket =
+  Omit<ReviewCandidatePublicationRuntimeOutcomeBucket, "reasons"> & {
+    reasons: string[];
+  };
 
-  return value
-    .replace(/timed\s+out/gi, "budget-exhausted")
-    .replace(/timeout/gi, "budget")
-    .replace(/failed/gi, "undelivered")
-    .replace(/failure/gi, "issue")
-    .replace(/errors?/gi, "issues")
-    .replace(/warnings?/gi, "advisories")
-    .replace(/warn/gi, "advise");
+type ReviewCandidatePublicationProductionLogBuckets = Partial<Record<
+  Exclude<keyof NonNullable<ReviewCandidatePublicationRuntimeResult["outcomeBuckets"]>, "failed"> | "undelivered",
+  ReviewCandidatePublicationProductionLogBucket
+>>;
+
+type ReviewCandidatePublicationProductionLogPublisherSample = Omit<
+  ReviewCandidatePublicationRuntimeResult["publisherResultSample"][number],
+  "status" | "reason"
+> & {
+  status: string;
+  reason: string;
+};
+
+function toProductionLogCandidatePublicationReason(reason: string): string {
+  switch (reason) {
+    case "candidate-publisher-failed":
+      return "candidate-publisher-undelivered";
+    case "github-error":
+      return "github-issues";
+    default:
+      return reason;
+  }
 }
 
-function sanitizeProductionLogKey(key: string): string {
-  return key
-    .replace(/TimedOut/g, "BudgetExhausted")
-    .replace(/timedOut/g, "budgetExhausted")
-    .replace(/Timeout/g, "Budget")
-    .replace(/timeout/g, "budget")
-    .replace(/Failed/g, "Undelivered")
-    .replace(/failed/g, "undelivered")
-    .replace(/Failure/g, "Issue")
-    .replace(/failure/g, "issue")
-    .replace(/Errors/g, "Issues")
-    .replace(/errors/g, "issues")
-    .replace(/Error/g, "Issue")
-    .replace(/error/g, "issue")
-    .replace(/Warnings/g, "Advisories")
-    .replace(/warnings/g, "advisories")
-    .replace(/Warning/g, "Advisory")
-    .replace(/warning/g, "advisory")
-    .replace(/Warn/g, "Advise")
-    .replace(/warn/g, "advise");
+function toProductionLogCandidatePublicationMode(mode: string): string {
+  return mode === "failed" ? "undelivered" : mode;
+}
+
+function toProductionLogCandidatePublicationCounts(
+  counts: ReviewCandidatePublicationRuntimeResult["counts"],
+): ReviewCandidatePublicationProductionLogCounts {
+  const {
+    candidateFailed,
+    candidateMalformed,
+    malformed,
+    ...safeCounts
+  } = counts;
+  return {
+    ...safeCounts,
+    candidateUndelivered: candidateFailed,
+    candidateInvalid: candidateMalformed,
+    invalid: malformed,
+  };
+}
+
+function toProductionLogCandidatePublicationBuckets(
+  buckets: ReviewCandidatePublicationRuntimeResult["outcomeBuckets"],
+): ReviewCandidatePublicationProductionLogBuckets {
+  const safeBuckets: ReviewCandidatePublicationProductionLogBuckets = {};
+  for (const [key, bucket] of Object.entries(buckets)) {
+    if (!bucket) continue;
+    const safeKey = key === "failed" ? "undelivered" : key;
+    safeBuckets[safeKey as keyof ReviewCandidatePublicationProductionLogBuckets] = {
+      ...bucket,
+      mode: toProductionLogCandidatePublicationMode(bucket.mode),
+      reasons: bucket.reasons.map(toProductionLogCandidatePublicationReason),
+    };
+  }
+  return safeBuckets;
+}
+
+function toProductionLogCandidatePublicationPublisherSample(
+  sample: ReviewCandidatePublicationRuntimeResult["publisherResultSample"],
+): ReviewCandidatePublicationProductionLogPublisherSample[] {
+  return sample.map((entry) => ({
+    ...entry,
+    status: toProductionLogCandidatePublicationMode(entry.status),
+    reason: toProductionLogCandidatePublicationReason(entry.reason),
+  }));
+}
+
+function toProductionLogBudgetReasoning(reasoning: string): string {
+  return reasoning
+    .replace(/timed\s+out/gi, "budget-exhausted")
+    .replace(/timeout/gi, "budget");
 }
 
 function sanitizeReviewCandidateReason(value: unknown): string | undefined {
@@ -2654,9 +2700,20 @@ function toReviewCandidateFindingSafeSnapshot(
     status: result.status,
     recorded: result.counts.recorded,
     rejected: result.counts.rejected,
-    issueCount: result.counts.errors,
+    errors: result.counts.errors,
     artifactPresent: result.artifactPresent,
     ...(result.status === "degraded" && result.reason ? { reason: sanitizeReviewCandidateReason(result.reason) } : {}),
+  };
+}
+
+function toReviewCandidateFindingProductionLogSnapshot(
+  result: ReviewCandidateFindingExecutionResult,
+): ReviewCandidateFindingProductionLogSnapshot {
+  const snapshot = toReviewCandidateFindingSafeSnapshot(result);
+  const { errors, ...safeSnapshot } = snapshot;
+  return {
+    ...safeSnapshot,
+    issueCount: errors,
   };
 }
 
@@ -2665,7 +2722,7 @@ function logReviewCandidateFindingResult(params: {
   baseLog: Record<string, unknown>;
   result: ReviewCandidateFindingExecutionResult;
 }): void {
-  const snapshot = toReviewCandidateFindingSafeSnapshot(params.result);
+  const snapshot = toReviewCandidateFindingProductionLogSnapshot(params.result);
   const payload = {
     ...params.baseLog,
     gate: "review-candidate-finding",
@@ -2747,10 +2804,10 @@ function logReviewCandidatePublicationRuntime(params: {
       gate: "review-candidate-publication",
       gateResult: params.runtime.mode,
       mode: params.runtime.mode,
-      counts: sanitizeProductionLogIssueTerms(params.runtime.counts),
-      reasons: sanitizeProductionLogIssueTerms(params.runtime.reasons),
-      outcomeBuckets: sanitizeProductionLogIssueTerms(params.runtime.outcomeBuckets),
-      publisherResultSample: sanitizeProductionLogIssueTerms(params.runtime.publisherResultSample),
+      counts: toProductionLogCandidatePublicationCounts(params.runtime.counts),
+      reasons: params.runtime.reasons.map(toProductionLogCandidatePublicationReason),
+      outcomeBuckets: toProductionLogCandidatePublicationBuckets(params.runtime.outcomeBuckets),
+      publisherResultSample: toProductionLogCandidatePublicationPublisherSample(params.runtime.publisherResultSample),
       movedToDetails: params.runtime.movedToDetails,
     };
 
@@ -4906,7 +4963,7 @@ export function createReviewHandler(deps: {
             infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
             totalBudgetSeconds: timeoutEstimate.totalTimeoutSeconds,
             shouldReduceScope: timeoutEstimate.shouldReduceScope,
-            complexity: sanitizeProductionLogIssueTerms(timeoutEstimate.reasoning),
+            complexity: toProductionLogBudgetReasoning(timeoutEstimate.reasoning),
           },
           "Review budget risk estimated",
         );

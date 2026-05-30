@@ -17361,7 +17361,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "shadow",
       recorded: 2,
       rejected: 1,
-      issueCount: 0,
+      errors: 0,
       artifactPresent: true,
     });
     expect(JSON.stringify(configSnapshot)).not.toContain("RAW BODY MUST NOT LEAK");
@@ -18379,7 +18379,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "unavailable",
       recorded: 0,
       rejected: 0,
-      issueCount: 0,
+      errors: 0,
       artifactPresent: false,
     });
   });
@@ -18415,7 +18415,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "degraded",
       recorded: 0,
       rejected: 0,
-      issueCount: 2,
+      errors: 2,
       artifactPresent: false,
       reason: "bad-json-prompt-redacted-token-redacted",
     });

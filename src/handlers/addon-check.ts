@@ -20,6 +20,8 @@ import {
 } from "../lib/addon-checker-runner.ts";
 import {
   classifyAddonCheckOutcome,
+  type AddonCheckClassificationMode,
+  type AddonCheckReasonCode,
 } from "../lib/addon-check-classification.ts";
 import {
   buildAddonCheckMarker,
@@ -118,26 +120,22 @@ function countFindings(findings: AddonFinding[]): {
   };
 }
 
-function toAddonCheckProductionLogMode(mode: string): string {
-  switch (mode) {
-    case "all-timeout":
-      return "all-budget-exhausted";
-    case "partial-timeout":
-      return "partial-budget-exhausted";
-    default:
-      return mode;
-  }
+const ADDON_CHECK_PRODUCTION_LOG_MODE_ALIASES = {
+  "all-timeout": "all-budget-exhausted",
+  "partial-timeout": "partial-budget-exhausted",
+} satisfies Partial<Record<AddonCheckClassificationMode, string>>;
+
+const ADDON_CHECK_PRODUCTION_LOG_REASON_ALIASES = {
+  "all-timeout": "all-budget-exhausted",
+  "partial-timeout": "partial-budget-exhausted",
+} satisfies Partial<Record<AddonCheckReasonCode, string>>;
+
+function toAddonCheckProductionLogMode(mode: AddonCheckClassificationMode): string {
+  return ADDON_CHECK_PRODUCTION_LOG_MODE_ALIASES[mode] ?? mode;
 }
 
-function toAddonCheckProductionLogReasonCode(reasonCode: string): string {
-  switch (reasonCode) {
-    case "all-timeout":
-      return "all-budget-exhausted";
-    case "partial-timeout":
-      return "partial-budget-exhausted";
-    default:
-      return reasonCode;
-  }
+function toAddonCheckProductionLogReasonCode(reasonCode: AddonCheckReasonCode): string {
+  return ADDON_CHECK_PRODUCTION_LOG_REASON_ALIASES[reasonCode] ?? reasonCode;
 }
 
 export function createAddonCheckHandler(deps: {

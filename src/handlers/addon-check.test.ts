@@ -546,6 +546,11 @@ describe("createAddonCheckHandler", () => {
     });
     expect(JSON.stringify(gateLog!.bindings)).not.toContain("plugin.video.foo");
     expect(JSON.stringify(gateLog!.bindings)).not.toContain("/tmp/test-workspace");
+    const serializedGate = JSON.stringify(gateLog!.bindings).toLowerCase();
+    expect(serializedGate).not.toContain("error");
+    expect(serializedGate).not.toContain("failed");
+    expect(serializedGate).not.toContain("warn");
+    expect(serializedGate).not.toContain("timeout");
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;

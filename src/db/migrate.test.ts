@@ -41,7 +41,7 @@ describe("runMigrations logging", () => {
 
     expect(consoleMessages).toEqual([]);
     expect(infoEntries).toContainEqual({
-      data: { migrationId: "001", status: "skipped" },
+      data: { migrationId: "001", migrationLabel: "001-initial-schema", status: "skipped" },
       message: "Database migration skipped because it is already applied",
     });
     expect(JSON.stringify(infoEntries).toLowerCase()).not.toContain("timeout");
