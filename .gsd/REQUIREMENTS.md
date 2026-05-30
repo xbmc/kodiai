@@ -100,7 +100,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R104 — Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Class: integration
-- Status: validated
+- Status: active
 - Description: Repo doctrine contracts: repositories should be able to declare review invariants in `.kodiai.yml`, such as API compatibility, migration requirements, performance budgets, forbidden patterns, tracing requirements, feature-flag rules, and docs-update requirements.
 - Why it matters: Review memory and generated rules should become auditable contracts rather than only prompt hints.
 - Source: issue #131
@@ -196,6 +196,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M073/S02,M073/S03,M073/S04,M073/S06
 - Validation: mapped
 - Notes: Review Details may expose bounded cost/efficiency signals and scoped-review disclosure, but must not leak raw prompts, raw candidates, or unsafe evidence.
+
+### R156 — M075 must close with local tests/verifiers and post-change production log proof showing targeted issue classes are absent or reclassified into bounded expected outcomes.
+- Class: launchability
+- Status: active
+- Description: M075 must close with local tests/verifiers and post-change production log proof showing targeted issue classes are absent or reclassified into bounded expected outcomes.
+- Why it matters: The milestone is not done when code compiles; it is done when the runtime evidence shows the production issue classes are reduced or made actionable.
+- Source: user
+- Primary owning slice: M075/S07
+- Supporting slices: M075/S02, M075/S03, M075/S04, M075/S05, M075/S06
+- Validation: mapped
+- Notes: Requires health/readiness evidence and fresh production log queries after deployment/release, tied back to the S01 baseline.
 
 ## Validated
 
@@ -1267,6 +1278,94 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M073/S06 verifier passed via `bun run verify:m073:s06 --json` (gsd_exec 97ce5b8e-b010-4fb2-9c72-421012bb3c8b): statusCode `m073_s06_ok`, 5/5 upstream evidence rows passed, runtime tokens reduced 21,200 -> 16,200 (23.58%), live duration 138,000 ms under 210,000 ms ceiling, bounded visible projections present, rollback controls present, negative cases covered, and issues empty.
 - Notes: Validation is production-like/offline; no live GitHub write was performed because future live PR review writes require explicit user confirmation.
 
+### R148 — Production log cleanup baseline: M075 must start from a fresh last-12h production log audit and preserve a verifier-readable taxonomy of current app-actionable issues, historical issues, and Azure/platform transient signals.
+- Class: operability
+- Status: validated
+- Description: Production log cleanup baseline: M075 must start from a fresh last-12h production log audit and preserve a verifier-readable taxonomy of current app-actionable issues, historical issues, and Azure/platform transient signals.
+- Why it matters: The milestone is driven by production evidence; without a baseline, fixes could target stale symptoms or hide unrelated noise.
+- Source: user + execution
+- Primary owning slice: M075/S01
+- Supporting slices: M075/S07
+- Validation: M075/S01 created a verifier-readable sanitized production log baseline fixture covering last12h and last7d, with source availability present, workspaceCount 21, required issue classes present, and `bun run verify:m075:s01 -- --fixture scripts/fixtures/m075-s01-production-log-baseline.json --json` passing with statusCode `m075_s01_ok`.
+- Notes: Validated by M075/S01 closeout evidence; downstream slices consume the taxonomy/class ids and owner mapping.
+
+### R149 — Knowledge-store writes must reject, sanitize, or omit undefined persistence payload fields before database writes so `UNDEFINED_VALUE: Undefined values are not allowed` cannot recur.
+- Class: continuity
+- Status: validated
+- Description: Knowledge-store writes must reject, sanitize, or omit undefined persistence payload fields before database writes so `UNDEFINED_VALUE: Undefined values are not allowed` cannot recur.
+- Why it matters: Undefined payloads drop learning/knowledge capture and create recurring non-fatal production errors that operators cannot safely ignore.
+- Source: user + production logs
+- Primary owning slice: M075/S02
+- Supporting slices: M075/S07
+- Validation: M075/S02 local proof passed: `bun test src/knowledge/memory-store.test.ts src/handlers/review-learning-memory.test.ts scripts/verify-m075-s02.test.ts` exited 0 with 21 pass / 0 fail, `bun run verify:m075:s02` exited 0 with PASS checks for required-field rejection, optional-field null normalization, missing-comment-id skip, invalid embedding metadata skip, and package wiring, and `bun test src/handlers/review-learning-memory.test.ts src/knowledge/memory-store.test.ts` exited 0 with 15 pass / 0 fail.
+- Notes: S02 validates the local persistence and review-construction contract. Final post-change production log proof remains under R156/S07.
+
+### R150 — Approved findings that cannot be placed as GitHub inline review comments must be preserved in bounded Review Details instead of being dropped or misclassified as generic publication failures.
+- Class: core-capability
+- Status: validated
+- Description: Approved findings that cannot be placed as GitHub inline review comments must be preserved in bounded Review Details instead of being dropped or misclassified as generic publication failures.
+- Why it matters: Review value should not disappear just because GitHub cannot resolve a specific diff line, but publication safety and visible-volume bounds must remain intact.
+- Source: user
+- Primary owning slice: M075/S03
+- Supporting slices: M075/S04, M075/S07
+- Validation: M075/S03 verified by integrated local regression suite and fixture verifier: `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts src/review-orchestration/review-candidate-publication-runtime.test.ts src/lib/review-utils.test.ts src/handlers/review.test.ts scripts/verify-m075-s03.test.ts` plus `bun run verify:m075:s03 -- --fixture scripts/fixtures/m075-s03-non-inlineable-review-details.json --json` in gsd_exec eac66f4b-12cf-4f65-ad18-a7dc81a6e82d. Evidence showed movedToDetails=1, detailsOnlyFindings=1, directFallback=0, inlineCandidatePublished=0, visibleLineCount=4, failed issues empty.
+- Notes: S03 validates local handler/test/verifier behavior. Production log proof remains deferred to M075/S07 per milestone plan.
+
+### R151 — Candidate publication outcomes must always expose explicit safe modes and non-empty reason codes for blocked, skipped, failed, moved-to-details, and published states.
+- Class: failure-visibility
+- Status: validated
+- Description: Candidate publication outcomes must always expose explicit safe modes and non-empty reason codes for blocked, skipped, failed, moved-to-details, and published states.
+- Why it matters: Operators need actionable publication outcomes; empty or vague blocked states make production logs noisy and make verifier evidence ambiguous.
+- Source: user + production logs
+- Primary owning slice: M075/S04
+- Supporting slices: M075/S03, M075/S07
+- Validation: M075/S04 validated by gsd_exec 265713e8-7e88-4d90-89c9-a6ee2b230204: `bun test src/review-orchestration/review-candidate-publication-runtime.test.ts src/lib/review-utils.test.ts src/handlers/review.test.ts scripts/verify-m075-s04.test.ts scripts/verify-m075-s03.test.ts` passed 275 tests across 5 files, and `bun run verify:m075:s04 -- --fixture scripts/fixtures/m075-s04-publication-reason-contract.json --json` returned success with 7 outcome buckets and 7 non-empty reason buckets.
+- Notes: Candidate publication evidence now exposes explicit safe modes and sanitized non-empty reason evidence for published, skipped, blocked, failed, moved-to-details, fallback-disallowed, and malformed/degraded outcomes.
+
+### R152 — Publication redesign must preserve candidate safety invariants: no unapproved candidate content, no raw candidate payloads, no direct fallback leakage, and no silent publication when validation fails.
+- Class: compliance/security
+- Status: validated
+- Description: Publication redesign must preserve candidate safety invariants: no unapproved candidate content, no raw candidate payloads, no direct fallback leakage, and no silent publication when validation fails.
+- Why it matters: Reducing production noise must not weaken the publication boundary that protects PR authors, repositories, and secrets.
+- Source: user + prior architecture
+- Primary owning slice: M075/S04
+- Supporting slices: M075/S03, M075/S07
+- Validation: M075/S04 validated by gsd_exec 265713e8-7e88-4d90-89c9-a6ee2b230204: S04 verifier checks `fallback-leakage.absent`, `redaction.safe`, `direct-fallback.disallowed`, and `output.bounded` all passed; S03 compatibility verifier also passed with directFallback=0, inlineCandidatePublished=0, movedToDetails=1, detailsOnlyFindings=1.
+- Notes: Publication reason contract preserves S03 safety invariants by projecting only bounded aggregate bucket evidence, redaction flags, counts, and sanitized reason codes into Review Details/log/verifier surfaces.
+
+### R153 — Review timeout and long-run failures must be classified or mitigated so production logs distinguish expected bounded timeout handling from real review failures.
+- Class: operability
+- Status: validated
+- Description: Review timeout and long-run failures must be classified or mitigated so production logs distinguish expected bounded timeout handling from real review failures.
+- Why it matters: Ambiguous timeout warnings make it hard to tell whether Kodiai is gracefully bounding long reviews or silently losing useful review work.
+- Source: user + production logs
+- Primary owning slice: M075/S05
+- Supporting slices: M075/S01, M075/S07
+- Validation: M075/S05 local proof passed: classifier, handler timeout cases, telemetry store, production taxonomy, S05 verifier, migration down-checks, and S01 baseline compatibility all exited 0 via gsd_exec. Evidence: focused tests 40 pass/17 skip/0 fail in exec 12c73732; handler tests 198 pass/0 fail in exec d2398553; verify:m075:s05 reported success with 8 scenarios/8 modes and no issues in exec f802cbd3; verify:m075:s01 baseline compatibility reported no issues in exec 62c37401; migration down-check passed in exec 036a9a43.
+- Notes: Validated for local deterministic S05 closure. Fresh production log proof remains assigned to M075/S07.
+
+### R154 — Addon-check timeout behavior that appears in production logs must be classified, bounded, or mitigated as an actionable review diagnostic rather than ambiguous production noise.
+- Class: operability
+- Status: validated
+- Description: Addon-check timeout behavior that appears in production logs must be classified, bounded, or mitigated as an actionable review diagnostic rather than ambiguous production noise.
+- Why it matters: Addon-check timeouts can look like generic platform or review failures unless the review pipeline classifies their scope and impact clearly.
+- Source: user + production logs
+- Primary owning slice: M075/S06
+- Supporting slices: M075/S01, M075/S07
+- Validation: M075/S06 closeout verified addon-check timeout behavior is classified through bounded `gate=addon-check-classification` projections, surfaced as actionable PR diagnostics, mapped ahead of legacy timeout text in production taxonomy, and covered by focused tests plus `verify:m075:s06` fixture evidence.
+- Notes: Validated by closeout gsd_exec runs: focused Bun tests (70 pass, 425 assertions), `bun run verify:m075:s06 -- --fixture scripts/fixtures/m075-s06-addon-check-classification.json --json` (`statusCode: m075_s06_ok`), and baseline compatibility `verify:m075:s01` (`statusCode: m075_s01_ok`).
+
+### R155 — Azure platform and transient Container Apps signals must be separated from app-actionable Kodiai issues in the production audit and final proof.
+- Class: failure-visibility
+- Status: validated
+- Description: Azure platform and transient Container Apps signals must be separated from app-actionable Kodiai issues in the production audit and final proof.
+- Why it matters: Operational cleanup should reduce actionable Kodiai issues without pretending platform transients are application bugs or hiding application faults among platform noise.
+- Source: user + production logs
+- Primary owning slice: M075/S01
+- Supporting slices: M075/S07
+- Validation: M075/S01 taxonomy and verifier separate app-actionable issue classes from Azure/platform/transient signals; closeout verifier passed `classification.separated` and exact owner mapping checks, with platform classes excluded from downstream owner slice requirements.
+- Notes: Validated by the S01 fixture, taxonomy tests, and verifier output.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -1579,6 +1678,39 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: n/a
 - Notes: Cost optimization must fail open or bypass safely rather than bypassing security and correctness controls.
 
+### R157 — M075 must not suppress production warnings without either fixing the root cause or reclassifying the condition into a bounded, explicit, expected outcome.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: M075 must not suppress production warnings without either fixing the root cause or reclassifying the condition into a bounded, explicit, expected outcome.
+- Why it matters: Log noise reduction is only useful if it improves truthfulness; hiding unresolved failures would make operations worse.
+- Source: discussion
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: This prevents log-level-only cleanup from satisfying the milestone.
+
+### R158 — M075 must not use direct issue-comment fallback for non-inlineable candidate findings.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: M075 must not use direct issue-comment fallback for non-inlineable candidate findings.
+- Why it matters: Direct fallback leakage was explicitly rejected; it risks visible-volume expansion and bypassing candidate publication safety evidence.
+- Source: discussion
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: Approved but non-inlineable findings should move into bounded Review Details instead.
+
+### R159 — M075 must not publish unapproved candidate content, raw candidate payloads, raw prompts, raw diffs, raw model output, or secret-bearing evidence.
+- Class: anti-feature
+- Status: out-of-scope
+- Description: M075 must not publish unapproved candidate content, raw candidate payloads, raw prompts, raw diffs, raw model output, or secret-bearing evidence.
+- Why it matters: Publication safety is more important than reducing warning counts; unsafe raw or unapproved output would be a regression.
+- Source: prior architecture + discussion
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: This preserves the existing candidate safety boundary while permitting publication behavior redesign.
+
 ## Traceability
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
@@ -1686,7 +1818,7 @@ This file is the explicit capability and coverage contract for the project.
 | R101 | core-capability | deferred | M068 provisional | none | unmapped |
 | R102 | core-capability | validated | M070/S05 | M070/S01,M070/S02,M070/S03 | M070/S05 added deterministic production-like normal-review integration proof for docs/config truth specialist lanes through createReviewHandler, shadow aggregate classification, MCP publication gate, Review Details/runtime evidence projection, and M070 verifier evaluation. Fresh closeout evidence: `bun test ./src/handlers/review-candidate-verification-integration.test.ts ./scripts/verify-m070-s05.test.ts ./scripts/verify-m070.test.ts ./scripts/verify-m070-s03.test.ts ./src/specialists/candidate-verification-publication-evidence.test.ts ./src/specialists/candidate-publication-policy.test.ts ./src/specialists/candidate-verification.test.ts ./src/handlers/review-candidate-verification-publication.test.ts ./src/handlers/review-candidate-verification-evidence.test.ts && bun run verify:m070 --json && bun run verify:m070:s05 --json` exited 0 (gsd_exec ec51400c-33f6-4522-a514-725d7b762589). The S05 verifier reported Review Details rows: 8, runtime log rows: 8, MCP evidence rows: 8, aggregateOnly:true, canaryLeakPresent:false, verifierJsonLeakPresent:false, and no issue categories. |
 | R103 | quality-attribute | validated | M070/S01 | M070/S02,M070/S03,M070/S04,M070/S05,M070/S06 | M070/S01 added a pure candidate verification/conflict classifier and fixture verifier. Fresh closeout evidence: `bun test ./src/specialists/candidate-verification.test.ts` exited 0 (gsd_exec 42c19ab1-e80e-40f0-b24e-d3910b670756); `bun test ./scripts/verify-m070-s01.test.ts && bun run verify:m070:s01 --json` exited 0 with success:true/status_code:m070_s01_ok and checks for taxonomy, conflict, fail-closed, privacy, and package wiring (gsd_exec 51b2952f-4d2e-4e52-b952-c3880aecb8c3). |
-| R104 | integration | validated | M074/S07 | M071/S06,M074/S07 | Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication. |
+| R104 | integration | active | M074/S07 | M071/S06,M074/S07 | Validated by source-backed repo doctrine tests (`src/execution/config.test.ts`, `src/review-orchestration/review-plan.test.ts`, `src/handlers/review.test.ts`, `scripts/verify-m074-s07.test.ts`) and `bun run verify:m074:s07`, which proves `.kodiai.yml` `review.doctrine` schema support plus ReviewPlan, prompt, reducer, Review Details, and handler consumption without raw doctrine publication. |
 | R105 | operability | active | M070/S03 | M070/S03 | unmapped |
 | R106 | anti-feature | out-of-scope | none | none | n/a |
 | R107 | anti-feature | out-of-scope | none | none | n/a |
@@ -1730,10 +1862,22 @@ This file is the explicit capability and coverage contract for the project.
 | R145 | constraint | deferred | none | none | unmapped |
 | R146 | anti-feature | out-of-scope | none | none | n/a |
 | R147 | compliance/security | out-of-scope | none | none | n/a |
+| R148 | operability | validated | M075/S01 | M075/S07 | M075/S01 created a verifier-readable sanitized production log baseline fixture covering last12h and last7d, with source availability present, workspaceCount 21, required issue classes present, and `bun run verify:m075:s01 -- --fixture scripts/fixtures/m075-s01-production-log-baseline.json --json` passing with statusCode `m075_s01_ok`. |
+| R149 | continuity | validated | M075/S02 | M075/S07 | M075/S02 local proof passed: `bun test src/knowledge/memory-store.test.ts src/handlers/review-learning-memory.test.ts scripts/verify-m075-s02.test.ts` exited 0 with 21 pass / 0 fail, `bun run verify:m075:s02` exited 0 with PASS checks for required-field rejection, optional-field null normalization, missing-comment-id skip, invalid embedding metadata skip, and package wiring, and `bun test src/handlers/review-learning-memory.test.ts src/knowledge/memory-store.test.ts` exited 0 with 15 pass / 0 fail. |
+| R150 | core-capability | validated | M075/S03 | M075/S04, M075/S07 | M075/S03 verified by integrated local regression suite and fixture verifier: `bun test src/review-orchestration/review-candidate-publication-adapter.test.ts src/review-orchestration/review-candidate-publication-runtime.test.ts src/lib/review-utils.test.ts src/handlers/review.test.ts scripts/verify-m075-s03.test.ts` plus `bun run verify:m075:s03 -- --fixture scripts/fixtures/m075-s03-non-inlineable-review-details.json --json` in gsd_exec eac66f4b-12cf-4f65-ad18-a7dc81a6e82d. Evidence showed movedToDetails=1, detailsOnlyFindings=1, directFallback=0, inlineCandidatePublished=0, visibleLineCount=4, failed issues empty. |
+| R151 | failure-visibility | validated | M075/S04 | M075/S03, M075/S07 | M075/S04 validated by gsd_exec 265713e8-7e88-4d90-89c9-a6ee2b230204: `bun test src/review-orchestration/review-candidate-publication-runtime.test.ts src/lib/review-utils.test.ts src/handlers/review.test.ts scripts/verify-m075-s04.test.ts scripts/verify-m075-s03.test.ts` passed 275 tests across 5 files, and `bun run verify:m075:s04 -- --fixture scripts/fixtures/m075-s04-publication-reason-contract.json --json` returned success with 7 outcome buckets and 7 non-empty reason buckets. |
+| R152 | compliance/security | validated | M075/S04 | M075/S03, M075/S07 | M075/S04 validated by gsd_exec 265713e8-7e88-4d90-89c9-a6ee2b230204: S04 verifier checks `fallback-leakage.absent`, `redaction.safe`, `direct-fallback.disallowed`, and `output.bounded` all passed; S03 compatibility verifier also passed with directFallback=0, inlineCandidatePublished=0, movedToDetails=1, detailsOnlyFindings=1. |
+| R153 | operability | validated | M075/S05 | M075/S01, M075/S07 | M075/S05 local proof passed: classifier, handler timeout cases, telemetry store, production taxonomy, S05 verifier, migration down-checks, and S01 baseline compatibility all exited 0 via gsd_exec. Evidence: focused tests 40 pass/17 skip/0 fail in exec 12c73732; handler tests 198 pass/0 fail in exec d2398553; verify:m075:s05 reported success with 8 scenarios/8 modes and no issues in exec f802cbd3; verify:m075:s01 baseline compatibility reported no issues in exec 62c37401; migration down-check passed in exec 036a9a43. |
+| R154 | operability | validated | M075/S06 | M075/S01, M075/S07 | M075/S06 closeout verified addon-check timeout behavior is classified through bounded `gate=addon-check-classification` projections, surfaced as actionable PR diagnostics, mapped ahead of legacy timeout text in production taxonomy, and covered by focused tests plus `verify:m075:s06` fixture evidence. |
+| R155 | failure-visibility | validated | M075/S01 | M075/S07 | M075/S01 taxonomy and verifier separate app-actionable issue classes from Azure/platform/transient signals; closeout verifier passed `classification.separated` and exact owner mapping checks, with platform classes excluded from downstream owner slice requirements. |
+| R156 | launchability | active | M075/S07 | M075/S02, M075/S03, M075/S04, M075/S05, M075/S06 | mapped |
+| R157 | anti-feature | out-of-scope | none | none | n/a |
+| R158 | anti-feature | out-of-scope | none | none | n/a |
+| R159 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 18
-- Mapped to slices: 18
-- Validated: 100 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130, R132, R143)
+- Active requirements: 19
+- Mapped to slices: 19
+- Validated: 108 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055, R056, R057, R058, R059, R061, R062, R063, R064, R065, R066, R067, R068, R069, R071, R072, R073, R074, R075, R076, R077, R078, R079, R080, R081, R082, R083, R084, R085, R092, R093, R094, R095, R096, R097, R098, R100, R102, R103, R110, R111, R112, R113, R114, R115, R116, R117, R118, R125, R126, R127, R128, R129, R130, R132, R143, R148, R149, R150, R151, R152, R153, R154, R155)
 - Unmapped active requirements: 0

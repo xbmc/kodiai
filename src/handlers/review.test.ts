@@ -2595,7 +2595,134 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     expect(updatedReviewId).toBe(777);
     expect(issueCommentCreateCount).toBe(0);
-    expect(existingApprovalReview.body).toContain("Decision: APPROVE");
+    expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
+    expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
+    expect(existingApprovalReview.body).not.toContain("<summary>kodiai response</summary>");
+    expect(existingApprovalReview.body.indexOf("Issues: none")).toBeLessThan(existingApprovalReview.body.indexOf("<summary>Review Details</summary>"));
+    expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
+    expect(existingApprovalReview.body).toContain("publication:");
+  });
+
+  test("published approval review receives Review Details when executor reports success without published flag", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+
+    let issueCommentCreateCount = 0;
+    let updatedReviewId: number | undefined;
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const existingApprovalReview = {
+      id: 778,
+      body: `<details>\n<summary>kodiai response</summary>\n\nDecision: APPROVE\nIssues: none\n\nEvidence:\n- Agent-published clean approval.\n\n</details>\n\n${marker}`,
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [existingApprovalReview] }),
+          createReview: async () => {
+            throw new Error("auto-approval should not create a second review when output marker already exists");
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            issueCommentCreateCount += 1;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+      request: async (
+        route: string,
+        params: { review_id: number; body: string },
+      ) => {
+        expect(route).toBe("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}");
+        updatedReviewId = params.review_id;
+        existingApprovalReview.body = params.body;
+        return { data: {} };
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-unflagged-published-approval-details",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(updatedReviewId).toBe(778);
+    expect(issueCommentCreateCount).toBe(0);
+    expect(existingApprovalReview.body).toStartWith("Decision: APPROVE");
+    expect(existingApprovalReview.body.match(/Decision: APPROVE/g) ?? []).toHaveLength(1);
+    expect(existingApprovalReview.body).not.toContain("<summary>kodiai response</summary>");
+    expect(existingApprovalReview.body.indexOf("Issues: none")).toBeLessThan(existingApprovalReview.body.indexOf("<summary>Review Details</summary>"));
     expect(existingApprovalReview.body).toContain("<summary>Review Details</summary>");
     expect(existingApprovalReview.body).toContain("publication:");
   });
@@ -5339,8 +5466,10 @@ describe("createReviewHandler diff collection resilience", () => {
         entry.message === "Diff collection degraded to GitHub file-list fallback"
       );
       expect(fallbackLog).toBeDefined();
+      expect(fallbackLog?.level).toBe("info");
       expect(fallbackLog?.data?.stage).toBe("merge-base-recovery");
       expect(fallbackLog?.data?.strategy).toBe("github-file-list-fallback");
+      expect(fallbackLog?.data?.fallbackEvidenceQuality).toBe("filename-only-small");
     } finally {
       await workspaceFixture.cleanup();
     }
@@ -5387,9 +5516,9 @@ describe("createReviewHandler diff collection resilience", () => {
     }
   });
 
-  test("uses GitHub PR file metadata when merge-base recovery times out", async () => {
+  test("warns when GitHub PR file metadata fallback has partial patch coverage", async () => {
     const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
-    const { logger } = createCaptureLogger();
+    const { logger, entries } = createCaptureLogger();
 
     try {
       const result = await collectDiffContext({
@@ -5435,6 +5564,61 @@ describe("createReviewHandler diff collection resilience", () => {
       expect(result.diffContent).toContain("--- a/src/api/old-phase27-uat-example.ts");
       expect(result.diffContent).toContain("+++ b/src/api/phase27-uat-example.ts");
       expect(result.diffContent).toContain("@@ -1 +1 @@");
+      const fallbackLog = entries.find((entry) =>
+        entry.message === "Diff collection degraded to GitHub PR files fallback"
+      );
+      expect(fallbackLog?.data?.fallbackEvidenceQuality).toBe("patch-partial");
+      expect(fallbackLog?.data?.patchFilesCount).toBe(1);
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  });
+
+  test("logs patch-complete GitHub PR file metadata fallback below warning level", async () => {
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
+    const { logger, entries } = createCaptureLogger();
+
+    try {
+      const result = await collectDiffContext({
+        workspaceDir: workspaceFixture.dir,
+        baseRef: "main",
+        maxFilesForFullDiff: 200,
+        logger,
+        baseLog: { deliveryId: "delivery-123", prNumber: 101 },
+        runGitCommand: async () => ({
+          exitCode: 124,
+          stdout: "",
+          stderr: "timed out",
+          timedOut: true,
+        }),
+        fallbackDiffProvider: async () => [
+          {
+            filename: "src/api/phase27-uat-example.ts",
+            status: "modified",
+            additions: 7,
+            deletions: 2,
+            patch: "@@ -1 +1 @@\n-old\n+new",
+          },
+          {
+            filename: "docs/phase27-note.md",
+            status: "added",
+            additions: 1,
+            deletions: 0,
+            patch: "@@ -0,0 +1 @@\n+note",
+          },
+        ],
+      });
+
+      expect(result.strategy).toBe("github-pr-files-fallback");
+      expect(result.diffContent).toContain("diff --git a/src/api/phase27-uat-example.ts b/src/api/phase27-uat-example.ts");
+      const infoLog = entries.find((entry) =>
+        entry.message === "Diff collection used GitHub PR files fallback with patch evidence"
+      );
+      expect(infoLog?.data?.fallbackEvidenceQuality).toBe("patch-complete");
+      expect(infoLog?.data?.patchFilesCount).toBe(2);
+      expect(entries.find((entry) =>
+        entry.message === "Diff collection degraded to GitHub file-list fallback"
+      )).toBeUndefined();
     } finally {
       await workspaceFixture.cleanup();
     }
@@ -5986,7 +6170,8 @@ describe("createReviewHandler finding extraction", () => {
       trigger: "pull_request",
       normalizedStatus: "normalized",
     });
-    expect(lifecycleLog?.data?.counts).toMatchObject({ input: 3, recorded: 3, rejected: 0 });
+    expect(lifecycleLog?.data?.counts).toMatchObject({ input: 3, recorded: 3 });
+    expect(lifecycleLog?.data?.counts).not.toHaveProperty("rejected");
     expect(lifecycleLog?.data?.redaction).toMatchObject({
       privateOnly: true,
       rawPromptsIncluded: false,
@@ -16838,6 +17023,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     executorPublished?: boolean;
     exposeSummaryComment?: boolean;
     shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
+    createReviewComment?: (commentParams: Record<string, unknown>) => Promise<{ data: Record<string, unknown> }>;
   } = {}) {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture({
@@ -16919,6 +17105,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           listCommits: async () => ({ data: [] }),
           get: async () => ({ data: { head: { sha: "abcdef1234567890" } } }),
           createReviewComment: async (commentParams: Record<string, unknown>) => {
+            if (params.createReviewComment) {
+              return params.createReviewComment(commentParams);
+            }
             const id = 1200 + createdReviewComments.length;
             createdReviewComments.push({ ...commentParams, id });
             return { data: { id, path: commentParams.path, html_url: `https://example.test/comment/${id}` } };
@@ -16932,7 +17121,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             if (!String(commentParams.body ?? "").includes(buildReviewOutputMarker(reviewOutputKey))) {
               forbiddenSideEffects.unexpectedPublicCommentCount += 1;
             }
-            return { data: { id } };
+            return { data: { id, body: commentParams.body } };
           },
           updateComment: async (updateParams: { body: string }) => {
             updatedSummaryBody = updateParams.body;
@@ -17603,6 +17792,13 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       candidateBlocked: 1,
       directPublished: 0,
     }));
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      blocked: expect.objectContaining({
+        mode: "blocked",
+        count: 1,
+        reasons: expect.arrayContaining(["candidate-publisher-blocked"]),
+      }),
+    }));
   });
 
   test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
@@ -17654,6 +17850,85 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       directPublished: 1,
       fallbackEvidence: 0,
     }));
+  });
+
+  test("missing-replacement candidates are expected policy blocks with reason-aware Review Details", async () => {
+    const { updatedSummaryBody, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: true,
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: "Candidate without replacement",
+            body: "This candidate has no safe replacement text and must stay private.",
+          },
+        ],
+        rejections: [],
+      },
+      reviewReducer: async (input) => ({
+        status: "ready",
+        findings: input.findings,
+        visibleFindings: input.findings,
+        filteredInlineFindings: [],
+        lowConfidenceFindings: [],
+        suppressionMatchCounts: new Map(),
+        filterRecords: [],
+        counts: {
+          input: input.findings.length,
+          kept: input.findings.length,
+          suppressed: 0,
+          rewritten: 0,
+          deprioritized: 0,
+          lowConfidence: 0,
+          auditEvents: 0,
+          severityDemoted: 0,
+          graphValidated: 0,
+          graphUncertain: 0,
+        },
+        audit: [],
+        detailsSummary: {
+          label: "Review reducer",
+          status: "ready",
+          text: "Review reducer: ready input=1 kept=1 suppressed=0 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=0 severityDemoted=0 graphValidated=0 graphUncertain=0",
+        },
+      }),
+    });
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+
+    const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(detailsBlock).toContain("Review candidate publication: mode=blocked");
+    expect(detailsBlock).toContain("approved=1");
+    expect(detailsBlock).toContain("publishable=0");
+    expect(detailsBlock).toContain("nonPublishable=1");
+    expect(detailsBlock).toContain("fixBlocked=1");
+    expect(detailsBlock).toContain("reasons=fix-eligibility-blocked");
+    expect(detailsBlock).toContain("buckets=blocked:1:fix-eligibility-blocked+missing-replacement");
+    expect(detailsBlock).not.toContain("This candidate has no safe replacement text");
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.level).toBe("info");
+    expect(publicationLog?.message).toBe("Review candidate publication completed with expected policy block");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      approvedReferences: 1,
+      candidatePublishable: 0,
+      candidatePublished: 0,
+      fixEligibilityBlocked: 1,
+      nonPublishableReferences: 1,
+    }));
+    expect(publicationLog?.data?.reasons).toEqual(["fix-eligibility-blocked"]);
   });
 
   test("candidate draft prioritization respects maxComments before inline publication", async () => {
@@ -17829,6 +18104,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(detailsBlock).toContain("Review candidate publication: mode=direct-fallback");
     expect(detailsBlock).toContain("published=0");
     expect(detailsBlock).toContain("directFallback=1");
+    expect(detailsBlock).toContain("buckets=blocked:1:approval-blocked+no-candidate-publication-path,direct-fallback:1:direct-fallback-attempted+direct-fallback-published+direct-fallback-audited");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.data?.gateResult).toBe("direct-fallback");
@@ -17837,6 +18113,15 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       directPublished: 1,
       fallbackEvidence: 1,
     }));
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      directFallback: expect.objectContaining({
+        mode: "direct-fallback",
+        count: 1,
+        reasons: expect.arrayContaining(["direct-fallback-attempted", "direct-fallback-published", "direct-fallback-audited"]),
+      }),
+    }));
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("safe test prompt");
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("base\\nfeature");
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
     expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("direct-fallback");
@@ -17844,10 +18129,21 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(JSON.stringify(configSnapshot)).not.toContain("base\\nfeature");
   });
 
-  test("candidate publication blocks non-commentable fix suggestions without storing draft findings", async () => {
-    const { recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+  test("candidate publication preserves non-commentable approved findings in Review Details without storing draft findings", async () => {
+    const rawBodyCanary = "This line is not commentable in the PR diff, but the explanation is safe to summarize.";
+    const rawFixCanary = "feature fixed safely on an unpublishable line";
+    const { createdIssueComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Unpublishable candidate line",
+        body: rawBodyCanary,
+        line: 999,
+        endLine: 999,
+        severity: "major",
+        category: "correctness",
+        fixReplacementText: rawFixCanary,
+      }),
       candidateFindingResult: {
         status: "shadow",
         repo: "acme/repo",
@@ -17863,8 +18159,8 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             severity: "major",
             category: "correctness",
             title: "Unpublishable candidate line",
-            body: "This line is not commentable in the PR diff.",
-            fixReplacementText: "feature fixed on an unpublishable line",
+            body: rawBodyCanary,
+            fixReplacementText: rawFixCanary,
           },
         ],
         rejections: [],
@@ -17903,14 +18199,59 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
     expect(recordFindingEntries).toHaveLength(0);
+    expect(createdIssueComments.length).toBeGreaterThanOrEqual(1);
+
+    const movedDetailsBody = createdIssueComments
+      .map((comment) => String(comment.body ?? ""))
+      .find((body) => body.includes("Review candidate publication: mode=moved-to-details"));
+    expect(movedDetailsBody).toBeDefined();
+    const detailsBlock = extractReviewDetailsBlock(movedDetailsBody ?? "");
+    expect(detailsBlock).toContain("Review candidate publication: mode=moved-to-details");
+    expect(detailsBlock).toContain("published=0");
+    expect(detailsBlock).toContain("directFallback=0");
+    expect(detailsBlock).toContain("movedToDetails=1");
+    expect(detailsBlock).toContain("Moved review candidates preserved in details:");
+    expect(detailsBlock).toContain("buckets=moved-to-details:1:candidate-moved-to-details+line-not-commentable");
+    expect(detailsBlock).toContain("[major/correctness] Unpublishable candidate line (README.md:999, reason=line-not-commentable)");
+    expect(detailsBlock).not.toContain("PROMPT_SECRET");
+    expect(detailsBlock).not.toContain("TOKEN=abc123");
+    expect(detailsBlock).not.toContain("diff --git");
+    expect(detailsBlock).not.toContain("feature fixed on an unpublishable line");
+    expect(detailsBlock).not.toContain("sk-test-secret");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
-    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.gateResult).toBe("moved-to-details");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublishable: 0,
       candidatePublished: 0,
       candidateFailed: 0,
+      candidateMovedToDetails: 1,
+      candidateDetailsOnlyFindings: 1,
       convertedProcessedFindings: 0,
+      directPublished: 0,
+    }));
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      movedToDetails: expect.objectContaining({
+        mode: "moved-to-details",
+        count: 1,
+        reasons: expect.arrayContaining(["candidate-moved-to-details", "line-not-commentable"]),
+      }),
+    }));
+    expect(JSON.stringify(publicationLog?.data)).not.toContain(rawBodyCanary);
+    expect(JSON.stringify(publicationLog?.data)).not.toContain(rawFixCanary);
+    expect(publicationLog?.data?.movedToDetails).toEqual(expect.objectContaining({
+      counts: expect.objectContaining({ total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 }),
+      reasonCounts: { "line-not-commentable": 1 },
+      redaction: expect.objectContaining({
+        rawCandidatePayloadsIncluded: false,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        diffsIncluded: false,
+        replacementTextIncluded: false,
+        githubResponsePayloadsIncluded: false,
+        secretLikeValuesIncluded: false,
+        bounded: true,
+      }),
     }));
 
     const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
@@ -17920,14 +18261,104 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       reasonCounts: { "line-not-commentable": 1 },
     }));
 
+    const detailsLog = logEntries.find((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "completed");
+    expect(detailsLog?.data).toEqual(expect.objectContaining({
+      reviewDetailsPublished: true,
+      publicationMode: "canonical",
+      surfaceKind: "issue_comment",
+    }));
+
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
-    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("blocked");
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("moved-to-details");
     expect(configSnapshot.reviewCandidatePublicationFlow).toEqual(expect.objectContaining({
       publishedCommentIds: [],
       convertedProcessedFindingCount: 0,
       hasFabricatedProcessedFindings: false,
     }));
+    expect(JSON.stringify(configSnapshot)).toContain("candidateMovedToDetails");
     expect(JSON.stringify(configSnapshot)).not.toContain("This line is not commentable");
+    expect(JSON.stringify(configSnapshot)).not.toContain("PROMPT_SECRET");
+    expect(JSON.stringify(configSnapshot)).not.toContain("feature fixed on an unpublishable line");
+  });
+
+  test("generic inline publisher failures stay degraded instead of moving candidates to Review Details", async () => {
+    const { createdIssueComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Commentable candidate that hits GitHub API failure",
+        body: "This candidate targets a commentable diff line but GitHub rejects the request.",
+        line: 2,
+        endLine: 2,
+        severity: "major",
+        category: "correctness",
+        fixReplacementText: "feature fixed on a commentable line",
+      }),
+      candidateFindingResult: {
+        status: "shadow",
+        repo: "acme/repo",
+        pullNumber: 101,
+        reviewOutputKey: "rk_safe",
+        deliveryId: "delivery-123",
+        artifactPresent: true,
+        findings: [
+          {
+            filePath: "README.md",
+            startLine: 2,
+            endLine: 2,
+            severity: "major",
+            category: "correctness",
+            title: "Commentable candidate that hits GitHub API failure",
+            body: "This candidate targets a commentable diff line but GitHub rejects the request.",
+            fixReplacementText: "feature fixed on a commentable line",
+          },
+        ],
+        rejections: [],
+      },
+      createReviewComment: async () => {
+        const err = new Error("Validation Failed: generic GitHub API validation failure");
+        (err as Error & { status?: number }).status = 422;
+        throw err;
+      },
+    });
+
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
+    expect(recordFindingEntries).toHaveLength(0);
+    for (const comment of createdIssueComments) {
+      const body = String(comment.body ?? "");
+      expect(body).not.toContain("mode=moved-to-details");
+      expect(body).not.toContain("Moved review candidates preserved in details");
+    }
+
+    const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
+    expect(publicationLog?.data?.gateResult).toBe("blocked");
+    expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
+      candidatePublishable: 1,
+      candidatePublished: 0,
+      candidateFailed: 1,
+      candidateMovedToDetails: 0,
+      candidateDetailsOnlyFindings: 0,
+      convertedProcessedFindings: 0,
+      directPublished: 0,
+    }));
+    expect(publicationLog?.data?.reasons).toContain("candidate-publisher-failed");
+    expect(publicationLog?.level).toBe("warn");
+    expect(publicationLog?.message).toBe("Review candidate publication completed with non-approved mode");
+    expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
+      failed: expect.objectContaining({
+        mode: "failed",
+        count: 1,
+        reasons: expect.arrayContaining(["candidate-publisher-failed", "github-error"]),
+      }),
+    }));
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("This candidate targets a commentable diff line");
+    expect(JSON.stringify(publicationLog?.data)).not.toContain("feature fixed on a commentable line");
+    expect(publicationLog?.data?.movedToDetails).toBeUndefined();
+
+    const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
+    expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("blocked");
+    expect(JSON.stringify(configSnapshot)).not.toContain("This candidate targets a commentable diff line");
+    expect(JSON.stringify(configSnapshot)).not.toContain("feature fixed on a commentable line");
   });
   test("missing candidate metadata keeps Review Details publication fail-open with unavailable snapshot", async () => {
     const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
@@ -18742,7 +19173,7 @@ describe("createReviewHandler bounded review disclosure", () => {
     return updatedSummaryBody;
   }
 
-  test("injects one large-PR disclosure and records explicit-profile timeout skips in Review Details", async () => {
+  test("auto-reduces explicit high-risk strict reviews to prevent max-turn exhaustion", async () => {
     const updatedSummaryBody = await runPublishedBoundedReviewScenario({
       configYaml: [
         "review:",
@@ -18771,14 +19202,14 @@ describe("createReviewHandler bounded review disclosure", () => {
 
     expect(updatedSummaryBody).toBeDefined();
     expect(updatedSummaryBody).toContain(
-      "- Requested strict review; effective review remained strict and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
+      "- Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
     );
     expect(
-      (updatedSummaryBody?.match(/Requested strict review; effective review remained strict and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
+      (updatedSummaryBody?.match(/Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
     ).toBe(1);
     expect(updatedSummaryBody).toContain("- Requested profile: strict (manual config)");
-    expect(updatedSummaryBody).toContain("- Effective profile: strict");
-    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: skipped (explicit profile)");
+    expect(updatedSummaryBody).toContain("- Effective profile: minimal");
+    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: applied");
   });
 
   test("injects one timeout auto-reduction disclosure when a high-risk auto strict review is reduced", async () => {
@@ -18959,6 +19390,132 @@ describe("createReviewHandler failure fallback publication", () => {
     expect(combinedBodies).not.toContain("**Bounded first-pass review**");
     expect(combinedBodies).not.toContain("stopped at max-turns");
     expect(combinedBodies).not.toContain("follow-up review is pending");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("logs turn-limit fallback publication after normal review fallback comment posts", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const createdCommentBodies: string[] = [];
+    const { logger, entries } = createCaptureLogger();
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        ) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: { id: 502 } };
+              },
+              updateComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 0 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "tool_use",
+          failureSubtype: "error_max_turns",
+          durationMs: 263_331,
+          numTurns: 26,
+          sessionId: "session-normal-review-turn-limit-fallback",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        countRecentTimeouts: async () => 3,
+      },
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => null,
+        upsertContinuationFamilyState: async () => undefined,
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md", "src/a.ts", "src/b.ts"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(createdCommentBodies.join("\n")).toContain("Kodiai ran out of steps while reviewing this PR");
+
+    const completionLog = entries.find((entry) => entry.message === "Review execution completed");
+    expect(completionLog?.data).toMatchObject({
+      prNumber: 101,
+      conclusion: "failure",
+      executorPublished: false,
+      published: true,
+      publishResolution: "turn-limit-fallback",
+      publishFallbackDelivery: "error-comment-created",
+      failureSubtype: "error_max_turns",
+    });
+
+    const phaseSummaryLog = entries.find((entry) => entry.message === "Review phase timing summary");
+    expect(phaseSummaryLog?.data).toMatchObject({
+      prNumber: 101,
+      conclusion: "failure",
+      published: true,
+      publishResolution: "turn-limit-fallback",
+      publishFallbackDelivery: "error-comment-created",
+    });
 
     await workspaceFixture.cleanup();
   });
@@ -19182,6 +19739,16 @@ describe("createReviewHandler failure fallback publication", () => {
     const retryLog = entries.find((entry) => entry.message === "Enqueueing retry with reduced scope");
     expect(retryLog?.data?.retryTimeout).toEqual(expect.any(Number));
     expect(retryLog!.data!.retryTimeout as number).toBeGreaterThan(30);
+
+    const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
+    expect(classificationLog?.data).toMatchObject({
+      gateResult: "expected-bounded-outcome",
+      classification: "expected-bounded-outcome",
+      mode: "max-turns-continuation",
+      deliveryId: "delivery-123",
+      retryEnqueued: true,
+    });
+    expect(classificationLog?.data?.reasonCodes).toContain("max-turns");
 
     await workspaceFixture.cleanup();
   });
@@ -19427,6 +19994,183 @@ describe("createReviewHandler failure fallback publication", () => {
     ).toBeFalse();
 
     await workspaceFixture.cleanup();
+  });
+
+  test("logs bounded partial timeout classification and fail-opens when resilience telemetry write fails", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+    const resilienceEvents: unknown[] = [];
+
+    createReviewHandler({
+      eventRouter: { register: (eventKey, handler) => void handlers.set(eventKey, handler), dispatch: async () => undefined },
+      jobQueue: {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }), listCommits: async () => ({ data: [] }), createReview: async () => ({ data: {} }) },
+            issues: { listComments: async () => ({ data: [] }), createComment: async () => ({ data: { id: 812 } }), updateComment: async () => ({ data: {} }) },
+            reactions: { createForIssue: async () => ({ data: {} }) },
+            search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "error",
+          published: false,
+          isTimeout: true,
+          durationMs: 12_000,
+          numTurns: 7,
+          sessionId: "session-bounded-timeout-classification",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: {
+        ...noopTelemetryStore,
+        recordResilienceEvent: async (entry: unknown) => {
+          resilienceEvents.push(entry);
+          throw new Error("forced resilience write failure");
+        },
+      },
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: async () => ({
+          reviewOutputKey: "unused-in-test",
+          repo: "acme/repo",
+          prNumber: 101,
+          filesReviewed: ["README.md"],
+          filesInspected: ["README.md"],
+          findingCount: 1,
+          summaryDraft: "Found one issue before timeout.",
+          totalFiles: 1,
+        }),
+        saveCheckpoint: async () => undefined,
+        updateCheckpointCommentId: async () => undefined,
+      }) as never,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 0,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+    await expect(handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }))).resolves.toBeUndefined();
+
+    const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
+    expect(classificationLog?.data).toMatchObject({
+      gateResult: "expected-bounded-outcome",
+      mode: "bounded-partial-timeout",
+      retryEnqueued: false,
+      checkpointFilesReviewed: 1,
+      checkpointFilesInspected: 1,
+    });
+    expect(classificationLog?.data?.reasonCodes).toEqual(expect.arrayContaining(["partial-timeout", "checkpoint-present"]));
+    expect(entries.some((entry) => entry.message === "Resilience telemetry write failed (non-blocking)")).toBeTrue();
+    expect(resilienceEvents[0]).toMatchObject({
+      timeoutClassification: "expected-bounded-outcome",
+      timeoutClassificationMode: "bounded-partial-timeout",
+      timeoutClassificationReasons: ["partial-timeout", "checkpoint-present"],
+    });
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("logs zero-evidence and chronic-timeout classifications without requiring telemetry", async () => {
+    async function runScenario(options: { recentTimeouts: number; checkpoint: unknown; expectedMode: string; expectedReasons: string[] }) {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const workspaceFixture = await createWorkspaceFixture();
+      const { logger, entries } = createCaptureLogger();
+
+      createReviewHandler({
+        eventRouter: { register: (eventKey, handler) => void handlers.set(eventKey, handler), dispatch: async () => undefined },
+        jobQueue: {
+          enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>, context?: { action?: string }) => {
+            if (context?.action === "review-retry") return undefined as T;
+            return fn(createQueueRunMetadata());
+          },
+          getQueueSize: () => 0,
+          getPendingCount: () => 0,
+          getActiveJobs: getEmptyActiveJobs,
+        } as unknown as JobQueue,
+        workspaceManager: { create: async () => ({ dir: workspaceFixture.dir, cleanup: async () => undefined }), cleanupStale: async () => 0 } as WorkspaceManager,
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => ({
+            rest: {
+              pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }), listCommits: async () => ({ data: [] }), createReview: async () => ({ data: {} }) },
+              issues: { listComments: async () => ({ data: [] }), createComment: async () => ({ data: { id: 901 } }), updateComment: async () => ({ data: {} }) },
+              reactions: { createForIssue: async () => ({ data: {} }) },
+              search: { issuesAndPullRequests: async () => ({ data: { total_count: 0 } }) },
+            },
+          }) as never,
+        } as unknown as GitHubApp,
+        executor: { execute: async () => ({ conclusion: "error", published: false, isTimeout: true, durationMs: 1, numTurns: 1, sessionId: "session-timeout-classification", costUsd: 0 }) } as never,
+        telemetryStore: { ...noopTelemetryStore, countRecentTimeouts: async () => options.recentTimeouts },
+        knowledgeStore: createKnowledgeStoreStub({ getCheckpoint: async () => options.checkpoint }) as never,
+        diffContextCollector: async () => ({
+          changedFiles: ["README.md", "src/a.ts"],
+          numstatLines: [],
+          diffContent: undefined,
+          strategy: "github-file-list-fallback",
+          mergeBaseRecovered: false,
+          deepenAttempts: 0,
+          unshallowAttempted: false,
+          diffRange: "github-api:file-list",
+        }),
+        logger,
+      });
+
+      const handler = handlers.get("pull_request.review_requested");
+      expect(handler).toBeDefined();
+      await handler!(buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }));
+      await workspaceFixture.cleanup();
+      return entries.find((entry) => entry.data?.gate === "review-timeout-classification")?.data;
+    }
+
+    const zeroEvidence = await runScenario({
+      recentTimeouts: 0,
+      checkpoint: null,
+      expectedMode: "zero-evidence-hard-timeout",
+      expectedReasons: ["zero-evidence", "timeout"],
+    });
+    expect(zeroEvidence?.mode).toBe("zero-evidence-hard-timeout");
+    expect(zeroEvidence?.reasonCodes).toEqual(expect.arrayContaining(["zero-evidence", "timeout"]));
+
+    const chronic = await runScenario({
+      recentTimeouts: 3,
+      checkpoint: {
+        reviewOutputKey: "unused-in-test",
+        repo: "acme/repo",
+        prNumber: 101,
+        filesReviewed: ["README.md"],
+        findingCount: 0,
+        summaryDraft: "Reviewed README before timeout.",
+        totalFiles: 2,
+      },
+      expectedMode: "chronic-timeout-skip",
+      expectedReasons: ["chronic-timeout", "continuation-skipped"],
+    });
+    expect(chronic?.mode).toBe("chronic-timeout-skip");
+    expect(chronic?.reasonCodes).toEqual(expect.arrayContaining(["chronic-timeout", "continuation-skipped"]));
+    expect(chronic?.chronicTimeout).toBe(true);
   });
 
 

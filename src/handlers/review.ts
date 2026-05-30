@@ -25,7 +25,7 @@ import type {
   ContinuationFamilyFinalStopReason,
   ContinuationFamilyProjectionStatus,
 } from "../knowledge/types.ts";
-import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
+import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
@@ -41,6 +41,7 @@ import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } fro
 import {
   computeFileRiskScores,
   triageFilesByRisk,
+  capTieredFilesForPromptBudget,
   applyGraphAwareSelection,
   type TieredFiles,
   type FileRiskScore,
@@ -101,6 +102,10 @@ import {
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
+import {
+  buildReviewLearningMemoryRecord,
+  isReviewLearningMemorySkip,
+} from "./review-learning-memory.ts";
 import {
   type ReviewArea,
   type FindingSeverity,
@@ -208,8 +213,10 @@ import {
 import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
+  isExpectedCandidatePublicationPolicyBlock,
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
@@ -1473,6 +1480,31 @@ async function upsertDegradedReviewDetailsFallbackComment(params: {
   return response.data.id;
 }
 
+function unwrapKodiaiResponseDetails(summaryBody: string): string {
+  return summaryBody.replace(
+    /\n?<details>\s*\n?<summary>kodiai response<\/summary>\s*\n+([\s\S]*?)\n<\/details>\n?/,
+    (_match, inner: string) => `\n${inner.trim()}\n`,
+  ).trim();
+}
+
+function ensureVisibleApprovalDecision(summaryBody: string): string {
+  if (!summaryBody.includes("Decision: APPROVE")) {
+    return summaryBody;
+  }
+
+  if (summaryBody.trimStart().startsWith("Decision: APPROVE")) {
+    return summaryBody;
+  }
+
+  const leadingWhitespaceLength = summaryBody.length - summaryBody.trimStart().length;
+  const leadingWhitespace = summaryBody.slice(0, leadingWhitespaceLength);
+  const rest = summaryBody
+    .slice(leadingWhitespaceLength)
+    .replace(/(^|\n)Decision: APPROVE\n*/g, "$1")
+    .trimStart();
+  return `${leadingWhitespace}Decision: APPROVE\n\n${rest}`;
+}
+
 function mergeReviewDetailsIntoSummaryBody(params: {
   summaryBody: string;
   reviewDetailsBlock: string;
@@ -1480,9 +1512,13 @@ function mergeReviewDetailsIntoSummaryBody(params: {
   reviewBoundedness?: ReviewBoundednessContract | null;
 }): string {
   let updatedReviewDetails = params.reviewDetailsBlock;
-  let summaryBody = ensureReviewBoundednessDisclosureInSummary(
-    params.summaryBody,
-    params.reviewBoundedness,
+  let summaryBody = ensureVisibleApprovalDecision(
+    unwrapKodiaiResponseDetails(
+      ensureReviewBoundednessDisclosureInSummary(
+        params.summaryBody,
+        params.reviewBoundedness,
+      ),
+    ),
   );
   if (params.requireDegradationDisclosure) {
     summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
@@ -1815,22 +1851,29 @@ async function buildDiffCollectionFallback(params: {
     const changedFiles = uniqueFiles.map((file) => file.filename);
     const numstatLines = buildFallbackNumstatLines(uniqueFiles);
     const diffContent = buildFallbackPatchDiff(uniqueFiles);
+    const patchFilesCount = uniqueFiles.filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0).length;
+    const hasCompletePatchFallback = uniqueFiles.length > 0 && patchFilesCount === uniqueFiles.length && diffContent !== undefined;
+    const logFallback = hasCompletePatchFallback ? logger.info.bind(logger) : logger.warn.bind(logger);
 
-    logger.warn(
+    logFallback(
       {
         ...baseLog,
         gate: "diff-collection",
         stage,
         reason,
         strategy: "github-pr-files-fallback",
+        fallbackEvidenceQuality: hasCompletePatchFallback ? "patch-complete" : "patch-partial",
         deepenAttempts,
         unshallowAttempted,
         mergeBaseRecovered,
         diffRange,
         changedFilesCount: changedFiles.length,
-        patchFilesCount: uniqueFiles.filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0).length,
+        patchFilesCount,
+        diffContentAvailable: diffContent !== undefined,
       },
-      "Diff collection degraded to GitHub PR files fallback",
+      hasCompletePatchFallback
+        ? "Diff collection used GitHub PR files fallback with patch evidence"
+        : "Diff collection degraded to GitHub PR files fallback",
     );
 
     return {
@@ -1850,14 +1893,17 @@ async function buildDiffCollectionFallback(params: {
   }
 
   const changedFiles = Array.from(new Set(await fallbackFileProvider()));
+  const boundedFilenameOnlyFallback = changedFiles.length <= 10;
+  const logFallback = boundedFilenameOnlyFallback ? logger.info.bind(logger) : logger.warn.bind(logger);
 
-  logger.warn(
+  logFallback(
     {
       ...baseLog,
       gate: "diff-collection",
       stage,
       reason,
       strategy: "github-file-list-fallback",
+      fallbackEvidenceQuality: boundedFilenameOnlyFallback ? "filename-only-small" : "filename-only",
       deepenAttempts,
       unshallowAttempted,
       mergeBaseRecovered,
@@ -2645,35 +2691,45 @@ function logReviewCandidatePublicationRuntime(params: {
   baseLog: Record<string, unknown>;
   runtime: ReviewCandidatePublicationRuntimeResult;
 }): void {
-  const payload = {
-    ...params.baseLog,
-    gate: "review-candidate-publication",
-    gateResult: params.runtime.mode,
-    mode: params.runtime.mode,
-    counts: params.runtime.counts,
-    reasons: params.runtime.reasons,
-    publisherResultSample: params.runtime.publisherResultSample,
-  };
+  try {
+    const payload = {
+      ...params.baseLog,
+      gate: "review-candidate-publication",
+      gateResult: params.runtime.mode,
+      mode: params.runtime.mode,
+      counts: params.runtime.counts,
+      reasons: params.runtime.reasons,
+      outcomeBuckets: params.runtime.outcomeBuckets,
+      publisherResultSample: params.runtime.publisherResultSample,
+      movedToDetails: params.runtime.movedToDetails,
+    };
 
-  const expectedPolicyBlocked = params.runtime.mode === "blocked"
-    && params.runtime.counts.candidateBlocked > 0
-    && params.runtime.counts.candidateFailed === 0
-    && params.runtime.counts.candidateMalformed === 0
-    && params.runtime.counts.directPublished === 0
-    && params.runtime.counts.malformed === 0
-    && params.runtime.reasons.every((reason) => reason === "candidate-publisher-blocked");
+    const expectedPolicyBlocked = isExpectedCandidatePublicationPolicyBlock(params.runtime);
 
-  if (expectedPolicyBlocked) {
-    params.logger.info(payload, "Review candidate publication completed with expected policy block");
-    return;
+    if (expectedPolicyBlocked) {
+      params.logger.info(payload, "Review candidate publication completed with expected policy block");
+      return;
+    }
+
+    if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
+      params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
+      return;
+    }
+
+    params.logger.info(payload, "Review candidate publication completed");
+  } catch (error) {
+    params.logger.warn(
+      {
+        ...params.baseLog,
+        gate: "review-candidate-publication",
+        gateResult: "degraded",
+        mode: "degraded",
+        reasons: ["malformed-runtime-summary"],
+        logError: error instanceof Error ? error.message : String(error),
+      },
+      "Review candidate publication runtime log degraded",
+    );
   }
-
-  if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
-    params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
-    return;
-  }
-
-  params.logger.info(payload, "Review candidate publication completed");
 }
 
 export function createReviewHandler(deps: {
@@ -3148,6 +3204,38 @@ export function createReviewHandler(deps: {
         "executor phase timings unavailable",
       );
       let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
+      let reviewExecutionLogged = false;
+      let reviewOutputPublished = false;
+      let reviewExecutorPublished = false;
+      let reviewPublishResolution = "none";
+      let reviewPublishFallbackDelivery: string | undefined;
+
+      function describeErrorCommentDelivery(status: Awaited<ReturnType<typeof postOrUpdateErrorComment>>): string {
+        if (!status.ok) return "error-comment-failed";
+        return status.resolution === "updated" ? "error-comment-updated" : "error-comment-created";
+      }
+
+      function logReviewExecutionCompleted(): void {
+        if (!executorResult || reviewExecutionLogged) return;
+        reviewExecutionLogged = true;
+        logger.info(
+          {
+            prNumber: pr.number,
+            conclusion: executorResult.conclusion,
+            published: reviewOutputPublished,
+            executorPublished: reviewExecutorPublished,
+            publishResolution: reviewPublishResolution,
+            publishFallbackDelivery: reviewPublishFallbackDelivery,
+            failureSubtype: executorResult.failureSubtype,
+            stopReason: executorResult.stopReason,
+            costUsd: executorResult.costUsd,
+            numTurns: executorResult.numTurns,
+            durationMs: executorResult.durationMs,
+            sessionId: executorResult.sessionId,
+          },
+          "Review execution completed",
+        );
+      }
 
       function setReviewWorkPhaseForAttempt(
         attemptId: string,
@@ -4415,7 +4503,7 @@ export function createReviewHandler(deps: {
         // Triage uses changedFiles.length (full PR size) for threshold check,
         // not reviewFiles.length (which may be filtered for incremental mode).
         // Per pitfall 3 in research: check full PR, triage review set.
-        const tieredFiles = triageFilesByRisk({
+        let tieredFiles = triageFilesByRisk({
           riskScores: graphSelection.riskScores,
           fileThreshold: config.largePR.fileThreshold,
           fullReviewCount: config.largePR.fullReviewCount,
@@ -4423,8 +4511,9 @@ export function createReviewHandler(deps: {
           totalFileCount: changedFiles.length,
         });
 
-        // Build the file list for the prompt: only full + abbreviated tier files
-        const promptFiles = tieredFiles.isLargePR
+        // Build the file list for the prompt: only full + abbreviated tier files.
+        // Timeout safety may tighten these tiers below, so keep this derived list mutable.
+        let promptFiles = tieredFiles.isLargePR
           ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
           : reviewFiles;
 
@@ -4760,60 +4849,13 @@ export function createReviewHandler(deps: {
           timeoutEstimate.riskLevel === "medium" ||
           timeoutEstimate.riskLevel === "high";
 
-        // TMO-02: Scope reduction for high-risk auto-profile PRs
+        // TMO-02: Scope reduction for high-risk PRs. Explicit strict profiles are
+        // still bounded here because otherwise the executor can exhaust max turns
+        // before publishing any result.
         const requestedProfileSelection = { ...profileSelection };
         let timeoutReductionApplied = false;
         let timeoutReductionSkippedReason: "explicit-profile" | "config-disabled" | null = null;
-        if (
-          timeoutEstimate.shouldReduceScope &&
-          profileSelection.source === "auto" &&
-          config.timeout.autoReduceScope !== false
-        ) {
-          // Override to minimal profile
-          profileSelection.selectedProfile = "minimal";
-          const minimalPreset = PROFILE_PRESETS["minimal"];
-          if (minimalPreset) {
-            resolvedSeverityMinLevel = minimalPreset.severityMinLevel;
-            resolvedMaxComments = minimalPreset.maxComments;
-            resolvedFocusAreas = [...minimalPreset.focusAreas];
-            resolvedIgnoredAreas = [...minimalPreset.ignoredAreas];
-          }
-
-          // Cap file count if needed
-          if (
-            timeoutEstimate.reducedFileCount !== null &&
-            tieredFiles.full.length > timeoutEstimate.reducedFileCount
-          ) {
-            const excess = tieredFiles.full.splice(timeoutEstimate.reducedFileCount);
-            tieredFiles.abbreviated.push(...excess);
-          }
-
-          timeoutReductionApplied = true;
-          logger.info(
-            {
-              ...baseLog,
-              gate: "timeout-scope-reduction",
-              originalProfile: requestedProfileSelection.selectedProfile,
-              reducedProfile: "minimal",
-              originalFileCount: tieredFiles.full.length + (tieredFiles.abbreviated.length - (timeoutEstimate.reducedFileCount !== null ? tieredFiles.abbreviated.length : 0)),
-              reducedFileCount: timeoutEstimate.reducedFileCount,
-            },
-            "Auto-reduced review scope for high timeout risk",
-          );
-        } else if (timeoutEstimate.shouldReduceScope && profileSelection.source !== "auto") {
-          timeoutReductionSkippedReason = "explicit-profile";
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "timeout-scope-reduction",
-              gateResult: "skipped",
-              skipReason: timeoutReductionSkippedReason,
-              profile: profileSelection.selectedProfile,
-              source: profileSelection.source,
-            },
-            "Skipping scope reduction: user explicitly configured profile",
-          );
-        } else if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
+        if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
           timeoutReductionSkippedReason = "config-disabled";
           logger.info(
             {
@@ -4825,6 +4867,47 @@ export function createReviewHandler(deps: {
               source: profileSelection.source,
             },
             "Skipping scope reduction because timeout auto-reduction is disabled",
+          );
+        } else if (timeoutEstimate.shouldReduceScope) {
+          const originalPromptFileCount = tieredFiles.isLargePR
+            ? tieredFiles.full.length + tieredFiles.abbreviated.length
+            : promptFiles.length;
+
+          // Override to minimal profile.
+          profileSelection.selectedProfile = "minimal";
+          const minimalPreset = PROFILE_PRESETS["minimal"];
+          if (minimalPreset) {
+            resolvedSeverityMinLevel = minimalPreset.severityMinLevel;
+            resolvedMaxComments = minimalPreset.maxComments;
+            resolvedFocusAreas = [...minimalPreset.focusAreas];
+            resolvedIgnoredAreas = [...minimalPreset.ignoredAreas];
+          }
+
+          if (timeoutEstimate.reducedFileCount !== null) {
+            tieredFiles = capTieredFilesForPromptBudget(
+              tieredFiles,
+              timeoutEstimate.reducedFileCount,
+            );
+            promptFiles = tieredFiles.isLargePR
+              ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
+              : tieredFiles.full.map(f => f.filePath);
+          }
+
+          timeoutReductionApplied = true;
+          logger.info(
+            {
+              ...baseLog,
+              gate: "timeout-scope-reduction",
+              originalProfile: requestedProfileSelection.selectedProfile,
+              requestedProfileSource: requestedProfileSelection.source,
+              reducedProfile: "minimal",
+              originalFileCount: originalPromptFileCount,
+              reducedFileCount: promptFiles.length,
+              reductionReason: requestedProfileSelection.source === "auto"
+                ? "auto-profile-high-timeout-risk"
+                : "explicit-profile-high-timeout-risk",
+            },
+            "Auto-reduced review scope for high timeout risk",
           );
         }
 
@@ -5235,6 +5318,9 @@ export function createReviewHandler(deps: {
           maxTurnsOverride: reviewMaxTurnsOverride,
         });
         executorResult = result;
+        reviewExecutorPublished = result.published ?? false;
+        reviewOutputPublished = result.published ?? false;
+        reviewPublishResolution = reviewOutputPublished ? "executor" : "none";
         visiblePromptSectionRecords = result.promptSections ?? visiblePromptSectionRecords;
         refreshReviewVisibleBudgetProjection();
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
@@ -5244,19 +5330,6 @@ export function createReviewHandler(deps: {
           reviewPhaseTimings.set(phase.name, phase);
         }
         publicationPhaseStartedAt = Date.now();
-
-        logger.info(
-          {
-            prNumber: pr.number,
-            conclusion: result.conclusion,
-            published: result.published,
-            costUsd: result.costUsd,
-            numTurns: result.numTurns,
-            durationMs: result.durationMs,
-            sessionId: result.sessionId,
-          },
-          "Review execution completed",
-        );
 
         if (result.candidateVerificationPublicationEvidence) {
           logger.info(
@@ -5915,9 +5988,90 @@ export function createReviewHandler(deps: {
                 }
               }
             } else {
-              const approvalWillOwnCanonicalSurface = result.conclusion === "success";
+              const hasMovedToDetailsFindings = reviewCandidatePublicationRuntime.counts.candidateMovedToDetails > 0;
+              const approvalWillOwnCanonicalSurface = result.conclusion === "success" && !hasMovedToDetailsFindings;
 
-              if (!approvalWillOwnCanonicalSurface && canPublishVisibleOutput("degraded Review Details fallback comment")) {
+              if (hasMovedToDetailsFindings && canPublishVisibleOutput("canonical Review Details moved-to-details preservation")) {
+                let movedDetailsSurface: CanonicalReviewSurface | undefined;
+                try {
+                  setReviewWorkPhase("publish");
+                  movedDetailsSurface = await upsertCanonicalReviewSurface({
+                    octokit: extractionOctokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    preferredKind: "issue_comment",
+                    canonicalSurface: acceptedCanonicalSurface?.kind === "issue_comment"
+                      ? acceptedCanonicalSurface
+                      : undefined,
+                    body: fullDetailsBody,
+                    botHandles: [githubApp.getAppSlug(), "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("canonical Review Details moved-to-details preservation"),
+                  });
+                  logCanonicalReviewDetailsPublicationCompleted(movedDetailsSurface);
+                } catch (appendErr) {
+                  logger.warn(
+                    { ...baseLog, gate: "review-details-output", gateResult: "moved-to-details-canonical-merge-failed", err: appendErr },
+                    "Failed to publish canonical Review Details for moved-to-details candidates; using degraded fallback comment",
+                  );
+                  if (canPublishVisibleOutput("degraded Review Details moved-to-details fallback comment")) {
+                    setReviewWorkPhase("publish");
+                    const fallbackCommentId = await upsertDegradedReviewDetailsFallbackComment({
+                      octokit: extractionOctokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      body: fullDetailsBody,
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("degraded Review Details moved-to-details fallback comment"),
+                    });
+                    if (typeof fallbackCommentId === "number") {
+                      logReviewDetailsPublicationCompleted({
+                        surfaceKind: "issue_comment",
+                        commentId: fallbackCommentId,
+                        publicationMode: "degraded-fallback",
+                      });
+                    }
+                  }
+                }
+
+                if (movedDetailsSurface?.kind === "issue_comment") {
+                  finalizePublicationPhaseTiming();
+                  try {
+                    await upsertCanonicalReviewSurface({
+                      octokit: extractionOctokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      preferredKind: "issue_comment",
+                      canonicalSurface: movedDetailsSurface,
+                      body: buildReviewDetailsBody(),
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                      reviewBoundedness,
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("finalized moved-to-details Review Details timing update"),
+                    });
+                  } catch (appendErr) {
+                    logger.warn(
+                      {
+                        ...baseLog,
+                        gate: "review-details-output",
+                        gateResult: "finalized-moved-to-details-merge-failed",
+                        err: appendErr,
+                      },
+                      "Failed to refresh finalized moved-to-details Review Details surface",
+                    );
+                  }
+                }
+              } else if (!approvalWillOwnCanonicalSurface && canPublishVisibleOutput("degraded Review Details fallback comment")) {
                 setReviewWorkPhase("publish");
                 const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
                   octokit: extractionOctokit,
@@ -6232,62 +6386,94 @@ export function createReviewHandler(deps: {
             const repo = `${apiOwner}/${apiRepo}`;
             let written = 0;
             let failed = 0;
+            let skipped = 0;
+            const skipReasons: Record<string, number> = {};
 
             for (const finding of processedFindings) {
+              const decision = buildReviewLearningMemoryRecord({
+                finding,
+                owner,
+                repo,
+                reviewId,
+                prNumber: pr.number,
+                // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
+                language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
+              });
+
+              if (isReviewLearningMemorySkip(decision)) {
+                skipped++;
+                skipReasons[decision.reason] = (skipReasons[decision.reason] ?? 0) + 1;
+                logger.info(
+                  {
+                    ...baseLog,
+                    gate: decision.gate,
+                    gateResult: decision.gateResult,
+                    reason: decision.reason,
+                    filePath: decision.filePath,
+                    findingTitle: decision.findingTitle,
+                  },
+                  'Learning memory write skipped for finding',
+                );
+                continue;
+              }
+
               try {
-                // Determine outcome from finding state
-                const outcome: string = finding.suppressed ? 'suppressed' : 'accepted';
-
-                // Build embedding text: finding title + severity + category + file path for context
-                const embeddingText = [
-                  `[${finding.severity}] [${finding.category}]`,
-                  finding.title,
-                  `File: ${finding.filePath}`,
-                ].join('\n');
-
-                const embeddingResult = await embeddingProvider.generate(embeddingText, 'document');
+                const embeddingResult = await embeddingProvider.generate(decision.embeddingText, 'document');
                 if (!embeddingResult) {
                   // Embedding failed (already logged by provider), skip this finding
                   failed++;
                   continue;
                 }
 
-                const memoryRecord: LearningMemoryRecord = {
-                  repo,
-                  owner,
-                  findingId: finding.commentId, // Use comment ID as finding reference
-                  reviewId: reviewId ?? 0,       // reviewId from knowledge store recordReview above
-                  sourceRepo: repo,
-                  findingText: finding.title,
-                  severity: finding.severity,
-                  category: finding.category,
-                  filePath: finding.filePath,
-                  outcome: outcome as LearningMemoryRecord["outcome"],
-                  embeddingModel: embeddingResult.model,
-                  embeddingDim: embeddingResult.dimensions,
-                  stale: false,
-                  // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
-                  language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
-                };
+                const memoryRecord = decision.toRecord({
+                  model: embeddingResult.model,
+                  dimensions: embeddingResult.dimensions,
+                });
+                if (isReviewLearningMemorySkip(memoryRecord)) {
+                  skipped++;
+                  skipReasons[memoryRecord.reason] = (skipReasons[memoryRecord.reason] ?? 0) + 1;
+                  logger.info(
+                    {
+                      ...baseLog,
+                      gate: memoryRecord.gate,
+                      gateResult: memoryRecord.gateResult,
+                      reason: memoryRecord.reason,
+                      filePath: memoryRecord.filePath,
+                      findingTitle: memoryRecord.findingTitle,
+                    },
+                    'Learning memory write skipped for finding',
+                  );
+                  continue;
+                }
 
                 await learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);
                 written++;
               } catch (err) {
                 failed++;
                 logger.warn(
-                  { err, findingTitle: finding.title, filePath: finding.filePath },
+                  {
+                    ...baseLog,
+                    gate: 'learning-memory-write',
+                    gateResult: 'failed',
+                    err,
+                    findingTitle: finding.title,
+                    filePath: finding.filePath,
+                  },
                   'Learning memory write failed for finding (fail-open)',
                 );
               }
             }
 
-            if (written > 0 || failed > 0) {
+            if (written > 0 || failed > 0 || skipped > 0) {
               logger.info(
                 {
                   ...baseLog,
                   gate: 'learning-memory-write',
+                  gateResult: failed > 0 ? 'failed' : 'completed',
                   written,
                   failed,
+                  skipped,
+                  skipReasons,
                   total: processedFindings.length,
                 },
                 'Learning memory write batch complete',
@@ -6536,6 +6722,88 @@ export function createReviewHandler(deps: {
               }
             }
 
+            const retryClassificationInput = retryPlan?.decision === "schedule-continuation"
+              ? {
+                  enqueued: true,
+                  filesCount: retryPlan.continuationFiles.length,
+                  scopeRatio: retryPlan.scopeRatio,
+                  timeoutSeconds: retryPlan.timeoutSeconds,
+                  checkpointEnabled: retryPlan.checkpointEnabled,
+                  riskLevel: retryPlan.timeoutEstimate.riskLevel,
+                }
+              : {
+                  enqueued: false,
+                  filesCount: 0,
+                };
+            const timeoutClassification = classifyReviewTimeoutOutcome({
+              deliveryId: event.id,
+              reviewOutputKey,
+              outcome: {
+                isTimeout: result.isTimeout,
+                stopReason: result.stopReason,
+                failureSubtype: result.failureSubtype,
+              },
+              firstPass: timeoutFirstPass
+                ? {
+                    state: timeoutFirstPass.state,
+                    boundedReason: timeoutFirstPass.boundedReason,
+                    evidenceSource: timeoutFirstPass.evidenceSource,
+                    continuationPending: timeoutFirstPass.continuationPending,
+                    zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
+                  }
+                : null,
+              checkpoint: checkpoint
+                ? {
+                    filesReviewed: timeoutReviewedFiles.length,
+                    filesInspected: timeoutInspectedFiles.length,
+                    findingCount: timeoutFindingCount,
+                    totalFiles: timeoutTotalFiles,
+                  }
+                : null,
+              retry: retryClassificationInput,
+              continuation: retryPlan
+                ? { decision: retryPlan.decision, reason: retryPlan.reason }
+                : null,
+              chronicTimeout: isChronicTimeout,
+              recentTimeouts,
+              longRun: {
+                thresholdExceeded: false,
+                durationSeconds: typeof result.durationMs === "number" ? Math.floor(result.durationMs / 1000) : undefined,
+                thresholdSeconds: timeoutDuration,
+              },
+            });
+            const timeoutClassificationTelemetry = {
+              timeoutClassification: timeoutClassification.classification,
+              timeoutClassificationMode: timeoutClassification.mode,
+              timeoutClassificationReasons: timeoutClassification.reasonCodes,
+            };
+
+            logger.info(
+              {
+                ...baseLog,
+                gate: timeoutClassification.gate,
+                gateResult: timeoutClassification.classification,
+                classification: timeoutClassification.classification,
+                mode: timeoutClassification.mode,
+                reasonCodes: timeoutClassification.reasonCodes,
+                deliveryId: event.id,
+                reviewOutputKey,
+                prNumber: pr.number,
+                checkpointFilesReviewed: timeoutClassification.counts.checkpointFilesReviewed ?? null,
+                checkpointFilesInspected: timeoutClassification.counts.checkpointFilesInspected ?? null,
+                checkpointFindingCount: timeoutClassification.counts.checkpointFindingCount ?? null,
+                checkpointTotalFiles: timeoutClassification.counts.checkpointTotalFiles ?? null,
+                retryFilesCount: timeoutClassification.counts.retryFilesCount ?? null,
+                recentTimeouts: timeoutClassification.counts.recentTimeouts ?? null,
+                longRunDurationSeconds: timeoutClassification.counts.longRunDurationSeconds ?? null,
+                longRunThresholdSeconds: timeoutClassification.counts.longRunThresholdSeconds ?? null,
+                chronicTimeout: isChronicTimeout,
+                retryEnqueued: retryPlan?.decision === "schedule-continuation",
+                redaction: timeoutClassification.redaction,
+              },
+              "Review timeout classification",
+            );
+
             // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
             const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines
               ? "Review stopped after GitHub-visible findings were already posted."
@@ -6730,6 +6998,7 @@ export function createReviewHandler(deps: {
                     recentTimeouts,
                     chronicTimeout: isChronicTimeout,
                     retryEnqueued: false,
+                    ...timeoutClassificationTelemetry,
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
@@ -6807,6 +7076,7 @@ export function createReviewHandler(deps: {
                     retryTimeoutSeconds: retryTimeout,
                     retryRiskLevel: retryTimeoutEstimate.riskLevel,
                     retryCheckpointEnabled,
+                    ...timeoutClassificationTelemetry,
                   });
                 } catch (err) {
                   logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
@@ -7077,9 +7347,36 @@ export function createReviewHandler(deps: {
                     });
 
                       const retryCheckpoint = (await knowledgeStore?.getCheckpoint?.(retryReviewOutputKey)) ?? null;
+                      const retryHasStructuredProgress =
+                        (retryCheckpoint?.filesReviewed?.length ?? 0) > 0 ||
+                        (retryCheckpoint?.filesInspected?.length ?? 0) > 0;
                       const retryHasResults =
+                        retryHasStructuredProgress ||
                         (retryCheckpoint?.findingCount ?? 0) >= 1 ||
                         (retryResult.published ?? false);
+                      const retryTimeoutClassification = classifyReviewTimeoutOutcome({
+                        deliveryId: retryDeliveryId,
+                        reviewOutputKey: retryReviewOutputKey,
+                        outcome: {
+                          isTimeout: retryResult.isTimeout,
+                          stopReason: retryResult.stopReason,
+                          failureSubtype: retryResult.failureSubtype,
+                        },
+                        checkpoint: retryCheckpoint
+                          ? {
+                              filesReviewed: retryCheckpoint.filesReviewed?.length,
+                              filesInspected: retryCheckpoint.filesInspected?.length,
+                              findingCount: retryCheckpoint.findingCount,
+                              totalFiles: timeoutTotalFiles,
+                            }
+                          : null,
+                        retry: {
+                          completed: retryResult.conclusion === "success" || retryHasResults,
+                          failed: retryResult.conclusion !== "success" && !retryHasResults,
+                          hasResults: retryHasResults,
+                          filesCount: retryFiles.length,
+                        },
+                      });
 
                       if (config.telemetry.enabled) {
                         try {
@@ -7118,6 +7415,9 @@ export function createReviewHandler(deps: {
                             retryTimeoutSeconds: retryTimeout,
                             retryRiskLevel: retryTimeoutEstimate.riskLevel,
                             retryCheckpointEnabled,
+                            timeoutClassification: retryTimeoutClassification.classification,
+                            timeoutClassificationMode: retryTimeoutClassification.mode,
+                            timeoutClassificationReasons: retryTimeoutClassification.reasonCodes,
                           });
                         } catch (err) {
                           logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
@@ -7587,11 +7887,18 @@ export function createReviewHandler(deps: {
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
             if (canPublishVisibleOutput("error comment")) {
               setReviewWorkPhase("publish");
-              await postOrUpdateErrorComment(octokit, {
+              const publicationStatus = await postOrUpdateErrorComment(octokit, {
                 owner: apiOwner,
                 repo: apiRepo,
                 issueNumber: pr.number,
               }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+              reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
+              if (publicationStatus.ok) {
+                reviewOutputPublished = true;
+                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback" : "error-fallback";
+              } else {
+                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-failed" : "error-comment-failed";
+              }
             }
           }
         }
@@ -7610,7 +7917,7 @@ export function createReviewHandler(deps: {
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {
             setReviewWorkPhase("publish");
-            await postOrUpdateErrorComment(
+            const publicationStatus = await postOrUpdateErrorComment(
               octokit,
               {
                 owner: apiOwner,
@@ -7620,6 +7927,13 @@ export function createReviewHandler(deps: {
               sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
               logger,
             );
+            reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
+            if (publicationStatus.ok) {
+              reviewOutputPublished = true;
+              reviewPublishResolution = "failure-fallback";
+            } else {
+              reviewPublishResolution = "failure-fallback-failed";
+            }
           }
         }
 
@@ -7667,42 +7981,66 @@ export function createReviewHandler(deps: {
                 },
                 "Skipping auto-approval because review output marker was published",
               );
-              if (
-                canonicalReviewDetailsBody &&
-                canPublishVisibleOutput("degraded Review Details fallback comment")
-              ) {
-                setReviewWorkPhase("publish");
-                const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
-                  octokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  body: canonicalReviewDetailsBody,
-                  botHandles: [appSlug, "claude"],
-                  recheckCanPublish: () =>
-                    canPublishVisibleOutput("degraded Review Details fallback comment"),
-                });
-
-                if (typeof reviewDetailsCommentId === "number") {
-                  logReviewDetailsPublicationCompleted({
-                    surfaceKind: "issue_comment",
-                    commentId: reviewDetailsCommentId,
-                    publicationMode: "degraded-fallback",
-                  });
-                }
-
-                finalizePublicationPhaseTiming();
+              if (canonicalReviewDetailsBody) {
                 if (
-                  reviewDetailsCommentId !== undefined &&
-                  canPublishVisibleOutput("finalized Review Details timing update")
+                  idempotencyCheck.existingLocation !== "review-comment" &&
+                  canPublishVisibleOutput("clean review canonical Review Details merge")
                 ) {
-                  await octokit.rest.issues.updateComment({
+                  setReviewWorkPhase("publish");
+                  const canonicalSurfaceKind: CanonicalSurfaceKind = idempotencyCheck.existingLocation === "review"
+                    ? "pull_review"
+                    : "issue_comment";
+                  const finalizedExistingReviewDetails = await upsertCanonicalReviewSurface({
+                    octokit,
                     owner: apiOwner,
                     repo: apiRepo,
-                    comment_id: reviewDetailsCommentId,
-                    body: sanitizeOutgoingMentions(canonicalReviewDetailsBody, [appSlug, "claude"]),
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    preferredKind: canonicalSurfaceKind,
+                    reviewDetailsBlock: canonicalReviewDetailsBody,
+                    botHandles: [appSlug, "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
+                    ...(canonicalSurfaceKind === "pull_review" ? { pullReviewEvent: "APPROVE" as const } : {}),
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("clean review canonical Review Details merge"),
                   });
+                  logCanonicalReviewDetailsPublicationCompleted(finalizedExistingReviewDetails);
+                  finalizePublicationPhaseTiming();
+                } else if (canPublishVisibleOutput("degraded Review Details fallback comment")) {
+                  setReviewWorkPhase("publish");
+                  const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
+                    octokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    body: canonicalReviewDetailsBody,
+                    botHandles: [appSlug, "claude"],
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("degraded Review Details fallback comment"),
+                  });
+
+                  if (typeof reviewDetailsCommentId === "number") {
+                    logReviewDetailsPublicationCompleted({
+                      surfaceKind: "issue_comment",
+                      commentId: reviewDetailsCommentId,
+                      publicationMode: "degraded-fallback",
+                    });
+                  }
+
+                  finalizePublicationPhaseTiming();
+                  if (
+                    reviewDetailsCommentId !== undefined &&
+                    canPublishVisibleOutput("finalized Review Details timing update")
+                  ) {
+                    await octokit.rest.issues.updateComment({
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      comment_id: reviewDetailsCommentId,
+                      body: sanitizeOutgoingMentions(canonicalReviewDetailsBody, [appSlug, "claude"]),
+                    });
+                  }
                 }
               }
               return;
@@ -7775,6 +8113,9 @@ export function createReviewHandler(deps: {
               });
               logCanonicalReviewDetailsPublicationCompleted(finalizedCleanReviewDetails);
             }
+
+            reviewOutputPublished = true;
+            reviewPublishResolution = config.review.autoApprove ? "auto-approval" : "clean-review-comment";
 
             logger.info(
               {
@@ -7902,6 +8243,8 @@ export function createReviewHandler(deps: {
           );
         }
 
+        logReviewExecutionCompleted();
+
         const shouldLogPhaseSummary =
           workspacePhaseStartedAt !== undefined ||
           retrievalPhaseStartedAt !== undefined ||
@@ -7925,7 +8268,9 @@ export function createReviewHandler(deps: {
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
                 conclusion: executorResult?.conclusion,
-                published: executorResult?.published,
+                published: executorResult ? reviewOutputPublished : undefined,
+                publishResolution: executorResult ? reviewPublishResolution : undefined,
+                publishFallbackDelivery: reviewPublishFallbackDelivery,
                 totalDurationMs,
                 phases,
               },

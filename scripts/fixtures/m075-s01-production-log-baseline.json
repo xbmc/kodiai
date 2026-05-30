@@ -1,0 +1,411 @@
+{
+  "schema": "m075-s01-production-log-baseline.v1",
+  "generatedAt": "2026-05-20T14:46:09.362Z",
+  "provenance": {
+    "source": "azure-log-analytics-live-sanitized-projection",
+    "liveVerifierStatusCode": "m075_s01_contract_failed",
+    "liveVerifierRedactionNote": "Live collection was available, but raw parsed rows were discarded before fixture publication; fixture redaction reflects the bounded sanitized projection only.",
+    "rawRowsIncluded": false,
+    "planningEvidenceFallbackUsed": false,
+    "workspaceCount": 21,
+    "totalRowsSampled": 400,
+    "malformedRowsSampled": 1
+  },
+  "queryMetadata": {
+    "mode": "live",
+    "source": "azure-log-analytics",
+    "windows": {
+      "last12h": {
+        "timespan": "PT12H",
+        "query": "ContainerAppConsoleLogs_CL\n| project TimeGenerated, Log_s, RevisionName_s, ContainerAppName_s\n| order by TimeGenerated asc\n| take 200",
+        "limit": 200
+      },
+      "last7d": {
+        "timespan": "P7D",
+        "query": "ContainerAppConsoleLogs_CL\n| project TimeGenerated, Log_s, RevisionName_s, ContainerAppName_s\n| order by TimeGenerated asc\n| take 200",
+        "limit": 200
+      }
+    }
+  },
+  "report": {
+    "generatedAt": "2026-05-20T14:46:09.362Z",
+    "windows": {
+      "last12h": {
+        "window": "last12h",
+        "source": {
+          "availability": "present",
+          "workspaceCount": 21,
+          "queryWindow": "last12h"
+        },
+        "totalRowCount": 200,
+        "malformedRowCount": 0,
+        "issueClasses": [
+          {
+            "id": "knowledge-store.undefined-write",
+            "title": "Knowledge store write received undefined payload data",
+            "classification": "app-actionable",
+            "downstreamOwner": "S02",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "inline-publication.line-not-commentable",
+            "title": "Approved inline finding targets a GitHub line that is not commentable",
+            "classification": "app-actionable",
+            "downstreamOwner": "S03",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "candidate-publication.non-approved-missing-reason",
+            "title": "Candidate publication completed in non-approved mode without a safe reason",
+            "classification": "app-actionable",
+            "downstreamOwner": "S04",
+            "count": 1,
+            "examples": [
+              {
+                "timeGenerated": "2026-05-20T09:27:51.0183944Z",
+                "repo": "Kore",
+                "prNumber": 1062,
+                "reviewOutputKey": null,
+                "deliveryId": "c282ce90-542d-11f1-8ecb-df55cd2c3c7f"
+              }
+            ],
+            "firstSeenAt": "2026-05-20T09:27:51.0183944Z",
+            "lastSeenAt": "2026-05-20T09:27:51.0183944Z",
+            "baselineStatus": "current",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.expected-bounded-outcome",
+            "title": "Review timeout classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.hard-failure",
+            "title": "Review timeout classification reported an actionable hard failure",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.long-run-threshold",
+            "title": "Review timeout classification crossed the long-run threshold",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review.timeout-or-long-run",
+            "title": "Review timed out or exceeded long-run threshold",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.expected-bounded-outcome",
+            "title": "Addon check classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.actionable-diagnostic",
+            "title": "Addon check classification reported an actionable diagnostic",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.malformed-evidence",
+            "title": "Addon check classification failed closed on malformed evidence",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check.timeout",
+            "title": "Addon check timed out",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "azure.platform-noise",
+            "title": "Azure or Container Apps platform signal separated from Kodiai application issues",
+            "classification": "azure-platform",
+            "downstreamOwner": null,
+            "count": 4,
+            "examples": [
+              {
+                "timeGenerated": "2026-05-20T09:25:47.77131Z",
+                "repo": null,
+                "prNumber": null,
+                "reviewOutputKey": null,
+                "deliveryId": null
+              },
+              {
+                "timeGenerated": "2026-05-20T09:25:48.6440884Z",
+                "repo": null,
+                "prNumber": null,
+                "reviewOutputKey": null,
+                "deliveryId": null
+              },
+              {
+                "timeGenerated": "2026-05-20T09:25:48.6440884Z",
+                "repo": null,
+                "prNumber": null,
+                "reviewOutputKey": null,
+                "deliveryId": null
+              }
+            ],
+            "firstSeenAt": "2026-05-20T09:25:47.77131Z",
+            "lastSeenAt": "2026-05-20T09:25:48.6440884Z",
+            "baselineStatus": "platform-transient",
+            "sourceEvidence": "live-sanitized-projection"
+          }
+        ],
+        "redaction": {
+          "passed": true,
+          "rawPayloadsExcluded": true,
+          "maxExamplesPerClass": 3,
+          "violations": []
+        }
+      },
+      "last7d": {
+        "window": "last7d",
+        "source": {
+          "availability": "present",
+          "workspaceCount": 21,
+          "queryWindow": "last7d"
+        },
+        "totalRowCount": 200,
+        "malformedRowCount": 1,
+        "issueClasses": [
+          {
+            "id": "knowledge-store.undefined-write",
+            "title": "Knowledge store write received undefined payload data",
+            "classification": "app-actionable",
+            "downstreamOwner": "S02",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "inline-publication.line-not-commentable",
+            "title": "Approved inline finding targets a GitHub line that is not commentable",
+            "classification": "app-actionable",
+            "downstreamOwner": "S03",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "candidate-publication.non-approved-missing-reason",
+            "title": "Candidate publication completed in non-approved mode without a safe reason",
+            "classification": "app-actionable",
+            "downstreamOwner": "S04",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.expected-bounded-outcome",
+            "title": "Review timeout classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.hard-failure",
+            "title": "Review timeout classification reported an actionable hard failure",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review-timeout-classification.long-run-threshold",
+            "title": "Review timeout classification crossed the long-run threshold",
+            "classification": "app-actionable",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S05 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "review.timeout-or-long-run",
+            "title": "Review timed out or exceeded long-run threshold",
+            "classification": "transient",
+            "downstreamOwner": "S05",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.expected-bounded-outcome",
+            "title": "Addon check classification reported an expected bounded outcome",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.actionable-diagnostic",
+            "title": "Addon check classification reported an actionable diagnostic",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check-classification.malformed-evidence",
+            "title": "Addon check classification failed closed on malformed evidence",
+            "classification": "app-actionable",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "structured S06 taxonomy class",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "addon-check.timeout",
+            "title": "Addon check timed out",
+            "classification": "transient",
+            "downstreamOwner": "S06",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "azure.platform-noise",
+            "title": "Azure or Container Apps platform signal separated from Kodiai application issues",
+            "classification": "azure-platform",
+            "downstreamOwner": null,
+            "count": 4,
+            "examples": [
+              {
+                "timeGenerated": "2026-05-13T15:37:58.1450233Z",
+                "repo": null,
+                "prNumber": null,
+                "reviewOutputKey": null,
+                "deliveryId": null
+              },
+              {
+                "timeGenerated": "2026-05-13T15:37:58.9511078Z",
+                "repo": null,
+                "prNumber": null,
+                "reviewOutputKey": null,
+                "deliveryId": null
+              },
+              {
+                "timeGenerated": "2026-05-13T15:37:58.9511078Z",
+                "repo": null,
+                "prNumber": null,
+                "reviewOutputKey": null,
+                "deliveryId": null
+              }
+            ],
+            "firstSeenAt": "2026-05-13T15:37:58.1450233Z",
+            "lastSeenAt": "2026-05-13T15:37:58.9511078Z",
+            "baselineStatus": "platform-transient",
+            "sourceEvidence": "live-sanitized-projection"
+          }
+        ],
+        "redaction": {
+          "passed": true,
+          "rawPayloadsExcluded": true,
+          "maxExamplesPerClass": 3,
+          "violations": []
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "schema": "m075-s03-non-inlineable-review-details.v1",
+  "generatedAt": "2026-05-20T15:20:00.000Z",
+  "provenance": {
+    "source": "sanitized-handler-test-projection",
+    "rawLogsIncluded": false,
+    "rawCandidatePayloadsIncluded": false,
+    "rawPromptsIncluded": false,
+    "rawModelOutputIncluded": false,
+    "diffPayloadsIncluded": false,
+    "fixReplacementTextIncluded": false,
+    "fixtureOnly": true
+  },
+  "reviewDetails": {
+    "sourceAvailable": true,
+    "published": true,
+    "reviewOutputKey": "repo-acme-repo-pr-101-delivery-delivery-123-attempt-review-work-1",
+    "deliveryId": "delivery-123",
+    "correlation": {
+      "repo": true,
+      "pull": true,
+      "reviewOutputKey": true,
+      "deliveryId": true,
+      "commit": true
+    },
+    "publicationMode": "canonical",
+    "surfaceKind": "issue_comment",
+    "visibleBody": {
+      "lineCount": 4,
+      "maxLineCount": 12,
+      "maxLineLength": 180,
+      "lines": [
+        "- Review candidate publication: mode=moved-to-details approved=1 rewritten=0 published=0 directFallback=0 reasons=candidate-moved-to-details movedToDetails=1 detailsOmitted=0",
+        "- Moved review candidates preserved in details:",
+        "  - [major/correctness] Unpublishable candidate line (README.md:999, reason=line-not-commentable)",
+        "    excerpt: Safe bounded summary of an approved finding whose target PR diff line is not commentable."
+      ]
+    }
+  },
+  "candidatePublication": {
+    "gateResult": "moved-to-details",
+    "mode": "moved-to-details",
+    "counts": {
+      "approvedReferences": 1,
+      "rewrittenReferences": 0,
+      "candidatePublishable": 0,
+      "candidatePublished": 0,
+      "candidateSkipped": 0,
+      "candidateBlocked": 0,
+      "candidateFailed": 0,
+      "candidateMalformed": 0,
+      "candidateMovedToDetails": 1,
+      "candidateDetailsOnlyFindings": 1,
+      "candidateDetailsOnlyOmitted": 0,
+      "convertedProcessedFindings": 0,
+      "directAttempted": 0,
+      "directPublished": 0,
+      "fallbackEvidence": 0,
+      "fallbackDisallowed": 0,
+      "malformed": 0
+    },
+    "reasons": ["candidate-moved-to-details"],
+    "movedToDetails": {
+      "counts": {
+        "total": 1,
+        "fromFixEligibility": 1,
+        "fromPublisherResult": 0,
+        "omitted": 0
+      },
+      "reasonCounts": {
+        "line-not-commentable": 1
+      },
+      "redaction": {
+        "rawCandidatePayloadsIncluded": false,
+        "rawPromptsIncluded": false,
+        "rawModelOutputIncluded": false,
+        "diffsIncluded": false,
+        "replacementTextIncluded": false,
+        "githubResponsePayloadsIncluded": false,
+        "secretLikeValuesIncluded": false,
+        "bounded": true
+      }
+    }
+  },
+  "fixEligibility": {
+    "gateResult": "blocked",
+    "counts": {
+      "input": 1,
+      "eligible": 0,
+      "blocked": 1
+    },
+    "reasonCounts": {
+      "line-not-commentable": 1
+    }
+  },
+  "flow": {
+    "publishedCommentIds": [],
+    "convertedProcessedFindingCount": 0,
+    "hasFabricatedProcessedFindings": false
+  },
+  "negativeControls": {
+    "genericPublicationFailure": {
+      "gateResult": "blocked",
+      "mode": "blocked",
+      "counts": {
+        "candidatePublishable": 1,
+        "candidatePublished": 0,
+        "candidateFailed": 1,
+        "candidateMovedToDetails": 0,
+        "candidateDetailsOnlyFindings": 0,
+        "convertedProcessedFindings": 0,
+        "directPublished": 0,
+        "fallbackEvidence": 0
+      },
+      "reasons": ["candidate-publisher-failed"],
+      "movedToDetailsPresent": false,
+      "detailsProjectionPresent": false
+    }
+  }
+}

@@ -100,14 +100,14 @@ export function createEventRouter(
         collected.map((handler) => handler(event)),
       );
 
-      let succeeded = 0;
-      let failed = 0;
+      let completedHandlerCount = 0;
+      let handlerIssueCount = 0;
 
       for (const result of results) {
         if (result.status === "fulfilled") {
-          succeeded++;
+          completedHandlerCount++;
         } else {
-          failed++;
+          handlerIssueCount++;
           logger.error(
             {
               deliveryId: event.id,
@@ -128,8 +128,8 @@ export function createEventRouter(
           specificKey,
           generalKey,
           matchedHandlerCount: collected.length,
-          succeeded,
-          failed,
+          completedHandlerCount,
+          ...(handlerIssueCount > 0 ? { handlerIssueCount } : {}),
         },
         `Dispatched to ${collected.length} handler(s)`,
       );

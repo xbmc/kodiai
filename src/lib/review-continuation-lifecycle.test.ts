@@ -105,6 +105,52 @@ describe("planReviewContinuation", () => {
     });
   });
 
+  test("keeps the original timeout when a small-PR retry covers all remaining files", async () => {
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const decision = mod!.planReviewContinuation({
+      reviewOutputKey: "review-small-pr",
+      firstPass: makeFirstPass({
+        coveredScope: { reviewedFiles: 0, totalFiles: 4 },
+        remainingScope: { remainingFiles: 4, totalFiles: 4 },
+        findingCount: 0,
+      }),
+      checkpoint: makeCheckpoint({
+        reviewOutputKey: "review-small-pr",
+        filesReviewed: [],
+        filesInspected: [],
+        findingCount: 0,
+        totalFiles: 4,
+      }),
+      riskScores: makeRiskScores([
+        ["src/a.py", 10],
+        ["src/b.py", 40],
+        ["src/c.py", 20],
+        ["src/d.py", 30],
+      ]),
+      timeoutSeconds: 364,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      estimateContinuationTimeout: ({ timeoutSeconds, files }) => ({
+        riskLevel: "low",
+        dynamicTimeoutSeconds: timeoutSeconds,
+        reasoning: `${files.length} files`,
+        shouldReduceScope: false,
+      }),
+    });
+
+    expect(decision.decision).toBe("schedule-continuation");
+    if (decision.decision !== "schedule-continuation") throw new Error("expected scheduled continuation");
+    expect(decision.continuationFiles).toEqual(["src/b.py", "src/d.py", "src/c.py", "src/a.py"]);
+    expect(decision.scopeRatio).toBe(1);
+    expect(decision.timeoutSeconds).toBe(364);
+    expect(decision.timeoutEstimate).toMatchObject({
+      dynamicTimeoutSeconds: 364,
+      reasoning: "4 files",
+    });
+  });
+
   test("adds compact retry evidence when checkpoint, prompt budget, and cache safety signals are complete", async () => {
     const mod = await loadLifecycleModule();
     expect(mod).not.toBeNull();

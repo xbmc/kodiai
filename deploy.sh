@@ -84,6 +84,13 @@ BUN_BASE_ACR_IMAGE=${BUN_BASE_ACR_IMAGE:-base/oven-bun:1-debian}
 BUN_BASE_IMAGE="${ACR_NAME}.azurecr.io/${BUN_BASE_ACR_IMAGE}"
 IDENTITY_NAME="id-kodiai"
 KEY_VAULT_NAME=${KEY_VAULT_NAME:-}
+SOURCE_COMMIT=${DEPLOY_SOURCE_COMMIT:-$(git rev-parse --verify HEAD)}
+if ! git rev-parse --verify "${SOURCE_COMMIT}^{commit}" >/dev/null 2>&1; then
+  echo "ERROR: DEPLOY_SOURCE_COMMIT '$SOURCE_COMMIT' is not a valid git commit." >&2
+  exit 1
+fi
+SOURCE_COMMIT=$(git rev-parse --verify "${SOURCE_COMMIT}^{commit}")
+SOURCE_COMMIT_SHORT=$(git rev-parse --short=12 "$SOURCE_COMMIT")
 BUILD_CONTEXT_DIR=$(mktemp -d)
 KEYVAULT_TEMP_FILES=()
 
@@ -99,11 +106,11 @@ prepare_build_context() {
   mkdir -p "$BUILD_CONTEXT_DIR"
   rm -rf "$BUILD_CONTEXT_DIR"/*
 
-  cp package.json bun.lock tsconfig.json Dockerfile Dockerfile.agent "$BUILD_CONTEXT_DIR"/
-  mkdir -p "$BUILD_CONTEXT_DIR/src"
-  cp -R src/. "$BUILD_CONTEXT_DIR/src/"
+  git archive --format=tar "$SOURCE_COMMIT" \
+    package.json bun.lock tsconfig.json Dockerfile Dockerfile.agent src \
+    | tar -x -C "$BUILD_CONTEXT_DIR"
 
-  echo "==> Prepared minimal build context at $BUILD_CONTEXT_DIR"
+  echo "==> Prepared git build context at $BUILD_CONTEXT_DIR from commit $SOURCE_COMMIT"
 }
 
 prepare_build_context
@@ -356,6 +363,9 @@ properties:
     containers:
       - name: "${ACA_JOB_NAME}"
         image: "${ACA_JOB_IMAGE}"
+        env:
+          - name: SOURCE_COMMIT
+            value: ${SOURCE_COMMIT}
         volumeMounts:
           - volumeName: kodiai-workspaces
             mountPath: /mnt/kodiai-workspaces
@@ -645,7 +655,7 @@ az containerapp job secret set \
 # -- Deploy Container App -----------------------------------------------------
 echo "==> Deploying container app: $APP_NAME..."
 if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
-  REVISION_SUFFIX="deploy-$(date +%Y%m%d-%H%M%S)"
+  REVISION_SUFFIX="deploy-${SOURCE_COMMIT_SHORT}-$(date +%Y%m%d-%H%M%S)"
   echo "==> Updating existing container app (revision: $REVISION_SUFFIX)..."
   APP_YAML=$(mktemp --suffix=.yaml)
   cat > "$APP_YAML" <<APPYAML
@@ -722,6 +732,8 @@ ${BOT_USER_ENV_YAML}
             value: "3000"
           - name: LOG_LEVEL
             value: info
+          - name: SOURCE_COMMIT
+            value: ${SOURCE_COMMIT}
         probes:
           - type: Liveness
             httpGet:
@@ -801,6 +813,7 @@ else
       SHUTDOWN_GRACE_MS="$SHUTDOWN_GRACE_MS" \
       PORT=3000 \
       LOG_LEVEL=info \
+      SOURCE_COMMIT="$SOURCE_COMMIT" \
       "${BOT_USER_CREATE_ENV_ARGS[@]}" \
     --output none
 
@@ -842,6 +855,8 @@ ${BOT_USER_ENV_YAML}
             value: "3000"
           - name: LOG_LEVEL
             value: info
+          - name: SOURCE_COMMIT
+            value: ${SOURCE_COMMIT}
         probes:
           - type: liveness
             httpGet:

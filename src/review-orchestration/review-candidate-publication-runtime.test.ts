@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewCandidateApprovalResult } from "./review-candidate-approval.ts";
 import type {
+  ReviewCandidateMovedToDetailsSummary,
   ReviewCandidatePublicationAdapterSummary,
   ReviewCandidatePublishedResultSummary,
 } from "./review-candidate-publication-adapter.ts";
 import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
+  isExpectedCandidatePublicationPolicyBlock,
   toReviewCandidatePublicationRuntimeConfigSnapshot,
   toReviewCandidatePublicationRuntimeDetailsSummary,
   type ReviewCandidatePublicationRuntimeInput,
@@ -74,6 +76,66 @@ describe("review candidate publication runtime classifier", () => {
     expect(result.reasons).toEqual(expect.arrayContaining(["missing-shared-publisher-results", "direct-fallback-published"]));
   });
 
+  test("classifies safe details-only preservation as moved-to-details without direct fallback evidence", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 1 }),
+      adapter: adapter({ input: 1, publishable: 0, approved: 0, detailsOnlyFindings: 1, movedToDetails: 1 }),
+      publisher: publisher([]),
+      convertedProcessedFindingCount: 0,
+    }));
+
+    expect(result.mode).toBe("moved-to-details");
+    expect(result.counts).toMatchObject({
+      candidatePublished: 0,
+      candidateMovedToDetails: 1,
+      candidateDetailsOnlyFindings: 1,
+      fallbackEvidence: 0,
+      directPublished: 0,
+      malformed: 0,
+    });
+    expect(result.reasons).toContain("candidate-moved-to-details");
+    expect(result.reasons).not.toContain("direct-fallback-published");
+    expect(result.detailsSummary.text).toContain("movedToDetails=1");
+  });
+
+  test("degrades and omits finding projection when moved-to-details metadata has unsafe redaction", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 1 }),
+      adapter: {
+        ...adapter({ input: 1, publishable: 0, detailsOnlyFindings: 1, movedToDetails: 1 }),
+        detailsOnlyFindings: [{
+          fingerprint: "rcf-0000000000000001",
+          lifecycle: "approved",
+          severity: "major",
+          category: "security",
+          title: "Should not render",
+          location: { path: "src/file.ts", line: 42 },
+          reason: "line-not-commentable",
+          excerpt: "secret sk-unsafe diff --git",
+        }],
+        movedToDetails: {
+          ...emptyMovedToDetailsSummary(),
+          counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: false,
+            rawModelOutputIncluded: false,
+            diffsIncluded: true,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        } as never,
+      },
+    }));
+
+    expect(result.mode).toBe("degraded");
+    expect(result.reasons).toContain("malformed-moved-to-details");
+    expect(result.detailsOnlyFindings).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("sk-unsafe");
+  });
+
   test("classifies attempted fallback as disallowed when policy blocks direct publication", () => {
     const result = classifyReviewCandidatePublicationRuntime(input({
       approval: approval({ approved: 1, fallbackDisallowed: 1 }),
@@ -108,6 +170,67 @@ describe("review candidate publication runtime classifier", () => {
 
     expect(blockedOnly.mode).toBe("blocked");
     expect(blockedOnly.counts.candidateBlocked).toBe(2);
+    expect(isExpectedCandidatePublicationPolicyBlock(blockedOnly)).toBe(true);
+  });
+
+  test("treats zero-candidate no-publication paths as expected policy blocks", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 0, suppressed: 0, rejected: 1 }),
+      adapter: adapter({ input: 0, publishable: 0, skipped: 0 }),
+      publisher: publisher([]),
+    }));
+
+    expect(result.mode).toBe("blocked");
+    expect(result.counts).toMatchObject({
+      approvedReferences: 0,
+      candidatePublishable: 0,
+      candidatePublished: 0,
+      candidateBlocked: 0,
+      candidateFailed: 0,
+      malformed: 0,
+    });
+    expect(result.reasons).toEqual(expect.arrayContaining(["no-candidate-publication-path", "approval-blocked"]));
+    expect(result.outcomeBuckets.blocked).toMatchObject({
+      mode: "blocked",
+      count: 1,
+      reasons: expect.arrayContaining(["approval-blocked", "no-candidate-publication-path"]),
+    });
+    expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(true);
+  });
+
+  test("surfaces approved but non-publishable fix candidates as expected fix eligibility blocks", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 3 }),
+      adapter: {
+        ...adapter({ input: 3, publishable: 0, approved: 0 }),
+        fixEligibility: {
+          ...emptyFixEligibilitySummary(),
+          status: "blocked",
+          counts: { input: 3, eligible: 0, blocked: 3, omitted: 0, capped: 0 },
+          reasonCounts: { "missing-replacement": 3 },
+        },
+      },
+      publisher: publisher([]),
+    }));
+
+    expect(result.mode).toBe("blocked");
+    expect(result.counts).toMatchObject({
+      approvedReferences: 3,
+      candidatePublishable: 0,
+      candidatePublished: 0,
+      candidateBlocked: 0,
+    });
+    expect(result.reasons).toContain("fix-eligibility-blocked");
+    expect(result.outcomeBuckets.blocked).toMatchObject({
+      mode: "blocked",
+      count: 3,
+      reasons: expect.arrayContaining(["fix-eligibility-blocked", "missing-replacement"]),
+    });
+    expect(result.detailsSummary.text).toContain("publishable=0");
+    expect(result.detailsSummary.text).toContain("nonPublishable=3");
+    expect(result.detailsSummary.text).toContain("fixBlocked=3");
+    expect(result.detailsSummary.text).toContain("reasons=fix-eligibility-blocked");
+    expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(true);
   });
 
   test("degrades instead of throwing on malformed summaries and unknown publisher status or reason values", () => {
@@ -167,6 +290,111 @@ describe("review candidate publication runtime classifier", () => {
     }
   });
 
+  test("exposes explicit sanitized outcome buckets for every non-zero publication outcome", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 7, fallbackDisallowed: 1 }),
+      adapter: adapter({ input: 8, publishable: 5, approved: 5, detailsOnlyFindings: 2, movedToDetails: 2, detailsOnlyOmitted: 1 }),
+      publisher: publisher([
+        published("rcf-0000000000000001", 101),
+        { fingerprint: "rcf-0000000000000002", status: "skipped", reason: "already-published" },
+        { fingerprint: "rcf-0000000000000003", status: "blocked", reason: "secret-detected" },
+        { fingerprint: "rcf-0000000000000004", status: "failed", reason: "line-not-commentable-in-pr-diff" },
+        { fingerprint: "rcf-0000000000000005", status: "malformed", reason: "diff --git sk-secret BEGIN PROMPT" },
+      ]),
+      convertedProcessedFindingCount: 1,
+      directPublication: { attempted: true, published: 0, allowed: false, reason: "direct fallback blocked before publishing TOKEN=abc123" },
+    }));
+
+    const buckets = outcomeBucketsOf(result);
+    expect(buckets.published).toMatchObject({ mode: "published", count: 1 });
+    expect(buckets.published.reasons).toEqual(expect.arrayContaining(["candidate-publisher-published", "published"]));
+    expect(buckets.skipped).toMatchObject({ mode: "skipped", count: 1 });
+    expect(buckets.skipped.reasons).toEqual(expect.arrayContaining(["candidate-publisher-skipped", "already-published"]));
+    expect(buckets.blocked).toMatchObject({ mode: "blocked", count: 1 });
+    expect(buckets.blocked.reasons).toEqual(expect.arrayContaining(["candidate-publisher-blocked", "secret-detected"]));
+    expect(buckets.failed).toMatchObject({ mode: "failed", count: 1 });
+    expect(buckets.failed.reasons).toEqual(expect.arrayContaining(["candidate-publisher-failed", "line-not-commentable-in-pr-diff"]));
+    expect(buckets.movedToDetails).toMatchObject({ mode: "moved-to-details", count: 2 });
+    expect(buckets.movedToDetails.reasons).toEqual(expect.arrayContaining(["candidate-moved-to-details"]));
+    expect(buckets.fallbackDisallowed).toMatchObject({ mode: "fallback-disallowed", count: 1 });
+    expect(buckets.fallbackDisallowed.reasons).toEqual(expect.arrayContaining(["direct-fallback-disallowed", "direct-fallback-blocked-before-publishing-token-redacted"]));
+    expect(buckets.degraded).toMatchObject({ mode: "degraded", count: 1 });
+    expect(buckets.degraded.reasons).toEqual(expect.arrayContaining(["candidate-publisher-malformed", "malformed-publisher-result", "diff-redacted-redacted-prompt-redacted"]));
+
+    for (const key of ["published", "skipped", "blocked", "failed", "movedToDetails", "fallbackDisallowed", "degraded"] as const) {
+      expectSafeNonZeroBucket(key, buckets[key]);
+    }
+    expect(buckets.degraded.count).toBeGreaterThanOrEqual(1);
+
+    const publicText = JSON.stringify(buckets);
+    for (const unsafe of ["diff --git", "sk-secret", "BEGIN PROMPT", "TOKEN=abc123", "direct fallback blocked"] as const) {
+      expect(publicText).not.toContain(unsafe);
+    }
+  });
+
+  test("normalizes empty unsafe and unknown publisher evidence into non-empty degraded outcome bucket reasons", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 4 }),
+      adapter: adapter({ input: 4, publishable: 4, approved: 4 }),
+      publisher: {
+        counts: { input: 4, processed: 1, skipped: 1, blocked: 1, failed: 1, malformed: 1 },
+        results: [
+          { fingerprint: "rcf-0000000000000001", status: "published", reason: "", commentId: 101 },
+          { fingerprint: "rcf-0000000000000002", status: "skipped", reason: "   " },
+          { fingerprint: "rcf-0000000000000003", status: "blocked", reason: "RAW_PROMPT_CANARY diff --git" },
+          { fingerprint: "rcf-0000000000000004", status: "unknown-new-status", reason: "TOKEN=abc123 hidden prompt" },
+          null,
+        ],
+      } as never,
+      convertedProcessedFindingCount: 1,
+    }));
+
+    const buckets = outcomeBucketsOf(result);
+    expectSafeNonZeroBucket("published", buckets.published);
+    expectSafeNonZeroBucket("skipped", buckets.skipped);
+    expectSafeNonZeroBucket("blocked", buckets.blocked);
+    expectSafeNonZeroBucket("degraded", buckets.degraded);
+    expect(buckets.degraded.reasons).toEqual(expect.arrayContaining(["unknown-publisher-status", "malformed-publisher-result"]));
+
+    const publicText = JSON.stringify(buckets);
+    for (const unsafe of ["RAW_PROMPT_CANARY", "diff --git", "TOKEN=abc123", "hidden prompt", "unknown-new-status"] as const) {
+      expect(publicText).not.toContain(unsafe);
+    }
+  });
+
+  test("caps outcome bucket reasons and samples under 10x publication volume", () => {
+    const manyResults = Array.from({ length: 240 }, (_, index) => ({
+      fingerprint: `rcf-${index.toString(16).padStart(16, "0")}`,
+      status: index % 4 === 0 ? "published" : index % 4 === 1 ? "skipped" : index % 4 === 2 ? "blocked" : "failed",
+      reason: `unsafe volume reason ${index} diff --git sk-secret-${index} BEGIN PROMPT`,
+      ...(index % 4 === 0 ? { commentId: 2000 + index } : {}),
+    }));
+
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 240 }),
+      adapter: adapter({ input: 240, publishable: 240, approved: 240 }),
+      publisher: {
+        counts: { input: 240, processed: 60, skipped: 60, blocked: 60, failed: 60, malformed: 0 },
+        results: manyResults as never,
+      },
+      convertedProcessedFindingCount: 60,
+    }));
+
+    const buckets = outcomeBucketsOf(result);
+    for (const key of ["published", "skipped", "blocked", "failed"] as const) {
+      expectSafeNonZeroBucket(key, buckets[key]);
+      expect(buckets[key].reasons.length).toBeLessThanOrEqual(8);
+      expect(JSON.stringify(buckets[key]).length).toBeLessThanOrEqual(900);
+    }
+    expect(JSON.stringify(buckets).length).toBeLessThanOrEqual(2400);
+    expect(result.publisherResultSample.length).toBeLessThanOrEqual(20);
+
+    const publicText = JSON.stringify(buckets);
+    for (const unsafe of ["unsafe volume reason", "diff --git", "sk-secret", "BEGIN PROMPT"] as const) {
+      expect(publicText).not.toContain(unsafe);
+    }
+  });
+
   test("helper represents candidate publication flow evidence without fabricated processed findings", () => {
     const evidence = createCandidatePublicationFlowEvidence({
       payloadFingerprints: ["rcf-0000000000000001", "rcf-0000000000000002"],
@@ -182,6 +410,30 @@ describe("review candidate publication runtime classifier", () => {
     expect(evidence.hasFabricatedProcessedFindings).toBe(false);
   });
 });
+
+type PublicationOutcomeBucket = { mode: string; count: number; reasons: string[] };
+type PublicationOutcomeBuckets = Record<string, PublicationOutcomeBucket>;
+
+function outcomeBucketsOf(result: unknown): PublicationOutcomeBuckets {
+  const buckets = (result as { outcomeBuckets?: unknown }).outcomeBuckets;
+  expect(buckets).toBeDefined();
+  expect(typeof buckets).toBe("object");
+  expect(Array.isArray(buckets)).toBe(false);
+  return buckets as PublicationOutcomeBuckets;
+}
+
+function expectSafeNonZeroBucket(key: string, bucket: PublicationOutcomeBucket | undefined): void {
+  expect(bucket).toBeDefined();
+  expect(bucket?.mode).toBeTruthy();
+  expect(bucket?.count).toBeGreaterThan(0);
+  expect(bucket?.reasons.length).toBeGreaterThan(0);
+  for (const reason of bucket?.reasons ?? []) {
+    expect(reason).toMatch(/^[a-z0-9][a-z0-9-]{1,80}$/);
+    expect(reason.trim()).toBe(reason);
+  }
+  expect(JSON.stringify(bucket)).not.toContain(key === "published" ? "commentId" : "raw");
+}
+
 
 function input(overrides: Partial<ReviewCandidatePublicationRuntimeInput> = {}): ReviewCandidatePublicationRuntimeInput {
   return {
@@ -222,9 +474,20 @@ function adapter(overrides: Partial<ReviewCandidatePublicationAdapterSummary["co
     skipped: 0,
     approved: 0,
     rewritten: 0,
+    detailsOnlyFindings: 0,
+    movedToDetails: 0,
+    detailsOnlyOmitted: 0,
     ...overrides,
   };
-  return { counts, skipped: [], fingerprints: [] };
+  return {
+    counts,
+    skipped: [],
+    fingerprints: [],
+    fixEligibility: emptyFixEligibilitySummary(),
+    fixOutcomes: [],
+    detailsOnlyFindings: [],
+    movedToDetails: emptyMovedToDetailsSummary(),
+  };
 }
 
 function publisher(results: ReviewCandidatePublishedResultSummary["results"]): ReviewCandidatePublishedResultSummary {
@@ -236,8 +499,49 @@ function publisher(results: ReviewCandidatePublishedResultSummary["results"]): R
       blocked: results.filter((result) => result.status === "blocked").length,
       failed: results.filter((result) => result.status === "failed").length,
       malformed: results.filter((result) => result.status === "malformed").length,
+      detailsOnlyFindings: 0,
+      movedToDetails: 0,
+      detailsOnlyOmitted: 0,
     },
     results,
+    movedToDetails: emptyMovedToDetailsSummary(),
+  };
+}
+
+function emptyMovedToDetailsSummary(): ReviewCandidateMovedToDetailsSummary {
+  return {
+    counts: { total: 0, fromFixEligibility: 0, fromPublisherResult: 0, omitted: 0 },
+    reasonCounts: {},
+    redaction: {
+      rawCandidatePayloadsIncluded: false,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      diffsIncluded: false,
+      replacementTextIncluded: false,
+      githubResponsePayloadsIncluded: false,
+      secretLikeValuesIncluded: false,
+      bounded: true,
+    },
+  };
+}
+
+function emptyFixEligibilitySummary(): ReviewCandidatePublicationAdapterSummary["fixEligibility"] {
+  return {
+    schema: "same-pr-fix-eligibility.v1",
+    status: "empty",
+    counts: { input: 0, eligible: 0, blocked: 0, omitted: 0, capped: 0 },
+    reasonCounts: {},
+    omittedReasonCounts: {},
+    redaction: {
+      privateOnly: true,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      candidateBodiesIncluded: false,
+      toolPayloadsIncluded: false,
+      diffsIncluded: false,
+      unboundedDiffsIncluded: false,
+      secretDetected: false,
+    },
   };
 }
 

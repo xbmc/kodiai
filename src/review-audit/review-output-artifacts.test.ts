@@ -225,7 +225,7 @@ describe("review output artifact helpers", () => {
     } satisfies Partial<ReviewOutputArtifactCollectionError>);
   });
 
-  test("validateCollapsedApproveReviewBody accepts the shipped collapsed APPROVE grammar with 1-3 bullets", () => {
+  test("validateCollapsedApproveReviewBody accepts the shipped visible APPROVE grammar with 1-3 bullets", () => {
     const oneBulletKey = makeReviewOutputKey({ deliveryId: "delivery-one" });
     const threeBulletKey = makeReviewOutputKey({ deliveryId: "delivery-three" });
 
@@ -242,7 +242,7 @@ describe("review output artifact helpers", () => {
         reviewOutputKey: threeBulletKey,
         evidence: [
           "Reviewed the touched files and found no actionable issues.",
-          "The approval body matches the collapsed GitHub contract.",
+          "The approval body matches the visible GitHub contract.",
           "No visible approval body drift is present.",
         ],
       }),
@@ -251,7 +251,7 @@ describe("review output artifact helpers", () => {
     expect(oneBullet.valid).toBe(true);
     expect(oneBullet.evidenceBulletCount).toBe(1);
     expect(oneBullet.hasExactMarker).toBe(true);
-    expect(oneBullet.hasDetailsWrapper).toBe(true);
+    expect(oneBullet.hasDetailsWrapper).toBe(false);
 
     expect(threeBullets.valid).toBe(true);
     expect(threeBullets.evidenceBulletCount).toBe(3);
@@ -259,7 +259,7 @@ describe("review output artifact helpers", () => {
     expect(threeBullets.issues).toEqual([]);
   });
 
-  test("validateCollapsedApproveReviewBody rejects missing Evidence bullets, overflow bullets, and visible-body drift", () => {
+  test("validateCollapsedApproveReviewBody rejects missing Evidence bullets, overflow bullets, and legacy collapsed response wrappers", () => {
     const reviewOutputKey = makeReviewOutputKey();
 
     const zeroBullets = validateCollapsedApproveReviewBody({
@@ -288,14 +288,21 @@ describe("review output artifact helpers", () => {
         buildReviewOutputMarker(reviewOutputKey),
       ].join("\n"),
     });
-    const visible = validateCollapsedApproveReviewBody({
+    const legacyCollapsed = validateCollapsedApproveReviewBody({
       reviewOutputKey,
       body: [
+        "Decision: APPROVE",
+        "",
+        "<details>",
+        "<summary>kodiai response</summary>",
+        "",
         "Decision: APPROVE",
         "Issues: none",
         "",
         "Evidence:",
         "- Reviewed the changed files.",
+        "",
+        "</details>",
         "",
         buildReviewOutputMarker(reviewOutputKey),
       ].join("\n"),
@@ -309,12 +316,12 @@ describe("review output artifact helpers", () => {
     expect(fourBullets.evidenceBulletCount).toBe(4);
     expect(fourBullets.issues).toContain("Approval body must include 1-3 evidence bullets.");
 
-    expect(visible.valid).toBe(false);
-    expect(visible.hasDetailsWrapper).toBe(false);
-    expect(visible.issues).toContain("Approval body must use collapsed <details> wrapper text.");
+    expect(legacyCollapsed.valid).toBe(false);
+    expect(legacyCollapsed.hasDetailsWrapper).toBe(true);
+    expect(legacyCollapsed.issues).toContain("Approval body must keep the response visible; legacy <details> response wrappers are no longer allowed.");
   });
 
-  test("evaluateExactReviewOutputProof passes only for one APPROVED review with the shared collapsed body", async () => {
+  test("evaluateExactReviewOutputProof passes only for one APPROVED review with the shared visible body", async () => {
     const reviewOutputKey = makeReviewOutputKey();
     const { octokit } = createOctokitStub({
       reviews: [

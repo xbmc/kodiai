@@ -70,10 +70,10 @@ export type ReviewFindingLifecycleLogEvidence = {
   source: ReviewLifecycleHandlerSource;
   trigger: ReviewLifecycleHandlerTrigger;
   normalizedStatus: ReviewFindingLifecycleResult["status"];
-  counts: ReviewFindingLifecyclePublicProjection["counts"];
-  statusSummary: ReviewFindingLifecyclePublicProjection["counts"]["status"];
-  severitySummary: ReviewFindingLifecyclePublicProjection["counts"]["severity"];
-  actionabilitySummary: ReviewFindingLifecyclePublicProjection["counts"]["actionability"];
+  counts: Record<string, unknown>;
+  statusSummary: Record<string, unknown>;
+  severitySummary: Record<string, unknown>;
+  actionabilitySummary: Record<string, unknown>;
   rejectionReasonCodes: readonly string[];
   reasonCodes: readonly string[];
   redaction: ReviewFindingLifecyclePublicProjection["redaction"];
@@ -165,15 +165,37 @@ export function attachReviewFindingLifecycle(
       source: input.source,
       trigger: input.trigger,
       normalizedStatus: lifecycle.status,
-      counts: projection.counts,
-      statusSummary: projection.counts.status,
-      severitySummary: projection.counts.severity,
-      actionabilitySummary: projection.counts.actionability,
+      counts: omitZeroCountLeaves(projection.counts),
+      statusSummary: omitZeroCountLeaves(projection.counts.status),
+      severitySummary: omitZeroCountLeaves(projection.counts.severity),
+      actionabilitySummary: omitZeroCountLeaves(projection.counts.actionability),
       rejectionReasonCodes: projection.rejectedReasonCodes,
       reasonCodes: projection.reasonCodes,
       redaction: projection.redaction,
     },
   };
+}
+
+function omitZeroCountLeaves(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const output: Record<string, unknown> = {};
+
+  for (const [key, child] of Object.entries(value)) {
+    if (typeof child === "number") {
+      if (child !== 0) output[key] = child;
+      continue;
+    }
+
+    if (child && typeof child === "object" && !Array.isArray(child)) {
+      const nested = omitZeroCountLeaves(child);
+      if (Object.keys(nested).length > 0) output[key] = nested;
+      continue;
+    }
+
+    output[key] = child;
+  }
+
+  return output;
 }
 
 function composeSamePrFixTruthEvidence(

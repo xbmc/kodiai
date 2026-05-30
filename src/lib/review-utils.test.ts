@@ -487,8 +487,196 @@ describe("formatReviewDetailsSummary", () => {
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result.indexOf("Review candidates:")).toBeLessThan(result.indexOf("Review candidate publication:"));
-    expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 published=3 directFallback=0 reasons=candidate-publisher-published");
+    expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 publishable=3 nonPublishable=0 fixBlocked=0 published=3 directFallback=0 reasons=candidate-publisher-published");
     expect(result).not.toContain("Review candidate publication runtime:");
+  });
+
+  it("renders compact publication outcome buckets without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: candidate-approved-partial approvedRefs=7 rewrittenRefs=0 publishable=5 candidatePublished=1 skipped=1 blocked=1 failed=1 movedToDetails=2 detailsOnly=2 detailsOmitted=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-published,candidate-publisher-skipped,candidate-publisher-blocked,candidate-publisher-failed,candidate-moved-to-details,direct-fallback-disallowed,candidate-publisher-malformed",
+        outcomeBuckets: {
+          published: { mode: "published", count: 1, reasons: ["candidate-publisher-published", "RAW_PROMPT_CANARY"] },
+          skipped: { mode: "skipped", count: 1, reasons: ["candidate-publisher-skipped", "diff --git"] },
+          blocked: { mode: "blocked", count: 1, reasons: ["candidate-publisher-blocked", "sk-secret-value"] },
+          failed: { mode: "failed", count: 1, reasons: ["candidate-publisher-failed", "TOKEN=abc123"] },
+          movedToDetails: { mode: "moved-to-details", count: 2, reasons: ["candidate-moved-to-details"] },
+          fallbackDisallowed: { mode: "fallback-disallowed", count: 1, reasons: ["direct-fallback-disallowed"] },
+          degraded: { mode: "degraded", count: 1, reasons: ["candidate-publisher-malformed"] },
+        },
+      } as never,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("buckets=published:1:candidate-publisher-published");
+    expect(result).toContain("skipped:1:candidate-publisher-skipped");
+    expect(result).toContain("blocked:1:candidate-publisher-blocked");
+    expect(result).toContain("failed:1:candidate-publisher-failed");
+    expect(result).toContain("moved-to-details:2:candidate-moved-to-details");
+    expect(result).toContain("fallback-disallowed:1:direct-fallback-disallowed");
+    expect(result).toContain("degraded:1:candidate-publisher-malformed");
+    expect(result).not.toContain("RAW_PROMPT_CANARY");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("sk-secret-value");
+    expect(result).not.toContain("TOKEN=abc123");
+  });
+
+  it("caps compact publication outcome bucket text and redacts unsafe bucket reasons", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: degraded approvedRefs=240 rewrittenRefs=0 publishable=240 candidatePublished=60 skipped=60 blocked=60 failed=60 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-partial",
+        outcomeBuckets: {
+          published: { mode: "published", count: 60, reasons: ["candidate-publisher-published", ...Array.from({ length: 20 }, (_, index) => `unsafe published ${index} diff --git sk-secret`)] },
+          skipped: { mode: "skipped", count: 60, reasons: ["candidate-publisher-skipped"] },
+          blocked: { mode: "blocked", count: 60, reasons: ["candidate-publisher-blocked"] },
+          failed: { mode: "failed", count: 60, reasons: ["candidate-publisher-failed"] },
+          degraded: { mode: "degraded", count: 1, reasons: ["malformed-publisher-result", "BEGIN PROMPT hidden instructions"] },
+        },
+      } as never,
+    });
+
+    const line = result.split("\n").find((entry) => entry.includes("Review candidate publication:")) ?? "";
+    expect(line).toContain("buckets=published:60:candidate-publisher-published");
+    expect(line).toContain("+20 bucketReasonsOmitted");
+    expect(line.length).toBeLessThanOrEqual(520);
+    expect(result).not.toContain("unsafe published");
+    expect(result).not.toContain("diff --git");
+    expect(result).not.toContain("sk-secret");
+    expect(result).not.toContain("BEGIN PROMPT");
+    expect(result).not.toContain("hidden instructions");
+  });
+
+
+  it("renders moved-to-details publication status plus bounded details-only findings", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: moved-to-details approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff",
+        movedToDetails: {
+          counts: { total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 },
+          reasonCounts: { "line-not-commentable-in-pr-diff": 1 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: false,
+            rawModelOutputIncluded: false,
+            diffsIncluded: false,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        },
+        detailsOnlyFindings: [{
+          fingerprint: "rcf-0000000000000001",
+          lifecycle: "approved",
+          severity: "major",
+          category: "correctness",
+          title: "Guard null payload before enqueue",
+          location: { path: "src/worker.ts", line: 42 },
+          reason: "line-not-commentable-in-pr-diff",
+          excerpt: "The enqueue path dereferences payload before validating it.",
+        }],
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("- Review candidate publication: mode=moved-to-details approved=1 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff movedToDetails=1 detailsOmitted=0");
+    expect(result).toContain("- Moved review candidates preserved in details:");
+    expect(result).toContain("  - [major/correctness] Guard null payload before enqueue (src/worker.ts:42, reason=line-not-commentable-in-pr-diff) — The enqueue path dereferences payload before validating it.");
+    expect(result).not.toContain("direct-fallback-published");
+  });
+
+  it("bounds and sanitizes moved-to-details finding lines while reporting omitted count", () => {
+    const findings = Array.from({ length: 12 }, (_, index) => ({
+      fingerprint: `rcf-${index.toString(16).padStart(16, "0")}`,
+      lifecycle: "approved" as const,
+      severity: "major" as const,
+      category: "security" as const,
+      title: `Safe title ${index} sk-secret-value ghp_secret_token_value BEGIN PROMPT diff --git`,
+      location: { path: `src/file-${index}.ts`, line: 10 + index },
+      reason: index === 0 ? "line-not-commentable-in-pr-diff" as const : "line-not-commentable" as const,
+      excerpt: `short excerpt ${index} TOKEN=abc123 secret=value \`\`\`suggestion\nreplacement text\n\`\`\` diff --git prompt text`,
+    }));
+
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: moved-to-details approvedRefs=12 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=12 detailsOnly=12 detailsOmitted=7 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six,oversized reason seven",
+        movedToDetails: {
+          counts: { total: 12, fromFixEligibility: 12, fromPublisherResult: 0, omitted: 7 },
+          reasonCounts: { "line-not-commentable": 11, "line-not-commentable-in-pr-diff": 1 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: false,
+            rawModelOutputIncluded: false,
+            diffsIncluded: false,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        },
+        detailsOnlyFindings: findings,
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(result).toContain("movedToDetails=12 detailsOmitted=7");
+    expect(result).toContain("+2 more");
+    expect(result).toContain("  - ...and 7 more omitted (bounded-details-only)");
+    expect(result).toContain("Safe title 0 redacted redacted prompt-redacted");
+    expect(result).toContain("[fix-redacted]");
+    expect(result).not.toContain("Safe title 5");
+    for (const unsafe of ["sk-secret-value", "ghp_secret_token_value", "BEGIN PROMPT", "TOKEN=abc123", "secret=value", "replacement text", "diff --git"] as const) {
+      expect(result).not.toContain(unsafe);
+    }
+  });
+
+  it("degrades moved-to-details metadata and omits findings when projection is malformed or unsafe", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        label: "Review candidate publication runtime",
+        text: "Review candidate publication runtime: not-a-real-mode approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=BEGIN PROMPT,diff --git,unknown reason",
+        movedToDetails: {
+          counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
+          reasonCounts: { "unknown unsafe reason": 1 },
+          redaction: {
+            rawCandidatePayloadsIncluded: false,
+            rawPromptsIncluded: true,
+            rawModelOutputIncluded: false,
+            diffsIncluded: false,
+            replacementTextIncluded: false,
+            githubResponsePayloadsIncluded: false,
+            secretLikeValuesIncluded: false,
+            bounded: true,
+          },
+        },
+        detailsOnlyFindings: [{
+          fingerprint: "rcf-0000000000000001",
+          lifecycle: "approved",
+          severity: "major",
+          category: "security",
+          title: "MUST_NOT_RENDER sk-secret-value",
+          location: { path: "src/secret.ts", line: 1 },
+          reason: "line-not-commentable",
+          excerpt: "PROMPT_SECRET diff --git",
+        }],
+      } as never,
+    });
+
+    expect(reviewCandidatePublicationLineCount(result)).toBe(1);
+    expect(result).toContain("mode=degraded");
+    expect(result).toContain("prompt-redacted,diff-redacted,unknown-reason");
+    expect(result).not.toContain("Moved review candidates preserved in details");
+    expect(result).not.toContain("MUST_NOT_RENDER");
+    expect(result).not.toContain("sk-secret-value");
+    expect(result).not.toContain("diff --git");
   });
 
   it("renders direct fallback publication state as audited fallback evidence", () => {
@@ -501,7 +689,7 @@ describe("formatReviewDetailsSummary", () => {
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
-    expect(result).toContain("- Review candidate publication: mode=direct-fallback approved=0 rewritten=0 published=0 directFallback=2 reasons=direct-fallback-attempted,direct-fallback-published");
+    expect(result).toContain("- Review candidate publication: mode=direct-fallback approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=2 reasons=direct-fallback-attempted,direct-fallback-published");
   });
 
   it("omits missing candidate publication metadata and degrades malformed metadata without breaking Review Details", () => {
@@ -516,7 +704,8 @@ describe("formatReviewDetailsSummary", () => {
 
     expect(reviewCandidatePublicationLineCount(omitted)).toBe(0);
     expect(reviewCandidatePublicationLineCount(malformed)).toBe(1);
-    expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
+    expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
+    expect(malformed).toContain("buckets=degraded:1:malformed-runtime-summary");
     expect(malformed).toContain("<summary>Review Details</summary>");
     expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
   });
@@ -531,7 +720,7 @@ describe("formatReviewDetailsSummary", () => {
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
-    expect(result).toContain("- Review candidate publication: mode=degraded approved=1 rewritten=0 published=0 directFallback=0 reasons=candidate-publisher-failed,redacted,redacted,prompt-redacted,diff-redacted,prompt-redacted");
+    expect(result).toContain("- Review candidate publication: mode=degraded approved=1 rewritten=0 publishable=1 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=candidate-publisher-failed,redacted,redacted,prompt-redacted,diff-redacted,prompt-redacted");
     expect(result).toContain("+6 more");
     expect(result).not.toContain("sk-secret-value");
     expect(result).not.toContain("ghp_secret_token_value");

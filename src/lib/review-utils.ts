@@ -418,12 +418,17 @@ function sanitizeReviewCandidateDetailsText(value: string): string {
 const REVIEW_CANDIDATE_PUBLICATION_MODES = new Set([
   "candidate-approved",
   "candidate-approved-partial",
+  "moved-to-details",
   "direct-fallback",
   "fallback-disallowed",
   "blocked",
   "degraded",
 ]);
 const MAX_REVIEW_CANDIDATE_PUBLICATION_REASONS = 6;
+const MAX_REVIEW_CANDIDATE_PUBLICATION_BUCKETS = 8;
+const MAX_REVIEW_CANDIDATE_PUBLICATION_BUCKET_REASONS = 8;
+const MAX_REVIEW_CANDIDATE_DETAILS_ONLY_FINDINGS = 5;
+const MAX_REVIEW_CANDIDATE_DETAILS_ONLY_EXCERPT_LENGTH = 160;
 
 export function formatReviewCandidatePublicationDetailsLine(
   reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null,
@@ -435,14 +440,18 @@ export function formatReviewCandidatePublicationDetailsLine(
       return [formatMalformedReviewCandidatePublicationDetailsLine()];
     }
 
-    const normalized = normalizeReviewCandidatePublicationDetailsText(reviewCandidatePublication.text);
-    return normalized ? [`- ${normalized}`] : [formatMalformedReviewCandidatePublicationDetailsLine()];
+    const normalized = normalizeReviewCandidatePublicationDetailsText(reviewCandidatePublication.text, reviewCandidatePublication);
+    if (!normalized) return [formatMalformedReviewCandidatePublicationDetailsLine()];
+    return [`- ${normalized}`, ...formatReviewCandidateMovedToDetailsLines(reviewCandidatePublication)];
   } catch {
     return [formatMalformedReviewCandidatePublicationDetailsLine()];
   }
 }
 
-function normalizeReviewCandidatePublicationDetailsText(value: string): string | null {
+function normalizeReviewCandidatePublicationDetailsText(
+  value: string,
+  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary,
+): string | null {
   const text = sanitizeReviewCandidatePublicationDetailsText(value);
   const match = text.match(/^Review candidate publication runtime:\s+(\S+)\s*/);
   if (!match) return null;
@@ -451,18 +460,163 @@ function normalizeReviewCandidatePublicationDetailsText(value: string): string |
   const mode = REVIEW_CANDIDATE_PUBLICATION_MODES.has(rawMode) ? rawMode : "degraded";
   const approved = extractCandidatePublicationCount(text, "approvedRefs");
   const rewritten = extractCandidatePublicationCount(text, "rewrittenRefs");
+  const publishable = extractCandidatePublicationCount(text, "publishable");
+  const nonPublishable = extractCandidatePublicationCount(text, "nonPublishable");
+  const fixBlocked = extractCandidatePublicationCount(text, "fixBlocked");
   const published = extractCandidatePublicationCount(text, "candidatePublished");
+  const movedToDetails = extractCandidatePublicationCount(text, "movedToDetails");
+  const detailsOmitted = extractCandidatePublicationCount(text, "detailsOmitted");
   const directFallback = Math.max(
     extractCandidatePublicationCount(text, "fallbackEvidence"),
     extractCandidatePublicationCount(text, "directPublished"),
   );
   const reasons = formatReviewCandidatePublicationReasons(text);
+  const buckets = formatReviewCandidatePublicationOutcomeBuckets(reviewCandidatePublication);
 
-  return `Review candidate publication: mode=${mode} approved=${approved} rewritten=${rewritten} published=${published} directFallback=${directFallback} reasons=${reasons}`;
+  return `Review candidate publication: mode=${mode} approved=${approved} rewritten=${rewritten} publishable=${publishable} nonPublishable=${nonPublishable} fixBlocked=${fixBlocked} published=${published} directFallback=${directFallback} reasons=${reasons} movedToDetails=${movedToDetails} detailsOmitted=${detailsOmitted}${buckets ? ` buckets=${buckets}` : ""}`;
+}
+
+
+function formatReviewCandidatePublicationOutcomeBuckets(
+  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary,
+): string | null {
+  const rawBuckets = (reviewCandidatePublication as { outcomeBuckets?: unknown } | undefined)?.outcomeBuckets;
+  if (typeof rawBuckets !== "object" || rawBuckets === null || Array.isArray(rawBuckets)) return null;
+
+  const entries: string[] = [];
+  let omittedReasons = 0;
+  const orderedKeys = ["published", "skipped", "blocked", "failed", "movedToDetails", "directFallback", "fallbackDisallowed", "degraded"] as const;
+  for (const key of orderedKeys) {
+    if (entries.length >= MAX_REVIEW_CANDIDATE_PUBLICATION_BUCKETS) break;
+    const bucket = (rawBuckets as Record<string, unknown>)[key];
+    if (typeof bucket !== "object" || bucket === null || Array.isArray(bucket)) continue;
+    const record = bucket as Record<string, unknown>;
+    const count = readNonNegativeCount(record, "count");
+    if (count <= 0) continue;
+    const mode = sanitizeReviewCandidatePublicationBucketMode(record.mode, key);
+    const rawReasons = Array.isArray(record.reasons) ? record.reasons : [];
+    const safeReasons = rawReasons
+      .map((reason) => typeof reason === "string" ? sanitizeReviewCandidatePublicationToken(reason) : "")
+      .filter(isSafeReviewCandidatePublicationBucketReason);
+    if (mode !== "degraded") {
+      omittedReasons += Math.max(0, rawReasons.length - safeReasons.length);
+    }
+    const cappedReasons = safeReasons.slice(0, MAX_REVIEW_CANDIDATE_PUBLICATION_BUCKET_REASONS);
+    omittedReasons += Math.max(0, safeReasons.length - cappedReasons.length);
+    entries.push(`${mode}:${count}:${cappedReasons.length > 0 ? cappedReasons.join("+") : "unknown-safe-reason"}`);
+  }
+
+  if (entries.length === 0) return null;
+  return `${entries.join(",")}${omittedReasons > 0 ? ` +${omittedReasons} bucketReasonsOmitted` : ""}`;
+}
+
+function sanitizeReviewCandidatePublicationBucketMode(value: unknown, key: string): string {
+  const mode = typeof value === "string" ? sanitizeReviewCandidatePublicationToken(value) : "";
+  if (mode) return mode;
+  return key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function isSafeReviewCandidatePublicationBucketReason(value: string): boolean {
+  if (!/^[a-z0-9][a-z0-9-]{1,80}$/.test(value)) return false;
+  return !/(redacted|prompt|diff|token|secret|unsafe|raw|canary|hidden)/.test(value);
+}
+
+function formatReviewCandidateMovedToDetailsLines(
+  reviewCandidatePublication: ReviewCandidatePublicationRuntimeDetailsSummary,
+): string[] {
+  try {
+    if (!hasSafeMovedToDetailsRedaction(reviewCandidatePublication.movedToDetails)) return [];
+    const findings = Array.isArray(reviewCandidatePublication.detailsOnlyFindings)
+      ? reviewCandidatePublication.detailsOnlyFindings
+      : [];
+    if (findings.length === 0) return [];
+
+    const rendered = findings
+      .map(formatReviewCandidateMovedFindingLine)
+      .filter((line): line is string => Boolean(line))
+      .slice(0, MAX_REVIEW_CANDIDATE_DETAILS_ONLY_FINDINGS);
+    if (rendered.length === 0) return [];
+
+    const total = readNonNegativeCount(reviewCandidatePublication.movedToDetails?.counts ?? {}, "total");
+    const explicitOmitted = readNonNegativeCount(reviewCandidatePublication.movedToDetails?.counts ?? {}, "omitted");
+    const omitted = Math.max(0, total - rendered.length, explicitOmitted, findings.length - rendered.length);
+    return [
+      "- Moved review candidates preserved in details:",
+      ...rendered,
+      ...(omitted > 0 ? [`  - ...and ${omitted} more omitted (bounded-details-only)`] : []),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+function hasSafeMovedToDetailsRedaction(summary: ReviewCandidatePublicationRuntimeDetailsSummary["movedToDetails"]): boolean {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) return false;
+  const redaction = summary.redaction;
+  if (typeof redaction !== "object" || redaction === null || Array.isArray(redaction)) return false;
+  return redaction.rawCandidatePayloadsIncluded === false
+    && redaction.rawPromptsIncluded === false
+    && redaction.rawModelOutputIncluded === false
+    && redaction.diffsIncluded === false
+    && redaction.replacementTextIncluded === false
+    && redaction.githubResponsePayloadsIncluded === false
+    && redaction.secretLikeValuesIncluded === false
+    && redaction.bounded === true;
+}
+
+function formatReviewCandidateMovedFindingLine(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const finding = value as Record<string, unknown>;
+  const location = typeof finding.location === "object" && finding.location !== null && !Array.isArray(finding.location)
+    ? finding.location as Record<string, unknown>
+    : null;
+  if (!location) return null;
+
+  const title = sanitizeMovedDetailsText(finding.title, 96) ?? "Untitled finding";
+  const severity = sanitizeReviewCandidatePublicationToken(String(finding.severity ?? "medium"));
+  const category = sanitizeReviewCandidatePublicationToken(String(finding.category ?? "correctness"));
+  const path = sanitizeMovedDetailsPath(location.path);
+  const line = readPositiveInteger(location.line);
+  const reason = sanitizeReviewCandidatePublicationToken(String(finding.reason ?? "unknown-safe-reason")) || "unknown-safe-reason";
+  if (!path || !line) return null;
+
+  const excerpt = sanitizeMovedDetailsText(finding.excerpt, MAX_REVIEW_CANDIDATE_DETAILS_ONLY_EXCERPT_LENGTH);
+  return `  - [${severity}/${category}] ${title} (${path}:${line}, reason=${reason})${excerpt ? ` — ${excerpt}` : ""}`;
+}
+
+function sanitizeMovedDetailsPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^b\//, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("..") || /^[a-zA-Z]:[\\/]/.test(normalized)) return null;
+  return sanitizeMovedDetailsText(normalized, 160);
+}
+
+function sanitizeMovedDetailsText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return null;
+  const normalized = String(value)
+    .replace(/```suggestion[\s\S]*?```/gi, "[fix-redacted]")
+    .replace(/diff --git[\s\S]*/gi, "diff-redacted")
+    .replace(/BEGIN\s+PROMPT[\s\S]*/gi, "prompt-redacted")
+    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
+    .replace(/system prompt|hidden instructions/gi, "prompt-redacted")
+    .replace(/TOKEN\s*[:=]\s*[^\s]+/gi, "token-redacted")
+    .replace(/secret\s*[:=]\s*[^\s]+/gi, "secret-redacted")
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
+    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
+    .replace(/AKIA[0-9A-Z]{16}/g, "redacted")
+    .replace(/[\r\n|\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function readPositiveInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 1 ? Math.trunc(value) : null;
 }
 
 function formatMalformedReviewCandidatePublicationDetailsLine(): string {
-  return "- Review candidate publication: mode=degraded approved=0 rewritten=0 published=0 directFallback=0 reasons=malformed-runtime-summary";
+  return "- Review candidate publication: mode=degraded approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=malformed-runtime-summary movedToDetails=0 detailsOmitted=0 buckets=degraded:1:malformed-runtime-summary";
 }
 
 function extractCandidatePublicationCount(text: string, key: string): number {

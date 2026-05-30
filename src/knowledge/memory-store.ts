@@ -62,6 +62,84 @@ type RepairStateRow = {
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS = "learning_memories" as const satisfies EmbeddingRepairCorpus;
 
+type RequiredLearningMemorySqlField =
+  | "repo"
+  | "owner"
+  | "findingId"
+  | "reviewId"
+  | "sourceRepo"
+  | "findingText"
+  | "severity"
+  | "category"
+  | "filePath"
+  | "outcome"
+  | "embeddingModel"
+  | "embeddingDim"
+  | "stale";
+
+type PreparedLearningMemoryRecord = Omit<LearningMemoryRecord, "id" | "language" | "createdAt"> & {
+  id: number | null;
+  language: string | null;
+  createdAt: string | null;
+};
+
+const REQUIRED_LEARNING_MEMORY_SQL_FIELDS = [
+  "repo",
+  "owner",
+  "findingId",
+  "reviewId",
+  "sourceRepo",
+  "findingText",
+  "severity",
+  "category",
+  "filePath",
+  "outcome",
+  "embeddingModel",
+  "embeddingDim",
+  "stale",
+] as const satisfies readonly RequiredLearningMemorySqlField[];
+
+function assertRequiredLearningMemorySqlField(
+  record: LearningMemoryRecord,
+  field: RequiredLearningMemorySqlField,
+): void {
+  if (record[field] === undefined) {
+    throw new Error(`LearningMemoryRecord.${field} is undefined before SQL binding`);
+  }
+}
+
+/**
+ * Prepare a learning-memory record for postgres.js binding.
+ *
+ * Required SQL-bound fields fail locally if undefined so postgres UNDEFINED_VALUE
+ * is never the first visible signal. Optional fields are normalized to null at
+ * this boundary; writeMemory can still derive fallback language before writing.
+ */
+export function prepareLearningMemoryRecordForSql(record: LearningMemoryRecord): PreparedLearningMemoryRecord {
+  for (const field of REQUIRED_LEARNING_MEMORY_SQL_FIELDS) {
+    assertRequiredLearningMemorySqlField(record, field);
+  }
+
+  return {
+    repo: record.repo,
+    owner: record.owner,
+    findingId: record.findingId,
+    reviewId: record.reviewId,
+    sourceRepo: record.sourceRepo,
+    findingText: record.findingText,
+    severity: record.severity,
+    category: record.category,
+    filePath: record.filePath,
+    language: record.language ?? null,
+    outcome: record.outcome,
+    embeddingModel: record.embeddingModel,
+    embeddingDim: record.embeddingDim,
+    stale: record.stale,
+    id: record.id ?? null,
+    createdAt: record.createdAt ?? null,
+  };
+}
+
 export function normalizeSafeInteger(value: number | string | bigint, fieldName: string): number {
   if (typeof value === "bigint") {
     if (value > BigInt(Number.MAX_SAFE_INTEGER) || value < BigInt(Number.MIN_SAFE_INTEGER)) {
@@ -151,12 +229,13 @@ export function createLearningMemoryStore(opts: {
 
   const store: LearningMemoryStore = {
     async writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void> {
+      const preparedRecord = prepareLearningMemoryRecordForSql(record);
       const embeddingString = float32ArrayToVectorString(embedding);
       // Use record.language if caller pre-classified (e.g., context-aware for .h files),
       // otherwise classify from filePath. Normalize to lowercase for DB storage.
-      const language = record.language
-        ? record.language.toLowerCase()
-        : classifyFileLanguage(record.filePath).toLowerCase().replace("unknown", "unknown");
+      const language = preparedRecord.language
+        ? preparedRecord.language.toLowerCase()
+        : classifyFileLanguage(preparedRecord.filePath).toLowerCase().replace("unknown", "unknown");
       try {
         await sql`
           INSERT INTO learning_memories (
@@ -164,15 +243,15 @@ export function createLearningMemoryStore(opts: {
             finding_text, severity, category, file_path, language, outcome,
             embedding_model, embedding_dim, stale, embedding
           ) VALUES (
-            ${record.repo}, ${record.owner}, ${record.findingId}, ${record.reviewId}, ${record.sourceRepo},
-            ${record.findingText}, ${record.severity}, ${record.category}, ${record.filePath}, ${language}, ${record.outcome},
-            ${record.embeddingModel}, ${record.embeddingDim}, ${record.stale}, ${embeddingString}::vector
+            ${preparedRecord.repo}, ${preparedRecord.owner}, ${preparedRecord.findingId}, ${preparedRecord.reviewId}, ${preparedRecord.sourceRepo},
+            ${preparedRecord.findingText}, ${preparedRecord.severity}, ${preparedRecord.category}, ${preparedRecord.filePath}, ${language}, ${preparedRecord.outcome},
+            ${preparedRecord.embeddingModel}, ${preparedRecord.embeddingDim}, ${preparedRecord.stale}, ${embeddingString}::vector
           )
           ON CONFLICT (repo, finding_id, outcome) DO NOTHING
         `;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        logger.error({ err: message, repo: record.repo, findingId: record.findingId }, "Failed to write memory");
+        logger.error({ err: message, repo: preparedRecord.repo, findingId: preparedRecord.findingId }, "Failed to write memory");
         throw err;
       }
     },

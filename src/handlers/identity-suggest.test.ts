@@ -229,7 +229,7 @@ describe("suggestIdentityLink", () => {
         : (init?.headers as Record<string, string> | undefined)?.authorization;
       if (authHeader === "Bearer xoxb-missing-scope" && missingScopeForFirstToken) {
         missingScopeForFirstToken = false;
-        return jsonResponse({ ok: false, error: "missing_scope" });
+        return jsonResponse({ ok: false, error: "missing_scope" }, { status: 403 });
       }
       return jsonResponse({ ok: true, members: [] });
     });
@@ -262,6 +262,35 @@ describe("suggestIdentityLink", () => {
       "https://slack.com/api/users.list",
     ]);
     expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("production-shaped Slack users.list missing_scope response disables identity suggestions without warning", async () => {
+    const logger = createMockLogger();
+    const fetchMock = mock(async () =>
+      jsonResponse(
+        { ok: false, error: "missing_scope: users:read required" },
+        { status: 403 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "scope-missing-production-shape",
+      githubDisplayName: "Scope Missing Production Shape",
+      slackBotToken: "xoxb-production-shape",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "missing_scope",
+        slackError: "missing_scope: users:read required",
+        httpStatus: 403,
+      }),
+      "Slack member lookup disabled; missing users.list scope",
+    );
     expect(logger.warn).not.toHaveBeenCalled();
   });
 

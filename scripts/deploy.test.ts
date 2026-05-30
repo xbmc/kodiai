@@ -22,6 +22,25 @@ describe("deploy.sh", () => {
     expect(deployScript).toContain('revisionSuffix: ${REVISION_SUFFIX}');
   });
 
+  test("builds deployment context from an explicit git commit hash", () => {
+    expect(deployScript).toContain('SOURCE_COMMIT=${DEPLOY_SOURCE_COMMIT:-$(git rev-parse --verify HEAD)}');
+    expect(deployScript).toContain('git archive --format=tar "$SOURCE_COMMIT"');
+    expect(deployScript).toContain('SOURCE_COMMIT_SHORT=$(git rev-parse --short=12 "$SOURCE_COMMIT")');
+    expect(deployScript).not.toContain('cp -R src/. "$BUILD_CONTEXT_DIR/src/"');
+  });
+
+  test("injects source commit provenance into app and job runtime configuration", () => {
+    expect(deployScript).toContain('REVISION_SUFFIX="deploy-${SOURCE_COMMIT_SHORT}-$(date +%Y%m%d-%H%M%S)"');
+    expect(deployScript).toContain('- name: SOURCE_COMMIT');
+    expect(deployScript).toContain('value: ${SOURCE_COMMIT}');
+    expect(deployScript).toContain('SOURCE_COMMIT="$SOURCE_COMMIT"');
+  });
+
+  test("fails deploy when the selected git commit cannot be verified", () => {
+    expect(deployScript).toContain('git rev-parse --verify "${SOURCE_COMMIT}^{commit}"');
+    expect(deployScript).toContain('ERROR: DEPLOY_SOURCE_COMMIT');
+  });
+
   test("reports the traffic-bearing active revision before falling back to the newest active revision", () => {
     expect(deployScript).toContain('properties.trafficWeight > `0`');
     expect(deployScript).toContain('sort_by(@, &properties.createdTime) | [-1].name');

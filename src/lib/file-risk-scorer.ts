@@ -382,6 +382,34 @@ export function computeFileRiskScores(params: {
     .sort((a, b) => b.score - a.score);
 }
 
+export function capTieredFilesForPromptBudget(
+  tieredFiles: TieredFiles,
+  maxPromptFiles: number,
+): TieredFiles {
+  const normalizedMaxPromptFiles = Math.max(0, Math.floor(maxPromptFiles));
+  const promptFiles = [...tieredFiles.full, ...tieredFiles.abbreviated];
+
+  if (promptFiles.length <= normalizedMaxPromptFiles) {
+    return {
+      ...tieredFiles,
+      full: [...tieredFiles.full],
+      abbreviated: [...tieredFiles.abbreviated],
+      mentionOnly: [...tieredFiles.mentionOnly],
+    };
+  }
+
+  const retainedPromptFiles = promptFiles.slice(0, normalizedMaxPromptFiles);
+  const movedToMentionOnly = promptFiles.slice(normalizedMaxPromptFiles);
+  const retainedFullCount = Math.min(tieredFiles.full.length, retainedPromptFiles.length);
+
+  return {
+    ...tieredFiles,
+    full: retainedPromptFiles.slice(0, retainedFullCount),
+    abbreviated: retainedPromptFiles.slice(retainedFullCount),
+    mentionOnly: [...movedToMentionOnly, ...tieredFiles.mentionOnly],
+  };
+}
+
 export function triageFilesByRisk(params: {
   riskScores: FileRiskScore[];
   fileThreshold: number;

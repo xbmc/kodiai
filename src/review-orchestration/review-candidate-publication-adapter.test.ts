@@ -128,7 +128,7 @@ describe("review candidate publication adapter", () => {
     });
 
     expect(adapted.payloads).toHaveLength(2);
-    expect(adapted.summary.counts).toMatchObject({ input: 2, publishable: 2, skipped: 0, approved: 1, rewritten: 1 });
+    expect(adapted.summary.counts).toMatchObject({ input: 2, publishable: 2, skipped: 0, approved: 1, rewritten: 1, detailsOnlyFindings: 0, movedToDetails: 0 });
     expect(adapted.summary.fixEligibility.counts).toMatchObject({ input: 2, eligible: 2, blocked: 0, omitted: 0, capped: 0 });
     expect(adapted.payloads.map((payload) => payload.candidatePublicationLifecycle)).toEqual(["approved", "rewritten"]);
     expect(adapted.payloads.map((payload) => payload.candidateFingerprint)).toEqual([
@@ -269,6 +269,123 @@ describe("review candidate publication adapter", () => {
     expect(summary.text).toContain("fixCapped=2");
     for (const privateText of ["same replacement", "formatter owned replacement", "over cap replacement", "AKIA1234567890ABCDEF", "body is safe and grounded"]) {
       expect(summary.text).not.toContain(privateText);
+    }
+  });
+
+
+  test("projects approved non-commentable fix candidates into bounded details-only findings", () => {
+    const candidates = candidateResult([
+      candidateInput("src/outside-diff.ts", "Preserved non-commentable title", {
+        startLine: 77,
+        endLine: 79,
+        severity: "major",
+        category: "performance",
+        body: "Safe public context for the details projection.",
+        fixReplacementText: "safe replacement that must not appear in details",
+      }),
+    ]);
+    const candidate = candidates.findings[0]!;
+    const approval = coordinateReviewCandidateApproval({
+      candidates,
+      reducer: reducerResult({
+        findings: [reducerFinding(1, candidate, { candidateFingerprint: candidate.fingerprint })],
+        visibleFindings: [reducerFinding(1, candidate, { candidateFingerprint: candidate.fingerprint })],
+      }),
+    });
+
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF });
+
+    expect(adapted.payloads).toEqual([]);
+    expect(adapted.summary.counts).toMatchObject({ publishable: 0, detailsOnlyFindings: 1, movedToDetails: 1, detailsOnlyOmitted: 0 });
+    expect(adapted.summary.movedToDetails).toMatchObject({
+      counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
+      reasonCounts: { "line-not-commentable": 1 },
+      redaction: {
+        rawCandidatePayloadsIncluded: false,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        diffsIncluded: false,
+        replacementTextIncluded: false,
+        githubResponsePayloadsIncluded: false,
+        secretLikeValuesIncluded: false,
+        bounded: true,
+      },
+    });
+    expect(adapted.summary.detailsOnlyFindings).toEqual([
+      {
+        fingerprint: candidate.fingerprint,
+        lifecycle: "approved",
+        severity: "major",
+        category: "performance",
+        title: "Preserved non-commentable title",
+        location: { path: "src/outside-diff.ts", startLine: 77, line: 79 },
+        reason: "line-not-commentable",
+        excerpt: "Safe public context for the details projection.",
+      },
+    ]);
+    expect(JSON.stringify(adapted.summary.detailsOnlyFindings)).not.toContain("safe replacement that must not appear");
+  });
+
+  test("does not promote malformed, missing-line, or unsafe-path candidates to details-only findings", () => {
+    const candidates = candidateResult([
+      candidateInput("src/missing-line.ts", "Missing line", { startLine: undefined, endLine: undefined }),
+      candidateInput("src/safe.ts", "Unsafe path shell", { startLine: 10, endLine: 10 }),
+    ]);
+    const missingLine = candidates.findings[0]!;
+    const unsafePath = { ...candidates.findings[1]!, filePath: "../secrets.ts" };
+    const approval: ReviewCandidateApprovalResult = {
+      outcomes: [],
+      approvedCandidates: [
+        { lifecycle: "approved", fingerprint: missingLine.fingerprint, candidate: missingLine },
+        { lifecycle: "approved", fingerprint: unsafePath.fingerprint, candidate: unsafePath },
+        { lifecycle: "approved", fingerprint: "rcf-ffffffffffffffff", candidate: undefined as unknown as ReviewCandidateFinding },
+      ],
+      rewrittenCandidates: [],
+      counts: { input: 3, approved: 3, rewritten: 0, suppressed: 0, deduped: 0, rejected: 0, fallbackDisallowed: 0, auditEvents: 0 },
+      audit: [],
+      detailsSummary: { label: "Review candidate approval", text: "Review candidate approval: test" },
+    };
+
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult(), prDiffText: PR_DIFF });
+
+    expect(adapted.payloads).toEqual([]);
+    expect(adapted.summary.detailsOnlyFindings).toEqual([]);
+    expect(adapted.summary.counts).toMatchObject({ skipped: 3, detailsOnlyFindings: 0, movedToDetails: 0 });
+    expect(adapted.summary.skipped.map((item) => item.reason)).toEqual(["missing-line", "unsafe-path", "missing-candidate"]);
+  });
+
+  test("caps details-only projection and redacts secrets, prompt canaries, diffs, and replacements", () => {
+    const rawSecret = "AKIA1234567890ABCDEF";
+    const inputs = Array.from({ length: 25 }, (_, index) => candidateInput(`src/non-commentable-${index}.ts`, `Non commentable ${index} TOKEN=super-secret`, {
+      startLine: 50 + index,
+      endLine: 50 + index,
+      body: `BEGIN PROMPT hidden ${index}\ndiff --git a/private b/private\n${rawSecret}\nVisible tail`,
+      fixReplacementText: `replacement-canary-${index}`,
+    }));
+    const candidates = createReviewCandidateFindingExecutionResult({
+      ...BASE_INPUT,
+      artifactPresent: true,
+      unsafeTextDetector: () => false,
+      candidates: inputs,
+    });
+    const reducerVisibleFindings = candidates.findings.map((candidate, index) => reducerFinding(index + 1, candidate, {
+      candidateFingerprint: candidate.fingerprint,
+      title: `${candidate.title} ghp_123456789012345678901234567890123456`,
+    }));
+    const approval = coordinateReviewCandidateApproval({
+      candidates,
+      reducer: reducerResult({ findings: reducerVisibleFindings, visibleFindings: reducerVisibleFindings }),
+    });
+
+    const adapted = adaptApprovedCandidatesForInlinePublication({ approval, reducer: reducerResult({ visibleFindings: reducerVisibleFindings }), prDiffText: PR_DIFF });
+    const publicJson = JSON.stringify({ findings: adapted.summary.detailsOnlyFindings, movedToDetails: adapted.summary.movedToDetails });
+
+    expect(adapted.payloads).toEqual([]);
+    expect(adapted.summary.detailsOnlyFindings).toHaveLength(20);
+    expect(adapted.summary.counts).toMatchObject({ movedToDetails: 25, detailsOnlyFindings: 20, detailsOnlyOmitted: 5 });
+    expect(adapted.summary.movedToDetails.counts).toMatchObject({ total: 25, fromFixEligibility: 25, omitted: 5 });
+    for (const forbidden of ["super-secret", "BEGIN PROMPT", "hidden", "diff --git", rawSecret, "replacement-canary", "ghp_123456789012345678901234567890123456"]) {
+      expect(publicJson).not.toContain(forbidden);
     }
   });
 
@@ -423,7 +540,15 @@ describe("review candidate publication adapter", () => {
       filePath: "src/published.ts",
       publicationStatus: "published",
     });
-    expect(converted.summary.counts).toMatchObject({ input: 3, processed: 1, skipped: 1, blocked: 0, failed: 1, malformed: 0 });
+    expect(converted.detailsOnlyFindings).toEqual([expect.objectContaining({
+      fingerprint: payloadByPath.get("src/non-commentable.ts")!.candidateFingerprint,
+      lifecycle: "approved",
+      title: "Non commentable candidate",
+      location: { path: "src/non-commentable.ts", line: 11 },
+      reason: "line-not-commentable-in-pr-diff",
+    })]);
+    expect(converted.summary.counts).toMatchObject({ input: 3, processed: 1, skipped: 1, blocked: 0, failed: 1, malformed: 0, detailsOnlyFindings: 1, movedToDetails: 1, detailsOnlyOmitted: 0 });
+    expect(converted.summary.movedToDetails?.counts).toMatchObject({ total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 });
     expect(converted.summary.results.map((result) => result.reason)).toEqual([
       "published",
       "already-published",

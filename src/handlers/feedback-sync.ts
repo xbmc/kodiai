@@ -189,7 +189,9 @@ export function createFeedbackSyncHandler(deps: {
 
       const uniqueCommentIds = [...new Set(candidates.map((candidate) => candidate.commentId))];
 
+      let reactionsPermissionDenied = false;
       for (const commentId of uniqueCommentIds) {
+        if (reactionsPermissionDenied) break;
         try {
           const response = await octokit.rest.reactions.listForPullRequestReviewComment({
             owner: repo.split("/")[0]!,
@@ -200,6 +202,7 @@ export function createFeedbackSyncHandler(deps: {
 
           reactionsByCommentId.set(commentId, response.data as ReactionEntry[]);
         } catch (err) {
+          reactionsPermissionDenied = isReactionPermissionDenied(err);
           logReactionFetchFailure({ logger, err, repo, commentId });
         }
       }

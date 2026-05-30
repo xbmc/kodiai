@@ -19,6 +19,9 @@ import {
   type AddonFinding,
 } from "../lib/addon-checker-runner.ts";
 import {
+  classifyAddonCheckOutcome,
+} from "../lib/addon-check-classification.ts";
+import {
   buildAddonCheckMarker,
   formatAddonCheckComment,
 } from "../lib/addon-check-formatter.ts";
@@ -94,6 +97,27 @@ async function upsertAddonCheckComment(params: {
 
 export const ADDON_CHECK_RUNNER_TIME_BUDGET_MS = 240_000;
 
+type AddonCheckRuntimeSummary = {
+  completed?: true;
+  timedOut?: true;
+  toolNotFound?: true;
+  findingCount?: number;
+  errorCount?: number;
+  warningCount?: number;
+};
+
+function countFindings(findings: AddonFinding[]): {
+  findingCount: number;
+  errorCount: number;
+  warningCount: number;
+} {
+  return {
+    findingCount: findings.length,
+    errorCount: findings.filter((finding) => finding.level === "ERROR").length,
+    warningCount: findings.filter((finding) => finding.level === "WARN").length,
+  };
+}
+
 export function createAddonCheckHandler(deps: {
   eventRouter: EventRouter;
   githubApp: GitHubApp;
@@ -103,6 +127,8 @@ export function createAddonCheckHandler(deps: {
   jobQueue: JobQueue;
   /** Test-only: injected subprocess stub forwarded to runAddonChecker. */
   __runSubprocessForTests?: RunSubprocess;
+  /** Test-only: override the checker time budget for deterministic timeout tests. */
+  __addonCheckTimeBudgetMsForTests?: number;
   /** Test-only: injected fetch-and-checkout stub for fork PR path. */
   __fetchAndCheckoutForTests?: FetchAndCheckout;
 }): void {
@@ -115,6 +141,7 @@ export function createAddonCheckHandler(deps: {
     jobQueue,
     __runSubprocessForTests,
     __fetchAndCheckoutForTests,
+    __addonCheckTimeBudgetMsForTests,
   } = deps;
 
   async function handlePullRequest(event: WebhookEvent): Promise<void> {
@@ -220,36 +247,74 @@ export function createAddonCheckHandler(deps: {
             }
 
             const allFindings: AddonFinding[] = [];
-            let toolNotFoundCount = 0;
+            const addonSummaries: AddonCheckRuntimeSummary[] = [];
+            const timeBudgetMs = __addonCheckTimeBudgetMsForTests ?? ADDON_CHECK_RUNNER_TIME_BUDGET_MS;
 
             for (const addonId of addonIds) {
               const addonDir = path.join(workspace.dir, addonId);
               const result = await runAddonChecker({
                 addonDir,
                 branch: kodiVersion,
-                timeBudgetMs: ADDON_CHECK_RUNNER_TIME_BUDGET_MS,
+                timeBudgetMs,
                 __runSubprocessForTests,
               });
 
               if (result.toolNotFound) {
                 handlerLogger.warn({ addonId }, "addon-check: kodi-addon-checker not installed, skipping");
-                toolNotFoundCount++;
+                addonSummaries.push({ toolNotFound: true });
                 continue;
               }
 
               if (result.timedOut) {
-                handlerLogger.info({ addonId, timeBudgetMs: ADDON_CHECK_RUNNER_TIME_BUDGET_MS }, "addon-check: runner skipped after budget");
+                handlerLogger.info({ addonId, timeBudgetMs }, "addon-check: runner skipped after budget");
+                addonSummaries.push({ timedOut: true });
                 continue;
               }
 
+              const findingCounts = countFindings(result.findings);
+              addonSummaries.push({ completed: true, ...findingCounts });
+
               for (const finding of result.findings) {
                 handlerLogger.info(
-                  { addonId: finding.addonId, level: finding.level, message: finding.message },
+                  { addonId: finding.addonId, findingLevel: finding.level, message: finding.message },
                   "addon-check: finding",
                 );
                 allFindings.push(finding);
               }
             }
+
+            const classification = classifyAddonCheckOutcome({
+              deliveryId: event.id,
+              repo,
+              prNumber,
+              addons: addonSummaries,
+              timeBudgetMs,
+            });
+
+            handlerLogger.info(
+              {
+                gate: classification.gate,
+                gateResult: classification.classification,
+                classification: classification.classification,
+                mode: classification.mode,
+                reasonCodes: classification.reasonCodes,
+                actionableDiagnostic: classification.actionableDiagnostic,
+                expectedBoundedOutcome: classification.expectedBoundedOutcome,
+                addonCount: classification.counts.addonCount,
+                completedCount: classification.counts.completedCount,
+                timedOutCount: classification.counts.timedOutCount,
+                toolNotFoundCount: classification.counts.toolNotFoundCount,
+                findingCount: classification.counts.findingCount,
+                errorCount: classification.counts.errorCount,
+                warningCount: classification.counts.warningCount,
+                timeBudgetMs: classification.counts.timeBudgetMs,
+                redaction: classification.redaction,
+                deliveryId: event.id,
+                repo,
+                prNumber,
+              },
+              "addon-check: classification",
+            );
 
             handlerLogger.info(
               { addonIds, totalFindings: allFindings.length },
@@ -258,11 +323,11 @@ export function createAddonCheckHandler(deps: {
 
             // Skip comment entirely when every addon returned toolNotFound
             // (kodi-addon-checker not installed on this runner).
-            if (allFindings.length === 0 && toolNotFoundCount === addonIds.length) {
+            if (allFindings.length === 0 && classification.mode === "tool-unavailable") {
               handlerLogger.warn("addon-check: all addons returned toolNotFound, skipping comment");
             } else {
               const marker = buildAddonCheckMarker(owner, repoName, prNumber);
-              const body = formatAddonCheckComment(allFindings, marker);
+              const body = formatAddonCheckComment(allFindings, marker, classification);
               await upsertAddonCheckComment({
                 octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
                 owner,

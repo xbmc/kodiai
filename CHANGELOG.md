@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.39 (2026-05-30)
+
+Production log cleanup and M075 review-publication evidence.
+
+### Added
+
+- M075 production-log taxonomy and aggregate verifier coverage for candidate publication, review timeout classification, addon-check classification, and bounded live Log Analytics proof.
+- Review candidate publication details now include publishable, nonPublishable, and fixBlocked counts, plus bounded outcome buckets and moved-to-details evidence.
+- Approved non-commentable review candidates can be preserved as bounded Review Details findings without publishing unsafe inline comments.
+- Addon-check and review-timeout outcomes now emit structured bounded classifications so expected policy/runtime outcomes are distinguishable from actionable failures.
+
+### Changed
+
+- Expected candidate-publication policy blocks now log at info level instead of warning level.
+- Missing-replacement candidates stay private and are not projected into public details-only findings.
+- Production startup migration logs use structured application logging, and logger error serialization strips request/response URL objects and stacks.
+- Benign zero-count lifecycle and webhook dispatch fields are omitted from production logs to avoid misleading `failed:0` / `rejected:0` matches.
+- Missing or stale MCP bearer-token requests are treated as bounded info-level auth lifecycle noise instead of production warnings.
+
+### Verification
+
+- PR #179 CI passed.
+- Local focused release verification passed with `478 pass`.
+- `bun run lint` passed.
+- `bun run verify:m075 -- --json` passed with `statusCode=m075_ok`.
+- Deployed revision `ca-kodiai--deploy-3d87f3900128-20260529-175246` passed `/healthz`, `/readiness`, and live `verify:m075` with `statusCode=m075_ok`.
+- Production log audit for the deployed revision showed 0 Pino errors, 0 Pino warnings, 0 textual error matches, 0 textual warning matches, and 0 MCP unauthorized warnings.
+- Live explicit `@kodiai review` proof on `xbmc/xbmc#28172` completed on `lane=interactive-review`, `taskType=review.full`, recorded 4 candidate findings, projected lifecycle and validation-truth evidence, and published bot output in comment `4581392154`.
+
 ## v0.38 (2026-05-19)
 
 Review-budget reliability, validation-truth evidence, and deploy base-image hardening.

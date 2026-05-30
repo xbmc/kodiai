@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
@@ -17,18 +18,46 @@ type McpJobEntry = {
  * Each entry maps server names to factory functions that produce a fresh
  * McpSdkServerConfigWithInstance on every call (required for stateless mode).
  */
+const RETIRED_TOKEN_TTL_MS = 5 * 60 * 1000;
+
 export function createMcpJobRegistry() {
   const registry = new Map<string, McpJobEntry>();
+  const retiredTokenFingerprints = new Map<string, number>();
+
+  const tokenFingerprint = (token: string): string =>
+    createHash("sha256").update(token).digest("hex");
+
+  const tokenLogId = (token: string): string => tokenFingerprint(token).slice(0, 16);
+
+  const pruneRetiredTokens = (): void => {
+    const now = Date.now();
+    for (const [fingerprint, expiresAt] of retiredTokenFingerprints) {
+      if (expiresAt <= now) {
+        retiredTokenFingerprints.delete(fingerprint);
+      }
+    }
+  };
+
+  const markRetired = (token: string): void => {
+    pruneRetiredTokens();
+    retiredTokenFingerprints.set(tokenFingerprint(token), Date.now() + RETIRED_TOKEN_TTL_MS);
+  };
 
   const inspectToken = (token: string):
     | { ok: true; ttlRemainingMs: number }
-    | { ok: false; reason: "missing" | "expired"; ttlRemainingMs?: number } => {
+    | { ok: false; reason: "missing" | "expired" | "retired"; ttlRemainingMs?: number } => {
     const entry = registry.get(token);
-    if (!entry) return { ok: false, reason: "missing" };
+    if (!entry) {
+      pruneRetiredTokens();
+      return retiredTokenFingerprints.has(tokenFingerprint(token))
+        ? { ok: false, reason: "retired" }
+        : { ok: false, reason: "missing" };
+    }
 
     const ttlRemainingMs = entry.expiresAt - Date.now();
     if (ttlRemainingMs <= 0) {
       registry.delete(token);
+      markRetired(token);
       return { ok: false, reason: "expired", ttlRemainingMs };
     }
 
@@ -45,10 +74,16 @@ export function createMcpJobRegistry() {
     },
 
     unregister(token: string): void {
-      registry.delete(token);
+      if (registry.delete(token)) {
+        markRetired(token);
+      }
     },
 
     inspectToken,
+
+    getTokenLogId(token: string): string {
+      return tokenLogId(token);
+    },
 
     hasToken(token: string): boolean {
       return inspectToken(token).ok;
@@ -90,8 +125,8 @@ export function createMcpHttpRoutes(
     const token = authHeader?.replace(/^Bearer /, "");
 
     if (!token) {
-      logger?.warn(
-        { tokenPrefix: undefined, authFailureReason: "missing" },
+      logger?.info(
+        { authFailureReason: "missing", authFailureExpected: true },
         "MCP HTTP: unauthorized",
       );
       return c.json({ error: "Unauthorized" }, 401);
@@ -99,10 +134,15 @@ export function createMcpHttpRoutes(
 
     const authState = registry.inspectToken(token);
     if (!authState.ok) {
-      logger?.warn(
+      const authFailureExpected = authState.reason === "missing" || authState.reason === "retired" || authState.reason === "expired";
+      const logAuthFailure = authFailureExpected
+        ? logger?.info.bind(logger)
+        : logger?.warn.bind(logger);
+      logAuthFailure?.(
         {
-          tokenPrefix: token.slice(0, 8),
+          tokenLogId: registry.getTokenLogId(token),
           authFailureReason: authState.reason,
+          authFailureExpected,
           ...(authState.ttlRemainingMs !== undefined
             ? { ttlRemainingMs: authState.ttlRemainingMs }
             : {}),
@@ -117,7 +157,7 @@ export function createMcpHttpRoutes(
 
     if (!factory) {
       logger?.warn(
-        { serverName, tokenPrefix: token.slice(0, 8) },
+        { serverName, tokenLogId: registry.getTokenLogId(token) },
         "MCP HTTP: server not found",
       );
       return c.json({ error: "Not Found" }, 404);

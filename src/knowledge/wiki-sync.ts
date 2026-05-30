@@ -194,17 +194,18 @@ async function runSync(opts: {
           continue;
         }
 
+        const parseRecord = parseData && typeof parseData === "object" ? parseData : undefined;
         if (
-          typeof parseData.parse?.title !== "string"
-          || typeof parseData.parse?.revid !== "number"
-          || typeof parseData.parse?.text?.["*"] !== "string"
+          typeof parseRecord?.parse?.title !== "string"
+          || typeof parseRecord.parse?.revid !== "number"
+          || typeof parseRecord.parse?.text?.["*"] !== "string"
         ) {
           logger.warn(
             {
               pageId: change.pageid,
               reason: "malformed-parse-response",
-              errorCode: parseData.error?.code,
-              errorInfo: parseData.error?.info,
+              errorCode: parseRecord?.error?.code,
+              errorInfo: parseRecord?.error?.info,
             },
             "Wiki sync parse response malformed, skipping page",
           );
@@ -213,7 +214,7 @@ async function runSync(opts: {
         }
 
         const namespace = namespaceIdToName(change.ns);
-        const pageTitle = parseData.parse.title;
+        const pageTitle = parseRecord.parse.title;
         const pageUrl = `${baseUrl}/view/${encodeURIComponent(pageTitle.replace(/ /g, "_"))}`;
 
         const pageInput: WikiPageInput = {
@@ -221,8 +222,8 @@ async function runSync(opts: {
           pageTitle,
           namespace,
           pageUrl,
-          htmlContent: parseData.parse.text["*"],
-          revisionId: parseData.parse.revid,
+          htmlContent: parseRecord.parse.text["*"],
+          revisionId: parseRecord.parse.revid,
         };
 
         // Chunk the page

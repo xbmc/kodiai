@@ -4,9 +4,31 @@ import type { Sql } from "./client.ts";
 
 const MIGRATIONS_DIR = join(import.meta.dir, "migrations");
 
+type MigrationLogger = {
+  info: (data: Record<string, unknown>, message: string) => void;
+};
+
+type MigrationLogOptions = {
+  logger?: MigrationLogger;
+};
+
 // This module is an operator-facing CLI surface. Direct console output is
 // intentional here so migration/apply/rollback progress is visible in local
 // runs and CI logs; eslint.config.mjs documents the file-level exception.
+
+function logMigration(
+  options: MigrationLogOptions | undefined,
+  data: Record<string, unknown>,
+  message: string,
+  consoleMessage: string,
+): void {
+  if (options?.logger) {
+    options.logger.info(data, message);
+    return;
+  }
+
+  console.log(consoleMessage);
+}
 
 /**
  * Apply all pending migrations in order.
@@ -15,13 +37,21 @@ const MIGRATIONS_DIR = join(import.meta.dir, "migrations");
  * created by 001-initial-schema.sql, so the first migration bootstraps itself
  * by catching the "table does not exist" error when checking applied state.
  */
-export async function runMigrations(sql: Sql): Promise<void> {
+export async function runMigrations(
+  sql: Sql,
+  options: MigrationLogOptions = {},
+): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql") && !f.endsWith(".down.sql"))
     .sort();
 
   if (files.length === 0) {
-    console.log("No migration files found.");
+    logMigration(
+      options,
+      { migrationCount: 0 },
+      "No database migration files found",
+      "No migration files found.",
+    );
     return;
   }
 
@@ -37,14 +67,24 @@ export async function runMigrations(sql: Sql): Promise<void> {
 
   for (const file of files) {
     if (applied.has(file)) {
-      console.log(`  skip: ${file} (already applied)`);
+      logMigration(
+        options,
+        { migration: file, status: "skipped" },
+        "Database migration skipped because it is already applied",
+        `  skip: ${file} (already applied)`,
+      );
       continue;
     }
 
     const filePath = join(MIGRATIONS_DIR, file);
     const sqlContent = readFileSync(filePath, "utf-8");
 
-    console.log(`  apply: ${file}`);
+    logMigration(
+      options,
+      { migration: file, status: "applying" },
+      "Applying database migration",
+      `  apply: ${file}`,
+    );
 
     await sql.begin(async (tx) => {
       await tx.unsafe(sqlContent);
@@ -55,7 +95,12 @@ export async function runMigrations(sql: Sql): Promise<void> {
     });
   }
 
-  console.log("Migrations complete.");
+  logMigration(
+    options,
+    { migrationCount: files.length },
+    "Database migrations complete",
+    "Migrations complete.",
+  );
 }
 
 /**

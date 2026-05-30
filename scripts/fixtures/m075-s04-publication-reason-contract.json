@@ -1,0 +1,150 @@
+{
+  "schema": "m075-s04-publication-reason-contract.v1",
+  "generatedAt": "2026-05-20T16:00:00.000Z",
+  "provenance": {
+    "source": "sanitized-runtime-log-review-details-projection",
+    "fixtureOnly": true,
+    "rawLogsIncluded": false,
+    "rawCandidatePayloadsIncluded": false,
+    "rawPromptsIncluded": false,
+    "rawModelOutputIncluded": false,
+    "diffPayloadsIncluded": false,
+    "fixReplacementTextIncluded": false
+  },
+  "runtime": {
+    "gate": "review-candidate-publication",
+    "gateResult": "degraded",
+    "mode": "degraded",
+    "counts": {
+      "approvedReferences": 7,
+      "rewrittenReferences": 0,
+      "candidatePublishable": 6,
+      "candidatePublished": 1,
+      "candidateSkipped": 1,
+      "candidateBlocked": 1,
+      "candidateFailed": 1,
+      "candidateMalformed": 1,
+      "candidateMovedToDetails": 1,
+      "candidateDetailsOnlyFindings": 1,
+      "candidateDetailsOnlyOmitted": 0,
+      "convertedProcessedFindings": 1,
+      "directAttempted": 0,
+      "directPublished": 0,
+      "fallbackEvidence": 0,
+      "fallbackDisallowed": 1,
+      "malformed": 1
+    },
+    "outcomeBuckets": {
+      "published": { "mode": "published", "count": 1, "reasons": ["candidate-publisher-published"] },
+      "skipped": { "mode": "skipped", "count": 1, "reasons": ["candidate-publisher-skipped"] },
+      "blocked": { "mode": "blocked", "count": 1, "reasons": ["candidate-publisher-blocked", "approval-blocked"] },
+      "failed": { "mode": "failed", "count": 1, "reasons": ["candidate-publisher-failed"] },
+      "movedToDetails": { "mode": "moved-to-details", "count": 1, "reasons": ["candidate-moved-to-details", "line-not-commentable"] },
+      "fallbackDisallowed": { "mode": "fallback-disallowed", "count": 1, "reasons": ["direct-fallback-disallowed", "fallback-policy-blocked"] },
+      "degraded": { "mode": "degraded", "count": 1, "reasons": ["malformed-publisher-result"] }
+    },
+    "publisherResultSample": [
+      { "fingerprint": "candidate-001", "status": "published", "reason": "candidate-publisher-published", "hasCommentId": true },
+      { "fingerprint": "candidate-002", "status": "skipped", "reason": "candidate-publisher-skipped", "hasCommentId": false },
+      { "fingerprint": "candidate-003", "status": "blocked", "reason": "candidate-publisher-blocked", "hasCommentId": false },
+      { "fingerprint": "candidate-004", "status": "failed", "reason": "candidate-publisher-failed", "hasCommentId": false },
+      { "fingerprint": "candidate-005", "status": "moved-to-details", "reason": "line-not-commentable", "hasCommentId": false },
+      { "fingerprint": "candidate-006", "status": "blocked", "reason": "fallback-policy-blocked", "hasCommentId": false },
+      { "fingerprint": "candidate-007", "status": "malformed", "reason": "malformed-publisher-result", "hasCommentId": false }
+    ],
+    "redaction": {
+      "rawCandidatePayloadsIncluded": false,
+      "rawPromptsIncluded": false,
+      "rawModelOutputIncluded": false,
+      "diffsIncluded": false,
+      "replacementTextIncluded": false,
+      "githubResponsePayloadsIncluded": false,
+      "secretLikeValuesIncluded": false,
+      "bounded": true
+    }
+  },
+  "logs": {
+    "gate": "review-candidate-publication",
+    "gateResult": "degraded",
+    "mode": "degraded",
+    "counts": {
+      "approvedReferences": 7,
+      "rewrittenReferences": 0,
+      "candidatePublishable": 6,
+      "candidatePublished": 1,
+      "candidateSkipped": 1,
+      "candidateBlocked": 1,
+      "candidateFailed": 1,
+      "candidateMalformed": 1,
+      "candidateMovedToDetails": 1,
+      "candidateDetailsOnlyFindings": 1,
+      "candidateDetailsOnlyOmitted": 0,
+      "convertedProcessedFindings": 1,
+      "directAttempted": 0,
+      "directPublished": 0,
+      "fallbackEvidence": 0,
+      "fallbackDisallowed": 1,
+      "malformed": 1
+    },
+    "outcomeBuckets": {
+      "published": { "mode": "published", "count": 1, "reasons": ["candidate-publisher-published"] },
+      "skipped": { "mode": "skipped", "count": 1, "reasons": ["candidate-publisher-skipped"] },
+      "blocked": { "mode": "blocked", "count": 1, "reasons": ["candidate-publisher-blocked", "approval-blocked"] },
+      "failed": { "mode": "failed", "count": 1, "reasons": ["candidate-publisher-failed"] },
+      "movedToDetails": { "mode": "moved-to-details", "count": 1, "reasons": ["candidate-moved-to-details", "line-not-commentable"] },
+      "fallbackDisallowed": { "mode": "fallback-disallowed", "count": 1, "reasons": ["direct-fallback-disallowed", "fallback-policy-blocked"] },
+      "degraded": { "mode": "degraded", "count": 1, "reasons": ["malformed-publisher-result"] }
+    }
+  },
+  "reviewDetails": {
+    "sourceAvailable": true,
+    "gate": "review-candidate-publication",
+    "gateResult": "degraded",
+    "mode": "degraded",
+    "visibleBody": {
+      "lineCount": 8,
+      "maxLineCount": 16,
+      "maxLineLength": 180,
+      "lines": [
+        "- Review candidate publication: gate=review-candidate-publication gateResult=degraded mode=degraded",
+        "  counts: published=1 skipped=1 blocked=1 failed=1 movedToDetails=1 fallbackDisallowed=1 degraded=1",
+        "  - bucket=published count=1 reasons=candidate-publisher-published",
+        "  - bucket=skipped count=1 reasons=candidate-publisher-skipped",
+        "  - bucket=blocked count=1 reasons=candidate-publisher-blocked,approval-blocked",
+        "  - bucket=failed count=1 reasons=candidate-publisher-failed",
+        "  - bucket=moved-to-details count=1 reasons=candidate-moved-to-details,line-not-commentable redaction=raw-omitted",
+        "  - bucket=fallback-disallowed count=1 reasons=direct-fallback-disallowed,fallback-policy-blocked degraded=malformed-publisher-result"
+      ]
+    },
+    "outcomeBuckets": {
+      "published": { "mode": "published", "count": 1, "reasons": ["candidate-publisher-published"] },
+      "skipped": { "mode": "skipped", "count": 1, "reasons": ["candidate-publisher-skipped"] },
+      "blocked": { "mode": "blocked", "count": 1, "reasons": ["candidate-publisher-blocked", "approval-blocked"] },
+      "failed": { "mode": "failed", "count": 1, "reasons": ["candidate-publisher-failed"] },
+      "movedToDetails": { "mode": "moved-to-details", "count": 1, "reasons": ["candidate-moved-to-details", "line-not-commentable"] },
+      "fallbackDisallowed": { "mode": "fallback-disallowed", "count": 1, "reasons": ["direct-fallback-disallowed", "fallback-policy-blocked"] },
+      "degraded": { "mode": "degraded", "count": 1, "reasons": ["malformed-publisher-result"] }
+    },
+    "movedToDetails": {
+      "redaction": {
+        "rawCandidatePayloadsIncluded": false,
+        "rawPromptsIncluded": false,
+        "rawModelOutputIncluded": false,
+        "diffsIncluded": false,
+        "replacementTextIncluded": false,
+        "githubResponsePayloadsIncluded": false,
+        "secretLikeValuesIncluded": false,
+        "bounded": true
+      },
+      "omittedRawPayloads": true
+    }
+  },
+  "negativeControls": {
+    "emptyReasonsRejected": true,
+    "rawCanariesRejected": true,
+    "directFallbackLeakageRejected": true,
+    "unapprovedContentRejected": true,
+    "unsafeRedactionFlagsRejected": true,
+    "unboundedVisibleOutputRejected": true
+  }
+}

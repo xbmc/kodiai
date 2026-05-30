@@ -89,7 +89,7 @@ if (staleCount > 0) {
 
 // PostgreSQL connection (all stores share single connection pool)
 const { sql, close: closeDb } = createDbClient({ logger });
-await runMigrations(sql);
+await runMigrations(sql, { logger });
 logger.info("PostgreSQL connected and migrations applied");
 
 // Telemetry storage

@@ -103,7 +103,7 @@ describe("estimateTimeoutRisk", () => {
 
     expect(result.riskLevel).toBe("high");
     expect(result.shouldReduceScope).toBe(true);
-    expect(result.reducedFileCount).toBe(50);
+    expect(result.reducedFileCount).toBe(25);
     expect(result.dynamicTimeoutSeconds).toBeGreaterThan(baseTimeout);
   });
 
@@ -166,7 +166,7 @@ describe("estimateTimeoutRisk", () => {
     );
   });
 
-  test("reducedFileCount caps at 50 for high-risk PR with more than 50 files", () => {
+  test("reducedFileCount caps at 25 for high-risk PR with more than 25 files", () => {
     const result = estimateTimeoutRisk({
       fileCount: 120,
       linesChanged: 3000,
@@ -176,16 +176,16 @@ describe("estimateTimeoutRisk", () => {
     });
 
     expect(result.shouldReduceScope).toBe(true);
-    expect(result.reducedFileCount).toBe(50);
+    expect(result.reducedFileCount).toBe(25);
   });
 
-  test("reducedFileCount uses actual file count when less than 50", () => {
+  test("reducedFileCount uses actual file count when less than 25", () => {
     // Need complexity >= 0.6 to get high risk with fewer files
-    // fileScore = 45/100 = 0.45, lineScore = 4000/5000 = 0.8, langScore = 1.0
-    // complexity = 0.45*0.4 + 0.8*0.4 + 1.0*0.2 = 0.18 + 0.32 + 0.2 = 0.7 => high
+    // fileScore = 20/100 = 0.2, lineScore = 5000/5000 = 1.0, langScore = 1.0
+    // complexity = 0.2*0.4 + 1.0*0.4 + 1.0*0.2 = 0.68 => high
     const result = estimateTimeoutRisk({
-      fileCount: 45,
-      linesChanged: 4000,
+      fileCount: 20,
+      linesChanged: 5000,
       languageComplexity: 1.0,
       isLargePR: true,
       baseTimeoutSeconds: baseTimeout,
@@ -193,7 +193,7 @@ describe("estimateTimeoutRisk", () => {
 
     expect(result.riskLevel).toBe("high");
     expect(result.shouldReduceScope).toBe(true);
-    expect(result.reducedFileCount).toBe(45);
+    expect(result.reducedFileCount).toBe(20);
   });
 
   test("timeout budgets stay within the global max after infra overhead is added", () => {

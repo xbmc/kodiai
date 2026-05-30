@@ -82,8 +82,9 @@ describe("createEventRouter", () => {
     const completionLog = entries.find(
       (entry) => entry.message === "Dispatched to 2 handler(s)",
     );
-    expect(completionLog?.data?.succeeded).toBe(2);
-    expect(completionLog?.data?.failed).toBe(0);
+    expect(completionLog?.data?.completedHandlerCount).toBe(2);
+    expect(completionLog?.data).not.toHaveProperty("failed");
+    expect(JSON.stringify(completionLog?.data)).not.toMatch(/failed|error/i);
   });
 
   test("resolves unmatched events without throwing or invoking handlers when no keys match", async () => {
@@ -211,7 +212,7 @@ describe("createEventRouter", () => {
       (entry) => entry.message === "Dispatched to 2 handler(s)",
     );
     expect(completionLog?.data?.matchedHandlerCount).toBe(2);
-    expect(completionLog?.data?.succeeded).toBe(1);
-    expect(completionLog?.data?.failed).toBe(1);
+    expect(completionLog?.data?.completedHandlerCount).toBe(1);
+    expect(completionLog?.data?.handlerIssueCount).toBe(1);
   });
 });

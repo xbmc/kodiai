@@ -7837,6 +7837,8 @@ describe("createMentionHandler review command", () => {
       },
     };
 
+    const { logger, infoCalls } = createMockLogger();
+
     createMentionHandler({
       eventRouter,
       jobQueue,
@@ -7865,7 +7867,7 @@ describe("createMentionHandler review command", () => {
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("issue_comment.created");
@@ -7885,6 +7887,15 @@ describe("createMentionHandler review command", () => {
     expect(issueReplies[0]).not.toContain("Ask a more targeted question");
     expect(issueReplies[0]).not.toContain("This can happen on PRs with large or complex diffs");
     expect(issueReplies[0]).not.toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.conclusion).toBe("failure");
+    expect(completionLog?.bindings.failureSubtype).toBe("error_max_turns");
+    expect(completionLog?.bindings.stopReason).toBe("tool_use");
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.published).toBe(true);
+    expect(completionLog?.bindings.publishResolution).toBe("turn-limit-fallback");
+    expect(completionLog?.bindings.publishFallbackDelivery).toBe("error-comment-created");
 
     await workspaceFixture.cleanup();
   });
@@ -9162,8 +9173,8 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
-    expect(createdReviews[0]?.body).toContain("<details>");
-    expect(createdReviews[0]?.body).toContain("<summary>kodiai response</summary>");
+    expect(createdReviews[0]?.body).not.toContain("<summary>kodiai response</summary>");
+    expect(createdReviews[0]?.body).toStartWith("Decision: APPROVE\n\nIssues: none");
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
     expect(createdReviews[0]?.body).toContain("Issues: none");
     expect(createdReviews[0]?.body).toContain("Evidence:");
@@ -9330,8 +9341,8 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(0);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("<details>");
-    expect(issueReplies[0]).toContain("<summary>kodiai response</summary>");
+    expect(issueReplies[0]).not.toContain("<summary>kodiai response</summary>");
+    expect(issueReplies[0]).toStartWith("Decision: APPROVE\n\nIssues: none");
     expect(issueReplies[0]).toContain("Decision: APPROVE");
     expect(issueReplies[0]).toContain("Issues: none");
     expect(issueReplies[0]).toContain("Evidence:");
@@ -13056,7 +13067,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       normalizedStatus: "normalized",
       reviewOutputKey: result.capturedContext?.reviewOutputKey,
       deliveryId: "delivery-pr-issue-comment-mention",
-      counts: { input: 1, recorded: 1, rejected: 0, unsafeInputFields: 0 },
+      counts: { input: 1, recorded: 1 },
       severitySummary: { major: 1 },
       actionabilitySummary: { "needs-human-review": 1 },
       redaction: {
@@ -13070,6 +13081,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         unboundedArraysIncluded: false,
       },
     });
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("rejected");
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("unsafeInputFields");
     expect(JSON.stringify(lifecycleLog?.bindings)).not.toContain(rawCanary);
 
     const validationTruthLog = result.infoCalls.find(
@@ -13235,9 +13248,11 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       source: "explicit-mention-review",
       reviewOutputKey: result.capturedContext?.reviewOutputKey,
       deliveryId: "delivery-pr-issue-comment-mention",
-      counts: { input: 1, recorded: 1, rejected: 0, unsafeInputFields: 0 },
+      counts: { input: 1, recorded: 1 },
       redaction: expect.objectContaining({ privateOnly: true, candidateBodiesIncluded: false, rawPromptsIncluded: false, rawModelOutputIncluded: false, diffsIncluded: false }),
     });
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("rejected");
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("unsafeInputFields");
     expect(validationTruthLog?.bindings).toMatchObject({
       gate: "review-validation-truth",
       source: "explicit-mention-review",
@@ -13320,7 +13335,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     );
     expect(completionLog?.bindings).toMatchObject({
       reviewConclusion: "error",
-      publishResolution: "none",
+      publishResolution: "error-fallback",
+      publishFallbackDelivery: "error-comment-created",
       formatterStatus: "posted",
       combinedPartialFailure: true,
     });
