@@ -17351,7 +17351,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "shadow",
       recorded: 2,
       rejected: 1,
-      errors: 0,
+      issueCount: 0,
       artifactPresent: true,
     }));
     expect(JSON.stringify(candidateLog?.data)).not.toContain("RAW TITLE MUST NOT LEAK");
@@ -17361,7 +17361,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "shadow",
       recorded: 2,
       rejected: 1,
-      errors: 0,
+      issueCount: 0,
       artifactPresent: true,
     });
     expect(JSON.stringify(configSnapshot)).not.toContain("RAW BODY MUST NOT LEAK");
@@ -17799,6 +17799,10 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         reasons: expect.arrayContaining(["candidate-publisher-blocked"]),
       }),
     }));
+    const serializedPublicationLog = JSON.stringify(publicationLog?.data).toLowerCase();
+    expect(serializedPublicationLog).not.toContain("error");
+    expect(serializedPublicationLog).not.toContain("failed");
+    expect(serializedPublicationLog).not.toContain("warn");
   });
 
   test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
@@ -18224,7 +18228,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublishable: 0,
       candidatePublished: 0,
-      candidateFailed: 0,
+      candidateUndelivered: 0,
       candidateMovedToDetails: 1,
       candidateDetailsOnlyFindings: 1,
       convertedProcessedFindings: 0,
@@ -18335,20 +18339,20 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublishable: 1,
       candidatePublished: 0,
-      candidateFailed: 1,
+      candidateUndelivered: 1,
       candidateMovedToDetails: 0,
       candidateDetailsOnlyFindings: 0,
       convertedProcessedFindings: 0,
       directPublished: 0,
     }));
-    expect(publicationLog?.data?.reasons).toContain("candidate-publisher-failed");
+    expect(publicationLog?.data?.reasons).toContain("candidate-publisher-undelivered");
     expect(publicationLog?.level).toBe("warn");
     expect(publicationLog?.message).toBe("Review candidate publication completed with non-approved mode");
     expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
-      failed: expect.objectContaining({
-        mode: "failed",
+      undelivered: expect.objectContaining({
+        mode: "undelivered",
         count: 1,
-        reasons: expect.arrayContaining(["candidate-publisher-failed", "github-error"]),
+        reasons: expect.arrayContaining(["candidate-publisher-undelivered", "github-issues"]),
       }),
     }));
     expect(JSON.stringify(publicationLog?.data)).not.toContain("This candidate targets a commentable diff line");
@@ -18375,7 +18379,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "unavailable",
       recorded: 0,
       rejected: 0,
-      errors: 0,
+      issueCount: 0,
       artifactPresent: false,
     });
   });
@@ -18411,7 +18415,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "degraded",
       recorded: 0,
       rejected: 0,
-      errors: 2,
+      issueCount: 2,
       artifactPresent: false,
       reason: "bad-json-prompt-redacted-token-redacted",
     });

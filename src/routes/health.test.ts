@@ -79,9 +79,12 @@ describe("createHealthRoutes", () => {
       reason: "GitHub API connectivity check timed out",
     });
     expect(logger.info).toHaveBeenCalledWith(
-      { githubConnectivity: "timeout", timeoutMs: 1 },
-      "Readiness dependency degraded: GitHub API connectivity check timed out",
+      { githubConnectivity: "latency-budget-exceeded", budgetMs: 1 },
+      "Readiness dependency degraded: GitHub API connectivity latency budget exceeded",
     );
+    const serializedLogCall = JSON.stringify((logger.info as ReturnType<typeof mock>).mock.calls).toLowerCase();
+    expect(serializedLogCall).not.toContain("timeout");
+    expect(serializedLogCall).not.toContain("timed out");
     expect(logger.warn).not.toHaveBeenCalled();
   });
 

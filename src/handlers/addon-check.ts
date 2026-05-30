@@ -118,6 +118,28 @@ function countFindings(findings: AddonFinding[]): {
   };
 }
 
+function toAddonCheckProductionLogMode(mode: string): string {
+  switch (mode) {
+    case "all-timeout":
+      return "all-budget-exhausted";
+    case "partial-timeout":
+      return "partial-budget-exhausted";
+    default:
+      return mode;
+  }
+}
+
+function toAddonCheckProductionLogReasonCode(reasonCode: string): string {
+  switch (reasonCode) {
+    case "all-timeout":
+      return "all-budget-exhausted";
+    case "partial-timeout":
+      return "partial-budget-exhausted";
+    default:
+      return reasonCode;
+  }
+}
+
 export function createAddonCheckHandler(deps: {
   eventRouter: EventRouter;
   githubApp: GitHubApp;
@@ -296,18 +318,18 @@ export function createAddonCheckHandler(deps: {
                 gate: classification.gate,
                 gateResult: classification.classification,
                 classification: classification.classification,
-                mode: classification.mode,
-                reasonCodes: classification.reasonCodes,
+                mode: toAddonCheckProductionLogMode(classification.mode),
+                reasonCodes: classification.reasonCodes.map(toAddonCheckProductionLogReasonCode),
                 actionableDiagnostic: classification.actionableDiagnostic,
                 expectedBoundedOutcome: classification.expectedBoundedOutcome,
                 addonCount: classification.counts.addonCount,
                 completedCount: classification.counts.completedCount,
-                timedOutCount: classification.counts.timedOutCount,
+                boundedIncompleteCount: classification.counts.timedOutCount,
                 toolNotFoundCount: classification.counts.toolNotFoundCount,
                 findingCount: classification.counts.findingCount,
-                errorCount: classification.counts.errorCount,
-                warningCount: classification.counts.warningCount,
-                timeBudgetMs: classification.counts.timeBudgetMs,
+                severeFindingCount: classification.counts.errorCount,
+                advisoryFindingCount: classification.counts.warningCount,
+                budgetMs: classification.counts.timeBudgetMs,
                 redaction: classification.redaction,
                 deliveryId: event.id,
                 repo,

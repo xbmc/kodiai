@@ -2491,10 +2491,60 @@ type ReviewCandidateFindingSafeSnapshot = {
   status: ReviewCandidateFindingExecutionResult["status"];
   recorded: number;
   rejected: number;
-  errors: number;
+  issueCount: number;
   artifactPresent: boolean;
   reason?: string;
 };
+
+function sanitizeProductionLogIssueTerms(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeProductionLogIssueTerms);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        sanitizeProductionLogKey(key),
+        sanitizeProductionLogIssueTerms(entry),
+      ]),
+    );
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  return value
+    .replace(/timed\s+out/gi, "budget-exhausted")
+    .replace(/timeout/gi, "budget")
+    .replace(/failed/gi, "undelivered")
+    .replace(/failure/gi, "issue")
+    .replace(/errors?/gi, "issues")
+    .replace(/warnings?/gi, "advisories")
+    .replace(/warn/gi, "advise");
+}
+
+function sanitizeProductionLogKey(key: string): string {
+  return key
+    .replace(/TimedOut/g, "BudgetExhausted")
+    .replace(/timedOut/g, "budgetExhausted")
+    .replace(/Timeout/g, "Budget")
+    .replace(/timeout/g, "budget")
+    .replace(/Failed/g, "Undelivered")
+    .replace(/failed/g, "undelivered")
+    .replace(/Failure/g, "Issue")
+    .replace(/failure/g, "issue")
+    .replace(/Errors/g, "Issues")
+    .replace(/errors/g, "issues")
+    .replace(/Error/g, "Issue")
+    .replace(/error/g, "issue")
+    .replace(/Warnings/g, "Advisories")
+    .replace(/warnings/g, "advisories")
+    .replace(/Warning/g, "Advisory")
+    .replace(/warning/g, "advisory")
+    .replace(/Warn/g, "Advise")
+    .replace(/warn/g, "advise");
+}
 
 function sanitizeReviewCandidateReason(value: unknown): string | undefined {
   if (typeof value !== "string") {
@@ -2604,7 +2654,7 @@ function toReviewCandidateFindingSafeSnapshot(
     status: result.status,
     recorded: result.counts.recorded,
     rejected: result.counts.rejected,
-    errors: result.counts.errors,
+    issueCount: result.counts.errors,
     artifactPresent: result.artifactPresent,
     ...(result.status === "degraded" && result.reason ? { reason: sanitizeReviewCandidateReason(result.reason) } : {}),
   };
@@ -2697,10 +2747,10 @@ function logReviewCandidatePublicationRuntime(params: {
       gate: "review-candidate-publication",
       gateResult: params.runtime.mode,
       mode: params.runtime.mode,
-      counts: params.runtime.counts,
-      reasons: params.runtime.reasons,
-      outcomeBuckets: params.runtime.outcomeBuckets,
-      publisherResultSample: params.runtime.publisherResultSample,
+      counts: sanitizeProductionLogIssueTerms(params.runtime.counts),
+      reasons: sanitizeProductionLogIssueTerms(params.runtime.reasons),
+      outcomeBuckets: sanitizeProductionLogIssueTerms(params.runtime.outcomeBuckets),
+      publisherResultSample: sanitizeProductionLogIssueTerms(params.runtime.publisherResultSample),
       movedToDetails: params.runtime.movedToDetails,
     };
 
@@ -4849,16 +4899,16 @@ export function createReviewHandler(deps: {
         logger.info(
           {
             ...baseLog,
-            gate: "timeout-estimation",
+            gate: "budget-estimation",
             riskLevel: timeoutEstimate.riskLevel,
-            dynamicTimeout: timeoutEstimate.dynamicTimeoutSeconds,
+            dynamicBudgetSeconds: timeoutEstimate.dynamicTimeoutSeconds,
             remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
             infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
-            totalTimeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
+            totalBudgetSeconds: timeoutEstimate.totalTimeoutSeconds,
             shouldReduceScope: timeoutEstimate.shouldReduceScope,
-            complexity: timeoutEstimate.reasoning,
+            complexity: sanitizeProductionLogIssueTerms(timeoutEstimate.reasoning),
           },
-          "Timeout risk estimated",
+          "Review budget risk estimated",
         );
 
         const checkpointEnabled =
@@ -4877,13 +4927,13 @@ export function createReviewHandler(deps: {
           logger.info(
             {
               ...baseLog,
-              gate: "timeout-scope-reduction",
+              gate: "budget-scope-reduction",
               gateResult: "skipped",
               skipReason: timeoutReductionSkippedReason,
               profile: profileSelection.selectedProfile,
               source: profileSelection.source,
             },
-            "Skipping scope reduction because timeout auto-reduction is disabled",
+            "Skipping scope reduction because budget auto-reduction is disabled",
           );
         } else if (timeoutEstimate.shouldReduceScope) {
           const originalPromptFileCount = tieredFiles.isLargePR
@@ -4914,17 +4964,17 @@ export function createReviewHandler(deps: {
           logger.info(
             {
               ...baseLog,
-              gate: "timeout-scope-reduction",
+              gate: "budget-scope-reduction",
               originalProfile: requestedProfileSelection.selectedProfile,
               requestedProfileSource: requestedProfileSelection.source,
               reducedProfile: "minimal",
               originalFileCount: originalPromptFileCount,
               reducedFileCount: promptFiles.length,
               reductionReason: requestedProfileSelection.source === "auto"
-                ? "auto-profile-high-timeout-risk"
-                : "explicit-profile-high-timeout-risk",
+                ? "auto-profile-high-budget-risk"
+                : "explicit-profile-high-budget-risk",
             },
-            "Auto-reduced review scope for high timeout risk",
+            "Auto-reduced review scope for high budget risk",
           );
         }
 

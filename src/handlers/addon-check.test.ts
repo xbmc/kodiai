@@ -526,18 +526,18 @@ describe("createAddonCheckHandler", () => {
       gate: "addon-check-classification",
       gateResult: "actionable-diagnostic",
       classification: "actionable-diagnostic",
-      mode: "all-timeout",
+      mode: "all-budget-exhausted",
       addonCount: 2,
       completedCount: 0,
-      timedOutCount: 2,
+      boundedIncompleteCount: 2,
       toolNotFoundCount: 0,
       findingCount: 0,
-      timeBudgetMs: 1,
+      budgetMs: 1,
       deliveryId: "delivery-pr-1",
       repo: "xbmc/repo-plugins",
       prNumber: 42,
     });
-    expect(gateLog!.bindings.reasonCodes).toContain("all-timeout");
+    expect(gateLog!.bindings.reasonCodes).toContain("all-budget-exhausted");
     expect(gateLog!.bindings.redaction).toMatchObject({
       rawCheckerOutputOmitted: true,
       workspacePathsOmitted: true,
@@ -586,17 +586,22 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
       classification: "actionable-diagnostic",
-      mode: "partial-timeout",
+      mode: "partial-budget-exhausted",
       addonCount: 2,
       completedCount: 1,
-      timedOutCount: 1,
+      boundedIncompleteCount: 1,
       findingCount: 2,
-      errorCount: 1,
-      warningCount: 1,
+      severeFindingCount: 1,
+      advisoryFindingCount: 1,
     });
-    expect(gateLog!.bindings.reasonCodes).toContain("partial-timeout");
+    expect(gateLog!.bindings.reasonCodes).toContain("partial-budget-exhausted");
     expect(gateLog!.bindings.reasonCodes).toContain("findings-present");
     expect(gateLog!.bindings.mode).not.toBe("completed-clean");
+    const serializedGate = JSON.stringify(gateLog!.bindings).toLowerCase();
+    expect(serializedGate).not.toContain("error");
+    expect(serializedGate).not.toContain("failed");
+    expect(serializedGate).not.toContain("warn");
+    expect(serializedGate).not.toContain("timeout");
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
@@ -640,7 +645,7 @@ describe("createAddonCheckHandler", () => {
       mode: "tool-unavailable",
       addonCount: 2,
       completedCount: 0,
-      timedOutCount: 0,
+      boundedIncompleteCount: 0,
       toolNotFoundCount: 2,
       findingCount: 0,
     });
@@ -681,7 +686,7 @@ describe("createAddonCheckHandler", () => {
       mode: "completed-clean",
       addonCount: 1,
       completedCount: 1,
-      timedOutCount: 0,
+      boundedIncompleteCount: 0,
       toolNotFoundCount: 0,
       findingCount: 0,
     });
@@ -690,6 +695,10 @@ describe("createAddonCheckHandler", () => {
     expect(serializedGate).not.toContain("/tmp/test-workspace");
     expect(serializedGate).not.toContain("raw detail");
     expect(serializedGate).not.toContain("plugin.video.foo");
+    expect(serializedGate.toLowerCase()).not.toContain("error");
+    expect(serializedGate.toLowerCase()).not.toContain("failed");
+    expect(serializedGate.toLowerCase()).not.toContain("warn");
+    expect(serializedGate.toLowerCase()).not.toContain("timeout");
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
   });

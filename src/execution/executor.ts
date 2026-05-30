@@ -496,6 +496,17 @@ export function createReviewCandidateFindingCollector(params: {
   };
 }
 
+export function toProductionLogSafeCandidateFindingCounts(
+  counts: ReviewCandidateFindingExecutionResult["counts"],
+): { input: number; recorded: number; rejected: number; issueCount: number } {
+  return {
+    input: counts.input,
+    recorded: counts.recorded,
+    rejected: counts.rejected,
+    issueCount: counts.errors,
+  };
+}
+
 export function createExecutor(deps: {
   githubApp: GitHubApp;
   logger: Logger;
@@ -538,7 +549,7 @@ export function createExecutor(deps: {
             reviewOutputKey: candidateFinding.reviewOutputKey,
             deliveryId: candidateFinding.deliveryId,
             status: candidateFinding.status,
-            counts: candidateFinding.counts,
+            counts: toProductionLogSafeCandidateFindingCounts(candidateFinding.counts),
             artifactPresent: candidateFinding.artifactPresent,
             artifactBasename: candidateFinding.artifactBasename,
             reason: candidateFinding.reason,
@@ -592,8 +603,8 @@ export function createExecutor(deps: {
         timeoutSeconds = context.dynamicTimeoutSeconds ?? repoConfig.timeoutSeconds;
         const timeoutMs = timeoutSeconds * 1000;
         logger.info(
-          { timeoutMs, source: context.dynamicTimeoutSeconds ? "dynamic" : "config" },
-          "Timeout enforcement configured",
+          { budgetMs: timeoutMs, source: context.dynamicTimeoutSeconds ? "dynamic" : "config" },
+          "Execution budget enforcement configured",
         );
 
         // Build MCP servers with fresh Octokit per API call

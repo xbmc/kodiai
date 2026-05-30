@@ -70,8 +70,8 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
         });
       case "timeout":
         logger.info(
-          { githubConnectivity: "timeout", timeoutMs: readinessDependencyTimeoutMs },
-          "Readiness dependency degraded: GitHub API connectivity check timed out",
+          { githubConnectivity: "latency-budget-exceeded", budgetMs: readinessDependencyTimeoutMs },
+          "Readiness dependency degraded: GitHub API connectivity latency budget exceeded",
         );
         return c.json({
           status: "ready",

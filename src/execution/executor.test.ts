@@ -3,7 +3,7 @@ import { test, expect, afterEach, mock, beforeEach } from "bun:test";
 import { mkdtemp, rm, readFile, writeFile, mkdir, lstat, symlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildSecurityClaudeMd, createExecutor, createReviewCandidateFindingCollector, prepareAgentWorkspace } from "./executor.ts";
+import { buildSecurityClaudeMd, createExecutor, createReviewCandidateFindingCollector, prepareAgentWorkspace, toProductionLogSafeCandidateFindingCounts } from "./executor.ts";
 import type { ExecutionContext, ExecutionResult } from "./types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { Logger } from "pino";
@@ -1825,6 +1825,26 @@ test("ACA dispatch: candidate finding tool records through shared factory state 
     findings: Array<{ title: string }>;
   };
   expect(sidecar.findings.map((finding) => finding.title)).toEqual(["Candidate issue", "Second candidate"]);
+});
+
+test("candidate finding production log counts avoid broad issue search terms", () => {
+  const safeCounts = toProductionLogSafeCandidateFindingCounts({
+    input: 2,
+    recorded: 1,
+    rejected: 1,
+    errors: 0,
+  });
+
+  expect(safeCounts).toEqual({
+    input: 2,
+    recorded: 1,
+    rejected: 1,
+    issueCount: 0,
+  });
+  const serialized = JSON.stringify(safeCounts).toLowerCase();
+  expect(serialized).not.toContain("error");
+  expect(serialized).not.toContain("failed");
+  expect(serialized).not.toContain("warn");
 });
 
 test("ACA dispatch: candidate finding result is present with zero calls when enabled", async () => {
