@@ -125,8 +125,8 @@ export function createMcpHttpRoutes(
     const token = authHeader?.replace(/^Bearer /, "");
 
     if (!token) {
-      logger?.warn(
-        { authFailureReason: "missing" },
+      logger?.info(
+        { authFailureReason: "missing", authFailureExpected: true },
         "MCP HTTP: unauthorized",
       );
       return c.json({ error: "Unauthorized" }, 401);

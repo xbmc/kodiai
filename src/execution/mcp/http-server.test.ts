@@ -124,7 +124,7 @@ describe("createMcpHttpRoutes", () => {
     expect(body.error).toBe("Unauthorized");
   });
 
-  test("unauthorized requests log missing versus expected expired token reasons", async () => {
+  test("unauthorized requests log absent and expected expired token reasons below warning level", async () => {
     const registry = createMcpJobRegistry();
     registry.register("expired-token", { test_server: makeFactory() }, -1);
     const warnings: Array<Record<string, unknown>> = [];
@@ -135,12 +135,16 @@ describe("createMcpHttpRoutes", () => {
     };
     const app = createMcpHttpRoutes(registry, logger as never);
 
-    const missing = await mcpPost(app, "test_server", "missing-token");
+    const absent = await mcpPost(app, "test_server");
     const expired = await mcpPost(app, "test_server", "expired-token");
 
-    expect(missing.status).toBe(401);
+    expect(absent.status).toBe(401);
     expect(expired.status).toBe(401);
-    expect(warnings).toContainEqual(expect.objectContaining({ authFailureReason: "missing" }));
+    expect(warnings).toHaveLength(0);
+    expect(infos).toContainEqual(expect.objectContaining({
+      authFailureReason: "missing",
+      authFailureExpected: true,
+    }));
     expect(infos).toContainEqual(expect.objectContaining({
       authFailureReason: "expired",
       authFailureExpected: true,
