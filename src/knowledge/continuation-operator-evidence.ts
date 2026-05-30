@@ -1,4 +1,4 @@
-import { parseReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { buildReviewFamilyKey } from "../jobs/review-work-coordinator.ts";
 import type {
   ContinuationFamilyStateRecord,

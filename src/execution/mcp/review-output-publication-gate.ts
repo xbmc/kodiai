@@ -3,7 +3,7 @@ import {
   buildReviewOutputMarker,
   ensureReviewOutputNotPublished,
   type ReviewOutputPublicationStatus,
-} from "../../handlers/review-idempotency.ts";
+} from "../../review-orchestration/review-idempotency.ts";
 import {
   evaluateCandidatePublicationPolicy,
   type CandidatePublicationPolicyAttempt,

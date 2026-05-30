@@ -101,7 +101,7 @@ import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
-} from "./review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 import {
   buildReviewLearningMemoryRecord,
   isReviewLearningMemorySkip,
@@ -214,10 +214,18 @@ import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
   isExpectedCandidatePublicationPolicyBlock,
-  type ReviewCandidatePublicationRuntimeOutcomeBucket,
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
+import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
+import {
+  toProductionLogBudgetReasoning,
+  toProductionLogCandidateFindingSnapshot,
+  toProductionLogCandidatePublicationBuckets,
+  toProductionLogCandidatePublicationCounts,
+  toProductionLogCandidatePublicationPublisherSample,
+  toProductionLogCandidatePublicationReason,
+} from "../review-audit/production-log-projection.ts";
 import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
@@ -2497,101 +2505,6 @@ type ReviewCandidateFindingSafeSnapshot = {
   reason?: string;
 };
 
-type ReviewCandidateFindingProductionLogSnapshot = Omit<ReviewCandidateFindingSafeSnapshot, "errors"> & {
-  issueCount: number;
-};
-
-type ReviewCandidatePublicationProductionLogCounts = Omit<
-  ReviewCandidatePublicationRuntimeResult["counts"],
-  "candidateFailed" | "candidateMalformed" | "malformed"
-> & {
-  candidateUndelivered: number;
-  candidateInvalid: number;
-  invalid: number;
-};
-
-type ReviewCandidatePublicationProductionLogBucket =
-  Omit<ReviewCandidatePublicationRuntimeOutcomeBucket, "reasons"> & {
-    reasons: string[];
-  };
-
-type ReviewCandidatePublicationProductionLogBuckets = Partial<Record<
-  Exclude<keyof NonNullable<ReviewCandidatePublicationRuntimeResult["outcomeBuckets"]>, "failed"> | "undelivered",
-  ReviewCandidatePublicationProductionLogBucket
->>;
-
-type ReviewCandidatePublicationProductionLogPublisherSample = Omit<
-  ReviewCandidatePublicationRuntimeResult["publisherResultSample"][number],
-  "status" | "reason"
-> & {
-  status: string;
-  reason: string;
-};
-
-function toProductionLogCandidatePublicationReason(reason: string): string {
-  switch (reason) {
-    case "candidate-publisher-failed":
-      return "candidate-publisher-undelivered";
-    case "github-error":
-      return "github-issues";
-    default:
-      return reason;
-  }
-}
-
-function toProductionLogCandidatePublicationMode(mode: string): string {
-  return mode === "failed" ? "undelivered" : mode;
-}
-
-function toProductionLogCandidatePublicationCounts(
-  counts: ReviewCandidatePublicationRuntimeResult["counts"],
-): ReviewCandidatePublicationProductionLogCounts {
-  const {
-    candidateFailed,
-    candidateMalformed,
-    malformed,
-    ...safeCounts
-  } = counts;
-  return {
-    ...safeCounts,
-    candidateUndelivered: candidateFailed,
-    candidateInvalid: candidateMalformed,
-    invalid: malformed,
-  };
-}
-
-function toProductionLogCandidatePublicationBuckets(
-  buckets: ReviewCandidatePublicationRuntimeResult["outcomeBuckets"],
-): ReviewCandidatePublicationProductionLogBuckets {
-  const safeBuckets: ReviewCandidatePublicationProductionLogBuckets = {};
-  for (const [key, bucket] of Object.entries(buckets)) {
-    if (!bucket) continue;
-    const safeKey = key === "failed" ? "undelivered" : key;
-    safeBuckets[safeKey as keyof ReviewCandidatePublicationProductionLogBuckets] = {
-      ...bucket,
-      mode: toProductionLogCandidatePublicationMode(bucket.mode),
-      reasons: bucket.reasons.map(toProductionLogCandidatePublicationReason),
-    };
-  }
-  return safeBuckets;
-}
-
-function toProductionLogCandidatePublicationPublisherSample(
-  sample: ReviewCandidatePublicationRuntimeResult["publisherResultSample"],
-): ReviewCandidatePublicationProductionLogPublisherSample[] {
-  return sample.map((entry) => ({
-    ...entry,
-    status: toProductionLogCandidatePublicationMode(entry.status),
-    reason: toProductionLogCandidatePublicationReason(entry.reason),
-  }));
-}
-
-function toProductionLogBudgetReasoning(reasoning: string): string {
-  return reasoning
-    .replace(/timed\s+out/gi, "budget-exhausted")
-    .replace(/timeout/gi, "budget");
-}
-
 function sanitizeReviewCandidateReason(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -2708,13 +2621,9 @@ function toReviewCandidateFindingSafeSnapshot(
 
 function toReviewCandidateFindingProductionLogSnapshot(
   result: ReviewCandidateFindingExecutionResult,
-): ReviewCandidateFindingProductionLogSnapshot {
+) {
   const snapshot = toReviewCandidateFindingSafeSnapshot(result);
-  const { errors, ...safeSnapshot } = snapshot;
-  return {
-    ...safeSnapshot,
-    issueCount: errors,
-  };
+  return toProductionLogCandidateFindingSnapshot(snapshot);
 }
 
 function logReviewCandidateFindingResult(params: {
@@ -5104,10 +5013,10 @@ export function createReviewHandler(deps: {
               ],
             },
             gates: {
-              enabled: ["review-routing", "timeout-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
+              enabled: ["review-routing", "budget-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
               current: [
                 "review-routing",
-                "timeout-estimation",
+                "budget-estimation",
                 ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
                 ...(reviewBoundedness ? ["review-boundedness"] : []),
               ],
@@ -5115,7 +5024,7 @@ export function createReviewHandler(deps: {
             policy: {
               publish: "canonical-visible-surface",
               tools: "github-comment-tools",
-              retry: "timeout-resilience",
+              retry: "budget-resilience",
             },
             graphValidation: reviewPlanGraphValidation,
             candidateFinding: {
@@ -6896,37 +6805,16 @@ export function createReviewHandler(deps: {
                 thresholdSeconds: timeoutDuration,
               },
             });
-            const timeoutClassificationTelemetry = {
-              timeoutClassification: timeoutClassification.classification,
-              timeoutClassificationMode: timeoutClassification.mode,
-              timeoutClassificationReasons: timeoutClassification.reasonCodes,
-            };
-
-            logger.info(
-              {
-                ...baseLog,
-                gate: timeoutClassification.gate,
-                gateResult: timeoutClassification.classification,
-                classification: timeoutClassification.classification,
-                mode: timeoutClassification.mode,
-                reasonCodes: timeoutClassification.reasonCodes,
-                deliveryId: event.id,
-                reviewOutputKey,
-                prNumber: pr.number,
-                checkpointFilesReviewed: timeoutClassification.counts.checkpointFilesReviewed ?? null,
-                checkpointFilesInspected: timeoutClassification.counts.checkpointFilesInspected ?? null,
-                checkpointFindingCount: timeoutClassification.counts.checkpointFindingCount ?? null,
-                checkpointTotalFiles: timeoutClassification.counts.checkpointTotalFiles ?? null,
-                retryFilesCount: timeoutClassification.counts.retryFilesCount ?? null,
-                recentTimeouts: timeoutClassification.counts.recentTimeouts ?? null,
-                longRunDurationSeconds: timeoutClassification.counts.longRunDurationSeconds ?? null,
-                longRunThresholdSeconds: timeoutClassification.counts.longRunThresholdSeconds ?? null,
-                chronicTimeout: isChronicTimeout,
-                retryEnqueued: retryPlan?.decision === "schedule-continuation",
-                redaction: timeoutClassification.redaction,
-              },
-              "Review timeout classification",
-            );
+            const timeoutClassificationTelemetry = logReviewTimeoutClassification({
+              logger,
+              baseLog,
+              classification: timeoutClassification,
+              deliveryId: event.id,
+              reviewOutputKey,
+              prNumber: pr.number,
+              chronicBudgetExhaustion: isChronicTimeout,
+              retryEnqueued: retryPlan?.decision === "schedule-continuation",
+            });
 
             // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
             const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines

@@ -1,7 +1,7 @@
 import pino from "pino";
 import { createDbClient } from "../src/db/client.ts";
 import { buildReviewFamilyKey } from "../src/jobs/review-work-coordinator.ts";
-import { buildReviewOutputKey, parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey, parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { createKnowledgeStore } from "../src/knowledge/store.ts";
 import type {
   ContinuationFamilyStateKey,

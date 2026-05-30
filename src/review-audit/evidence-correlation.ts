@@ -1,5 +1,5 @@
 import type { Sql } from "../db/client.ts";
-import { parseReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import type { NormalizedLogAnalyticsRow } from "./log-analytics.ts";
 import type { RecentReviewArtifact, ReviewAuditLane } from "./recent-review-sample.ts";
 

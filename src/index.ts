@@ -53,14 +53,6 @@ import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
 
-// Global error handlers — log and keep running instead of silently crashing
-process.on("uncaughtException", (err) => {
-  console.error("FATAL: uncaughtException", err);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error("FATAL: unhandledRejection", reason);
-});
-
 // Fail fast on missing or invalid config
 const config = await loadConfig();
 const logger = createLogger();
@@ -618,6 +610,15 @@ app.onError((err, c) => {
 
 // Start shutdown manager (SIGTERM/SIGINT handlers)
 shutdownManager.start();
+
+process.on("uncaughtException", (err) => {
+  logger.fatal({ err }, "uncaughtException");
+  shutdownManager.requestShutdown("uncaughtException");
+});
+process.on("unhandledRejection", (reason) => {
+  logger.fatal({ reason }, "unhandledRejection");
+  shutdownManager.requestShutdown("unhandledRejection");
+});
 
 // Startup webhook queue replay: process any webhooks queued during previous shutdown
 const startupReplayStart = Date.now();

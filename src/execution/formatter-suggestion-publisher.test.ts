@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { buildReviewOutputMarker } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
 import {
   publishFormatterSuggestionReview,
   type FormatterSuggestionPublisherOctokit,
 } from "./formatter-suggestion-publisher.ts";
 import type { ReviewOutputPublicationGate } from "./mcp/review-output-publication-gate.ts";
 import type { FormatterSuggestionPayload } from "./formatter-suggestions.ts";
-import type { ReviewOutputPublicationStatus } from "../handlers/review-idempotency.ts";
+import type { ReviewOutputPublicationStatus } from "../review-orchestration/review-idempotency.ts";
 
 type CreateReviewPayload = Parameters<FormatterSuggestionPublisherOctokit["rest"]["pulls"]["createReview"]>[0];
 

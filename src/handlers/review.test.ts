@@ -13,7 +13,7 @@ import {
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import { createMentionHandler } from "./mention.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
   ContributorProfile,
@@ -20090,12 +20090,12 @@ describe("createReviewHandler failure fallback publication", () => {
     const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
     expect(classificationLog?.data).toMatchObject({
       gateResult: "expected-bounded-outcome",
-      mode: "bounded-partial-timeout",
+      mode: "bounded-partial-budget-exhausted",
       retryEnqueued: false,
       checkpointFilesReviewed: 1,
       checkpointFilesInspected: 1,
     });
-    expect(classificationLog?.data?.reasonCodes).toEqual(expect.arrayContaining(["partial-timeout", "checkpoint-present"]));
+    expect(classificationLog?.data?.reasonCodes).toEqual(expect.arrayContaining(["partial-budget-exhausted", "checkpoint-present"]));
     expect(entries.some((entry) => entry.message === "Resilience telemetry write failed (non-blocking)")).toBeTrue();
     expect(resilienceEvents[0]).toMatchObject({
       timeoutClassification: "expected-bounded-outcome",
@@ -20161,11 +20161,11 @@ describe("createReviewHandler failure fallback publication", () => {
     const zeroEvidence = await runScenario({
       recentTimeouts: 0,
       checkpoint: null,
-      expectedMode: "zero-evidence-hard-timeout",
-      expectedReasons: ["zero-evidence", "timeout"],
+      expectedMode: "zero-evidence-hard-budget-exhausted",
+      expectedReasons: ["zero-evidence", "budget-exhausted"],
     });
-    expect(zeroEvidence?.mode).toBe("zero-evidence-hard-timeout");
-    expect(zeroEvidence?.reasonCodes).toEqual(expect.arrayContaining(["zero-evidence", "timeout"]));
+    expect(zeroEvidence?.mode).toBe("zero-evidence-hard-budget-exhausted");
+    expect(zeroEvidence?.reasonCodes).toEqual(expect.arrayContaining(["zero-evidence", "budget-exhausted"]));
 
     const chronic = await runScenario({
       recentTimeouts: 3,
@@ -20178,12 +20178,12 @@ describe("createReviewHandler failure fallback publication", () => {
         summaryDraft: "Reviewed README before timeout.",
         totalFiles: 2,
       },
-      expectedMode: "chronic-timeout-skip",
-      expectedReasons: ["chronic-timeout", "continuation-skipped"],
+      expectedMode: "chronic-budget-exhausted-skip",
+      expectedReasons: ["chronic-budget-exhausted", "continuation-skipped"],
     });
-    expect(chronic?.mode).toBe("chronic-timeout-skip");
-    expect(chronic?.reasonCodes).toEqual(expect.arrayContaining(["chronic-timeout", "continuation-skipped"]));
-    expect(chronic?.chronicTimeout).toBe(true);
+    expect(chronic?.mode).toBe("chronic-budget-exhausted-skip");
+    expect(chronic?.reasonCodes).toEqual(expect.arrayContaining(["chronic-budget-exhausted", "continuation-skipped"]));
+    expect(chronic?.chronicBudgetExhaustion).toBe(true);
   });
 
 

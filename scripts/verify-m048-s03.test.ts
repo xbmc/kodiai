@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import type { M048S01Report } from "./verify-m048-s01.ts";
 
 function makeS01Report(params?: {

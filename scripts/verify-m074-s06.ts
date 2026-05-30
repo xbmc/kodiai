@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createGitHubApp } from "../src/auth/github-app.ts";
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { collectReviewOutputArtifacts, type ReviewOutputArtifactCollection, type ReviewOutputArtifactsOctokit } from "../src/review-audit/review-output-artifacts.ts";
 import { discoverLogAnalyticsWorkspaceIds, queryReviewAuditLogs, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 

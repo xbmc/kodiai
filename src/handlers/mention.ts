@@ -84,7 +84,7 @@ import {
   buildReviewOutputKey,
   buildReviewOutputPublicationLogFields,
   ensureReviewOutputNotPublished,
-} from "./review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 import {
   attachReviewFindingLifecycle,
   attachReviewValidationTruth,

@@ -3,7 +3,7 @@ import {
   buildApprovedReviewBody,
   buildReviewOutputKey,
   buildReviewOutputMarker,
-} from "../handlers/review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 import {
   ReviewOutputArtifactCollectionError,
   collectReviewOutputArtifacts,

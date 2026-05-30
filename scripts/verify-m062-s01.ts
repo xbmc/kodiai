@@ -1,7 +1,7 @@
 import { normalizeReviewFirstPass, type ReviewFirstPassOutcome, type ReviewFirstPassPayload } from "../src/lib/review-first-pass.ts";
 import type { ReviewBoundednessContract } from "../src/lib/review-boundedness.ts";
 import type { CheckpointRecord } from "../src/knowledge/types.ts";
-import { buildReviewOutputKey, parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey, parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 export type M062S01StatusCode =
   | "m062_s01_ok"

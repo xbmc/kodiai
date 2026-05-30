@@ -3,7 +3,7 @@ import {
   extractReviewOutputKey,
   parseReviewOutputKey,
   type ParsedReviewOutputKey,
-} from "../handlers/review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 import {
   classifyReviewOutputLane,
   type ReviewArtifactSource,

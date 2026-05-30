@@ -7,7 +7,7 @@ import {
   type M044S01Report,
 } from "./verify-m044-s01.ts";
 import type { RecentReviewArtifact } from "../src/review-audit/recent-review-sample.ts";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 function makeArtifact(overrides: Partial<RecentReviewArtifact> & Pick<RecentReviewArtifact, "prNumber" | "lane" | "source">): RecentReviewArtifact {
   return {

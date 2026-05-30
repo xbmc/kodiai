@@ -19,6 +19,9 @@ import type { CostTracker } from "../llm/cost-tracker.ts";
 import type { ResolvedModel } from "../llm/task-router.ts";
 import type { AppConfig } from "../config.ts";
 import type { McpJobRegistry } from "./mcp/http-server.ts";
+import { toProductionLogCandidateFindingCounts } from "../review-audit/production-log-projection.ts";
+
+export { toProductionLogCandidateFindingCounts as toProductionLogSafeCandidateFindingCounts } from "../review-audit/production-log-projection.ts";
 import {
   buildAcaJobSpec,
   launchAcaJob,
@@ -496,17 +499,6 @@ export function createReviewCandidateFindingCollector(params: {
   };
 }
 
-export function toProductionLogSafeCandidateFindingCounts(
-  counts: ReviewCandidateFindingExecutionResult["counts"],
-): { input: number; recorded: number; rejected: number; issueCount: number } {
-  return {
-    input: counts.input,
-    recorded: counts.recorded,
-    rejected: counts.rejected,
-    issueCount: counts.errors,
-  };
-}
-
 export function createExecutor(deps: {
   githubApp: GitHubApp;
   logger: Logger;
@@ -549,7 +541,7 @@ export function createExecutor(deps: {
             reviewOutputKey: candidateFinding.reviewOutputKey,
             deliveryId: candidateFinding.deliveryId,
             status: candidateFinding.status,
-            counts: toProductionLogSafeCandidateFindingCounts(candidateFinding.counts),
+            counts: toProductionLogCandidateFindingCounts(candidateFinding.counts),
             artifactPresent: candidateFinding.artifactPresent,
             artifactBasename: candidateFinding.artifactBasename,
             reason: candidateFinding.reason,

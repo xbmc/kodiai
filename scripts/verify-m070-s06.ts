@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import pino from "pino";
 import { createGitHubApp } from "../src/auth/github-app.ts";
-import { parseReviewOutputKey, type ParsedReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey, type ParsedReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import {
   collectReviewOutputArtifacts,
   evaluateExactReviewOutputProof,

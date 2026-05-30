@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewPhaseTiming } from "../src/execution/types.ts";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import type { M048S01Report } from "./verify-m048-s01.ts";
 
 const TARGET_PHASES = [

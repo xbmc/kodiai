@@ -9,7 +9,7 @@ import type {
   FormatterSuggestionSubflowOptions,
   FormatterSuggestionSubflowResult,
 } from "./formatter-suggestion-orchestration.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";

@@ -23,6 +23,8 @@ export interface ShutdownManager {
   start(): void;
   /** Whether a shutdown signal has been received. */
   isShuttingDown(): boolean;
+  /** Begin graceful drain after an unrecoverable runtime fault. */
+  requestShutdown(reason: string): void;
 }
 
 /** Shape of a queued webhook row in the webhook_queue table. */

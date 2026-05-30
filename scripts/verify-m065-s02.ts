@@ -1,4 +1,4 @@
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { evaluateM048S01 } from "./verify-m048-s01.ts";
 import { evaluateM049S02 } from "./verify-m049-s02.ts";
 import { evaluateM064S03 } from "./verify-m064-s03.ts";

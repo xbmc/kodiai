@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { normalizeLogAnalyticsRows, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 import type { ReviewOutputArtifactCollection } from "../src/review-audit/review-output-artifacts.ts";
 import type { M067S04Report } from "./verify-m067-s04.ts";

@@ -1,7 +1,7 @@
 import {
   extractReviewOutputKey,
   parseReviewOutputKey,
-} from "../handlers/review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 
 export type ReviewAuditLane = "automatic" | "explicit";
 export type ReviewArtifactSource = "review" | "issue-comment" | "review-comment";

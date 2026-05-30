@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildReviewOutputKey, buildReviewOutputMarker } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker } from "../src/review-orchestration/review-idempotency.ts";
 
 function makeReviewOutputKey(overrides?: Partial<{
   owner: string;

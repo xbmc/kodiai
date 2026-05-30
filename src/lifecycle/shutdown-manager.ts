@@ -22,25 +22,40 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
   const graceMs = deps.graceMs ?? (parseInt(process.env.SHUTDOWN_GRACE_MS ?? "", 10) || 300_000);
   let shuttingDown = false;
 
-  async function handleSignal(signal: string): Promise<void> {
+  async function beginShutdown(trigger: { kind: "signal"; signal: string } | { kind: "fault"; reason: string }): Promise<void> {
     if (shuttingDown) {
-      logger.warn({ signal }, "Shutdown already in progress, ignoring duplicate signal");
+      if (trigger.kind === "signal") {
+        logger.warn({ signal: trigger.signal }, "Shutdown already in progress, ignoring duplicate signal");
+      }
       return;
     }
 
     shuttingDown = true;
 
     const counts = requestTracker.activeCount();
-    logger.info(
-      {
-        signal,
-        activeRequests: counts.requests,
-        activeJobs: counts.jobs,
-        activeTotal: counts.total,
-        graceMs,
-      },
-      "Shutdown signal received, starting graceful drain",
-    );
+    if (trigger.kind === "signal") {
+      logger.info(
+        {
+          signal: trigger.signal,
+          activeRequests: counts.requests,
+          activeJobs: counts.jobs,
+          activeTotal: counts.total,
+          graceMs,
+        },
+        "Shutdown signal received, starting graceful drain",
+      );
+    } else {
+      logger.error(
+        {
+          shutdownReason: trigger.reason,
+          activeRequests: counts.requests,
+          activeJobs: counts.jobs,
+          activeTotal: counts.total,
+          graceMs,
+        },
+        "Fatal runtime fault received, starting graceful shutdown",
+      );
+    }
 
     async function safeCloseDb(): Promise<void> {
       try {
@@ -95,16 +110,20 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
   return {
     start() {
       process.on("SIGTERM", () => {
-        void handleSignal("SIGTERM");
+        void beginShutdown({ kind: "signal", signal: "SIGTERM" });
       });
       process.on("SIGINT", () => {
-        void handleSignal("SIGINT");
+        void beginShutdown({ kind: "signal", signal: "SIGINT" });
       });
       logger.info({ graceMs }, "Shutdown manager registered SIGTERM/SIGINT handlers");
     },
 
     isShuttingDown() {
       return shuttingDown;
+    },
+
+    requestShutdown(reason: string) {
+      void beginShutdown({ kind: "fault", reason });
     },
   };
 }

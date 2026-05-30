@@ -12,7 +12,7 @@ import {
   evaluateM068S03ClosureContract,
   M068_S03_CHECK_IDS,
 } from "./verify-m068-s03.ts";
-import { buildReviewOutputMarker, parseReviewOutputKey, type ParsedReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputMarker, parseReviewOutputKey, type ParsedReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { buildReviewDetailsMarker } from "../src/lib/review-utils.ts";
 import pino from "pino";
 import { createGitHubApp } from "../src/auth/github-app.ts";

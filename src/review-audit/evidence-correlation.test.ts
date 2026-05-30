@@ -9,7 +9,7 @@ import {
   type ExplicitLaneEvidence,
 } from "./evidence-correlation.ts";
 import type { RecentReviewArtifact } from "./recent-review-sample.ts";
-import { buildReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 
 function makeArtifact(overrides: Partial<RecentReviewArtifact> & Pick<RecentReviewArtifact, "prNumber" | "lane" | "source">): RecentReviewArtifact {
   const reviewOutputKey = overrides.reviewOutputKey ?? buildReviewOutputKey({

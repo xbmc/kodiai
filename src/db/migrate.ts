@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Sql } from "./client.ts";
+import { toProductionLogMigrationLabel } from "../review-audit/production-log-projection.ts";
 
 const MIGRATIONS_DIR = join(import.meta.dir, "migrations");
 
@@ -36,14 +37,7 @@ function migrationIdForLog(file: string): string {
 }
 
 function migrationLabelForLog(file: string): string {
-  return file
-    .replace(/\.sql$/i, "")
-    .replace(/timed\s+out/gi, "budget-exhausted")
-    .replace(/timeout/gi, "budget")
-    .replace(/failed/gi, "undelivered")
-    .replace(/errors?/gi, "issues")
-    .replace(/warnings?/gi, "advisories")
-    .replace(/warn/gi, "advise");
+  return toProductionLogMigrationLabel(file);
 }
 
 /**

@@ -11,7 +11,7 @@ import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
 } from "../src/jobs/review-work-coordinator.ts";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 export const M063_S01_SCENARIO_IDS = [
   "schedule-continuation",

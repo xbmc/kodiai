@@ -129,6 +129,7 @@ function createApp(options?: {
   const shutdownManager: ShutdownManager = {
     start: () => undefined,
     isShuttingDown: () => options?.isShuttingDown ?? false,
+    requestShutdown: () => undefined,
   };
 
   const app = new Hono();
@@ -161,6 +162,21 @@ describe("createWebhookRoutes", () => {
     });
 
     expect(response.status).toBe(401);
+    expect(dispatchedEvents).toHaveLength(0);
+    expect(trackedJobs).toHaveLength(0);
+  });
+
+  test("returns 400 before dispatch when the signature is valid but the payload is malformed JSON", async () => {
+    const invalidJson = "{ not valid json";
+    const { app, dispatchedEvents, trackedJobs } = createApp();
+
+    const response = await app.request("http://localhost/webhooks/github", {
+      method: "POST",
+      headers: createHeaders(invalidJson),
+      body: invalidJson,
+    });
+
+    expect(response.status).toBe(400);
     expect(dispatchedEvents).toHaveLength(0);
     expect(trackedJobs).toHaveLength(0);
   });

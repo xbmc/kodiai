@@ -19,7 +19,7 @@ import {
   discoverLogAnalyticsWorkspaceIds,
   queryReviewAuditLogs,
 } from "../src/review-audit/log-analytics.ts";
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 type PullRequestRef = { number: number; html_url: string };
 type AccessState = "available" | "missing" | "unavailable";

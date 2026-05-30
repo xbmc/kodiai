@@ -30,7 +30,7 @@ Use this runbook when very large PRs (many files), very long conversation thread
 
 ### Pagination (API correctness + avoiding silent partial reads)
 
-- Review idempotency marker scans: `src/handlers/review-idempotency.ts`
+- Review idempotency marker scans: `src/review-orchestration/review-idempotency.ts`
   - Uses paginated list calls to scan for `<!-- kodiai:review-output-key:... -->` markers.
 
 - Auto-approve “did we post any inline comments?” scan: `src/handlers/review.ts`

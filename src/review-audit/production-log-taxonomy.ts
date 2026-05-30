@@ -1,4 +1,4 @@
-import { parseReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import type { NormalizedLogAnalyticsRow } from "./log-analytics.ts";
 
 export type ProductionLogWindowId = "last12h" | "last7d";
@@ -325,7 +325,7 @@ function classifyStructuredReviewTimeout(row: NormalizedLogAnalyticsRow): Produc
     return "review-timeout-classification.expected-bounded-outcome";
   }
 
-  if (classification === "hard-failure" || mode === "zero-evidence-hard-timeout" || mode === "unknown-malformed-evidence") {
+  if (classification === "hard-failure" || mode === "zero-evidence-hard-timeout" || mode === "zero-evidence-hard-budget-exhausted" || mode === "unknown-malformed-evidence") {
     return "review-timeout-classification.hard-failure";
   }
 

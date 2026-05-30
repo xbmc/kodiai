@@ -5,7 +5,7 @@ import {
   selectRecentReviewSample,
   type RecentReviewArtifact,
 } from "./recent-review-sample.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
 
 function makeArtifact(overrides: Partial<RecentReviewArtifact> & Pick<RecentReviewArtifact, "prNumber" | "updatedAt" | "lane">): RecentReviewArtifact {
   const reviewOutputKey = overrides.reviewOutputKey ?? buildReviewOutputKey({

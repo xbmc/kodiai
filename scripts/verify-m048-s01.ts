@@ -9,7 +9,7 @@ import {
   type EvidenceAvailability,
   type PhaseTimingEvidence,
 } from "../src/review-audit/phase-timing-evidence.ts";
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import type { ReviewPhaseTiming } from "../src/execution/types.ts";
 
 const DEFAULT_TIMESPAN = "P14D";

@@ -20,9 +20,11 @@ import {
 } from "../lib/addon-checker-runner.ts";
 import {
   classifyAddonCheckOutcome,
-  type AddonCheckClassificationMode,
-  type AddonCheckReasonCode,
 } from "../lib/addon-check-classification.ts";
+import {
+  toProductionLogAddonCheckMode,
+  toProductionLogAddonCheckReasonCode,
+} from "../review-audit/production-log-projection.ts";
 import {
   buildAddonCheckMarker,
   formatAddonCheckComment,
@@ -118,24 +120,6 @@ function countFindings(findings: AddonFinding[]): {
     errorCount: findings.filter((finding) => finding.level === "ERROR").length,
     warningCount: findings.filter((finding) => finding.level === "WARN").length,
   };
-}
-
-const ADDON_CHECK_PRODUCTION_LOG_MODE_ALIASES = {
-  "all-timeout": "all-budget-exhausted",
-  "partial-timeout": "partial-budget-exhausted",
-} satisfies Partial<Record<AddonCheckClassificationMode, string>>;
-
-const ADDON_CHECK_PRODUCTION_LOG_REASON_ALIASES = {
-  "all-timeout": "all-budget-exhausted",
-  "partial-timeout": "partial-budget-exhausted",
-} satisfies Partial<Record<AddonCheckReasonCode, string>>;
-
-function toAddonCheckProductionLogMode(mode: AddonCheckClassificationMode): string {
-  return ADDON_CHECK_PRODUCTION_LOG_MODE_ALIASES[mode] ?? mode;
-}
-
-function toAddonCheckProductionLogReasonCode(reasonCode: AddonCheckReasonCode): string {
-  return ADDON_CHECK_PRODUCTION_LOG_REASON_ALIASES[reasonCode] ?? reasonCode;
 }
 
 export function createAddonCheckHandler(deps: {
@@ -316,8 +300,8 @@ export function createAddonCheckHandler(deps: {
                 gate: classification.gate,
                 gateResult: classification.classification,
                 classification: classification.classification,
-                mode: toAddonCheckProductionLogMode(classification.mode),
-                reasonCodes: classification.reasonCodes.map(toAddonCheckProductionLogReasonCode),
+                mode: toProductionLogAddonCheckMode(classification.mode),
+                reasonCodes: classification.reasonCodes.map(toProductionLogAddonCheckReasonCode),
                 actionableDiagnostic: classification.actionableDiagnostic,
                 expectedBoundedOutcome: classification.expectedBoundedOutcome,
                 addonCount: classification.counts.addonCount,

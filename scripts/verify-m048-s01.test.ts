@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ReviewPhaseTiming } from "../src/execution/types.ts";
 import type { NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 import type { PhaseTimingEvidence } from "../src/review-audit/phase-timing-evidence.ts";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 const REQUIRED_PHASES = [
   "queue wait",
