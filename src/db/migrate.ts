@@ -30,6 +30,11 @@ function logMigration(
   console.log(consoleMessage);
 }
 
+function migrationIdForLog(file: string): string {
+  const match = /^(\d+)/.exec(file);
+  return match?.[1] ?? "unknown";
+}
+
 /**
  * Apply all pending migrations in order.
  *
@@ -69,7 +74,7 @@ export async function runMigrations(
     if (applied.has(file)) {
       logMigration(
         options,
-        { migration: file, status: "skipped" },
+        { migrationId: migrationIdForLog(file), status: "skipped" },
         "Database migration skipped because it is already applied",
         `  skip: ${file} (already applied)`,
       );
@@ -81,7 +86,7 @@ export async function runMigrations(
 
     logMigration(
       options,
-      { migration: file, status: "applying" },
+      { migrationId: migrationIdForLog(file), status: "applying" },
       "Applying database migration",
       `  apply: ${file}`,
     );
