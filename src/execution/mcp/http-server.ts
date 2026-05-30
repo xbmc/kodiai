@@ -134,14 +134,15 @@ export function createMcpHttpRoutes(
 
     const authState = registry.inspectToken(token);
     if (!authState.ok) {
-      const logAuthFailure = authState.reason === "retired" || authState.reason === "expired"
+      const authFailureExpected = authState.reason === "missing" || authState.reason === "retired" || authState.reason === "expired";
+      const logAuthFailure = authFailureExpected
         ? logger?.info.bind(logger)
         : logger?.warn.bind(logger);
       logAuthFailure?.(
         {
           tokenLogId: registry.getTokenLogId(token),
           authFailureReason: authState.reason,
-          authFailureExpected: authState.reason === "retired" || authState.reason === "expired",
+          authFailureExpected,
           ...(authState.ttlRemainingMs !== undefined
             ? { ttlRemainingMs: authState.ttlRemainingMs }
             : {}),
