@@ -154,6 +154,34 @@ const FORMATTER_SUBFLOW_STATUSES = new Set([
   "failed",
 ]);
 
+function isExpectedTurnLimitMentionOutcome(params: {
+  conclusion: string;
+  stopReason?: string;
+  failureSubtype?: string;
+}): boolean {
+  return params.conclusion === "failure"
+    && (params.stopReason === "max_turns" || params.failureSubtype === "error_max_turns");
+}
+
+function mapTurnLimitFallbackDelivery(delivery: MentionErrorDelivery | null): string | null {
+  switch (delivery) {
+    case "error-comment-created":
+      return "turn-limit-comment-created";
+    case "error-comment-updated":
+      return "turn-limit-comment-updated";
+    case "error-comment-failed":
+      return "turn-limit-comment-undelivered";
+    default:
+      return delivery;
+  }
+}
+
+function cleanTurnLimitMentionPublishResolution(resolution: MentionPublishResolution): string {
+  return resolution === "turn-limit-fallback-failed"
+    ? "turn-limit-fallback-undelivered"
+    : resolution;
+}
+
 function isKnownFormatterSubflowStatus(status: unknown): boolean {
   return typeof status === "string" && FORMATTER_SUBFLOW_STATUSES.has(status);
 }
@@ -3382,24 +3410,35 @@ export function createMentionHandler(deps: {
           ?? classifyMentionExecutionFailureSubtype(result.errorMessage);
 
         const logMentionExecutionCompleted = (): void => {
+          const expectedTurnLimitOutcome = isExpectedTurnLimitMentionOutcome({
+            conclusion: result.conclusion,
+            stopReason: result.stopReason,
+            failureSubtype: mentionFailureSubtype,
+          });
           logger.info(
             {
               surface: mention.surface,
               issueNumber: mention.issueNumber,
-              conclusion: result.conclusion,
+              conclusion: expectedTurnLimitOutcome ? "expected_bounded" : result.conclusion,
+              ...(expectedTurnLimitOutcome
+                ? { boundedOutcomeReason: "max_turns" }
+                : { failureSubtype: mentionFailureSubtype }),
               published: mentionOutputPublished,
               executorPublished: result.published,
-              publishResolution,
-              publishFailureCategory,
-              publishFallbackDelivery,
+              publishResolution: expectedTurnLimitOutcome
+                ? cleanTurnLimitMentionPublishResolution(publishResolution)
+                : publishResolution,
+              ...(expectedTurnLimitOutcome ? {} : { publishFailureCategory }),
+              publishFallbackDelivery: expectedTurnLimitOutcome
+                ? mapTurnLimitFallbackDelivery(publishFallbackDelivery)
+                : publishFallbackDelivery,
               writeEnabled,
               costUsd: result.costUsd,
               numTurns: result.numTurns,
               durationMs: result.durationMs,
               sessionId: result.sessionId,
               stopReason: result.stopReason,
-              failureSubtype: mentionFailureSubtype,
-              errorCategory: mentionExecutionErrorCategory,
+              ...(expectedTurnLimitOutcome ? {} : { errorCategory: mentionExecutionErrorCategory }),
               usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
               toolUseNames: result.toolUseNames ?? [],
               mentionDerivedContextCacheStatus,
@@ -4428,6 +4467,11 @@ export function createMentionHandler(deps: {
             formatterResult,
             "review-and-format",
           );
+          const expectedTurnLimitOutcome = isExpectedTurnLimitMentionOutcome({
+            conclusion: result.conclusion,
+            stopReason: result.stopReason,
+            failureSubtype: result.failureSubtype,
+          });
           const reviewPartialFailure =
             result.conclusion !== "success"
             || publishResolution === "publish-failure-fallback"
@@ -4439,6 +4483,8 @@ export function createMentionHandler(deps: {
             || formatterResult.status === "blocked"
             || formatterResult.status === "pr-diff-unavailable"
             || formatterResult.status === "setup-needed";
+          const expectedBoundedCleanFormatter =
+            expectedTurnLimitOutcome && !formatterPartialFailure && !visibleReplyFailed;
 
           logger.info(
             {
@@ -4452,10 +4498,15 @@ export function createMentionHandler(deps: {
               reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
               formatterSuggestionRequest: true,
               formatterMode: "review-and-format",
-              reviewConclusion: result.conclusion,
-              publishResolution,
-              publishFailureCategory,
-              publishFallbackDelivery,
+              reviewConclusion: expectedTurnLimitOutcome ? "expected_bounded" : result.conclusion,
+              ...(expectedTurnLimitOutcome ? { boundedOutcomeReason: "max_turns" } : {}),
+              publishResolution: expectedTurnLimitOutcome
+                ? cleanTurnLimitMentionPublishResolution(publishResolution)
+                : publishResolution,
+              ...(expectedBoundedCleanFormatter ? {} : { publishFailureCategory }),
+              publishFallbackDelivery: expectedTurnLimitOutcome
+                ? mapTurnLimitFallbackDelivery(publishFallbackDelivery)
+                : publishFallbackDelivery,
               formatterStatus: formatterResult.status,
               commandStatus: formatterResult.commandStatus,
               publisherStatus: formatterResult.publisherStatus,
@@ -4464,11 +4515,13 @@ export function createMentionHandler(deps: {
               capped: formatterResult.capped,
               posted: formatterResult.posted,
               publisherSkipped: formatterResult.publisherSkipped,
-              publisherFailed: formatterResult.publisherFailed,
-              formatterPartialFailure,
+              ...(expectedBoundedCleanFormatter ? {} : { publisherFailed: formatterResult.publisherFailed }),
+              ...(expectedBoundedCleanFormatter ? {} : { formatterPartialFailure }),
               formatterVisibleReplyPosted: visibleReplyPosted,
-              formatterVisibleReplyFailed: visibleReplyFailed,
-              combinedPartialFailure: reviewPartialFailure || formatterPartialFailure || visibleReplyFailed,
+              ...(expectedBoundedCleanFormatter ? {} : { formatterVisibleReplyFailed: visibleReplyFailed }),
+              ...(expectedBoundedCleanFormatter
+                ? { combinedOutcome: "expected_bounded" }
+                : { combinedPartialFailure: reviewPartialFailure || formatterPartialFailure || visibleReplyFailed }),
             },
             "Combined review-and-format mention request completed",
           );

@@ -19500,22 +19500,31 @@ describe("createReviewHandler failure fallback publication", () => {
     const completionLog = entries.find((entry) => entry.message === "Review execution completed");
     expect(completionLog?.data).toMatchObject({
       prNumber: 101,
-      conclusion: "failure",
+      conclusion: "expected_bounded",
+      boundedOutcomeReason: "max_turns",
       executorPublished: false,
       published: true,
       publishResolution: "turn-limit-fallback",
-      publishFallbackDelivery: "error-comment-created",
-      failureSubtype: "error_max_turns",
+      publishFallbackDelivery: "turn-limit-comment-created",
     });
+    const serializedCompletionLog = JSON.stringify(completionLog?.data).toLowerCase();
+    expect(serializedCompletionLog).not.toContain("failure");
+    expect(serializedCompletionLog).not.toContain("failed");
+    expect(serializedCompletionLog).not.toContain("error");
 
     const phaseSummaryLog = entries.find((entry) => entry.message === "Review phase timing summary");
     expect(phaseSummaryLog?.data).toMatchObject({
       prNumber: 101,
-      conclusion: "failure",
+      conclusion: "expected_bounded",
+      boundedOutcomeReason: "max_turns",
       published: true,
       publishResolution: "turn-limit-fallback",
-      publishFallbackDelivery: "error-comment-created",
+      publishFallbackDelivery: "turn-limit-comment-created",
     });
+    const serializedPhaseSummaryLog = JSON.stringify(phaseSummaryLog?.data).toLowerCase();
+    expect(serializedPhaseSummaryLog).not.toContain("failure");
+    expect(serializedPhaseSummaryLog).not.toContain("failed");
+    expect(serializedPhaseSummaryLog).not.toContain("error");
 
     await workspaceFixture.cleanup();
   });

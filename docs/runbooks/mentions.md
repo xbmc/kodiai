@@ -351,6 +351,7 @@ Look for:
 Outcomes:
 
 - `conclusion: success` or `failure`: the Claude Code run finished (not necessarily that it posted a comment)
+- `conclusion: expected_bounded`: the run hit an expected turn-budget limit and posted or attempted a turn-limit fallback
 - `conclusion: error`: the handler will attempt to post/update an error comment
 
 Relevant code:

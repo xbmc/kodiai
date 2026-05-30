@@ -7863,7 +7863,7 @@ describe("createMentionHandler review command", () => {
           cacheReadTokens: 0,
           cacheCreationTokens: 0,
           resultText: undefined,
-          errorMessage: undefined,
+          errorMessage: "Claude Code returned an error result: max turns reached",
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -7889,13 +7889,17 @@ describe("createMentionHandler review command", () => {
     expect(issueReplies[0]).not.toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
 
     const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
-    expect(completionLog?.bindings.conclusion).toBe("failure");
-    expect(completionLog?.bindings.failureSubtype).toBe("error_max_turns");
+    expect(completionLog?.bindings.conclusion).toBe("expected_bounded");
+    expect(completionLog?.bindings.boundedOutcomeReason).toBe("max_turns");
     expect(completionLog?.bindings.stopReason).toBe("tool_use");
     expect(completionLog?.bindings.executorPublished).toBe(false);
     expect(completionLog?.bindings.published).toBe(true);
     expect(completionLog?.bindings.publishResolution).toBe("turn-limit-fallback");
-    expect(completionLog?.bindings.publishFallbackDelivery).toBe("error-comment-created");
+    expect(completionLog?.bindings.publishFallbackDelivery).toBe("turn-limit-comment-created");
+    const serializedLog = JSON.stringify(completionLog?.bindings).toLowerCase();
+    expect(serializedLog).not.toContain("failure");
+    expect(serializedLog).not.toContain("failed");
+    expect(serializedLog).not.toContain("error");
 
     await workspaceFixture.cleanup();
   });
@@ -13340,6 +13344,40 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       formatterStatus: "posted",
       combinedPartialFailure: true,
     });
+  });
+
+  test("combined review-and-format logs expected max-turns without raw failure or error taxonomy", async () => {
+    const result = await runPrFormatterMention({
+      commentBody: "@kodiai review & format suggestions",
+      executorResult: {
+        conclusion: "failure",
+        published: false,
+        failureSubtype: "error_max_turns",
+        stopReason: "tool_use",
+        usedRepoInspectionTools: false,
+        toolUseNames: [],
+      },
+    });
+
+    expect(result.executorCalls).toHaveLength(1);
+    expect(result.formatterSubflowCalls).toHaveLength(1);
+    expect(result.commentBodies.some((body) => body.includes("ran out of steps"))).toBe(true);
+
+    const completionLog = result.infoCalls.find(
+      (entry) => entry.message === "Combined review-and-format mention request completed",
+    );
+    expect(completionLog?.bindings).toMatchObject({
+      reviewConclusion: "expected_bounded",
+      boundedOutcomeReason: "max_turns",
+      publishResolution: "turn-limit-fallback",
+      publishFallbackDelivery: "turn-limit-comment-created",
+      formatterStatus: "posted",
+      combinedOutcome: "expected_bounded",
+    });
+    const serializedLog = JSON.stringify(completionLog?.bindings).toLowerCase();
+    expect(serializedLog).not.toContain("failure");
+    expect(serializedLog).not.toContain("failed");
+    expect(serializedLog).not.toContain("error");
   });
 
   test("combined review-and-format runs formatter before preserving executor thrown error handling", async () => {

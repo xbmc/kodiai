@@ -59,7 +59,7 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
       case "connected":
         return c.json({ status: "ready" });
       case "unreachable":
-        logger.warn(
+        logger.info(
           { githubConnectivity: "degraded" },
           "Readiness dependency degraded: GitHub API unreachable",
         );
@@ -69,7 +69,7 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
           reason: "GitHub API unreachable",
         });
       case "timeout":
-        logger.warn(
+        logger.info(
           { githubConnectivity: "timeout", timeoutMs: readinessDependencyTimeoutMs },
           "Readiness dependency degraded: GitHub API connectivity check timed out",
         );
@@ -79,14 +79,14 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
           reason: "GitHub API connectivity check timed out",
         });
       case "error":
-        logger.warn(
-          { err: githubConnectivity.err, githubConnectivity: "error" },
-          "Readiness dependency degraded: GitHub API connectivity check failed",
+        logger.info(
+          { githubConnectivity: "degraded" },
+          "Readiness dependency degraded: GitHub API connectivity check degraded",
         );
         return c.json({
           status: "ready",
           github: "degraded",
-          reason: "GitHub API connectivity check failed",
+          reason: "GitHub API connectivity check degraded",
         });
     }
   });

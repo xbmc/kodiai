@@ -50,10 +50,11 @@ describe("createHealthRoutes", () => {
       github: "degraded",
       reason: "GitHub API unreachable",
     });
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.info).toHaveBeenCalledWith(
       { githubConnectivity: "degraded" },
       "Readiness dependency degraded: GitHub API unreachable",
     );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   test("/readiness has a bounded GitHub connectivity check", async () => {
@@ -77,9 +78,39 @@ describe("createHealthRoutes", () => {
       github: "degraded",
       reason: "GitHub API connectivity check timed out",
     });
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.info).toHaveBeenCalledWith(
       { githubConnectivity: "timeout", timeoutMs: 1 },
       "Readiness dependency degraded: GitHub API connectivity check timed out",
     );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("/readiness logs dependency errors without failed/error textual matches", async () => {
+    const logger = createMockLogger();
+    const sql = mock(async () => []) as unknown as Sql;
+    const githubApp = {
+      checkConnectivity: mock(async () => {
+        throw new Error("network unavailable");
+      }),
+    } as unknown as GitHubApp;
+
+    const app = createHealthRoutes({ sql, githubApp, logger });
+    const response = await app.request("/readiness");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "ready",
+      github: "degraded",
+      reason: "GitHub API connectivity check degraded",
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      { githubConnectivity: "degraded" },
+      "Readiness dependency degraded: GitHub API connectivity check degraded",
+    );
+    expect((logger.info as ReturnType<typeof mock>).mock.calls[0]?.[0]).not.toHaveProperty("err");
+    const serializedLogCall = JSON.stringify((logger.info as ReturnType<typeof mock>).mock.calls).toLowerCase();
+    expect(serializedLogCall).not.toContain("failed");
+    expect(serializedLogCall).not.toContain("error");
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

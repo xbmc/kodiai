@@ -71,6 +71,8 @@ Explicit `@kodiai review` lane:
 - `publishResolution="duplicate-suppressed"` → clean-valid duplicate-safe recovery
 - `publishResolution="publish-failure-fallback"` → publish-failure
 - `publishResolution="publish-failure-comment-failed"` → publish-failure
+- `publishResolution="turn-limit-fallback"` → publish-failure / expected bounded turn-limit notice delivered
+- `publishResolution="turn-limit-fallback-undelivered"` → publish-failure / expected bounded turn-limit notice not delivered
 - `publishResolution="executor"` → findings-published
 
 ## Report fields to inspect first
@@ -129,6 +131,8 @@ The audit found a real publish-failure path, not a quiet clean review.
 Examples:
 - explicit lane `publishResolution=publish-failure-fallback`
 - explicit lane `publishResolution=publish-failure-comment-failed`
+- explicit lane `publishResolution=turn-limit-fallback`
+- explicit lane `publishResolution=turn-limit-fallback-undelivered`
 
 ### `suspicious-approval`
 

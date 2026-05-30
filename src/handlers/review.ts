@@ -3214,19 +3214,36 @@ export function createReviewHandler(deps: {
         if (!status.ok) return "error-comment-failed";
         return status.resolution === "updated" ? "error-comment-updated" : "error-comment-created";
       }
+      function describeTurnLimitNoticeDelivery(status: Awaited<ReturnType<typeof postOrUpdateErrorComment>>): string {
+        if (!status.ok) return "turn-limit-comment-undelivered";
+        return status.resolution === "updated" ? "turn-limit-comment-updated" : "turn-limit-comment-created";
+      }
+      function isExpectedTurnLimitOutcome(result: typeof executorResult): boolean {
+        return result?.stopReason === "max_turns" || result?.failureSubtype === "error_max_turns";
+      }
+      function cleanTurnLimitPublishResolution(resolution: string): string {
+        return resolution === "turn-limit-fallback-failed"
+          ? "turn-limit-fallback-undelivered"
+          : resolution;
+      }
 
       function logReviewExecutionCompleted(): void {
         if (!executorResult || reviewExecutionLogged) return;
         reviewExecutionLogged = true;
+        const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);
         logger.info(
           {
             prNumber: pr.number,
-            conclusion: executorResult.conclusion,
+            conclusion: expectedTurnLimitOutcome ? "expected_bounded" : executorResult.conclusion,
+            ...(expectedTurnLimitOutcome
+              ? { boundedOutcomeReason: "max_turns" }
+              : { failureSubtype: executorResult.failureSubtype }),
             published: reviewOutputPublished,
             executorPublished: reviewExecutorPublished,
-            publishResolution: reviewPublishResolution,
+            publishResolution: expectedTurnLimitOutcome
+              ? cleanTurnLimitPublishResolution(reviewPublishResolution)
+              : reviewPublishResolution,
             publishFallbackDelivery: reviewPublishFallbackDelivery,
-            failureSubtype: executorResult.failureSubtype,
             stopReason: executorResult.stopReason,
             costUsd: executorResult.costUsd,
             numTurns: executorResult.numTurns,
@@ -7892,12 +7909,14 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 issueNumber: pr.number,
               }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
-              reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
+              reviewPublishFallbackDelivery = exhaustedTurnBudget
+                ? describeTurnLimitNoticeDelivery(publicationStatus)
+                : describeErrorCommentDelivery(publicationStatus);
               if (publicationStatus.ok) {
                 reviewOutputPublished = true;
                 reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback" : "error-fallback";
               } else {
-                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-failed" : "error-comment-failed";
+                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-undelivered" : "error-comment-failed";
               }
             }
           }
@@ -8260,6 +8279,7 @@ export function createReviewHandler(deps: {
           const phases = buildOrderedReviewPhaseSummary(reviewPhaseTimings);
           const totalDurationMs = Math.max(0, Date.now() - totalPhaseStartAt);
           try {
+            const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);
             logger.info(
               {
                 deliveryId: event.id,
@@ -8267,9 +8287,16 @@ export function createReviewHandler(deps: {
                 installationId: event.installationId,
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
-                conclusion: executorResult?.conclusion,
+                conclusion: expectedTurnLimitOutcome ? "expected_bounded" : executorResult?.conclusion,
+                ...(expectedTurnLimitOutcome
+                  ? { boundedOutcomeReason: "max_turns" }
+                  : {}),
                 published: executorResult ? reviewOutputPublished : undefined,
-                publishResolution: executorResult ? reviewPublishResolution : undefined,
+                publishResolution: executorResult
+                  ? expectedTurnLimitOutcome
+                    ? cleanTurnLimitPublishResolution(reviewPublishResolution)
+                    : reviewPublishResolution
+                  : undefined,
                 publishFallbackDelivery: reviewPublishFallbackDelivery,
                 totalDurationMs,
                 phases,

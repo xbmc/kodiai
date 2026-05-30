@@ -410,7 +410,12 @@ function classifyExplicitEvidence(explicitEvidence: ExplicitLaneEvidence | undef
     };
   }
 
-  if (["publish-failure-fallback", "publish-failure-comment-failed"].includes(publishResolution)) {
+  if ([
+    "publish-failure-fallback",
+    "publish-failure-comment-failed",
+    "turn-limit-fallback",
+    "turn-limit-fallback-undelivered",
+  ].includes(publishResolution)) {
     return {
       verdict: "publish-failure",
       rationale: "The explicit review ended on a publish-failure path.",
