@@ -13067,7 +13067,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       normalizedStatus: "normalized",
       reviewOutputKey: result.capturedContext?.reviewOutputKey,
       deliveryId: "delivery-pr-issue-comment-mention",
-      counts: { input: 1, recorded: 1, rejected: 0, unsafeInputFields: 0 },
+      counts: { input: 1, recorded: 1 },
       severitySummary: { major: 1 },
       actionabilitySummary: { "needs-human-review": 1 },
       redaction: {
@@ -13081,6 +13081,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         unboundedArraysIncluded: false,
       },
     });
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("rejected");
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("unsafeInputFields");
     expect(JSON.stringify(lifecycleLog?.bindings)).not.toContain(rawCanary);
 
     const validationTruthLog = result.infoCalls.find(
@@ -13246,9 +13248,11 @@ describe("createMentionHandler formatter suggestion intent context", () => {
       source: "explicit-mention-review",
       reviewOutputKey: result.capturedContext?.reviewOutputKey,
       deliveryId: "delivery-pr-issue-comment-mention",
-      counts: { input: 1, recorded: 1, rejected: 0, unsafeInputFields: 0 },
+      counts: { input: 1, recorded: 1 },
       redaction: expect.objectContaining({ privateOnly: true, candidateBodiesIncluded: false, rawPromptsIncluded: false, rawModelOutputIncluded: false, diffsIncluded: false }),
     });
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("rejected");
+    expect(lifecycleLog?.bindings.counts).not.toHaveProperty("unsafeInputFields");
     expect(validationTruthLog?.bindings).toMatchObject({
       gate: "review-validation-truth",
       source: "explicit-mention-review",
