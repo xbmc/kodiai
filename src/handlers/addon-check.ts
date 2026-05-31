@@ -271,7 +271,7 @@ export function createAddonCheckHandler(deps: {
               }
 
               if (result.timedOut) {
-                handlerLogger.info({ addonId, timeBudgetMs }, "addon-check: runner skipped after budget");
+                handlerLogger.info({ timeBudgetMs }, "addon-check: runner skipped after budget");
                 addonSummaries.push({ timedOut: true });
                 continue;
               }

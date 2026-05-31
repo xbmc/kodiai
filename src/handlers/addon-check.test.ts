@@ -521,6 +521,7 @@ describe("createAddonCheckHandler", () => {
     const budgetSkipLogs = infoCalls.filter((c) => c.message === "addon-check: runner skipped after budget");
     expect(budgetSkipLogs).toHaveLength(2);
     expect(budgetSkipLogs.every((c) => c.bindings.timeBudgetMs === 1)).toBe(true);
+    expect(budgetSkipLogs.every((c) => c.bindings.addonId === undefined)).toBe(true);
 
     const gateLog = findClassificationLog(infoCalls);
     expect(gateLog).toBeDefined();
