@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## v0.40 (2026-05-31)
 
 Priority-stack hardening for production observability, module boundaries, and runtime safety.
 
@@ -19,6 +19,13 @@ Priority-stack hardening for production observability, module boundaries, and ru
 - Fatal `uncaughtException` / `unhandledRejection` handlers trigger graceful shutdown instead of log-and-continue.
 - Malformed signed GitHub webhook JSON returns HTTP 400 before dispatch.
 - `review-idempotency` moved from `handlers/` to `review-orchestration/`.
+
+### Verification
+
+- PR #180 CI passed.
+- `bun run lint` passed.
+- `bun run verify:m075 -- --json` passed with `statusCode=m075_ok`.
+- Deployed revision `ca-kodiai--deploy-da01ecc5f90a-20260531-113953` passed `/healthz`, `/readiness`, and live `verify:m075` with `statusCode=m075_ok`.
 
 ## v0.39 (2026-05-30)
 
