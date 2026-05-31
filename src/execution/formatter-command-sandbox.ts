@@ -1,8 +1,15 @@
-export type FormatterCommandExecutionMode = "argv" | "shell-fallback";
+export type FormatterCommandExecutionMode = "argv" | "rejected";
+
+export type FormatterCommandRejectionReason =
+  | "empty-command"
+  | "shell-metacharacters"
+  | "empty-argv"
+  | "executable-not-allowlisted"
+  | "path-traversal";
 
 export type FormatterCommandSpawnPlan =
   | { mode: "argv"; argv: string[] }
-  | { mode: "shell-fallback"; reason: string; command: string };
+  | { mode: "rejected"; reason: FormatterCommandRejectionReason; command: string };
 
 const FORMATTER_SHELL_METACHAR_RE = /[|&;<>$`\\]|\$\(|\r|\n/;
 
@@ -80,43 +87,40 @@ export function isAllowlistedFormatterExecutable(token: string): boolean {
 export function planFormatterCommandExecution(command: string): FormatterCommandSpawnPlan {
   const trimmed = command.trim();
   if (!trimmed) {
-    return { mode: "shell-fallback", reason: "empty-command", command: trimmed };
+    return { mode: "rejected", reason: "empty-command", command: trimmed };
   }
 
   if (FORMATTER_SHELL_METACHAR_RE.test(trimmed)) {
-    return { mode: "shell-fallback", reason: "shell-metacharacters", command: trimmed };
+    return { mode: "rejected", reason: "shell-metacharacters", command: trimmed };
   }
 
   const argv = tokenizeFormatterCommand(trimmed);
   if (argv.length === 0) {
-    return { mode: "shell-fallback", reason: "empty-argv", command: trimmed };
+    return { mode: "rejected", reason: "empty-argv", command: trimmed };
   }
 
   const executable = argv[0]!;
   if (!isAllowlistedFormatterExecutable(executable)) {
-    return { mode: "shell-fallback", reason: "executable-not-allowlisted", command: trimmed };
+    return { mode: "rejected", reason: "executable-not-allowlisted", command: trimmed };
   }
 
   if (executable.includes("..")) {
-    return { mode: "shell-fallback", reason: "path-traversal", command: trimmed };
+    return { mode: "rejected", reason: "path-traversal", command: trimmed };
   }
 
   return { mode: "argv", argv };
 }
 
-export function spawnArgsForFormatterCommand(command: string): {
-  spawnArgs: string[];
-  executionMode: FormatterCommandExecutionMode;
-  fallbackReason?: string;
-} {
+export function spawnArgsForFormatterCommand(command: string):
+  | { spawnArgs: string[]; executionMode: "argv" }
+  | { executionMode: "rejected"; rejectionReason: FormatterCommandRejectionReason } {
   const plan = planFormatterCommandExecution(command);
   if (plan.mode === "argv") {
     return { spawnArgs: plan.argv, executionMode: "argv" };
   }
 
   return {
-    spawnArgs: ["bash", "-lc", plan.command],
-    executionMode: "shell-fallback",
-    fallbackReason: plan.reason,
+    executionMode: "rejected",
+    rejectionReason: plan.reason,
   };
 }

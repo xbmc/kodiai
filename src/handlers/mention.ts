@@ -87,6 +87,10 @@ import {
   ensureReviewOutputNotPublished,
 } from "../review-orchestration/review-idempotency.ts";
 import {
+  evaluateExplicitMentionReviewPublish,
+  logExplicitMentionReviewPublishSkipped,
+} from "../review-orchestration/explicit-mention-review-publish.ts";
+import {
   attachReviewFindingLifecycle,
   attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
@@ -785,174 +789,6 @@ export function createMentionHandler(deps: {
       `rejected=${projection.rejectedReasonCodes.slice(0, 8).join(",") || "none"}`,
       `redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:${projection.redaction.unsafeInputFieldCount}`,
     ].join("; ");
-  }
-
-  function extractExplicitReviewResultFindingLines(resultText: string | undefined): string[] {
-    if (!resultText) {
-      return [];
-    }
-
-    const findings: string[] = [];
-    const numberedFindings: Array<{
-      index: number;
-      path: string;
-      lineNo: string;
-      title: string;
-    }> = [];
-    const numberedSeverityByIndex = new Map<number, string>();
-    let currentFilePath: string | null = null;
-    let currentSeveritySection: string | null = null;
-    const headingPattern = /^#{1,6}\s*\d+\.\s*\*\*\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+(.+?)\s+-\s+(.+?)\*\*\s*$/i;
-    const inlinePattern = /^\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+(.+?)\s+\((\d+(?:-\d+)?)\):\s+(.+)$/i;
-    const numberedPattern = /^(\d+)\.\s+\*\*(.+?):(\d+(?:-\d+)?)\*\*\s+-\s+(.+)$/;
-    const severitySummaryPattern = /^-\s+\*\*\d+\s+(CRITICAL|MAJOR|MEDIUM|MINOR)\s+issues?\*\*:\s+(.+)$/i;
-    const severitySectionPattern = /^#{1,6}\s+(CRITICAL|MAJOR|MEDIUM|MINOR)\s+issues\b[:\s]*$/i;
-    const sectionedBoldFindingPattern = /^\*\*(\d+)\.\s+(?:\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+)?(.+?)\*\*\s+\((.+?):(\d+(?:-\d+)?)\)$/i;
-    const fileHeaderPattern = /^###\s+(.+)$/;
-    const fileScopedLinePattern = /^(\d+)\.\s+\*\*Line\s+(\d+(?:-\d+)?)\s+\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\*\*:\s+(.+)$/i;
-
-    for (const rawLine of resultText.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line) {
-        continue;
-      }
-
-      const severitySectionMatch = line.match(severitySectionPattern);
-      if (severitySectionMatch) {
-        currentSeveritySection = severitySectionMatch[1]?.toLowerCase() ?? null;
-        currentFilePath = null;
-        continue;
-      }
-
-      const headingMatch = line.match(headingPattern);
-      if (headingMatch) {
-        const severity = headingMatch[1];
-        const location = headingMatch[2];
-        const title = headingMatch[3];
-        if (!severity || !location || !title) {
-          continue;
-        }
-        const locationMatch = location.trim().match(/^(.*?):(\d+(?:-\d+)?)$/);
-        const path = locationMatch?.[1]?.trim() || location.trim();
-        const lineNo = locationMatch?.[2]?.trim() || "0";
-        findings.push(`- (${findings.length + 1}) [${severity.toLowerCase()}] ${path} (${lineNo}): ${title.trim()}`);
-        continue;
-      }
-
-      const inlineMatch = line.match(inlinePattern);
-      if (inlineMatch) {
-        const severity = inlineMatch[1];
-        const path = inlineMatch[2];
-        const lineNo = inlineMatch[3];
-        const title = inlineMatch[4];
-        if (!severity || !path || !lineNo || !title) {
-          continue;
-        }
-        findings.push(`- (${findings.length + 1}) [${severity.toLowerCase()}] ${path.trim()} (${lineNo.trim()}): ${title.trim()}`);
-        continue;
-      }
-
-      const sectionedBoldFindingMatch = line.match(sectionedBoldFindingPattern);
-      if (sectionedBoldFindingMatch) {
-        const severity = (sectionedBoldFindingMatch[2] ?? currentSeveritySection)?.toLowerCase();
-        const title = sectionedBoldFindingMatch[3]?.trim();
-        const path = sectionedBoldFindingMatch[4]?.trim();
-        const lineNo = sectionedBoldFindingMatch[5]?.trim();
-        if (!severity || !title || !path || !lineNo) {
-          continue;
-        }
-        findings.push(`- (${findings.length + 1}) [${severity}] ${path} (${lineNo}): ${title}`);
-        continue;
-      }
-
-      const fileHeaderMatch = line.match(fileHeaderPattern);
-      if (fileHeaderMatch) {
-        const candidatePath = fileHeaderMatch[1]?.trim() ?? "";
-        currentFilePath = candidatePath.includes("/") && candidatePath.includes(".")
-          ? candidatePath
-          : null;
-        continue;
-      }
-
-      const fileScopedLineMatch = line.match(fileScopedLinePattern);
-      if (fileScopedLineMatch && currentFilePath) {
-        const lineNo = fileScopedLineMatch[2]?.trim();
-        const severity = fileScopedLineMatch[3]?.toLowerCase();
-        const title = fileScopedLineMatch[4]?.trim();
-        if (!lineNo || !severity || !title) {
-          continue;
-        }
-        findings.push(`- (${findings.length + 1}) [${severity}] ${currentFilePath} (${lineNo}): ${title}`);
-        continue;
-      }
-
-      const numberedMatch = line.match(numberedPattern);
-      if (numberedMatch) {
-        const findingIndex = Number.parseInt(numberedMatch[1] ?? "", 10);
-        const path = numberedMatch[2]?.trim();
-        const lineNo = numberedMatch[3]?.trim();
-        const title = numberedMatch[4]?.trim();
-        if (!Number.isInteger(findingIndex) || findingIndex < 1 || !path || !lineNo || !title) {
-          continue;
-        }
-        numberedFindings.push({ index: findingIndex, path, lineNo, title });
-        continue;
-      }
-
-      const severitySummaryMatch = line.match(severitySummaryPattern);
-      if (severitySummaryMatch) {
-        const severity = severitySummaryMatch[1]?.toLowerCase();
-        const summary = severitySummaryMatch[2];
-        if (!severity || !summary) {
-          continue;
-        }
-        for (const match of summary.matchAll(/#(\d+)/g)) {
-          const findingIndex = Number.parseInt(match[1] ?? "", 10);
-          if (Number.isInteger(findingIndex) && findingIndex > 0) {
-            numberedSeverityByIndex.set(findingIndex, severity);
-          }
-        }
-      }
-    }
-
-    if (findings.length > 0) {
-      return findings;
-    }
-
-    if (numberedFindings.length === 0) {
-      return [];
-    }
-
-    return numberedFindings
-      .sort((a, b) => a.index - b.index)
-      .map((finding, arrayIndex) => {
-        const severity = numberedSeverityByIndex.get(finding.index) ?? "major";
-        return `- (${arrayIndex + 1}) [${severity}] ${finding.path} (${finding.lineNo}): ${finding.title}`;
-      });
-  }
-
-  function hasExplicitReviewBlockingSignals(resultText: string | undefined): boolean {
-    if (!resultText) {
-      return false;
-    }
-
-    const text = resultText.toLowerCase();
-    if (
-      text.includes("no blocking issues found")
-      || text.includes("ready to merge")
-      || text.includes("decision: approve")
-    ) {
-      return false;
-    }
-
-    return (
-      /found(?:\s+\*\*\d+)?\s+(?:several|multiple|\d+)?\s*(?:blocking|critical\/major|critical and major|major and critical|critical|major)\s+issues/.test(text)
-      || /cannot be merged/.test(text)
-      || /should not be merged/.test(text)
-      || /address before merging/.test(text)
-      || /critical issues found/.test(text)
-      || /\bblocking issues\b/.test(text)
-    );
   }
 
   function buildIssueWriteSuccessReply(params: {
@@ -3119,56 +2955,39 @@ export function createMentionHandler(deps: {
             }
           }
         }
-        const explicitReviewResultFindingLines = extractExplicitReviewResultFindingLines(result.resultText);
-        const explicitReviewHasUnpublishedFindings =
-          explicitReviewRequest &&
-          mention.prNumber !== undefined &&
-          !result.published &&
-          (
-            explicitReviewResultFindingLines.length > 0
-            || hasExplicitReviewBlockingSignals(result.resultText)
-          );
-        const explicitReviewPublishEligible =
-          explicitReviewRequest &&
-          mention.prNumber !== undefined &&
-          result.conclusion === "success" &&
-          !result.published &&
-          result.usedRepoInspectionTools === true &&
-          reviewOutputKey &&
-          !explicitReviewHasUnpublishedFindings;
+        const explicitReviewPublishEvaluation = evaluateExplicitMentionReviewPublish({
+          explicitReviewRequest,
+          prNumber: mention.prNumber,
+          reviewOutputKey,
+          result: {
+            conclusion: result.conclusion,
+            published: result.published,
+            usedRepoInspectionTools: result.usedRepoInspectionTools,
+            resultText: result.resultText,
+            toolUseNames: result.toolUseNames,
+          },
+        });
+        const explicitReviewPublishEligible = explicitReviewPublishEvaluation.eligible;
 
         if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
-          const skipReason =
-            result.conclusion !== "success"
-              ? "execution-not-success"
-              : result.published
-                ? "output-already-published"
-                : explicitReviewHasUnpublishedFindings
-                  ? "result-text-findings"
-                  : result.usedRepoInspectionTools !== true
-                    ? "missing-inspection-evidence"
-                    : !reviewOutputKey
-                      ? "missing-review-output-key"
-                      : "not-eligible";
-
-          logger.info(
-            {
+          logExplicitMentionReviewPublishSkipped({
+            logger,
+            baseLog: {
               surface: mention.surface,
               owner: mention.owner,
               repo: mention.repo,
               prNumber: mention.prNumber,
-              gate: "explicit-review-publish",
-              gateResult: "skipped",
-              skipReason,
-              reviewOutputKey: reviewOutputKey ?? null,
-              resultConclusion: result.conclusion,
-              resultPublished: result.published,
-              usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
-              toolUseNames: result.toolUseNames ?? [],
-              autoApprove: config.review.autoApprove,
             },
-            "Skipping explicit mention review publish path",
-          );
+            evaluation: explicitReviewPublishEvaluation,
+            reviewOutputKey,
+            result: {
+              conclusion: result.conclusion,
+              published: result.published,
+              usedRepoInspectionTools: result.usedRepoInspectionTools,
+              toolUseNames: result.toolUseNames,
+            },
+            autoApprove: config.review.autoApprove,
+          });
         }
 
         if (explicitReviewPublishEligible && reviewOutputKey && mention.prNumber !== undefined) {

@@ -451,7 +451,7 @@ describe("runFormatterCommand", () => {
     const calls: Parameters<FormatterProcessRunner>[0][] = [];
     const result = await runFormatterCommand({
       workspaceDir,
-      command: "formatter --base {baseRef} --head {headRef} --range {diffRange}",
+      command: "prettier --base {baseRef} --head {headRef} --range {diffRange}",
       baseRef: "main",
       headRef: "feature",
       diffRange: "origin/main...HEAD",
@@ -462,9 +462,9 @@ describe("runFormatterCommand", () => {
       },
     });
 
-    expect(calls).toEqual([{ command: "formatter --base main --head feature --range origin/main...HEAD", cwd: workspaceDir, timeoutMs: 1234 }]);
+    expect(calls).toEqual([{ command: "prettier --base main --head feature --range origin/main...HEAD", cwd: workspaceDir, timeoutMs: 1234 }]);
     expect(result.status).toBe("success");
-    expect(result.resolvedCommand).toBe("formatter --base main --head feature --range origin/main...HEAD");
+    expect(result.resolvedCommand).toBe("prettier --base main --head feature --range origin/main...HEAD");
     expect(result.stdout).toBe("diff --git a/a.ts b/a.ts\n");
     expect(result.durationMs).toBe(7);
   });
@@ -472,7 +472,7 @@ describe("runFormatterCommand", () => {
   test("returns no-op for exit 0 with whitespace-only stdout", async () => {
     const result = await runFormatterCommand({
       workspaceDir,
-      command: "formatter",
+      command: "prettier",
       baseRef: "main",
       headRef: "feature",
       diffRange: "origin/main...HEAD",
@@ -490,7 +490,7 @@ describe("runFormatterCommand", () => {
     const stdout = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
     const result = await runFormatterCommand({
       workspaceDir,
-      command: "formatter",
+      command: "prettier",
       baseRef: "main",
       headRef: "feature",
       diffRange: "origin/main...HEAD",
@@ -507,7 +507,7 @@ describe("runFormatterCommand", () => {
     const stdout = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
     const result = await runFormatterCommand({
       workspaceDir,
-      command: "formatter --diff",
+      command: "prettier --diff",
       baseRef: "main",
       headRef: "feature",
       diffRange: "origin/main...HEAD",
@@ -525,7 +525,7 @@ describe("runFormatterCommand", () => {
     const longStderr = `${token}\n${"x".repeat(FORMATTER_STDERR_SUMMARY_MAX_CHARS + 50)}`;
     const result = await runFormatterCommand({
       workspaceDir,
-      command: "formatter",
+      command: "prettier",
       baseRef: "main",
       headRef: "feature",
       diffRange: "origin/main...HEAD",
@@ -544,7 +544,7 @@ describe("runFormatterCommand", () => {
   test("returns timed-out when the process runner reports a timeout", async () => {
     const result = await runFormatterCommand({
       workspaceDir,
-      command: "formatter",
+      command: "prettier",
       baseRef: "main",
       headRef: "feature",
       diffRange: "origin/main...HEAD",
@@ -556,5 +556,26 @@ describe("runFormatterCommand", () => {
     expect(result.exitCode).toBe(124);
     expect(result.timedOut).toBe(true);
     expect(result.stderrSummary).toBe("hung");
+  });
+
+  test("returns command-rejected for shell pipelines without invoking a process", async () => {
+    let calls = 0;
+    const result = await runFormatterCommand({
+      workspaceDir,
+      command: "git clang-format --diff origin/main HEAD | head",
+      baseRef: "main",
+      headRef: "feature",
+      diffRange: "origin/main...HEAD",
+      timeoutMs: 1000,
+      runProcess: async () => {
+        calls += 1;
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false, durationMs: 1 };
+      },
+    });
+
+    expect(calls).toBe(0);
+    expect(result.status).toBe("command-rejected");
+    expect(result.stderrSummary).toBe("shell-metacharacters");
+    expect(result.exitCode).toBe(126);
   });
 });

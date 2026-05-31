@@ -32,20 +32,20 @@ describe("planFormatterCommandExecution", () => {
     });
   });
 
-  test("falls back to shell for pipelines and substitutions", () => {
+  test("rejects pipelines and substitutions instead of shell fallback", () => {
     expect(planFormatterCommandExecution("git clang-format --diff origin/main HEAD | head")).toMatchObject({
-      mode: "shell-fallback",
+      mode: "rejected",
       reason: "shell-metacharacters",
     });
     expect(planFormatterCommandExecution("echo $(whoami)")).toMatchObject({
-      mode: "shell-fallback",
+      mode: "rejected",
       reason: "shell-metacharacters",
     });
   });
 
-  test("falls back to shell for non-allowlisted executables", () => {
+  test("rejects non-allowlisted executables", () => {
     expect(planFormatterCommandExecution("./scripts/custom-formatter.sh")).toMatchObject({
-      mode: "shell-fallback",
+      mode: "rejected",
       reason: "executable-not-allowlisted",
     });
   });
@@ -65,11 +65,10 @@ describe("spawnArgsForFormatterCommand", () => {
     });
   });
 
-  test("returns bash fallback args for shell pipelines", () => {
+  test("returns rejected execution mode for shell pipelines", () => {
     expect(spawnArgsForFormatterCommand("prettier --write . && git diff")).toEqual({
-      spawnArgs: ["bash", "-lc", "prettier --write . && git diff"],
-      executionMode: "shell-fallback",
-      fallbackReason: "shell-metacharacters",
+      executionMode: "rejected",
+      rejectionReason: "shell-metacharacters",
     });
   });
 });
