@@ -221,10 +221,13 @@ import { logReviewTimeoutClassification } from "../review-orchestration/review-t
 import {
   toProductionLogBudgetReasoning,
   toProductionLogCandidateFindingSnapshot,
+  toProductionLogHunkEmbeddingCounts,
   toProductionLogCandidatePublicationBuckets,
   toProductionLogCandidatePublicationCounts,
   toProductionLogCandidatePublicationPublisherSample,
   toProductionLogCandidatePublicationReason,
+  toProductionLogRuntimeBudgetFields,
+  toProductionLogTurnBudgetFields,
 } from "../review-audit/production-log-projection.ts";
 import {
   createInlineReviewPublisher,
@@ -718,7 +721,7 @@ function buildCandidateVerificationPublicationEvidenceLogFields(
     deniedCount: evidence.counts.denied,
     publishedCount: evidence.counts.published,
     skippedCount: evidence.counts.skipped,
-    failedCount: evidence.counts.failed,
+    issueCount: evidence.counts.failed,
     publicationDenialCounts: evidence.publicationDenialCounts,
     reasonCategories: evidence.reasonCategories,
     verificationStateCounts: evidence.verificationStateCounts,
@@ -1979,7 +1982,7 @@ export async function collectDiffContext(params: {
         gate: "diff-collection",
         stage: "merge-base-recovery",
         baseRef,
-        timeoutMs: commandTimeoutMs,
+        ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
       },
       "Merge base missing before diff collection; attempting history recovery",
     );
@@ -1993,7 +1996,7 @@ export async function collectDiffContext(params: {
           stage: "merge-base-recovery",
           attempt: deepenAttempts,
           deepenBy: step,
-          timeoutMs: commandTimeoutMs,
+          ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Attempting diff collection merge-base recovery",
       );
@@ -2034,7 +2037,7 @@ export async function collectDiffContext(params: {
           stage: "merge-base-recovery",
           attempt: deepenAttempts + 1,
           mode: "unshallow",
-          timeoutMs: commandTimeoutMs,
+          ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Attempting diff collection full-history recovery",
       );
@@ -2143,7 +2146,7 @@ export async function collectDiffContext(params: {
         gate: "diff-collection",
         stage: "numstat",
         diffRange,
-        timeoutMs: commandTimeoutMs,
+        ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
       },
       "Diff numstat collection timed out; continuing without numstat",
     );
@@ -2173,7 +2176,7 @@ export async function collectDiffContext(params: {
           stage: "full-diff",
           diffRange,
           changedFilesCount: changedFiles.length,
-          timeoutMs: commandTimeoutMs,
+          ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Full diff collection timed out; continuing without full diff",
       );
@@ -2323,7 +2326,15 @@ async function embedDiffHunks(params: {
 
     if (embeddedCount > 0 || failedCount > 0) {
       logger.info(
-        { repo, prNumber, hunkCount: cappedHunks.length, embeddedCount, failedCount },
+        {
+          repo,
+          prNumber,
+          ...toProductionLogHunkEmbeddingCounts({
+            hunkCount: cappedHunks.length,
+            embeddedCount,
+            failedCount,
+          }),
+        },
         "Hunk embedding complete",
       );
     }
@@ -4856,8 +4867,10 @@ export function createReviewHandler(deps: {
             linesChanged: reviewRoutingLinesChanged,
             diffAnalysisLinesChanged,
             prApiLinesChanged,
-            maxTurns: reviewMaxTurnsOverride ?? null,
-            maxTurnsSource: reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+            ...toProductionLogTurnBudgetFields(
+              reviewMaxTurnsOverride,
+              reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+            ),
           },
           "Review routing decision",
         );
@@ -5000,8 +5013,10 @@ export function createReviewHandler(deps: {
             },
             budget: {
               timeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds,
-              maxTurns: reviewMaxTurnsOverride ?? config.maxTurns,
-              maxTurnsSource: reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+              ...toProductionLogTurnBudgetFields(
+                reviewMaxTurnsOverride ?? config.maxTurns,
+                reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+              ),
             },
             context: {
               sources: [

@@ -19,7 +19,11 @@ import type { CostTracker } from "../llm/cost-tracker.ts";
 import type { ResolvedModel } from "../llm/task-router.ts";
 import type { AppConfig } from "../config.ts";
 import type { McpJobRegistry } from "./mcp/http-server.ts";
-import { toProductionLogCandidateFindingCounts } from "../review-audit/production-log-projection.ts";
+import {
+  toProductionLogCandidateFindingCounts,
+  toProductionLogRuntimeBudgetFields,
+  toProductionLogTurnBudgetFields,
+} from "../review-audit/production-log-projection.ts";
 
 export { toProductionLogCandidateFindingCounts as toProductionLogSafeCandidateFindingCounts } from "../review-audit/production-log-projection.ts";
 import {
@@ -585,8 +589,10 @@ export function createExecutor(deps: {
           {
             model,
             modelSource: context.modelOverride ? "override" : deps.taskRouter ? "router" : "config",
-            maxTurns,
-            maxTurnsSource: context.maxTurnsOverride ? "override" : "config",
+            ...toProductionLogTurnBudgetFields(
+              maxTurns,
+              context.maxTurnsOverride ? "override" : "config",
+            ),
           },
           "Loaded repo config",
         );
@@ -765,7 +771,7 @@ export function createExecutor(deps: {
             executionName,
             workspaceDir,
             mcpTokenLogId: createHash("sha256").update(mcpBearerToken).digest("hex").slice(0, 16),
-            timeoutMs,
+            ...toProductionLogRuntimeBudgetFields(timeoutMs),
           },
           "ACA Job launched, polling for completion",
         );

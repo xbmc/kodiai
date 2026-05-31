@@ -5,10 +5,13 @@ import {
   toProductionLogAddonCheckFindingSeverity,
   toProductionLogBudgetReasoning,
   toProductionLogCandidateFindingCounts,
+  toProductionLogHunkEmbeddingCounts,
   toProductionLogMigrationLabel,
+  toProductionLogRuntimeBudgetFields,
   toProductionLogReviewTimeoutCounts,
   toProductionLogReviewTimeoutMode,
   toProductionLogReviewTimeoutReasonCode,
+  toProductionLogTurnBudgetFields,
 } from "./production-log-projection.ts";
 
 describe("production-log-projection", () => {
@@ -29,6 +32,28 @@ describe("production-log-projection", () => {
       recorded: 1,
       rejected: 1,
       issueCount: 0,
+    });
+  });
+
+  test("projects runtime turn and time budgets without broad issue terms", () => {
+    expect(toProductionLogTurnBudgetFields(50, "dynamic-risk")).toEqual({
+      turnBudget: 50,
+      turnBudgetSource: "dynamic-risk",
+    });
+    expect(toProductionLogRuntimeBudgetFields(1_800_000)).toEqual({
+      budgetMs: 1_800_000,
+    });
+  });
+
+  test("projects hunk embedding counts without failed terminology", () => {
+    expect(toProductionLogHunkEmbeddingCounts({
+      hunkCount: 3,
+      embeddedCount: 2,
+      failedCount: 1,
+    })).toEqual({
+      hunkCount: 3,
+      embeddedCount: 2,
+      issueCount: 1,
     });
   });
 

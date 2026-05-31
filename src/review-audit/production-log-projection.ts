@@ -103,6 +103,34 @@ export function toProductionLogCandidateFindingSnapshot(params: {
   };
 }
 
+export function toProductionLogTurnBudgetFields(
+  turnBudget: number | null | undefined,
+  source: string | null | undefined,
+): { turnBudget: number | null; turnBudgetSource: string } {
+  return {
+    turnBudget: turnBudget ?? null,
+    turnBudgetSource: source ?? "config",
+  };
+}
+
+export function toProductionLogRuntimeBudgetFields(
+  budgetMs: number,
+): { budgetMs: number } {
+  return { budgetMs };
+}
+
+export function toProductionLogHunkEmbeddingCounts(counts: {
+  hunkCount: number;
+  embeddedCount: number;
+  failedCount: number;
+}): { hunkCount: number; embeddedCount: number; issueCount: number } {
+  return {
+    hunkCount: counts.hunkCount,
+    embeddedCount: counts.embeddedCount,
+    issueCount: counts.failedCount,
+  };
+}
+
 export function toProductionLogCandidatePublicationReason(reason: string): string {
   switch (reason) {
     case "candidate-publisher-failed":

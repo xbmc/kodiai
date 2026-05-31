@@ -58,6 +58,7 @@ import {
   resolveReviewMaxTurnsOverride,
   type ReviewTaskRouting,
 } from "../lib/review-routing.ts";
+import { toProductionLogTurnBudgetFields } from "../review-audit/production-log-projection.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
@@ -2781,8 +2782,10 @@ export function createMentionHandler(deps: {
               routingReason: explicitReviewRouting.routingReason,
               changedFiles: promptChangedFiles.length,
               linesChanged: explicitReviewLinesChanged,
-              maxTurns: explicitReviewMaxTurnsOverride ?? null,
-              maxTurnsSource: explicitReviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+              ...toProductionLogTurnBudgetFields(
+                explicitReviewMaxTurnsOverride,
+                explicitReviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+              ),
               timeoutSeconds: explicitReviewDynamicTimeoutSeconds ?? null,
               timeoutRiskLevel: timeoutEstimate.riskLevel,
               remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
