@@ -16,6 +16,31 @@ type GitHubConnectivityResult =
   | { kind: "timeout" }
   | { kind: "error"; err: unknown };
 
+function toReadinessDependencyIssueFields(err: unknown): {
+  dependencyIssueName: string;
+  dependencyIssueMessage?: string;
+} {
+  if (err instanceof Error) {
+    return {
+      dependencyIssueName: err.name.toLowerCase() === "error" ? "exception" : err.name,
+      ...(err.message ? { dependencyIssueMessage: err.message } : {}),
+    };
+  }
+
+  if (err && typeof err === "object") {
+    const maybeRecord = err as { name?: unknown; message?: unknown };
+    const rawName = typeof maybeRecord.name === "string" ? maybeRecord.name : "non-error";
+    return {
+      dependencyIssueName: rawName.toLowerCase() === "error" ? "exception" : rawName,
+      ...(typeof maybeRecord.message === "string" && maybeRecord.message
+        ? { dependencyIssueMessage: maybeRecord.message }
+        : {}),
+    };
+  }
+
+  return { dependencyIssueName: "non-error" };
+}
+
 async function checkGitHubConnectivityWithTimeout(
   githubApp: GitHubApp,
   timeoutMs: number,
@@ -80,7 +105,10 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
         });
       case "error":
         logger.info(
-          { githubConnectivity: "degraded" },
+          {
+            githubConnectivity: "degraded",
+            ...toReadinessDependencyIssueFields(githubConnectivity.err),
+          },
           "Readiness dependency degraded: GitHub API connectivity check degraded",
         );
         return c.json({

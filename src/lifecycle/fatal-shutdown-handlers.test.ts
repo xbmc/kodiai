@@ -29,4 +29,24 @@ describe("registerFatalShutdownHandlers", () => {
     expect(fatal).toHaveBeenCalledWith({ reason: rejection }, "unhandledRejection");
     expect(requestShutdown).toHaveBeenCalledWith("unhandledRejection");
   });
+
+  test("logs Error rejection reasons with pino err serialization", () => {
+    const fatal = mock((_bindings: Record<string, unknown>, _message: string) => undefined);
+    const logger = {
+      fatal,
+      child: () => logger,
+    } as unknown as Logger;
+    const shutdownManager = {
+      start: () => undefined,
+      isShuttingDown: () => false,
+      requestShutdown: mock((_reason: string) => undefined),
+    } satisfies ShutdownManager;
+
+    registerFatalShutdownHandlers({ logger, shutdownManager });
+
+    const rejection = new Error("async-boom");
+    process.emit("unhandledRejection", rejection, Promise.resolve());
+
+    expect(fatal).toHaveBeenCalledWith({ err: rejection }, "unhandledRejection");
+  });
 });

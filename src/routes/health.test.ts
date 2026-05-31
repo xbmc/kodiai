@@ -107,10 +107,13 @@ describe("createHealthRoutes", () => {
       reason: "GitHub API connectivity check degraded",
     });
     expect(logger.info).toHaveBeenCalledWith(
-      { githubConnectivity: "degraded" },
+      {
+        githubConnectivity: "degraded",
+        dependencyIssueName: "exception",
+        dependencyIssueMessage: "network unavailable",
+      },
       "Readiness dependency degraded: GitHub API connectivity check degraded",
     );
-    expect((logger.info as ReturnType<typeof mock>).mock.calls[0]?.[0]).not.toHaveProperty("err");
     const serializedLogCall = JSON.stringify((logger.info as ReturnType<typeof mock>).mock.calls).toLowerCase();
     expect(serializedLogCall).not.toContain("failed");
     expect(serializedLogCall).not.toContain("error");
