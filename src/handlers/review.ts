@@ -6,7 +6,6 @@ import type {
   PullRequestSynchronizeEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
-import { createHash } from "node:crypto";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
@@ -136,13 +135,6 @@ import {
   splitDiffByFile,
 } from "../lib/review-utils.ts";
 import picomatch from "picomatch";
-import {
-  parseDiffHunks,
-  buildEmbeddingText,
-  isExcludedPath,
-  applyHunkCap,
-  computeContentHash,
-} from "../knowledge/code-snippet-chunker.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import {
   normalizeRepoDoctrineProjection,
@@ -176,7 +168,6 @@ import {
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import {
-  createReviewCandidateFindingExecutionResult,
   toReviewCandidateFindingDetailsSummary,
   type ReviewCandidateFinding,
   type ReviewCandidateFindingDetailsSummary,
@@ -270,10 +261,25 @@ import {
   REVIEW_WORKSPACE_FETCH_DEPTH,
 } from "../review-orchestration/review-diff-collection.ts";
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
+import { fetchReviewCommitMessages } from "../review-orchestration/review-commit-messages.ts";
+import { embedReviewDiffHunks } from "../review-orchestration/review-diff-hunk-embedding.ts";
+import {
+  buildRepoDoctrineLogFields,
+  serializeReviewPlanBuilderError,
+  toRepoDoctrineReviewSurfaceProjection,
+  toReviewPlanConfigSnapshot,
+} from "../review-orchestration/review-plan-doctrine-log.ts";
+import {
+  isTrustedReviewReducerResult,
+  logReviewReducerResult,
+} from "../review-orchestration/review-reducer-log.ts";
+import {
+  logReviewCandidateFindingResult,
+  resolveReviewCandidateFindingResult,
+  toReviewCandidateReducerDrafts,
+} from "../review-orchestration/review-candidate-finding-handler.ts";
 import {
   toProductionLogBudgetReasoning,
-  toProductionLogCandidateFindingSnapshot,
-  toProductionLogHunkEmbeddingCounts,
   toProductionLogRuntimeBudgetFields,
   toProductionLogTurnBudgetFields,
 } from "../review-audit/production-log-projection.ts";
@@ -382,28 +388,6 @@ type RetrievalContextForPrompt = {
 
 
 
-async function fetchCommitMessages(
-  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  commitCount: number,
-): Promise<Array<{ sha: string; message: string }>> {
-  if (commitCount === 0) return [];
-
-  const perPage = Math.min(commitCount, 100);
-  const { data } = await octokit.rest.pulls.listCommits({
-    owner,
-    repo,
-    pull_number: prNumber,
-    per_page: perPage,
-  });
-
-  return data.map((c) => ({
-    sha: c.sha.slice(0, 7),
-    message: c.commit.message.split("\n")[0] ?? "",
-  }));
-}
 
 
 
@@ -416,123 +400,6 @@ async function fetchCommitMessages(
 
 
 
-/**
- * Embed diff hunks from a PR into the code snippet store.
- *
- * Fire-and-forget async function — errors are logged and swallowed.
- * Called after review completion so embedding latency doesn't affect review speed.
- */
-async function embedDiffHunks(params: {
-  diffFiles: Array<{ filename: string; patch?: string }>;
-  repo: string;
-  owner: string;
-  prNumber: number;
-  prTitle: string;
-  codeSnippetStore: CodeSnippetStore;
-  embeddingProvider: EmbeddingProvider;
-  config: { enabled: boolean; maxHunksPerPr: number; minChangedLines: number; excludePatterns: string[] };
-  logger: Logger;
-}): Promise<void> {
-  const {
-    diffFiles,
-    repo,
-    owner,
-    prNumber,
-    prTitle,
-    codeSnippetStore,
-    embeddingProvider,
-    config: hunkConfig,
-    logger,
-  } = params;
-
-  if (!hunkConfig.enabled) return;
-
-  try {
-    // 1. Parse hunks from each file, applying exclusions
-    const allHunks: import("../knowledge/code-snippet-chunker.ts").ParsedHunk[] = [];
-
-    for (const file of diffFiles) {
-      if (!file.patch) continue;
-      if (isExcludedPath(file.filename, hunkConfig.excludePatterns)) continue;
-
-      const hunks = parseDiffHunks({
-        diffText: file.patch,
-        filePath: file.filename,
-        minChangedLines: hunkConfig.minChangedLines,
-      });
-      allHunks.push(...hunks);
-    }
-
-    if (allHunks.length === 0) return;
-
-    // 2. Apply per-PR hunk cap
-    const cappedHunks = applyHunkCap(allHunks, hunkConfig.maxHunksPerPr);
-
-    // 3. Embed and store each hunk
-    let embeddedCount = 0;
-    let failedCount = 0;
-
-    for (const hunk of cappedHunks) {
-      try {
-        const embeddedText = buildEmbeddingText({ hunk, prTitle });
-        const contentHash = computeContentHash(embeddedText);
-
-        const embeddingResult = await embeddingProvider.generate(embeddedText, "document");
-        if (!embeddingResult) {
-          failedCount++;
-          continue;
-        }
-
-        await codeSnippetStore.writeSnippet(
-          {
-            contentHash,
-            embeddedText,
-            language: hunk.language,
-            embeddingModel: embeddingResult.model,
-          },
-          embeddingResult.embedding,
-        );
-
-        await codeSnippetStore.writeOccurrence({
-          contentHash,
-          repo,
-          owner,
-          prNumber,
-          prTitle,
-          filePath: hunk.filePath,
-          startLine: hunk.startLine,
-          endLine: hunk.startLine + hunk.addedLines.length - 1,
-          functionContext: hunk.functionContext || null,
-        });
-
-        embeddedCount++;
-      } catch (err) {
-        failedCount++;
-        logger.warn(
-          { err, filePath: hunk.filePath, startLine: hunk.startLine },
-          "Hunk embedding failed for individual hunk (fail-open)",
-        );
-      }
-    }
-
-    if (embeddedCount > 0 || failedCount > 0) {
-      logger.info(
-        {
-          repo,
-          prNumber,
-          ...toProductionLogHunkEmbeddingCounts({
-            hunkCount: cappedHunks.length,
-            embeddedCount,
-            failedCount,
-          }),
-        },
-        "Hunk embedding complete",
-      );
-    }
-  } catch (err) {
-    logger.warn({ err, repo, prNumber }, "Hunk embedding pipeline failed (fail-open)");
-  }
-}
 
 /**
  * Create the review handler and register it with the event router.
@@ -549,324 +416,10 @@ async function embedDiffHunks(params: {
  */
 type ReviewPlanBuilder = typeof buildReviewPlan;
 
-type ReviewPlanConfigSnapshot = {
-  status: ReviewPlan["status"] | DegradedReviewPlan["status"];
-  hash: string;
-  taskType?: string;
-  routingReason?: string;
-  graphValidationStatus: ReviewPlan["graphValidation"]["status"] | DegradedReviewPlan["graphValidation"]["status"];
-  candidateFindingMode: ReviewPlan["candidateFinding"]["mode"] | DegradedReviewPlan["candidateFinding"]["mode"];
-  repoDoctrine?: ReturnType<typeof toRepoDoctrineReviewSurfaceProjection>;
-  degradedReason?: string;
-};
-
-function toRepoDoctrineReviewSurfaceProjection(doctrine: RepoDoctrineProjection) {
-  const status = !doctrine.enabled
-    ? "disabled"
-    : doctrine.consumedContractCount > 0
-      ? "applied"
-      : doctrine.reasonCodes.length > 0
-        ? "degraded"
-        : "skipped";
-  const omittedCount = doctrine.omittedContractCount + doctrine.omittedMatchedPathCandidateCount;
-  const reasonCodes = doctrine.reasonCodes.length > 0
-    ? doctrine.reasonCodes
-    : status === "applied"
-      ? ["none"]
-      : [status];
-
-  return {
-    status,
-    contractCount: doctrine.contractCount,
-    matchedCount: doctrine.matchedPathCandidateCount,
-    omittedCount,
-    reasonCodes,
-  };
-}
-
-function buildRepoDoctrineLogFields(doctrine: RepoDoctrineProjection): Record<string, unknown> {
-  const projection = toRepoDoctrineReviewSurfaceProjection(doctrine);
-  return {
-    repoDoctrineStatus: projection.status,
-    repoDoctrineContractCount: projection.contractCount,
-    repoDoctrineConsumedContractCount: doctrine.consumedContractCount,
-    repoDoctrineMatchedPathCandidateCount: projection.matchedCount,
-    repoDoctrineOmittedCount: projection.omittedCount,
-    repoDoctrineReasonCodes: projection.reasonCodes.slice(0, 8),
-  };
-}
-
-function toReviewPlanConfigSnapshot(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanConfigSnapshot {
-  if (plan.status === "degraded") {
-    return {
-      status: plan.status,
-      hash: plan.hash,
-      taskType: plan.task.taskType,
-      routingReason: plan.task.routingReason,
-      graphValidationStatus: plan.graphValidation.status,
-      candidateFindingMode: plan.candidateFinding.mode,
-      degradedReason: plan.degraded.reason,
-    };
-  }
-
-  return {
-    status: plan.status,
-    hash: plan.hash,
-    taskType: plan.task.taskType,
-    routingReason: plan.task.routingReason,
-    graphValidationStatus: plan.graphValidation.status,
-    candidateFindingMode: plan.candidateFinding.mode,
-    repoDoctrine: plan.repoDoctrine,
-  };
-}
-
-function serializeReviewPlanBuilderError(err: unknown): { name: string; message: string } {
-  return {
-    name: err instanceof Error && err.name ? err.name : "Error",
-    message: "ReviewPlan builder failed",
-  };
-}
 
 type ReviewReducer = (input: ReviewReducerInput) => Promise<ReviewReducerResult>;
 
-function hasTrustedReviewReducerCounts(value: unknown): value is ReviewReducerResult["counts"] {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
 
-  const counts = value as Record<string, unknown>;
-  return [
-    "input",
-    "kept",
-    "suppressed",
-    "rewritten",
-    "deprioritized",
-    "lowConfidence",
-    "auditEvents",
-    "severityDemoted",
-    "graphValidated",
-    "graphUncertain",
-  ].every((key) => typeof counts[key] === "number" && Number.isFinite(counts[key]) && counts[key] >= 0);
-}
-
-function isTrustedReviewReducerResult(value: unknown): value is ReviewReducerResult {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<ReviewReducerResult>;
-  return (candidate.status === "ready" || candidate.status === "degraded")
-    && Array.isArray(candidate.findings)
-    && Array.isArray(candidate.visibleFindings)
-    && Array.isArray(candidate.filteredInlineFindings)
-    && Array.isArray(candidate.lowConfidenceFindings)
-    && candidate.suppressionMatchCounts instanceof Map
-    && Array.isArray(candidate.filterRecords)
-    && hasTrustedReviewReducerCounts(candidate.counts)
-    && Array.isArray(candidate.audit)
-    && typeof candidate.detailsSummary === "object"
-    && candidate.detailsSummary !== null
-    && typeof candidate.detailsSummary.text === "string";
-}
-
-function logReviewReducerResult(params: {
-  logger: Logger;
-  baseLog: Record<string, unknown>;
-  reducerResult: ReviewReducerResult;
-  graphValidationEnabled: boolean;
-}): void {
-  const { logger, baseLog, reducerResult, graphValidationEnabled } = params;
-  const logPayload = {
-    ...baseLog,
-    gate: "review-reducer",
-    gateResult: reducerResult.status,
-    status: reducerResult.status,
-    reason: reducerResult.reason,
-    counts: reducerResult.counts,
-    graphValidation: {
-      enabled: graphValidationEnabled,
-      graphValidated: reducerResult.counts.graphValidated,
-      graphUncertain: reducerResult.counts.graphUncertain,
-    },
-  };
-
-  if (reducerResult.status === "degraded") {
-    logger.warn(logPayload, "Review reducer degraded (fail-open, destructive cleanup disabled)");
-    return;
-  }
-
-  logger.info(logPayload, "Review reducer completed");
-}
-
-type ReviewCandidateFindingSafeSnapshot = {
-  status: ReviewCandidateFindingExecutionResult["status"];
-  recorded: number;
-  rejected: number;
-  errors: number;
-  artifactPresent: boolean;
-  reason?: string;
-};
-
-function sanitizeReviewCandidateReason(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const sanitized = value
-    .trim()
-    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
-    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
-    .replace(/TOKEN\s*=\s*[^\s]+/gi, "token-redacted")
-    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
-    .replace(/diff --git/gi, "diff-redacted")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120);
-
-  return sanitized || undefined;
-}
-
-function normalizeReviewCandidateCount(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? Math.floor(value)
-    : 0;
-}
-
-function resolveReviewCandidateFindingResult(params: {
-  candidateFinding: unknown;
-  repo: string;
-  pullNumber: number;
-  reviewOutputKey: string;
-  deliveryId: string;
-}): ReviewCandidateFindingExecutionResult {
-  const { candidateFinding, repo, pullNumber, reviewOutputKey, deliveryId } = params;
-
-  if (typeof candidateFinding !== "object" || candidateFinding === null) {
-    return createReviewCandidateFindingExecutionResult({
-      repo,
-      pullNumber,
-      reviewOutputKey,
-      deliveryId,
-      mode: "unavailable",
-      reason: "candidate-metadata-missing",
-      artifactPresent: false,
-    });
-  }
-
-  const raw = candidateFinding as Record<string, unknown>;
-  const rawStatus = raw.status;
-  const status: ReviewCandidateFindingExecutionResult["status"] = rawStatus === "shadow" || rawStatus === "degraded" || rawStatus === "unavailable"
-    ? rawStatus
-    : "degraded";
-  const counts = typeof raw.counts === "object" && raw.counts !== null
-    ? raw.counts as Record<string, unknown>
-    : {};
-
-  const rawCandidates = Array.isArray(raw.findings)
-    ? raw.findings
-    : Array.isArray(raw.candidates)
-      ? raw.candidates
-      : [];
-  const normalized = createReviewCandidateFindingExecutionResult({
-    repo,
-    pullNumber,
-    reviewOutputKey,
-    deliveryId,
-    mode: status === "unavailable" ? "unavailable" : "shadow",
-    reason: typeof raw.reason === "string" ? raw.reason : undefined,
-    artifactPresent: raw.artifactPresent === true,
-    candidates: rawCandidates as Parameters<typeof createReviewCandidateFindingExecutionResult>[0]["candidates"],
-  });
-
-  if (status === "degraded") {
-    return {
-      ...normalized,
-      status: "degraded",
-      findings: [],
-      rejections: [],
-      counts: {
-        input: normalizeReviewCandidateCount(counts.input),
-        recorded: normalizeReviewCandidateCount(counts.recorded),
-        rejected: normalizeReviewCandidateCount(counts.rejected),
-        errors: normalizeReviewCandidateCount(counts.errors),
-      },
-      ...(sanitizeReviewCandidateReason(raw.reason) ? { reason: sanitizeReviewCandidateReason(raw.reason) } : {}),
-    };
-  }
-
-  return {
-    ...normalized,
-    counts: {
-      input: normalizeReviewCandidateCount(counts.input) || normalized.counts.input,
-      recorded: normalizeReviewCandidateCount(counts.recorded) || normalized.counts.recorded,
-      rejected: normalizeReviewCandidateCount(counts.rejected) || normalized.counts.rejected,
-      errors: normalizeReviewCandidateCount(counts.errors) || normalized.counts.errors,
-    },
-    artifactPresent: raw.artifactPresent === true,
-    ...(typeof raw.artifactBasename === "string" && raw.artifactBasename.trim() ? { artifactBasename: raw.artifactBasename.trim().split(/[\\/]/).pop() } : {}),
-    ...(sanitizeReviewCandidateReason(raw.reason) ? { reason: sanitizeReviewCandidateReason(raw.reason) } : {}),
-  };
-}
-
-function toReviewCandidateFindingSafeSnapshot(
-  result: ReviewCandidateFindingExecutionResult,
-): ReviewCandidateFindingSafeSnapshot {
-  return {
-    status: result.status,
-    recorded: result.counts.recorded,
-    rejected: result.counts.rejected,
-    errors: result.counts.errors,
-    artifactPresent: result.artifactPresent,
-    ...(result.status === "degraded" && result.reason ? { reason: sanitizeReviewCandidateReason(result.reason) } : {}),
-  };
-}
-
-function toReviewCandidateFindingProductionLogSnapshot(
-  result: ReviewCandidateFindingExecutionResult,
-) {
-  const snapshot = toReviewCandidateFindingSafeSnapshot(result);
-  return toProductionLogCandidateFindingSnapshot(snapshot);
-}
-
-function logReviewCandidateFindingResult(params: {
-  logger: Logger;
-  baseLog: Record<string, unknown>;
-  result: ReviewCandidateFindingExecutionResult;
-}): void {
-  const snapshot = toReviewCandidateFindingProductionLogSnapshot(params.result);
-  const payload = {
-    ...params.baseLog,
-    gate: "review-candidate-finding",
-    gateResult: snapshot.status,
-    ...snapshot,
-  };
-
-  if (snapshot.status === "degraded") {
-    params.logger.warn(payload, "Review candidate finding capture degraded (fail-open)");
-    return;
-  }
-
-  params.logger.info(payload, "Review candidate finding capture summarized");
-}
-
-function toReviewCandidateReducerDrafts(candidates: ReviewCandidateFindingExecutionResult): ProcessedReviewFinding[] {
-  if (candidates.status !== "shadow") return [];
-
-  return candidates.findings.map((candidate, index) => ({
-    commentId: -(index + 1),
-    filePath: candidate.filePath,
-    title: candidate.title,
-    severity: candidate.severity,
-    category: candidate.category,
-    ...(typeof candidate.startLine === "number" ? { startLine: candidate.startLine } : {}),
-    ...(typeof candidate.endLine === "number" ? { endLine: candidate.endLine } : {}),
-    confidence: 90,
-    body: candidate.body,
-    candidateFingerprint: candidate.fingerprint,
-    candidatePublicationLifecycle: "candidate-draft",
-    candidatePublicationDraft: true,
-  }));
-}
 
 export function createReviewHandler(deps: {
   eventRouter: EventRouter;
@@ -1641,7 +1194,7 @@ export function createReviewHandler(deps: {
         let parsedIntent: ParsedPRIntent = DEFAULT_EMPTY_INTENT;
         let commitMessagesForLinking: string[] = [];
         try {
-          const commitMessages = await fetchCommitMessages(
+          const commitMessages = await fetchReviewCommitMessages(
             idempotencyOctokit,
             apiOwner,
             apiRepo,
@@ -4492,7 +4045,7 @@ export function createReviewHandler(deps: {
         const hunkEmbeddingConfig = config.knowledge.retrieval.hunkEmbedding;
         if (codeSnippetStore && embeddingProvider && hunkEmbeddingConfig.enabled && diffContext.diffContent) {
           const diffFiles = splitDiffByFile(diffContext.diffContent);
-          embedDiffHunks({
+          embedReviewDiffHunks({
             diffFiles,
             repo: `${apiOwner}/${apiRepo}`,
             owner: apiOwner,

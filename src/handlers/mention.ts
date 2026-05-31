@@ -70,6 +70,11 @@ import {
   isLikelyWritePermissionFailure,
   summarizeErrorForDiagnostics,
 } from "./mention-write-replies.ts";
+import { buildWriteBranchName, buildWriteOutputKey } from "./mention-write-keys.ts";
+import {
+  collectPrReviewPromptDiff,
+  scanDiffForFabricatedContent,
+} from "./mention-pr-review-diff.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
 import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
@@ -101,7 +106,8 @@ import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
-import { buildWritePolicyRefusalMessage, scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
+import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
+import { splitGitLines } from "../lib/review-utils.ts";
 import {
   buildApprovedReviewBody,
   buildReviewOutputKey,
@@ -119,7 +125,6 @@ import {
   attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
-import { collectDiffContext } from "./review.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 import {
   runFormatterSuggestionSubflow,
@@ -379,39 +384,6 @@ export function createMentionHandler(deps: {
     }
   }
 
-  function buildWriteOutputKey(input: {
-    installationId: number;
-    owner: string;
-    repo: string;
-    sourceType: "pr" | "issue";
-    sourceNumber: number;
-    commentId: number;
-    keyword: string;
-  }): string {
-    const normalizedOwner = input.owner.trim().toLowerCase();
-    const normalizedRepo = input.repo.trim().toLowerCase();
-    const normalizedKeyword = input.keyword.trim().toLowerCase();
-
-    return [
-      "kodiai-write-output",
-      "v1",
-      `inst-${input.installationId}`,
-      `${normalizedOwner}/${normalizedRepo}`,
-      `${input.sourceType}-${input.sourceNumber}`,
-      `comment-${input.commentId}`,
-      `keyword-${normalizedKeyword}`,
-    ].join(":");
-  }
-
-  function buildWriteBranchName(params: {
-    sourceType: "pr" | "issue";
-    sourceNumber: number;
-    commentId: number;
-    writeOutputKey: string;
-  }): string {
-    const hash = createHash("sha256").update(params.writeOutputKey).digest("hex").slice(0, 12);
-    return `kodiai/apply/${params.sourceType}-${params.sourceNumber}-comment-${params.commentId}-${hash}`;
-  }
 
   function pruneRateLimiter(now: number): void {
     // Defense-in-depth: prevent unbounded growth in long-lived processes.
@@ -458,75 +430,6 @@ export function createMentionHandler(deps: {
     }
   }
 
-  async function scanDiffForFabricatedContent(dir: string): Promise<string[]> {
-    let diffText: string;
-    try {
-      diffText = (await $`git -C ${dir} diff HEAD~1 HEAD`.quiet()).text();
-    } catch {
-      return []; // no diff available, skip scan
-    }
-
-    const addedLines = diffText
-      .split("\n")
-      .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
-
-    return scanLinesForFabricatedContent(addedLines);
-  }
-
-
-  function splitGitLines(output: string): string[] {
-    return output
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-  }
-
-  async function collectPrReviewPromptDiff(input: {
-    workspaceDir: string;
-    owner: string;
-    repo: string;
-    prNumber: number;
-    baseRef: string;
-    surface: MentionEvent["surface"];
-    token?: string;
-    fallbackFileProvider?: () => Promise<string[]>;
-    fallbackDiffProvider?: () => Promise<Array<{
-      filename: string;
-      status?: string;
-      previousFilename?: string;
-      additions?: number | null;
-      deletions?: number | null;
-      patch?: string | null;
-    }>>;
-  }): Promise<{
-    changedFiles: string[];
-    numstatLines: string[];
-    diffRange: string;
-    diffContent?: string;
-  }> {
-    const diffContext = await collectDiffContext({
-      workspaceDir: input.workspaceDir,
-      baseRef: input.baseRef,
-      maxFilesForFullDiff: 0,
-      logger,
-      baseLog: {
-        surface: input.surface,
-        owner: input.owner,
-        repo: input.repo,
-        prNumber: input.prNumber,
-      },
-      token: input.token,
-      fallbackFileProvider: input.fallbackFileProvider,
-      fallbackDiffProvider: input.fallbackDiffProvider,
-    });
-
-    return {
-      changedFiles: diffContext.changedFiles,
-      numstatLines: diffContext.numstatLines,
-      diffRange: diffContext.diffRange,
-      diffContent: diffContext.diffContent,
-    };
-  }
 
 
   async function handleMention(event: WebhookEvent): Promise<void> {
@@ -1959,6 +1862,7 @@ export function createMentionHandler(deps: {
                 prNumber: explicitReviewPrNumber,
                 baseRef: mention.baseRef,
                 surface: mention.surface,
+                logger,
                 token: workspace.token,
                 fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
                   octokit,
