@@ -88,6 +88,8 @@ import {
 } from "../review-orchestration/review-idempotency.ts";
 import {
   evaluateExplicitMentionReviewPublish,
+  buildExplicitMentionReviewPublishFailureBody,
+  buildExplicitReviewLifecycleEvidenceLine,
   logExplicitMentionReviewPublishSkipped,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
 import {
@@ -754,41 +756,6 @@ export function createMentionHandler(deps: {
       .find((part) => part.length > 0);
 
     return firstLine ?? "Unknown publish failure";
-  }
-
-  function buildExplicitReviewPublishFailureBody(publishErr: unknown): string {
-    const detail = summarizeErrorForDiagnostics(publishErr);
-    const category = classifyError(publishErr, false);
-    return wrapInDetails(
-      formatErrorComment(
-        category,
-        `Review execution finished, but GitHub rejected the publish step. ${detail}`,
-      ),
-      "Kodiai couldn't publish the review result",
-    );
-  }
-
-  function buildExplicitReviewLifecycleEvidenceLine(
-    lifecycleResult: AttachReviewFindingLifecycleResult | null | undefined,
-  ): string | null {
-    const projection = lifecycleResult?.projection;
-    if (!projection || projection.schema !== "review-finding-lifecycle.v1" || projection.status === "unavailable") {
-      return null;
-    }
-
-    const counts = projection.counts;
-    const statusCounts = counts.status;
-    const severityCounts = counts.severity;
-    const actionabilityCounts = counts.actionability;
-    return [
-      `Review finding lifecycle: status=${projection.status}`,
-      `counts=input:${counts.input},recorded:${counts.recorded},rejected:${counts.rejected},unsafeInputFields:${counts.unsafeInputFields}`,
-      `statuses=detected:${statusCounts.detected},open:${statusCounts.open},validated:${statusCounts.validated},degraded:${statusCounts.degraded}`,
-      `severity=critical:${severityCounts.critical},major:${severityCounts.major},medium:${severityCounts.medium},minor:${severityCounts.minor}`,
-      `actionability=actionable:${actionabilityCounts.actionable},needs-human-review:${actionabilityCounts["needs-human-review"]},blocked:${actionabilityCounts.blocked}`,
-      `rejected=${projection.rejectedReasonCodes.slice(0, 8).join(",") || "none"}`,
-      `redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:${projection.redaction.unsafeInputFieldCount}`,
-    ].join("; ");
   }
 
   function buildIssueWriteSuccessReply(params: {
@@ -3196,7 +3163,10 @@ export function createMentionHandler(deps: {
               } else {
                 setReviewWorkPhase("publish");
                 const fallbackResult = await postMentionError(
-                  buildExplicitReviewPublishFailureBody(publishErr),
+                  buildExplicitMentionReviewPublishFailureBody({
+                    publishErr,
+                    summarizeError: summarizeErrorForDiagnostics,
+                  }),
                 );
                 publishFallbackDelivery = fallbackResult.delivery;
 

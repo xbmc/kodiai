@@ -92,7 +92,7 @@ import {
   settleReviewContinuation,
 } from "../lib/review-continuation-lifecycle.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
-import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
+import { type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import {
   buildApprovedReviewBody,
@@ -222,6 +222,27 @@ import { createReviewContinuationFamilyStateManager } from "../review-orchestrat
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
+  buildExecutorUnavailablePhases,
+  buildQueueWaitPhase,
+  buildReviewDetailsPhaseTimingSummary,
+  buildUnavailableReviewPhase,
+  createReviewPhaseTiming,
+  isValidQueueWaitMetadata,
+} from "../review-orchestration/review-phase-timing.ts";
+export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
+import {
+  buildPromptReviewCacheEvent,
+  buildRetrievalReviewCacheEvent,
+  REVIEW_PROMPT_FINGERPRINT_VERSION,
+  type ReviewPromptCacheState,
+} from "../review-orchestration/review-prompt-cache-events.ts";
+import {
+  appendReviewDetailsBudgetLines,
+  buildPromptBudgetOutcomes,
+  buildVisibleBudgetDisclosureEvidence,
+  buildVisibleBudgetProjectionFromEvidence,
+} from "../review-orchestration/review-visible-budget-evidence.ts";
+import {
   toProductionLogBudgetReasoning,
   toProductionLogCandidateFindingSnapshot,
   toProductionLogHunkEmbeddingCounts,
@@ -288,11 +309,7 @@ import {
   type ReviewHandlerPublicationBridgeProjection,
 } from "../issue-131/review-handler-publication-bridge.ts";
 import {
-  buildReviewDetailsBudgetLines,
-  buildVisibleBudgetProjection,
-  type PromptBudgetEvidenceObservation,
   type VisibleBudgetProjection,
-  type VisibleBudgetScenario,
 } from "../review-visible-budget/visible-budget-behavior.ts";
 import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
 import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
@@ -357,244 +374,6 @@ export type ReviewPromptFingerprintResult = {
   fingerprint: string | null;
   missingSignals: string[];
 };
-
-type ReviewPromptCacheState = {
-  status: ReviewCacheEventRecord["status"];
-  reason: string | null;
-  fingerprintVersion?: string;
-  safetySignalNames?: string[];
-  missingSignalNames?: string[];
-  invalidationSignalNames?: string[];
-  bookkeepingErrorCount?: number;
-};
-
-const REVIEW_PROMPT_FINGERPRINT_VERSION = "review-prompt-v1";
-const RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION = "retrieval-query-embedding-v1";
-const BOUNDED_REVIEW_CACHE_SIGNAL_NAME = /^[a-z0-9][a-z0-9.-]{0,79}$/;
-
-function normalizeReviewCacheSignalNames(values: readonly string[] | undefined): string[] | undefined {
-  if (!values || values.length === 0) return undefined;
-  const normalized = Array.from(new Set(
-    values
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => BOUNDED_REVIEW_CACHE_SIGNAL_NAME.test(value)),
-  )).sort((a, b) => a.localeCompare(b));
-  return normalized.length > 0 ? normalized : undefined;
-}
-
-function mapReviewPromptCacheReason(state: ReviewPromptCacheState): ReviewCacheEventRecord["reason"] {
-  if (state.status === "hit") return "safe-reuse";
-  if (state.status === "miss") return "cache-miss";
-  if (state.status === "bypass") {
-    return state.reason === "disabled-cache" ? "disabled-cache" : "incomplete-fingerprint";
-  }
-  if (state.status === "degraded") return "bookkeeping-failure";
-  return undefined;
-}
-
-function buildPromptReviewCacheEvent(params: {
-  deliveryId: string;
-  repo: string;
-  prNumber: number;
-  state: ReviewPromptCacheState;
-}): ReviewCacheEventRecord {
-  const reason = mapReviewPromptCacheReason(params.state);
-  return {
-    deliveryId: params.deliveryId,
-    repo: params.repo,
-    prNumber: params.prNumber,
-    cacheSurface: "review-derived-prompt",
-    status: params.state.status,
-    ...(reason ? { reason } : {}),
-    ...(params.state.fingerprintVersion ? { fingerprintVersion: params.state.fingerprintVersion } : {}),
-    ...(normalizeReviewCacheSignalNames(params.state.safetySignalNames) ? { safetySignalNames: normalizeReviewCacheSignalNames(params.state.safetySignalNames) } : {}),
-    ...(normalizeReviewCacheSignalNames(params.state.missingSignalNames) ? { missingSignalNames: normalizeReviewCacheSignalNames(params.state.missingSignalNames) } : {}),
-    ...(normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) ? { invalidationSignalNames: normalizeReviewCacheSignalNames(params.state.invalidationSignalNames) } : {}),
-    ...(params.state.bookkeepingErrorCount ? { bookkeepingErrorCount: params.state.bookkeepingErrorCount } : {}),
-  };
-}
-
-function buildPromptBudgetEvidenceObservations(records: readonly PromptSectionRecord[]): PromptBudgetEvidenceObservation[] {
-  return records
-    .map((record) => {
-      const sections = record.sections
-        .filter((section) =>
-          typeof section.budgetChars === "number"
-          && typeof section.budgetTokens === "number"
-          && typeof section.includedChars === "number"
-          && typeof section.includedTokens === "number"
-          && typeof section.trimmedChars === "number"
-          && typeof section.trimmedTokens === "number"
-          && (section.budgetStatus === "included" || section.budgetStatus === "trimmed" || section.budgetStatus === "bypassed")
-          && (section.budgetReason === "within-budget" || section.budgetReason === "section-over-budget" || section.budgetReason === "zero-budget")
-        )
-        .map((section) => ({
-          sectionName: section.sectionName,
-          sectionPosition: section.sectionPosition,
-          budgetChars: section.budgetChars!,
-          budgetTokens: section.budgetTokens!,
-          includedChars: section.includedChars!,
-          includedTokens: section.includedTokens!,
-          trimmedChars: section.trimmedChars!,
-          trimmedTokens: section.trimmedTokens!,
-          budgetStatus: section.budgetStatus!,
-          budgetReason: section.budgetReason!,
-        }));
-
-      if (sections.length === 0) {
-        return null;
-      }
-
-      return {
-        caseId: `${record.promptKind}:budget`,
-        deliveryId: record.deliveryId ?? "unknown-delivery",
-        repo: record.repo,
-        taskType: record.taskType,
-        promptKind: record.promptKind,
-        sections,
-      };
-    })
-    .filter((entry): entry is PromptBudgetEvidenceObservation => entry !== null);
-}
-
-function buildPromptBudgetOutcomes(records: readonly PromptSectionRecord[]): PromptBudgetOutcome[] {
-  return buildPromptBudgetEvidenceObservations(records).flatMap((observation) =>
-    observation.sections.map((section) => ({
-      sectionName: section.sectionName,
-      sectionPosition: section.sectionPosition,
-      budgetChars: section.budgetChars,
-      budgetTokens: section.budgetTokens,
-      includedChars: section.includedChars,
-      includedTokens: section.includedTokens,
-      trimmedChars: section.trimmedChars,
-      trimmedTokens: section.trimmedTokens,
-      status: section.budgetStatus,
-      reason: section.budgetReason,
-    }))
-  );
-}
-
-function chooseVisibleBudgetScenario(params: {
-  promptBudgetEvidence: readonly PromptBudgetEvidenceObservation[];
-  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
-  continuationCompactionObservations: readonly ContinuationCompactionObservation[];
-}): VisibleBudgetScenario {
-  if (params.continuationCompactionObservations.some((observation) => observation.status === "fallback")) {
-    return "fallback-review";
-  }
-
-  const promptScoped = params.promptBudgetEvidence.some((observation) =>
-    observation.sections.some((section) => section.budgetStatus === "trimmed" || section.budgetStatus === "bypassed")
-  );
-  const cacheScoped = params.cacheTelemetryObservations.some((observation) =>
-    observation.status === "degraded" || observation.status === "bypass"
-  );
-  const continuationScoped = params.continuationCompactionObservations.some((observation) =>
-    observation.status === "compacted" || observation.status === "degraded"
-  );
-
-  return promptScoped || cacheScoped || continuationScoped ? "scoped-review" : "happy-path";
-}
-
-function buildVisibleBudgetProjectionFromEvidence(params: {
-  promptSectionRecords: readonly PromptSectionRecord[];
-  cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
-  continuationCompactionObservations: readonly ContinuationCompactionObservation[];
-}): VisibleBudgetProjection | null {
-  const promptBudgetEvidence = buildPromptBudgetEvidenceObservations(params.promptSectionRecords);
-  if (
-    promptBudgetEvidence.length === 0
-    && params.cacheTelemetryObservations.length === 0
-    && params.continuationCompactionObservations.length === 0
-  ) {
-    return null;
-  }
-
-  return buildVisibleBudgetProjection({
-    scenario: chooseVisibleBudgetScenario({
-      promptBudgetEvidence,
-      cacheTelemetryObservations: params.cacheTelemetryObservations,
-      continuationCompactionObservations: params.continuationCompactionObservations,
-    }),
-    promptBudgetEvidence,
-    cacheTelemetryObservations: params.cacheTelemetryObservations,
-    continuationCompactionObservations: params.continuationCompactionObservations,
-  });
-}
-
-function appendReviewDetailsBudgetLines(body: string, projection: VisibleBudgetProjection | null): string {
-  if (!projection) return body;
-  const lines = buildReviewDetailsBudgetLines(projection).map((line) => `- ${line}`);
-  const closeMarker = "\n\n</details>";
-  const closeIndex = body.lastIndexOf(closeMarker);
-  if (closeIndex === -1) {
-    return `${body}\n${lines.join("\n")}`;
-  }
-  return `${body.slice(0, closeIndex)}\n${lines.join("\n")}${body.slice(closeIndex)}`;
-}
-
-function buildVisibleBudgetDisclosureEvidence(projection: VisibleBudgetProjection | null): string | null {
-  if (!projection || projection.visibleStatus === "complete") return null;
-  if (projection.visibleStatus === "fallback") {
-    return "Review scope note: fallback review behavior was used; Review Details include bounded budget/cache/continuation counts only.";
-  }
-  if (projection.visibleReason === "prompt-budget-limited") {
-    return "Review scope note: output was scoped by prompt budget limits; Review Details include bounded counts only.";
-  }
-  if (projection.visibleReason === "cache-degraded") {
-    return "Review scope note: cache reuse was degraded or bypassed; Review Details include bounded cache status counts only.";
-  }
-  return "Review scope note: continuation or compaction behavior scoped the review; Review Details include bounded counts only.";
-}
-
-function buildRetrievalReviewCacheEvent(params: {
-  deliveryId: string;
-  repo: string;
-  prNumber: number;
-  result: RetrieveResult | null | undefined;
-}): ReviewCacheEventRecord {
-  const provenance = params.result?.provenance;
-  if (
-    !params.result
-    || !provenance
-    || !Number.isFinite(provenance.embeddingRequests)
-    || !Number.isFinite(provenance.embeddingCacheHits)
-  ) {
-    return {
-      deliveryId: params.deliveryId,
-      repo: params.repo,
-      prNumber: params.prNumber,
-      cacheSurface: "retrieval-query-embedding",
-      status: "degraded",
-      reason: "unavailable-retrieval",
-      missingSignalNames: ["retrieval-provenance"],
-    };
-  }
-
-  if (provenance.embeddingCacheHits > 0) {
-    return {
-      deliveryId: params.deliveryId,
-      repo: params.repo,
-      prNumber: params.prNumber,
-      cacheSurface: "retrieval-query-embedding",
-      status: "hit",
-      reason: "safe-reuse",
-      fingerprintVersion: RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION,
-      safetySignalNames: ["embedding-cache-provenance"],
-    };
-  }
-
-  return {
-    deliveryId: params.deliveryId,
-    repo: params.repo,
-    prNumber: params.prNumber,
-    cacheSurface: "retrieval-query-embedding",
-    status: "miss",
-    reason: "cache-miss",
-    fingerprintVersion: RETRIEVAL_EMBEDDING_FINGERPRINT_VERSION,
-    safetySignalNames: ["embedding-cache-provenance"],
-  };
-}
 
 function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -897,138 +676,6 @@ export function buildReviewPromptFingerprint(
   return {
     fingerprint: sha256Hex(JSON.stringify(fingerprintPayload)),
     missingSignals: [],
-  };
-}
-
-const REVIEW_PHASE_ORDER = [
-  "queue wait",
-  "workspace preparation",
-  "retrieval/context assembly",
-  "executor handoff",
-  "remote runtime",
-  "publication",
-] as const satisfies ReadonlyArray<ReviewPhaseName>;
-
-function createReviewPhaseTiming(params: {
-  name: ReviewPhaseName;
-  status: ReviewPhaseTiming["status"];
-  durationMs?: number;
-  detail?: string;
-}): ReviewPhaseTiming {
-  return {
-    name: params.name,
-    status: params.status,
-    ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
-    ...(params.detail ? { detail: params.detail } : {}),
-  };
-}
-
-function buildUnavailableReviewPhase(name: ReviewPhaseName, detail: string): ReviewPhaseTiming {
-  return createReviewPhaseTiming({
-    name,
-    status: "unavailable",
-    detail,
-  });
-}
-
-function isValidQueueWaitMetadata(metadata?: JobQueueWaitMetadata): metadata is JobQueueWaitMetadata {
-  return Boolean(
-    metadata &&
-    Number.isFinite(metadata.queuedAtMs) &&
-    Number.isFinite(metadata.startedAtMs) &&
-    Number.isFinite(metadata.waitMs) &&
-    metadata.queuedAtMs >= 0 &&
-    metadata.startedAtMs >= metadata.queuedAtMs &&
-    metadata.waitMs >= 0 &&
-    metadata.startedAtMs - metadata.queuedAtMs === metadata.waitMs,
-  );
-}
-
-function buildQueueWaitPhase(metadata?: JobQueueWaitMetadata): ReviewPhaseTiming {
-  if (!isValidQueueWaitMetadata(metadata)) {
-    return buildUnavailableReviewPhase("queue wait", "invalid queue wait metadata");
-  }
-
-  return createReviewPhaseTiming({
-    name: "queue wait",
-    status: "completed",
-    durationMs: metadata.waitMs,
-  });
-}
-
-export function formatTimeoutErrorDetail(params: {
-  totalTimeoutSeconds: number;
-  complexityInfo: string;
-  hasReviewOutput: boolean;
-  timeoutEstimate?: TimeoutBudgetDetails | null;
-}): string {
-  const summary = params.hasReviewOutput
-    ? "Timed out after partial review output."
-    : "Timed out with no review output.";
-
-  const budgetDetail = params.timeoutEstimate
-    ? `Timeout budget: remote runtime ${params.timeoutEstimate.remoteRuntimeBudgetSeconds}s + infra overhead ${params.timeoutEstimate.infraOverheadBudgetSeconds}s = total ${params.timeoutEstimate.totalTimeoutSeconds}s.`
-    : `Timed out after ${params.totalTimeoutSeconds}s.`;
-
-  return `${summary} ${budgetDetail} PR complexity: ${params.complexityInfo}`;
-}
-
-function buildExecutorUnavailablePhases(detail: string): ExecutorPhaseTiming[] {
-  return [
-    createReviewPhaseTiming({
-      name: "executor handoff",
-      status: "unavailable",
-      detail,
-    }) as ExecutorPhaseTiming,
-    createReviewPhaseTiming({
-      name: "remote runtime",
-      status: "unavailable",
-      detail,
-    }) as ExecutorPhaseTiming,
-  ];
-}
-
-function buildOrderedReviewPhaseSummary(phases: Map<ReviewPhaseName, ReviewPhaseTiming>): ReviewPhaseTiming[] {
-  return REVIEW_PHASE_ORDER.map((name) =>
-    phases.get(name) ?? buildUnavailableReviewPhase(name, "phase timing unavailable"));
-}
-
-function buildReviewDetailsPhaseTimingSummary(params: {
-  phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
-  publicationPhaseStartedAt?: number;
-  totalPhaseStartAt?: number;
-}) {
-  const phaseSnapshot = new Map(params.phases);
-
-  if (!phaseSnapshot.has("publication")) {
-    if (params.publicationPhaseStartedAt !== undefined) {
-      phaseSnapshot.set(
-        "publication",
-        createReviewPhaseTiming({
-          name: "publication",
-          status: "degraded",
-          durationMs: Math.max(0, Date.now() - params.publicationPhaseStartedAt),
-          detail: "captured before publication completed",
-        }),
-      );
-    } else {
-      phaseSnapshot.set(
-        "publication",
-        buildUnavailableReviewPhase("publication", "phase timing unavailable"),
-      );
-    }
-  }
-
-  const totalDurationMs =
-    typeof params.totalPhaseStartAt === "number" &&
-      Number.isFinite(params.totalPhaseStartAt) &&
-      params.totalPhaseStartAt > 0
-      ? Math.max(0, Date.now() - params.totalPhaseStartAt)
-      : undefined;
-
-  return {
-    ...(typeof totalDurationMs === "number" ? { totalDurationMs } : {}),
-    phases: buildOrderedReviewPhaseSummary(phaseSnapshot),
   };
 }
 

@@ -1,4 +1,7 @@
 import type { Logger } from "pino";
+import { classifyError, formatErrorComment } from "../lib/errors.ts";
+import { wrapInDetails } from "../lib/formatting.ts";
+import type { AttachReviewFindingLifecycleResult } from "../review-lifecycle/handler-lifecycle.ts";
 
 export type ExplicitMentionReviewPublishSkipReason =
   | "execution-not-success"
@@ -265,5 +268,43 @@ export function logExplicitMentionReviewPublishSkipped(params: {
       unpublishedFindingCount: params.evaluation.findingLines.length,
     },
     "Skipping explicit mention review publish path",
+  );
+}
+
+export function buildExplicitReviewLifecycleEvidenceLine(
+  lifecycleResult: AttachReviewFindingLifecycleResult | null | undefined,
+): string | null {
+  const projection = lifecycleResult?.projection;
+  if (!projection || projection.schema !== "review-finding-lifecycle.v1" || projection.status === "unavailable") {
+    return null;
+  }
+
+  const counts = projection.counts;
+  const statusCounts = counts.status;
+  const severityCounts = counts.severity;
+  const actionabilityCounts = counts.actionability;
+  return [
+    `Review finding lifecycle: status=${projection.status}`,
+    `counts=input:${counts.input},recorded:${counts.recorded},rejected:${counts.rejected},unsafeInputFields:${counts.unsafeInputFields}`,
+    `statuses=detected:${statusCounts.detected},open:${statusCounts.open},validated:${statusCounts.validated},degraded:${statusCounts.degraded}`,
+    `severity=critical:${severityCounts.critical},major:${severityCounts.major},medium:${severityCounts.medium},minor:${severityCounts.minor}`,
+    `actionability=actionable:${actionabilityCounts.actionable},needs-human-review:${actionabilityCounts["needs-human-review"]},blocked:${actionabilityCounts.blocked}`,
+    `rejected=${projection.rejectedReasonCodes.slice(0, 8).join(",") || "none"}`,
+    `redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:${projection.redaction.unsafeInputFieldCount}`,
+  ].join("; ");
+}
+
+export function buildExplicitMentionReviewPublishFailureBody(params: {
+  publishErr: unknown;
+  summarizeError: (err: unknown) => string;
+}): string {
+  const detail = params.summarizeError(params.publishErr);
+  const category = classifyError(params.publishErr, false);
+  return wrapInDetails(
+    formatErrorComment(
+      category,
+      `Review execution finished, but GitHub rejected the publish step. ${detail}`,
+    ),
+    "Kodiai couldn't publish the review result",
   );
 }

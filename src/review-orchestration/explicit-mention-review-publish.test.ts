@@ -5,6 +5,8 @@ import {
   extractExplicitReviewResultFindingLines,
   hasExplicitReviewBlockingSignals,
   logExplicitMentionReviewPublishSkipped,
+  buildExplicitReviewLifecycleEvidenceLine,
+  buildExplicitMentionReviewPublishFailureBody,
 } from "./explicit-mention-review-publish.ts";
 
 describe("extractExplicitReviewResultFindingLines", () => {
@@ -76,6 +78,46 @@ describe("evaluateExplicitMentionReviewPublish", () => {
       eligible: true,
       hasUnpublishedFindings: false,
     });
+  });
+});
+
+describe("buildExplicitReviewLifecycleEvidenceLine", () => {
+  test("returns bounded lifecycle summary for normalized projections", () => {
+    const line = buildExplicitReviewLifecycleEvidenceLine({
+      projection: {
+        schema: "review-finding-lifecycle.v1",
+        status: "normalized",
+        counts: {
+          input: 6,
+          recorded: 6,
+          rejected: 0,
+          unsafeInputFields: 0,
+          status: { detected: 6, open: 6, validated: 0, degraded: 0 },
+          severity: { critical: 3, major: 2, medium: 0, minor: 1 },
+          actionability: { actionable: 0, "needs-human-review": 6, blocked: 0 },
+        },
+        rejectedReasonCodes: [],
+        redaction: {
+          privateOnly: true,
+          unsafeInputFieldCount: 0,
+        },
+      },
+    } as never);
+
+    expect(line).toContain("severity=critical:3");
+    expect(line).toContain("Review finding lifecycle: status=normalized");
+  });
+});
+
+describe("buildExplicitMentionReviewPublishFailureBody", () => {
+  test("wraps publish failures in a bounded error comment", () => {
+    const body = buildExplicitMentionReviewPublishFailureBody({
+      publishErr: new Error("validation failed"),
+      summarizeError: (err) => (err instanceof Error ? err.message : "unknown"),
+    });
+
+    expect(body).toContain("Kodiai couldn't publish the review result");
+    expect(body).toContain("validation failed");
   });
 });
 
