@@ -21,8 +21,6 @@ import type { PromptSectionRecord, ReviewCacheEventRecord, TelemetryStore } from
 import type {
   KnowledgeStore,
   PriorFinding,
-  ContinuationFamilyAuthoritativeOutcome,
-  ContinuationFamilyFinalStopReason,
   ContinuationFamilyProjectionStatus,
 } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
@@ -213,19 +211,16 @@ import {
 import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
-  isExpectedCandidatePublicationPolicyBlock,
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import { logReviewCandidatePublicationRuntime } from "../review-orchestration/review-candidate-publication-log.ts";
+import { createReviewContinuationFamilyStateManager } from "../review-orchestration/review-continuation-family-state.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
   toProductionLogBudgetReasoning,
   toProductionLogCandidateFindingSnapshot,
   toProductionLogHunkEmbeddingCounts,
-  toProductionLogCandidatePublicationBuckets,
-  toProductionLogCandidatePublicationCounts,
-  toProductionLogCandidatePublicationPublisherSample,
-  toProductionLogCandidatePublicationReason,
   toProductionLogRuntimeBudgetFields,
   toProductionLogTurnBudgetFields,
 } from "../review-audit/production-log-projection.ts";
@@ -2713,52 +2708,6 @@ function reviewFindingIdentityKey(finding: ProcessedReviewFinding): string {
   ].join(":");
 }
 
-function logReviewCandidatePublicationRuntime(params: {
-  logger: Logger;
-  baseLog: Record<string, unknown>;
-  runtime: ReviewCandidatePublicationRuntimeResult;
-}): void {
-  try {
-    const payload = {
-      ...params.baseLog,
-      gate: "review-candidate-publication",
-      gateResult: params.runtime.mode,
-      mode: params.runtime.mode,
-      counts: toProductionLogCandidatePublicationCounts(params.runtime.counts),
-      reasons: params.runtime.reasons.map(toProductionLogCandidatePublicationReason),
-      outcomeBuckets: toProductionLogCandidatePublicationBuckets(params.runtime.outcomeBuckets),
-      publisherResultSample: toProductionLogCandidatePublicationPublisherSample(params.runtime.publisherResultSample),
-      movedToDetails: params.runtime.movedToDetails,
-    };
-
-    const expectedPolicyBlocked = isExpectedCandidatePublicationPolicyBlock(params.runtime);
-
-    if (expectedPolicyBlocked) {
-      params.logger.info(payload, "Review candidate publication completed with expected policy block");
-      return;
-    }
-
-    if (params.runtime.mode === "degraded" || params.runtime.mode === "blocked" || params.runtime.mode === "fallback-disallowed") {
-      params.logger.warn(payload, "Review candidate publication completed with non-approved mode");
-      return;
-    }
-
-    params.logger.info(payload, "Review candidate publication completed");
-  } catch (error) {
-    params.logger.warn(
-      {
-        ...params.baseLog,
-        gate: "review-candidate-publication",
-        gateResult: "degraded",
-        mode: "degraded",
-        reasons: ["malformed-runtime-summary"],
-        logError: error instanceof Error ? error.message : String(error),
-      },
-      "Review candidate publication runtime log degraded",
-    );
-  }
-}
-
 export function createReviewHandler(deps: {
   eventRouter: EventRouter;
   jobQueue: JobQueue;
@@ -3295,178 +3244,21 @@ export function createReviewHandler(deps: {
         setReviewWorkPhaseForAttempt(reviewWorkAttempt.attemptId, phase);
       }
 
-      function getBaseReviewOutputKey(currentReviewOutputKey: string): string {
-        return currentReviewOutputKey.replace(/-retry-\d+$/, "");
-      }
-
-      function getAttemptOrdinal(attemptId: string): number {
-        const match = /(?:^|[^\d])(\d+)$/.exec(attemptId);
-        return match ? Number.parseInt(match[1] ?? "0", 10) : 0;
-      }
-
-      async function persistContinuationFamilyState(params: {
-        authoritativeAttemptId: string;
-        authoritativeAttemptOrdinal?: number;
-        authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
-        finalStopReason: ContinuationFamilyFinalStopReason;
-        projectionStatus: ContinuationFamilyProjectionStatus;
-        supersededByAttemptId?: string | null;
-        reviewOutputKey?: string;
-      }): Promise<void> {
-        if (!knowledgeStore?.upsertContinuationFamilyState) {
-          return;
-        }
-
-        const authoritativeAttemptOrdinal = params.authoritativeAttemptOrdinal
-          ?? getAttemptOrdinal(params.authoritativeAttemptId);
-        if (!Number.isFinite(authoritativeAttemptOrdinal) || authoritativeAttemptOrdinal < 1) {
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "continuation-family-state",
-              gateResult: "skipped",
-              reason: "invalid-attempt-ordinal",
-              authoritativeAttemptId: params.authoritativeAttemptId,
-            },
-            "Skipping canonical continuation-family state write because the attempt ordinal was invalid",
-          );
-          return;
-        }
-
-        try {
-          await knowledgeStore.upsertContinuationFamilyState({
-            familyKey: reviewFamilyKey,
-            baseReviewOutputKey: getBaseReviewOutputKey(params.reviewOutputKey ?? reviewOutputKey),
-            authoritativeAttemptId: params.authoritativeAttemptId,
-            authoritativeAttemptOrdinal,
-            authoritativeOutcome: params.authoritativeOutcome,
-            finalStopReason: params.finalStopReason,
-            projectionStatus: params.projectionStatus,
-            supersededByAttemptId: params.supersededByAttemptId ?? null,
-          });
-        } catch (err) {
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "continuation-family-state",
-              gateResult: "degraded",
-              authoritativeAttemptId: params.authoritativeAttemptId,
-              authoritativeOutcome: params.authoritativeOutcome,
-              finalStopReason: params.finalStopReason,
-              err,
-            },
-            "Failed to persist canonical continuation-family state",
-          );
-        }
-      }
-
-      async function persistDegradedContinuationFamilyState(params: {
-        authoritativeAttemptId: string;
-        authoritativeOutcome: ContinuationFamilyAuthoritativeOutcome;
-        finalStopReason: ContinuationFamilyFinalStopReason;
-        supersededByAttemptId?: string | null;
-        reviewOutputKey?: string;
-      }): Promise<void> {
-        await persistContinuationFamilyState({
-          ...params,
-          projectionStatus: "degraded",
-        });
-      }
-
-      async function settleRetryWithoutCanonicalUpdate(params: {
-        attemptId: string;
-        reviewOutputKey?: string;
-        deliveryId: string;
-        reason: string;
-        logMessage: string;
-      }): Promise<void> {
-        logger.warn(
-          {
-            deliveryId: params.deliveryId,
-            prNumber: pr.number,
-            reviewOutputKey: params.reviewOutputKey,
-            reason: params.reason,
-          },
-          params.logMessage,
-        );
-        await persistContinuationFamilyState({
-          authoritativeAttemptId: params.attemptId,
-          authoritativeOutcome: "quiet-settled",
-          finalStopReason: "settled-without-update",
-          projectionStatus: "canonical",
-          reviewOutputKey: params.reviewOutputKey,
-        });
-      }
-
-      async function finalizeContinuationAttempt(params: {
-        attemptId: string;
-        fallbackOutcome: ContinuationFamilyAuthoritativeOutcome;
-        fallbackStopReason: ContinuationFamilyFinalStopReason;
-        reviewOutputKey?: string;
-      }): Promise<void> {
-        const currentAttempt = reviewWorkCoordinator
-          .getSnapshot(reviewFamilyKey)
-          ?.attempts.find((attempt) => attempt.attemptId === params.attemptId);
-        const supersededByAttemptId = currentAttempt?.supersededByAttemptId ?? null;
-
-        if (supersededByAttemptId) {
-          await persistContinuationFamilyState({
-            authoritativeAttemptId: supersededByAttemptId,
-            authoritativeOutcome: "superseded",
-            finalStopReason: "superseded-by-newer-attempt",
-            projectionStatus: "canonical",
-            supersededByAttemptId,
-            reviewOutputKey: params.reviewOutputKey,
-          });
-          return;
-        }
-
-        await persistContinuationFamilyState({
-          authoritativeAttemptId: params.attemptId,
-          authoritativeOutcome: params.fallbackOutcome,
-          finalStopReason: params.fallbackStopReason,
-          projectionStatus: "canonical",
-          reviewOutputKey: params.reviewOutputKey,
-        });
-      }
-
-      function canPublishReviewWorkOutput(
-        attemptId: string,
-        outputLabel: string,
-        deliveryId: string,
-      ): boolean {
-        if (reviewWorkCoordinator.canPublish(attemptId)) {
-          return true;
-        }
-
-        const currentAttempt = reviewWorkCoordinator
-          .getSnapshot(reviewFamilyKey)
-          ?.attempts.find((attempt) => attempt.attemptId === attemptId);
-        const supersededByAttemptId = currentAttempt?.supersededByAttemptId ?? null;
-        if (supersededByAttemptId) {
-          void persistContinuationFamilyState({
-            authoritativeAttemptId: supersededByAttemptId,
-            authoritativeOutcome: "superseded",
-            finalStopReason: "superseded-by-newer-attempt",
-            projectionStatus: "canonical",
-            supersededByAttemptId,
-          });
-        }
-        logger.info(
-          {
-            ...baseLog,
-            deliveryId,
-            gate: "review-family-coordinator",
-            gateResult: "skipped",
-            skipReason: "publish-rights-lost",
-            reviewFamilyKey,
-            reviewWorkAttemptId: attemptId,
-            supersededByAttemptId,
-          },
-          `Skipping ${outputLabel} because publish rights were superseded`,
-        );
-        return false;
-      }
+      const continuationFamilyState = createReviewContinuationFamilyStateManager({
+        logger,
+        baseLog,
+        reviewFamilyKey,
+        reviewOutputKey,
+        knowledgeStore,
+        reviewWorkCoordinator,
+      });
+      const {
+        persistContinuationFamilyState,
+        persistDegradedContinuationFamilyState,
+        settleRetryWithoutCanonicalUpdate,
+        finalizeContinuationAttempt,
+        canPublishReviewWorkOutput,
+      } = continuationFamilyState;
 
       function canPublishVisibleOutput(outputLabel: string): boolean {
         return canPublishReviewWorkOutput(reviewWorkAttempt.attemptId, outputLabel, event.id);
