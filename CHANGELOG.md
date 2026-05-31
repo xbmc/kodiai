@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.41 (2026-05-31)
+
+Review handler slice extraction and formatter argv sandbox.
+
+### Added
+
+- Extracted review candidate publication runtime logging into `review-orchestration/review-candidate-publication-log.ts` with unit tests.
+- Extracted continuation-family state persistence and publish-rights gating into `review-orchestration/review-continuation-family-state.ts` with unit tests.
+- Formatter command sandbox: allowlisted executables spawn via argv; shell metacharacters or unknown binaries fall back to `bash -lc` with bounded `executionMode` telemetry.
+
+### Changed
+
+- `review.ts` delegates publication logging and continuation-family wiring to the new orchestration modules (~220 lines removed from the handler).
+
+### Verification
+
+- PR #181 CI passed.
+- `bun run lint` passed.
+- `bun run verify:m075 -- --json` passed with `statusCode=m075_ok`.
+- Deployed revision `ca-kodiai--deploy-7d55f9108031-20260531-124116` passed `/healthz`, `/readiness`, and live `verify:m075` with `statusCode=m075_ok`.
+
 ## v0.40 (2026-05-31)
 
 Priority-stack hardening for production observability, module boundaries, and runtime safety.
