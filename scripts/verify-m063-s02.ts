@@ -5,7 +5,7 @@ import {
   buildReviewOutputKey,
   buildReviewOutputMarker,
   extractReviewOutputKey,
-} from "../src/handlers/review-idempotency.ts";
+} from "../src/review-orchestration/review-idempotency.ts";
 import { buildReviewDetailsMarker } from "../src/lib/review-utils.ts";
 import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildM070FixtureScenario } from "./verify-m070.ts";
-import { buildApprovedReviewBody } from "../src/handlers/review-idempotency.ts";
+import { buildApprovedReviewBody } from "../src/review-orchestration/review-idempotency.ts";
 import {
   DEFAULT_TARGET,
   EXPECTED_PACKAGE_SCRIPT,

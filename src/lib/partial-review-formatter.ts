@@ -3,7 +3,7 @@ import {
   buildReviewFirstPassPublicSummary,
   type TimeoutBudgetDetails,
 } from "./review-utils.ts";
-import { buildReviewOutputMarker } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
 
 export type ContinuationRevisionCounts = {
   new: number;

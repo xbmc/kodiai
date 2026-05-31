@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
+import { buildReviewOutputMarker } from "../../review-orchestration/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import {

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Sql } from "./client.ts";
+import { toProductionLogMigrationLabel } from "../review-audit/production-log-projection.ts";
 
 const MIGRATIONS_DIR = join(import.meta.dir, "migrations");
 
@@ -28,6 +29,15 @@ function logMigration(
   }
 
   console.log(consoleMessage);
+}
+
+function migrationIdForLog(file: string): string {
+  const match = /^(\d+)/.exec(file);
+  return match?.[1] ?? "unknown";
+}
+
+function migrationLabelForLog(file: string): string {
+  return toProductionLogMigrationLabel(file);
 }
 
 /**
@@ -69,7 +79,7 @@ export async function runMigrations(
     if (applied.has(file)) {
       logMigration(
         options,
-        { migration: file, status: "skipped" },
+        { migrationId: migrationIdForLog(file), migrationLabel: migrationLabelForLog(file), status: "skipped" },
         "Database migration skipped because it is already applied",
         `  skip: ${file} (already applied)`,
       );
@@ -81,7 +91,7 @@ export async function runMigrations(
 
     logMigration(
       options,
-      { migration: file, status: "applying" },
+      { migrationId: migrationIdForLog(file), migrationLabel: migrationLabelForLog(file), status: "applying" },
       "Applying database migration",
       `  apply: ${file}`,
     );

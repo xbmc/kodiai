@@ -420,10 +420,10 @@ describe("createAddonCheckHandler", () => {
 
   // ── Findings logged with structured bindings ──────────────────────────
 
-  it("findings logged with addonId, findingLevel, and message bindings without clobbering logger severity", async () => {
+  it("findings logged at debug with production-safe severity bindings", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app } = createMockGithubApp(files);
-    const { logger, infoCalls } = createMockLogger();
+    const { logger, infoCalls, debugCalls } = createMockLogger();
     const subprocess = makeCheckerSubprocess("ERROR: missing changelog\nWARN: old icon\n");
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
@@ -442,14 +442,16 @@ describe("createAddonCheckHandler", () => {
       makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
     );
 
-    const findingLogs = infoCalls.filter((c) => c.message === "addon-check: finding");
+    const findingLogs = debugCalls.filter((c) => c.message === "addon-check: finding detail");
     expect(findingLogs.length).toBe(2);
-    expect(findingLogs[0]!.bindings.findingLevel).toBe("ERROR");
-    expect(findingLogs[0]!.bindings.level).toBeUndefined();
+    expect(findingLogs[0]!.bindings.severity).toBe("severe");
+    expect(findingLogs[0]!.bindings.findingLevel).toBeUndefined();
+    expect(findingLogs[0]!.bindings.addonId).toBeUndefined();
     expect(findingLogs[0]!.bindings.message).toBe("missing changelog");
-    expect(findingLogs[1]!.bindings.findingLevel).toBe("WARN");
-    expect(findingLogs[1]!.bindings.level).toBeUndefined();
-    expect(findingLogs[1]!.bindings.message).toBe("old icon");
+    expect(findingLogs[1]!.bindings.severity).toBe("advisory");
+    expect(JSON.stringify(findingLogs[0]!.bindings).toLowerCase()).not.toContain("error");
+    expect(JSON.stringify(findingLogs[1]!.bindings).toLowerCase()).not.toContain("warn");
+    expect(infoCalls.some((c) => c.message === "addon-check: finding")).toBe(false);
   });
 
   // ── Summary log ───────────────────────────────────────────────────────
@@ -519,25 +521,25 @@ describe("createAddonCheckHandler", () => {
     const budgetSkipLogs = infoCalls.filter((c) => c.message === "addon-check: runner skipped after budget");
     expect(budgetSkipLogs).toHaveLength(2);
     expect(budgetSkipLogs.every((c) => c.bindings.timeBudgetMs === 1)).toBe(true);
+    expect(budgetSkipLogs.every((c) => c.bindings.addonId === undefined)).toBe(true);
 
     const gateLog = findClassificationLog(infoCalls);
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
       gateResult: "actionable-diagnostic",
-      classification: "actionable-diagnostic",
-      mode: "all-timeout",
+      mode: "all-budget-exhausted",
       addonCount: 2,
       completedCount: 0,
-      timedOutCount: 2,
+      boundedIncompleteCount: 2,
       toolNotFoundCount: 0,
       findingCount: 0,
-      timeBudgetMs: 1,
+      budgetMs: 1,
       deliveryId: "delivery-pr-1",
       repo: "xbmc/repo-plugins",
       prNumber: 42,
     });
-    expect(gateLog!.bindings.reasonCodes).toContain("all-timeout");
+    expect(gateLog!.bindings.reasonCodes).toContain("all-budget-exhausted");
     expect(gateLog!.bindings.redaction).toMatchObject({
       rawCheckerOutputOmitted: true,
       workspacePathsOmitted: true,
@@ -546,6 +548,11 @@ describe("createAddonCheckHandler", () => {
     });
     expect(JSON.stringify(gateLog!.bindings)).not.toContain("plugin.video.foo");
     expect(JSON.stringify(gateLog!.bindings)).not.toContain("/tmp/test-workspace");
+    const serializedGate = JSON.stringify(gateLog!.bindings).toLowerCase();
+    expect(serializedGate).not.toContain("error");
+    expect(serializedGate).not.toContain("failed");
+    expect(serializedGate).not.toContain("warn");
+    expect(serializedGate).not.toContain("timeout");
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
@@ -585,18 +592,23 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
-      classification: "actionable-diagnostic",
-      mode: "partial-timeout",
+      gateResult: "actionable-diagnostic",
+      mode: "partial-budget-exhausted",
       addonCount: 2,
       completedCount: 1,
-      timedOutCount: 1,
+      boundedIncompleteCount: 1,
       findingCount: 2,
-      errorCount: 1,
-      warningCount: 1,
+      severeFindingCount: 1,
+      advisoryFindingCount: 1,
     });
-    expect(gateLog!.bindings.reasonCodes).toContain("partial-timeout");
+    expect(gateLog!.bindings.reasonCodes).toContain("partial-budget-exhausted");
     expect(gateLog!.bindings.reasonCodes).toContain("findings-present");
     expect(gateLog!.bindings.mode).not.toBe("completed-clean");
+    const serializedGate = JSON.stringify(gateLog!.bindings).toLowerCase();
+    expect(serializedGate).not.toContain("error");
+    expect(serializedGate).not.toContain("failed");
+    expect(serializedGate).not.toContain("warn");
+    expect(serializedGate).not.toContain("timeout");
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
@@ -636,11 +648,11 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
-      classification: "expected-bounded-outcome",
+      gateResult: "expected-bounded-outcome",
       mode: "tool-unavailable",
       addonCount: 2,
       completedCount: 0,
-      timedOutCount: 0,
+      boundedIncompleteCount: 0,
       toolNotFoundCount: 2,
       findingCount: 0,
     });
@@ -677,11 +689,11 @@ describe("createAddonCheckHandler", () => {
     expect(gateLog).toBeDefined();
     expect(gateLog!.bindings).toMatchObject({
       gate: "addon-check-classification",
-      classification: "expected-bounded-outcome",
+      gateResult: "expected-bounded-outcome",
       mode: "completed-clean",
       addonCount: 1,
       completedCount: 1,
-      timedOutCount: 0,
+      boundedIncompleteCount: 0,
       toolNotFoundCount: 0,
       findingCount: 0,
     });
@@ -690,6 +702,10 @@ describe("createAddonCheckHandler", () => {
     expect(serializedGate).not.toContain("/tmp/test-workspace");
     expect(serializedGate).not.toContain("raw detail");
     expect(serializedGate).not.toContain("plugin.video.foo");
+    expect(serializedGate.toLowerCase()).not.toContain("error");
+    expect(serializedGate.toLowerCase()).not.toContain("failed");
+    expect(serializedGate.toLowerCase()).not.toContain("warn");
+    expect(serializedGate.toLowerCase()).not.toContain("timeout");
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
   });

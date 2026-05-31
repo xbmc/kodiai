@@ -5,7 +5,7 @@ import {
   type ReviewOutputIdempotencyLocation,
   type ReviewOutputPublicationState,
   type ReviewOutputScanStats,
-} from "../handlers/review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 import type { FormatterDiffSkip, FormatterSuggestionPayload } from "./formatter-suggestions.ts";
 import {
   sanitizeOutgoingMentions,

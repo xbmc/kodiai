@@ -2,7 +2,7 @@
 
 import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
-import { extractReviewOutputKey, parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { extractReviewOutputKey, parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { discoverLogAnalyticsWorkspaceIds, queryReviewAuditLogs, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 
 export const M069_S05_DEFAULT_TARGET = {

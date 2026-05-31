@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createReviewHandler } from "../src/handlers/review.ts";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { buildReviewFamilyKey, createReviewWorkCoordinator } from "../src/jobs/review-work-coordinator.ts";
 import { createQueueRunMetadata, getEmptyActiveJobs } from "../src/jobs/queue.test-helpers.ts";
 import type { GitHubApp } from "../src/auth/github-app.ts";

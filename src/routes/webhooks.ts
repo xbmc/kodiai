@@ -47,7 +47,13 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
     }
 
     // Parse payload after verification passes
-    const payload = JSON.parse(body) as Record<string, unknown>;
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(body) as Record<string, unknown>;
+    } catch (err) {
+      logger.warn({ deliveryId, eventName, err }, "Webhook payload JSON parse failed");
+      return c.text("", 400);
+    }
     const action = typeof payload.action === "string" ? payload.action : undefined;
     const senderLogin =
       typeof (payload.sender as { login?: unknown } | undefined)?.login === "string"

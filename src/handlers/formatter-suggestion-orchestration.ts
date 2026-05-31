@@ -17,7 +17,7 @@ import {
   type FormatterSuggestionPublisherStatus,
 } from "../execution/formatter-suggestion-publisher.ts";
 import { collectDiffContext } from "./review.ts";
-import { buildReviewOutputKey } from "./review-idempotency.ts";
+import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 
 const DEFAULT_FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 const DEFAULT_FORMATTER_TIMEOUT_MS = 120_000;

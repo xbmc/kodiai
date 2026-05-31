@@ -22,6 +22,11 @@ import {
   classifyAddonCheckOutcome,
 } from "../lib/addon-check-classification.ts";
 import {
+  toProductionLogAddonCheckMode,
+  toProductionLogAddonCheckReasonCode,
+  toProductionLogAddonCheckFindingSeverity,
+} from "../review-audit/production-log-projection.ts";
+import {
   buildAddonCheckMarker,
   formatAddonCheckComment,
 } from "../lib/addon-check-formatter.ts";
@@ -266,7 +271,7 @@ export function createAddonCheckHandler(deps: {
               }
 
               if (result.timedOut) {
-                handlerLogger.info({ addonId, timeBudgetMs }, "addon-check: runner skipped after budget");
+                handlerLogger.info({ timeBudgetMs }, "addon-check: runner skipped after budget");
                 addonSummaries.push({ timedOut: true });
                 continue;
               }
@@ -275,9 +280,12 @@ export function createAddonCheckHandler(deps: {
               addonSummaries.push({ completed: true, ...findingCounts });
 
               for (const finding of result.findings) {
-                handlerLogger.info(
-                  { addonId: finding.addonId, findingLevel: finding.level, message: finding.message },
-                  "addon-check: finding",
+                handlerLogger.debug(
+                  {
+                    severity: toProductionLogAddonCheckFindingSeverity(finding.level),
+                    message: finding.message,
+                  },
+                  "addon-check: finding detail",
                 );
                 allFindings.push(finding);
               }
@@ -295,19 +303,18 @@ export function createAddonCheckHandler(deps: {
               {
                 gate: classification.gate,
                 gateResult: classification.classification,
-                classification: classification.classification,
-                mode: classification.mode,
-                reasonCodes: classification.reasonCodes,
+                mode: toProductionLogAddonCheckMode(classification.mode),
+                reasonCodes: classification.reasonCodes.map(toProductionLogAddonCheckReasonCode),
                 actionableDiagnostic: classification.actionableDiagnostic,
                 expectedBoundedOutcome: classification.expectedBoundedOutcome,
                 addonCount: classification.counts.addonCount,
                 completedCount: classification.counts.completedCount,
-                timedOutCount: classification.counts.timedOutCount,
+                boundedIncompleteCount: classification.counts.timedOutCount,
                 toolNotFoundCount: classification.counts.toolNotFoundCount,
                 findingCount: classification.counts.findingCount,
-                errorCount: classification.counts.errorCount,
-                warningCount: classification.counts.warningCount,
-                timeBudgetMs: classification.counts.timeBudgetMs,
+                severeFindingCount: classification.counts.errorCount,
+                advisoryFindingCount: classification.counts.warningCount,
+                budgetMs: classification.counts.timeBudgetMs,
                 redaction: classification.redaction,
                 deliveryId: event.id,
                 repo,

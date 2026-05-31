@@ -19,7 +19,7 @@ import {
   discoverLogAnalyticsWorkspaceIds,
   queryReviewAuditLogs,
 } from "../src/review-audit/log-analytics.ts";
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 type PullRequestRef = { number: number; html_url: string };
 type AccessState = "available" | "missing" | "unavailable";
@@ -313,6 +313,7 @@ function buildAuditSummary(artifacts: M044S01ArtifactReport[]): M044S01Summary {
   const verdictCounts: Record<string, number> = {
     "clean-valid": 0,
     "findings-published": 0,
+    "expected-bounded": 0,
     "publish-failure": 0,
     "suspicious-approval": 0,
     "indeterminate": 0,
@@ -343,7 +344,7 @@ export function renderM044S01Report(report: M044S01Report): string {
     `Limit: ${report.limit}`,
     `Preflight: github=${report.preflight.githubAccess} db=${report.preflight.databaseAccess} azure_logs=${report.preflight.azureLogAccess} explicit_publish_resolution=${report.preflight.explicitPublishResolution}`,
     `Selection: scanned_prs=${report.selection.scannedPullRequests} collected_artifacts=${report.selection.collectedArtifacts} selected=${report.artifacts.length} auto=${report.selection.selectedLaneCounts.automatic} explicit=${report.selection.selectedLaneCounts.explicit} fill=${report.selection.fillCount}`,
-    `Summary: total=${report.summary.totalArtifacts} clean-valid=${report.summary.verdictCounts["clean-valid"] ?? 0} findings-published=${report.summary.verdictCounts["findings-published"] ?? 0} publish-failure=${report.summary.verdictCounts["publish-failure"] ?? 0} suspicious-approval=${report.summary.verdictCounts["suspicious-approval"] ?? 0} indeterminate=${report.summary.verdictCounts["indeterminate"] ?? 0}`,
+    `Summary: total=${report.summary.totalArtifacts} clean-valid=${report.summary.verdictCounts["clean-valid"] ?? 0} findings-published=${report.summary.verdictCounts["findings-published"] ?? 0} expected-bounded=${report.summary.verdictCounts["expected-bounded"] ?? 0} publish-failure=${report.summary.verdictCounts["publish-failure"] ?? 0} suspicious-approval=${report.summary.verdictCounts["suspicious-approval"] ?? 0} indeterminate=${report.summary.verdictCounts["indeterminate"] ?? 0}`,
     "",
   ];
 

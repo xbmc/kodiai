@@ -6,7 +6,7 @@ import {
 import { formatPartialReviewComment } from "../src/lib/partial-review-formatter.ts";
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
 import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import {
   evaluateM048S01,
   type M048S01Report,

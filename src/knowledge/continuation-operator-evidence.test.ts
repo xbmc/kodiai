@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import type {
   ContinuationFamilyStateKey,
   ContinuationFamilyStateRecord,

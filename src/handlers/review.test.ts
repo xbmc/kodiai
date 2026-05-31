@@ -13,7 +13,7 @@ import {
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import { createMentionHandler } from "./mention.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
   ContributorProfile,
@@ -17351,7 +17351,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       status: "shadow",
       recorded: 2,
       rejected: 1,
-      errors: 0,
+      issueCount: 0,
       artifactPresent: true,
     }));
     expect(JSON.stringify(candidateLog?.data)).not.toContain("RAW TITLE MUST NOT LEAK");
@@ -17799,6 +17799,10 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         reasons: expect.arrayContaining(["candidate-publisher-blocked"]),
       }),
     }));
+    const serializedPublicationLog = JSON.stringify(publicationLog?.data).toLowerCase();
+    expect(serializedPublicationLog).not.toContain("error");
+    expect(serializedPublicationLog).not.toContain("failed");
+    expect(serializedPublicationLog).not.toContain("warn");
   });
 
   test("candidate publication still publishes inline comments when executor already created the summary comment", async () => {
@@ -18224,7 +18228,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublishable: 0,
       candidatePublished: 0,
-      candidateFailed: 0,
+      candidateUndelivered: 0,
       candidateMovedToDetails: 1,
       candidateDetailsOnlyFindings: 1,
       convertedProcessedFindings: 0,
@@ -18335,20 +18339,20 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       candidatePublishable: 1,
       candidatePublished: 0,
-      candidateFailed: 1,
+      candidateUndelivered: 1,
       candidateMovedToDetails: 0,
       candidateDetailsOnlyFindings: 0,
       convertedProcessedFindings: 0,
       directPublished: 0,
     }));
-    expect(publicationLog?.data?.reasons).toContain("candidate-publisher-failed");
+    expect(publicationLog?.data?.reasons).toContain("candidate-publisher-undelivered");
     expect(publicationLog?.level).toBe("warn");
     expect(publicationLog?.message).toBe("Review candidate publication completed with non-approved mode");
     expect(publicationLog?.data?.outcomeBuckets).toEqual(expect.objectContaining({
-      failed: expect.objectContaining({
-        mode: "failed",
+      undelivered: expect.objectContaining({
+        mode: "undelivered",
         count: 1,
-        reasons: expect.arrayContaining(["candidate-publisher-failed", "github-error"]),
+        reasons: expect.arrayContaining(["candidate-publisher-undelivered", "github-issues"]),
       }),
     }));
     expect(JSON.stringify(publicationLog?.data)).not.toContain("This candidate targets a commentable diff line");
@@ -19500,22 +19504,31 @@ describe("createReviewHandler failure fallback publication", () => {
     const completionLog = entries.find((entry) => entry.message === "Review execution completed");
     expect(completionLog?.data).toMatchObject({
       prNumber: 101,
-      conclusion: "failure",
+      conclusion: "expected_bounded",
+      boundedOutcomeReason: "max_turns",
       executorPublished: false,
       published: true,
       publishResolution: "turn-limit-fallback",
-      publishFallbackDelivery: "error-comment-created",
-      failureSubtype: "error_max_turns",
+      publishFallbackDelivery: "turn-limit-comment-created",
     });
+    const serializedCompletionLog = JSON.stringify(completionLog?.data).toLowerCase();
+    expect(serializedCompletionLog).not.toContain("failure");
+    expect(serializedCompletionLog).not.toContain("failed");
+    expect(serializedCompletionLog).not.toContain("error");
 
     const phaseSummaryLog = entries.find((entry) => entry.message === "Review phase timing summary");
     expect(phaseSummaryLog?.data).toMatchObject({
       prNumber: 101,
-      conclusion: "failure",
+      conclusion: "expected_bounded",
+      boundedOutcomeReason: "max_turns",
       published: true,
       publishResolution: "turn-limit-fallback",
-      publishFallbackDelivery: "error-comment-created",
+      publishFallbackDelivery: "turn-limit-comment-created",
     });
+    const serializedPhaseSummaryLog = JSON.stringify(phaseSummaryLog?.data).toLowerCase();
+    expect(serializedPhaseSummaryLog).not.toContain("failure");
+    expect(serializedPhaseSummaryLog).not.toContain("failed");
+    expect(serializedPhaseSummaryLog).not.toContain("error");
 
     await workspaceFixture.cleanup();
   });
@@ -19743,7 +19756,6 @@ describe("createReviewHandler failure fallback publication", () => {
     const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
     expect(classificationLog?.data).toMatchObject({
       gateResult: "expected-bounded-outcome",
-      classification: "expected-bounded-outcome",
       mode: "max-turns-continuation",
       deliveryId: "delivery-123",
       retryEnqueued: true,
@@ -20077,12 +20089,12 @@ describe("createReviewHandler failure fallback publication", () => {
     const classificationLog = entries.find((entry) => entry.data?.gate === "review-timeout-classification");
     expect(classificationLog?.data).toMatchObject({
       gateResult: "expected-bounded-outcome",
-      mode: "bounded-partial-timeout",
+      mode: "bounded-partial-budget-exhausted",
       retryEnqueued: false,
       checkpointFilesReviewed: 1,
       checkpointFilesInspected: 1,
     });
-    expect(classificationLog?.data?.reasonCodes).toEqual(expect.arrayContaining(["partial-timeout", "checkpoint-present"]));
+    expect(classificationLog?.data?.reasonCodes).toEqual(expect.arrayContaining(["partial-budget-exhausted", "checkpoint-present"]));
     expect(entries.some((entry) => entry.message === "Resilience telemetry write failed (non-blocking)")).toBeTrue();
     expect(resilienceEvents[0]).toMatchObject({
       timeoutClassification: "expected-bounded-outcome",
@@ -20148,11 +20160,11 @@ describe("createReviewHandler failure fallback publication", () => {
     const zeroEvidence = await runScenario({
       recentTimeouts: 0,
       checkpoint: null,
-      expectedMode: "zero-evidence-hard-timeout",
-      expectedReasons: ["zero-evidence", "timeout"],
+      expectedMode: "zero-evidence-hard-budget-exhausted",
+      expectedReasons: ["zero-evidence", "budget-exhausted"],
     });
-    expect(zeroEvidence?.mode).toBe("zero-evidence-hard-timeout");
-    expect(zeroEvidence?.reasonCodes).toEqual(expect.arrayContaining(["zero-evidence", "timeout"]));
+    expect(zeroEvidence?.mode).toBe("zero-evidence-hard-budget-exhausted");
+    expect(zeroEvidence?.reasonCodes).toEqual(expect.arrayContaining(["zero-evidence", "budget-exhausted"]));
 
     const chronic = await runScenario({
       recentTimeouts: 3,
@@ -20165,12 +20177,12 @@ describe("createReviewHandler failure fallback publication", () => {
         summaryDraft: "Reviewed README before timeout.",
         totalFiles: 2,
       },
-      expectedMode: "chronic-timeout-skip",
-      expectedReasons: ["chronic-timeout", "continuation-skipped"],
+      expectedMode: "chronic-budget-exhausted-skip",
+      expectedReasons: ["chronic-budget-exhausted", "continuation-skipped"],
     });
-    expect(chronic?.mode).toBe("chronic-timeout-skip");
-    expect(chronic?.reasonCodes).toEqual(expect.arrayContaining(["chronic-timeout", "continuation-skipped"]));
-    expect(chronic?.chronicTimeout).toBe(true);
+    expect(chronic?.mode).toBe("chronic-budget-exhausted-skip");
+    expect(chronic?.reasonCodes).toEqual(expect.arrayContaining(["chronic-budget-exhausted", "continuation-skipped"]));
+    expect(chronic?.chronicBudgetExhaustion).toBe(true);
   });
 
 

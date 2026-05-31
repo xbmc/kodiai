@@ -12,7 +12,7 @@ import {
   type M074S06Args,
   type M074S06EvidenceSnapshot,
 } from "./verify-m074-s06.ts";
-import { buildApprovedReviewBody, buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildApprovedReviewBody, buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 const VALID_PACKAGE = `{"scripts":{"${COMMAND_NAME}":"${EXPECTED_PACKAGE_SCRIPT}"}}`;
 const BASE_ARGS = parseM074S06Args([

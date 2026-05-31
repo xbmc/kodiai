@@ -6,6 +6,8 @@ interface ShutdownManagerDeps {
   requestTracker: RequestTracker;
   closeDb: () => Promise<void>;
   graceMs?: number;
+  /** Test-only: override process exit for deterministic shutdown tests. */
+  __exitForTests?: (code: number) => void;
 }
 
 /**
@@ -20,27 +22,43 @@ interface ShutdownManagerDeps {
 export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManager {
   const { logger, requestTracker, closeDb } = deps;
   const graceMs = deps.graceMs ?? (parseInt(process.env.SHUTDOWN_GRACE_MS ?? "", 10) || 300_000);
+  const exitProcess = deps.__exitForTests ?? ((code: number) => process.exit(code));
   let shuttingDown = false;
 
-  async function handleSignal(signal: string): Promise<void> {
+  async function beginShutdown(trigger: { kind: "signal"; signal: string } | { kind: "fault"; reason: string }): Promise<void> {
     if (shuttingDown) {
-      logger.warn({ signal }, "Shutdown already in progress, ignoring duplicate signal");
+      if (trigger.kind === "signal") {
+        logger.warn({ signal: trigger.signal }, "Shutdown already in progress, ignoring duplicate signal");
+      }
       return;
     }
 
     shuttingDown = true;
 
     const counts = requestTracker.activeCount();
-    logger.info(
-      {
-        signal,
-        activeRequests: counts.requests,
-        activeJobs: counts.jobs,
-        activeTotal: counts.total,
-        graceMs,
-      },
-      "Shutdown signal received, starting graceful drain",
-    );
+    if (trigger.kind === "signal") {
+      logger.info(
+        {
+          signal: trigger.signal,
+          activeRequests: counts.requests,
+          activeJobs: counts.jobs,
+          activeTotal: counts.total,
+          graceMs,
+        },
+        "Shutdown signal received, starting graceful drain",
+      );
+    } else {
+      logger.error(
+        {
+          shutdownReason: trigger.reason,
+          activeRequests: counts.requests,
+          activeJobs: counts.jobs,
+          activeTotal: counts.total,
+          graceMs,
+        },
+        "Fatal runtime fault received, starting graceful shutdown",
+      );
+    }
 
     async function safeCloseDb(): Promise<void> {
       try {
@@ -55,7 +73,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
       await requestTracker.waitForDrain(graceMs);
       logger.info("Graceful drain completed successfully");
       await safeCloseDb();
-      process.exit(0);
+      exitProcess(0);
     } catch {
       // First drain timed out -- extend grace once (double)
       const extendedGraceMs = graceMs * 2;
@@ -74,7 +92,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
         await requestTracker.waitForDrain(extendedGraceMs);
         logger.info("Graceful drain completed after extended grace");
         await safeCloseDb();
-        process.exit(0);
+        exitProcess(0);
       } catch {
         // Extended drain also timed out -- force exit
         const abandonedCounts = requestTracker.activeCount();
@@ -87,7 +105,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
           "Force exit after extended grace timeout, work abandoned",
         );
         await safeCloseDb();
-        process.exit(1);
+        exitProcess(1);
       }
     }
   }
@@ -95,16 +113,20 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
   return {
     start() {
       process.on("SIGTERM", () => {
-        void handleSignal("SIGTERM");
+        void beginShutdown({ kind: "signal", signal: "SIGTERM" });
       });
       process.on("SIGINT", () => {
-        void handleSignal("SIGINT");
+        void beginShutdown({ kind: "signal", signal: "SIGINT" });
       });
       logger.info({ graceMs }, "Shutdown manager registered SIGTERM/SIGINT handlers");
     },
 
     isShuttingDown() {
       return shuttingDown;
+    },
+
+    requestShutdown(reason: string) {
+      void beginShutdown({ kind: "fault", reason });
     },
   };
 }

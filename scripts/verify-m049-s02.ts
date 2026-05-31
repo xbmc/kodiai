@@ -21,7 +21,7 @@ import {
   queryReviewAuditLogs,
   type NormalizedLogAnalyticsRow,
 } from "../src/review-audit/log-analytics.ts";
-import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 type AccessState = "available" | "missing" | "unavailable";
 

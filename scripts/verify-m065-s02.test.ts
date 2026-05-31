@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 type RuntimeReport = {
   command: "verify:m048:s01";

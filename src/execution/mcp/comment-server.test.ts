@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { extractReviewOutputKey } from "../../handlers/review-idempotency.ts";
+import { extractReviewOutputKey } from "../../review-orchestration/review-idempotency.ts";
 import { createCommentServer } from "./comment-server.ts";
 
 function getToolHandlers(server: ReturnType<typeof createCommentServer>) {

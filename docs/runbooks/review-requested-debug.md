@@ -212,6 +212,8 @@ Failure-path outcomes are also explicit:
 
 - `publishResolution=publish-failure-fallback` means the clean-review publish failed and Kodiai posted an error comment instead.
 - `publishResolution=publish-failure-comment-failed` means the clean-review publish failed and even the fallback error comment could not be delivered.
+- `publishResolution=turn-limit-fallback` with `conclusion=expected_bounded` means the run exhausted its turn budget and posted a turn-limit notice.
+- `publishResolution=turn-limit-fallback-undelivered` means the expected turn-limit notice could not be delivered.
 
 `reviewOutputKey` is the durable correlation key across the idempotency logs, the evidence bundle, and the final completion log.
 

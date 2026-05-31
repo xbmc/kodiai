@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import type { NormalizedLogAnalyticsRow } from "./log-analytics.ts";
 import {
   PRODUCTION_LOG_ISSUE_CLASS_IDS,
@@ -122,14 +122,13 @@ describe("production log taxonomy", () => {
 
   test("classifies structured S05 timeout outcomes separately from ambiguous timeout noise", () => {
     const bounded = row({
-      msg: "Review timeout classification",
+      msg: "Review budget classification",
       parsedLog: {
-        msg: "Review timeout classification",
+        msg: "Review budget classification",
         gate: "review-timeout-classification",
         gateResult: "expected-bounded-outcome",
-        classification: "expected-bounded-outcome",
-        mode: "bounded-partial-timeout",
-        reasonCodes: ["partial-timeout", "checkpoint-present"],
+        mode: "bounded-partial-budget-exhausted",
+        reasonCodes: ["partial-budget-exhausted", "checkpoint-present"],
         repo: "xbmc/xbmc",
         prNumber: 701,
         deliveryId: "delivery-701",
@@ -138,14 +137,13 @@ describe("production log taxonomy", () => {
       prNumber: 701,
     });
     const zeroEvidence = row({
-      msg: "Review timeout classification",
+      msg: "Review budget classification",
       parsedLog: {
-        msg: "Review timeout classification",
+        msg: "Review budget classification",
         gate: "review-timeout-classification",
         gateResult: "hard-failure",
-        classification: "hard-failure",
-        mode: "zero-evidence-hard-timeout",
-        reasonCodes: ["zero-evidence", "timeout"],
+        mode: "zero-evidence-hard-budget-exhausted",
+        reasonCodes: ["zero-evidence", "budget-exhausted"],
         repo: "xbmc/xbmc",
         prNumber: 702,
         deliveryId: "delivery-702",
@@ -154,12 +152,11 @@ describe("production log taxonomy", () => {
       prNumber: 702,
     });
     const longRun = row({
-      msg: "Review timeout classification",
+      msg: "Review budget classification",
       parsedLog: {
-        msg: "Review timeout classification",
+        msg: "Review budget classification",
         gate: "review-timeout-classification",
         gateResult: "hard-failure",
-        classification: "hard-failure",
         mode: "long-run-threshold-exceeded",
         reasonCodes: ["long-run-threshold-exceeded"],
         repo: "xbmc/xbmc",
@@ -193,7 +190,6 @@ describe("production log taxonomy", () => {
         msg: "Addon check classification",
         gate: "addon-check-classification",
         gateResult: "expected-bounded-outcome",
-        classification: "expected-bounded-outcome",
         mode: "completed-clean",
         reasonCodes: ["completed-clean"],
         repo: "xbmc/xbmc",
@@ -203,14 +199,13 @@ describe("production log taxonomy", () => {
       prNumber: 801,
     });
     const actionable = row({
-      msg: "Addon check classification timeout",
+      msg: "Addon check classification",
       parsedLog: {
-        msg: "Addon check classification timeout",
+        msg: "Addon check classification",
         gate: "addon-check-classification",
         gateResult: "actionable-diagnostic",
-        classification: "actionable-diagnostic",
-        mode: "all-timeout",
-        reasonCodes: ["all-timeout"],
+        mode: "all-budget-exhausted",
+        reasonCodes: ["all-budget-exhausted"],
         repo: "xbmc/xbmc",
         prNumber: 802,
         deliveryId: "delivery-802",

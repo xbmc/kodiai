@@ -20,6 +20,13 @@ import type { ResolvedModel } from "../llm/task-router.ts";
 import type { AppConfig } from "../config.ts";
 import type { McpJobRegistry } from "./mcp/http-server.ts";
 import {
+  toProductionLogCandidateFindingCounts,
+  toProductionLogRuntimeBudgetFields,
+  toProductionLogTurnBudgetFields,
+} from "../review-audit/production-log-projection.ts";
+
+export { toProductionLogCandidateFindingCounts as toProductionLogSafeCandidateFindingCounts } from "../review-audit/production-log-projection.ts";
+import {
   buildAcaJobSpec,
   launchAcaJob,
   pollUntilComplete,
@@ -538,7 +545,7 @@ export function createExecutor(deps: {
             reviewOutputKey: candidateFinding.reviewOutputKey,
             deliveryId: candidateFinding.deliveryId,
             status: candidateFinding.status,
-            counts: candidateFinding.counts,
+            counts: toProductionLogCandidateFindingCounts(candidateFinding.counts),
             artifactPresent: candidateFinding.artifactPresent,
             artifactBasename: candidateFinding.artifactBasename,
             reason: candidateFinding.reason,
@@ -582,8 +589,10 @@ export function createExecutor(deps: {
           {
             model,
             modelSource: context.modelOverride ? "override" : deps.taskRouter ? "router" : "config",
-            maxTurns,
-            maxTurnsSource: context.maxTurnsOverride ? "override" : "config",
+            ...toProductionLogTurnBudgetFields(
+              maxTurns,
+              context.maxTurnsOverride ? "override" : "config",
+            ),
           },
           "Loaded repo config",
         );
@@ -592,8 +601,8 @@ export function createExecutor(deps: {
         timeoutSeconds = context.dynamicTimeoutSeconds ?? repoConfig.timeoutSeconds;
         const timeoutMs = timeoutSeconds * 1000;
         logger.info(
-          { timeoutMs, source: context.dynamicTimeoutSeconds ? "dynamic" : "config" },
-          "Timeout enforcement configured",
+          { budgetMs: timeoutMs, source: context.dynamicTimeoutSeconds ? "dynamic" : "config" },
+          "Execution budget enforcement configured",
         );
 
         // Build MCP servers with fresh Octokit per API call
@@ -762,7 +771,7 @@ export function createExecutor(deps: {
             executionName,
             workspaceDir,
             mcpTokenLogId: createHash("sha256").update(mcpBearerToken).digest("hex").slice(0, 16),
-            timeoutMs,
+            ...toProductionLogRuntimeBudgetFields(timeoutMs),
           },
           "ACA Job launched, polling for completion",
         );

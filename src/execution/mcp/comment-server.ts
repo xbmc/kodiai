@@ -2,7 +2,7 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
+import { buildReviewOutputMarker } from "../../review-orchestration/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 import { wrapInDetails } from "../../lib/formatting.ts";
 import type { ExecutionPublishEvent } from "../types.ts";

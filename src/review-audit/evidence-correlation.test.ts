@@ -9,7 +9,7 @@ import {
   type ExplicitLaneEvidence,
 } from "./evidence-correlation.ts";
 import type { RecentReviewArtifact } from "./recent-review-sample.ts";
-import { buildReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 
 function makeArtifact(overrides: Partial<RecentReviewArtifact> & Pick<RecentReviewArtifact, "prNumber" | "lane" | "source">): RecentReviewArtifact {
   const reviewOutputKey = overrides.reviewOutputKey ?? buildReviewOutputKey({
@@ -281,5 +281,39 @@ describe("review audit evidence correlation", () => {
     const result = classifyReviewArtifactEvidence({ artifact, explicitEvidence });
 
     expect(result.verdict).toBe("publish-failure");
+  });
+
+  test("classifyReviewArtifactEvidence returns expected-bounded for delivered explicit turn-limit notices", () => {
+    const artifact = makeArtifact({ prNumber: 107, lane: "explicit", source: "issue-comment" });
+    const explicitEvidence: ExplicitLaneEvidence = {
+      sourceAvailability: {
+        telemetry: "present",
+        publishResolution: "present",
+      },
+      telemetry: { conclusion: "expected_bounded", eventType: "issue_comment.created" },
+      publishResolution: "turn-limit-fallback",
+    };
+
+    const result = classifyReviewArtifactEvidence({ artifact, explicitEvidence });
+
+    expect(result.verdict).toBe("expected-bounded");
+    expect(result.signals).toContain("explicit-turn-limit-fallback");
+  });
+
+  test("classifyReviewArtifactEvidence returns publish-failure for undelivered explicit turn-limit notices", () => {
+    const artifact = makeArtifact({ prNumber: 108, lane: "explicit", source: "issue-comment" });
+    const explicitEvidence: ExplicitLaneEvidence = {
+      sourceAvailability: {
+        telemetry: "present",
+        publishResolution: "present",
+      },
+      telemetry: { conclusion: "expected_bounded", eventType: "issue_comment.created" },
+      publishResolution: "turn-limit-fallback-undelivered",
+    };
+
+    const result = classifyReviewArtifactEvidence({ artifact, explicitEvidence });
+
+    expect(result.verdict).toBe("publish-failure");
+    expect(result.signals).toContain("explicit-turn-limit-fallback-undelivered");
   });
 });

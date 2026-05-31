@@ -121,7 +121,7 @@ Full documentation lives in the `docs/` directory:
 
 Kodiai deploys to Azure Container Apps via ACR remote build with zero-downtime rolling deploys, and the deploy script reports the active revision for post-deploy proof.
 
-See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md). For explicit formatter-suggestion smoke proof, see [docs/runbooks/formatter-suggestions.md](docs/runbooks/formatter-suggestions.md). For Slack assistant operations, see [docs/runbooks/slack-integration.md](docs/runbooks/slack-integration.md). For webhook relay setup and troubleshooting, see [docs/runbooks/slack-webhook-relay.md](docs/runbooks/slack-webhook-relay.md).
+See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md). For explicit formatter-suggestion smoke proof, see [docs/runbooks/formatter-suggestions.md](docs/runbooks/formatter-suggestions.md). For Slack assistant operations, see [docs/runbooks/slack-integration.md](docs/runbooks/slack-integration.md). For webhook relay setup and troubleshooting, see [docs/runbooks/slack-webhook-relay.md](docs/runbooks/slack-webhook-relay.md). For operator trust boundaries (repo-controlled formatter shell execution and MCP ingress), see [docs/runbooks/mcp-ingress-trust.md](docs/runbooks/mcp-ingress-trust.md) and [docs/runbooks/formatter-suggestions.md#trust-model-repo-controlled-shell](docs/runbooks/formatter-suggestions.md#trust-model-repo-controlled-shell).
 
 ## Contributing
 

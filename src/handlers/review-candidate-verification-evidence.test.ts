@@ -134,7 +134,7 @@ describe("review handler M070 candidate-verification aggregate evidence", () => 
       deniedCount: 2,
       publishedCount: 1,
       skippedCount: 1,
-      failedCount: 1,
+      issueCount: 1,
       publicationDenialCounts: { "publication-ineligible": 2, "evidence-conflict": 1 },
       reasonCategories: ["publication-ineligible", "evidence-conflict"],
       hasDeliveryId: true,

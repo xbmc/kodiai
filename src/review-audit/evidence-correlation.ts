@@ -1,5 +1,5 @@
 import type { Sql } from "../db/client.ts";
-import { parseReviewOutputKey } from "../handlers/review-idempotency.ts";
+import { parseReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import type { NormalizedLogAnalyticsRow } from "./log-analytics.ts";
 import type { RecentReviewArtifact, ReviewAuditLane } from "./recent-review-sample.ts";
 
@@ -7,6 +7,7 @@ export type EvidenceAvailability = "present" | "missing" | "unavailable";
 export type ProvisionalReviewVerdict =
   | "clean-valid"
   | "findings-published"
+  | "expected-bounded"
   | "publish-failure"
   | "suspicious-approval"
   | "indeterminate";
@@ -410,7 +411,20 @@ function classifyExplicitEvidence(explicitEvidence: ExplicitLaneEvidence | undef
     };
   }
 
-  if (["publish-failure-fallback", "publish-failure-comment-failed"].includes(publishResolution)) {
+  if (publishResolution === "turn-limit-fallback") {
+    return {
+      verdict: "expected-bounded",
+      rationale: "The explicit review exhausted its turn budget and delivered the expected bounded notice.",
+      sourceAvailability: explicitEvidence.sourceAvailability,
+      signals: ["explicit-turn-limit-fallback"],
+    };
+  }
+
+  if ([
+    "publish-failure-fallback",
+    "publish-failure-comment-failed",
+    "turn-limit-fallback-undelivered",
+  ].includes(publishResolution)) {
     return {
       verdict: "publish-failure",
       rationale: "The explicit review ended on a publish-failure path.",

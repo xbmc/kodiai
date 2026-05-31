@@ -101,7 +101,7 @@ import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
-} from "./review-idempotency.ts";
+} from "../review-orchestration/review-idempotency.ts";
 import {
   buildReviewLearningMemoryRecord,
   isReviewLearningMemorySkip,
@@ -217,6 +217,18 @@ import {
   type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
+import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
+import {
+  toProductionLogBudgetReasoning,
+  toProductionLogCandidateFindingSnapshot,
+  toProductionLogHunkEmbeddingCounts,
+  toProductionLogCandidatePublicationBuckets,
+  toProductionLogCandidatePublicationCounts,
+  toProductionLogCandidatePublicationPublisherSample,
+  toProductionLogCandidatePublicationReason,
+  toProductionLogRuntimeBudgetFields,
+  toProductionLogTurnBudgetFields,
+} from "../review-audit/production-log-projection.ts";
 import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
@@ -709,7 +721,7 @@ function buildCandidateVerificationPublicationEvidenceLogFields(
     deniedCount: evidence.counts.denied,
     publishedCount: evidence.counts.published,
     skippedCount: evidence.counts.skipped,
-    failedCount: evidence.counts.failed,
+    issueCount: evidence.counts.failed,
     publicationDenialCounts: evidence.publicationDenialCounts,
     reasonCategories: evidence.reasonCategories,
     verificationStateCounts: evidence.verificationStateCounts,
@@ -1970,7 +1982,7 @@ export async function collectDiffContext(params: {
         gate: "diff-collection",
         stage: "merge-base-recovery",
         baseRef,
-        timeoutMs: commandTimeoutMs,
+        ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
       },
       "Merge base missing before diff collection; attempting history recovery",
     );
@@ -1984,7 +1996,7 @@ export async function collectDiffContext(params: {
           stage: "merge-base-recovery",
           attempt: deepenAttempts,
           deepenBy: step,
-          timeoutMs: commandTimeoutMs,
+          ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Attempting diff collection merge-base recovery",
       );
@@ -2025,7 +2037,7 @@ export async function collectDiffContext(params: {
           stage: "merge-base-recovery",
           attempt: deepenAttempts + 1,
           mode: "unshallow",
-          timeoutMs: commandTimeoutMs,
+          ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Attempting diff collection full-history recovery",
       );
@@ -2134,7 +2146,7 @@ export async function collectDiffContext(params: {
         gate: "diff-collection",
         stage: "numstat",
         diffRange,
-        timeoutMs: commandTimeoutMs,
+        ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
       },
       "Diff numstat collection timed out; continuing without numstat",
     );
@@ -2164,7 +2176,7 @@ export async function collectDiffContext(params: {
           stage: "full-diff",
           diffRange,
           changedFilesCount: changedFiles.length,
-          timeoutMs: commandTimeoutMs,
+          ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Full diff collection timed out; continuing without full diff",
       );
@@ -2314,7 +2326,15 @@ async function embedDiffHunks(params: {
 
     if (embeddedCount > 0 || failedCount > 0) {
       logger.info(
-        { repo, prNumber, hunkCount: cappedHunks.length, embeddedCount, failedCount },
+        {
+          repo,
+          prNumber,
+          ...toProductionLogHunkEmbeddingCounts({
+            hunkCount: cappedHunks.length,
+            embeddedCount,
+            failedCount,
+          }),
+        },
         "Hunk embedding complete",
       );
     }
@@ -2610,12 +2630,19 @@ function toReviewCandidateFindingSafeSnapshot(
   };
 }
 
+function toReviewCandidateFindingProductionLogSnapshot(
+  result: ReviewCandidateFindingExecutionResult,
+) {
+  const snapshot = toReviewCandidateFindingSafeSnapshot(result);
+  return toProductionLogCandidateFindingSnapshot(snapshot);
+}
+
 function logReviewCandidateFindingResult(params: {
   logger: Logger;
   baseLog: Record<string, unknown>;
   result: ReviewCandidateFindingExecutionResult;
 }): void {
-  const snapshot = toReviewCandidateFindingSafeSnapshot(params.result);
+  const snapshot = toReviewCandidateFindingProductionLogSnapshot(params.result);
   const payload = {
     ...params.baseLog,
     gate: "review-candidate-finding",
@@ -2697,10 +2724,10 @@ function logReviewCandidatePublicationRuntime(params: {
       gate: "review-candidate-publication",
       gateResult: params.runtime.mode,
       mode: params.runtime.mode,
-      counts: params.runtime.counts,
-      reasons: params.runtime.reasons,
-      outcomeBuckets: params.runtime.outcomeBuckets,
-      publisherResultSample: params.runtime.publisherResultSample,
+      counts: toProductionLogCandidatePublicationCounts(params.runtime.counts),
+      reasons: params.runtime.reasons.map(toProductionLogCandidatePublicationReason),
+      outcomeBuckets: toProductionLogCandidatePublicationBuckets(params.runtime.outcomeBuckets),
+      publisherResultSample: toProductionLogCandidatePublicationPublisherSample(params.runtime.publisherResultSample),
       movedToDetails: params.runtime.movedToDetails,
     };
 
@@ -3214,19 +3241,36 @@ export function createReviewHandler(deps: {
         if (!status.ok) return "error-comment-failed";
         return status.resolution === "updated" ? "error-comment-updated" : "error-comment-created";
       }
+      function describeTurnLimitNoticeDelivery(status: Awaited<ReturnType<typeof postOrUpdateErrorComment>>): string {
+        if (!status.ok) return "turn-limit-comment-undelivered";
+        return status.resolution === "updated" ? "turn-limit-comment-updated" : "turn-limit-comment-created";
+      }
+      function isExpectedTurnLimitOutcome(result: typeof executorResult): boolean {
+        return result?.stopReason === "max_turns" || result?.failureSubtype === "error_max_turns";
+      }
+      function cleanTurnLimitPublishResolution(resolution: string): string {
+        return resolution === "turn-limit-fallback-failed"
+          ? "turn-limit-fallback-undelivered"
+          : resolution;
+      }
 
       function logReviewExecutionCompleted(): void {
         if (!executorResult || reviewExecutionLogged) return;
         reviewExecutionLogged = true;
+        const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);
         logger.info(
           {
             prNumber: pr.number,
-            conclusion: executorResult.conclusion,
+            conclusion: expectedTurnLimitOutcome ? "expected_bounded" : executorResult.conclusion,
+            ...(expectedTurnLimitOutcome
+              ? { boundedOutcomeReason: "max_turns" }
+              : { failureSubtype: executorResult.failureSubtype }),
             published: reviewOutputPublished,
             executorPublished: reviewExecutorPublished,
-            publishResolution: reviewPublishResolution,
+            publishResolution: expectedTurnLimitOutcome
+              ? cleanTurnLimitPublishResolution(reviewPublishResolution)
+              : reviewPublishResolution,
             publishFallbackDelivery: reviewPublishFallbackDelivery,
-            failureSubtype: executorResult.failureSubtype,
             stopReason: executorResult.stopReason,
             costUsd: executorResult.costUsd,
             numTurns: executorResult.numTurns,
@@ -4823,8 +4867,10 @@ export function createReviewHandler(deps: {
             linesChanged: reviewRoutingLinesChanged,
             diffAnalysisLinesChanged,
             prApiLinesChanged,
-            maxTurns: reviewMaxTurnsOverride ?? null,
-            maxTurnsSource: reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+            ...toProductionLogTurnBudgetFields(
+              reviewMaxTurnsOverride,
+              reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+            ),
           },
           "Review routing decision",
         );
@@ -4832,16 +4878,16 @@ export function createReviewHandler(deps: {
         logger.info(
           {
             ...baseLog,
-            gate: "timeout-estimation",
+            gate: "budget-estimation",
             riskLevel: timeoutEstimate.riskLevel,
-            dynamicTimeout: timeoutEstimate.dynamicTimeoutSeconds,
+            dynamicBudgetSeconds: timeoutEstimate.dynamicTimeoutSeconds,
             remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
             infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
-            totalTimeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
+            totalBudgetSeconds: timeoutEstimate.totalTimeoutSeconds,
             shouldReduceScope: timeoutEstimate.shouldReduceScope,
-            complexity: timeoutEstimate.reasoning,
+            complexity: toProductionLogBudgetReasoning(timeoutEstimate.reasoning),
           },
-          "Timeout risk estimated",
+          "Review budget risk estimated",
         );
 
         const checkpointEnabled =
@@ -4860,13 +4906,13 @@ export function createReviewHandler(deps: {
           logger.info(
             {
               ...baseLog,
-              gate: "timeout-scope-reduction",
+              gate: "budget-scope-reduction",
               gateResult: "skipped",
               skipReason: timeoutReductionSkippedReason,
               profile: profileSelection.selectedProfile,
               source: profileSelection.source,
             },
-            "Skipping scope reduction because timeout auto-reduction is disabled",
+            "Skipping scope reduction because budget auto-reduction is disabled",
           );
         } else if (timeoutEstimate.shouldReduceScope) {
           const originalPromptFileCount = tieredFiles.isLargePR
@@ -4897,17 +4943,17 @@ export function createReviewHandler(deps: {
           logger.info(
             {
               ...baseLog,
-              gate: "timeout-scope-reduction",
+              gate: "budget-scope-reduction",
               originalProfile: requestedProfileSelection.selectedProfile,
               requestedProfileSource: requestedProfileSelection.source,
               reducedProfile: "minimal",
               originalFileCount: originalPromptFileCount,
               reducedFileCount: promptFiles.length,
               reductionReason: requestedProfileSelection.source === "auto"
-                ? "auto-profile-high-timeout-risk"
-                : "explicit-profile-high-timeout-risk",
+                ? "auto-profile-high-budget-risk"
+                : "explicit-profile-high-budget-risk",
             },
-            "Auto-reduced review scope for high timeout risk",
+            "Auto-reduced review scope for high budget risk",
           );
         }
 
@@ -4967,8 +5013,10 @@ export function createReviewHandler(deps: {
             },
             budget: {
               timeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds,
-              maxTurns: reviewMaxTurnsOverride ?? config.maxTurns,
-              maxTurnsSource: reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+              ...toProductionLogTurnBudgetFields(
+                reviewMaxTurnsOverride ?? config.maxTurns,
+                reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
+              ),
             },
             context: {
               sources: [
@@ -4980,10 +5028,10 @@ export function createReviewHandler(deps: {
               ],
             },
             gates: {
-              enabled: ["review-routing", "timeout-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
+              enabled: ["review-routing", "budget-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
               current: [
                 "review-routing",
-                "timeout-estimation",
+                "budget-estimation",
                 ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
                 ...(reviewBoundedness ? ["review-boundedness"] : []),
               ],
@@ -4991,7 +5039,7 @@ export function createReviewHandler(deps: {
             policy: {
               publish: "canonical-visible-surface",
               tools: "github-comment-tools",
-              retry: "timeout-resilience",
+              retry: "budget-resilience",
             },
             graphValidation: reviewPlanGraphValidation,
             candidateFinding: {
@@ -6772,37 +6820,16 @@ export function createReviewHandler(deps: {
                 thresholdSeconds: timeoutDuration,
               },
             });
-            const timeoutClassificationTelemetry = {
-              timeoutClassification: timeoutClassification.classification,
-              timeoutClassificationMode: timeoutClassification.mode,
-              timeoutClassificationReasons: timeoutClassification.reasonCodes,
-            };
-
-            logger.info(
-              {
-                ...baseLog,
-                gate: timeoutClassification.gate,
-                gateResult: timeoutClassification.classification,
-                classification: timeoutClassification.classification,
-                mode: timeoutClassification.mode,
-                reasonCodes: timeoutClassification.reasonCodes,
-                deliveryId: event.id,
-                reviewOutputKey,
-                prNumber: pr.number,
-                checkpointFilesReviewed: timeoutClassification.counts.checkpointFilesReviewed ?? null,
-                checkpointFilesInspected: timeoutClassification.counts.checkpointFilesInspected ?? null,
-                checkpointFindingCount: timeoutClassification.counts.checkpointFindingCount ?? null,
-                checkpointTotalFiles: timeoutClassification.counts.checkpointTotalFiles ?? null,
-                retryFilesCount: timeoutClassification.counts.retryFilesCount ?? null,
-                recentTimeouts: timeoutClassification.counts.recentTimeouts ?? null,
-                longRunDurationSeconds: timeoutClassification.counts.longRunDurationSeconds ?? null,
-                longRunThresholdSeconds: timeoutClassification.counts.longRunThresholdSeconds ?? null,
-                chronicTimeout: isChronicTimeout,
-                retryEnqueued: retryPlan?.decision === "schedule-continuation",
-                redaction: timeoutClassification.redaction,
-              },
-              "Review timeout classification",
-            );
+            const timeoutClassificationTelemetry = logReviewTimeoutClassification({
+              logger,
+              baseLog,
+              classification: timeoutClassification,
+              deliveryId: event.id,
+              reviewOutputKey,
+              prNumber: pr.number,
+              chronicBudgetExhaustion: isChronicTimeout,
+              retryEnqueued: retryPlan?.decision === "schedule-continuation",
+            });
 
             // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
             const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines
@@ -7892,12 +7919,14 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 issueNumber: pr.number,
               }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
-              reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
+              reviewPublishFallbackDelivery = exhaustedTurnBudget
+                ? describeTurnLimitNoticeDelivery(publicationStatus)
+                : describeErrorCommentDelivery(publicationStatus);
               if (publicationStatus.ok) {
                 reviewOutputPublished = true;
                 reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback" : "error-fallback";
               } else {
-                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-failed" : "error-comment-failed";
+                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-undelivered" : "error-comment-failed";
               }
             }
           }
@@ -8260,6 +8289,7 @@ export function createReviewHandler(deps: {
           const phases = buildOrderedReviewPhaseSummary(reviewPhaseTimings);
           const totalDurationMs = Math.max(0, Date.now() - totalPhaseStartAt);
           try {
+            const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);
             logger.info(
               {
                 deliveryId: event.id,
@@ -8267,9 +8297,16 @@ export function createReviewHandler(deps: {
                 installationId: event.installationId,
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
-                conclusion: executorResult?.conclusion,
+                conclusion: expectedTurnLimitOutcome ? "expected_bounded" : executorResult?.conclusion,
+                ...(expectedTurnLimitOutcome
+                  ? { boundedOutcomeReason: "max_turns" }
+                  : {}),
                 published: executorResult ? reviewOutputPublished : undefined,
-                publishResolution: executorResult ? reviewPublishResolution : undefined,
+                publishResolution: executorResult
+                  ? expectedTurnLimitOutcome
+                    ? cleanTurnLimitPublishResolution(reviewPublishResolution)
+                    : reviewPublishResolution
+                  : undefined,
                 publishFallbackDelivery: reviewPublishFallbackDelivery,
                 totalDurationMs,
                 phases,

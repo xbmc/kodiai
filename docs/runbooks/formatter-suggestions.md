@@ -56,6 +56,24 @@ Command requirements:
 - The default `git clang-format --diff origin/{baseRef} HEAD` command uses `git-clang-format` from the runtime image. If the repository language or formatter differs, override `command` with a tool-specific diff command.
 - Must not print secrets. Raw formatter stdout and unbounded stderr must not be copied into proof records.
 
+## Trust model (repo-controlled shell)
+
+Formatter commands are **repository-configured** and executed with `bash -lc` inside the cloned PR workspace. Treat every `.kodiai.yml` maintainer as a trusted operator for that repository.
+
+| Boundary | What Kodiai assumes | What Kodiai does *not* assume |
+|---|---|---|
+| Config author | Repo maintainers control `review.formatterSuggestions.command` intentionally | Untrusted fork contributors can inject commands without a merged config change |
+| Execution context | Command runs in the ephemeral review workspace with repo contents at PR head | Commands are sandboxed beyond normal workspace isolation |
+| Placeholders | `{baseRef}`, `{headRef}`, and `{diffRange}` are substituted literally | Placeholder values are shell-escaped |
+| Output | Unified diff on stdout is parsed into bounded GitHub suggestions | Raw stdout/stderr is copied into production logs or public comments |
+
+Operational guidance:
+
+- Only enable formatter overrides for repositories whose maintainers understand the shell execution model.
+- Prefer diff-emitting tools invoked directly over opaque shell pipelines when possible.
+- Keep smoke overrides (like `scripts/m066-formatter-smoke.py`) limited to proof repositories.
+- Treat unexpected network egress or credential access from formatter commands as a repository trust incident, not an app bug.
+
 ## Prepare a safe smoke PR
 
 Use a small PR with one intentional formatting-only issue that the default formatter command, or the repository's configured override, can fix. Keep the PR narrow:

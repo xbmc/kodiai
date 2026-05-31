@@ -12,7 +12,7 @@ import {
 import { M068_S01_CHECK_IDS } from "./verify-m068-s01.ts";
 import { M068_S02_CHECK_IDS } from "./verify-m068-s02.ts";
 import { M068_S03_CHECK_IDS } from "./verify-m068-s03.ts";
-import { buildReviewOutputMarker } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputMarker } from "../src/review-orchestration/review-idempotency.ts";
 import { buildReviewDetailsMarker } from "../src/lib/review-utils.ts";
 import type { NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
 import type { ReviewOutputArtifact, ReviewOutputArtifactCollection } from "../src/review-audit/review-output-artifacts.ts";

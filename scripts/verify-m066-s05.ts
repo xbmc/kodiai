@@ -4,7 +4,7 @@ import {
   buildReviewOutputMarker,
   parseReviewOutputKey,
   type ParsedReviewOutputKey,
-} from "../src/handlers/review-idempotency.ts";
+} from "../src/review-orchestration/review-idempotency.ts";
 
 type AccessState = "available" | "missing" | "unavailable";
 

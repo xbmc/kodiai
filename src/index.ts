@@ -50,16 +50,9 @@ import { createSlackWriteRunner } from "./slack/write-runner.ts";
 import { deliverWebhookRelayEvent } from "./slack/webhook-relay-delivery.ts";
 import { createRequestTracker } from "./lifecycle/request-tracker.ts";
 import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
+import { registerFatalShutdownHandlers } from "./lifecycle/fatal-shutdown-handlers.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
-
-// Global error handlers — log and keep running instead of silently crashing
-process.on("uncaughtException", (err) => {
-  console.error("FATAL: uncaughtException", err);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error("FATAL: unhandledRejection", reason);
-});
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -619,6 +612,8 @@ app.onError((err, c) => {
 // Start shutdown manager (SIGTERM/SIGINT handlers)
 shutdownManager.start();
 
+registerFatalShutdownHandlers({ logger, shutdownManager });
+
 // Startup webhook queue replay: process any webhooks queued during previous shutdown
 const startupReplayStart = Date.now();
 let queuedWebhooksProcessed = 0;
@@ -675,7 +670,7 @@ if (queuedWebhooksProcessed > 0 || queuedWebhooksFailed > 0) {
 
 const SERVER_IDLE_TIMEOUT_SECONDS = 60;
 
-logger.info({ port: config.port, idleTimeoutSeconds: SERVER_IDLE_TIMEOUT_SECONDS }, "Kodiai server started");
+logger.info({ port: config.port, idleBudgetSeconds: SERVER_IDLE_TIMEOUT_SECONDS }, "Kodiai server started");
 
 export default {
   port: config.port,

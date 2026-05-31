@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewFirstPassPayload } from "../src/lib/review-first-pass.ts";
-import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
+import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 
 type JsonReport = {
   command: string;
