@@ -1,4 +1,8 @@
 import { redactGitHubTokens } from "../lib/sanitizer.ts";
+import {
+  spawnArgsForFormatterCommand,
+  type FormatterCommandExecutionMode,
+} from "./formatter-command-sandbox.ts";
 
 export const FORMATTER_STDERR_SUMMARY_MAX_CHARS = 500;
 export const FORMATTER_PROCESS_STREAM_MAX_CHARS = 1_000_000;
@@ -29,6 +33,8 @@ export interface FormatterProcessResult {
   stderr: string;
   timedOut: boolean;
   durationMs: number;
+  executionMode?: FormatterCommandExecutionMode;
+  shellFallbackReason?: string;
 }
 
 export type FormatterProcessRunner = (
@@ -645,7 +651,8 @@ export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
   timeoutMs,
 }) => {
   const startedAt = performance.now();
-  const proc = Bun.spawn(["bash", "-lc", command], {
+  const { spawnArgs, executionMode, fallbackReason } = spawnArgsForFormatterCommand(command);
+  const proc = Bun.spawn(spawnArgs, {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
@@ -681,6 +688,8 @@ export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
       stderr,
       timedOut,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      executionMode,
+      ...(fallbackReason ? { shellFallbackReason: fallbackReason } : {}),
     };
   } finally {
     if (timer !== undefined) {
