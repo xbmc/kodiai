@@ -116,8 +116,6 @@ import {
   ensureSearchRateLimitDisclosureInSummary,
   extractSearchErrorStatus,
   extractSearchErrorText,
-  isSearchRateLimitError,
-  resolveRateLimitBackoffMs,
   toConfidenceBand,
   fingerprintFindingTitle,
   buildReviewDetailsMarker,
@@ -157,7 +155,6 @@ import {
   createReviewWorkCoordinator,
   type ReviewWorkPhase,
 } from "../jobs/review-work-coordinator.ts";
-import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
 import {
   projectContributorExperienceContract,
@@ -166,11 +163,9 @@ import {
   type ContributorExperienceSource,
 } from "../contributor/experience-contract.ts";
 import {
-  resolveReviewAuthorClassification,
   type ReviewAuthorClassification,
 } from "../contributor/review-author-resolution.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
-import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -250,6 +245,20 @@ import {
   upsertDegradedReviewDetailsFallbackComment,
 } from "../review-orchestration/review-canonical-surface.ts";
 import {
+  type ExtractedFinding,
+  extractFindingsFromReviewComments,
+  removeFilteredInlineComments,
+} from "../review-orchestration/review-comment-finding-extraction.ts";
+import {
+  resolveAuthorTier,
+} from "../review-orchestration/review-author-tier.ts";
+export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
+import {
+  buildShadowSpecialistCorrelationKey,
+  buildShadowSpecialistLogFields,
+  buildCandidateVerificationPublicationEvidenceLogFields,
+} from "../review-orchestration/review-specialist-publication-log.ts";
+import {
   toProductionLogBudgetReasoning,
   toProductionLogCandidateFindingSnapshot,
   toProductionLogHunkEmbeddingCounts,
@@ -309,7 +318,6 @@ import {
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
   createCandidateVerificationPublicationEvidenceCollector,
-  type CandidateVerificationPublicationEvidenceSummary,
 } from "../specialists/candidate-verification-publication-evidence.ts";
 import {
   projectReviewHandlerCandidatePublicationBridgeEvidence,
@@ -330,15 +338,6 @@ import {
 
 
 
-type ExtractedFinding = {
-  commentId: number;
-  filePath: string;
-  title: string;
-  severity: FindingSeverity;
-  category: FindingCategory;
-  startLine?: number;
-  endLine?: number;
-};
 
 type ProcessedFinding = ExtractedFinding & {
   suppressed: boolean;
@@ -368,12 +367,6 @@ type RetrievalContextForPrompt = {
   maxChars: number;
 };
 
-type AuthorTierSearchEnrichment = {
-  degraded: boolean;
-  retryAttempts: number;
-  skippedQueries: number;
-  degradationPath: "none" | "search-api-rate-limit";
-};
 
 type ReviewPromptBuildContext = Parameters<typeof buildReviewPromptDetails>[0];
 
@@ -394,147 +387,6 @@ function hashPromptString(value: string | null | undefined): string | null {
   return sha256Hex(value);
 }
 
-function buildShadowSpecialistCorrelationKey(params: {
-  deliveryId?: string | null;
-  reviewOutputKey?: string | null;
-  prNumber: number;
-}): string {
-  return sha256Hex(`${params.deliveryId ?? "unknown-delivery"}:${params.reviewOutputKey ?? "unknown-output"}:${params.prNumber}`).slice(0, 16);
-}
-
-function buildShadowSpecialistLogFields(result: ShadowSpecialistSubflowResult): Record<string, unknown> {
-  try {
-    const metricsProjection = projectShadowSpecialistMetrics(result);
-    const reviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(metricsProjection);
-
-    return {
-      gate: "shadow-specialist",
-      laneId: reviewDetailsProjection.laneId,
-      status: result.triggerStatus,
-      outputStatus: reviewDetailsProjection.status,
-      reason: reviewDetailsProjection.reason,
-      candidateCount: reviewDetailsProjection.candidateCount,
-      decisionCount: reviewDetailsProjection.decisionCount,
-      decisionCounts: reviewDetailsProjection.decisionCounts,
-      duplicateCount: reviewDetailsProjection.duplicateCount,
-      disagreementCount: reviewDetailsProjection.disagreementCount,
-      dismissedCount: reviewDetailsProjection.dismissedCount,
-      unclassifiableCount: reviewDetailsProjection.unclassifiableCount,
-      truncatedCandidateCount: reviewDetailsProjection.truncatedCandidateCount,
-      durationMs: result.durationMs,
-      deliveryId: reviewDetailsProjection.deliveryId,
-      reviewOutputKey: reviewDetailsProjection.reviewOutputKey,
-      correlationKey: reviewDetailsProjection.correlationKey,
-      metricAvailability: reviewDetailsProjection.metricAvailability,
-      tokenCountAvailable: reviewDetailsProjection.tokenCountAvailable,
-      costAvailable: reviewDetailsProjection.costAvailable,
-      latencyMsAvailable: reviewDetailsProjection.latencyMsAvailable,
-      unsafeFieldCount: reviewDetailsProjection.redactionFlags.unsafeFieldCount,
-      discardedRawPayload: reviewDetailsProjection.redactionFlags.discardedRawPayload,
-      discardedPublicationFields: reviewDetailsProjection.redactionFlags.discardedPublicationFields,
-      discardedApprovalFields: reviewDetailsProjection.redactionFlags.discardedApprovalFields,
-      privateOnly: reviewDetailsProjection.privateOnly,
-      shadowOnly: reviewDetailsProjection.shadowOnly,
-      publishesFindings: reviewDetailsProjection.publishesFindings,
-      visiblePublicationDenied: reviewDetailsProjection.visiblePublicationDenied,
-      approvalPublicationDenied: reviewDetailsProjection.approvalPublicationDenied,
-      rawContentFieldCount: reviewDetailsProjection.rawContentFieldCount,
-      candidateBodyFieldCount: reviewDetailsProjection.candidateBodyFieldCount,
-      githubPublicationFieldCount: reviewDetailsProjection.githubPublicationFieldCount,
-      approvalFieldCount: reviewDetailsProjection.approvalFieldCount,
-      specialistContentIncluded: reviewDetailsProjection.specialistContentIncluded,
-      candidateFingerprintsIncluded: reviewDetailsProjection.candidateFingerprintsIncluded,
-      candidateBodiesIncluded: reviewDetailsProjection.candidateBodiesIncluded,
-      rawModelOutputIncluded: reviewDetailsProjection.rawModelOutputIncluded,
-      toolPayloadIncluded: reviewDetailsProjection.toolPayloadIncluded,
-      approvalFieldsIncluded: reviewDetailsProjection.approvalFieldsIncluded,
-      tierModeIncluded: reviewDetailsProjection.tierModeIncluded,
-      s04EvidenceAvailable: true,
-      reviewDetailsProjectionAvailable: true,
-      reviewDetailsProjectionStatus: reviewDetailsProjection.status,
-      reviewDetailsLineAvailable: reviewDetailsProjection.reviewDetailsLine.length > 0,
-      metricBoundedness: "bounded-aggregate-only",
-      metricBoundednessAvailable: true,
-      metricProjectionDegraded: false,
-      compactReviewDetailsPrivateOnly: reviewDetailsProjection.privateOnly,
-      compactReviewDetailsShadowOnly: reviewDetailsProjection.shadowOnly,
-      compactReviewDetailsVisiblePublicationDenied: reviewDetailsProjection.visiblePublicationDenied,
-      compactReviewDetailsApprovalPublicationDenied: reviewDetailsProjection.approvalPublicationDenied,
-    };
-  } catch {
-    return {
-      gate: "shadow-specialist",
-      laneId: result.laneId ?? "docs-config-truth",
-      status: "degraded",
-      outputStatus: "degraded",
-      reason: "metrics-projection-error",
-      durationMs: result.durationMs,
-      deliveryId: result.deliveryId,
-      reviewOutputKey: result.reviewOutputKey,
-      correlationKey: result.correlationKey,
-      privateOnly: true,
-      shadowOnly: true,
-      publishesFindings: false,
-      visiblePublicationDenied: true,
-      approvalPublicationDenied: true,
-      specialistContentIncluded: false,
-      candidateFingerprintsIncluded: false,
-      candidateBodiesIncluded: false,
-      rawModelOutputIncluded: false,
-      toolPayloadIncluded: false,
-      approvalFieldsIncluded: false,
-      tierModeIncluded: false,
-      s04EvidenceAvailable: false,
-      reviewDetailsProjectionAvailable: false,
-      reviewDetailsProjectionStatus: "degraded",
-      reviewDetailsLineAvailable: false,
-      metricBoundedness: "bounded-aggregate-only",
-      metricBoundednessAvailable: false,
-      metricProjectionDegraded: true,
-    };
-  }
-}
-
-function buildCandidateVerificationPublicationEvidenceLogFields(
-  evidence: CandidateVerificationPublicationEvidenceSummary,
-): Record<string, unknown> {
-  return {
-    gate: "m070-candidate-verification-evidence",
-    aggregateStatus: evidence.aggregateStatus,
-    attemptedCount: evidence.counts.attempted,
-    allowedCount: evidence.counts.allowed,
-    deniedCount: evidence.counts.denied,
-    publishedCount: evidence.counts.published,
-    skippedCount: evidence.counts.skipped,
-    issueCount: evidence.counts.failed,
-    publicationDenialCounts: evidence.publicationDenialCounts,
-    reasonCategories: evidence.reasonCategories,
-    verificationStateCounts: evidence.verificationStateCounts,
-    candidateVerificationCounts: evidence.candidateVerificationCounts,
-    hasDeliveryId: evidence.metadata.hasDeliveryId,
-    hasReviewOutputKey: evidence.metadata.hasReviewOutputKey,
-    hasCorrelationKey: evidence.metadata.hasCorrelationKey,
-    deliveryId: evidence.metadata.deliveryId,
-    reviewOutputKey: evidence.metadata.reviewOutputKey,
-    correlationKey: evidence.metadata.correlationKey,
-    privateOnly: evidence.redactionFlags.privateOnly,
-    candidateBodiesIncluded: evidence.redactionFlags.candidateBodiesIncluded,
-    specialistProseIncluded: evidence.redactionFlags.specialistProseIncluded,
-    rawPromptsIncluded: evidence.redactionFlags.rawPromptsIncluded,
-    rawModelOutputIncluded: evidence.redactionFlags.rawModelOutputIncluded,
-    diffsIncluded: evidence.redactionFlags.diffsIncluded,
-    evidencePayloadsIncluded: evidence.redactionFlags.evidencePayloadsIncluded,
-    rawFingerprintsIncluded: evidence.redactionFlags.rawFingerprintsIncluded,
-    publicationEvidenceIncluded: evidence.redactionFlags.publicationEvidenceIncluded,
-    unsafeInputFieldCount: evidence.redactionFlags.unsafeInputFieldCount,
-    discardedRawPayload: evidence.redactionFlags.discardedRawPayload,
-    discardedPublicationFields: evidence.redactionFlags.discardedPublicationFields,
-    discardedEvidencePayloads: evidence.redactionFlags.discardedEvidencePayloads,
-    candidateAttemptIncluded: evidence.redactionFlags.candidateAttemptIncluded,
-    candidateKeyIncluded: evidence.redactionFlags.candidateKeyIncluded,
-    boundedness: "aggregate-only",
-  };
-}
 
 function normalizePromptStringList(values: string[] | undefined, signal: string): { values: string[] | null; missingSignals: string[] } {
   if (!values) {
@@ -686,117 +538,6 @@ export function buildReviewPromptFingerprint(
   };
 }
 
-export function resolveAuthorTierFromSources(params: {
-  contributorTier?: AuthorTier | null;
-  cachedTier?: AuthorCacheTier | null;
-  fallbackTier: AuthorTier;
-}): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
-  const { contributorTier, cachedTier, fallbackTier } = params;
-
-  if (contributorTier) {
-    return { tier: contributorTier, source: "contributor-profile" };
-  }
-
-  if (cachedTier) {
-    return { tier: cachedTier, source: "author-cache" };
-  }
-
-  return { tier: fallbackTier, source: "fallback" };
-}
-
-function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
-  if (value === "first-time" || value === "regular" || value === "core") {
-    return value;
-  }
-  return null;
-}
-
-function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
-  if (!entry) {
-    return null;
-  }
-
-  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
-  if (!normalizedTier) {
-    return null;
-  }
-
-  return {
-    ...entry,
-    tier: normalizedTier,
-  };
-}
-
-function normalizeContributorProfileTier(value: string | null | undefined): AuthorTier | null {
-  if (value === "newcomer" || value === "developing" || value === "established" || value === "senior") {
-    return value;
-  }
-  return null;
-}
-
-function hasAssociationFallbackSignal(authorAssociation: string): boolean {
-  return [
-    "MEMBER",
-    "OWNER",
-    "FIRST_TIMER",
-    "FIRST_TIME_CONTRIBUTOR",
-    "COLLABORATOR",
-    "CONTRIBUTOR",
-  ].includes(authorAssociation);
-}
-
-async function executeSearchWithRateLimitRetry(params: {
-  operation: () => Promise<number>;
-  logger: Logger;
-  authorLogin: string;
-}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
-  const { operation, logger, authorLogin } = params;
-
-  try {
-    return {
-      value: await operation(),
-      retryAttempts: 0,
-      degraded: false,
-    };
-  } catch (err) {
-    if (!isSearchRateLimitError(err)) {
-      throw err;
-    }
-
-    const backoffMs = resolveRateLimitBackoffMs(err);
-    logger.warn(
-      { err, authorLogin, backoffMs, retryAttempts: 1 },
-      "Search API rate limit detected; retrying author-tier enrichment once",
-    );
-
-    if (backoffMs > 0) {
-      await Bun.sleep(backoffMs);
-    }
-
-    try {
-      return {
-        value: await operation(),
-        retryAttempts: 1,
-        degraded: false,
-      };
-    } catch (retryErr) {
-      if (!isSearchRateLimitError(retryErr)) {
-        throw retryErr;
-      }
-
-      logger.warn(
-        { err: retryErr, authorLogin, retryAttempts: 1 },
-        "Search API remained rate-limited after one retry; degrading enrichment",
-      );
-
-      return {
-        value: null,
-        retryAttempts: 1,
-        degraded: true,
-      };
-    }
-  }
-}
 
 async function fetchCommitMessages(
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
@@ -826,153 +567,8 @@ async function fetchCommitMessages(
 
 
 
-function resolveAuthorTier(params: {
-  authorLogin: string;
-  authorAssociation: string;
-  repo: string;
-  owner: string;
-  repoSlug: string;
-  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
-  knowledgeStore?: KnowledgeStore;
-  searchCache?: SearchCache<number>;
-  contributorProfileStore?: ContributorProfileStore;
-  logger: Logger;
-}): Promise<ReviewAuthorClassification> {
-  const {
-    authorLogin,
-    authorAssociation,
-    repo,
-    owner,
-    repoSlug,
-    octokit,
-    knowledgeStore,
-    searchCache,
-    contributorProfileStore,
-    logger,
-  } = params;
 
-  return resolveReviewAuthorClassification({
-    authorLogin,
-    authorAssociation,
-    repo,
-    owner,
-    repoSlug,
-    searchIssuesAndPullRequests: (searchParams) =>
-      octokit.rest.search.issuesAndPullRequests(searchParams),
-    knowledgeStore,
-    searchCache,
-    contributorProfileStore,
-    logger,
-  });
-}
 
-async function extractFindingsFromReviewComments(params: {
-  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
-  owner: string;
-  repo: string;
-  prNumber: number;
-  reviewOutputKey: string;
-  logger: Logger;
-  baseLog: Record<string, unknown>;
-}): Promise<ExtractedFinding[]> {
-  const { octokit, owner, repo, prNumber, reviewOutputKey, logger, baseLog } = params;
-  const marker = buildReviewOutputMarker(reviewOutputKey);
-
-  try {
-    const response = await octokit.rest.pulls.listReviewComments({
-      owner,
-      repo,
-      pull_number: prNumber,
-      per_page: 100,
-      sort: "created",
-      direction: "desc",
-    });
-
-    const findings: ExtractedFinding[] = [];
-
-    for (const comment of response.data) {
-      if (
-        typeof comment.id !== "number" ||
-        typeof comment.path !== "string" ||
-        typeof comment.body !== "string"
-      ) {
-        continue;
-      }
-
-      if (!comment.body.includes(marker)) {
-        continue;
-      }
-
-      const parsed = parseInlineCommentMetadata(comment.body);
-      if (!parsed.severity) {
-        continue;
-      }
-
-      findings.push({
-        commentId: comment.id,
-        filePath: comment.path,
-        title: parsed.title,
-        severity: parsed.severity,
-        category: parsed.category,
-        startLine: typeof comment.start_line === "number" ? comment.start_line : undefined,
-        endLine: typeof comment.line === "number" ? comment.line : undefined,
-      });
-    }
-
-    logger.debug(
-      {
-        ...baseLog,
-        gate: "finding-extraction",
-        extractedCount: findings.length,
-      },
-      "Extracted structured findings from review comments",
-    );
-
-    return findings;
-  } catch (err) {
-    logger.warn(
-      {
-        ...baseLog,
-        gate: "finding-extraction",
-        err,
-      },
-      "Finding extraction failed; continuing with empty findings",
-    );
-    return [];
-  }
-}
-
-async function removeFilteredInlineComments(params: {
-  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
-  owner: string;
-  repo: string;
-  findings: ProcessedFinding[];
-  logger: Logger;
-  baseLog: Record<string, unknown>;
-}): Promise<void> {
-  const { octokit, owner, repo, findings, logger, baseLog } = params;
-  const commentIds = new Set<number>(findings.map((finding) => finding.commentId));
-
-  for (const commentId of commentIds) {
-    try {
-      await octokit.rest.pulls.deleteReviewComment({
-        owner,
-        repo,
-        comment_id: commentId,
-      });
-    } catch (err) {
-      logger.warn(
-        {
-          ...baseLog,
-          gate: "inline-policy-filter",
-          commentId,
-          err,
-        },
-        "Failed to delete filtered inline review comment; continuing",
-      );
-    }
-  }
-}
 
 
 
@@ -1008,7 +604,6 @@ type DiffFallbackFile = PullRequestFileMetadata;
 export const REVIEW_WORKSPACE_FETCH_DEPTH = 50;
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
 const DIFF_COMMAND_TIMEOUT_MS = 30_000;
-const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
   const mergeBaseResult = await $`git -C ${workspaceDir} merge-base origin/${baseRef} HEAD`.quiet().nothrow();
