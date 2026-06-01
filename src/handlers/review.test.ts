@@ -17022,6 +17022,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     directReviewComments?: Array<Record<string, unknown>>;
     executorPublished?: boolean;
     exposeSummaryComment?: boolean;
+    featureFiles?: Record<string, string>;
     shadowSpecialistSubflow?: (input: ShadowSpecialistSubflowInput) => Promise<ShadowSpecialistSubflowResult>;
     createReviewComment?: (commentParams: Record<string, unknown>) => Promise<{ data: Record<string, unknown> }>;
   } = {}) {
@@ -17030,6 +17031,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       graphValidationEnabled: params.graphValidationEnabled,
       extraChangedFiles: params.extraChangedFiles,
       maxComments: params.maxComments,
+      featureFiles: params.featureFiles,
     });
     const { logger, entries } = createCaptureLogger();
 
@@ -17308,6 +17310,33 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
     expect(detailsBlock).toContain("candidates=preferred");
+  });
+
+  test("passes a bounded diff snippet to shadow specialist instead of duplicating the full diff", async () => {
+    let capturedInput: ShadowSpecialistSubflowInput | undefined;
+    const shadowSubflow = buildCandidateVerificationShadowSubflow("verified");
+    const largeDocsChange = Array.from({ length: 1_200 }, (_, index) => `docs line ${index}`).join("\n");
+
+    await runReviewPlanScenario({
+      featureFiles: {
+        "docs/large.md": `${largeDocsChange}\n`,
+      },
+      shadowSpecialistSubflow: async (input) => {
+        capturedInput = input;
+        return shadowSubflow(input);
+      },
+    });
+
+    expect(capturedInput).toBeDefined();
+    const diffText = String(capturedInput?.diffText ?? "");
+    const diffSnippet = String(capturedInput?.diffSnippet ?? "");
+
+    expect(diffText.length).toBeGreaterThan(12_000);
+    expect(diffSnippet.length).toBeGreaterThan(0);
+    expect(diffSnippet.length).toBeLessThan(diffText.length);
+    expect(diffSnippet).toContain("docs line 0");
+    expect(diffText).toContain("docs line 1199");
+    expect(diffSnippet).not.toContain("docs line 1199");
   });
 
   test("candidate finding result is projected once into Review Details, logs, and safe snapshots", async () => {
