@@ -22,14 +22,16 @@ import {
 } from "./review-details-plan-formatting.ts";
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import { formatReviewCandidateFindingDetailsLine } from "./review-details-candidate-finding-formatting.ts";
+import { formatReviewCandidatePublicationDetailsLine } from "./review-details-candidate-publication-formatting.ts";
 import {
   formatCandidatePublicationBridgeLine,
-  formatCandidateVerificationPublicationEvidenceLine,
-  formatReviewCandidateFindingDetailsLine,
-  formatReviewCandidatePublicationDetailsLine,
   type CandidatePublicationBridgeReviewDetails,
+} from "./review-details-candidate-bridge-formatting.ts";
+import {
+  formatCandidateVerificationPublicationEvidenceLine,
   type CandidateVerificationPublicationEvidenceReviewDetails,
-} from "./review-details-candidate-formatting.ts";
+} from "./review-details-candidate-verification-formatting.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 import type { ValidationTruthProjection } from "../review-lifecycle/validation-truth.ts";
 import {
@@ -51,10 +53,8 @@ export {
   describeReviewFirstPass,
 } from "./review-details-first-pass-formatting.ts";
 export type { ReviewDetailsPhaseTimingSummary } from "./review-details-phase-formatting.ts";
-export type {
-  CandidatePublicationBridgeReviewDetails,
-  CandidateVerificationPublicationEvidenceReviewDetails,
-} from "./review-details-candidate-formatting.ts";
+export type { CandidatePublicationBridgeReviewDetails } from "./review-details-candidate-bridge-formatting.ts";
+export type { CandidateVerificationPublicationEvidenceReviewDetails } from "./review-details-candidate-verification-formatting.ts";
 
 export type TimeoutReviewDetailsProgress = {
   analyzedFiles: number;
@@ -68,6 +68,76 @@ export type ReviewDetailsLineCountSource = "local-diff" | "github-pr-api-fallbac
 export type ReviewRetryFailureClassification = {
   category: "retry-infra-failure" | "retry-execution-failure";
   reason: "workspace-prep-terminated" | "unknown";
+};
+
+type FindingCounts = {
+  critical: number;
+  major: number;
+  medium: number;
+  minor: number;
+};
+
+type LargePrTriageDetails = {
+  fullCount: number;
+  abbreviatedCount: number;
+  mentionOnlyFiles: Array<{ filePath: string; score: number }>;
+  totalFiles: number;
+};
+
+type PrioritizationDetails = {
+  findingsScored: number;
+  topScore: number | null;
+  thresholdScore: number | null;
+  maxComments?: number;
+  selectedFindings?: number;
+  omittedFindings?: number;
+};
+
+type UsageLimitDetails = {
+  utilization: number | undefined;
+  rateLimitType: string | undefined;
+  resetsAt: number | undefined;
+};
+
+type TokenUsageDetails = {
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  costUsd: number | undefined;
+};
+
+export type ReviewDetailsSummaryParams = {
+  reviewOutputKey: string;
+  filesReviewed: number;
+  linesAdded: number;
+  linesRemoved: number;
+  findingCounts: FindingCounts;
+  largePRTriage?: LargePrTriageDetails;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+  reviewFirstPass?: ReviewFirstPassPayload | null;
+  feedbackSuppressionCount?: number;
+  keywordParsing?: ParsedPRIntent;
+  profileSelection: ResolvedReviewProfile;
+  contributorExperience: ContributorExperienceReviewDetailsProjection;
+  shadowSpecialistReviewDetails?: {
+    readonly reviewDetailsLine: string;
+  } | null;
+  candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceReviewDetails | null;
+  candidatePublicationBridge?: CandidatePublicationBridgeReviewDetails | null;
+  reviewPlan?: ReviewPlanDetailsSummary | null;
+  reviewReducer?: ReviewReducerDetailsSummary | null;
+  reviewCandidateFinding?: ReviewCandidateFindingDetailsSummary | null;
+  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null;
+  reviewFindingLifecycle?: ReviewFindingLifecyclePublicProjection | null;
+  reviewValidationTruth?: ValidationTruthProjection | null;
+  prioritization?: PrioritizationDetails;
+  usageLimit?: UsageLimitDetails;
+  tokenUsage?: TokenUsageDetails;
+  structuralImpact?: StructuralImpactPayload | null;
+  phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null;
+  timeoutProgress?: TimeoutReviewDetailsProgress | null;
+  timeoutBudget?: TimeoutBudgetDetails | null;
+  lineCountSource?: ReviewDetailsLineCountSource;
+  completedAt?: string;
 };
 
 export function resolveReviewDetailsLineCounts(params: {
@@ -129,298 +199,246 @@ function optionalReviewDetailsLine<T>(
   }
 }
 
-export function formatReviewDetailsSummary(params: {
-  reviewOutputKey: string;
+function formatProfileLine(label: string, profile: ResolvedReviewProfile): string {
+  if (profile.source === "auto") {
+    return `- ${label}: ${profile.selectedProfile} (auto, lines changed: ${profile.linesChanged})`;
+  }
+
+  if (profile.source === "manual") {
+    return `- ${label}: ${profile.selectedProfile} (manual config)`;
+  }
+
+  return `- ${label}: ${profile.selectedProfile} (keyword override)`;
+}
+
+function formatPrimaryReviewDetailLines(params: {
   filesReviewed: number;
-  linesAdded: number;
-  linesRemoved: number;
-  findingCounts: {
-    critical: number;
-    major: number;
-    medium: number;
-    minor: number;
-  };
-  largePRTriage?: {
-    fullCount: number;
-    abbreviatedCount: number;
-    mentionOnlyFiles: Array<{ filePath: string; score: number }>;
-    totalFiles: number;
-  };
-  reviewBoundedness?: ReviewBoundednessContract | null;
+  findingCounts: FindingCounts;
   reviewFirstPass?: ReviewFirstPassPayload | null;
-  feedbackSuppressionCount?: number;
-  keywordParsing?: ParsedPRIntent;
-  profileSelection: ResolvedReviewProfile;
-  contributorExperience: ContributorExperienceReviewDetailsProjection;
-  shadowSpecialistReviewDetails?: {
-    readonly reviewDetailsLine: string;
-  } | null;
-  candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceReviewDetails | null;
-  candidatePublicationBridge?: CandidatePublicationBridgeReviewDetails | null;
-  reviewPlan?: ReviewPlanDetailsSummary | null;
-  reviewReducer?: ReviewReducerDetailsSummary | null;
-  reviewCandidateFinding?: ReviewCandidateFindingDetailsSummary | null;
-  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null;
-  reviewFindingLifecycle?: ReviewFindingLifecyclePublicProjection | null;
-  reviewValidationTruth?: ValidationTruthProjection | null;
-  prioritization?: {
-    findingsScored: number;
-    topScore: number | null;
-    thresholdScore: number | null;
-    maxComments?: number;
-    selectedFindings?: number;
-    omittedFindings?: number;
-  };
-  usageLimit?: {
-    utilization: number | undefined;
-    rateLimitType: string | undefined;
-    resetsAt: number | undefined;
-  };
-  tokenUsage?: {
-    inputTokens: number | undefined;
-    outputTokens: number | undefined;
-    costUsd: number | undefined;
-  };
-  structuralImpact?: StructuralImpactPayload | null;
-  phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null;
+  timeoutProgress?: TimeoutReviewDetailsProgress | null;
+}): string[] {
+  if (params.reviewFirstPass) return describeReviewFirstPass(params.reviewFirstPass).detailLines;
+  if (params.timeoutProgress) return [];
+  return [
+    `- Files reviewed: ${params.filesReviewed}`,
+    `- Findings: ${params.findingCounts.critical} critical, ${params.findingCounts.major} major, ${params.findingCounts.medium} medium, ${params.findingCounts.minor} minor`,
+  ];
+}
+
+function formatTimeoutProgressSection(params: {
   timeoutProgress?: TimeoutReviewDetailsProgress | null;
   timeoutBudget?: TimeoutBudgetDetails | null;
-  lineCountSource?: ReviewDetailsLineCountSource;
-  completedAt?: string;
+}): string[] {
+  const { timeoutProgress, timeoutBudget } = params;
+  if (!timeoutProgress) return [];
+  return [
+    `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
+    `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
+    ...(timeoutBudget
+      ? [
+          `- Timeout budget: remote runtime ${timeoutBudget.remoteRuntimeBudgetSeconds}s + infra overhead ${timeoutBudget.infraOverheadBudgetSeconds}s = total ${timeoutBudget.totalTimeoutSeconds}s`,
+        ]
+      : []),
+    `- Retry state: ${timeoutProgress.retryState}`,
+  ];
+}
+
+function formatLineCountLine(params: {
+  linesAdded: number;
+  linesRemoved: number;
+  lineCountSource: ReviewDetailsLineCountSource;
 }): string {
-  const {
-    reviewOutputKey,
-    filesReviewed,
-    linesAdded,
-    linesRemoved,
-    findingCounts,
-    largePRTriage,
-    reviewBoundedness,
-    reviewFirstPass,
-    feedbackSuppressionCount,
-    keywordParsing,
-    profileSelection,
-    contributorExperience,
-    shadowSpecialistReviewDetails,
-    candidateVerificationPublicationEvidence,
-    candidatePublicationBridge,
-    reviewPlan,
-    reviewReducer,
-    reviewCandidateFinding,
-    reviewCandidatePublication,
-    reviewFindingLifecycle,
-    reviewValidationTruth,
-    prioritization,
-    usageLimit,
-    tokenUsage,
-    structuralImpact,
-    phaseTimingSummary,
-    timeoutProgress,
-    timeoutBudget,
-    lineCountSource = "local-diff",
-  } = params;
+  return params.lineCountSource === "github-pr-api-fallback"
+    ? `- Lines changed: +${params.linesAdded} -${params.linesRemoved} (GitHub PR API fallback; local diff stats unavailable)`
+    : `- Lines changed: +${params.linesAdded} -${params.linesRemoved}`;
+}
 
-  const formatProfileLine = (label: string, profile: ResolvedReviewProfile): string => {
-    if (profile.source === "auto") {
-      return `- ${label}: ${profile.selectedProfile} (auto, lines changed: ${profile.linesChanged})`;
-    }
+function formatProfileSection(params: {
+  profileSelection: ResolvedReviewProfile;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+}): string[] {
+  const { profileSelection, reviewBoundedness } = params;
+  if (!reviewBoundedness || reviewBoundedness.reasonCodes.length === 0) {
+    return [formatProfileLine("Profile", profileSelection)];
+  }
 
-    if (profile.source === "manual") {
-      return `- ${label}: ${profile.selectedProfile} (manual config)`;
-    }
+  return [
+    formatProfileLine("Requested profile", reviewBoundedness.requestedProfile),
+    `- Effective profile: ${reviewBoundedness.effectiveProfile.selectedProfile}`,
+    ...(reviewBoundedness.largePR
+      ? [
+          `- Bounded review: covered ${reviewBoundedness.largePR.reviewedCount}/${reviewBoundedness.largePR.totalFiles} changed files via large-PR triage (${reviewBoundedness.largePR.fullCount} full, ${reviewBoundedness.largePR.abbreviatedCount} abbreviated; ${reviewBoundedness.largePR.notReviewedCount} not reviewed)`,
+        ]
+      : []),
+    ...formatTimeoutReductionLines(reviewBoundedness),
+  ];
+}
 
-    return `- ${label}: ${profile.selectedProfile} (keyword override)`;
-  };
+function formatTimeoutReductionLines(reviewBoundedness: ReviewBoundednessContract): string[] {
+  if (reviewBoundedness.timeout?.reductionApplied) return ["- Timeout auto-reduction: applied"];
+  if (reviewBoundedness.timeout?.reductionSkippedReason === "explicit-profile") {
+    return ["- Timeout auto-reduction: skipped (explicit profile)"];
+  }
+  if (reviewBoundedness.timeout?.reductionSkippedReason === "config-disabled") {
+    return ["- Timeout auto-reduction: skipped (config disabled)"];
+  }
+  return [];
+}
 
-  const profileLine = profileSelection.source === "auto"
-    ? `- Profile: ${profileSelection.selectedProfile} (auto, lines changed: ${profileSelection.linesChanged})`
-    : profileSelection.source === "manual"
-      ? `- Profile: ${profileSelection.selectedProfile} (manual config)`
-      : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
-  const hasBoundedProfileDetails = Boolean(reviewBoundedness && reviewBoundedness.reasonCodes.length > 0);
+function formatCoreReviewDetailsSection(params: ReviewDetailsSummaryParams & {
+  lineCountSource: ReviewDetailsLineCountSource;
+}): string[] {
+  return [
+    ...formatPrimaryReviewDetailLines(params),
+    ...formatTimeoutProgressSection(params),
+    formatLineCountLine(params),
+    ...formatProfileSection(params),
+    `- Contributor experience: ${params.contributorExperience.text}`,
+    ...(params.shadowSpecialistReviewDetails?.reviewDetailsLine
+      ? [`- ${params.shadowSpecialistReviewDetails.reviewDetailsLine}`]
+      : []),
+    `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
+  ];
+}
 
-  const primaryReviewDetailLines = reviewFirstPass
-    ? describeReviewFirstPass(reviewFirstPass).detailLines
-    : timeoutProgress
-      ? []
-      : [
-          `- Files reviewed: ${filesReviewed}`,
-          `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
-        ];
+function formatPublicationDiagnosticsSection(params: ReviewDetailsSummaryParams): string[] {
+  return [
+    ...formatReviewPlanDetailsLine(params.reviewPlan),
+    ...formatReviewReducerDetailsLine(params.reviewReducer),
+    ...formatReviewCandidateFindingDetailsLine(params.reviewCandidateFinding),
+    ...formatReviewCandidatePublicationDetailsLine(params.reviewCandidatePublication),
+    ...optionalReviewDetailsLine(params.candidatePublicationBridge, formatCandidatePublicationBridgeLine),
+    ...optionalReviewDetailsLine(params.candidateVerificationPublicationEvidence, formatCandidateVerificationPublicationEvidenceLine),
+    ...optionalReviewDetailsLine(params.reviewFindingLifecycle, formatReviewFindingLifecycleDetailsLine),
+    ...optionalReviewDetailsLine(params.reviewValidationTruth, formatReviewValidationTruthDetailsLine),
+  ];
+}
 
-  const timeoutProgressLines = timeoutProgress
-    ? [
-        `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
-        `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
-        ...(timeoutBudget
-          ? [
-              `- Timeout budget: remote runtime ${timeoutBudget.remoteRuntimeBudgetSeconds}s + infra overhead ${timeoutBudget.infraOverheadBudgetSeconds}s = total ${timeoutBudget.totalTimeoutSeconds}s`,
-            ]
-          : []),
-        `- Retry state: ${timeoutProgress.retryState}`,
-      ]
-    : [];
+function formatPhaseTimingSection(
+  phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null,
+): string[] {
+  if (!phaseTimingSummary) return [];
+  try {
+    const lines = formatReviewDetailsPhaseTimingSummary(phaseTimingSummary);
+    return lines.length > 0 ? ["", ...lines] : [];
+  } catch {
+    return [];
+  }
+}
 
-  const lineCountText = lineCountSource === "github-pr-api-fallback"
-    ? `- Lines changed: +${linesAdded} -${linesRemoved} (GitHub PR API fallback; local diff stats unavailable)`
-    : `- Lines changed: +${linesAdded} -${linesRemoved}`;
+function formatUsageLimitSection(usageLimit?: UsageLimitDetails): string[] {
+  if (usageLimit?.utilization === undefined) return [];
+  const pct = Math.round(usageLimit.utilization * 100);
+  const pctLeft = 100 - pct;
+  const type = usageLimit.rateLimitType ?? "usage";
+  const resetStr = usageLimit.resetsAt !== undefined
+    ? ` | resets ${new Date(usageLimit.resetsAt * 1000).toISOString()}`
+    : "";
+  return [`- Claude Code usage: ${pctLeft}% of ${type} limit remaining${resetStr}`];
+}
 
+function formatTokenUsageSection(tokenUsage?: TokenUsageDetails): string[] {
+  if (tokenUsage?.inputTokens === undefined && tokenUsage?.outputTokens === undefined) return [];
+  const inp = tokenUsage.inputTokens ?? 0;
+  const out = tokenUsage.outputTokens ?? 0;
+  const costStr = tokenUsage.costUsd !== undefined ? ` | ${tokenUsage.costUsd.toFixed(4)}` : "";
+  return [`- Tokens: ${inp.toLocaleString()} in / ${out.toLocaleString()} out${costStr}`];
+}
 
-  const candidatePublicationBridgeLines = optionalReviewDetailsLine(candidatePublicationBridge, formatCandidatePublicationBridgeLine);
-  const candidateVerificationPublicationEvidenceLines = optionalReviewDetailsLine(candidateVerificationPublicationEvidence, formatCandidateVerificationPublicationEvidenceLine);
-  const reviewFindingLifecycleLines = optionalReviewDetailsLine(reviewFindingLifecycle, formatReviewFindingLifecycleDetailsLine);
-  const reviewValidationTruthLines = optionalReviewDetailsLine(reviewValidationTruth, formatReviewValidationTruthDetailsLine);
+function formatLargePrTriageSection(largePRTriage?: LargePrTriageDetails): string[] {
+  if (!largePRTriage) return [];
+  const { abbreviatedCount, fullCount, mentionOnlyFiles, totalFiles } = largePRTriage;
+  const reviewedCount = fullCount + abbreviatedCount;
+  const notReviewedCount = totalFiles - reviewedCount;
+  const lines = [
+    "",
+    `- Review scope: Reviewed ${reviewedCount}/${totalFiles} files, prioritized by risk`,
+    `- Full review: ${fullCount} files | Abbreviated review: ${abbreviatedCount} files | Not reviewed: ${notReviewedCount} files`,
+  ];
 
+  if (mentionOnlyFiles.length === 0) return lines;
+
+  const MAX_MENTION_ONLY_ENTRIES = 100;
+  const cappedFiles = mentionOnlyFiles.slice(0, MAX_MENTION_ONLY_ENTRIES);
+  const remaining = mentionOnlyFiles.length - cappedFiles.length;
+  lines.push(
+    "",
+    "<details>",
+    "<summary>Files not fully reviewed (sorted by risk score)</summary>",
+    "",
+    ...cappedFiles.map((file) => `- ${file.filePath} (risk: ${file.score})`),
+    ...(remaining > 0 ? [`- ...and ${remaining} more files`] : []),
+    "",
+    "</details>",
+  );
+
+  return lines;
+}
+
+function formatFeedbackSuppressionSection(feedbackSuppressionCount?: number): string[] {
+  if (!feedbackSuppressionCount || feedbackSuppressionCount <= 0) return [];
+  return [`- ${feedbackSuppressionCount} pattern${feedbackSuppressionCount === 1 ? "" : "s"} auto-suppressed by feedback`];
+}
+
+function formatPrioritizationSection(prioritization?: PrioritizationDetails): string[] {
+  if (!prioritization) return [];
+  const hasSaturatedCommentCap =
+    typeof prioritization.maxComments === "number" &&
+    typeof prioritization.selectedFindings === "number" &&
+    typeof prioritization.omittedFindings === "number" &&
+    prioritization.omittedFindings > 0;
+
+  return [
+    ...(hasSaturatedCommentCap
+      ? [
+          `- Comment cap saturated: published ${prioritization.selectedFindings}/${prioritization.findingsScored} prioritized findings; ${prioritization.omittedFindings} lower-priority ${prioritization.omittedFindings === 1 ? "finding" : "findings"} omitted from inline publication`,
+        ]
+      : []),
+    `- Prioritization: scored ${prioritization.findingsScored} findings | top score ${prioritization.topScore ?? "n/a"} | threshold score ${prioritization.thresholdScore ?? "n/a"}`,
+  ];
+}
+
+function formatStructuralImpactSection(structuralImpact?: StructuralImpactPayload | null): string[] {
+  const section = buildStructuralImpactSection(structuralImpact);
+  if (!section.text) return [];
+
+  const degradation = summarizeStructuralImpactDegradation(structuralImpact);
+  return [
+    section.text,
+    `- Structural Impact rendered: callers ${section.stats.callersRendered}/${section.stats.callersTotal}${section.stats.callersTruncated ? " truncated" : ""}; files ${section.stats.filesRendered}/${section.stats.filesTotal}${section.stats.filesTruncated ? " truncated" : ""}; tests ${section.stats.testsRendered}/${section.stats.testsTotal}${section.stats.testsTruncated ? " truncated" : ""}; unchanged evidence ${section.stats.evidenceRendered}/${section.stats.evidenceTotal}${section.stats.evidenceTruncated ? " truncated" : ""}`,
+    ...(degradation.fallbackUsed
+      ? [
+          `- Structural Impact degradation: status ${degradation.status}; graph ${degradation.availability.graphAvailable ? "available" : "unavailable"}; corpus ${degradation.availability.corpusAvailable ? "available" : "unavailable"}; signals ${degradation.truthfulnessSignals.join(", ")}`,
+        ]
+      : []),
+  ];
+}
+
+function formatKeywordParsingSection(keywordParsing?: ParsedPRIntent): string[] {
+  return [buildKeywordParsingSection(keywordParsing ?? DEFAULT_EMPTY_INTENT)];
+}
+
+export function formatReviewDetailsSummary(params: ReviewDetailsSummaryParams): string {
+  const lineCountSource = params.lineCountSource ?? "local-diff";
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
-    ...formatReviewPlanDetailsLine(reviewPlan),
-    ...formatReviewReducerDetailsLine(reviewReducer),
-    ...formatReviewCandidateFindingDetailsLine(reviewCandidateFinding),
-    ...formatReviewCandidatePublicationDetailsLine(reviewCandidatePublication),
-    ...primaryReviewDetailLines,
-    ...timeoutProgressLines,
-    lineCountText,
-    ...(hasBoundedProfileDetails && reviewBoundedness
-      ? [
-          formatProfileLine("Requested profile", reviewBoundedness.requestedProfile),
-          `- Effective profile: ${reviewBoundedness.effectiveProfile.selectedProfile}`,
-          ...(reviewBoundedness.largePR
-            ? [
-                `- Bounded review: covered ${reviewBoundedness.largePR.reviewedCount}/${reviewBoundedness.largePR.totalFiles} changed files via large-PR triage (${reviewBoundedness.largePR.fullCount} full, ${reviewBoundedness.largePR.abbreviatedCount} abbreviated; ${reviewBoundedness.largePR.notReviewedCount} not reviewed)`,
-              ]
-            : []),
-          ...(reviewBoundedness.timeout?.reductionApplied
-            ? ["- Timeout auto-reduction: applied"]
-            : reviewBoundedness.timeout?.reductionSkippedReason === "explicit-profile"
-              ? ["- Timeout auto-reduction: skipped (explicit profile)"]
-              : reviewBoundedness.timeout?.reductionSkippedReason === "config-disabled"
-                ? ["- Timeout auto-reduction: skipped (config disabled)"]
-                : []),
-        ]
-      : [profileLine]),
-    `- Contributor experience: ${contributorExperience.text}`,
-    ...(shadowSpecialistReviewDetails?.reviewDetailsLine
-      ? [`- ${shadowSpecialistReviewDetails.reviewDetailsLine}`]
-      : []),
-    ...candidatePublicationBridgeLines,
-    ...candidateVerificationPublicationEvidenceLines,
-    ...reviewFindingLifecycleLines,
-    ...reviewValidationTruthLines,
-    `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
-  ];
-
-  if (phaseTimingSummary) {
-    try {
-      const phaseTimingLines = formatReviewDetailsPhaseTimingSummary(phaseTimingSummary);
-      if (phaseTimingLines.length > 0) {
-        sections.push("", ...phaseTimingLines);
-      }
-    } catch {
-      // Keep Review Details publication fail-open if timing formatting regresses.
-    }
-  }
-
-  if (usageLimit?.utilization !== undefined) {
-    const pct = Math.round(usageLimit.utilization * 100);
-    const pctLeft = 100 - pct;
-    const type = usageLimit.rateLimitType ?? 'usage';
-    const resetStr = usageLimit.resetsAt !== undefined
-      ? ` | resets ${new Date(usageLimit.resetsAt * 1000).toISOString()}`
-      : '';
-    sections.push(`- Claude Code usage: ${pctLeft}% of ${type} limit remaining${resetStr}`);
-  }
-
-  if (tokenUsage?.inputTokens !== undefined || tokenUsage?.outputTokens !== undefined) {
-    const inp = tokenUsage?.inputTokens ?? 0;
-    const out = tokenUsage?.outputTokens ?? 0;
-    const costStr = tokenUsage?.costUsd !== undefined ? ` | ${tokenUsage.costUsd.toFixed(4)}` : '';
-    sections.push(`- Tokens: ${inp.toLocaleString()} in / ${out.toLocaleString()} out${costStr}`);
-  }
-
-  if (largePRTriage) {
-    const reviewedCount = largePRTriage.fullCount + largePRTriage.abbreviatedCount;
-    const notReviewedCount = largePRTriage.totalFiles - reviewedCount;
-
-    sections.push(
-      "",
-      `- Review scope: Reviewed ${reviewedCount}/${largePRTriage.totalFiles} files, prioritized by risk`,
-      `- Full review: ${largePRTriage.fullCount} files | Abbreviated review: ${largePRTriage.abbreviatedCount} files | Not reviewed: ${notReviewedCount} files`,
-    );
-
-    if (largePRTriage.mentionOnlyFiles.length > 0) {
-      const MAX_MENTION_ONLY_ENTRIES = 100;
-      const cappedFiles = largePRTriage.mentionOnlyFiles.slice(0, MAX_MENTION_ONLY_ENTRIES);
-      const remaining = largePRTriage.mentionOnlyFiles.length - cappedFiles.length;
-
-      sections.push(
-        "",
-        "<details>",
-        "<summary>Files not fully reviewed (sorted by risk score)</summary>",
-        "",
-      );
-
-      for (const file of cappedFiles) {
-        sections.push(`- ${file.filePath} (risk: ${file.score})`);
-      }
-
-      if (remaining > 0) {
-        sections.push(`- ...and ${remaining} more files`);
-      }
-
-      sections.push("", "</details>");
-    }
-  }
-
-  if (feedbackSuppressionCount && feedbackSuppressionCount > 0) {
-    sections.push(`- ${feedbackSuppressionCount} pattern${feedbackSuppressionCount === 1 ? '' : 's'} auto-suppressed by feedback`);
-  }
-
-  if (prioritization) {
-    const hasSaturatedCommentCap =
-      typeof prioritization.maxComments === "number" &&
-      typeof prioritization.selectedFindings === "number" &&
-      typeof prioritization.omittedFindings === "number" &&
-      prioritization.omittedFindings > 0;
-
-    if (hasSaturatedCommentCap) {
-      const omittedFindingLabel = prioritization.omittedFindings === 1 ? "finding" : "findings";
-      sections.push(
-        `- Comment cap saturated: published ${prioritization.selectedFindings}/${prioritization.findingsScored} prioritized findings; ${prioritization.omittedFindings} lower-priority ${omittedFindingLabel} omitted from inline publication`,
-      );
-    }
-
-    sections.push(
-      `- Prioritization: scored ${prioritization.findingsScored} findings | top score ${prioritization.topScore ?? "n/a"} | threshold score ${prioritization.thresholdScore ?? "n/a"}`,
-    );
-  }
-
-  const structuralImpactSection = buildStructuralImpactSection(structuralImpact);
-  if (structuralImpactSection.text) {
-    const structuralImpactDegradation = summarizeStructuralImpactDegradation(structuralImpact);
-    sections.push(structuralImpactSection.text);
-    sections.push(
-      `- Structural Impact rendered: callers ${structuralImpactSection.stats.callersRendered}/${structuralImpactSection.stats.callersTotal}${structuralImpactSection.stats.callersTruncated ? " truncated" : ""}; files ${structuralImpactSection.stats.filesRendered}/${structuralImpactSection.stats.filesTotal}${structuralImpactSection.stats.filesTruncated ? " truncated" : ""}; tests ${structuralImpactSection.stats.testsRendered}/${structuralImpactSection.stats.testsTotal}${structuralImpactSection.stats.testsTruncated ? " truncated" : ""}; unchanged evidence ${structuralImpactSection.stats.evidenceRendered}/${structuralImpactSection.stats.evidenceTotal}${structuralImpactSection.stats.evidenceTruncated ? " truncated" : ""}`,
-    );
-    if (structuralImpactDegradation.fallbackUsed) {
-      sections.push(
-        `- Structural Impact degradation: status ${structuralImpactDegradation.status}; graph ${structuralImpactDegradation.availability.graphAvailable ? "available" : "unavailable"}; corpus ${structuralImpactDegradation.availability.corpusAvailable ? "available" : "unavailable"}; signals ${structuralImpactDegradation.truthfulnessSignals.join(", ")}`,
-      );
-    }
-  }
-
-  const keywordSection = buildKeywordParsingSection(
-    keywordParsing ?? DEFAULT_EMPTY_INTENT,
-  );
-  sections.push(keywordSection);
-
-  sections.push(
+    ...formatPublicationDiagnosticsSection(params),
+    ...formatCoreReviewDetailsSection({ ...params, lineCountSource }),
+    ...formatPhaseTimingSection(params.phaseTimingSummary),
+    ...formatUsageLimitSection(params.usageLimit),
+    ...formatTokenUsageSection(params.tokenUsage),
+    ...formatLargePrTriageSection(params.largePRTriage),
+    ...formatFeedbackSuppressionSection(params.feedbackSuppressionCount),
+    ...formatPrioritizationSection(params.prioritization),
+    ...formatStructuralImpactSection(params.structuralImpact),
+    ...formatKeywordParsingSection(params.keywordParsing),
     "",
     "</details>",
     "",
-    buildReviewDetailsMarker(reviewOutputKey),
-  );
+    buildReviewDetailsMarker(params.reviewOutputKey),
+  ];
 
   return sections.join("\n");
 }
