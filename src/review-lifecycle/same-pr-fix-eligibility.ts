@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import { scanOutgoingForSecrets } from "../lib/sanitizer.ts";
-import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
+import type { FindingCategory, FindingSeverity } from "../lib/review-finding-metadata.ts";
 
 export type SamePrFixEligibilityReasonCode =
   | "eligible"

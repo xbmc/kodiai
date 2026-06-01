@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import { $ } from "bun";
 import { buildAuthFetchUrl } from "../jobs/workspace.ts";
 import type { PullRequestFileMetadata } from "../lib/github-pr-files.ts";
-import { splitGitLines } from "../lib/review-utils.ts";
+import { splitGitLines } from "../lib/review-git-utils.ts";
 import { toProductionLogRuntimeBudgetFields } from "../review-audit/production-log-projection.ts";
 
 type DiffCollectionStrategy =

@@ -1,9 +1,9 @@
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { ensureReviewBoundednessDisclosureInSummary } from "../lib/review-boundedness.ts";
 import {
-  ensureSearchRateLimitDisclosureInSummary,
   parseSeverityCountsFromBody,
-} from "../lib/review-utils.ts";
+} from "../lib/review-finding-metadata.ts";
+import { ensureSearchRateLimitDisclosureInSummary } from "../lib/search-rate-limit.ts";
 
 export function unwrapKodiaiResponseDetails(summaryBody: string): string {
   return summaryBody.replace(

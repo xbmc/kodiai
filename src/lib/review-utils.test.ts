@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatReviewDetailsSummary } from "./review-utils.ts";
+import { formatReviewDetailsSummary } from "./review-details-formatting.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-plan.ts";
@@ -65,17 +65,11 @@ describe("formatReviewDetailsSummary", () => {
   it("renders bounded doctrine counts in structured review plan details without raw canaries", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
-      reviewPlanSummary: {
-        planHash: "abcdef1234567890",
-        route: { kind: "standard", taskType: "review.full", routingReason: "standard" },
-        scope: { changedFileCount: 2, reviewedFileCount: 2, totalLinesChanged: 20, representativePaths: ["src/index.ts"], omittedPathCount: 0 },
-        repoDoctrine: {
-          status: "applied",
-          contractCount: 3,
-          matchedCount: 2,
-          omittedCount: 1,
-          reasonCodes: ["redaction-applied", "PROMPT_SECRET TOKEN=abc123 diff --git", "oversized-instruction", "too-many-contracts", "unmatched-paths", "duplicate-id", "extra-reason"],
-        },
+      reviewPlan: {
+        label: "Review plan",
+        status: "ready",
+        hash: "abcdef1234567890",
+        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=2 lines=20(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow doctrine=applied/3/2/1 reasons=redaction-applied +1 omitted",
       },
     });
 

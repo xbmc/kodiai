@@ -104,36 +104,44 @@ import {
   isReviewLearningMemorySkip,
 } from "./review-learning-memory.ts";
 import {
-  type ReviewArea,
-  type FindingSeverity,
-  type FindingCategory,
-  type ConfidenceBand,
-  SEARCH_RATE_LIMIT_ERROR_MARKERS,
-  SEARCH_RATE_LIMIT_BACKOFF_MAX_MS,
-  SEARCH_RATE_LIMIT_DISCLOSURE_LINE,
-  PROFILE_PRESETS,
-  ensureSearchRateLimitDisclosureInSummary,
-  extractSearchErrorStatus,
-  extractSearchErrorText,
-  toConfidenceBand,
-  fingerprintFindingTitle,
   buildReviewDetailsMarker,
-  parseSeverityCountsFromBody,
   formatReviewDetailsSummary,
   classifyRetryFailure,
   resolveReviewDetailsLineCounts,
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
+} from "../lib/review-details-formatting.ts";
+import { PROFILE_PRESETS } from "../lib/review-profile-presets.ts";
+import {
+  type ReviewArea,
+  type FindingSeverity,
+  type FindingCategory,
+  type ConfidenceBand,
+  fingerprintFindingTitle,
   normalizeSeverity,
   normalizeCategory,
   parseInlineCommentMetadata,
+  parseSeverityCountsFromBody,
+  toConfidenceBand,
+} from "../lib/review-finding-metadata.ts";
+import {
+  SEARCH_RATE_LIMIT_ERROR_MARKERS,
+  SEARCH_RATE_LIMIT_BACKOFF_MAX_MS,
+  SEARCH_RATE_LIMIT_DISCLOSURE_LINE,
+  ensureSearchRateLimitDisclosureInSummary,
+  extractSearchErrorStatus,
+  extractSearchErrorText,
+} from "../lib/search-rate-limit.ts";
+import {
   normalizeSkipPattern,
-  renderApprovalConfidence,
   splitGitLines,
+  splitDiffByFile,
+} from "../lib/review-git-utils.ts";
+import {
   isReviewTriggerEnabled,
   normalizeReviewerLogin,
-  splitDiffByFile,
-} from "../lib/review-utils.ts";
+} from "../lib/review-trigger-utils.ts";
+import { renderApprovalConfidence } from "../lib/merge-confidence-format.ts";
 import picomatch from "picomatch";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import {

@@ -112,7 +112,7 @@ import {
   createTriageCooldownStore,
   createWriteRateLimitStore,
 } from "../lib/mention-state-stores.ts";
-import { splitGitLines } from "../lib/review-utils.ts";
+import { splitGitLines } from "../lib/review-git-utils.ts";
 import {
   buildApprovedReviewBody,
   buildReviewOutputKey,

@@ -13,14 +13,14 @@ import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
-  "import { buildReviewPlan, summarizeReviewPlanForDiagnostics, summarizeReviewPlanForReviewDetails, type ReviewPlan } from '../review-plan/review-plan.ts';",
+  "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
   "import { graphValidationAppliedRuntimeStatus, graphValidationGateForReviewPlan, graphValidationSkippedRuntimeStatus, graphValidationThrownRuntimeStatus, resolveGraphValidationPreStatus } from '../review-graph/graph-validation-status.ts';",
   "const graphValidationPreStatus = resolveGraphValidationPreStatus({ config, graphContextAvailable: Boolean(graphBlastRadius) });",
-  "const reviewPlan = reviewPlanBuilder({ route: { kind: 'pull_request' }, scope: { changedFileCount: 1, reviewedFileCount: 1, totalLinesChanged: 1 }, contextSources: [], gates: [graphValidationGateForReviewPlan(graphValidationPreStatus)], budgets: { maxComments: 7 }, publishPolicy: { mode: 'review-comment', autoApprove: false, publishReviewDetails: true, inlineComments: true, candidateVerificationRequired: false } });",
-  "logger.info({ ...reviewPlanSummarizer(reviewPlan as ReviewPlan) }, 'ReviewPlan constructed before publication');",
-  "const reviewPlanReviewDetailsSummarizer = summarizeReviewPlanForReviewDetails;",
-  "const buildReviewPlanReviewDetailsSummary = () => { try { return reviewPlanReviewDetailsSummarizer(reviewPlan); } catch (err) { logger.warn({ gate: 'review-plan', reason: 'review-details-projection-failed' }, 'ReviewPlan Review Details projection failed (fail-open, publishing without Review Plan line)'); return null; } };",
-  "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlanSummary: buildReviewPlanReviewDetailsSummary() });",
+  "let reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }).plan;",
+  "reviewPlan = createDegradedReviewPlan({ reason: 'builder-error', routingReason: 'standard' });",
+  "logger.info({ planHash: reviewPlan.hash }, 'ReviewPlan constructed before publication');",
+  "const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);",
+  "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlan: reviewPlanDetailsSummary });",
   "const marker = '<summary>Review Details</summary>';",
   "const skippedGraphValidationStatus = graphValidationSkippedRuntimeStatus({ config, graphContextAvailable: Boolean(graphBlastRadius), findingCount: processedFindings.length });",
   "if (skippedGraphValidationStatus) logger.info({ ...skippedGraphValidationStatus }, 'Graph-amplified finding validation skipped or unavailable');",
@@ -36,26 +36,20 @@ const CURRENT_REVIEW_TS = [
 
 const CURRENT_REVIEW_PLAN_TS = [
   "const GATE_STATUSES = ['enabled', 'applied', 'skipped', 'unavailable'] as const; export type ReviewPlanGateStatus = typeof GATE_STATUSES[number];",
-  "export type ReviewPlan = { version: 1; stableHash: string; route: unknown; scope: unknown; contextSources: readonly unknown[]; gates: readonly unknown[]; budgets: unknown; publishPolicy: unknown };",
-  "export type ReviewPlanReviewDetailsSummary = { gate: 'review-plan-review-details'; planHash: string; route: unknown; scope: unknown; contextSources: unknown; gates: unknown; budgets: unknown; publishPolicy: unknown };",
-  "export const REVIEW_PLAN_HASH_PREFIX = 'review-plan:v1:';",
-  "export function buildReviewPlan(input: unknown): ReviewPlan { assertNoForbiddenRawFields(input); return { version: 1, stableHash: REVIEW_PLAN_HASH_PREFIX + 'abc', route: {}, scope: {}, contextSources: [], gates: [], budgets: {}, publishPolicy: {} }; }",
-  "export function summarizeReviewPlanForDiagnostics(plan: ReviewPlan) { return { gate: 'review-plan', planHash: plan.stableHash }; }",
-  "export function summarizeReviewPlanForReviewDetails(plan: ReviewPlan): ReviewPlanReviewDetailsSummary { return { gate: 'review-plan-review-details', planHash: plan.stableHash, route: plan.route, scope: { ...plan.scope, omittedPathCount: 0 }, contextSources: { totalCount: 0, totalItemCount: 0, statusCounts: {}, representatives: [], omittedSourceCount: 0 }, gates: { totalCount: 0, totalFindingCount: 0, statusCounts: {}, representatives: [], omittedGateCount: 0 }, budgets: plan.budgets, publishPolicy: plan.publishPolicy }; }",
-  "const MAX_PUBLIC_REVIEW_DETAILS = 4; function sanitizePublicReviewDetailsString(value: string) { return value.slice(0, MAX_PUBLIC_REVIEW_DETAILS); }",
-  "function assertNoForbiddenRawFields(value: unknown): void { void value; }",
+  "export type ReviewPlan = { status: 'ready'; hash: string; task: { taskType: string; routingReason: string }; change: { changedFileCount: number; linesChanged: number; linesChangedSource: string }; budget: unknown; gates: { current: string[]; enabled: string[] }; policy: { publish: string }; graphValidation: { status: string }; candidateFinding: { mode: string }; repoDoctrine: unknown };",
+  "export type DegradedReviewPlan = { status: 'degraded'; hash: string; degraded: { reason: string }; task: { routingReason?: string }; graphValidation: { status: 'skipped' }; candidateFinding: { mode: 'unavailable' } };",
+  "export type ReviewPlanDetailsSummary = { label: 'Review plan'; text: string; status: 'ready' | 'degraded'; hash: string };",
+  "function hashCanonical(value: unknown) { return 'review-plan:v1:abc'; }",
+  "function sanitizeSummaryToken(value: unknown) { return String(value ?? '').slice(0, 80); }",
+  "function boundSummary(value: string) { return value.slice(0, 500); }",
+  "export function buildReviewPlan(input: unknown): { status: 'ready'; plan: ReviewPlan } { return { status: 'ready', plan: { status: 'ready', hash: hashCanonical(input), task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, budget: {}, gates: { current: ['graph-validation'], enabled: ['graph-validation'] }, policy: { publish: 'review-comment' }, graphValidation: { status: 'enabled' }, candidateFinding: { mode: 'preferred' }, repoDoctrine: {} } }; }",
+  "export function toReviewPlanDetailsSummary(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanDetailsSummary { return plan.status === 'degraded' ? { label: 'Review plan', status: 'degraded', hash: plan.hash, text: boundSummary(`Review plan: degraded hash=${plan.hash} route=unknown reason=${sanitizeSummaryToken(plan.degraded.reason)} graph=skipped candidates=unavailable doctrine=degraded/0/0/0`) } : { label: 'Review plan', status: 'ready', hash: plan.hash, text: boundSummary(`Review plan: ready hash=${plan.hash} route=${sanitizeSummaryToken(plan.task.routingReason)} task=${sanitizeSummaryToken(plan.task.taskType)} files=${plan.change.changedFileCount} lines=${plan.change.linesChanged}(local-diff) budget=na/900s gates=${plan.gates.current.length}/${plan.gates.enabled.length} publish=${sanitizeSummaryToken(plan.policy.publish)} graph=${plan.graphValidation.status} candidates=${plan.candidateFinding.mode} doctrine=applied/0/0/0`) }; }",
 ].join("\n");
 
 const CURRENT_REVIEW_UTILS_TS = [
-  "export type ReviewPlanReviewDetailsFormatterSummary = { planHash?: unknown; route?: unknown; scope?: unknown; contextSources?: unknown; gates?: unknown; budgets?: unknown; publishPolicy?: unknown };",
-  "const REVIEW_PLAN_DETAILS_MAX_VALUE_LENGTH = 80;",
-  "function sanitizeReviewPlanDetailsValue(value: unknown) { return typeof value === 'string' ? value.slice(0, REVIEW_PLAN_DETAILS_MAX_VALUE_LENGTH) : String(value ?? ''); }",
-  "function formatReviewPlanDetailsRepresentativeList(value: unknown) { return Array.isArray(value) ? value.slice(0, 4).join(',') : 'none'; }",
-  "function formatReviewPlanReviewDetailsLine(summary?: ReviewPlanReviewDetailsFormatterSummary | null): string | null {",
-  "  if (!summary?.planHash) return null;",
-  "  return `- Review Plan: hash=${sanitizeReviewPlanDetailsValue(summary.planHash)}; route=${sanitizeReviewPlanDetailsValue('pull_request')}; scope=1 changed/1 reviewed/1 lines; paths=${formatReviewPlanDetailsRepresentativeList([])}; contexts=0 sources/0 items/enabled:0; reps=none; gates=0 gates/0 findings/enabled:0; reps=none; budget=maxComments:7; publish=review-comment,autoApprove:n,details:y,inline:y,candidateVerification:n`;",
-  "}",
-  "export function formatReviewDetailsSummary(params: { reviewPlanSummary?: ReviewPlanReviewDetailsFormatterSummary | null }) { const line = formatReviewPlanReviewDetailsLine(params.reviewPlanSummary); return `<summary>Review Details</summary>\\n${line ?? ''}`; }",
+  "import type { ReviewPlanDetailsSummary } from '../review-orchestration/review-plan.ts';",
+  "export function formatReviewPlanDetailsLine(reviewPlan?: ReviewPlanDetailsSummary | null): string[] { const text = typeof reviewPlan?.text === 'string' ? reviewPlan.text.trim().replace(/\\s+/g, ' ') : ''; return text ? [`- ${text}`] : []; }",
+  "export function formatReviewDetailsSummary(params: { reviewPlan?: ReviewPlanDetailsSummary | null }) { return `<summary>Review Details</summary>\\n${formatReviewPlanDetailsLine(params.reviewPlan).join('\\n')}`; }",
 ].join("\n");
 
 const CURRENT_CONFIG_TS = [
@@ -105,8 +99,8 @@ function mutableHandoffRows(): Issue131DeferredHandoffRow[] {
 function makeReaders(overrides: Partial<Record<Issue131SourcePath, string>> & { packageJson?: string } = {}) {
   const files: Record<Issue131SourcePath, string> = {
     "src/handlers/review.ts": CURRENT_REVIEW_TS,
-    "src/review-plan/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
-    "src/lib/review-utils.ts": CURRENT_REVIEW_UTILS_TS,
+    "src/review-orchestration/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
+    "src/lib/review-details-formatting.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
     "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,
@@ -275,7 +269,7 @@ describe("verify:m071 CLI", () => {
 
     expect(evidencePaths.length).toBeGreaterThan(0);
     expect(evidencePaths).toContain("src/handlers/review.ts");
-    expect(evidencePaths).toContain("src/review-plan/review-plan.ts");
+    expect(evidencePaths).toContain("src/review-orchestration/review-plan.ts");
     expect(evidencePaths).toContain("src/review-graph/graph-validation-status.ts");
     expect(evidencePaths).toContain("package.json");
     expect(evidencePaths.every((path) => !path.startsWith(".gsd/") && !path.startsWith(".planning/") && !path.startsWith(".audits/"))).toBe(true);
@@ -342,7 +336,7 @@ describe("verify:m071 CLI", () => {
     const report = evaluateM071VerifierContract({
       generatedAt: "x",
       ...makeReaders({
-        "src/review-plan/review-plan.ts": "",
+        "src/review-orchestration/review-plan.ts": "",
         "src/handlers/review.ts": "const marker = '<summary>Review Details</summary>'; const reviewDetailsBody = formatReviewDetailsSummary({});",
       }),
     });

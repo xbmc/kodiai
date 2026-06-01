@@ -14,7 +14,8 @@ import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-sto
 import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import type { PriorFindingContext } from "../lib/finding-dedup.ts";
 import { shouldSuppressFinding } from "../lib/finding-dedup.ts";
-import { fingerprintFindingTitle, splitDiffByFile, type FindingCategory, type FindingSeverity } from "../lib/review-utils.ts";
+import { fingerprintFindingTitle, type FindingCategory, type FindingSeverity } from "../lib/review-finding-metadata.ts";
+import { splitDiffByFile } from "../lib/review-git-utils.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { validateGraphAmplifiedFindings as defaultValidateGraphAmplifiedFindings, type GraphValidationFinding, type GraphValidationResult, type GraphValidationVerdict, type ValidationLLM } from "../review-graph/validation.ts";
 import type { LanguageRulesConfig } from "../enforcement/types.ts";

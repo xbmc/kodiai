@@ -13,7 +13,7 @@ import {
   type SamePrFixDraft,
 } from "../review-lifecycle/same-pr-fix-eligibility.ts";
 import type { SamePrFixTruthEvidence } from "../review-lifecycle/validation-truth.ts";
-import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
+import type { FindingCategory, FindingSeverity } from "../lib/review-finding-metadata.ts";
 import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 import type {
   ReviewCandidateApprovalCandidateReference,
