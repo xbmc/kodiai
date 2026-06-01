@@ -2270,6 +2270,7 @@ export function createMentionHandler(deps: {
             toolUseNames: result.toolUseNames,
           },
         });
+        const explicitReviewResultFindingLines = explicitReviewPublishEvaluation.findingLines;
         const explicitReviewPublishEligible = explicitReviewPublishEvaluation.eligible;
 
         if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
