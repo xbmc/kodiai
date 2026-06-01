@@ -324,6 +324,7 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
       const hasBuilder = /export\s+function\s+buildReviewPlan\b/.test(source.reviewPlan);
       const hasStableHash = /hash\s*:\s*string/.test(source.reviewPlan) && /hashCanonical|createHash/.test(source.reviewPlan);
       const hasSafeDiagnosticProjection = /export\s+function\s+toReviewPlanDetailsSummary\b/.test(source.reviewPlan)
+        && /export\s+function\s+buildReviewPlanPublicationContext\b/.test(source.reviewPlan)
         && /Review plan: ready/.test(source.reviewPlan)
         && /sanitizeSummaryToken/.test(source.reviewPlan);
       return hasTypedContract && hasBuilder && hasStableHash && hasSafeDiagnosticProjection
@@ -332,11 +333,12 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
     }
     case "normal-handler-plan-construction": {
       const hasReviewPlanImport = /from\s+[\"']\.\.\/review-orchestration\/review-plan\.ts[\"']/.test(source.review)
-        && /\bbuildReviewPlan\b/.test(source.review)
-        && /\btoReviewPlanDetailsSummary\b/.test(source.review);
+        && /\bbuildReviewPlanPublicationContext\b/.test(source.review);
       const construction = findReviewPlanConstruction(source.review);
-      const constructsBeforePublication = construction.found && construction.beforePublication;
-      const hasSafeStableHashProjection = /toReviewPlanDetailsSummary\s*\(\s*reviewPlan\s*\)/.test(source.review)
+      const helperConstruction = findReviewPlanPublicationContextConstruction(source.review);
+      const constructsBeforePublication = (construction.found && construction.beforePublication)
+        || (helperConstruction.found && helperConstruction.beforePublication);
+      const hasSafeStableHashProjection = /detailsSummary\s*:\s*reviewPlanDetailsSummary/.test(source.review)
         || /\breviewPlan\.hash\b/.test(source.review);
       if (hasReviewPlanImport && constructsBeforePublication && hasSafeStableHashProjection) {
         return makeRow(definition, "complete", [{ path: "src/handlers/review.ts", reason: "Normal review flow imports, constructs, and logs a safe ReviewPlan projection before nearby publication side effects." }]);
@@ -533,59 +535,13 @@ function findReviewDetailsPlanFormatter(reviewDetailsFormatterSource: string): S
 
 function findReviewDetailsPlanHandlerWiring(reviewSource: string): SourceEvidenceProbe {
   const source = stripTypeScriptComments(reviewSource);
-  const present = /toReviewPlanDetailsSummary|reviewPlanDetailsSummary|reviewPlan\s*:/.test(source);
+  const present = /buildReviewPlanPublicationContext|reviewPlanDetailsSummary|reviewPlan\s*:/.test(source);
   return makeProbe(present, [
-    [/toReviewPlanDetailsSummary/.test(source), "Review handler does not import/use the public ReviewPlan Review Details projection."],
-    [/toReviewPlanDetailsSummary\s*\(\s*reviewPlan\s*\)/.test(source), "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan instance."],
+    [/buildReviewPlanPublicationContext/.test(source), "Review handler does not import/use the public ReviewPlan publication helper."],
+    [/detailsSummary\s*:\s*reviewPlanDetailsSummary/.test(source), "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan publication helper."],
     [/reviewPlan\s*:\s*reviewPlanDetailsSummary/.test(source), "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
-    [hasBoundedReviewPlanDegradation(source), "Review handler does not prove bounded fail-open ReviewPlan degradation behavior."],
+    [/buildReviewPlanPublicationContext\s*\([\s\S]*?builder\s*:\s*reviewPlanBuilder[\s\S]*?degraded\s*:\s*\{[\s\S]*?reason\s*:\s*["']builder-error["']/.test(source), "Review handler does not prove bounded fail-open ReviewPlan degradation behavior."],
   ]);
-}
-
-function hasBoundedReviewPlanDegradation(reviewSource: string): boolean {
-  const projectionIndex = reviewSource.search(/toReviewPlanDetailsSummary\s*\(\s*reviewPlan\s*\)/);
-  if (projectionIndex < 0) return false;
-  const beforeProjection = reviewSource.slice(0, projectionIndex);
-  for (const catchMatch of beforeProjection.matchAll(/\bcatch\b/g)) {
-    const catchBlock = extractBracedBlockAfter(beforeProjection, catchMatch.index);
-    if (!catchBlock) continue;
-    if (!/\breviewPlan\s*=\s*createDegradedReviewPlan\s*\(\s*\{[\s\S]*?reason\s*:\s*["']builder-error["']/.test(catchBlock.body)) {
-      continue;
-    }
-    const tryBlock = findAdjacentTryBlock(beforeProjection, catchMatch.index);
-    if (!tryBlock) continue;
-    if (/\breviewPlan\s*=/.test(tryBlock.body) && /(?:buildReviewPlan|reviewPlanBuilder)\s*\(/.test(tryBlock.body)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function findAdjacentTryBlock(source: string, catchIndex: number): { body: string; closeIndex: number } | null {
-  const tryMatches = [...source.slice(0, catchIndex).matchAll(/\btry\b/g)].reverse();
-  for (const tryMatch of tryMatches) {
-    const block = extractBracedBlockAfter(source, tryMatch.index);
-    if (!block || block.closeIndex > catchIndex) continue;
-    if (source.slice(block.closeIndex + 1, catchIndex).trim().length === 0) return block;
-  }
-  return null;
-}
-
-function extractBracedBlockAfter(source: string, startIndex: number): { body: string; closeIndex: number } | null {
-  const openIndex = source.indexOf("{", startIndex);
-  if (openIndex < 0) return null;
-  let depth = 0;
-  for (let index = openIndex; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === "{") depth += 1;
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return { body: source.slice(openIndex + 1, index), closeIndex: index };
-      }
-    }
-  }
-  return null;
 }
 
 function extractFunctionBody(source: string, functionName: string): string {
@@ -613,6 +569,17 @@ function findReviewPlanConstruction(text: string): { found: boolean; beforePubli
     "createReviewPlan({",
     "resolveReviewPlan({",
   ]);
+  if (constructionIndex < 0) return { found: false, beforePublication: false };
+
+  const precedingWindow = text.slice(Math.max(0, constructionIndex - 1800), constructionIndex);
+  return {
+    found: true,
+    beforePublication: firstPublicationIndex(precedingWindow) === Number.POSITIVE_INFINITY,
+  };
+}
+
+function findReviewPlanPublicationContextConstruction(text: string): { found: boolean; beforePublication: boolean } {
+  const constructionIndex = text.indexOf("buildReviewPlanPublicationContext(");
   if (constructionIndex < 0) return { found: false, beforePublication: false };
 
   const precedingWindow = text.slice(Math.max(0, constructionIndex - 1800), constructionIndex);

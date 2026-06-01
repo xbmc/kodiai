@@ -1,6 +1,6 @@
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
-import type { ReviewHandlerPublicationBridgeReviewDetails } from "../issue-131/review-handler-publication-bridge.ts";
+import type { ReviewHandlerPublicationBridgeReviewDetails } from "../review-orchestration/review-candidate-publication-bridge-details.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import {
   boundedReviewDetailsValue,

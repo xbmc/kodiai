@@ -13,17 +13,11 @@ import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
-  "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type DegradedReviewPlan, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
+  "import { buildReviewPlanPublicationContext, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
   "import { graphValidationAppliedRuntimeStatus, graphValidationGateForReviewPlan, graphValidationSkippedRuntimeStatus, graphValidationThrownRuntimeStatus, resolveGraphValidationPreStatus } from '../review-graph/graph-validation-status.ts';",
   "const graphValidationPreStatus = resolveGraphValidationPreStatus({ config, graphContextAvailable: Boolean(graphBlastRadius) });",
-  "let reviewPlan: ReviewPlan | DegradedReviewPlan;",
-  "try {",
-  "  reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }).plan;",
-  "} catch {",
-  "  reviewPlan = createDegradedReviewPlan({ reason: 'builder-error', routingReason: 'standard' });",
-  "}",
+  "const { plan: reviewPlan, detailsSummary: reviewPlanDetailsSummary } = buildReviewPlanPublicationContext({ input: { task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }, builder: reviewPlanBuilder, degraded: { reason: 'builder-error', routingReason: 'standard' } });",
   "logger.info({ planHash: reviewPlan.hash }, 'ReviewPlan constructed before publication');",
-  "const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);",
   "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlan: reviewPlanDetailsSummary });",
   "const marker = '<summary>Review Details</summary>';",
   "const skippedGraphValidationStatus = graphValidationSkippedRuntimeStatus({ config, graphContextAvailable: Boolean(graphBlastRadius), findingCount: processedFindings.length });",
@@ -47,6 +41,8 @@ const CURRENT_REVIEW_PLAN_TS = [
   "function sanitizeSummaryToken(value: unknown) { return String(value ?? '').slice(0, 80); }",
   "function boundSummary(value: string) { return value.slice(0, 500); }",
   "export function buildReviewPlan(input: unknown): { status: 'ready'; plan: ReviewPlan } { return { status: 'ready', plan: { status: 'ready', hash: hashCanonical(input), task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, budget: {}, gates: { current: ['graph-validation'], enabled: ['graph-validation'] }, policy: { publish: 'review-comment' }, graphValidation: { status: 'enabled' }, candidateFinding: { mode: 'preferred' }, repoDoctrine: {} } }; }",
+  "export function buildReviewPlanPublicationContext(input: { input: unknown; builder?: typeof buildReviewPlan; degraded: { reason: string; routingReason?: string } }) { try { const plan = (input.builder ?? buildReviewPlan)(input.input).plan; return { status: 'ready', plan, detailsSummary: toReviewPlanDetailsSummary(plan) }; } catch (error) { const plan = createDegradedReviewPlan(input.degraded); return { status: 'degraded', plan, detailsSummary: toReviewPlanDetailsSummary(plan), error }; } }",
+  "export function createDegradedReviewPlan(input: { reason: string; routingReason?: string }): DegradedReviewPlan { return { status: 'degraded', hash: hashCanonical(input), degraded: { reason: input.reason }, task: { routingReason: input.routingReason }, graphValidation: { status: 'skipped' }, candidateFinding: { mode: 'unavailable' } }; }",
   "export function toReviewPlanDetailsSummary(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanDetailsSummary { return plan.status === 'degraded' ? { label: 'Review plan', status: 'degraded', hash: plan.hash, text: boundSummary(`Review plan: degraded hash=${plan.hash} route=unknown reason=${sanitizeSummaryToken(plan.degraded.reason)} graph=skipped candidates=unavailable doctrine=degraded/0/0/0`) } : { label: 'Review plan', status: 'ready', hash: plan.hash, text: boundSummary(`Review plan: ready hash=${plan.hash} route=${sanitizeSummaryToken(plan.task.routingReason)} task=${sanitizeSummaryToken(plan.task.taskType)} files=${plan.change.changedFileCount} lines=${plan.change.linesChanged}(local-diff) budget=na/900s gates=${plan.gates.current.length}/${plan.gates.enabled.length} publish=${sanitizeSummaryToken(plan.policy.publish)} graph=${plan.graphValidation.status} candidates=${plan.candidateFinding.mode} doctrine=applied/0/0/0`) }; }",
 ].join("\n");
 

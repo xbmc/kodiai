@@ -15,6 +15,8 @@ import type {
 } from "../specialists/candidate-publication-policy.ts";
 import type { CandidateVerificationState } from "../specialists/candidate-verification.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
+import type { ReviewHandlerPublicationBridgeReviewDetails } from "../review-orchestration/review-candidate-publication-bridge-details.ts";
+export type { ReviewHandlerPublicationBridgeReviewDetails } from "../review-orchestration/review-candidate-publication-bridge-details.ts";
 
 export const REVIEW_HANDLER_PUBLICATION_BRIDGE_SOURCE_LABEL = "review-handler-publication" as const;
 
@@ -47,44 +49,6 @@ export type ReviewHandlerPublicationBridgeLogFields = {
   readonly candidatePublicationBridgeDiscardedPublicationFields: boolean;
   readonly candidatePublicationBridgeDiscardedEvidencePayloads: boolean;
   readonly candidatePublicationBridgePrivateOnly: true;
-};
-
-export type ReviewHandlerPublicationBridgeReviewDetails = {
-  readonly bridgeVersion: CandidatePublicationBridgeRecord["bridgeVersion"];
-  readonly bridgeId: string;
-  readonly recordKey: string;
-  readonly correlationKey: string;
-  readonly status: CandidatePublicationBridgeRecord["status"] | "unavailable";
-  readonly sourceLabel: string;
-  readonly candidateRef: string;
-  readonly verificationState: CandidatePublicationBridgeRecord["verificationState"];
-  readonly reducerHandoffAvailable: boolean;
-  readonly counts: Pick<
-    CandidatePublicationBridgeCounts,
-    | "candidateCount"
-    | "evidenceCount"
-    | "verifiedCount"
-    | "partiallyVerifiedCount"
-    | "unverifiedCount"
-    | "disprovenCount"
-    | "publicationEligibleCount"
-    | "malformedRecordCount"
-    | "unsafeInputFieldCount"
-  >;
-  readonly presence: CandidatePublicationBridgeRecord["presence"];
-  readonly reasonCategories: readonly CandidatePublicationBridgeReasonCategory[];
-  readonly malformedReasonCodes: readonly CandidatePublicationBridgeMalformedReasonCode[];
-  readonly redaction: {
-    readonly privateOnly: true;
-    readonly rawPayloadsIncluded: false;
-    readonly publicationFieldsIncluded: false;
-    readonly evidencePayloadsIncluded: false;
-    readonly githubCommentBodyIncluded: false;
-    readonly reducerHandoffIncludesRawPayload: false;
-    readonly discardedRawPayload: boolean;
-    readonly discardedPublicationFields: boolean;
-    readonly discardedEvidencePayloads: boolean;
-  };
 };
 
 export type ReviewHandlerPublicationBridgeProjection = {

@@ -183,11 +183,11 @@ import {
 } from "../review-orchestration/review-candidate-finding.ts";
 import {
   buildReviewPlan,
-  createDegradedReviewPlan,
+  buildReviewPlanPublicationContext,
   resolveGraphValidationPlanStatus,
-  toReviewPlanDetailsSummary,
   type DegradedReviewPlan,
   type ReviewPlan,
+  type ReviewPlanBuilder,
 } from "../review-orchestration/review-plan.ts";
 import {
   coordinateReviewCandidateApproval,
@@ -423,9 +423,6 @@ type RetrievalContextForPrompt = {
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
  */
-type ReviewPlanBuilder = typeof buildReviewPlan;
-
-
 type ReviewReducer = (input: ReviewReducerInput) => Promise<ReviewReducerResult>;
 
 
@@ -2513,9 +2510,8 @@ export function createReviewHandler(deps: {
           trivialChangeBypass: graphQueryBypassedForTrivialChange,
           graphBlastRadiusAvailable: Boolean(graphBlastRadius),
         });
-        let reviewPlan: ReviewPlan | DegradedReviewPlan;
-        try {
-          reviewPlan = reviewPlanBuilder({
+        const reviewPlanPublication = buildReviewPlanPublicationContext({
+          input: {
             task: {
               taskType: reviewRouting.taskType,
               routingReason: reviewRouting.routingReason,
@@ -2560,7 +2556,20 @@ export function createReviewHandler(deps: {
               mode: "preferred",
             },
             repoDoctrine: repoDoctrineReviewSurface,
-          }).plan;
+          },
+          builder: reviewPlanBuilder,
+          degraded: {
+            reason: "builder-error",
+            message: "ReviewPlan builder failed",
+            taskType: reviewRouting.taskType,
+            routingReason: reviewRouting.routingReason,
+          },
+        });
+        const {
+          plan: reviewPlan,
+          detailsSummary: reviewPlanDetailsSummary,
+        } = reviewPlanPublication;
+        if (reviewPlanPublication.status === "ready") {
           logger.info(
             {
               ...baseLog,
@@ -2577,13 +2586,7 @@ export function createReviewHandler(deps: {
             },
             "Review plan ready",
           );
-        } catch (err) {
-          reviewPlan = createDegradedReviewPlan({
-            reason: "builder-error",
-            message: "ReviewPlan builder failed",
-            taskType: reviewRouting.taskType,
-            routingReason: reviewRouting.routingReason,
-          });
+        } else {
           logger.warn(
             {
               ...baseLog,
@@ -2597,12 +2600,11 @@ export function createReviewHandler(deps: {
               graphValidationStatus: reviewPlan.graphValidation.status,
               candidateFindingMode: reviewPlan.candidateFinding.mode,
               ...buildRepoDoctrineLogFields(repoDoctrineProjection),
-              error: serializeReviewPlanBuilderError(err),
+              error: serializeReviewPlanBuilderError(reviewPlanPublication.error),
             },
             "Review plan builder failed; continuing with degraded plan metadata",
           );
         }
-        const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);
         const reviewPlanConfigSnapshot = toReviewPlanConfigSnapshot(reviewPlan);
 
         if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {

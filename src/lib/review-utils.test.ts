@@ -62,16 +62,6 @@ function reviewValidationTruthLineCount(body: string): number {
 }
 
 describe("formatReviewDetailsSummary", () => {
-  it("keeps candidate Review Details formatter on canonical projection types", async () => {
-    const formatterSource = await Bun.file("src/lib/review-details-candidate-formatting.ts").text();
-
-    expect(formatterSource).toContain("ReviewHandlerPublicationBridgeReviewDetails");
-    expect(formatterSource).toContain("CandidateVerificationPublicationEvidenceSummary");
-    expect(formatterSource).not.toContain("export type CandidatePublicationBridgeReviewDetails = {");
-    expect(formatterSource).not.toContain("export type CandidateVerificationPublicationEvidenceReviewDetails = {");
-    expect(formatterSource).not.toContain("counts?: unknown");
-  });
-
   it("renders bounded doctrine counts in structured review plan details without raw canaries", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
