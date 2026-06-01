@@ -363,7 +363,16 @@ import {
   type AttachReviewValidationTruthResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
 
+const SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS = 12_000;
 
+function buildShadowSpecialistDiffSnippet(diffText: string): string {
+  if (diffText.length <= SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS) return diffText;
+
+  const prefix = diffText.slice(0, SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS);
+  const lastNewline = prefix.lastIndexOf("\n");
+  const bounded = lastNewline > 0 ? prefix.slice(0, lastNewline) : prefix;
+  return `${bounded}\n...(shadow specialist diff snippet truncated)`;
+}
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1895,7 +1904,7 @@ export function createReviewHandler(deps: {
           shadowSpecialistResult = await shadowSpecialistSubflow({
             changedPaths: changedFiles,
             diffText: diffContext.diffContent,
-            diffSnippet: diffContext.diffContent,
+            diffSnippet: buildShadowSpecialistDiffSnippet(diffContext.diffContent),
             workspaceDir: workspace.dir,
             deliveryId: event.id,
             reviewOutputKey,
