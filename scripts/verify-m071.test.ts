@@ -13,11 +13,15 @@ import type { Issue131SourcePath } from "../src/issue-131/evidence-matrix.ts";
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
-  "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
+  "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type DegradedReviewPlan, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
   "import { graphValidationAppliedRuntimeStatus, graphValidationGateForReviewPlan, graphValidationSkippedRuntimeStatus, graphValidationThrownRuntimeStatus, resolveGraphValidationPreStatus } from '../review-graph/graph-validation-status.ts';",
   "const graphValidationPreStatus = resolveGraphValidationPreStatus({ config, graphContextAvailable: Boolean(graphBlastRadius) });",
-  "let reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }).plan;",
-  "reviewPlan = createDegradedReviewPlan({ reason: 'builder-error', routingReason: 'standard' });",
+  "let reviewPlan: ReviewPlan | DegradedReviewPlan;",
+  "try {",
+  "  reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }).plan;",
+  "} catch {",
+  "  reviewPlan = createDegradedReviewPlan({ reason: 'builder-error', routingReason: 'standard' });",
+  "}",
   "logger.info({ planHash: reviewPlan.hash }, 'ReviewPlan constructed before publication');",
   "const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);",
   "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlan: reviewPlanDetailsSummary });",
@@ -100,7 +104,8 @@ function makeReaders(overrides: Partial<Record<Issue131SourcePath, string>> & { 
   const files: Record<Issue131SourcePath, string> = {
     "src/handlers/review.ts": CURRENT_REVIEW_TS,
     "src/review-orchestration/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
-    "src/lib/review-details-formatting.ts": CURRENT_REVIEW_UTILS_TS,
+    "src/lib/review-details-formatting.ts": "<summary>Review Details</summary>",
+    "src/lib/review-details-plan-formatting.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
     "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,

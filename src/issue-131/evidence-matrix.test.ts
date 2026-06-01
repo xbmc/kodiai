@@ -13,11 +13,15 @@ import { ISSUE_131_DEFERRED_HANDOFF_ROWS, type Issue131DeferredHandoffRow } from
 
 const CURRENT_REVIEW_TS = [
   "import { validateGraphAmplifiedFindings, type GraphValidationFinding } from '../review-graph/validation.ts';",
-  "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
+  "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type DegradedReviewPlan, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
   "import { graphValidationAppliedRuntimeStatus, graphValidationGateForReviewPlan, graphValidationSkippedRuntimeStatus, graphValidationThrownRuntimeStatus, resolveGraphValidationPreStatus } from '../review-graph/graph-validation-status.ts';",
   "const graphValidationPreStatus = resolveGraphValidationPreStatus({ config, graphContextAvailable: Boolean(graphBlastRadius) });",
-  "let reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }).plan;",
-  "reviewPlan = createDegradedReviewPlan({ reason: 'builder-error', routingReason: 'standard' });",
+  "let reviewPlan: ReviewPlan | DegradedReviewPlan;",
+  "try {",
+  "  reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full', routingReason: 'standard' }, change: { changedFileCount: 1, linesChanged: 1, linesChangedSource: 'local-diff' }, gates: { current: [graphValidationGateForReviewPlan(graphValidationPreStatus).name], enabled: ['graph-validation'] }, policy: { publish: 'review-comment', tools: 'github-comment-tools', retry: 'budget-resilience' }, graphValidation: { status: graphValidationPreStatus.status, reason: graphValidationPreStatus.reason }, candidateFinding: { mode: 'preferred' } }).plan;",
+  "} catch {",
+  "  reviewPlan = createDegradedReviewPlan({ reason: 'builder-error', routingReason: 'standard' });",
+  "}",
   "logger.info({ planHash: reviewPlan.hash }, 'ReviewPlan constructed before publication');",
   "const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);",
   "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlan: reviewPlanDetailsSummary });",
@@ -93,7 +97,8 @@ function evaluateFixture(overrides: Partial<Record<Issue131SourcePath, string>> 
   const files: Record<Issue131SourcePath, string> = {
     "src/handlers/review.ts": CURRENT_REVIEW_TS,
     "src/review-orchestration/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
-    "src/lib/review-details-formatting.ts": CURRENT_REVIEW_UTILS_TS,
+    "src/lib/review-details-formatting.ts": "<summary>Review Details</summary>",
+    "src/lib/review-details-plan-formatting.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
     "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,
@@ -121,7 +126,8 @@ function evaluateFixtureWithHandoff(handoffRows: readonly Issue131DeferredHandof
   const files: Record<Issue131SourcePath, string> = {
     "src/handlers/review.ts": CURRENT_REVIEW_TS,
     "src/review-orchestration/review-plan.ts": CURRENT_REVIEW_PLAN_TS,
-    "src/lib/review-details-formatting.ts": CURRENT_REVIEW_UTILS_TS,
+    "src/lib/review-details-formatting.ts": "<summary>Review Details</summary>",
+    "src/lib/review-details-plan-formatting.ts": CURRENT_REVIEW_UTILS_TS,
     "src/execution/config.ts": CURRENT_CONFIG_TS,
     "src/review-graph/validation.ts": CURRENT_VALIDATION_TS,
     "src/review-graph/graph-validation-status.ts": CURRENT_GRAPH_VALIDATION_STATUS_TS,
@@ -188,10 +194,10 @@ describe("issue #131 evidence matrix evaluator", () => {
     expect(row(report, "normal-handler-plan-construction").evidence.map((entry) => entry.path)).toEqual(["src/handlers/review.ts"]);
     expect(row(report, "review-details-plan-summary").status).toBe("complete");
     expect(row(report, "review-details-plan-summary").evidence.map((entry) => entry.path)).toEqual([
-      "src/review-orchestration/review-plan.ts",
-        "src/lib/review-details-formatting.ts",
-      "src/handlers/review.ts",
-    ]);
+        "src/review-orchestration/review-plan.ts",
+        "src/lib/review-details-plan-formatting.ts",
+        "src/handlers/review.ts",
+      ]);
     expect(row(report, "typed-graph-validation-config").status).toBe("complete");
     expect(row(report, "truthful-graph-validation-status").status).toBe("complete");
     expect(row(report, "package-verifier-wiring").status).toBe("missing");
@@ -376,15 +382,31 @@ describe("issue #131 evidence matrix evaluator", () => {
       "src/handlers/review.ts": [
         "// reviewPlan: reviewPlanDetailsSummary",
         "// toReviewPlanDetailsSummary(reviewPlan)",
+        "// createDegradedReviewPlan({ reason: 'builder-error' })",
         "const marker = '<summary>Review Details</summary>';",
         "const reviewDetailsBody = formatReviewDetailsSummary({});",
       ].join("\n"),
-      "src/review-orchestration/review-plan.ts": "// toReviewPlanDetailsSummary and ReviewPlanDetailsSummary are test-only notes",
-      "src/lib/review-details-formatting.ts": "// formatReviewPlanDetailsLine would render - Review plan: ready in tests",
     });
 
     expect(row(report, "review-details-plan-summary").status).toBe("partial");
-    expect(row(report, "review-details-plan-summary").failureReasons.join("\n")).toContain("No exported ReviewPlanDetailsSummary type");
+    expect(row(report, "review-details-plan-summary").failureReasons.join("\n")).toContain("Review handler does not derive");
+  });
+
+  test("rejects disconnected degraded-plan tokens that are not bounded fail-open wiring", () => {
+    const report = evaluateFixture({
+      "src/handlers/review.ts": [
+        "import { buildReviewPlan, createDegradedReviewPlan, toReviewPlanDetailsSummary, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
+        "const reviewPlan = reviewPlanBuilder({ task: { taskType: 'review.full' } }).plan;",
+        "const unrelated = 'builder-error';",
+        "function unused() { return createDegradedReviewPlan({ reason: 'other-error', routingReason: 'standard' }); }",
+        "const reviewPlanDetailsSummary = toReviewPlanDetailsSummary(reviewPlan);",
+        "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlan: reviewPlanDetailsSummary });",
+        "const marker = '<summary>Review Details</summary>';",
+      ].join("\n"),
+    });
+
+    expect(row(report, "review-details-plan-summary").status).toBe("partial");
+    expect(row(report, "review-details-plan-summary").failureReasons.join("\n")).toContain("bounded fail-open ReviewPlan degradation behavior");
   });
 
   test("fails S03 evidence when Review Plan formatter visible output contains raw canary names", () => {
@@ -392,7 +414,7 @@ describe("issue #131 evidence matrix evaluator", () => {
       "return text ? [`- ${text}`] : [];",
       "return text ? [`- rawPrompt=${text}`] : [];",
     );
-    const report = evaluateFixture({ "src/lib/review-details-formatting.ts": unsafeFormatter });
+    const report = evaluateFixture({ "src/lib/review-details-plan-formatting.ts": unsafeFormatter });
 
     expect(row(report, "review-details-plan-summary").status).toBe("partial");
     expect(row(report, "review-details-plan-summary").failureReasons.join("\n")).toContain("raw review artifact field names");

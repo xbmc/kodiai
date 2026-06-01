@@ -100,6 +100,7 @@ export const ISSUE_131_SOURCE_PATHS = [
   "src/handlers/review.ts",
   "src/review-orchestration/review-plan.ts",
   "src/lib/review-details-formatting.ts",
+  "src/lib/review-details-plan-formatting.ts",
   "src/execution/config.ts",
   "src/review-graph/validation.ts",
   "src/review-graph/graph-validation-status.ts",
@@ -272,7 +273,10 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
   const source = {
     review: readers.readFileText("src/handlers/review.ts") ?? "",
     reviewPlan: readers.readFileText("src/review-orchestration/review-plan.ts") ?? "",
-    reviewDetailsFormatting: readers.readFileText("src/lib/review-details-formatting.ts") ?? "",
+    reviewDetailsFormatting: [
+      readers.readFileText("src/lib/review-details-formatting.ts") ?? "",
+      readers.readFileText("src/lib/review-details-plan-formatting.ts") ?? "",
+    ].join("\n"),
     config: readers.readFileText("src/execution/config.ts") ?? "",
     validation: readers.readFileText("src/review-graph/validation.ts") ?? "",
     graphValidationStatus: readers.readFileText("src/review-graph/graph-validation-status.ts") ?? "",
@@ -352,14 +356,14 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
       if (projection.complete && formatter.complete && handler.complete) {
         return makeRow(definition, "complete", [
           { path: "src/review-orchestration/review-plan.ts", reason: "Exports the compact public ReviewPlan Review Details projection with hash, route, budget, gate, policy, graph, candidate, and doctrine fields." },
-          { path: "src/lib/review-details-formatting.ts", reason: "Formats the public ReviewPlan projection into a bounded Review Details line without raw review artifacts." },
+          { path: "src/lib/review-details-plan-formatting.ts", reason: "Formats the public ReviewPlan projection into a bounded Review Details line without raw review artifacts." },
           { path: "src/handlers/review.ts", reason: "Normal review publication passes the ReviewPlan Review Details projection to formatReviewDetailsSummary with fail-open warning logs." },
         ]);
       }
 
       const partialEvidence: Issue131Evidence[] = [];
       if (projection.present) partialEvidence.push({ path: "src/review-orchestration/review-plan.ts", reason: "Public ReviewPlan Review Details projection exists but is not fully proven." });
-      if (formatter.present) partialEvidence.push({ path: "src/lib/review-details-formatting.ts", reason: "Review Details formatter mentions ReviewPlan summary but bounded safe output is not fully proven." });
+      if (formatter.present) partialEvidence.push({ path: "src/lib/review-details-plan-formatting.ts", reason: "Review Details formatter mentions ReviewPlan summary but bounded safe output is not fully proven." });
       if (handler.present || hasReviewDetails) partialEvidence.push({ path: "src/handlers/review.ts", reason: "Review Details publication exists or mentions ReviewPlan summary, but source-owned projection-to-formatter wiring is incomplete." });
 
       const failureReasons = [...projection.reasons, ...formatter.reasons, ...handler.reasons];
@@ -528,13 +532,60 @@ function findReviewDetailsPlanFormatter(reviewDetailsFormatterSource: string): S
 }
 
 function findReviewDetailsPlanHandlerWiring(reviewSource: string): SourceEvidenceProbe {
-  const present = /toReviewPlanDetailsSummary|reviewPlanDetailsSummary|reviewPlan\s*:/.test(reviewSource);
+  const source = stripTypeScriptComments(reviewSource);
+  const present = /toReviewPlanDetailsSummary|reviewPlanDetailsSummary|reviewPlan\s*:/.test(source);
   return makeProbe(present, [
-    [/toReviewPlanDetailsSummary/.test(reviewSource), "Review handler does not import/use the public ReviewPlan Review Details projection."],
-    [/toReviewPlanDetailsSummary\s*\(\s*reviewPlan\s*\)/.test(reviewSource), "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan instance."],
-    [/reviewPlan\s*:\s*reviewPlanDetailsSummary/.test(reviewSource), "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
-    [/createDegradedReviewPlan/.test(reviewSource) && /builder-error/.test(reviewSource), "Review handler does not prove bounded fail-open ReviewPlan degradation behavior."],
+    [/toReviewPlanDetailsSummary/.test(source), "Review handler does not import/use the public ReviewPlan Review Details projection."],
+    [/toReviewPlanDetailsSummary\s*\(\s*reviewPlan\s*\)/.test(source), "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan instance."],
+    [/reviewPlan\s*:\s*reviewPlanDetailsSummary/.test(source), "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
+    [hasBoundedReviewPlanDegradation(source), "Review handler does not prove bounded fail-open ReviewPlan degradation behavior."],
   ]);
+}
+
+function hasBoundedReviewPlanDegradation(reviewSource: string): boolean {
+  const projectionIndex = reviewSource.search(/toReviewPlanDetailsSummary\s*\(\s*reviewPlan\s*\)/);
+  if (projectionIndex < 0) return false;
+  const beforeProjection = reviewSource.slice(0, projectionIndex);
+  for (const catchMatch of beforeProjection.matchAll(/\bcatch\b/g)) {
+    const catchBlock = extractBracedBlockAfter(beforeProjection, catchMatch.index);
+    if (!catchBlock) continue;
+    if (!/\breviewPlan\s*=\s*createDegradedReviewPlan\s*\(\s*\{[\s\S]*?reason\s*:\s*["']builder-error["']/.test(catchBlock.body)) {
+      continue;
+    }
+    const tryBlock = findAdjacentTryBlock(beforeProjection, catchMatch.index);
+    if (!tryBlock) continue;
+    if (/\breviewPlan\s*=/.test(tryBlock.body) && /(?:buildReviewPlan|reviewPlanBuilder)\s*\(/.test(tryBlock.body)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findAdjacentTryBlock(source: string, catchIndex: number): { body: string; closeIndex: number } | null {
+  const tryMatches = [...source.slice(0, catchIndex).matchAll(/\btry\b/g)].reverse();
+  for (const tryMatch of tryMatches) {
+    const block = extractBracedBlockAfter(source, tryMatch.index);
+    if (!block || block.closeIndex > catchIndex) continue;
+    if (source.slice(block.closeIndex + 1, catchIndex).trim().length === 0) return block;
+  }
+  return null;
+}
+
+function extractBracedBlockAfter(source: string, startIndex: number): { body: string; closeIndex: number } | null {
+  const openIndex = source.indexOf("{", startIndex);
+  if (openIndex < 0) return null;
+  let depth = 0;
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return { body: source.slice(openIndex + 1, index), closeIndex: index };
+      }
+    }
+  }
+  return null;
 }
 
 function extractFunctionBody(source: string, functionName: string): string {

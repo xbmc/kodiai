@@ -1,5 +1,7 @@
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import type { ReviewHandlerPublicationBridgeReviewDetails } from "../issue-131/review-handler-publication-bridge.ts";
+import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import {
   boundedReviewDetailsValue,
   formatCountFields,
@@ -8,39 +10,12 @@ import {
   readNonNegativeCount,
 } from "./review-details-shared-formatting.ts";
 
-export type CandidatePublicationBridgeReviewDetails = {
-  bridgeVersion?: unknown;
-  bridgeId?: unknown;
-  recordKey?: unknown;
-  correlationKey?: unknown;
-  status?: unknown;
-  sourceLabel?: unknown;
-  candidateRef?: unknown;
-  verificationState?: unknown;
-  counts?: unknown;
-  presence?: unknown;
-  reasonCategories?: unknown;
-  malformedReasonCodes?: unknown;
-  redaction?: unknown;
-  reducerHandoffAvailable?: unknown;
-};
+export type CandidatePublicationBridgeReviewDetails = ReviewHandlerPublicationBridgeReviewDetails;
+export type CandidateVerificationPublicationEvidenceReviewDetails = CandidateVerificationPublicationEvidenceSummary;
 
-export type CandidateVerificationPublicationEvidenceReviewDetails = {
-  aggregateStatus?: unknown;
-  counts?: unknown;
-  publicationDenialCounts?: unknown;
-  reasonCategories?: unknown;
-  verificationStateCounts?: unknown;
-  candidateVerificationCounts?: unknown;
-  metadata?: unknown;
-  redactionFlags?: unknown;
-};
-
-function formatCandidateVerificationMetadata(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return "deliveryId:n,reviewOutputKey:n,correlationKey:n";
-  }
-  const metadata = value as Record<string, unknown>;
+function formatCandidateVerificationMetadata(
+  metadata: CandidateVerificationPublicationEvidenceSummary["metadata"],
+): string {
   return [
     `deliveryId:${metadata.hasDeliveryId === true ? "y" : "n"}`,
     `reviewOutputKey:${metadata.hasReviewOutputKey === true ? "y" : "n"}`,
@@ -48,11 +23,9 @@ function formatCandidateVerificationMetadata(value: unknown): string {
   ].join(",");
 }
 
-function formatRedactionFlags(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return "privateOnly:y,raw:n,evidencePayloads:n,publicationEvidence:n";
-  }
-  const flags = value as Record<string, unknown>;
+function formatRedactionFlags(
+  flags: CandidateVerificationPublicationEvidenceSummary["redactionFlags"],
+): string {
   return [
     `privateOnly:${flags.privateOnly === false ? "n" : "y"}`,
     `candidateBodies:${flags.candidateBodiesIncluded === true ? "y" : "n"}`,
@@ -373,9 +346,7 @@ function formatBridgeStringArray(value: unknown, maxItems = 8): string {
   return entries.length > 0 ? entries.join(",") : "none";
 }
 
-function hasUnsafeBridgeRedaction(value: unknown): boolean {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return true;
-  const redaction = value as Record<string, unknown>;
+function hasUnsafeBridgeRedaction(redaction: ReviewHandlerPublicationBridgeReviewDetails["redaction"]): boolean {
   return redaction.privateOnly !== true
     || redaction.rawPayloadsIncluded !== false
     || redaction.publicationFieldsIncluded !== false
@@ -384,11 +355,7 @@ function hasUnsafeBridgeRedaction(value: unknown): boolean {
     || redaction.reducerHandoffIncludesRawPayload !== false;
 }
 
-function formatBridgeRedactionFlags(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return "privateOnly:n,rawPayloads:n,publicationFields:n,evidencePayloads:n,githubCommentBody:n,reducerRawPayload:n,discardedRawPayload:n,discardedPublicationFields:n,discardedEvidencePayloads:n";
-  }
-  const redaction = value as Record<string, unknown>;
+function formatBridgeRedactionFlags(redaction: ReviewHandlerPublicationBridgeReviewDetails["redaction"]): string {
   return [
     `privateOnly:${redaction.privateOnly === true ? "y" : "n"}`,
     `rawPayloads:${redaction.rawPayloadsIncluded === true ? "y" : "n"}`,
@@ -402,11 +369,7 @@ function formatBridgeRedactionFlags(value: unknown): string {
   ].join(",");
 }
 
-function formatBridgePresence(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return "deliveryId:n,reviewOutputKey:n,upstreamCorrelationKey:n,policyCorrelationKey:n";
-  }
-  const presence = value as Record<string, unknown>;
+function formatBridgePresence(presence: ReviewHandlerPublicationBridgeReviewDetails["presence"]): string {
   return [
     `deliveryId:${presence.hasDeliveryId === true ? "y" : "n"}`,
     `reviewOutputKey:${presence.hasReviewOutputKey === true ? "y" : "n"}`,
