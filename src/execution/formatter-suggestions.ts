@@ -1,7 +1,9 @@
 import { redactGitHubTokens } from "../lib/sanitizer.ts";
 import {
+  planFormatterCommandExecution,
   spawnArgsForFormatterCommand,
   type FormatterCommandExecutionMode,
+  type FormatterCommandRejectionReason,
 } from "./formatter-command-sandbox.ts";
 
 export const FORMATTER_STDERR_SUMMARY_MAX_CHARS = 500;
@@ -12,7 +14,8 @@ export type FormatterCommandStatus =
   | "no-command"
   | "no-op"
   | "failed"
-  | "timed-out";
+  | "timed-out"
+  | "command-rejected";
 
 export interface ResolveFormatterCommandOptions {
   command: string | undefined;
@@ -34,7 +37,7 @@ export interface FormatterProcessResult {
   timedOut: boolean;
   durationMs: number;
   executionMode?: FormatterCommandExecutionMode;
-  shellFallbackReason?: string;
+  rejectionReason?: FormatterCommandRejectionReason;
 }
 
 export type FormatterProcessRunner = (
@@ -651,7 +654,19 @@ export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
   timeoutMs,
 }) => {
   const startedAt = performance.now();
-  const { spawnArgs, executionMode, fallbackReason } = spawnArgsForFormatterCommand(command);
+  const { spawnArgs, executionMode, rejectionReason } = spawnArgsForFormatterCommand(command);
+  if (executionMode === "rejected") {
+    return {
+      exitCode: 126,
+      stdout: "",
+      stderr: "",
+      timedOut: false,
+      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      executionMode,
+      rejectionReason,
+    };
+  }
+
   const proc = Bun.spawn(spawnArgs, {
     cwd,
     stdout: "pipe",
@@ -689,7 +704,6 @@ export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
       timedOut,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
       executionMode,
-      ...(fallbackReason ? { shellFallbackReason: fallbackReason } : {}),
     };
   } finally {
     if (timer !== undefined) {
@@ -713,6 +727,19 @@ export async function runFormatterCommand(
       stderrSummary: "",
       timedOut: false,
       durationMs: 0,
+    };
+  }
+
+  const plan = planFormatterCommandExecution(resolvedCommand);
+  if (plan.mode === "rejected") {
+    return {
+      status: "command-rejected",
+      stdout: "",
+      stderrSummary: plan.reason,
+      timedOut: false,
+      durationMs: 0,
+      resolvedCommand,
+      exitCode: 126,
     };
   }
 

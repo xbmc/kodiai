@@ -46,8 +46,35 @@ import {
   buildMentionContext,
   buildMentionContextDetails,
   buildMentionContextFingerprint,
-  type MentionContextAdmissionPolicy,
 } from "../execution/mention-context.ts";
+import {
+  buildMentionRetrievalBody,
+  deriveMentionAdmissionPolicy,
+  detectImplicitIssueIntent,
+  detectImplicitPrPatchIntent,
+  isCodeSeekingMentionRequest,
+  isDiffSeekingMentionRequest,
+  isReviewRequest,
+} from "./mention-request-classification.ts";
+import {
+  generateCommitSubject,
+  generatePrBody,
+  generatePrTitle,
+  parseWriteIntent,
+  summarizeWriteRequest,
+} from "./mention-write-formatters.ts";
+import {
+  buildIssueWriteFailureReply,
+  buildIssueWriteSuccessReply,
+  type IssueWriteFailureStep,
+  isLikelyWritePermissionFailure,
+  summarizeErrorForDiagnostics,
+} from "./mention-write-replies.ts";
+import { buildWriteBranchName, buildWriteOutputKey } from "./mention-write-keys.ts";
+import {
+  collectPrReviewPromptDiff,
+  scanDiffForFabricatedContent,
+} from "./mention-pr-review-diff.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
 import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
@@ -79,7 +106,8 @@ import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
-import { buildWritePolicyRefusalMessage, scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
+import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
+import { splitGitLines } from "../lib/review-utils.ts";
 import {
   buildApprovedReviewBody,
   buildReviewOutputKey,
@@ -87,11 +115,16 @@ import {
   ensureReviewOutputNotPublished,
 } from "../review-orchestration/review-idempotency.ts";
 import {
+  evaluateExplicitMentionReviewPublish,
+  buildExplicitMentionReviewPublishFailureBody,
+  buildExplicitReviewLifecycleEvidenceLine,
+  logExplicitMentionReviewPublishSkipped,
+} from "../review-orchestration/explicit-mention-review-publish.ts";
+import {
   attachReviewFindingLifecycle,
   attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
-import { collectDiffContext } from "./review.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 import {
   runFormatterSuggestionSubflow,
@@ -114,7 +147,6 @@ type MentionRetrievalContext = {
   }>;
 };
 
-type IssueWriteFailureStep = "branch-push" | "create-pr" | "issue-linkback";
 type MentionPublishResolution =
   | "none"
   | "executor"
@@ -352,39 +384,6 @@ export function createMentionHandler(deps: {
     }
   }
 
-  function buildWriteOutputKey(input: {
-    installationId: number;
-    owner: string;
-    repo: string;
-    sourceType: "pr" | "issue";
-    sourceNumber: number;
-    commentId: number;
-    keyword: string;
-  }): string {
-    const normalizedOwner = input.owner.trim().toLowerCase();
-    const normalizedRepo = input.repo.trim().toLowerCase();
-    const normalizedKeyword = input.keyword.trim().toLowerCase();
-
-    return [
-      "kodiai-write-output",
-      "v1",
-      `inst-${input.installationId}`,
-      `${normalizedOwner}/${normalizedRepo}`,
-      `${input.sourceType}-${input.sourceNumber}`,
-      `comment-${input.commentId}`,
-      `keyword-${normalizedKeyword}`,
-    ].join(":");
-  }
-
-  function buildWriteBranchName(params: {
-    sourceType: "pr" | "issue";
-    sourceNumber: number;
-    commentId: number;
-    writeOutputKey: string;
-  }): string {
-    const hash = createHash("sha256").update(params.writeOutputKey).digest("hex").slice(0, 12);
-    return `kodiai/apply/${params.sourceType}-${params.sourceNumber}-comment-${params.commentId}-${hash}`;
-  }
 
   function pruneRateLimiter(now: number): void {
     // Defense-in-depth: prevent unbounded growth in long-lived processes.
@@ -431,868 +430,7 @@ export function createMentionHandler(deps: {
     }
   }
 
-  function parseWriteIntent(userQuestion: string): {
-    writeIntent: boolean;
-    keyword: "apply" | "change" | "plan" | undefined;
-    request: string;
-  } {
-    const trimmed = userQuestion.trimStart();
-    const lower = trimmed.toLowerCase();
 
-    for (const keyword of ["apply", "change", "plan"] as const) {
-      const prefix = `${keyword}:`;
-      if (lower.startsWith(prefix)) {
-        return {
-          writeIntent: true,
-          keyword,
-          request: trimmed.slice(prefix.length).trim(),
-        };
-      }
-    }
-
-    return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
-  }
-
-  function detectImplicitIssueIntent(userQuestion: string): "apply" | "plan" | undefined {
-    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
-    if (normalized.length === 0) return undefined;
-
-    const planDirect = /^(?:please\s+)?(?:plan|draft|outline|propose)\b/;
-    const planAsk =
-      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:plan|draft|outline|propose)\b/;
-    const planPhrase = /(?:\bwork\s+up\b|\bput\s+together\b)(?:.{0,30})\bplan\b/;
-
-    if (planDirect.test(normalized) || planAsk.test(normalized) || planPhrase.test(normalized)) {
-      return "plan";
-    }
-
-    if (isImplementationRequestWithoutPrefix(normalized)) {
-      return "apply";
-    }
-
-    if (isConversationalConfirmation(normalized)) {
-      return "apply";
-    }
-
-    return undefined;
-  }
-
-  function detectImplicitPrPatchIntent(userQuestion: string): "apply" | undefined {
-    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
-    if (normalized.length === 0) return undefined;
-
-    // Direct: "create a patch", "make a patch", "open a patch PR", "submit a patch"
-    const patchDirect = /^(?:please\s+)?(?:create|make|open|submit)\s+(?:a\s+)?patch\b/;
-    // Direct: "patch this", "patch the earlier change"
-    const patchThis = /^(?:please\s+)?patch\s+(?:this|the|that)\b/;
-    // Polite: "can/could/would you create a patch"
-    const patchAsk = /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:create|make|open|submit)\s+(?:a\s+)?patch\b/;
-    // Polite: "can you patch this/the/that"
-    const patchThisAsk = /^(?:can|could|would|will)\s+you\s+(?:please\s+)?patch\s+(?:this|the|that)\b/;
-    // Contextual: "apply the earlier suggestion as a patch PR"
-    const patchContextual = /(?:apply|implement)\s+(?:the\s+)?(?:earlier|previous|above|suggested)\s+(?:change|suggestion|fix).*(?:as\s+)?(?:a\s+)?(?:patch|pr)\b/;
-
-    if (
-      patchDirect.test(normalized) ||
-      patchThis.test(normalized) ||
-      patchAsk.test(normalized) ||
-      patchThisAsk.test(normalized) ||
-      patchContextual.test(normalized)
-    ) {
-      return "apply";
-    }
-
-    if (isImplementationRequestWithoutPrefix(normalized)) {
-      return "apply";
-    }
-
-    if (isConversationalConfirmation(normalized)) {
-      return "apply";
-    }
-
-    return undefined;
-  }
-
-  function summarizeWriteRequest(request: string): string {
-    const condensed = request
-      .replace(/\s+/g, " ")
-      .replace(/^[@`'"([{\s]+/, "")
-      .replace(/[@`'"\])}\s]+$/, "")
-      .replace(/^(?:can|could|would|will)\s+you\s+/i, "")
-      .replace(/^(?:please\s+)+/i, "")
-      .replace(/[?.!]+$/, "")
-      .trim();
-
-    const fallback = "requested update";
-    const normalized = condensed.length > 0 ? condensed : fallback;
-    const maxLen = 72;
-    return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
-  }
-
-  function generatePrTitle(issueTitle: string | null, requestSummary: string, isFromPr: boolean): string {
-    const maxLen = 72;
-
-    if (issueTitle && issueTitle.trim().length > 0) {
-      // Clean the issue title: remove leading [tags], trailing issue refs
-      const cleaned = issueTitle
-        .replace(/^\[.*?\]\s*/g, "")
-        .replace(/\s*#\d+\s*$/, "")
-        .trim();
-
-      // Detect prefix from content
-      const lower = cleaned.toLowerCase();
-      let prefix: string;
-      if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
-        prefix = "fix";
-      } else if (/\brefactor\b/.test(lower)) {
-        prefix = "refactor";
-      } else if (/\b(?:add|support|implement|feature|new)\b/.test(lower)) {
-        prefix = "feat";
-      } else {
-        prefix = isFromPr ? "fix" : "feat";
-      }
-
-      const full = `${prefix}: ${cleaned}`;
-      return full.length <= maxLen ? full : `${full.slice(0, maxLen - 3).trimEnd()}...`;
-    }
-
-    // Fallback: no issue title available
-    const defaultPrefix = isFromPr ? "fix" : "feat";
-    const full = `${defaultPrefix}: ${requestSummary}`;
-    return full.length <= maxLen ? full : `${full.slice(0, maxLen - 3).trimEnd()}...`;
-  }
-
-  function generateCommitSubject(params: {
-    issueTitle: string | null | undefined;
-    requestSummary: string;
-    isFromPr: boolean;
-    ref?: string; // e.g. "#27954" or "PR #42"
-  }): string {
-    const maxLen = 72;
-    const { issueTitle, requestSummary, isFromPr, ref } = params;
-
-    let subject: string;
-
-    if (issueTitle && issueTitle.trim().length > 0) {
-      const cleaned = issueTitle
-        .replace(/^\[.*?\]\s*/g, "")
-        .replace(/\s*#\d+\s*$/, "")
-        .trim();
-
-      const lower = cleaned.toLowerCase();
-      let prefix: string;
-      if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
-        prefix = "fix";
-      } else if (/\brefactor\b/.test(lower)) {
-        prefix = "refactor";
-      } else if (/\b(?:add|support|implement|feature|new)\b/.test(lower)) {
-        prefix = "feat";
-      } else {
-        prefix = isFromPr ? "fix" : "feat";
-      }
-      subject = `${prefix}: ${cleaned}`;
-    } else {
-      const defaultPrefix = isFromPr ? "fix" : "feat";
-      subject = `${defaultPrefix}: ${requestSummary}`;
-    }
-
-    // Append ref if provided
-    if (ref) {
-      const withRef = `${subject} (${ref})`;
-      if (withRef.length <= maxLen) {
-        subject = withRef;
-      }
-      // If adding ref would exceed maxLen, truncate subject part to fit
-      else {
-        const refSuffix = ` (${ref})`;
-        const available = maxLen - refSuffix.length - 3; // 3 for "..."
-        if (available > 10) {
-          subject = `${subject.slice(0, available).trimEnd()}...${refSuffix}`;
-        }
-        // else just truncate without ref
-      }
-    }
-
-    return subject.length <= maxLen ? subject : `${subject.slice(0, maxLen - 3).trimEnd()}...`;
-  }
-
-  function generatePrBody(params: {
-    summary: string;
-    issueTitle: string | null;
-    sourceUrl: string;
-    triggerCommentUrl: string;
-    deliveryId: string;
-    headSha: string;
-    isFromPr: boolean;
-    issueNumber: number;
-    prNumber: number | undefined;
-    diffStat: string;
-    warnings?: string[];
-  }): string {
-    const {
-      summary, issueTitle, sourceUrl, triggerCommentUrl,
-      deliveryId, headSha, isFromPr, issueNumber, prNumber, diffStat,
-    } = params;
-
-    // Summary paragraph: prefer issue title context, fall back to request summary
-    const summaryParagraph = issueTitle && issueTitle.trim().length > 0
-      ? issueTitle.trim()
-      : summary;
-
-    const resolveOrRelate = isFromPr
-      ? `Related to #${prNumber}`
-      : `Resolves #${issueNumber}`;
-
-    const lines: string[] = [
-      summaryParagraph,
-      "",
-    ];
-
-    if (diffStat) {
-      lines.push("## Changes", "", diffStat, "");
-    }
-
-    if (params.warnings && params.warnings.length > 0) {
-      lines.push(
-        "## Automated warnings",
-        "",
-        ...params.warnings.map((w) => `- ${w}`),
-        "",
-      );
-    }
-
-    lines.push(
-      "---",
-      "",
-      resolveOrRelate,
-      "",
-      "<details>",
-      "<summary>Metadata</summary>",
-      "",
-      `- Source: ${sourceUrl}`,
-      `- Trigger: ${triggerCommentUrl}`,
-      `- Delivery: ${deliveryId}`,
-      `- Commit: ${headSha}`,
-      "",
-      "</details>",
-    );
-
-    return lines.join("\n");
-  }
-
-  async function scanDiffForFabricatedContent(dir: string): Promise<string[]> {
-    let diffText: string;
-    try {
-      diffText = (await $`git -C ${dir} diff HEAD~1 HEAD`.quiet()).text();
-    } catch {
-      return []; // no diff available, skip scan
-    }
-
-    const addedLines = diffText
-      .split("\n")
-      .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
-
-    return scanLinesForFabricatedContent(addedLines);
-  }
-
-  function toErrorSignalText(value: unknown): string {
-    if (typeof value === "string") {
-      return value;
-    }
-    if (value instanceof Uint8Array) {
-      return new TextDecoder().decode(value);
-    }
-    if (value instanceof Error) {
-      return value.message;
-    }
-    if (value && typeof value === "object") {
-      try {
-        return JSON.stringify(value);
-      } catch {
-        return String(value);
-      }
-    }
-    return String(value ?? "");
-  }
-
-  function summarizeErrorForDiagnostics(err: unknown): string {
-    const parts: string[] = [];
-
-    if (err instanceof Error) {
-      if (typeof err.message === "string") {
-        parts.push(err.message);
-      }
-      const withExtras = err as Error & {
-        stderr?: unknown;
-        stdout?: unknown;
-        cause?: unknown;
-      };
-      parts.push(toErrorSignalText(withExtras.stderr));
-      parts.push(toErrorSignalText(withExtras.stdout));
-      parts.push(toErrorSignalText(withExtras.cause));
-    }
-
-    if (typeof err === "object" && err !== null) {
-      const maybeObj = err as {
-        message?: unknown;
-        stderr?: unknown;
-        stdout?: unknown;
-        response?: unknown;
-      };
-      parts.push(toErrorSignalText(maybeObj.message));
-      parts.push(toErrorSignalText(maybeObj.stderr));
-      parts.push(toErrorSignalText(maybeObj.stdout));
-      parts.push(toErrorSignalText(maybeObj.response));
-    }
-
-    const firstLine = parts
-      .map((part) => part.replace(/\s+/g, " ").trim())
-      .find((part) => part.length > 0);
-
-    return firstLine ?? "Unknown publish failure";
-  }
-
-  function buildExplicitReviewPublishFailureBody(publishErr: unknown): string {
-    const detail = summarizeErrorForDiagnostics(publishErr);
-    const category = classifyError(publishErr, false);
-    return wrapInDetails(
-      formatErrorComment(
-        category,
-        `Review execution finished, but GitHub rejected the publish step. ${detail}`,
-      ),
-      "Kodiai couldn't publish the review result",
-    );
-  }
-
-  function buildExplicitReviewLifecycleEvidenceLine(
-    lifecycleResult: AttachReviewFindingLifecycleResult | null | undefined,
-  ): string | null {
-    const projection = lifecycleResult?.projection;
-    if (!projection || projection.schema !== "review-finding-lifecycle.v1" || projection.status === "unavailable") {
-      return null;
-    }
-
-    const counts = projection.counts;
-    const statusCounts = counts.status;
-    const severityCounts = counts.severity;
-    const actionabilityCounts = counts.actionability;
-    return [
-      `Review finding lifecycle: status=${projection.status}`,
-      `counts=input:${counts.input},recorded:${counts.recorded},rejected:${counts.rejected},unsafeInputFields:${counts.unsafeInputFields}`,
-      `statuses=detected:${statusCounts.detected},open:${statusCounts.open},validated:${statusCounts.validated},degraded:${statusCounts.degraded}`,
-      `severity=critical:${severityCounts.critical},major:${severityCounts.major},medium:${severityCounts.medium},minor:${severityCounts.minor}`,
-      `actionability=actionable:${actionabilityCounts.actionable},needs-human-review:${actionabilityCounts["needs-human-review"]},blocked:${actionabilityCounts.blocked}`,
-      `rejected=${projection.rejectedReasonCodes.slice(0, 8).join(",") || "none"}`,
-      `redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:${projection.redaction.unsafeInputFieldCount}`,
-    ].join("; ");
-  }
-
-  function extractExplicitReviewResultFindingLines(resultText: string | undefined): string[] {
-    if (!resultText) {
-      return [];
-    }
-
-    const findings: string[] = [];
-    const numberedFindings: Array<{
-      index: number;
-      path: string;
-      lineNo: string;
-      title: string;
-    }> = [];
-    const numberedSeverityByIndex = new Map<number, string>();
-    let currentFilePath: string | null = null;
-    let currentSeveritySection: string | null = null;
-    const headingPattern = /^#{1,6}\s*\d+\.\s*\*\*\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+(.+?)\s+-\s+(.+?)\*\*\s*$/i;
-    const inlinePattern = /^\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+(.+?)\s+\((\d+(?:-\d+)?)\):\s+(.+)$/i;
-    const numberedPattern = /^(\d+)\.\s+\*\*(.+?):(\d+(?:-\d+)?)\*\*\s+-\s+(.+)$/;
-    const severitySummaryPattern = /^-\s+\*\*\d+\s+(CRITICAL|MAJOR|MEDIUM|MINOR)\s+issues?\*\*:\s+(.+)$/i;
-    const severitySectionPattern = /^#{1,6}\s+(CRITICAL|MAJOR|MEDIUM|MINOR)\s+issues\b[:\s]*$/i;
-    const sectionedBoldFindingPattern = /^\*\*(\d+)\.\s+(?:\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+)?(.+?)\*\*\s+\((.+?):(\d+(?:-\d+)?)\)$/i;
-    const fileHeaderPattern = /^###\s+(.+)$/;
-    const fileScopedLinePattern = /^(\d+)\.\s+\*\*Line\s+(\d+(?:-\d+)?)\s+\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\*\*:\s+(.+)$/i;
-
-    for (const rawLine of resultText.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line) {
-        continue;
-      }
-
-      const severitySectionMatch = line.match(severitySectionPattern);
-      if (severitySectionMatch) {
-        currentSeveritySection = severitySectionMatch[1]?.toLowerCase() ?? null;
-        currentFilePath = null;
-        continue;
-      }
-
-      const headingMatch = line.match(headingPattern);
-      if (headingMatch) {
-        const severity = headingMatch[1];
-        const location = headingMatch[2];
-        const title = headingMatch[3];
-        if (!severity || !location || !title) {
-          continue;
-        }
-        const locationMatch = location.trim().match(/^(.*?):(\d+(?:-\d+)?)$/);
-        const path = locationMatch?.[1]?.trim() || location.trim();
-        const lineNo = locationMatch?.[2]?.trim() || "0";
-        findings.push(`- (${findings.length + 1}) [${severity.toLowerCase()}] ${path} (${lineNo}): ${title.trim()}`);
-        continue;
-      }
-
-      const inlineMatch = line.match(inlinePattern);
-      if (inlineMatch) {
-        const severity = inlineMatch[1];
-        const path = inlineMatch[2];
-        const lineNo = inlineMatch[3];
-        const title = inlineMatch[4];
-        if (!severity || !path || !lineNo || !title) {
-          continue;
-        }
-        findings.push(`- (${findings.length + 1}) [${severity.toLowerCase()}] ${path.trim()} (${lineNo.trim()}): ${title.trim()}`);
-        continue;
-      }
-
-      const sectionedBoldFindingMatch = line.match(sectionedBoldFindingPattern);
-      if (sectionedBoldFindingMatch) {
-        const severity = (sectionedBoldFindingMatch[2] ?? currentSeveritySection)?.toLowerCase();
-        const title = sectionedBoldFindingMatch[3]?.trim();
-        const path = sectionedBoldFindingMatch[4]?.trim();
-        const lineNo = sectionedBoldFindingMatch[5]?.trim();
-        if (!severity || !title || !path || !lineNo) {
-          continue;
-        }
-        findings.push(`- (${findings.length + 1}) [${severity}] ${path} (${lineNo}): ${title}`);
-        continue;
-      }
-
-      const fileHeaderMatch = line.match(fileHeaderPattern);
-      if (fileHeaderMatch) {
-        const candidatePath = fileHeaderMatch[1]?.trim() ?? "";
-        currentFilePath = candidatePath.includes("/") && candidatePath.includes(".")
-          ? candidatePath
-          : null;
-        continue;
-      }
-
-      const fileScopedLineMatch = line.match(fileScopedLinePattern);
-      if (fileScopedLineMatch && currentFilePath) {
-        const lineNo = fileScopedLineMatch[2]?.trim();
-        const severity = fileScopedLineMatch[3]?.toLowerCase();
-        const title = fileScopedLineMatch[4]?.trim();
-        if (!lineNo || !severity || !title) {
-          continue;
-        }
-        findings.push(`- (${findings.length + 1}) [${severity}] ${currentFilePath} (${lineNo}): ${title}`);
-        continue;
-      }
-
-      const numberedMatch = line.match(numberedPattern);
-      if (numberedMatch) {
-        const findingIndex = Number.parseInt(numberedMatch[1] ?? "", 10);
-        const path = numberedMatch[2]?.trim();
-        const lineNo = numberedMatch[3]?.trim();
-        const title = numberedMatch[4]?.trim();
-        if (!Number.isInteger(findingIndex) || findingIndex < 1 || !path || !lineNo || !title) {
-          continue;
-        }
-        numberedFindings.push({ index: findingIndex, path, lineNo, title });
-        continue;
-      }
-
-      const severitySummaryMatch = line.match(severitySummaryPattern);
-      if (severitySummaryMatch) {
-        const severity = severitySummaryMatch[1]?.toLowerCase();
-        const summary = severitySummaryMatch[2];
-        if (!severity || !summary) {
-          continue;
-        }
-        for (const match of summary.matchAll(/#(\d+)/g)) {
-          const findingIndex = Number.parseInt(match[1] ?? "", 10);
-          if (Number.isInteger(findingIndex) && findingIndex > 0) {
-            numberedSeverityByIndex.set(findingIndex, severity);
-          }
-        }
-      }
-    }
-
-    if (findings.length > 0) {
-      return findings;
-    }
-
-    if (numberedFindings.length === 0) {
-      return [];
-    }
-
-    return numberedFindings
-      .sort((a, b) => a.index - b.index)
-      .map((finding, arrayIndex) => {
-        const severity = numberedSeverityByIndex.get(finding.index) ?? "major";
-        return `- (${arrayIndex + 1}) [${severity}] ${finding.path} (${finding.lineNo}): ${finding.title}`;
-      });
-  }
-
-  function hasExplicitReviewBlockingSignals(resultText: string | undefined): boolean {
-    if (!resultText) {
-      return false;
-    }
-
-    const text = resultText.toLowerCase();
-    if (
-      text.includes("no blocking issues found")
-      || text.includes("ready to merge")
-      || text.includes("decision: approve")
-    ) {
-      return false;
-    }
-
-    return (
-      /found(?:\s+\*\*\d+)?\s+(?:several|multiple|\d+)?\s*(?:blocking|critical\/major|critical and major|major and critical|critical|major)\s+issues/.test(text)
-      || /cannot be merged/.test(text)
-      || /should not be merged/.test(text)
-      || /address before merging/.test(text)
-      || /critical issues found/.test(text)
-      || /\bblocking issues\b/.test(text)
-    );
-  }
-
-  function buildIssueWriteSuccessReply(params: {
-    prUrl: string;
-    issueLinkbackUrl: string;
-  }): string {
-    const lines = [
-      "status: success",
-      `pr_url: ${params.prUrl}`,
-      `issue_linkback_url: ${params.issueLinkbackUrl}`,
-      "",
-      `Opened PR: ${params.prUrl}`,
-    ];
-
-    return wrapInDetails(lines.join("\n"), "kodiai response");
-  }
-
-  function buildIssueWriteFailureReply(params: {
-    failedStep: IssueWriteFailureStep;
-    diagnostics: string;
-    retryCommand: string;
-  }): string {
-    const lines = [
-      "Write request failed before PR publication completed.",
-      "",
-      "status: pr_creation_failed",
-      `failed_step: ${params.failedStep}`,
-      `diagnostics: ${params.diagnostics}`,
-      "",
-      "Next step: Fix the failed step and retry the exact same command.",
-      `Retry command: ${params.retryCommand}`,
-    ];
-
-    return wrapInDetails(lines.join("\n"), "kodiai response");
-  }
-
-  function isLikelyWritePermissionFailure(err: unknown): boolean {
-    if (!err) {
-      return false;
-    }
-
-    const status =
-      typeof err === "object" && err !== null && "status" in err && typeof err.status === "number"
-        ? err.status
-        : undefined;
-
-    if (status === 401 || status === 403) {
-      return true;
-    }
-
-    const parts: string[] = [];
-    if (err instanceof Error) {
-      parts.push(err.message);
-      const errorWithExtras = err as Error & {
-        stderr?: unknown;
-        stdout?: unknown;
-        cause?: unknown;
-      };
-      parts.push(toErrorSignalText(errorWithExtras.stderr));
-      parts.push(toErrorSignalText(errorWithExtras.stdout));
-      parts.push(toErrorSignalText(errorWithExtras.cause));
-    }
-
-    if (typeof err === "object" && err !== null) {
-      const obj = err as {
-        message?: unknown;
-        stderr?: unknown;
-        stdout?: unknown;
-        response?: unknown;
-      };
-      parts.push(toErrorSignalText(obj.message));
-      parts.push(toErrorSignalText(obj.stderr));
-      parts.push(toErrorSignalText(obj.stdout));
-      parts.push(toErrorSignalText(obj.response));
-    }
-
-    const signal = parts.join("\n").toLowerCase();
-    if (signal.length === 0) {
-      return false;
-    }
-
-    return (
-      signal.includes("resource not accessible by integration") ||
-      signal.includes("permission to") ||
-      signal.includes("write access to repository not granted") ||
-      signal.includes("permission denied") ||
-      signal.includes("insufficient permission") ||
-      signal.includes("forbidden") ||
-      signal.includes("not permitted") ||
-      signal.includes("requires write")
-    );
-  }
-
-  function splitGitLines(output: string): string[] {
-    return output
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-  }
-
-  async function collectPrReviewPromptDiff(input: {
-    workspaceDir: string;
-    owner: string;
-    repo: string;
-    prNumber: number;
-    baseRef: string;
-    surface: MentionEvent["surface"];
-    token?: string;
-    fallbackFileProvider?: () => Promise<string[]>;
-    fallbackDiffProvider?: () => Promise<Array<{
-      filename: string;
-      status?: string;
-      previousFilename?: string;
-      additions?: number | null;
-      deletions?: number | null;
-      patch?: string | null;
-    }>>;
-  }): Promise<{
-    changedFiles: string[];
-    numstatLines: string[];
-    diffRange: string;
-    diffContent?: string;
-  }> {
-    const diffContext = await collectDiffContext({
-      workspaceDir: input.workspaceDir,
-      baseRef: input.baseRef,
-      maxFilesForFullDiff: 0,
-      logger,
-      baseLog: {
-        surface: input.surface,
-        owner: input.owner,
-        repo: input.repo,
-        prNumber: input.prNumber,
-      },
-      token: input.token,
-      fallbackFileProvider: input.fallbackFileProvider,
-      fallbackDiffProvider: input.fallbackDiffProvider,
-    });
-
-    return {
-      changedFiles: diffContext.changedFiles,
-      numstatLines: diffContext.numstatLines,
-      diffRange: diffContext.diffRange,
-      diffContent: diffContext.diffContent,
-    };
-  }
-
-  function stripIssueIntentWrappers(userQuestion: string): string {
-    let normalized = userQuestion.trim().replace(/\s+/g, " ");
-
-    for (let i = 0; i < 4; i++) {
-      const before = normalized;
-      normalized = normalized
-        .replace(/^(?:>+\s*)+/, "")
-        .replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "")
-        .replace(/^\/[a-z0-9._:-]+(?:\s+|$)/i, "")
-        .replace(/^https?:\/\/\S+(?:\s+|$)/i, "")
-        .replace(/^[`'"([{]+/, "")
-        .replace(/^[,.;:!?\-\s]+/, "")
-        .replace(/^(?:hey|hi|hello|quick question|question|fyi|context)[,\-:]\s+/i, "")
-        .trim();
-      if (normalized === before || normalized.length === 0) break;
-    }
-
-    return normalized;
-  }
-
-  function isImplementationRequestWithoutPrefix(userQuestion: string): boolean {
-    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
-    if (normalized.length === 0) return false;
-
-    const implementationVerb =
-      "(?:fix|update|change|refactor|add|remove|implement|create|rename|rewrite|patch|write|open|submit|send)";
-    const rewriteVerb = "(?:improve|tweak|clean\\s*up|cleanup|clarify)";
-    const codeTarget =
-      "(?:code|logic|behavior|copy|text|wording|message|handler|prompt|response|implementation|flow|gating|function|test(?:s)?|readme|docs?|config|types?)";
-    const styleOutcome = "(?:clear(?:er)?|better|safer|faster|consistent|more\\s+readable)";
-
-    const directCommand = new RegExp(`^${implementationVerb}\\b`);
-    const politeCommand = new RegExp(`^(?:please\\s+)?${implementationVerb}\\b`);
-    const explicitAsk = new RegExp(
-      `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?${implementationVerb}\\b`,
-    );
-    const rewriteCommand = new RegExp(
-      `^(?:please\\s+)?${rewriteVerb}\\b(?:.{0,80})\\b${codeTarget}\\b`,
-    );
-    const rewriteAsk = new RegExp(
-      `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?${rewriteVerb}\\b(?:.{0,80})\\b${codeTarget}\\b`,
-    );
-    const makeStyleCommand = new RegExp(
-      `^(?:please\\s+)?make\\b(?:.{0,120})\\b${styleOutcome}\\b(?:.{0,120})\\b${codeTarget}\\b`,
-    );
-    const makeStyleAsk = new RegExp(
-      `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?make\\b(?:.{0,120})\\b${styleOutcome}\\b(?:.{0,120})\\b${codeTarget}\\b`,
-    );
-
-    return (
-      directCommand.test(normalized) ||
-      politeCommand.test(normalized) ||
-      explicitAsk.test(normalized) ||
-      rewriteCommand.test(normalized) ||
-      rewriteAsk.test(normalized) ||
-      makeStyleCommand.test(normalized) ||
-      makeStyleAsk.test(normalized)
-    );
-  }
-
-  function isConversationalConfirmation(text: string): boolean {
-    const normalized = stripIssueIntentWrappers(text).toLowerCase();
-    if (normalized.length === 0) return false;
-
-    const actionSignal =
-      /(?:\bwrite\b|\bdo\s+it\b|\bgo\s+ahead\b|\bproceed\b|\bpr\b|\bimplement\b|\bfix\b|\bopen\b|\bsubmit\b|\bsend\b|\bmake\b|\bcreate\b)/;
-
-    // Confirmation + action: "yes, please write the PR", "yes do it", "yes go ahead"
-    // NOTE: "please" is intentionally excluded — it is a politeness prefix, not a confirmation.
-    // "please do X" should be handled by the implementation-verb patterns, not treated as
-    // a confirmation of a prior offer. Including "please" here caused "please do a full review
-    // of this PR" to match as write intent (confirmationAction="please" + actionSignal="\bpr\b").
-    const confirmationAction = /^(?:yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely)\b/;
-    // Sentiment + action: "sounds good, go ahead", "looks good, make the PR"
-    const sentimentAction =
-      /^(?:sounds?\s+good|looks?\s+good|that(?:'s|\s+is)\s+(?:good|great|perfect|fine)|perfect|great)\b/;
-    // Standalone action: "go ahead", "do it", "please proceed"
-    const standaloneAction =
-      /^(?:(?:please\s+)?go\s+ahead|(?:please\s+)?do\s+it|(?:please\s+)?proceed)\b/;
-
-    if (standaloneAction.test(normalized)) return true;
-    if ((confirmationAction.test(normalized) || sentimentAction.test(normalized)) && actionSignal.test(normalized))
-      return true;
-
-    return false;
-  }
-
-  /**
-   * Detect explicit review requests on PR surfaces.
-   *
-   * Review requests should never trigger write mode — the bot should post a review
-   * comment/summary on the PR, not open a new PR. This guard must run before
-   * detectImplicitPrPatchIntent so that "please do a full review" doesn't fall
-   * through to the patch/apply detection path.
-   *
-   * Returns true if the request is unambiguously asking for a code review.
-   */
-  function isReviewRequest(userQuestion: string): boolean {
-    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase().trim();
-    if (normalized.length === 0) return false;
-
-    const reviewCommand =
-      "(?:do\\s+(?:a\\s+)?(?:full\\s+)?review|review|(?:retry|rerun|re-run)\\s+(?:the\\s+)?(?:full\\s+)?review)";
-
-    // Direct: "review this", "review the PR", "do a full review", "please retry review"
-    const reviewDirect = new RegExp(`^(?:please\\s+)?${reviewCommand}\\b`);
-    // Polite ask: "can you review", "can you do a review", "can you retry the review"
-    const reviewAsk = new RegExp(`^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?${reviewCommand}\\b`);
-
-    // Follow-up after a PR update: "better now?", "fixed now?", "can you check again?".
-    // On PR surfaces these are operator shorthand for rerunning the review after addressing feedback.
-    const reviewFollowUp = /^(?:(?:is\s+)?(?:it\s+)?better\s+now|(?:is\s+)?(?:it\s+)?fixed\s+now|(?:how\s+about|what\s+about)\s+now|(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:check|look|take\s+a\s+look)\s+again)\??$/;
-
-    return reviewDirect.test(normalized) || reviewAsk.test(normalized) || reviewFollowUp.test(normalized);
-  }
-
-  function deriveMentionAdmissionPolicy(params: {
-    explicitReviewRequest: boolean;
-    config: Awaited<ReturnType<typeof loadRepoConfig>>["config"];
-  }): MentionContextAdmissionPolicy {
-    const source = params.explicitReviewRequest
-      ? params.config.mention.admission.explicitReview
-      : params.config.mention.admission.conversational;
-
-    return {
-      includeConversationHistory: source.includeConversationHistory,
-      includePrMetadata: source.includePrMetadata,
-      includeReviewThread: params.explicitReviewRequest ? source.includeReviewThread : false,
-      includeInlineReviewContext: source.includeInlineReviewContext,
-    };
-  }
-
-  function isCodeSeekingMentionRequest(question: string): boolean {
-    const normalized = stripIssueIntentWrappers(question).toLowerCase();
-    if (normalized.length === 0) {
-      return false;
-    }
-
-    const directCodeIntent = /\b(where\s+is|which\s+file|what\s+file|show\s+me|point\s+me|find|locate|trace|walk\s+me\s+through|inspect|debug|look\s+at)\b/;
-    const codeSubject = /\b(code|implementation|logic|handler|function|module|class|component|query|workflow|prompt|diff|stack|error|bug|regression|test|file|path|line|symbol|readme|docs?)\b/;
-    const fileReference = /\b[a-z0-9._/-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|yml|yaml|sql|py|rb|go|rs|java|kt|swift|cpp|cc|c|h)\b/;
-    const codeSyntax = /[`/]|::|->|\bsrc\//;
-
-    if (directCodeIntent.test(normalized) && (codeSubject.test(normalized) || fileReference.test(normalized) || codeSyntax.test(normalized))) {
-      return true;
-    }
-
-    const implementationQuestion = /\b(how\s+does|why\s+does|what\s+does)\b/;
-    if (implementationQuestion.test(normalized) && (codeSubject.test(normalized) || fileReference.test(normalized) || codeSyntax.test(normalized))) {
-      return true;
-    }
-
-    const locationQuestion = /\b(file|path|line|symbol|function|module|class|component)\b/;
-    if (locationQuestion.test(normalized) && /\b(where|which|show|find|locate)\b/.test(normalized)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  function isDiffSeekingMentionRequest(question: string): boolean {
-    const normalized = stripIssueIntentWrappers(question).toLowerCase();
-    if (normalized.length === 0) {
-      return false;
-    }
-
-    const diffNoun = /\b(diff|patch|changes|changed files|delta|hunk|stat|files changed)\b/;
-    const diffVerb = /\b(show|inspect|review|analyze|walk\s+through|summarize|explain|compare|check)\b/;
-    const comparePhrase = /\bwhat\s+changed\b/;
-
-    return comparePhrase.test(normalized) || (diffNoun.test(normalized) && diffVerb.test(normalized));
-  }
-
-  function buildMentionRetrievalBody(params: {
-    userQuestion: string;
-    mentionContext: string;
-    allowHeavyContext: boolean;
-    allowDiffContext: boolean;
-    explicitReviewRequest: boolean;
-  }): string {
-    if (params.explicitReviewRequest) {
-      return params.mentionContext;
-    }
-
-    const summaryLines = [params.userQuestion.trim()];
-    if (params.allowHeavyContext && params.mentionContext.trim().length > 0) {
-      summaryLines.push(params.mentionContext.trim());
-    } else if (params.allowDiffContext) {
-      summaryLines.push("diff-inspection request");
-    }
-
-    return summaryLines.filter((line) => line.length > 0).join("\n\n");
-  }
 
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
@@ -2280,7 +1418,7 @@ export function createMentionHandler(deps: {
         let mentionDerivedContextCacheReason: string | null = null;
         const mentionAdmissionPolicy = deriveMentionAdmissionPolicy({
           explicitReviewRequest,
-          config,
+          mentionAdmission: config.mention.admission,
         });
         const allowIssueCodePointers = isIssueThreadComment && isCodeSeekingMentionRequest(writeIntent.request);
         const allowPrDiffContext =
@@ -2724,6 +1862,7 @@ export function createMentionHandler(deps: {
                 prNumber: explicitReviewPrNumber,
                 baseRef: mention.baseRef,
                 surface: mention.surface,
+                logger,
                 token: workspace.token,
                 fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
                   octokit,
@@ -3119,56 +2258,40 @@ export function createMentionHandler(deps: {
             }
           }
         }
-        const explicitReviewResultFindingLines = extractExplicitReviewResultFindingLines(result.resultText);
-        const explicitReviewHasUnpublishedFindings =
-          explicitReviewRequest &&
-          mention.prNumber !== undefined &&
-          !result.published &&
-          (
-            explicitReviewResultFindingLines.length > 0
-            || hasExplicitReviewBlockingSignals(result.resultText)
-          );
-        const explicitReviewPublishEligible =
-          explicitReviewRequest &&
-          mention.prNumber !== undefined &&
-          result.conclusion === "success" &&
-          !result.published &&
-          result.usedRepoInspectionTools === true &&
-          reviewOutputKey &&
-          !explicitReviewHasUnpublishedFindings;
+        const explicitReviewPublishEvaluation = evaluateExplicitMentionReviewPublish({
+          explicitReviewRequest,
+          prNumber: mention.prNumber,
+          reviewOutputKey,
+          result: {
+            conclusion: result.conclusion,
+            published: result.published,
+            usedRepoInspectionTools: result.usedRepoInspectionTools,
+            resultText: result.resultText,
+            toolUseNames: result.toolUseNames,
+          },
+        });
+        const explicitReviewResultFindingLines = explicitReviewPublishEvaluation.findingLines;
+        const explicitReviewPublishEligible = explicitReviewPublishEvaluation.eligible;
 
         if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
-          const skipReason =
-            result.conclusion !== "success"
-              ? "execution-not-success"
-              : result.published
-                ? "output-already-published"
-                : explicitReviewHasUnpublishedFindings
-                  ? "result-text-findings"
-                  : result.usedRepoInspectionTools !== true
-                    ? "missing-inspection-evidence"
-                    : !reviewOutputKey
-                      ? "missing-review-output-key"
-                      : "not-eligible";
-
-          logger.info(
-            {
+          logExplicitMentionReviewPublishSkipped({
+            logger,
+            baseLog: {
               surface: mention.surface,
               owner: mention.owner,
               repo: mention.repo,
               prNumber: mention.prNumber,
-              gate: "explicit-review-publish",
-              gateResult: "skipped",
-              skipReason,
-              reviewOutputKey: reviewOutputKey ?? null,
-              resultConclusion: result.conclusion,
-              resultPublished: result.published,
-              usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
-              toolUseNames: result.toolUseNames ?? [],
-              autoApprove: config.review.autoApprove,
             },
-            "Skipping explicit mention review publish path",
-          );
+            evaluation: explicitReviewPublishEvaluation,
+            reviewOutputKey,
+            result: {
+              conclusion: result.conclusion,
+              published: result.published,
+              usedRepoInspectionTools: result.usedRepoInspectionTools,
+              toolUseNames: result.toolUseNames,
+            },
+            autoApprove: config.review.autoApprove,
+          });
         }
 
         if (explicitReviewPublishEligible && reviewOutputKey && mention.prNumber !== undefined) {
@@ -3377,7 +2500,10 @@ export function createMentionHandler(deps: {
               } else {
                 setReviewWorkPhase("publish");
                 const fallbackResult = await postMentionError(
-                  buildExplicitReviewPublishFailureBody(publishErr),
+                  buildExplicitMentionReviewPublishFailureBody({
+                    publishErr,
+                    summarizeError: summarizeErrorForDiagnostics,
+                  }),
                 );
                 publishFallbackDelivery = fallbackResult.delivery;
 
