@@ -228,6 +228,18 @@ export function createLearningMemoryStore(opts: {
   const { sql, logger } = opts;
 
   const store: LearningMemoryStore = {
+    async hasMemoryConflict(key: { repo: string; findingId: number; outcome: LearningMemoryRecord["outcome"] }): Promise<boolean> {
+      const rows = await sql`
+        SELECT 1
+        FROM learning_memories
+        WHERE repo = ${key.repo}
+          AND finding_id = ${key.findingId}
+          AND outcome = ${key.outcome}
+        LIMIT 1
+      `;
+      return rows.length > 0;
+    },
+
     async writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void> {
       const preparedRecord = prepareLearningMemoryRecordForSql(record);
       const embeddingString = float32ArrayToVectorString(embedding);

@@ -4,7 +4,7 @@ import { createReviewCommentSyncHandler } from "./review-comment-sync.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, JobQueueRunMetadata } from "../jobs/types.ts";
 import { createQueueRunMetadata } from "../jobs/queue.test-helpers.ts";
-import type { ReviewCommentChunk, ReviewCommentStore } from "../knowledge/review-comment-types.ts";
+import type { ReviewCommentChunk, ReviewCommentRecord, ReviewCommentStore } from "../knowledge/review-comment-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 
 function createNoopLogger(): Logger {
@@ -25,15 +25,17 @@ function createMockStore(): ReviewCommentStore & {
   writtenChunks: ReviewCommentChunk[];
   updatedChunks: ReviewCommentChunk[];
   softDeleted: Array<{ repo: string; commentGithubId: number }>;
+  existingByGithubId: ReviewCommentRecord | null;
 } {
   const writtenChunks: ReviewCommentChunk[] = [];
   const updatedChunks: ReviewCommentChunk[] = [];
   const softDeleted: Array<{ repo: string; commentGithubId: number }> = [];
 
-  return {
+  const store = {
     writtenChunks,
     updatedChunks,
     softDeleted,
+    existingByGithubId: null as ReviewCommentRecord | null,
     async writeChunks(chunks: ReviewCommentChunk[]) {
       writtenChunks.push(...chunks);
     },
@@ -70,9 +72,10 @@ function createMockStore(): ReviewCommentStore & {
       return 0;
     },
     async getByGithubId() {
-      return null;
+      return store.existingByGithubId;
     },
   };
+  return store;
 }
 
 function createMockEmbeddingProvider(): EmbeddingProvider & { callCount: number } {
@@ -186,6 +189,38 @@ function buildCommentPayload(overrides: Record<string, unknown> = {}): Record<st
       login: "alice",
       type: "User",
     },
+    ...overrides,
+  };
+}
+
+function buildStoredCommentRecord(overrides: Partial<ReviewCommentRecord> = {}): ReviewCommentRecord {
+  return {
+    id: 1,
+    createdAt: "2026-02-20T10:00:00.000Z",
+    repo: "acme/repo",
+    owner: "acme",
+    prNumber: 101,
+    prTitle: "Fix null pointer",
+    commentGithubId: 12345,
+    threadId: "acme/repo#101:src/index.ts:10",
+    inReplyToId: null,
+    filePath: "src/index.ts",
+    startLine: 40,
+    endLine: 42,
+    diffHunk: "@@ -38,6 +38,8 @@ function foo() {",
+    authorLogin: "alice",
+    authorAssociation: "CONTRIBUTOR",
+    body: "This looks like a potential null pointer issue.",
+    chunkIndex: 0,
+    chunkText: "This looks like a potential null pointer issue.",
+    tokenCount: 8,
+    embedding: null,
+    embeddingModel: null,
+    stale: false,
+    githubCreatedAt: "2026-02-20T10:00:00.000Z",
+    githubUpdatedAt: "2026-02-20T10:00:00.000Z",
+    deleted: false,
+    backfillBatch: null,
     ...overrides,
   };
 }
@@ -395,6 +430,28 @@ describe("review-comment-sync", () => {
       await jobQueue.capturedJobs[0]!();
       expect(store.writtenChunks.length).toBeGreaterThan(0);
     });
+
+    test("skips duplicate created comment before embedding", async () => {
+      const router = createMockRouter();
+      const store = createMockStore();
+      store.existingByGithubId = buildStoredCommentRecord();
+      const jobQueue = createImmediateJobQueue();
+      const embeddingProvider = createMockEmbeddingProvider();
+
+      createReviewCommentSyncHandler({
+        eventRouter: router,
+        jobQueue,
+        store,
+        embeddingProvider,
+        logger: createNoopLogger(),
+      });
+
+      const handler = router.registrations.get("pull_request_review_comment.created")![0]!;
+      await handler(buildCreatedEvent());
+
+      expect(store.writtenChunks.length).toBe(0);
+      expect(embeddingProvider.callCount).toBe(0);
+    });
   });
 
   describe("edited event", () => {
@@ -419,6 +476,31 @@ describe("review-comment-sync", () => {
       expect(store.updatedChunks[0]!.chunkText).toContain("definitely a null pointer");
       expect(store.writtenChunks.length).toBe(0); // Should use update, not write
       expect(embeddingProvider.callCount).toBeGreaterThan(0);
+    });
+
+    test("skips no-op edit before embedding", async () => {
+      const router = createMockRouter();
+      const store = createMockStore();
+      store.existingByGithubId = buildStoredCommentRecord({
+        body: "Updated: This is definitely a null pointer issue.",
+        githubUpdatedAt: "2026-02-20T10:00:00.000Z",
+      });
+      const jobQueue = createImmediateJobQueue();
+      const embeddingProvider = createMockEmbeddingProvider();
+
+      createReviewCommentSyncHandler({
+        eventRouter: router,
+        jobQueue,
+        store,
+        embeddingProvider,
+        logger: createNoopLogger(),
+      });
+
+      const handler = router.registrations.get("pull_request_review_comment.edited")![0]!;
+      await handler(buildEditedEvent());
+
+      expect(store.updatedChunks.length).toBe(0);
+      expect(embeddingProvider.callCount).toBe(0);
     });
   });
 

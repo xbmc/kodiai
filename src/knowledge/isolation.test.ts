@@ -50,6 +50,9 @@ function createStore(state: StoreState = {}): LearningMemoryStore {
   const records = state.records ?? {};
 
   return {
+    async hasMemoryConflict() {
+      return false;
+    },
     async writeMemory() {},
     async retrieveMemories() {
       return state.repoResults ?? [];

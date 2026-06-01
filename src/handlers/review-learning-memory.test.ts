@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildReviewLearningMemoryRecord,
   isReviewLearningMemorySkip,
+  writeReviewLearningMemory,
   type BuildReviewLearningMemoryRecordInput,
 } from "./review-learning-memory.ts";
 
@@ -50,6 +51,11 @@ describe("buildReviewLearningMemoryRecord", () => {
       "Avoid dereferencing maybe-null pointer",
       "File: include/widget.h",
     ].join("\n"));
+    expect(decision.memoryKey).toEqual({
+      repo: "owner/repo",
+      findingId: 1234,
+      outcome: "accepted",
+    });
 
     const record = decision.toRecord({ model: "voyage-code-3", dimensions: 1024 });
     expect(isReviewLearningMemorySkip(record)).toBe(false);
@@ -126,5 +132,96 @@ describe("buildReviewLearningMemoryRecord", () => {
       filePath: "include/widget.h",
       findingTitle: "Avoid dereferencing maybe-null pointer",
     });
+  });
+});
+
+function noopLogger() {
+  const noop = () => undefined;
+  return { debug: noop, info: noop, warn: noop };
+}
+
+describe("writeReviewLearningMemory", () => {
+  test("skips duplicate conflict keys before embedding", async () => {
+    const calls: unknown[] = [];
+    let embeddingCalls = 0;
+    const store = {
+      async hasMemoryConflict(key: unknown) {
+        calls.push(key);
+        return true;
+      },
+      async writeMemory() {
+        throw new Error("writeMemory should not be called for duplicates");
+      },
+    };
+    const embeddingProvider = {
+      async generate() {
+        embeddingCalls++;
+        return {
+          embedding: new Float32Array([1, 2, 3]),
+          model: "voyage-code-3",
+          dimensions: 1024,
+        };
+      },
+      model: "voyage-code-3",
+      dimensions: 1024,
+    };
+
+    const result = await writeReviewLearningMemory({
+      input: baseInput(),
+      store,
+      embeddingProvider,
+      logger: noopLogger(),
+    });
+
+    expect(result).toEqual({ status: "skipped", reason: "duplicate-memory" });
+    expect(embeddingCalls).toBe(0);
+    expect(calls).toEqual([{
+      repo: "owner/repo",
+      findingId: 1234,
+      outcome: "accepted",
+    }]);
+  });
+
+  test("writes normally when the conflict preflight reports no duplicate", async () => {
+    let embeddingCalls = 0;
+    const conflictCalls: unknown[] = [];
+    const written: unknown[] = [];
+    const store = {
+      async hasMemoryConflict(key: unknown) {
+        conflictCalls.push(key);
+        return false;
+      },
+      async writeMemory(record: unknown, embedding: Float32Array) {
+        written.push({ record, embedding });
+      },
+    };
+    const embeddingProvider = {
+      async generate() {
+        embeddingCalls++;
+        return {
+          embedding: new Float32Array([1, 2, 3]),
+          model: "voyage-code-3",
+          dimensions: 1024,
+        };
+      },
+      model: "voyage-code-3",
+      dimensions: 1024,
+    };
+
+    const result = await writeReviewLearningMemory({
+      input: baseInput(),
+      store,
+      embeddingProvider,
+      logger: noopLogger(),
+    });
+
+    expect(result).toEqual({ status: "written" });
+    expect(conflictCalls).toEqual([{
+      repo: "owner/repo",
+      findingId: 1234,
+      outcome: "accepted",
+    }]);
+    expect(embeddingCalls).toBe(1);
+    expect(written).toHaveLength(1);
   });
 });

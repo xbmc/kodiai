@@ -413,6 +413,7 @@ export type LearningMemoryRepairCandidate = {
 };
 
 export type LearningMemoryStore = {
+  hasMemoryConflict(key: { repo: string; findingId: number; outcome: MemoryOutcome }): Promise<boolean>;
   writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void>;
   retrieveMemories(params: {
     queryEmbedding: Float32Array;
