@@ -4,7 +4,7 @@ import type {
   ReviewPhaseTiming,
 } from "../execution/types.ts";
 import type { JobQueueWaitMetadata } from "../jobs/types.ts";
-import type { TimeoutBudgetDetails } from "../lib/review-utils.ts";
+import type { TimeoutBudgetDetails } from "../lib/review-details-formatting.ts";
 
 export const REVIEW_PHASE_ORDER = [
   "queue wait",

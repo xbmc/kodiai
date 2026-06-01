@@ -135,6 +135,7 @@ export type DegradedReviewPlan = {
 export type ReviewPlanBuildResult =
   | { status: "ready"; plan: ReviewPlan }
   | { status: "degraded"; plan: DegradedReviewPlan };
+export type ReviewPlanBuilder = (input: ReviewPlanInput) => Extract<ReviewPlanBuildResult, { status: "ready" }>;
 
 export type ReviewPlanDetailsSummary = {
   label: "Review plan";
@@ -143,12 +144,26 @@ export type ReviewPlanDetailsSummary = {
   hash: string;
 };
 
-type DegradedReviewPlanInput = {
+export type DegradedReviewPlanInput = {
   reason: string;
   message?: string;
   taskType?: string;
   routingReason?: string;
 };
+
+export type ReviewPlanPublicationContext =
+  | {
+      status: ReviewPlanStatus;
+      plan: ReviewPlan;
+      detailsSummary: ReviewPlanDetailsSummary;
+      error?: undefined;
+    }
+  | {
+      status: DegradedReviewPlanStatus;
+      plan: DegradedReviewPlan;
+      detailsSummary: ReviewPlanDetailsSummary;
+      error: unknown;
+    };
 
 export function resolveGraphValidationPlanStatus(input: ResolveGraphValidationPlanStatusInput): GraphValidationPlanProjection {
   if (!input.configEnabled) {
@@ -235,6 +250,29 @@ export function createDegradedReviewPlan(input: DegradedReviewPlanInput): Degrad
     ...degradedWithoutHash,
     hash,
   };
+}
+
+export function buildReviewPlanPublicationContext(input: {
+  input: ReviewPlanInput;
+  builder?: ReviewPlanBuilder;
+  degraded: DegradedReviewPlanInput;
+}): ReviewPlanPublicationContext {
+  try {
+    const plan = (input.builder ?? buildReviewPlan)(input.input).plan;
+    return {
+      status: "ready",
+      plan,
+      detailsSummary: toReviewPlanDetailsSummary(plan),
+    };
+  } catch (error) {
+    const plan = createDegradedReviewPlan(input.degraded);
+    return {
+      status: "degraded",
+      plan,
+      detailsSummary: toReviewPlanDetailsSummary(plan),
+      error,
+    };
+  }
 }
 
 export function toReviewPlanDetailsSummary(plan: ReviewPlan | DegradedReviewPlan): ReviewPlanDetailsSummary {

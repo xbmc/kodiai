@@ -1,9 +1,9 @@
 import type { Octokit } from "@octokit/rest";
 import type { GitHubApp } from "../auth/github-app.ts";
-import type { ReviewBoundednessContract } from "../lib/review-utils.ts";
+import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import { buildReviewOutputMarker } from "./review-idempotency.ts";
-import { buildReviewDetailsMarker } from "../lib/review-utils.ts";
+import { buildReviewDetailsMarker } from "../lib/review-details-formatting.ts";
 import { mergeReviewDetailsIntoSummaryBody } from "./review-details-summary-merge.ts";
 
 export type CanonicalReviewSurface =

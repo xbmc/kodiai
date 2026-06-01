@@ -2,7 +2,7 @@ import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import {
   buildReviewFirstPassPublicSummary,
   type TimeoutBudgetDetails,
-} from "./review-utils.ts";
+} from "./review-details-formatting.ts";
 import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
 
 export type ContinuationRevisionCounts = {

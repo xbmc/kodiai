@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildReviewPlan,
+  buildReviewPlanPublicationContext,
   createDegradedReviewPlan,
   resolveGraphValidationPlanStatus,
   toReviewPlanDetailsSummary,
@@ -387,6 +388,49 @@ describe("createDegradedReviewPlan", () => {
     expect(first.hash).toMatch(/^degraded-[a-f0-9]{16}$/);
     expect(second.hash).toBe(first.hash);
     expect(() => toReviewPlanDetailsSummary(first)).not.toThrow();
+  });
+});
+
+describe("buildReviewPlanPublicationContext", () => {
+  test("builds ready plan metadata and Review Details projection through one production helper", () => {
+    const result = buildReviewPlanPublicationContext({
+      input: baseInput(),
+      degraded: {
+        reason: "builder-error",
+        taskType: "review-full",
+        routingReason: "standard",
+      },
+    });
+
+    expect(result.status).toBe("ready");
+    expect(result.error).toBeUndefined();
+    expect(result.plan.status).toBe("ready");
+    expect(result.detailsSummary.status).toBe("ready");
+    expect(result.detailsSummary.text).toContain("Review plan: ready");
+    expect(result.detailsSummary.hash).toBe(result.plan.hash);
+  });
+
+  test("returns degraded plan metadata and projection when the injected builder throws", () => {
+    const result = buildReviewPlanPublicationContext({
+      input: baseInput(),
+      builder: () => {
+        throw new Error("synthetic builder failure");
+      },
+      degraded: {
+        reason: "builder-error",
+        message: "ReviewPlan builder failed",
+        taskType: "review-full",
+        routingReason: "standard",
+      },
+    });
+
+    expect(result.status).toBe("degraded");
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.plan.status).toBe("degraded");
+    expect(result.plan.degraded.reason).toBe("builder-error");
+    expect(result.detailsSummary.status).toBe("degraded");
+    expect(result.detailsSummary.text).toContain("reason=builder-error");
+    expect(result.detailsSummary.hash).toBe(result.plan.hash);
   });
 });
 

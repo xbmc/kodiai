@@ -98,8 +98,9 @@ export type Issue131CheckId = typeof ISSUE_131_CHECK_IDS[number];
 
 export const ISSUE_131_SOURCE_PATHS = [
   "src/handlers/review.ts",
-  "src/review-plan/review-plan.ts",
-  "src/lib/review-utils.ts",
+  "src/review-orchestration/review-plan.ts",
+  "src/lib/review-details-formatting.ts",
+  "src/lib/review-details-plan-formatting.ts",
   "src/execution/config.ts",
   "src/review-graph/validation.ts",
   "src/review-graph/graph-validation-status.ts",
@@ -271,8 +272,11 @@ export function validateIssue131EvidencePath(path: string): { valid: true } | { 
 export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders): Issue131EvidenceMatrixReport {
   const source = {
     review: readers.readFileText("src/handlers/review.ts") ?? "",
-    reviewPlan: readers.readFileText("src/review-plan/review-plan.ts") ?? "",
-    reviewUtils: readers.readFileText("src/lib/review-utils.ts") ?? "",
+    reviewPlan: readers.readFileText("src/review-orchestration/review-plan.ts") ?? "",
+    reviewDetailsFormatting: [
+      readers.readFileText("src/lib/review-details-formatting.ts") ?? "",
+      readers.readFileText("src/lib/review-details-plan-formatting.ts") ?? "",
+    ].join("\n"),
     config: readers.readFileText("src/execution/config.ts") ?? "",
     validation: readers.readFileText("src/review-graph/validation.ts") ?? "",
     graphValidationStatus: readers.readFileText("src/review-graph/graph-validation-status.ts") ?? "",
@@ -303,7 +307,7 @@ export function evaluateIssue131EvidenceMatrix(readers: Issue131EvidenceReaders)
   };
 }
 
-function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; reviewUtils: string; config: string; validation: string; graphValidationStatus: string; packageJson: string }, handoffRows: readonly Issue131DeferredHandoffRow[]): Issue131MatrixRow {
+function classifyRow(definition: RowDefinition, source: { review: string; reviewPlan: string; reviewDetailsFormatting: string; config: string; validation: string; graphValidationStatus: string; packageJson: string }, handoffRows: readonly Issue131DeferredHandoffRow[]): Issue131MatrixRow {
   if (definition.deferredTo) {
     const handoff = handoffRows.find((row) => row.rowId === definition.id);
     const deferredTo = handoff ? {
@@ -318,23 +322,24 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
     case "review-plan-contract": {
       const hasTypedContract = /export\s+type\s+ReviewPlan\b|export\s+interface\s+ReviewPlan\b/.test(source.reviewPlan);
       const hasBuilder = /export\s+function\s+buildReviewPlan\b/.test(source.reviewPlan);
-      const hasStableHash = /stableHash\s*:\s*string/.test(source.reviewPlan) && /REVIEW_PLAN_HASH_PREFIX|review-plan:v/.test(source.reviewPlan);
-      const hasSafeDiagnosticProjection = /export\s+function\s+summarizeReviewPlanForDiagnostics\b/.test(source.reviewPlan)
-        && /planHash/.test(source.reviewPlan)
-        && /assertNoForbiddenRawFields/.test(source.reviewPlan);
+      const hasStableHash = /hash\s*:\s*string/.test(source.reviewPlan) && /hashCanonical|createHash/.test(source.reviewPlan);
+      const hasSafeDiagnosticProjection = /export\s+function\s+toReviewPlanDetailsSummary\b/.test(source.reviewPlan)
+        && /export\s+function\s+buildReviewPlanPublicationContext\b/.test(source.reviewPlan)
+        && /Review plan: ready/.test(source.reviewPlan)
+        && /sanitizeSummaryToken/.test(source.reviewPlan);
       return hasTypedContract && hasBuilder && hasStableHash && hasSafeDiagnosticProjection
-        ? makeRow(definition, "complete", [{ path: "src/review-plan/review-plan.ts", reason: "Exports the typed ReviewPlan contract, stable hash, builder, and safe diagnostic projection." }])
-        : makeRow(definition, "missing", [], ["No exported typed ReviewPlan contract with stable hash, builder, and safe diagnostic projection was found in src/review-plan/review-plan.ts."]);
+        ? makeRow(definition, "complete", [{ path: "src/review-orchestration/review-plan.ts", reason: "Exports the typed ReviewPlan contract, stable hash, builder, and safe Review Details projection." }])
+        : makeRow(definition, "missing", [], ["No exported typed ReviewPlan contract with stable hash, builder, and safe Review Details projection was found in src/review-orchestration/review-plan.ts."]);
     }
     case "normal-handler-plan-construction": {
-      const hasReviewPlanImport = /from\s+[\"']\.\.\/review-plan\/review-plan\.ts[\"']/.test(source.review)
-        && /\bbuildReviewPlan\b/.test(source.review)
-        && /\bsummarizeReviewPlanForDiagnostics\b/.test(source.review);
+      const hasReviewPlanImport = /from\s+[\"']\.\.\/review-orchestration\/review-plan\.ts[\"']/.test(source.review)
+        && /\bbuildReviewPlanPublicationContext\b/.test(source.review);
       const construction = findReviewPlanConstruction(source.review);
-      const constructsBeforePublication = construction.found && construction.beforePublication;
-      const hasSafeStableHashProjection = /reviewPlanSummarizer\s*\(\s*reviewPlan/.test(source.review)
-        || /\bplanHash\b/.test(source.review)
-        || /\bstableHash\b/.test(source.review);
+      const helperConstruction = findReviewPlanPublicationContextConstruction(source.review);
+      const constructsBeforePublication = (construction.found && construction.beforePublication)
+        || (helperConstruction.found && helperConstruction.beforePublication);
+      const hasSafeStableHashProjection = /detailsSummary\s*:\s*reviewPlanDetailsSummary/.test(source.review)
+        || /\breviewPlan\.hash\b/.test(source.review);
       if (hasReviewPlanImport && constructsBeforePublication && hasSafeStableHashProjection) {
         return makeRow(definition, "complete", [{ path: "src/handlers/review.ts", reason: "Normal review flow imports, constructs, and logs a safe ReviewPlan projection before nearby publication side effects." }]);
       }
@@ -345,22 +350,22 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
     }
     case "review-details-plan-summary": {
       const projection = findReviewDetailsPlanProjection(source.reviewPlan);
-      const formatter = findReviewDetailsPlanFormatter(source.reviewUtils);
+      const formatter = findReviewDetailsPlanFormatter(source.reviewDetailsFormatting);
       const handler = findReviewDetailsPlanHandlerWiring(source.review);
       const hasReviewDetails = source.review.includes("formatReviewDetailsSummary")
-        || source.reviewUtils.includes("<summary>Review Details</summary>");
+        || source.reviewDetailsFormatting.includes("<summary>Review Details</summary>");
 
       if (projection.complete && formatter.complete && handler.complete) {
         return makeRow(definition, "complete", [
-          { path: "src/review-plan/review-plan.ts", reason: "Exports the compact public ReviewPlan Review Details projection with hash, route, scope, context, gate, budget, and publish-policy fields." },
-          { path: "src/lib/review-utils.ts", reason: "Formats the public ReviewPlan projection into a bounded Review Details line without raw review artifacts." },
+          { path: "src/review-orchestration/review-plan.ts", reason: "Exports the compact public ReviewPlan Review Details projection with hash, route, budget, gate, policy, graph, candidate, and doctrine fields." },
+          { path: "src/lib/review-details-plan-formatting.ts", reason: "Formats the public ReviewPlan projection into a bounded Review Details line without raw review artifacts." },
           { path: "src/handlers/review.ts", reason: "Normal review publication passes the ReviewPlan Review Details projection to formatReviewDetailsSummary with fail-open warning logs." },
         ]);
       }
 
       const partialEvidence: Issue131Evidence[] = [];
-      if (projection.present) partialEvidence.push({ path: "src/review-plan/review-plan.ts", reason: "Public ReviewPlan Review Details projection exists but is not fully proven." });
-      if (formatter.present) partialEvidence.push({ path: "src/lib/review-utils.ts", reason: "Review Details formatter mentions ReviewPlan summary but bounded safe output is not fully proven." });
+      if (projection.present) partialEvidence.push({ path: "src/review-orchestration/review-plan.ts", reason: "Public ReviewPlan Review Details projection exists but is not fully proven." });
+      if (formatter.present) partialEvidence.push({ path: "src/lib/review-details-plan-formatting.ts", reason: "Review Details formatter mentions ReviewPlan summary but bounded safe output is not fully proven." });
       if (handler.present || hasReviewDetails) partialEvidence.push({ path: "src/handlers/review.ts", reason: "Review Details publication exists or mentions ReviewPlan summary, but source-owned projection-to-formatter wiring is incomplete." });
 
       const failureReasons = [...projection.reasons, ...formatter.reasons, ...handler.reasons];
@@ -397,7 +402,7 @@ function classifyRow(definition: RowDefinition, source: { review: string; review
         return makeRow(definition, "complete", [
           { path: "src/review-graph/graph-validation-status.ts", reason: "Shared status mapper owns bounded graph-validation pre/runtime states, reasons, counts, and fail-open failure status." },
           { path: "src/handlers/review.ts", reason: "Normal review path feeds graph-validation into ReviewPlan gates and bounded skipped, unavailable, applied, and failure runtime logs." },
-          { path: "src/review-plan/review-plan.ts", reason: "ReviewPlan gate taxonomy supports enabled, applied, skipped, and unavailable graph-validation gate states." },
+          { path: "src/review-orchestration/review-plan.ts", reason: "ReviewPlan gate taxonomy supports enabled, applied, skipped, and unavailable graph-validation gate states." },
         ]);
       }
       if (statusProbe.present) {
@@ -501,41 +506,44 @@ function findTruthfulGraphValidationStatus(reviewSource: string, reviewPlanSourc
   const evidence: Issue131Evidence[] = [];
   if (/GraphValidationRuntimeStatus|GRAPH_VALIDATION_GATE|graphValidationAppliedRuntimeStatus/.test(status)) evidence.push({ path: "src/review-graph/graph-validation-status.ts", reason: "Graph-validation status mapper exists but the full evidence contract is not proven." });
   if (/graphValidationGateForReviewPlan|graphValidationSkippedRuntimeStatus|graphValidationAppliedRuntimeStatus|graphValidationThrownRuntimeStatus/.test(review)) evidence.push({ path: "src/handlers/review.ts", reason: "Review handler references graph-validation status helpers but complete ReviewPlan/runtime surfacing is not proven." });
-  if (/GATE_STATUSES|ReviewPlanGateStatus/.test(reviewPlan)) evidence.push({ path: "src/review-plan/review-plan.ts", reason: "ReviewPlan gate status taxonomy exists but graph-validation status wiring is incomplete." });
+  if (/GraphValidationPlanStatus|graphValidation/.test(reviewPlan)) evidence.push({ path: "src/review-orchestration/review-plan.ts", reason: "ReviewPlan graph-validation status taxonomy exists but graph-validation status wiring is incomplete." });
   return { ...probe, evidence };
 }
 
 function findReviewDetailsPlanProjection(reviewPlanSource: string): SourceEvidenceProbe {
-  const present = /summarizeReviewPlanForReviewDetails|ReviewPlanReviewDetailsSummary|review-plan-review-details/.test(reviewPlanSource);
+  const present = /toReviewPlanDetailsSummary|ReviewPlanDetailsSummary|Review plan: ready/.test(reviewPlanSource);
   return makeProbe(present, [
-    [/export\s+type\s+ReviewPlanReviewDetailsSummary\b/.test(reviewPlanSource), "No exported ReviewPlanReviewDetailsSummary type was found in source."],
-    [/export\s+function\s+summarizeReviewPlanForReviewDetails\s*\(\s*plan\s*:\s*ReviewPlan/.test(reviewPlanSource), "No source-owned ReviewPlan-to-Review Details summary projection was found."],
-    [/gate\s*:\s*["']review-plan-review-details["']/.test(reviewPlanSource), "Review Details projection does not identify the public review-plan gate."],
-    [["planHash", "route", "scope", "contextSources", "gates", "budgets", "publishPolicy"].every((field) => reviewPlanSource.includes(field)), "Review Details projection does not include hash, route, scope, context, gates, budgets, and publish policy."],
-    [/MAX_PUBLIC_REVIEW_DETAILS|omitted(?:Path|Source|Gate)Count|sanitizePublicReviewDetailsString/.test(reviewPlanSource), "Review Details projection does not prove public bounds, omitted counts, and string sanitization."],
+    [/export\s+type\s+ReviewPlanDetailsSummary\b/.test(reviewPlanSource), "No exported ReviewPlanDetailsSummary type was found in source."],
+    [/export\s+function\s+toReviewPlanDetailsSummary\s*\(\s*plan\s*:\s*ReviewPlan\s*\|\s*DegradedReviewPlan/.test(reviewPlanSource), "No source-owned ReviewPlan-to-Review Details line projection was found."],
+    [/Review plan: ready/.test(reviewPlanSource) && /Review plan: degraded/.test(reviewPlanSource), "Review Details projection does not render ready and degraded Review plan lines."],
+    [["hash", "route", "task", "files", "lines", "budget", "gates", "publish", "graph", "candidates", "doctrine"].every((field) => reviewPlanSource.includes(field)), "Review Details projection does not include hash, route, task, files, lines, budget, gates, publish, graph, candidates, and doctrine truth."],
+    [/boundSummary|sanitizeSummaryToken/.test(reviewPlanSource), "Review Details projection does not prove bounded/sanitized visible output."],
   ]);
 }
 
-function findReviewDetailsPlanFormatter(reviewUtilsSource: string): SourceEvidenceProbe {
-  const present = /ReviewPlanReviewDetailsFormatterSummary|formatReviewPlanReviewDetailsLine|reviewPlanSummary/.test(reviewUtilsSource);
-  const formatterBody = extractFunctionBody(reviewUtilsSource, "formatReviewPlanReviewDetailsLine");
+function findReviewDetailsPlanFormatter(reviewDetailsFormatterSource: string): SourceEvidenceProbe {
+  const present = /formatReviewPlanDetailsLine|reviewPlan\?: ReviewPlanDetailsSummary/.test(reviewDetailsFormatterSource);
+  const formatterBody = extractFunctionBody(reviewDetailsFormatterSource, "formatReviewPlanDetailsLine");
   const forbiddenVisibleTokens = ["rawPrompt", "modelPrompt", "rawModelOutput", "rawDiff", "candidatePayload", "candidateFindingPayload", "commentBody", "rawCommentBody", "apiKey", "password", "secret"];
   return makeProbe(present, [
-    [/export\s+type\s+ReviewPlanReviewDetailsFormatterSummary\b/.test(reviewUtilsSource), "No formatter-facing public ReviewPlan summary type was found."],
-    [formatterBody !== "" && formatterBody.includes("- Review Plan: hash="), "Review Details formatter does not render a compact Review Plan line."],
-    [["route=", "scope=", "contexts=", "gates=", "budget=", "publish="].every((token) => formatterBody.includes(token)), "Review Plan formatter line does not include route, scope, context, gate, budget, and publish-policy truth."],
-    [/REVIEW_PLAN_DETAILS_MAX_|sanitizeReviewPlanDetailsValue|formatReviewPlanDetailsRepresentativeList/.test(reviewUtilsSource), "Review Plan formatter does not prove bounded/sanitized visible output."],
+    [/ReviewPlanDetailsSummary/.test(reviewDetailsFormatterSource), "Formatter does not consume the canonical ReviewPlanDetailsSummary type."],
+    [formatterBody !== "" && /reviewPlan\?\.text/.test(formatterBody), "Review Details formatter does not render the source-owned Review plan line."],
+    [!/(ReviewPlanReviewDetailsFormatterSummary|formatReviewPlanReviewDetailsLine|reviewPlanSummary)/.test(reviewDetailsFormatterSource), "Review Details formatter still contains the legacy reviewPlanSummary path."],
     [!forbiddenVisibleTokens.some((token) => formatterBody.includes(token)), "Review Plan formatter visible output contains raw review artifact field names or canaries."],
   ]);
 }
 
 function findReviewDetailsPlanHandlerWiring(reviewSource: string): SourceEvidenceProbe {
-  const present = /summarizeReviewPlanForReviewDetails|reviewPlanReviewDetailsSummarizer|reviewPlanSummary/.test(reviewSource);
+  const source = stripTypeScriptComments(reviewSource);
+  const present = /buildReviewPlanPublicationContext|reviewPlanDetailsSummary|reviewPlan\s*:/.test(source);
+  const derivesDetailsSummary = /detailsSummary\s*:\s*\w+/.test(source)
+    || /\.\s*detailsSummary\b/.test(source);
+  const passesDetailsSummaryToFormatter = /formatReviewDetailsSummary\s*\([\s\S]*?reviewPlan\s*:\s*(?!null|undefined)[A-Za-z_$][\w$]*/.test(source);
   return makeProbe(present, [
-    [/summarizeReviewPlanForReviewDetails/.test(reviewSource), "Review handler does not import/use the public ReviewPlan Review Details projection."],
-    [/reviewPlanReviewDetailsSummarizer\s*\(\s*reviewPlan\s*\)/.test(reviewSource), "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan instance."],
-    [/reviewPlanSummary\s*:\s*buildReviewPlanReviewDetailsSummary\s*\(\s*\)/.test(reviewSource), "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
-    [/review-details-projection-failed/.test(reviewSource) && /logger\.warn/.test(reviewSource) && /fail-open/i.test(reviewSource), "Review handler does not prove bounded fail-open warning behavior for projection failures."],
+    [/buildReviewPlanPublicationContext/.test(source), "Review handler does not import/use the public ReviewPlan publication helper."],
+    [derivesDetailsSummary, "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan publication helper."],
+    [passesDetailsSummaryToFormatter, "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
+    [/buildReviewPlanPublicationContext\s*\([\s\S]*?builder\s*:\s*reviewPlanBuilder[\s\S]*?degraded\s*:\s*\{[\s\S]*?reason\s*:\s*["']builder-error["']/.test(source), "Review handler does not prove bounded fail-open ReviewPlan degradation behavior."],
   ]);
 }
 
@@ -564,6 +572,17 @@ function findReviewPlanConstruction(text: string): { found: boolean; beforePubli
     "createReviewPlan({",
     "resolveReviewPlan({",
   ]);
+  if (constructionIndex < 0) return { found: false, beforePublication: false };
+
+  const precedingWindow = text.slice(Math.max(0, constructionIndex - 1800), constructionIndex);
+  return {
+    found: true,
+    beforePublication: firstPublicationIndex(precedingWindow) === Number.POSITIVE_INFINITY,
+  };
+}
+
+function findReviewPlanPublicationContextConstruction(text: string): { found: boolean; beforePublication: boolean } {
+  const constructionIndex = text.indexOf("buildReviewPlanPublicationContext(");
   if (constructionIndex < 0) return { found: false, beforePublication: false };
 
   const precedingWindow = text.slice(Math.max(0, constructionIndex - 1800), constructionIndex);
@@ -618,9 +637,9 @@ function makeRow(
 function parsePackageScripts(packageJsonText: string): Record<string, string> {
   try {
     const parsed = JSON.parse(packageJsonText) as { scripts?: unknown };
-    if (!parsed.scripts || typeof parsed.scripts !== "object") return {};
+    if (!isRecord(parsed.scripts)) return {};
     return Object.fromEntries(
-      Object.entries(parsed.scripts as Record<string, unknown>)
+      Object.entries(parsed.scripts)
         .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
     );
   } catch {
@@ -809,13 +828,17 @@ export function findForbiddenReportFields(value: unknown): string[] {
 }
 
 function visitReportValue(value: unknown, path: string, findings: string[]): void {
-  if (value === null || typeof value !== "object") return;
+  if (!isRecord(value) && !Array.isArray(value)) return;
   if (Array.isArray(value)) {
     value.forEach((item, index) => visitReportValue(item, `${path}[${index}]`, findings));
     return;
   }
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, child] of Object.entries(value)) {
     if (FORBIDDEN_REPORT_KEYS.has(key)) findings.push(`${path}.${key}`);
     visitReportValue(child, `${path}.${key}`, findings);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

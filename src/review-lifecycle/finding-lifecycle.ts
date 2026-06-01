@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
+import type { FindingCategory, FindingSeverity } from "../lib/review-finding-metadata.ts";
 
 export type ReviewFindingLifecycleStatus =
   | "detected"

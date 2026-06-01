@@ -1,7 +1,10 @@
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
-import type { FindingCategory, FindingSeverity } from "../lib/review-utils.ts";
-import { parseInlineCommentMetadata } from "../lib/review-utils.ts";
+import {
+  parseInlineCommentMetadata,
+  type FindingCategory,
+  type FindingSeverity,
+} from "../lib/review-finding-metadata.ts";
 import { buildReviewOutputMarker } from "./review-idempotency.ts";
 
 export type ExtractedFinding = {

@@ -4,7 +4,7 @@ import {
   classifyRetryFailure,
   formatReviewDetailsSummary,
   resolveReviewDetailsLineCounts,
-} from "./review-utils.ts";
+} from "./review-details-formatting.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 

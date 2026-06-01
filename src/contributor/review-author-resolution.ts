@@ -3,7 +3,7 @@ import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import {
   isSearchRateLimitError,
   resolveRateLimitBackoffMs,
-} from "../lib/review-utils.ts";
+} from "../lib/search-rate-limit.ts";
 import {
   buildSearchCacheKey,
   type SearchCache,
