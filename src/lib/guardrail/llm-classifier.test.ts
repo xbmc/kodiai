@@ -188,4 +188,29 @@ describe("createLlmClassifier", () => {
 
     expect(results[0]!.text).toBe("CVE-2024-1234 is critical.");
   });
+
+  test("renders shared grounding context once per batch", async () => {
+    const sharedContext = makeContext([
+      "large shared issue body",
+      "large shared diff patch",
+    ]);
+    const response = JSON.stringify([
+      { label: "diff-grounded", confidence: 0.9, evidence: "first" },
+      { label: "inferential", confidence: 0.8, evidence: "second" },
+    ]);
+
+    const deps = createMockDeps(response);
+    const classifier = createLlmClassifier(deps);
+
+    await classifier([
+      makeClaim("First claim.", sharedContext),
+      makeClaim("Second claim.", sharedContext),
+    ]);
+
+    const prompt = String(deps.generateWithFallback.mock.calls[0]?.[0]?.prompt ?? "");
+    expect(prompt).toContain("First claim.");
+    expect(prompt).toContain("Second claim.");
+    expect(prompt.match(/large shared issue body/g)).toHaveLength(1);
+    expect(prompt.match(/large shared diff patch/g)).toHaveLength(1);
+  });
 });

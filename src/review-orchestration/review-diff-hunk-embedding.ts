@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
-import type { CodeSnippetStore, EmbeddingProvider } from "../knowledge/types.ts";
+import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
+import type { EmbeddingProvider } from "../knowledge/types.ts";
 import {
   applyHunkCap,
   buildEmbeddingText,
@@ -60,6 +61,22 @@ export async function embedReviewDiffHunks(params: {
       try {
         const embeddedText = buildEmbeddingText({ hunk, prTitle });
         const contentHash = computeContentHash(embeddedText);
+
+        const snippetExists = await codeSnippetStore.hasSnippet?.(contentHash);
+        if (snippetExists) {
+          await codeSnippetStore.writeOccurrence({
+            contentHash,
+            repo,
+            owner,
+            prNumber,
+            prTitle,
+            filePath: hunk.filePath,
+            startLine: hunk.startLine,
+            endLine: hunk.startLine + hunk.addedLines.length - 1,
+            functionContext: hunk.functionContext || null,
+          });
+          continue;
+        }
 
         const embeddingResult = await embeddingProvider.generate(embeddedText, "document");
         if (!embeddingResult) {

@@ -100,6 +100,17 @@ export function createCodeSnippetStore(opts: {
   const { sql, logger } = opts;
 
   const store: CodeSnippetStore = {
+    async hasSnippet(contentHash: string): Promise<boolean> {
+      const rows = await sql`
+        SELECT 1
+        FROM code_snippets
+        WHERE content_hash = ${contentHash}
+          AND stale = false
+        LIMIT 1
+      `;
+      return rows.length > 0;
+    },
+
     async writeSnippet(
       record: {
         contentHash: string;

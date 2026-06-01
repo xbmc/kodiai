@@ -299,6 +299,38 @@ describe("createRetriever", () => {
     expect(result!.provenance.embeddingCacheHits).toBeGreaterThan(0);
   });
 
+  test("reuses request-scoped embedding cache for wiki retrieval when provider is shared", async () => {
+    let generateCalls = 0;
+    const embeddingProvider: EmbeddingProvider = {
+      async generate(_text: string, _inputType: "document" | "query"): Promise<EmbeddingResult> {
+        generateCalls += 1;
+        return {
+          embedding: new Float32Array(1024).fill(0.1),
+          model: "test-model",
+          dimensions: 1024,
+        };
+      },
+      get model() { return "test-model"; },
+      get dimensions() { return 1024; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider,
+      isolationLayer: makeMockIsolationLayer([makeRetrievalResult(1, 0.2)]),
+      wikiPageStore: makeMockWikiStore([makeWikiSearchResult(10, 0.2, ["typescript"])]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({
+      queries: ["same shared query"],
+    }));
+
+    expect(result).not.toBeNull();
+    expect(generateCalls).toBe(1);
+    expect(result!.provenance.embeddingRequests).toBe(1);
+    expect(result!.provenance.embeddingCacheHits).toBeGreaterThanOrEqual(1);
+  });
+
   test("does not reuse embeddings across separate retrieve calls", async () => {
     let generateCalls = 0;
     const embeddingProvider: EmbeddingProvider = {

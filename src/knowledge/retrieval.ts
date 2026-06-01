@@ -506,10 +506,9 @@ export function createRetriever(deps: {
       embeddingProvider,
       requestScopedEmbeddingStats,
     );
-    const wikiProvider = createRequestScopedEmbeddingProvider(
-      deps.wikiEmbeddingProvider ?? deps.embeddingProvider,
-      requestScopedEmbeddingStats,
-    );
+    const wikiProvider = deps.wikiEmbeddingProvider
+      ? createRequestScopedEmbeddingProvider(deps.wikiEmbeddingProvider, requestScopedEmbeddingStats)
+      : requestScopedEmbeddingProvider;
     const topK = opts.topK ?? config.retrieval.topK;
     const distanceThreshold = opts.distanceThreshold ?? config.retrieval.distanceThreshold;
     const adaptive = opts.adaptive ?? config.retrieval.adaptive;
