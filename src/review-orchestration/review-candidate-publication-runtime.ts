@@ -103,6 +103,9 @@ export type ReviewCandidatePublicationRuntimeOutcomeBuckets = Partial<Record<
 export type ReviewCandidatePublicationRuntimeDetailsSummary = {
   label: "Review candidate publication runtime";
   text: string;
+  mode: ReviewCandidatePublicationRuntimeMode;
+  counts: ReviewCandidatePublicationRuntimeCounts;
+  reasons: ReviewCandidatePublicationRuntimeReason[];
   outcomeBuckets?: ReviewCandidatePublicationRuntimeOutcomeBuckets;
   detailsOnlyFindings?: ReviewCandidateDetailsOnlyFinding[];
   movedToDetails?: ReviewCandidateMovedToDetailsSummary;
@@ -274,6 +277,9 @@ export function toReviewCandidatePublicationRuntimeDetailsSummary(result: Pick<R
   return {
     label: "Review candidate publication runtime",
     text,
+    mode: result.mode,
+    counts: { ...result.counts },
+    reasons: result.reasons.slice(0, MAX_REASON_CODES),
     ...(result.outcomeBuckets ? { outcomeBuckets: result.outcomeBuckets } : {}),
     ...(Array.isArray(result.detailsOnlyFindings) && result.detailsOnlyFindings.length > 0
       ? { detailsOnlyFindings: result.detailsOnlyFindings.slice(0, MAX_RESULT_SAMPLE) }

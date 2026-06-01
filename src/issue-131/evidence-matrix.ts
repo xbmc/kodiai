@@ -536,10 +536,13 @@ function findReviewDetailsPlanFormatter(reviewDetailsFormatterSource: string): S
 function findReviewDetailsPlanHandlerWiring(reviewSource: string): SourceEvidenceProbe {
   const source = stripTypeScriptComments(reviewSource);
   const present = /buildReviewPlanPublicationContext|reviewPlanDetailsSummary|reviewPlan\s*:/.test(source);
+  const derivesDetailsSummary = /detailsSummary\s*:\s*\w+/.test(source)
+    || /\.\s*detailsSummary\b/.test(source);
+  const passesDetailsSummaryToFormatter = /formatReviewDetailsSummary\s*\([\s\S]*?reviewPlan\s*:\s*(?!null|undefined)[A-Za-z_$][\w$]*/.test(source);
   return makeProbe(present, [
     [/buildReviewPlanPublicationContext/.test(source), "Review handler does not import/use the public ReviewPlan publication helper."],
-    [/detailsSummary\s*:\s*reviewPlanDetailsSummary/.test(source), "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan publication helper."],
-    [/reviewPlan\s*:\s*reviewPlanDetailsSummary/.test(source), "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
+    [derivesDetailsSummary, "Review handler does not derive the public ReviewPlan summary from the typed ReviewPlan publication helper."],
+    [passesDetailsSummaryToFormatter, "Review handler does not pass the public ReviewPlan summary into formatReviewDetailsSummary."],
     [/buildReviewPlanPublicationContext\s*\([\s\S]*?builder\s*:\s*reviewPlanBuilder[\s\S]*?degraded\s*:\s*\{[\s\S]*?reason\s*:\s*["']builder-error["']/.test(source), "Review handler does not prove bounded fail-open ReviewPlan degradation behavior."],
   ]);
 }

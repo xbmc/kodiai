@@ -117,6 +117,18 @@ export function buildReviewDetailsMarker(reviewOutputKey: string): string {
   return `<!-- kodiai:review-details:${reviewOutputKey} -->`;
 }
 
+function optionalReviewDetailsLine<T>(
+  value: T,
+  formatter: (value: T) => string | null,
+): string[] {
+  try {
+    const line = formatter(value);
+    return line ? [line] : [];
+  } catch {
+    return [];
+  }
+}
+
 export function formatReviewDetailsSummary(params: {
   reviewOutputKey: string;
   filesReviewed: number;
@@ -254,45 +266,10 @@ export function formatReviewDetailsSummary(params: {
     : `- Lines changed: +${linesAdded} -${linesRemoved}`;
 
 
-  const candidatePublicationBridgeLines: string[] = [];
-  try {
-    const line = formatCandidatePublicationBridgeLine(candidatePublicationBridge);
-    if (line) {
-      candidatePublicationBridgeLines.push(line);
-    }
-  } catch {
-    // Keep Review Details fail-open; malformed M072 bridge projections must not block publication.
-  }
-
-  const candidateVerificationPublicationEvidenceLines: string[] = [];
-  try {
-    const line = formatCandidateVerificationPublicationEvidenceLine(candidateVerificationPublicationEvidence);
-    if (line) {
-      candidateVerificationPublicationEvidenceLines.push(line);
-    }
-  } catch {
-    // Keep Review Details fail-open; malformed diagnostic projections must not block publication.
-  }
-
-  const reviewFindingLifecycleLines: string[] = [];
-  try {
-    const line = formatReviewFindingLifecycleDetailsLine(reviewFindingLifecycle);
-    if (line) {
-      reviewFindingLifecycleLines.push(line);
-    }
-  } catch {
-    // Keep Review Details fail-open; malformed lifecycle projections must not block publication.
-  }
-
-  const reviewValidationTruthLines: string[] = [];
-  try {
-    const line = formatReviewValidationTruthDetailsLine(reviewValidationTruth);
-    if (line) {
-      reviewValidationTruthLines.push(line);
-    }
-  } catch {
-    // Keep Review Details fail-open; malformed validation truth projections must not block publication.
-  }
+  const candidatePublicationBridgeLines = optionalReviewDetailsLine(candidatePublicationBridge, formatCandidatePublicationBridgeLine);
+  const candidateVerificationPublicationEvidenceLines = optionalReviewDetailsLine(candidateVerificationPublicationEvidence, formatCandidateVerificationPublicationEvidenceLine);
+  const reviewFindingLifecycleLines = optionalReviewDetailsLine(reviewFindingLifecycle, formatReviewFindingLifecycleDetailsLine);
+  const reviewValidationTruthLines = optionalReviewDetailsLine(reviewValidationTruth, formatReviewValidationTruthDetailsLine);
 
   const sections = [
     "<details>",

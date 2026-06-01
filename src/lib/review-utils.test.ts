@@ -61,6 +61,43 @@ function reviewValidationTruthLineCount(body: string): number {
   return body.split("\n").filter((line) => line.includes("Review validation truth:")).length;
 }
 
+function candidatePublicationSummary(input: {
+  mode?: ReviewCandidatePublicationRuntimeDetailsSummary["mode"];
+  counts?: Partial<ReviewCandidatePublicationRuntimeDetailsSummary["counts"]>;
+  reasons?: readonly string[];
+  text?: string;
+} = {}): ReviewCandidatePublicationRuntimeDetailsSummary {
+  const counts: ReviewCandidatePublicationRuntimeDetailsSummary["counts"] = {
+    approvedReferences: 0,
+    rewrittenReferences: 0,
+    candidatePublishable: 0,
+    candidatePublished: 0,
+    candidateSkipped: 0,
+    candidateBlocked: 0,
+    candidateFailed: 0,
+    candidateMalformed: 0,
+    candidateMovedToDetails: 0,
+    candidateDetailsOnlyFindings: 0,
+    candidateDetailsOnlyOmitted: 0,
+    fixEligibilityBlocked: 0,
+    nonPublishableReferences: 0,
+    convertedProcessedFindings: 0,
+    directAttempted: 0,
+    directPublished: 0,
+    fallbackEvidence: 0,
+    fallbackDisallowed: 0,
+    malformed: 0,
+    ...input.counts,
+  };
+  return {
+    label: "Review candidate publication runtime",
+    text: input.text ?? "Review candidate publication runtime: typed-public-summary",
+    mode: input.mode ?? "degraded",
+    counts,
+    reasons: (input.reasons ?? []) as ReviewCandidatePublicationRuntimeDetailsSummary["reasons"],
+  };
+}
+
 describe("formatReviewDetailsSummary", () => {
   it("renders bounded doctrine counts in structured review plan details without raw canaries", () => {
     const result = formatReviewDetailsSummary({
@@ -473,10 +510,18 @@ describe("formatReviewDetailsSummary", () => {
         status: "shadow",
         text: "Review candidates: shadow recorded=2 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001",
       } satisfies ReviewCandidateFindingDetailsSummary,
-      reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
+      reviewCandidatePublication: candidatePublicationSummary({
         text: "Review candidate publication runtime: candidate-approved approvedRefs=2 rewrittenRefs=1 publishable=3 candidatePublished=3 skipped=0 blocked=0 failed=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-publisher-published",
-      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+        mode: "candidate-approved",
+        counts: {
+          approvedReferences: 2,
+          rewrittenReferences: 1,
+          candidatePublishable: 3,
+          candidatePublished: 3,
+          convertedProcessedFindings: 3,
+        },
+        reasons: ["candidate-publisher-published"],
+      }),
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
@@ -485,12 +530,65 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("Review candidate publication runtime:");
   });
 
-  it("renders compact publication outcome buckets without raw canaries", () => {
+  it("renders candidate publication details from typed metadata instead of reparsing stale visible text", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
       reviewCandidatePublication: {
         label: "Review candidate publication runtime",
-        text: "Review candidate publication runtime: candidate-approved-partial approvedRefs=7 rewrittenRefs=0 publishable=5 candidatePublished=1 skipped=1 blocked=1 failed=1 movedToDetails=2 detailsOnly=2 detailsOmitted=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-published,candidate-publisher-skipped,candidate-publisher-blocked,candidate-publisher-failed,candidate-moved-to-details,direct-fallback-disallowed,candidate-publisher-malformed",
+        text: "Review candidate publication runtime: degraded approvedRefs=999 rewrittenRefs=999 publishable=999 candidatePublished=999 directPublished=999 fallbackEvidence=999 reasons=stale-visible-text",
+        mode: "candidate-approved",
+        counts: {
+          approvedReferences: 2,
+          rewrittenReferences: 1,
+          candidatePublishable: 3,
+          candidatePublished: 3,
+          candidateSkipped: 0,
+          candidateBlocked: 0,
+          candidateFailed: 0,
+          candidateMalformed: 0,
+          candidateMovedToDetails: 0,
+          candidateDetailsOnlyFindings: 0,
+          candidateDetailsOnlyOmitted: 0,
+          fixEligibilityBlocked: 0,
+          nonPublishableReferences: 0,
+          convertedProcessedFindings: 3,
+          directAttempted: 0,
+          directPublished: 0,
+          fallbackEvidence: 0,
+          fallbackDisallowed: 0,
+          malformed: 0,
+        },
+        reasons: ["candidate-publisher-published"],
+      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+    });
+
+    expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 publishable=3 nonPublishable=0 fixBlocked=0 published=3 directFallback=0 reasons=candidate-publisher-published");
+    expect(result).not.toContain("approved=999");
+    expect(result).not.toContain("stale-visible-text");
+  });
+
+  it("renders compact publication outcome buckets without raw canaries", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewCandidatePublication: {
+        ...candidatePublicationSummary({
+          text: "Review candidate publication runtime: candidate-approved-partial approvedRefs=7 rewrittenRefs=0 publishable=5 candidatePublished=1 skipped=1 blocked=1 failed=1 movedToDetails=2 detailsOnly=2 detailsOmitted=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-published,candidate-publisher-skipped,candidate-publisher-blocked,candidate-publisher-failed,candidate-moved-to-details,direct-fallback-disallowed,candidate-publisher-malformed",
+          mode: "candidate-approved-partial",
+          counts: {
+            approvedReferences: 7,
+            candidatePublishable: 5,
+            candidatePublished: 1,
+            candidateSkipped: 1,
+            candidateBlocked: 1,
+            candidateFailed: 1,
+            candidateMovedToDetails: 2,
+            candidateDetailsOnlyFindings: 2,
+            candidateDetailsOnlyOmitted: 1,
+            fallbackDisallowed: 1,
+            malformed: 1,
+          },
+          reasons: ["candidate-publisher-published", "candidate-publisher-skipped", "candidate-publisher-blocked", "candidate-publisher-failed", "candidate-moved-to-details", "direct-fallback-disallowed", "candidate-publisher-malformed"],
+        }),
         outcomeBuckets: {
           published: { mode: "published", count: 1, reasons: ["candidate-publisher-published", "RAW_PROMPT_CANARY"] },
           skipped: { mode: "skipped", count: 1, reasons: ["candidate-publisher-skipped", "diff --git"] },
@@ -500,7 +598,7 @@ describe("formatReviewDetailsSummary", () => {
           fallbackDisallowed: { mode: "fallback-disallowed", count: 1, reasons: ["direct-fallback-disallowed"] },
           degraded: { mode: "degraded", count: 1, reasons: ["candidate-publisher-malformed"] },
         },
-      } as never,
+      },
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
@@ -521,8 +619,20 @@ describe("formatReviewDetailsSummary", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
       reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
-        text: "Review candidate publication runtime: degraded approvedRefs=240 rewrittenRefs=0 publishable=240 candidatePublished=60 skipped=60 blocked=60 failed=60 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-partial",
+        ...candidatePublicationSummary({
+          text: "Review candidate publication runtime: degraded approvedRefs=240 rewrittenRefs=0 publishable=240 candidatePublished=60 skipped=60 blocked=60 failed=60 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-partial",
+          mode: "degraded",
+          counts: {
+            approvedReferences: 240,
+            candidatePublishable: 240,
+            candidatePublished: 60,
+            candidateSkipped: 60,
+            candidateBlocked: 60,
+            candidateFailed: 60,
+            malformed: 1,
+          },
+          reasons: ["candidate-publisher-partial"],
+        }),
         outcomeBuckets: {
           published: { mode: "published", count: 60, reasons: ["candidate-publisher-published", ...Array.from({ length: 20 }, (_, index) => `unsafe published ${index} diff --git sk-secret`)] },
           skipped: { mode: "skipped", count: 60, reasons: ["candidate-publisher-skipped"] },
@@ -530,7 +640,7 @@ describe("formatReviewDetailsSummary", () => {
           failed: { mode: "failed", count: 60, reasons: ["candidate-publisher-failed"] },
           degraded: { mode: "degraded", count: 1, reasons: ["malformed-publisher-result", "BEGIN PROMPT hidden instructions"] },
         },
-      } as never,
+      },
     });
 
     const line = result.split("\n").find((entry) => entry.includes("Review candidate publication:")) ?? "";
@@ -549,8 +659,16 @@ describe("formatReviewDetailsSummary", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
       reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
-        text: "Review candidate publication runtime: moved-to-details approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff",
+        ...candidatePublicationSummary({
+          text: "Review candidate publication runtime: moved-to-details approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff",
+          mode: "moved-to-details",
+          counts: {
+            approvedReferences: 1,
+            candidateMovedToDetails: 1,
+            candidateDetailsOnlyFindings: 1,
+          },
+          reasons: ["candidate-moved-to-details", "line-not-commentable-in-pr-diff"],
+        }),
         movedToDetails: {
           counts: { total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 },
           reasonCounts: { "line-not-commentable-in-pr-diff": 1 },
@@ -600,8 +718,17 @@ describe("formatReviewDetailsSummary", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
       reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
-        text: "Review candidate publication runtime: moved-to-details approvedRefs=12 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=12 detailsOnly=12 detailsOmitted=7 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six,oversized reason seven",
+        ...candidatePublicationSummary({
+          text: "Review candidate publication runtime: moved-to-details approvedRefs=12 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=12 detailsOnly=12 detailsOmitted=7 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six,oversized reason seven",
+          mode: "moved-to-details",
+          counts: {
+            approvedReferences: 12,
+            candidateMovedToDetails: 12,
+            candidateDetailsOnlyFindings: 12,
+            candidateDetailsOnlyOmitted: 7,
+          },
+          reasons: ["candidate-moved-to-details", "oversized reason one", "oversized reason two", "oversized reason three", "oversized reason four", "oversized reason five", "oversized reason six", "oversized reason seven"],
+        }),
         movedToDetails: {
           counts: { total: 12, fromFixEligibility: 12, fromPublisherResult: 0, omitted: 7 },
           reasonCounts: { "line-not-commentable": 11, "line-not-commentable-in-pr-diff": 1 },
@@ -635,8 +762,16 @@ describe("formatReviewDetailsSummary", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
       reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
-        text: "Review candidate publication runtime: not-a-real-mode approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=BEGIN PROMPT,diff --git,unknown reason",
+        ...candidatePublicationSummary({
+          text: "Review candidate publication runtime: not-a-real-mode approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=BEGIN PROMPT,diff --git,unknown reason",
+          mode: "degraded",
+          counts: {
+            approvedReferences: 1,
+            candidateMovedToDetails: 1,
+            candidateDetailsOnlyFindings: 1,
+          },
+          reasons: ["BEGIN PROMPT", "diff --git", "unknown reason"],
+        }),
         movedToDetails: {
           counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
           reasonCounts: { "unknown unsafe reason": 1 },
@@ -676,10 +811,16 @@ describe("formatReviewDetailsSummary", () => {
   it("renders direct fallback publication state as audited fallback evidence", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
-      reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
+      reviewCandidatePublication: candidatePublicationSummary({
         text: "Review candidate publication runtime: direct-fallback approvedRefs=0 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 directPublished=2 fallbackEvidence=2 malformed=0 reasons=direct-fallback-attempted,direct-fallback-published",
-      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+        mode: "direct-fallback",
+        counts: {
+          directAttempted: 1,
+          directPublished: 2,
+          fallbackEvidence: 2,
+        },
+        reasons: ["direct-fallback-attempted", "direct-fallback-published"],
+      }),
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
@@ -707,10 +848,17 @@ describe("formatReviewDetailsSummary", () => {
   it("caps oversized candidate publication reasons and redacts secret prompt and diff markers", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
-      reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
+      reviewCandidatePublication: candidatePublicationSummary({
         text: "Review candidate publication runtime: degraded approvedRefs=1 rewrittenRefs=0 publishable=1 candidatePublished=0 skipped=0 blocked=0 failed=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-failed,sk-secret-value,ghp_secret_token_value,BEGIN PROMPT,diff --git,hidden instructions,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six",
-      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
+        mode: "degraded",
+        counts: {
+          approvedReferences: 1,
+          candidatePublishable: 1,
+          candidateFailed: 1,
+          malformed: 1,
+        },
+        reasons: ["candidate-publisher-failed", "sk-secret-value", "ghp_secret_token_value", "BEGIN PROMPT", "diff --git", "hidden instructions", "oversized reason one", "oversized reason two", "oversized reason three", "oversized reason four", "oversized reason five", "oversized reason six"],
+      }),
     });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);

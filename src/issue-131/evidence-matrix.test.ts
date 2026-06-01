@@ -405,6 +405,21 @@ describe("issue #131 evidence matrix evaluator", () => {
     expect(row(report, "review-details-plan-summary").failureReasons.join("\n")).toContain("bounded fail-open ReviewPlan degradation behavior");
   });
 
+  test("accepts ReviewPlan details wiring without coupling to the local summary variable name", () => {
+    const report = evaluateFixture({
+      "src/handlers/review.ts": [
+        "import { buildReviewPlanPublicationContext, type ReviewPlan } from '../review-orchestration/review-plan.ts';",
+        "const publicationContext = buildReviewPlanPublicationContext({ input: { task: { taskType: 'review.full' } }, builder: reviewPlanBuilder, degraded: { reason: 'builder-error', routingReason: 'standard' } });",
+        "const plan = publicationContext.plan;",
+        "const publicPlanDetails = publicationContext.detailsSummary;",
+        "const reviewDetailsBody = formatReviewDetailsSummary({ analyzedFiles: 1, reviewPlan: publicPlanDetails });",
+        "const marker = '<summary>Review Details</summary>';",
+      ].join("\n"),
+    });
+
+    expect(row(report, "review-details-plan-summary").status).toBe("complete");
+  });
+
   test("keeps runtime lib modules from importing issue-specific proof modules", async () => {
     const runtimeFormatterSource = await Bun.file("src/lib/review-details-candidate-formatting.ts").text();
 

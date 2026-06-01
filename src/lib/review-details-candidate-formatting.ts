@@ -1,5 +1,10 @@
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
-import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import type {
+  ReviewCandidatePublicationRuntimeCounts,
+  ReviewCandidatePublicationRuntimeDetailsSummary,
+  ReviewCandidatePublicationRuntimeMode,
+  ReviewCandidatePublicationRuntimeReason,
+} from "../review-orchestration/review-candidate-publication-runtime.ts";
 import type { ReviewHandlerPublicationBridgeReviewDetails } from "../review-orchestration/review-candidate-publication-bridge-details.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import {
@@ -77,7 +82,7 @@ function sanitizeReviewCandidateDetailsText(value: string): string {
     .slice(0, 260);
 }
 
-const REVIEW_CANDIDATE_PUBLICATION_MODES = new Set([
+const REVIEW_CANDIDATE_PUBLICATION_MODES: ReadonlySet<ReviewCandidatePublicationRuntimeMode> = new Set([
   "candidate-approved",
   "candidate-approved-partial",
   "moved-to-details",
@@ -102,7 +107,7 @@ export function formatReviewCandidatePublicationDetailsLine(
       return [formatMalformedReviewCandidatePublicationDetailsLine()];
     }
 
-    const normalized = normalizeReviewCandidatePublicationDetailsText(reviewCandidatePublication.text, reviewCandidatePublication);
+    const normalized = normalizeReviewCandidatePublicationDetailsText(reviewCandidatePublication);
     if (!normalized) return [formatMalformedReviewCandidatePublicationDetailsLine()];
     return [`- ${normalized}`, ...formatReviewCandidateMovedToDetailsLines(reviewCandidatePublication)];
   } catch {
@@ -111,33 +116,50 @@ export function formatReviewCandidatePublicationDetailsLine(
 }
 
 function normalizeReviewCandidatePublicationDetailsText(
-  value: string,
-  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary,
+  reviewCandidatePublication: ReviewCandidatePublicationRuntimeDetailsSummary,
 ): string | null {
-  const text = sanitizeReviewCandidatePublicationDetailsText(value);
-  const match = text.match(/^Review candidate publication runtime:\s+(\S+)\s*/);
-  if (!match) return null;
+  const mode = normalizeReviewCandidatePublicationMode(reviewCandidatePublication.mode);
+  const counts = normalizeReviewCandidatePublicationCounts(reviewCandidatePublication.counts);
+  if (!mode || !counts) return null;
 
-  const rawMode = sanitizeReviewCandidatePublicationToken(match[1] ?? "degraded");
-  const mode = REVIEW_CANDIDATE_PUBLICATION_MODES.has(rawMode) ? rawMode : "degraded";
-  const approved = extractCandidatePublicationCount(text, "approvedRefs");
-  const rewritten = extractCandidatePublicationCount(text, "rewrittenRefs");
-  const publishable = extractCandidatePublicationCount(text, "publishable");
-  const nonPublishable = extractCandidatePublicationCount(text, "nonPublishable");
-  const fixBlocked = extractCandidatePublicationCount(text, "fixBlocked");
-  const published = extractCandidatePublicationCount(text, "candidatePublished");
-  const movedToDetails = extractCandidatePublicationCount(text, "movedToDetails");
-  const detailsOmitted = extractCandidatePublicationCount(text, "detailsOmitted");
-  const directFallback = Math.max(
-    extractCandidatePublicationCount(text, "fallbackEvidence"),
-    extractCandidatePublicationCount(text, "directPublished"),
-  );
-  const reasons = formatReviewCandidatePublicationReasons(text);
+  const reasons = formatReviewCandidatePublicationReasons(reviewCandidatePublication.reasons);
   const buckets = formatReviewCandidatePublicationOutcomeBuckets(reviewCandidatePublication);
 
-  return `Review candidate publication: mode=${mode} approved=${approved} rewritten=${rewritten} publishable=${publishable} nonPublishable=${nonPublishable} fixBlocked=${fixBlocked} published=${published} directFallback=${directFallback} reasons=${reasons} movedToDetails=${movedToDetails} detailsOmitted=${detailsOmitted}${buckets ? ` buckets=${buckets}` : ""}`;
+  return `Review candidate publication: mode=${mode} approved=${counts.approvedReferences} rewritten=${counts.rewrittenReferences} publishable=${counts.candidatePublishable} nonPublishable=${counts.nonPublishableReferences} fixBlocked=${counts.fixEligibilityBlocked} published=${counts.candidatePublished} directFallback=${counts.fallbackEvidence} reasons=${reasons} movedToDetails=${counts.candidateMovedToDetails} detailsOmitted=${counts.candidateDetailsOnlyOmitted}${buckets ? ` buckets=${buckets}` : ""}`;
 }
 
+
+function normalizeReviewCandidatePublicationMode(value: unknown): ReviewCandidatePublicationRuntimeMode | null {
+  return typeof value === "string" && REVIEW_CANDIDATE_PUBLICATION_MODES.has(value as ReviewCandidatePublicationRuntimeMode)
+    ? value as ReviewCandidatePublicationRuntimeMode
+    : null;
+}
+
+function normalizeReviewCandidatePublicationCounts(value: unknown): ReviewCandidatePublicationRuntimeCounts | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<keyof ReviewCandidatePublicationRuntimeCounts, unknown>;
+  return {
+    approvedReferences: readNonNegativeCount(record, "approvedReferences"),
+    rewrittenReferences: readNonNegativeCount(record, "rewrittenReferences"),
+    candidatePublishable: readNonNegativeCount(record, "candidatePublishable"),
+    candidatePublished: readNonNegativeCount(record, "candidatePublished"),
+    candidateSkipped: readNonNegativeCount(record, "candidateSkipped"),
+    candidateBlocked: readNonNegativeCount(record, "candidateBlocked"),
+    candidateFailed: readNonNegativeCount(record, "candidateFailed"),
+    candidateMalformed: readNonNegativeCount(record, "candidateMalformed"),
+    candidateMovedToDetails: readNonNegativeCount(record, "candidateMovedToDetails"),
+    candidateDetailsOnlyFindings: readNonNegativeCount(record, "candidateDetailsOnlyFindings"),
+    candidateDetailsOnlyOmitted: readNonNegativeCount(record, "candidateDetailsOnlyOmitted"),
+    fixEligibilityBlocked: readNonNegativeCount(record, "fixEligibilityBlocked"),
+    nonPublishableReferences: readNonNegativeCount(record, "nonPublishableReferences"),
+    convertedProcessedFindings: readNonNegativeCount(record, "convertedProcessedFindings"),
+    directAttempted: readNonNegativeCount(record, "directAttempted"),
+    directPublished: readNonNegativeCount(record, "directPublished"),
+    fallbackEvidence: readNonNegativeCount(record, "fallbackEvidence"),
+    fallbackDisallowed: readNonNegativeCount(record, "fallbackDisallowed"),
+    malformed: readNonNegativeCount(record, "malformed"),
+  };
+}
 
 function formatReviewCandidatePublicationOutcomeBuckets(
   reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary,
@@ -281,24 +303,9 @@ function formatMalformedReviewCandidatePublicationDetailsLine(): string {
   return "- Review candidate publication: mode=degraded approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=malformed-runtime-summary movedToDetails=0 detailsOmitted=0 buckets=degraded:1:malformed-runtime-summary";
 }
 
-function extractCandidatePublicationCount(text: string, key: string): number {
-  const match = text.match(new RegExp(`(?:^|\\s)${key}=(-?\\d+)`));
-  if (!match) return 0;
-  const value = Number.parseInt(match[1] ?? "0", 10);
-  return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
-function formatReviewCandidatePublicationReasons(text: string): string {
-  const marker = "reasons=";
-  const markerIndex = text.indexOf(marker);
-  if (markerIndex < 0) return "none";
-
-  const reasonText = text.slice(markerIndex + marker.length).trim();
-  if (!reasonText || reasonText === "none") return "none";
-
-  const reasons = reasonText
-    .split(",")
-    .map((reason) => sanitizeReviewCandidatePublicationToken(reason))
+function formatReviewCandidatePublicationReasons(values: readonly ReviewCandidatePublicationRuntimeReason[]): string {
+  const reasons = values
+    .map((reason) => sanitizeReviewCandidatePublicationReason(reason))
     .filter((reason) => reason.length > 0);
 
   if (reasons.length === 0) return "none";
@@ -308,20 +315,6 @@ function formatReviewCandidatePublicationReasons(text: string): string {
   return remaining > 0 ? `${cappedReasons.join(",")} +${remaining} more` : cappedReasons.join(",");
 }
 
-function sanitizeReviewCandidatePublicationDetailsText(value: string): string {
-  return value
-    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
-    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
-    .replace(/TOKEN\s*=\s*[^\s]+/gi, "token-redacted")
-    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
-    .replace(/diff --git/gi, "diff-redacted")
-    .replace(/BEGIN\s+PROMPT/gi, "prompt-redacted")
-    .replace(/system prompt|hidden instructions/gi, "prompt-redacted")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 1_000);
-}
-
 function sanitizeReviewCandidatePublicationToken(value: string): string {
   return value
     .toLowerCase()
@@ -329,6 +322,17 @@ function sanitizeReviewCandidatePublicationToken(value: string): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 64);
+}
+
+function sanitizeReviewCandidatePublicationReason(value: string): string {
+  return sanitizeReviewCandidatePublicationToken(value
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
+    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
+    .replace(/TOKEN\s*[:=]\s*[^\s]+/gi, "token-redacted")
+    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
+    .replace(/diff --git/gi, "diff-redacted")
+    .replace(/BEGIN\s+PROMPT/gi, "prompt-redacted")
+    .replace(/system prompt|hidden instructions/gi, "prompt-redacted"));
 }
 
 function boundedBridgeToken(value: unknown, fallback = "unavailable", maxLength = 160): string {
