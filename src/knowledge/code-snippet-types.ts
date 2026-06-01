@@ -57,6 +57,8 @@ export type CodeSnippetRepairCandidate = {
 };
 
 export type CodeSnippetStore = {
+  hasSnippet?(contentHash: string): Promise<boolean>;
+
   writeSnippet(
     record: {
       contentHash: string;

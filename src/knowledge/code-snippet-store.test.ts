@@ -68,6 +68,23 @@ describe("createCodeSnippetStore", () => {
     expect(calls[0]!.values).toContain("abc123");
   });
 
+  test("hasSnippet checks for a non-stale content hash", async () => {
+    const calls: Array<{ query: string; values: unknown[] }> = [];
+    const sql = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ query: strings.join("?"), values });
+      return Promise.resolve([{ "?column?": 1 }]);
+    };
+    const store = createCodeSnippetStore({
+      sql: sql as unknown as import("../db/client.ts").Sql,
+      logger: createMockLogger(),
+    });
+
+    await expect(store.hasSnippet!("abc123")).resolves.toBe(true);
+    expect(calls[0]!.query).toContain("content_hash");
+    expect(calls[0]!.query).toContain("stale = false");
+    expect(calls[0]!.values).toContain("abc123");
+  });
+
   test("writeOccurrence calls sql with occurrence data", async () => {
     const { sql, calls } = createMockSql();
     const store = createCodeSnippetStore({

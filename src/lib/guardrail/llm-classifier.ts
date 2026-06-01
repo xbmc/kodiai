@@ -56,25 +56,47 @@ const SYSTEM_PROMPT =
 // ---------------------------------------------------------------------------
 
 function buildBatchPrompt(claims: LlmClassifierClaim[]): string {
-  const sections = claims.map((claim, i) => {
-    const contextText = claim.context.providedContext.length > 0
+  const contextBlocks = new Map<string, { index: number; sources: string; text: string }>();
+
+  const getContextIndex = (claim: LlmClassifierClaim): number => {
+    const text = claim.context.providedContext.length > 0
       ? claim.context.providedContext.join("\n")
       : "(no context provided)";
+    const sources = claim.context.contextSources.join(", ") || "none";
+    const key = JSON.stringify({ sources, text });
+    const existing = contextBlocks.get(key);
+    if (existing) return existing.index;
+
+    const index = contextBlocks.size + 1;
+    contextBlocks.set(key, { index, sources, text });
+    return index;
+  };
+
+  const sections = claims.map((claim, i) => {
+    const contextIndex = getContextIndex(claim);
 
     return [
       `### Claim ${i + 1}`,
       `Text: "${claim.text}"`,
-      `Context sources: ${claim.context.contextSources.join(", ") || "none"}`,
-      `Available context:`,
-      contextText,
+      `Use shared context: Context ${contextIndex}`,
     ].join("\n");
   });
+
+  const sharedContextSections = Array.from(contextBlocks.values()).map((block) => [
+    `### Context ${block.index}`,
+    `Context sources: ${block.sources}`,
+    "Available context:",
+    block.text,
+  ].join("\n"));
 
   return [
     "Classify each of the following claims. For each claim, determine whether it is:",
     '- "diff-grounded": directly supported by the provided context',
     '- "external-knowledge": asserts facts not present in the provided context (versions, dates, API behavior, CVEs)',
     '- "inferential": a logical deduction from the provided context',
+    "",
+    "Shared context blocks:",
+    ...sharedContextSections,
     "",
     ...sections,
     "",
