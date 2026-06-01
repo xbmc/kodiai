@@ -121,6 +121,40 @@ type RawClassification = {
 
 const VALID_LABELS = new Set<ClaimLabel>(["diff-grounded", "external-knowledge", "inferential"]);
 
+function buildClaimCacheKey(claim: LlmClassifierClaim): string {
+  const contextText = claim.context.providedContext.length > 0
+    ? claim.context.providedContext.join("\n")
+    : "(no context provided)";
+  const contextSources = claim.context.contextSources.join("\n");
+  return JSON.stringify({
+    text: claim.text,
+    contextSources,
+    contextText,
+  });
+}
+
+function dedupeClaims(claims: LlmClassifierClaim[]): {
+  uniqueClaims: LlmClassifierClaim[];
+  originalToUniqueIndex: number[];
+} {
+  const uniqueClaims: LlmClassifierClaim[] = [];
+  const originalToUniqueIndex: number[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (const claim of claims) {
+    const key = buildClaimCacheKey(claim);
+    let uniqueIndex = indexByKey.get(key);
+    if (uniqueIndex === undefined) {
+      uniqueIndex = uniqueClaims.length;
+      indexByKey.set(key, uniqueIndex);
+      uniqueClaims.push(claim);
+    }
+    originalToUniqueIndex.push(uniqueIndex);
+  }
+
+  return { uniqueClaims, originalToUniqueIndex };
+}
+
 function parseClassifications(
   text: string,
   claimTexts: string[],
@@ -180,11 +214,12 @@ export function createLlmClassifier(deps: LlmClassifierDeps): LlmClassifier {
 
     try {
       const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
+      const { uniqueClaims, originalToUniqueIndex } = dedupeClaims(claims);
 
       // Batch claims into chunks of MAX_CLAIMS_PER_BATCH
-      const results: ClaimClassification[] = [];
-      for (let i = 0; i < claims.length; i += MAX_CLAIMS_PER_BATCH) {
-        const batch = claims.slice(i, i + MAX_CLAIMS_PER_BATCH);
+      const uniqueResults: ClaimClassification[] = [];
+      for (let i = 0; i < uniqueClaims.length; i += MAX_CLAIMS_PER_BATCH) {
+        const batch = uniqueClaims.slice(i, i + MAX_CLAIMS_PER_BATCH);
         const batchTexts = batch.map((c) => c.text);
 
         try {
@@ -200,18 +235,22 @@ export function createLlmClassifier(deps: LlmClassifierDeps): LlmClassifier {
           });
 
           const classifications = parseClassifications(response.text, batchTexts);
-          results.push(...classifications);
+          uniqueResults.push(...classifications);
         } catch (batchErr) {
           // Fail-open per batch: if one batch fails, return all claims in that batch as grounded
           logger.warn(
             { err: batchErr, batchSize: batch.length },
             "LLM classifier batch failed, applying fail-open for batch",
           );
-          results.push(...batchTexts.map(failOpenClassification));
+          uniqueResults.push(...batchTexts.map(failOpenClassification));
         }
       }
 
-      return results;
+      return originalToUniqueIndex.map((uniqueIndex, originalIndex) => {
+        const claimText = claims[originalIndex]!.text;
+        const result = uniqueResults[uniqueIndex] ?? failOpenClassification(claimText);
+        return { ...result, text: claimText };
+      });
     } catch (err) {
       // Global fail-open: return all claims as grounded
       logger.warn(

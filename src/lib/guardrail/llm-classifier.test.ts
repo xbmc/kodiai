@@ -213,4 +213,36 @@ describe("createLlmClassifier", () => {
     expect(prompt.match(/large shared issue body/g)).toHaveLength(1);
     expect(prompt.match(/large shared diff patch/g)).toHaveLength(1);
   });
+
+  test("deduplicates identical claim and context pairs before LLM classification", async () => {
+    const sharedContext = makeContext([
+      "large shared diff patch",
+    ]);
+    const response = JSON.stringify([
+      { label: "external-knowledge", confidence: 0.85, evidence: "version claim" },
+    ]);
+
+    const deps = createMockDeps(response);
+    const classifier = createLlmClassifier(deps);
+
+    const results = await classifier([
+      makeClaim("This requires version 21.", sharedContext),
+      makeClaim("This requires version 21.", sharedContext),
+    ]);
+
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.text)).toEqual([
+      "This requires version 21.",
+      "This requires version 21.",
+    ]);
+    expect(results.map((result) => result.label)).toEqual([
+      "external-knowledge",
+      "external-knowledge",
+    ]);
+
+    expect(deps.generateWithFallback).toHaveBeenCalledTimes(1);
+    const prompt = String(deps.generateWithFallback.mock.calls[0]?.[0]?.prompt ?? "");
+    expect(prompt.match(/### Claim /g)).toHaveLength(1);
+    expect(prompt).toContain("Respond with a JSON array of exactly 1 objects");
+  });
 });
