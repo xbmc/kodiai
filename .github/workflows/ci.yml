@@ -34,6 +34,7 @@ jobs:
       - run: bun run lint
       - run: bun run verify:m056:s03
       - run: bun run check:orphaned-tests
+      - run: bun run check:review-details-architecture
       # Bun has been unstable on GitHub runners with one monolithic test process.
       # Keep DB-backed tests on a low concurrency cap and split the suite into
       # two shorter invocations to avoid cross-file schema interference and runner crashes.

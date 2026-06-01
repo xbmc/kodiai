@@ -6,8 +6,8 @@ import {
   buildKeywordParsingSection,
   DEFAULT_EMPTY_INTENT,
   type ParsedPRIntent,
-} from "../lib/pr-intent-parser.ts";
-import type { ResolvedReviewProfile } from "../lib/auto-profile.ts";
+} from "./pr-intent-parser.ts";
+import type { ResolvedReviewProfile } from "./auto-profile.ts";
 import type { ContributorExperienceReviewDetailsProjection } from "../contributor/experience-contract.ts";
 import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";

@@ -122,6 +122,7 @@
     "verify:m054:s04": "bun scripts/verify-m054-s04.ts",
     "check:migrations-have-downs": "bun scripts/check-migrations-have-downs.ts",
     "check:orphaned-tests": "bun scripts/check-orphaned-tests.ts",
+    "check:review-details-architecture": "bun scripts/check-review-details-architecture.ts",
     "verify:m069:s05": "bun scripts/verify-m069-s05.ts",
     "verify:m073:s01": "bun scripts/verify-m073-s01.ts",
     "verify:m073:s02": "bun scripts/verify-m073-s02.ts",
