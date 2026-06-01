@@ -1,25 +1,11 @@
 import type { ReviewHandlerPublicationBridgeReviewDetails } from "../review-orchestration/review-candidate-publication-bridge-details.ts";
 import {
-  boundedReviewDetailsValue,
+  boundedBridgeToken,
+  formatBridgeTokenArray,
   formatCountFields,
 } from "./review-details-shared-formatting.ts";
 
 export type CandidatePublicationBridgeReviewDetails = ReviewHandlerPublicationBridgeReviewDetails;
-
-function boundedBridgeToken(value: unknown, fallback = "unavailable", maxLength = 160): string {
-  const text = boundedReviewDetailsValue(value, maxLength);
-  if (!text || !/^[a-z0-9][a-z0-9:._-]*$/.test(text)) return fallback;
-  return text;
-}
-
-function formatBridgeStringArray(value: unknown, maxItems = 8): string {
-  if (!Array.isArray(value)) return "none";
-  const entries = value
-    .map((entry) => boundedBridgeToken(entry, "", 64))
-    .filter((entry) => entry.length > 0)
-    .slice(0, maxItems);
-  return entries.length > 0 ? entries.join(",") : "none";
-}
 
 function hasUnsafeBridgeRedaction(redaction: ReviewHandlerPublicationBridgeReviewDetails["redaction"]): boolean {
   return redaction.privateOnly !== true
@@ -91,8 +77,8 @@ export function formatCandidatePublicationBridgeLine(
     `candidateRef=${boundedBridgeToken(bridge.candidateRef)}`,
     `verification=${bridge.verificationState === null ? "none" : boundedBridgeToken(bridge.verificationState, "unavailable", 32)}`,
     `counts=${counts}`,
-    `reasons=${formatBridgeStringArray(bridge.reasonCategories)}`,
-    `malformed=${formatBridgeStringArray(bridge.malformedReasonCodes)}`,
+    `reasons=${formatBridgeTokenArray(bridge.reasonCategories)}`,
+    `malformed=${formatBridgeTokenArray(bridge.malformedReasonCodes)}`,
     `presence=${formatBridgePresence(bridge.presence)}`,
     `handoffOwner=${handoffOwner}`,
     `redaction=${formatBridgeRedactionFlags(bridge.redaction)}`,

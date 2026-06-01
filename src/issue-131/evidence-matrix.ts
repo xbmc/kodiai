@@ -637,9 +637,9 @@ function makeRow(
 function parsePackageScripts(packageJsonText: string): Record<string, string> {
   try {
     const parsed = JSON.parse(packageJsonText) as { scripts?: unknown };
-    if (!parsed.scripts || typeof parsed.scripts !== "object") return {};
+    if (!isRecord(parsed.scripts)) return {};
     return Object.fromEntries(
-      Object.entries(parsed.scripts as Record<string, unknown>)
+      Object.entries(parsed.scripts)
         .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
     );
   } catch {
@@ -828,13 +828,17 @@ export function findForbiddenReportFields(value: unknown): string[] {
 }
 
 function visitReportValue(value: unknown, path: string, findings: string[]): void {
-  if (value === null || typeof value !== "object") return;
+  if (!isRecord(value) && !Array.isArray(value)) return;
   if (Array.isArray(value)) {
     value.forEach((item, index) => visitReportValue(item, `${path}[${index}]`, findings));
     return;
   }
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, child] of Object.entries(value)) {
     if (FORBIDDEN_REPORT_KEYS.has(key)) findings.push(`${path}.${key}`);
     visitReportValue(child, `${path}.${key}`, findings);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -5,6 +5,7 @@ import {
   boundedReviewDetailsValue,
   formatCountFields,
   formatStringArray,
+  isReviewDetailsRecord,
   readNonNegativeCount,
 } from "./review-details-shared-formatting.ts";
 
@@ -25,8 +26,8 @@ const REVIEW_VALIDATION_TRUTH_MAX_REASONS = 8;
 const REVIEW_VALIDATION_TRUTH_MAX_REFERENCES = 5;
 
 function hasUnsafeValidationTruthRedaction(value: unknown): boolean {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return true;
-  const redaction = value as Record<string, unknown>;
+  if (!isReviewDetailsRecord(value)) return true;
+  const redaction = value;
   return redaction.privateOnly !== true
     || redaction.rawPromptsIncluded !== false
     || redaction.rawModelOutputIncluded !== false
@@ -39,8 +40,8 @@ function hasUnsafeValidationTruthRedaction(value: unknown): boolean {
 }
 
 function formatValidationTruthReasonCounts(value: unknown, omittedValue: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return "none";
-  const record = value as Record<string, unknown>;
+  if (!isReviewDetailsRecord(value)) return "none";
+  const record = value;
   const entries = REVIEW_VALIDATION_TRUTH_REASON_ORDER
     .map((reason) => {
       const count = record[reason];
@@ -62,8 +63,8 @@ function formatValidationTruthReferences(value: unknown, omittedValue: unknown):
   if (!Array.isArray(value)) return "none";
   const entries = value
     .map((entry) => {
-      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
-      const record = entry as Record<string, unknown>;
+      if (!isReviewDetailsRecord(entry)) return null;
+      const record = entry;
       const id = boundedBridgeToken(record.id, "", 48);
       const status = boundedBridgeToken(record.status, "", 24);
       if (!id || !["open", "suggested", "uncertain", "blocked", "degraded", "resolved"].includes(status)) return null;
@@ -88,9 +89,7 @@ function formatValidationTruthReferences(value: unknown, omittedValue: unknown):
 }
 
 function formatValidationTruthRedaction(value: unknown): string {
-  const redaction = typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  const redaction = isReviewDetailsRecord(value) ? value : {};
   return [
     "privateOnly:y",
     "rawPrompts:n",
@@ -109,7 +108,7 @@ export function formatReviewValidationTruthDetailsLine(
   validationTruth?: ValidationTruthProjection | null,
 ): string | null {
   try {
-    if (typeof validationTruth !== "object" || validationTruth === null || Array.isArray(validationTruth)) return null;
+    if (!isReviewDetailsRecord(validationTruth)) return null;
     if (validationTruth.schema !== "review-validation-truth.v1") return null;
     if (validationTruth.gate !== "review-validation-truth") return null;
     const status = boundedBridgeToken(validationTruth.status, "unavailable", 32);
@@ -135,9 +134,7 @@ export function formatReviewValidationTruthDetailsLine(
       "missingValidation",
       "missingRevalidation",
     ]) ?? "fresh:0,stale:0,missingValidation:0,missingRevalidation:0";
-    const omitted = typeof validationTruth.omitted === "object" && validationTruth.omitted !== null && !Array.isArray(validationTruth.omitted)
-      ? validationTruth.omitted as Record<string, unknown>
-      : {};
+    const omitted = isReviewDetailsRecord(validationTruth.omitted) ? validationTruth.omitted : {};
     const correlation = [
       `reviewOutputKey:${boundedReviewDetailsValue(validationTruth.reviewOutputKey, 96) ? "y" : "n"}`,
       `deliveryId:${boundedReviewDetailsValue(validationTruth.deliveryId, 96) ? "y" : "n"}`,
@@ -161,14 +158,12 @@ export function formatReviewFindingLifecycleDetailsLine(
   lifecycle?: ReviewFindingLifecyclePublicProjection | null,
 ): string | null {
   try {
-    if (typeof lifecycle !== "object" || lifecycle === null || Array.isArray(lifecycle)) return null;
+    if (!isReviewDetailsRecord(lifecycle)) return null;
     if (lifecycle.schema !== "review-finding-lifecycle.v1") return null;
     const status = boundedBridgeToken(lifecycle.status, "unavailable", 32);
     if (status !== "normalized" && status !== "degraded" && status !== "unavailable") return null;
 
-    const redaction = typeof lifecycle.redaction === "object" && lifecycle.redaction !== null && !Array.isArray(lifecycle.redaction)
-      ? lifecycle.redaction as Record<string, unknown>
-      : null;
+    const redaction = isReviewDetailsRecord(lifecycle.redaction) ? lifecycle.redaction : null;
     if (
       !redaction
       || redaction.privateOnly !== true
@@ -191,9 +186,7 @@ export function formatReviewFindingLifecycleDetailsLine(
       ?? "critical:0,major:0,medium:0,minor:0";
     const actionabilityCounts = formatCountFields(lifecycle.counts?.actionability, ["actionable", "needs-human-review", "needs-reproduction", "blocked", "not-actionable"])
       ?? "actionable:0,needs-human-review:0,needs-reproduction:0,blocked:0,not-actionable:0";
-    const correlation = typeof lifecycle.correlation === "object" && lifecycle.correlation !== null && !Array.isArray(lifecycle.correlation)
-      ? lifecycle.correlation as Record<string, unknown>
-      : {};
+    const correlation = isReviewDetailsRecord(lifecycle.correlation) ? lifecycle.correlation : {};
     const correlationText = [
       `repo:${correlation.repoPresent === true ? "y" : "n"}`,
       `pull:${correlation.pullNumberPresent === true ? "y" : "n"}`,
