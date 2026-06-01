@@ -107,6 +107,11 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
+import {
+  createConversationTurnStore,
+  createTriageCooldownStore,
+  createWriteRateLimitStore,
+} from "../lib/mention-state-stores.ts";
 import { splitGitLines } from "../lib/review-utils.ts";
 import {
   buildApprovedReviewBody,
@@ -354,81 +359,12 @@ export function createMentionHandler(deps: {
     },
   });
 
-  // Basic in-memory rate limiter for write-mode requests.
-  // Keyed by installation+repo; resets on process restart.
-  const lastWriteAt = new Map<string, number>();
-  const prConversationTurns = new Map<string, number>();
-  const prConversationTouchedAt = new Map<string, number>();
+  const writeRateLimitStore = createWriteRateLimitStore();
+  const conversationTurnStore = createConversationTurnStore();
 
   const inFlightWriteKeys = new Set<string>();
 
-  // Per-issue triage cooldown: prevents repeated triage nudges.
-  // Keyed by "{owner}/{repo}#{issueNumber}". Resets when issue body hash changes.
-  const triageCooldowns = new Map<string, { lastTriagedAt: number; bodyHash: string }>();
-
-  function pruneTriageCooldowns(now: number): void {
-    const ttlMs = 24 * 60 * 60 * 1000; // 24h
-    for (const [key, entry] of triageCooldowns.entries()) {
-      if (now - entry.lastTriagedAt > ttlMs) {
-        triageCooldowns.delete(key);
-      }
-    }
-    // Hard cap
-    if (triageCooldowns.size > 1000) {
-      const sortedEntries = [...triageCooldowns.entries()]
-        .sort((a, b) => a[1].lastTriagedAt - b[1].lastTriagedAt);
-      const toDelete = sortedEntries.slice(0, triageCooldowns.size - 1000);
-      for (const [key] of toDelete) {
-        triageCooldowns.delete(key);
-      }
-    }
-  }
-
-
-  function pruneRateLimiter(now: number): void {
-    // Defense-in-depth: prevent unbounded growth in long-lived processes.
-    // Keep recent entries only; this limiter is best-effort and not durable.
-    const ttlMs = 24 * 60 * 60 * 1000; // 24h
-    for (const [key, ts] of lastWriteAt.entries()) {
-      if (now - ts > ttlMs) {
-        lastWriteAt.delete(key);
-      }
-    }
-
-    // Hard cap: if still large, drop oldest entries.
-    const maxEntries = 10_000;
-    if (lastWriteAt.size <= maxEntries) return;
-
-    const entries = [...lastWriteAt.entries()].sort((a, b) => a[1] - b[1]);
-    const toDelete = entries.length - maxEntries;
-    for (let i = 0; i < toDelete; i++) {
-      const k = entries[i]?.[0];
-      if (k) lastWriteAt.delete(k);
-    }
-  }
-
-  function pruneConversationTurns(now: number): void {
-    const ttlMs = 24 * 60 * 60 * 1000;
-    for (const [key, ts] of prConversationTouchedAt.entries()) {
-      if (now - ts > ttlMs) {
-        prConversationTurns.delete(key);
-        prConversationTouchedAt.delete(key);
-      }
-    }
-
-    const maxEntries = 10_000;
-    if (prConversationTurns.size <= maxEntries) return;
-
-    const entries = [...prConversationTouchedAt.entries()].sort((a, b) => a[1] - b[1]);
-    const toDelete = entries.length - maxEntries;
-    for (let i = 0; i < toDelete; i++) {
-      const k = entries[i]?.[0];
-      if (k) {
-        prConversationTurns.delete(k);
-        prConversationTouchedAt.delete(k);
-      }
-    }
-  }
+  const triageCooldownStore = createTriageCooldownStore();
 
 
 
@@ -1283,8 +1219,7 @@ export function createMentionHandler(deps: {
         if (writeEnabled && config.write.minIntervalSeconds > 0) {
           const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
           const now = Date.now();
-          pruneRateLimiter(now);
-          const last = lastWriteAt.get(key);
+          const last = writeRateLimitStore.getLastWriteAt(key);
           const minMs = config.write.minIntervalSeconds * 1000;
 
           if (last !== undefined && now - last < minMs) {
@@ -1357,9 +1292,7 @@ export function createMentionHandler(deps: {
 
         if (mention.inReplyToId !== undefined) {
           const conversationKey = `${mention.owner}/${mention.repo}#${mention.prNumber ?? mention.issueNumber}`;
-          const now = Date.now();
-          pruneConversationTurns(now);
-          const turns = prConversationTurns.get(conversationKey) ?? 0;
+          const turns = conversationTurnStore.getTurns(conversationKey);
           if (turns >= config.mention.conversation.maxTurnsPerPr) {
             await postMentionReply(
               [
@@ -1524,8 +1457,7 @@ export function createMentionHandler(deps: {
             .digest("hex")
             .slice(0, 16);
           const now = Date.now();
-          pruneTriageCooldowns(now);
-          const cooldownEntry = triageCooldowns.get(cooldownKey);
+          const cooldownEntry = triageCooldownStore.get(cooldownKey);
           const cooldownMs = (config.triage.cooldownMinutes ?? 30) * 60 * 1000;
 
           const withinCooldown =
@@ -1558,7 +1490,7 @@ export function createMentionHandler(deps: {
               // If valid, triageContext stays empty -- no nudge needed
 
               // Update cooldown
-              triageCooldowns.set(cooldownKey, { lastTriagedAt: now, bodyHash });
+              triageCooldownStore.set(cooldownKey, { lastTriagedAt: now, bodyHash });
             } catch (err) {
               logger.warn(
                 { err, issueNumber: mention.issueNumber },
@@ -2596,8 +2528,7 @@ export function createMentionHandler(deps: {
 
         if (mention.inReplyToId !== undefined && result.conclusion === "success") {
           const conversationKey = `${mention.owner}/${mention.repo}#${mention.prNumber ?? mention.issueNumber}`;
-          prConversationTurns.set(conversationKey, (prConversationTurns.get(conversationKey) ?? 0) + 1);
-          prConversationTouchedAt.set(conversationKey, Date.now());
+          conversationTurnStore.recordSuccessfulTurn(conversationKey);
         }
 
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
@@ -3409,7 +3340,7 @@ export function createMentionHandler(deps: {
           // Record successful publish time for rate limiting.
           if (config.write.minIntervalSeconds > 0) {
             const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
-            lastWriteAt.set(key, Date.now());
+            writeRateLimitStore.recordWrite(key);
           }
 
           return;
