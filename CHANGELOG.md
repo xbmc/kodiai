@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.42 (2026-06-01)
+
+Review utility decomposition, mention state extraction, and Review Details boundary hardening.
+
+### Added
+
+- Review Details architecture gate for keeping formatting and publication-detail helpers out of the main review handler.
+- Focused formatting modules for Review Details phases, validation, candidate publication, verification, and shared summary rendering.
+- Mention state store utilities and shared review git/trigger/rate-limit helpers with module tests.
+
+### Changed
+
+- `review.ts` and `mention.ts` delegate more reducer, candidate, git-line, trigger, and publication-detail work to shared modules.
+- Review utility boundaries were split into smaller files for finding metadata, profile presets, merge-confidence formatting, git helpers, and search rate limiting.
+- Candidate publication bridge details now flow through the review orchestration boundary instead of staying embedded in the handler closure.
+
+### Verification
+
+- PR #182, #183, and #184 CI passed.
+- Deployed revision `ca-kodiai--deploy-94c668222c20-20260601-133420` passed `/healthz`.
+- Live explicit `@kodiai review` proof on `xbmc/xbmc#28172` completed through ACA agent execution `caj-kodiai-agent-alqjy8n` and published bot output in comment `4596332933`.
+
 ## v0.41 (2026-05-31)
 
 Review handler slice extraction and formatter argv sandbox.
