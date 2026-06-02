@@ -9,7 +9,7 @@ import type {
 } from "../knowledge/review-comment-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 import { chunkReviewThread } from "../knowledge/review-comment-chunker.ts";
-import { generateDocumentEmbeddingsBatch } from "../knowledge/embedding-batch.ts";
+import { generateDocumentEmbeddingResultsBatch } from "../knowledge/embedding-batch.ts";
 
 const BOT_LOGINS = new Set([
   "dependabot",
@@ -79,13 +79,13 @@ async function embedChunks(
   chunks: ReviewCommentChunk[],
   embeddingProvider: EmbeddingProvider,
 ): Promise<ReviewCommentChunk[]> {
-  const embeddings = await generateDocumentEmbeddingsBatch({
+  const embeddingResults = await generateDocumentEmbeddingResultsBatch({
     texts: chunks.map((chunk) => chunk.chunkText),
     embeddingProvider,
   });
 
   for (let i = 0; i < chunks.length; i++) {
-    chunks[i]!.embedding = embeddings[i] ?? null;
+    chunks[i]!.embedding = embeddingResults[i]?.embedding ?? null;
   }
   return chunks;
 }

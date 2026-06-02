@@ -24,24 +24,9 @@ type GenerateDocumentEmbeddingsBatchBaseOptions = {
   batchSize?: number;
 };
 
-export async function generateDocumentEmbeddingsBatch(
-  opts: GenerateDocumentEmbeddingsBatchBaseOptions & { includeResults: true },
-): Promise<DocumentEmbeddingBatchResult[]>;
-
-export async function generateDocumentEmbeddingsBatch(
-  opts: GenerateDocumentEmbeddingsBatchBaseOptions & { includeResults?: false },
-): Promise<Array<Float32Array | null>>;
-
-export async function generateDocumentEmbeddingsBatch(
-  opts: GenerateDocumentEmbeddingsBatchBaseOptions & { includeResults: boolean },
-): Promise<Array<Float32Array | null> | DocumentEmbeddingBatchResult[]>;
-
-export async function generateDocumentEmbeddingsBatch(opts: {
-  texts: string[];
-  embeddingProvider: Pick<EmbeddingProvider, "generate">;
-  batchSize?: number;
-  includeResults?: boolean;
-}): Promise<Array<Float32Array | null> | DocumentEmbeddingBatchResult[]> {
+export async function generateDocumentEmbeddingResultsBatch(
+  opts: GenerateDocumentEmbeddingsBatchBaseOptions,
+): Promise<DocumentEmbeddingBatchResult[]> {
   const { texts, embeddingProvider } = opts;
   const requestedBatchSize = opts.batchSize ?? DEFAULT_DOCUMENT_EMBEDDING_BATCH_SIZE;
   const batchSize = Number.isFinite(requestedBatchSize)
@@ -78,9 +63,5 @@ export async function generateDocumentEmbeddingsBatch(opts: {
     results.push(...batchResults);
   }
 
-  if (opts.includeResults) {
-    return results;
-  }
-
-  return results.map((result) => result.embedding);
+  return results;
 }

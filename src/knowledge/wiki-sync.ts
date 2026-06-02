@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
-import { generateDocumentEmbeddingsBatch } from "./embedding-batch.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
 import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
 
@@ -237,10 +237,9 @@ async function runSync(opts: {
             pagesDeleted++;
           }
         } else {
-          const embeddings = await generateDocumentEmbeddingsBatch({
+          const embeddings = await generateDocumentEmbeddingResultsBatch({
             texts: chunks.map((chunk) => chunk.chunkText),
             embeddingProvider,
-            includeResults: true,
           });
           for (const [index, embeddingResult] of embeddings.entries()) {
             const chunk = chunks[index]!;

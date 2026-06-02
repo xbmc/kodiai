@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { chunkCanonicalCodeFile, type CanonicalChunk, type CanonicalChunkerObservability } from "./canonical-code-chunker.ts";
 import type { CanonicalCodeStore } from "./canonical-code-types.ts";
-import { generateDocumentEmbeddingsBatch } from "./embedding-batch.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import type { EmbeddingProvider } from "./types.ts";
 
 export type CanonicalCodeUpdateFile = {
@@ -159,10 +159,9 @@ export async function updateCanonicalCodeSnapshot(params: {
       changedChunks.push(chunk);
     }
 
-    const embeddingResults = await generateDocumentEmbeddingsBatch({
+    const embeddingResults = await generateDocumentEmbeddingResultsBatch({
       texts: changedChunks.map((chunk) => chunk.chunkText),
       embeddingProvider,
-      includeResults: true,
     });
 
     for (const [index, embeddingResult] of embeddingResults.entries()) {
