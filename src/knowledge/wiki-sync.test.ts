@@ -339,12 +339,13 @@ describe("createWikiSyncScheduler", () => {
       return new Response("", { status: 404 });
     }) as typeof globalThis.fetch;
 
+    const logger = createMockLogger();
     const scheduler = createWikiSyncScheduler({
       store,
       embeddingProvider,
       source: "kodi.wiki",
       delayMs: 0,
-      logger: createMockLogger(),
+      logger,
       fetchFn,
     });
 
@@ -360,6 +361,11 @@ describe("createWikiSyncScheduler", () => {
     expect(Array.from(chunks[0]!.embedding!)).toEqual([7, 8, 9]);
     expect(chunks[1]!.embedding).toBeUndefined();
     expect(chunks[2]!.embedding).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ pageId: 1, chunkIndex: 0, err: expect.any(Error) }),
+      "Wiki sync chunk embedding failed (fail-open)",
+    );
   });
 
   test("updates sync state timestamp after sync", async () => {

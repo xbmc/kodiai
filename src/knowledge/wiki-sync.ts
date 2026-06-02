@@ -240,10 +240,19 @@ async function runSync(opts: {
           const embeddings = await generateDocumentEmbeddingsBatch({
             texts: chunks.map((chunk) => chunk.chunkText),
             embeddingProvider,
+            includeResults: true,
           });
-          for (const [index, embedding] of embeddings.entries()) {
-            if (embedding) {
-              chunks[index]!.embedding = embedding;
+          for (const [index, embeddingResult] of embeddings.entries()) {
+            const chunk = chunks[index]!;
+            if (embeddingResult.status === "success") {
+              chunk.embedding = embeddingResult.embedding;
+              continue;
+            }
+            if (embeddingResult.status === "failed") {
+              logger.warn(
+                { pageId: change.pageid, chunkIndex: chunk.chunkIndex, err: embeddingResult.err },
+                "Wiki sync chunk embedding failed (fail-open)",
+              );
             }
           }
 
