@@ -170,4 +170,68 @@ describe("createWikiStalenessDetector", () => {
     expect(result.stalePages).toHaveLength(0);
     expect(opts.slackClient.postStandaloneMessage).not.toHaveBeenCalled();
   });
+
+  it("fetches merged PR file details with bounded concurrency", async () => {
+    let activeListFiles = 0;
+    let maxActiveListFiles = 0;
+    const mergedAt = new Date().toISOString();
+
+    const opts = makeMockOpts({
+      sql: mock(() => Promise.resolve([])) as any,
+      wikiPageStore: {
+        countBySource: mock(async () => 10),
+      } as any,
+      githubApp: {
+        getRepoInstallationContext: mock(async () => ({
+          installationId: 1,
+          defaultBranch: "master",
+        })),
+        getInstallationOctokit: mock(async () => ({
+          rest: {
+            pulls: {
+              list: mock(async ({ page }: { page: number }) => ({
+                data:
+                  page === 1
+                    ? Array.from({ length: 8 }, (_, index) => ({
+                        number: index + 1,
+                        title: `PR ${index + 1}`,
+                        body: null,
+                        user: { login: `author-${index + 1}` },
+                        merged_at: mergedAt,
+                        updated_at: mergedAt,
+                      }))
+                    : [],
+              })),
+              listFiles: mock(async ({ pull_number }: { pull_number: number }) => {
+                activeListFiles += 1;
+                maxActiveListFiles = Math.max(maxActiveListFiles, activeListFiles);
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                activeListFiles -= 1;
+                return {
+                  data: [
+                    {
+                      filename: `src/file-${pull_number}.cpp`,
+                      patch: "@@ patch",
+                      additions: 1,
+                      deletions: 0,
+                    },
+                  ],
+                };
+              }),
+            },
+          },
+        })),
+        getAppSlug: mock(() => "test-app"),
+        initialize: mock(async () => {}),
+        getInstallationToken: mock(async () => "test-token"),
+      } as any,
+    });
+
+    const detector = createWikiStalenessDetector(opts);
+    const result = await detector.runScan();
+
+    expect(result.skipped).toBe(false);
+    expect(maxActiveListFiles).toBeGreaterThan(1);
+    expect(maxActiveListFiles).toBeLessThanOrEqual(4);
+  });
 });

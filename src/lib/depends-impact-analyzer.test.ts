@@ -458,4 +458,45 @@ describe("checkTransitiveDependencies", () => {
 
     expect(result.newDependencies).toContain("icu");
   });
+
+  test("fetches Find module contents with bounded concurrency", async () => {
+    let activeFetches = 0;
+    let maxActiveFetches = 0;
+
+    const octokit = createMockOctokit();
+    (octokit as any).rest.repos.getContent = async (params: any) => {
+      if (params.path === "cmake/modules") {
+        return {
+          data: Array.from({ length: 8 }, (_, index) => ({
+            name: `FindLib${index}.cmake`,
+            type: "file",
+            path: `cmake/modules/FindLib${index}.cmake`,
+          })),
+        };
+      }
+
+      activeFetches += 1;
+      maxActiveFetches = Math.max(maxActiveFetches, activeFetches);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeFetches -= 1;
+
+      return {
+        data: {
+          content: Buffer.from("find_dependency(Freetype)\n").toString("base64"),
+          encoding: "base64",
+        },
+      };
+    };
+
+    const result = await checkTransitiveDependencies({
+      libraryName: "freetype",
+      octokit,
+      owner: "xbmc",
+      repo: "xbmc",
+    });
+
+    expect(result.dependents).toHaveLength(8);
+    expect(maxActiveFetches).toBeGreaterThan(1);
+    expect(maxActiveFetches).toBeLessThanOrEqual(4);
+  });
 });

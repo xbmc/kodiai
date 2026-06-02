@@ -488,6 +488,79 @@ describe("createWikiPublisher", () => {
         { pageTitle: "Failing Page", reason: "Comment post failed after retries" },
       ]);
     });
+
+    it("scans existing issue comments once and reuses markers across page groups", async () => {
+      const listComments = mock(() =>
+        Promise.resolve({
+          data: [
+            { id: 7001, body: "<!-- kodiai:wiki-modification:100 -->\nold page 100" },
+            { id: 7002, body: "<!-- kodiai:wiki-modification:200 -->\nold page 200" },
+          ],
+        }),
+      );
+      const updateComment = mock(() => Promise.resolve({ data: {} }));
+      const createComment = mock(() => Promise.resolve({ data: { id: 99002 } }));
+      const mockOctokit = {
+        rest: {
+          issues: {
+            get: mock(() =>
+              Promise.resolve({
+                data: { html_url: "https://github.com/xbmc/wiki/issues/5" },
+              }),
+            ),
+            create: mock(() =>
+              Promise.resolve({
+                data: { number: 99, html_url: "https://github.com/xbmc/wiki/issues/99" },
+              }),
+            ),
+            createComment,
+            listComments,
+            updateComment,
+            update: mock(() => Promise.resolve({ data: {} })),
+          },
+        },
+      } as unknown as Octokit;
+
+      const githubApp = createMockGithubApp({
+        getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
+      });
+      const { sql } = createMockSql([
+        {
+          id: 1,
+          page_id: 100,
+          page_title: "First Page",
+          section_heading: "Intro",
+          suggestion: "New text",
+          why_summary: "Reason",
+          citing_prs: [],
+          voice_mismatch_warning: false,
+        },
+        {
+          id: 2,
+          page_id: 200,
+          page_title: "Second Page",
+          section_heading: "Intro",
+          suggestion: "Other text",
+          why_summary: "Reason",
+          citing_prs: [],
+          voice_mismatch_warning: false,
+        },
+      ]);
+      const logger = createSilentLogger();
+
+      const publisher = createWikiPublisher({
+        sql,
+        githubApp,
+        logger,
+        commentDelayMs: 0,
+      });
+      const result = await publisher.publish({ issueNumber: 5 });
+
+      expect(result.pagesPosted).toBe(2);
+      expect(listComments).toHaveBeenCalledTimes(1);
+      expect(updateComment).toHaveBeenCalledTimes(2);
+      expect(createComment).not.toHaveBeenCalled();
+    });
   });
 
   describe("issue creation", () => {
@@ -927,6 +1000,69 @@ describe("createWikiPublisher — retrofitPreview", () => {
     const publisher = createWikiPublisher({ sql, githubApp, logger, commentDelayMs: 0 });
     await publisher.publish({ retrofitPreview: true, issueNumber: 50 });
 
+    expect(createComment).not.toHaveBeenCalled();
+    expect(updateComment).not.toHaveBeenCalled();
+  });
+
+  it("scans comments once for all page actions during retrofitPreview", async () => {
+    const listComments = mock(() =>
+      Promise.resolve({
+        data: [
+          { id: 5001, body: "<!-- kodiai:wiki-modification:42 -->\n## Some page" },
+          { id: 5002, body: "<!-- kodiai:wiki-modification:99 -->\n## Other page" },
+        ],
+      }),
+    );
+    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
+    const updateComment = mock(() => Promise.resolve({ data: {} }));
+
+    const mockOctokit = {
+      rest: {
+        issues: {
+          listComments,
+          createComment,
+          updateComment,
+          create: mock(() => Promise.resolve({ data: { number: 1, html_url: "" } })),
+          update: mock(() => Promise.resolve({ data: {} })),
+        },
+      },
+    } as unknown as Octokit;
+
+    const githubApp = createMockGithubApp({
+      getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
+    });
+    const { sql } = createMockSql([
+      {
+        id: 1,
+        page_id: 42,
+        page_title: "Advanced Settings",
+        section_heading: null,
+        suggestion: "Some text",
+        why_summary: "Reason",
+        citing_prs: [],
+        voice_mismatch_warning: false,
+      },
+      {
+        id: 2,
+        page_id: 99,
+        page_title: "PipeWire",
+        section_heading: null,
+        suggestion: "Other text",
+        why_summary: "Reason",
+        citing_prs: [],
+        voice_mismatch_warning: false,
+      },
+    ]);
+    const logger = createSilentLogger();
+
+    const publisher = createWikiPublisher({ sql, githubApp, logger, commentDelayMs: 0 });
+    const result = await publisher.publish({ retrofitPreview: true, issueNumber: 50 });
+
+    expect(listComments).toHaveBeenCalledTimes(1);
+    expect(result.retrofitPreviewResult!.actions.map((action) => action.existingCommentId)).toEqual([
+      5001,
+      5002,
+    ]);
     expect(createComment).not.toHaveBeenCalled();
     expect(updateComment).not.toHaveBeenCalled();
   });

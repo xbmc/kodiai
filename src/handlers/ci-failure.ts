@@ -14,6 +14,59 @@ import {
   buildCIAnalysisMarker,
 } from "../lib/ci-failure-formatter.ts";
 
+const BASE_CHECK_FETCH_CONCURRENCY = 2;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await fn(items[index]!, index);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+async function fetchCheckRunsForRef(
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
+  params: {
+    owner: string;
+    repo: string;
+    ref: string;
+  },
+): Promise<CheckResult[]> {
+  const checks: CheckResult[] = [];
+  for await (const response of octokit.paginate.iterator(
+    octokit.rest.checks.listForRef,
+    {
+      owner: params.owner,
+      repo: params.repo,
+      ref: params.ref,
+      per_page: 100,
+      filter: "latest",
+    },
+  )) {
+    for (const run of response.data) {
+      checks.push({
+        name: run.name,
+        conclusion: run.conclusion ?? null,
+        status: run.status,
+      });
+    }
+  }
+  return checks;
+}
+
 /**
  * Create and register the CI failure analysis handler.
  *
@@ -69,24 +122,11 @@ export function createCIFailureHandler(deps: {
           // Fetch ALL check runs for the head SHA (paginated)
           const headChecks: CheckResult[] = [];
           try {
-            for await (const response of octokit.paginate.iterator(
-              octokit.rest.checks.listForRef,
-              {
-                owner,
-                repo: repoName,
-                ref: headSha,
-                per_page: 100,
-                filter: "latest",
-              },
-            )) {
-              for (const run of response.data) {
-                headChecks.push({
-                  name: run.name,
-                  conclusion: run.conclusion ?? null,
-                  status: run.status,
-                });
-              }
-            }
+            headChecks.push(...await fetchCheckRunsForRef(octokit, {
+              owner,
+              repo: repoName,
+              ref: headSha,
+            }));
           } catch (err: unknown) {
             const status =
               typeof err === "object" && err !== null && "status" in err
@@ -109,6 +149,12 @@ export function createCIFailureHandler(deps: {
               name: c.name,
               conclusion: c.conclusion!,
             }));
+
+          const baseCommitsByRef = new Map<string, Array<{ sha: string }>>();
+          const baseCheckResultsByRef = new Map<
+            string,
+            { baseResults: Map<string, CheckResult[]>; anyBaseData: boolean }
+          >();
 
           // Process each PR in the check_suite
           for (const pr of pullRequests) {
@@ -146,62 +192,68 @@ export function createCIFailureHandler(deps: {
 
             // Fetch last 3 commits on base branch
             let baseCommits: Array<{ sha: string }>;
-            try {
-              const { data: commits } = await octokit.rest.repos.listCommits({
-                owner,
-                repo: repoName,
-                sha: baseRef,
-                per_page: 3,
-              });
-              baseCommits = commits.map((c) => ({ sha: c.sha }));
-            } catch {
-              logger.debug(
-                { deliveryId: event.id, baseRef },
-                "Failed to fetch base branch commits, skipping CI annotation",
-              );
-              continue;
-            }
-
-            // Fetch check runs for each base commit (sequentially to reduce burst)
-            const baseResults = new Map<string, CheckResult[]>();
-            let anyBaseData = false;
-
-            for (const commit of baseCommits) {
+            if (baseCommitsByRef.has(baseRef)) {
+              baseCommits = baseCommitsByRef.get(baseRef)!;
+            } else {
               try {
-                const baseChecks: CheckResult[] = [];
-                for await (const response of octokit.paginate.iterator(
-                  octokit.rest.checks.listForRef,
-                  {
-                    owner,
-                    repo: repoName,
-                    ref: commit.sha,
-                    per_page: 100,
-                    filter: "latest",
-                  },
-                )) {
-                  for (const run of response.data) {
-                    baseChecks.push({
-                      name: run.name,
-                      conclusion: run.conclusion ?? null,
-                      status: run.status,
-                    });
-                  }
-                }
-                if (baseChecks.length > 0) {
-                  baseResults.set(commit.sha, baseChecks);
-                  anyBaseData = true;
-                }
+                const { data: commits } = await octokit.rest.repos.listCommits({
+                  owner,
+                  repo: repoName,
+                  sha: baseRef,
+                  per_page: 3,
+                });
+                baseCommits = commits.map((c) => ({ sha: c.sha }));
+                baseCommitsByRef.set(baseRef, baseCommits);
               } catch {
-                // Treat as empty results for this ref
                 logger.debug(
-                  { deliveryId: event.id, sha: commit.sha },
-                  "Failed to fetch checks for base commit",
+                  { deliveryId: event.id, baseRef },
+                  "Failed to fetch base branch commits, skipping CI annotation",
                 );
+                continue;
               }
             }
 
+            // Fetch check runs for base commits with conservative bounded concurrency.
+            let cachedBaseResults = baseCheckResultsByRef.get(baseRef);
+            if (!cachedBaseResults) {
+              const fetchedBaseChecks = await mapWithConcurrency(
+                baseCommits,
+                BASE_CHECK_FETCH_CONCURRENCY,
+                async (commit) => {
+                  try {
+                    return {
+                      sha: commit.sha,
+                      checks: await fetchCheckRunsForRef(octokit, {
+                        owner,
+                        repo: repoName,
+                        ref: commit.sha,
+                      }),
+                    };
+                  } catch {
+                    // Treat as empty results for this ref
+                    logger.debug(
+                      { deliveryId: event.id, sha: commit.sha },
+                      "Failed to fetch checks for base commit",
+                    );
+                    return { sha: commit.sha, checks: [] };
+                  }
+                },
+              );
+
+              const baseResults = new Map<string, CheckResult[]>();
+              let anyBaseData = false;
+              for (const fetched of fetchedBaseChecks) {
+                if (fetched.checks.length > 0) {
+                  baseResults.set(fetched.sha, fetched.checks);
+                  anyBaseData = true;
+                }
+              }
+              cachedBaseResults = { baseResults, anyBaseData };
+              baseCheckResultsByRef.set(baseRef, cachedBaseResults);
+            }
+
             // If no base-branch check data exists, skip CI annotation entirely
-            if (!anyBaseData) {
+            if (!cachedBaseResults.anyBaseData) {
               logger.debug(
                 { deliveryId: event.id, prNumber },
                 "No base-branch check data, skipping CI annotation",
@@ -219,7 +271,7 @@ export function createCIFailureHandler(deps: {
             // Classify failures
             const classified = classifyFailures({
               headChecks,
-              baseResults,
+              baseResults: cachedBaseResults.baseResults,
               flakiness,
             });
 

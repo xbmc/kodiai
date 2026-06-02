@@ -72,6 +72,28 @@ function logReactionFetchFailure(params: {
 
 const DEFAULT_MAX_CANDIDATES = 100;
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
+const REACTION_FETCH_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await fn(items[index]!, index);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
 
 function normalizeLogin(login: string | undefined): string {
   return (login ?? "").trim().toLowerCase().replace(/\[bot\]$/i, "");
@@ -188,22 +210,56 @@ export function createFeedbackSyncHandler(deps: {
       const reactionsByCommentId = new Map<number, ReactionEntry[]>();
 
       const uniqueCommentIds = [...new Set(candidates.map((candidate) => candidate.commentId))];
+      const [repoOwner, repoName] = repo.split("/");
 
-      let reactionsPermissionDenied = false;
-      for (const commentId of uniqueCommentIds) {
-        if (reactionsPermissionDenied) break;
+      const fetchReactions = async (commentId: number): Promise<{
+        commentId: number;
+        reactions: ReactionEntry[];
+        permissionDenied: boolean;
+      }> => {
         try {
           const response = await octokit.rest.reactions.listForPullRequestReviewComment({
-            owner: repo.split("/")[0]!,
-            repo: repo.split("/")[1]!,
+            owner: repoOwner!,
+            repo: repoName!,
             comment_id: commentId,
             per_page: 100,
           });
 
-          reactionsByCommentId.set(commentId, response.data as ReactionEntry[]);
+          return {
+            commentId,
+            reactions: response.data as ReactionEntry[],
+            permissionDenied: false,
+          };
         } catch (err) {
-          reactionsPermissionDenied = isReactionPermissionDenied(err);
           logReactionFetchFailure({ logger, err, repo, commentId });
+          return {
+            commentId,
+            reactions: [],
+            permissionDenied: isReactionPermissionDenied(err),
+          };
+        }
+      };
+
+      const firstCommentId = uniqueCommentIds[0];
+      let reactionsPermissionDenied = false;
+      let remainingCommentIds = uniqueCommentIds;
+
+      if (firstCommentId !== undefined) {
+        const firstResult = await fetchReactions(firstCommentId);
+        reactionsPermissionDenied = firstResult.permissionDenied;
+        reactionsByCommentId.set(firstResult.commentId, firstResult.reactions);
+        remainingCommentIds = uniqueCommentIds.slice(1);
+      }
+
+      if (!reactionsPermissionDenied && remainingCommentIds.length > 0) {
+        const remainingResults = await mapWithConcurrency(
+          remainingCommentIds,
+          REACTION_FETCH_CONCURRENCY,
+          fetchReactions,
+        );
+
+        for (const result of remainingResults) {
+          reactionsByCommentId.set(result.commentId, result.reactions);
         }
       }
 

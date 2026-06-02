@@ -26,6 +26,29 @@ const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 90_000; // 90 seconds
 const LLM_CAP = 20; // max pages to LLM-evaluate per cycle
 const MAX_SCAN_WINDOW_DAYS = 7; // cap on commit scan window regardless of threshold
+const PR_FILE_FETCH_CONCURRENCY = 4;
+const LLM_EVALUATION_CONCURRENCY = 3;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await fn(items[index]!, index);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
 
 // ── Run state persistence ────────────────────────────────────────────
 
@@ -170,33 +193,39 @@ async function fetchMergedPRs(
       (pr) => pr.merged_at && new Date(pr.merged_at) >= since,
     );
 
-    for (const pr of relevantPRs) {
-      try {
-        const filesResponse = await octokit.rest.pulls.listFiles({
-          owner,
-          repo,
-          pull_number: pr.number,
-          per_page: 100,
-        });
+    const enrichedPRs = await mapWithConcurrency(
+      relevantPRs,
+      PR_FILE_FETCH_CONCURRENCY,
+      async (pr) => {
+        try {
+          const filesResponse = await octokit.rest.pulls.listFiles({
+            owner,
+            repo,
+            pull_number: pr.number,
+            per_page: 100,
+          });
 
-        merged.push({
-          number: pr.number,
-          title: pr.title,
-          body: pr.body ?? null,
-          author: pr.user?.login ?? "unknown",
-          mergedAt: new Date(pr.merged_at!),
-          files: filesResponse.data.map((f) => ({
-            filename: f.filename,
-            patch: f.patch,
-            additions: f.additions,
-            deletions: f.deletions,
-          })),
-        });
-      } catch (err) {
-        // Fail-open: skip PRs where file details can't be fetched
-        logger.warn({ err, prNumber: pr.number }, "Failed to get PR file details (skipping)");
-      }
-    }
+          return {
+            number: pr.number,
+            title: pr.title,
+            body: pr.body ?? null,
+            author: pr.user?.login ?? "unknown",
+            mergedAt: new Date(pr.merged_at!),
+            files: filesResponse.data.map((f) => ({
+              filename: f.filename,
+              patch: f.patch,
+              additions: f.additions,
+              deletions: f.deletions,
+            })),
+          };
+        } catch (err) {
+          // Fail-open: skip PRs where file details can't be fetched
+          logger.warn({ err, prNumber: pr.number }, "Failed to get PR file details (skipping)");
+          return null;
+        }
+      },
+    );
+    merged.push(...enrichedPRs.filter((pr): pr is MergedPR => pr !== null));
 
     // Stop pagination early when oldest PR on page has updated_at before since
     const oldestPR = prs[prs.length - 1];
@@ -655,11 +684,12 @@ export function createWikiStalenessDetector(
       const toEvaluate = candidates.slice(0, LLM_CAP);
 
       // LLM evaluation
-      const stalePages: StalePage[] = [];
-      for (const candidate of toEvaluate) {
-        const result = await evaluateWithLlm(candidate, opts, logger);
-        if (result) stalePages.push(result);
-      }
+      const evaluatedPages = await mapWithConcurrency(
+        toEvaluate,
+        LLM_EVALUATION_CONCURRENCY,
+        (candidate) => evaluateWithLlm(candidate, opts, logger),
+      );
+      const stalePages = evaluatedPages.filter((page): page is StalePage => page !== null);
 
       // Determine newest merged_at timestamp for scan window anchor
       const newestMergedAt = mergedPRs.reduce<Date | null>(
