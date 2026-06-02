@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
+import { generateDocumentEmbeddingsBatch } from "./embedding-batch.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
 import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
 
@@ -236,18 +237,13 @@ async function runSync(opts: {
             pagesDeleted++;
           }
         } else {
-          // Embed each chunk
-          for (const chunk of chunks) {
-            try {
-              const embedResult = await embeddingProvider.generate(chunk.chunkText, "document");
-              if (embedResult) {
-                chunk.embedding = embedResult.embedding;
-              }
-            } catch (err) {
-              logger.warn(
-                { pageId: change.pageid, chunkIndex: chunk.chunkIndex, err },
-                "Wiki sync chunk embedding failed (fail-open)",
-              );
+          const embeddings = await generateDocumentEmbeddingsBatch({
+            texts: chunks.map((chunk) => chunk.chunkText),
+            embeddingProvider,
+          });
+          for (const [index, embedding] of embeddings.entries()) {
+            if (embedding) {
+              chunks[index]!.embedding = embedding;
             }
           }
 

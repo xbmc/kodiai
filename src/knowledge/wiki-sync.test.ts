@@ -101,6 +101,16 @@ function buildParseResponse(pageid: number, title: string, html: string, revid =
 // Large enough HTML content to not be skipped as a stub
 const WIKI_HTML = `<h2>Overview</h2><p>${"This is a detailed section about the topic with enough content to pass the stub filter. ".repeat(10)}</p>`;
 
+function buildMultiChunkWikiHtml(): string {
+  const sectionText = (label: string) =>
+    `${label} ${"has enough detailed wiki prose for chunking and embedding coverage. ".repeat(14)}`;
+  return `
+    <h2>First</h2><p>${sectionText("First")}</p>
+    <h2>Second</h2><p>${sectionText("Second")}</p>
+    <h2>Third</h2><p>${sectionText("Third")}</p>
+  `;
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("createWikiSyncScheduler", () => {
@@ -288,6 +298,68 @@ describe("createWikiSyncScheduler", () => {
       (call: unknown[]) => String(call[0]).includes("action=parse"),
     );
     expect(parseCalls.length).toBe(0);
+  });
+
+  test("embeds changed page chunks through bounded batch helper fail-open", async () => {
+    const store = createMockStore();
+    let activeEmbeddings = 0;
+    let maxActiveEmbeddings = 0;
+    const seenEmbeddingTexts: string[] = [];
+    const embeddingProvider: EmbeddingProvider = {
+      async generate(text, inputType) {
+        expect(inputType).toBe("document");
+        seenEmbeddingTexts.push(text);
+        activeEmbeddings++;
+        maxActiveEmbeddings = Math.max(maxActiveEmbeddings, activeEmbeddings);
+        await Promise.resolve();
+        activeEmbeddings--;
+
+        if (text.includes("Second")) return null;
+        if (text.includes("Third")) throw new Error("provider failed");
+        return {
+          embedding: new Float32Array([7, 8, 9]),
+          tokenCount: 5,
+        };
+      },
+      model: "voyage-code-3",
+      dimensions: 1024,
+    };
+
+    const fetchFn = mockFetch(async (url: string) => {
+      if (url.includes("list=recentchanges")) {
+        return new Response(JSON.stringify(buildRCResponse([
+          { pageid: 1, title: "ChangedPage", revid: 200 },
+        ])));
+      }
+      if (url.includes("action=parse")) {
+        return new Response(JSON.stringify(
+          buildParseResponse(1, "ChangedPage", buildMultiChunkWikiHtml(), 200),
+        ));
+      }
+      return new Response("", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const scheduler = createWikiSyncScheduler({
+      store,
+      embeddingProvider,
+      source: "kodi.wiki",
+      delayMs: 0,
+      logger: createMockLogger(),
+      fetchFn,
+    });
+
+    const result = await scheduler.syncNow();
+
+    expect(result.pagesUpdated).toBe(1);
+    expect(seenEmbeddingTexts).toHaveLength(3);
+    expect(maxActiveEmbeddings).toBe(3);
+
+    const replaceCall = (store.replacePageChunks as ReturnType<typeof mock>).mock.calls.at(-1)!;
+    const chunks = replaceCall[1] as Array<{ embedding?: Float32Array | null; sectionHeading?: string | null }>;
+    expect(chunks.map((chunk) => chunk.sectionHeading)).toEqual(["First", "Second", "Third"]);
+    expect(Array.from(chunks[0]!.embedding!)).toEqual([7, 8, 9]);
+    expect(chunks[1]!.embedding).toBeUndefined();
+    expect(chunks[2]!.embedding).toBeUndefined();
   });
 
   test("updates sync state timestamp after sync", async () => {
