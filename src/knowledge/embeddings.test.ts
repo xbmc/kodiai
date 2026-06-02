@@ -12,13 +12,22 @@ const noopLogger = {
 } as unknown as Logger;
 
 let originalFetch: typeof globalThis.fetch;
+let originalSetTimeout: typeof globalThis.setTimeout;
+let originalClearTimeout: typeof globalThis.clearTimeout;
+let originalRandom: typeof Math.random;
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
+  originalSetTimeout = globalThis.setTimeout;
+  originalClearTimeout = globalThis.clearTimeout;
+  originalRandom = Math.random;
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  globalThis.setTimeout = originalSetTimeout;
+  globalThis.clearTimeout = originalClearTimeout;
+  Math.random = originalRandom;
 });
 
 // ── No-op provider (empty apiKey) ────────────────────────────────────────────
@@ -118,4 +127,68 @@ test("does not include top_k when topK is undefined", async () => {
   const provider = createRerankProvider({ apiKey: "key123", logger: noopLogger });
   await provider.rerank({ query: "q", documents: ["doc0"] });
   expect(capturedBody?.top_k).toBeUndefined();
+});
+
+test("keeps request timeout active while parsing the response body", async () => {
+  type TimerHandle = { delay: number; callback: () => void; cleared: boolean };
+  const timers: TimerHandle[] = [];
+
+  globalThis.setTimeout = ((callback: () => void, delay?: number) => {
+    const handle = { delay: Number(delay), callback, cleared: false };
+    timers.push(handle);
+    if (handle.delay !== 30_000) {
+      queueMicrotask(callback);
+    }
+    return handle as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof globalThis.setTimeout;
+  globalThis.clearTimeout = ((handle: TimerHandle) => {
+    handle.cleared = true;
+  }) as unknown as typeof globalThis.clearTimeout;
+
+  globalThis.fetch = mock(async (_input: unknown, init?: RequestInit) => {
+    const signal = init?.signal;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => {
+        for (const timer of timers.filter((item) => item.delay === 30_000 && !item.cleared)) {
+          timer.callback();
+        }
+        if (signal?.aborted) {
+          throw new Error("body stalled until timeout");
+        }
+        return { data: [{ index: 0, relevance_score: 0.9 }] };
+      },
+    } as Response;
+  }) as unknown as typeof globalThis.fetch;
+
+  const provider = createRerankProvider({ apiKey: "key123", logger: noopLogger });
+
+  const result = await provider.rerank({ query: "q", documents: ["doc0"] });
+
+  expect(result).toBeNull();
+});
+
+test("uses jittered retry delay for Voyage retryable responses", async () => {
+  const retryDelays: number[] = [];
+  Math.random = () => 0.5;
+  globalThis.setTimeout = ((callback: () => void, delay?: number) => {
+    const delayMs = Number(delay);
+    if (delayMs !== 30_000) {
+      retryDelays.push(delayMs);
+      queueMicrotask(callback);
+    }
+    return { delayMs } as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof globalThis.setTimeout;
+  globalThis.clearTimeout = (() => undefined) as typeof globalThis.clearTimeout;
+
+  globalThis.fetch = mock(async () =>
+    new Response("Internal Server Error", { status: 500 })
+  ) as unknown as typeof globalThis.fetch;
+
+  const provider = createRerankProvider({ apiKey: "key123", logger: noopLogger });
+
+  await provider.rerank({ query: "q", documents: ["a", "b"] });
+
+  expect(retryDelays).toEqual([1_125]);
 });

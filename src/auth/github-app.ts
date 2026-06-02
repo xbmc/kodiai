@@ -3,6 +3,8 @@ import { createAppAuth } from "@octokit/auth-app";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 
+export const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 30_000;
+
 export interface GitHubApp {
   /** Create an Octokit client authenticated as a specific installation. */
   getInstallationOctokit(
@@ -29,6 +31,14 @@ function hasStatusCode(error: unknown, statusCode: number): boolean {
   return typeof error === "object" && error !== null && "status" in error && error.status === statusCode;
 }
 
+function githubRequestOptions(options?: { requestTimeoutMs?: number }): { request: { timeout: number } } {
+  return {
+    request: {
+      timeout: options?.requestTimeoutMs ?? DEFAULT_GITHUB_REQUEST_TIMEOUT_MS,
+    },
+  };
+}
+
 export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
   let appSlug = "";
 
@@ -44,6 +54,7 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
       appId: config.githubAppId,
       privateKey: config.githubPrivateKey,
     },
+    ...githubRequestOptions(),
   });
 
   return {
@@ -61,9 +72,7 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
           privateKey: config.githubPrivateKey,
           installationId,
         },
-        request: options?.requestTimeoutMs
-          ? { timeout: options.requestTimeoutMs }
-          : undefined,
+        ...githubRequestOptions(options),
       });
 
       return octokit;

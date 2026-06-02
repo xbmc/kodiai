@@ -201,4 +201,36 @@ describe("createSearchCache", () => {
     expect(loaderCalls).toBe(1);
     expect(errors.length).toBeGreaterThan(0);
   });
+
+  test("evicts the oldest entries when maxSize is exceeded", () => {
+    const cache = createSearchCache<string>({ maxSize: 2 });
+
+    cache.set("a", "first");
+    cache.set("b", "second");
+    cache.set("c", "third");
+
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBe("second");
+    expect(cache.get("c")).toBe("third");
+  });
+
+  test("cleans up expired entries during later writes", () => {
+    let clock = 1_000;
+    const store = new Map<string, { value: string; expiresAt: number }>();
+    const cache = createSearchCache<string>({
+      ttlMs: 10,
+      now: () => clock,
+      store,
+    });
+
+    cache.set("expired-a", "a");
+    cache.set("expired-b", "b");
+
+    clock = 1_010;
+    cache.set("active", "c");
+
+    expect(store.has("expired-a")).toBe(false);
+    expect(store.has("expired-b")).toBe(false);
+    expect(cache.get("active")).toBe("c");
+  });
 });

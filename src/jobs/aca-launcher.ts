@@ -49,6 +49,8 @@ export const APPLICATION_SECRET_NAMES: readonly string[] = [
   "GITHUB_INSTALLATION_TOKEN",
 ] as const;
 
+export const DEFAULT_ACA_REQUEST_TIMEOUT_MS = 30_000;
+
 // ---------------------------------------------------------------------------
 // Spec builder
 // ---------------------------------------------------------------------------
@@ -110,18 +112,55 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
 // Job dispatch
 // ---------------------------------------------------------------------------
 
-async function fetchManagedIdentityToken(url: string, identityHeader: string): Promise<Response> {
+async function withRequestTimeout<T>(
+  label: string,
+  timeoutMs: number,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await run(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${label}: request timed out after ${timeoutMs}ms`, {
+        cause: error,
+      });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchTextWithTimeout(
+  label: string,
+  url: string,
+  init: RequestInit,
+  timeoutMs = DEFAULT_ACA_REQUEST_TIMEOUT_MS,
+): Promise<{ response: Response; body: string }> {
+  return await withRequestTimeout(label, timeoutMs, async (signal) => {
+    const response = await fetch(url, { ...init, signal });
+    const body = await response.text();
+    return { response, body };
+  });
+}
+
+async function fetchManagedIdentityToken(url: string, identityHeader: string): Promise<{ response: Response; body: string }> {
   const maxAttempts = 3;
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await fetch(url, { headers: { "X-IDENTITY-HEADER": identityHeader } });
+      const result = await fetchTextWithTimeout("getAzureAccessToken", url, {
+        headers: { "X-IDENTITY-HEADER": identityHeader },
+      });
+      const { response, body } = result;
       if (response.ok || response.status < 500 || response.status >= 600) {
-        return response;
+        return result;
       }
 
-      const body = await response.text();
       lastErr = new Error(`getAzureAccessToken: MSI endpoint returned ${response.status}: ${body.slice(0, 300)}`);
     } catch (err) {
       lastErr = err;
@@ -153,10 +192,9 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
 
   if (identityEndpoint && identityHeader) {
     const url = `${identityEndpoint}?resource=https://management.azure.com/&api-version=2019-08-01&client_id=${clientId}`;
-    const resp = await fetchManagedIdentityToken(url, identityHeader);
-    const body = await resp.text();
-    if (!resp.ok) {
-      throw new Error(`getAzureAccessToken: MSI endpoint returned ${resp.status}: ${body.slice(0, 300)}`);
+    const { response, body } = await fetchManagedIdentityToken(url, identityHeader);
+    if (!response.ok) {
+      throw new Error(`getAzureAccessToken: MSI endpoint returned ${response.status}: ${body.slice(0, 300)}`);
     }
     const parsed = JSON.parse(body) as { access_token?: string };
     const token = parsed.access_token ?? "";
@@ -227,7 +265,7 @@ export async function launchAcaJob(opts: {
     "ACA Job start request prepared",
   );
 
-  const response = await fetch(url, {
+  const { response, body: responseBody } = await fetchTextWithTimeout("launchAcaJob", url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -237,13 +275,12 @@ export async function launchAcaJob(opts: {
   });
 
   if (!response.ok) {
-    const text = await response.text();
     logger?.error(
       {
         jobName,
         resourceGroup,
         httpStatus: response.status,
-        responseBody: text.slice(0, 1000),
+        responseBody: responseBody.slice(0, 1000),
         startApiVersion: "2024-03-01",
         specImage: spec.image,
         bodyShape: {
@@ -257,11 +294,11 @@ export async function launchAcaJob(opts: {
       "ACA Job start request rejected",
     );
     throw new Error(
-      `launchAcaJob: REST API returned ${response.status}: ${text.slice(0, 500)}`,
+      `launchAcaJob: REST API returned ${response.status}: ${responseBody.slice(0, 500)}`,
     );
   }
 
-  const parsed = (await response.json()) as { name?: string; id?: string };
+  const parsed = JSON.parse(responseBody) as { name?: string; id?: string };
   const executionName = parsed.name ?? "";
   if (!executionName) {
     throw new Error(
@@ -365,10 +402,11 @@ export async function pollUntilComplete(opts: {
     attempt++;
     let rawBody = "";
     try {
-      const resp = await fetch(url, {
+      const remainingForRequest = Math.max(1, timeoutMs - elapsed);
+      const { response: resp, body } = await fetchTextWithTimeout("pollUntilComplete", url, {
         headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      rawBody = await resp.text();
+      }, Math.min(DEFAULT_ACA_REQUEST_TIMEOUT_MS, remainingForRequest));
+      rawBody = body;
       if (!resp.ok) {
         logger?.debug(
           {
@@ -477,7 +515,7 @@ export async function cancelAcaJob(opts: {
   const { token: accessToken, subscriptionId } = await getAzureAccessToken();
   const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.App/jobs/${jobName}/executions/${executionName}/stop?api-version=2024-03-01`;
 
-  const resp = await fetch(url, {
+  const { response: resp, body } = await fetchTextWithTimeout("cancelAcaJob", url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -486,8 +524,7 @@ export async function cancelAcaJob(opts: {
   });
 
   if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`cancelAcaJob: REST API returned ${resp.status}: ${text.slice(0, 300)}`);
+    throw new Error(`cancelAcaJob: REST API returned ${resp.status}: ${body.slice(0, 300)}`);
   }
 
   logger?.info({ executionName, jobName }, "ACA Job execution cancelled");
