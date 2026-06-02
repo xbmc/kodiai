@@ -8,6 +8,16 @@ export type RateLimiter = {
   isLimited(key: string): boolean;
 };
 
+export type RateLimitPairOptions = {
+  pre?: RateLimitWindowOptions;
+  verified?: RateLimitWindowOptions;
+};
+
+export type RateLimitPairDefaults = {
+  pre: Required<RateLimitWindowOptions>;
+  verified: Required<RateLimitWindowOptions>;
+};
+
 export function createSlidingWindowRateLimiter(
   options: RateLimitWindowOptions | undefined,
   defaults: Required<RateLimitWindowOptions>,
@@ -58,6 +68,16 @@ export function createSlidingWindowRateLimiter(
       pruneKeys(cutoff);
       return false;
     },
+  };
+}
+
+export function createRateLimitPair(
+  options: RateLimitPairOptions | undefined,
+  defaults: RateLimitPairDefaults,
+): { pre: RateLimiter; verified: RateLimiter } {
+  return {
+    pre: createSlidingWindowRateLimiter(options?.pre, defaults.pre),
+    verified: createSlidingWindowRateLimiter(options?.verified, defaults.verified),
   };
 }
 

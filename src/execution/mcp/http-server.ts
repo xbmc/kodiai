@@ -4,7 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import {
-  createSlidingWindowRateLimiter,
+  createRateLimitPair,
   requestSourceKey,
   type RateLimitWindowOptions,
 } from "../../lib/sliding-window-rate-limiter.ts";
@@ -133,20 +133,17 @@ export function createMcpHttpRoutes(
   const rateLimitOptions = "rateLimit" in (options ?? {})
     ? (options as { rateLimit?: McpHttpRateLimitOptions }).rateLimit
     : options as McpHttpRateLimitOptions | undefined;
-  const preAuthLimiter = createSlidingWindowRateLimiter(rateLimitOptions?.preAuth, {
-    max: 240,
-    windowMs: 60_000,
-    maxKeys: 2_000,
-  });
-  const verifiedLimiter = createSlidingWindowRateLimiter(rateLimitOptions?.verified, {
-    max: 120,
-    windowMs: 60_000,
-    maxKeys: 5_000,
+  const rateLimiters = createRateLimitPair({
+    pre: rateLimitOptions?.preAuth,
+    verified: rateLimitOptions?.verified,
+  }, {
+    pre: { max: 240, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 120, windowMs: 60_000, maxKeys: 5_000 },
   });
 
   app.all("/internal/mcp/:serverName", async (c) => {
     const requestSource = requestSourceKey((name) => c.req.header(name));
-    if (preAuthLimiter.isLimited(`mcp:${requestSource}`)) {
+    if (rateLimiters.pre.isLimited(`mcp:${requestSource}`)) {
       logger?.warn({ requestSource }, "MCP HTTP: request rate-limited before auth");
       return c.json({ error: "Rate limited" }, 429);
     }
@@ -184,7 +181,7 @@ export function createMcpHttpRoutes(
 
     const serverName = c.req.param("serverName");
     const tokenLogId = registry.getTokenLogId(token);
-    if (verifiedLimiter.isLimited(`token:${tokenLogId}:server:${serverName}`)) {
+    if (rateLimiters.verified.isLimited(`token:${tokenLogId}:server:${serverName}`)) {
       logger?.warn({ serverName, tokenLogId }, "MCP HTTP: verified token rate-limited");
       return c.json({ error: "Rate limited" }, 429);
     }

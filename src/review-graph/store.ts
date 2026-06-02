@@ -82,12 +82,6 @@ type InsertedNodeRow = DbRow & {
   stable_key: string;
 };
 
-type WorkspaceGraphRow = DbRow & {
-  files: unknown;
-  nodes: unknown;
-  edges: unknown;
-};
-
 type EdgeInsertPayload = {
   edge_kind: string;
   source_node_id: number;
@@ -118,23 +112,6 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   }
 
   return {};
-}
-
-function parseJsonRows(value: unknown): DbRow[] {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is DbRow =>
-      Boolean(item) && typeof item === "object" && !Array.isArray(item));
-  }
-
-  if (typeof value === "string") {
-    try {
-      return parseJsonRows(JSON.parse(value) as unknown);
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
 }
 
 function mapFileRow(row: FileRow): ReviewGraphFileRecord {
@@ -515,46 +492,42 @@ export function createReviewGraphStore(opts: {
     },
 
     async listWorkspaceGraph(repo: string, workspaceKey: string) {
-      const rows = await sql`
-        WITH file_rows AS (
+      return await sql.begin("isolation level repeatable read read only", async (tx) => {
+        const scoped = tx as unknown as Sql;
+        const fileRowsQuery = scoped`
           SELECT *
           FROM review_graph_files
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
-        ),
-        node_rows AS (
+          ORDER BY path ASC
+        `;
+        const nodeRowsQuery = scoped`
           SELECT *
           FROM review_graph_nodes
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
-        ),
-        edge_rows AS (
+          ORDER BY file_id ASC, id ASC
+        `;
+        const edgeRowsQuery = scoped`
           SELECT *
           FROM review_graph_edges
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
-        )
-        SELECT
-          COALESCE(
-            (SELECT jsonb_agg(to_jsonb(file_rows) ORDER BY file_rows.path ASC) FROM file_rows),
-            '[]'::jsonb
-          ) AS files,
-          COALESCE(
-            (SELECT jsonb_agg(to_jsonb(node_rows) ORDER BY node_rows.file_id ASC, node_rows.id ASC) FROM node_rows),
-            '[]'::jsonb
-          ) AS nodes,
-          COALESCE(
-            (SELECT jsonb_agg(to_jsonb(edge_rows) ORDER BY edge_rows.file_id ASC, edge_rows.id ASC) FROM edge_rows),
-            '[]'::jsonb
-          ) AS edges
-      `;
-      const row = (rows[0] ?? { files: [], nodes: [], edges: [] }) as unknown as WorkspaceGraphRow;
+          ORDER BY file_id ASC, id ASC
+        `;
 
-      return {
-        files: parseJsonRows(row.files).map((fileRow) => mapFileRow(fileRow as FileRow)),
-        nodes: parseJsonRows(row.nodes).map((nodeRow) => mapNodeRow(nodeRow as NodeRow)),
-        edges: parseJsonRows(row.edges).map((edgeRow) => mapEdgeRow(edgeRow as EdgeRow)),
-      };
+        const [fileRows, nodeRows, edgeRows] = await Promise.all([
+          fileRowsQuery,
+          nodeRowsQuery,
+          edgeRowsQuery,
+        ]) as [unknown[], unknown[], unknown[]];
+
+        return {
+          files: fileRows.map((row) => mapFileRow(row as unknown as FileRow)),
+          nodes: nodeRows.map((row) => mapNodeRow(row as unknown as NodeRow)),
+          edges: edgeRows.map((row) => mapEdgeRow(row as unknown as EdgeRow)),
+        };
+      });
     },
 
     async getBuild(repo: string, workspaceKey: string): Promise<ReviewGraphBuildRecord | null> {

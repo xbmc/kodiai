@@ -8,7 +8,7 @@ import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../life
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import {
-  createSlidingWindowRateLimiter,
+  createRateLimitPair,
   requestSourceKey,
   type RateLimitWindowOptions,
 } from "../lib/sliding-window-rate-limiter.ts";
@@ -25,12 +25,6 @@ interface WebhookRouteDeps {
   rateLimit?: WebhookRateLimitOptions;
 }
 
-type RateLimitWindowOptions = {
-  max?: number;
-  windowMs?: number;
-  maxKeys?: number;
-};
-
 type WebhookRateLimitOptions = {
   preBody?: RateLimitWindowOptions;
   verified?: RateLimitWindowOptions;
@@ -39,20 +33,17 @@ type WebhookRateLimitOptions = {
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
   const { config, logger, dedup, eventRouter, requestTracker, webhookQueueStore, shutdownManager } = deps;
   const app = new Hono();
-  const preBodyLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.preBody, {
-    max: 120,
-    windowMs: 60_000,
-    maxKeys: 2_000,
-  });
-  const verifiedLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.verified, {
-    max: 240,
-    windowMs: 60_000,
-    maxKeys: 5_000,
+  const rateLimiters = createRateLimitPair({
+    pre: deps.rateLimit?.preBody,
+    verified: deps.rateLimit?.verified,
+  }, {
+    pre: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 240, windowMs: 60_000, maxKeys: 5_000 },
   });
 
   app.post("/github", async (c) => {
     const sourceKey = requestSourceKey((name) => c.req.header(name));
-    if (preBodyLimiter.isLimited(`github:${sourceKey}`)) {
+    if (rateLimiters.pre.isLimited(`github:${sourceKey}`)) {
       logger.warn({ sourceKey }, "GitHub webhook request rate-limited before body read");
       return c.text("", 429);
     }
@@ -107,7 +98,7 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
         ? `repository:${repositoryName}`
         : `event:${eventName}`;
 
-    if (verifiedLimiter.isLimited(verifiedSourceKey)) {
+    if (rateLimiters.verified.isLimited(verifiedSourceKey)) {
       logger.warn(
         { deliveryId, eventName, verifiedSourceKey },
         "GitHub webhook verified source rate-limited",

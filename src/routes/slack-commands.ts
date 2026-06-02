@@ -5,7 +5,7 @@ import type { ContributorProfileStore } from "../contributor/types.ts";
 import { handleKodiaiCommand } from "../slack/slash-command-handler.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
 import {
-  createSlidingWindowRateLimiter,
+  createRateLimitPair,
   requestSourceKey,
   type RateLimitWindowOptions,
 } from "../lib/sliding-window-rate-limiter.ts";
@@ -17,12 +17,6 @@ interface SlackCommandRouteDeps {
   rateLimit?: SlackCommandRateLimitOptions;
 }
 
-type RateLimitWindowOptions = {
-  max?: number;
-  windowMs?: number;
-  maxKeys?: number;
-};
-
 type SlackCommandRateLimitOptions = {
   preBody?: RateLimitWindowOptions;
   verified?: RateLimitWindowOptions;
@@ -31,20 +25,17 @@ type SlackCommandRateLimitOptions = {
 export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
   const { config, logger, profileStore } = deps;
   const app = new Hono();
-  const preBodyLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.preBody, {
-    max: 60,
-    windowMs: 60_000,
-    maxKeys: 2_000,
-  });
-  const verifiedLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.verified, {
-    max: 30,
-    windowMs: 60_000,
-    maxKeys: 5_000,
+  const rateLimiters = createRateLimitPair({
+    pre: deps.rateLimit?.preBody,
+    verified: deps.rateLimit?.verified,
+  }, {
+    pre: { max: 60, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 30, windowMs: 60_000, maxKeys: 5_000 },
   });
 
   app.post("/", async (c) => {
     const sourceKey = requestSourceKey((name) => c.req.header(name));
-    if (preBodyLimiter.isLimited(`slack-command:${sourceKey}`)) {
+    if (rateLimiters.pre.isLimited(`slack-command:${sourceKey}`)) {
       logger.warn({ sourceKey }, "Slash command request rate-limited before body read");
       return c.text("Rate limited", 429);
     }
@@ -72,7 +63,7 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
     const userName = params.get("user_name") ?? "";
     const teamId = params.get("team_id") ?? "unknown-team";
 
-    if (verifiedLimiter.isLimited(`team:${teamId}:user:${userId || "unknown-user"}`)) {
+    if (rateLimiters.verified.isLimited(`team:${teamId}:user:${userId || "unknown-user"}`)) {
       logger.warn({ teamId, userId }, "Slash command verified user rate-limited");
       return c.text("Rate limited", 429);
     }

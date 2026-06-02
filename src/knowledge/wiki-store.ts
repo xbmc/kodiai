@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { insertJsonbRecordsetBatches, type JsonbRecordsetColumn } from "../db/jsonb-batch.ts";
 import type {
   WikiEmbeddingRepairCheckpoint,
   WikiPageChunk,
@@ -24,6 +25,33 @@ function float32ArrayToVectorString(arr: Float32Array): string {
 const DEFAULT_WIKI_REPAIR_KEY = "wiki-embedding-repair";
 const DEFAULT_WIKI_REPAIR_MODEL = "voyage-context-3";
 const WIKI_CHUNK_WRITE_BATCH_SIZE = 500;
+const WIKI_CHUNK_BATCH_COLUMNS: JsonbRecordsetColumn[] = [
+  { name: "page_id", type: "integer" },
+  { name: "page_title", type: "text" },
+  { name: "namespace", type: "text" },
+  { name: "page_url", type: "text" },
+  { name: "section_heading", type: "text" },
+  { name: "section_anchor", type: "text" },
+  { name: "section_level", type: "integer" },
+  { name: "chunk_index", type: "integer" },
+  { name: "chunk_text", type: "text" },
+  { name: "raw_text", type: "text" },
+  { name: "token_count", type: "integer" },
+  {
+    name: "embedding",
+    type: "text",
+    selectExpression: "CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END",
+  },
+  { name: "embedding_model", type: "text" },
+  { name: "stale", type: "boolean" },
+  { name: "last_modified", type: "timestamptz" },
+  { name: "revision_id", type: "integer" },
+  {
+    name: "language_tags",
+    type: "jsonb",
+    selectExpression: "ARRAY(SELECT jsonb_array_elements_text(batch_rows.language_tags))",
+  },
+];
 
 type WikiRow = {
   id: number;
@@ -122,61 +150,14 @@ async function insertWikiChunkBatches(
   chunks: WikiPageChunk[],
   embeddingModelOverride?: string,
 ): Promise<void> {
-  for (let i = 0; i < chunks.length; i += WIKI_CHUNK_WRITE_BATCH_SIZE) {
-    const batch = chunks.slice(i, i + WIKI_CHUNK_WRITE_BATCH_SIZE);
-    const rows = batch.map((chunk) => wikiChunkToBatchRow(chunk, embeddingModelOverride));
-
-    await sqlClient.unsafe(
-      `
-        INSERT INTO wiki_pages (
-          page_id, page_title, namespace, page_url,
-          section_heading, section_anchor, section_level,
-          chunk_index, chunk_text, raw_text, token_count,
-          embedding, embedding_model, stale,
-          last_modified, revision_id, language_tags
-        )
-        SELECT
-          batch_rows.page_id,
-          batch_rows.page_title,
-          batch_rows.namespace,
-          batch_rows.page_url,
-          batch_rows.section_heading,
-          batch_rows.section_anchor,
-          batch_rows.section_level,
-          batch_rows.chunk_index,
-          batch_rows.chunk_text,
-          batch_rows.raw_text,
-          batch_rows.token_count,
-          CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
-          batch_rows.embedding_model,
-          batch_rows.stale,
-          batch_rows.last_modified,
-          batch_rows.revision_id,
-          ARRAY(SELECT jsonb_array_elements_text(batch_rows.language_tags))
-        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-          page_id integer,
-          page_title text,
-          namespace text,
-          page_url text,
-          section_heading text,
-          section_anchor text,
-          section_level integer,
-          chunk_index integer,
-          chunk_text text,
-          raw_text text,
-          token_count integer,
-          embedding text,
-          embedding_model text,
-          stale boolean,
-          last_modified timestamptz,
-          revision_id integer,
-          language_tags jsonb
-        )
-        ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
-      `,
-      [JSON.stringify(rows)],
-    );
-  }
+  await insertJsonbRecordsetBatches(sqlClient, {
+    tableName: "wiki_pages",
+    columns: WIKI_CHUNK_BATCH_COLUMNS,
+    rows: chunks,
+    batchSize: WIKI_CHUNK_WRITE_BATCH_SIZE,
+    rowToRecord: (chunk) => wikiChunkToBatchRow(chunk, embeddingModelOverride),
+    onConflictClause: "ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING",
+  });
 }
 
 /**

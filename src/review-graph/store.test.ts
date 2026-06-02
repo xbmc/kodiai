@@ -18,7 +18,7 @@ const mockLogger = {
 } as unknown as import("pino").Logger;
 
 type MockSqlCall = {
-  kind: "query" | "unsafe";
+  kind: "begin" | "query" | "unsafe";
   scope: "root" | "tx";
   text: string;
   values: unknown[];
@@ -40,11 +40,12 @@ function createMockSql(responses: unknown[][] = []): {
         values,
       });
       return queue.shift() ?? [];
-    }) as unknown as Sql & {
+    }) as unknown as Sql;
+    const mockTag = tag as unknown as {
       unsafe(query: string, params?: unknown[]): Promise<unknown[]>;
     };
 
-    tag.unsafe = async (query: string, params: unknown[] = []) => {
+    mockTag.unsafe = async (query: string, params: unknown[] = []) => {
       calls.push({
         kind: "unsafe",
         scope,
@@ -59,12 +60,24 @@ function createMockSql(responses: unknown[][] = []): {
 
   const sql = createTag("root") as Sql & {
     begin<T>(callback: (tx: Sql) => Promise<T>): Promise<T>;
+    begin<T>(options: string, callback: (tx: Sql) => Promise<T>): Promise<T>;
     end(): Promise<void>;
   };
 
-  sql.begin = async <T,>(callback: (tx: Sql) => Promise<T>) => {
-    return await callback(createTag("tx"));
-  };
+  sql.begin = (async <T,>(
+    optionsOrCallback: string | ((tx: Sql) => Promise<T>),
+    callback?: (tx: Sql) => Promise<T>,
+  ): Promise<T> => {
+    const options = typeof optionsOrCallback === "string" ? optionsOrCallback : "";
+    const txCallback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback!;
+    calls.push({
+      kind: "begin",
+      scope: "root",
+      text: options,
+      values: [],
+    });
+    return await txCallback(createTag("tx"));
+  }) as typeof sql.begin;
   sql.end = async () => {};
 
   return { sql: sql as unknown as Sql, calls };
@@ -198,21 +211,19 @@ describe("createReviewGraphStore batching", () => {
     expect(calls.some((call) => call.kind === "unsafe")).toBe(false);
   });
 
-  test("listWorkspaceGraph loads files nodes and edges with one batched query", async () => {
+  test("listWorkspaceGraph loads files nodes and edges with explicit typed queries", async () => {
     const { sql, calls } = createMockSql([
-      [{
-        files: [makeFileRow()],
-        nodes: [
-          makeNodeRow(),
-          makeNodeRow({
-            id: 12,
-            node_kind: "symbol",
-            stable_key: "symbol:src/app.py:handler",
-            symbol_name: "handler",
-          }),
-        ],
-        edges: [makeEdgeRow()],
-      }],
+      [makeFileRow()],
+      [
+        makeNodeRow(),
+        makeNodeRow({
+          id: 12,
+          node_kind: "symbol",
+          stable_key: "symbol:src/app.py:handler",
+          symbol_name: "handler",
+        }),
+      ],
+      [makeEdgeRow()],
     ]);
     const store = createReviewGraphStore({ sql, logger: mockLogger });
 
@@ -224,7 +235,16 @@ describe("createReviewGraphStore batching", () => {
       "symbol:src/app.py:handler",
     ]);
     expect(snapshot.edges.map((edge) => edge.edgeKind)).toEqual(["declares"]);
-    expect(calls.filter((call) => call.scope === "root")).toHaveLength(1);
+    const rootCalls = calls.filter((call) => call.scope === "root");
+    const txCalls = calls.filter((call) => call.scope === "tx");
+    expect(rootCalls).toEqual([{
+      kind: "begin",
+      scope: "root",
+      text: "isolation level repeatable read read only",
+      values: [],
+    }]);
+    expect(txCalls).toHaveLength(3);
+    expect(txCalls.some((call) => call.kind === "unsafe")).toBe(false);
   });
 });
 

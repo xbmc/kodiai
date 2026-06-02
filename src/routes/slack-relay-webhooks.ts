@@ -7,7 +7,7 @@ import {
   type NormalizedWebhookRelayEvent,
 } from "../slack/webhook-relay.ts";
 import {
-  createSlidingWindowRateLimiter,
+  createRateLimitPair,
   requestSourceKey,
   type RateLimitWindowOptions,
 } from "../lib/sliding-window-rate-limiter.ts";
@@ -18,12 +18,6 @@ interface SlackRelayWebhookRouteDeps {
   onAcceptedRelay?: (event: NormalizedWebhookRelayEvent) => Promise<void> | void;
   rateLimit?: SlackRelayRateLimitOptions;
 }
-
-type RateLimitWindowOptions = {
-  max?: number;
-  windowMs?: number;
-  maxKeys?: number;
-};
 
 type SlackRelayRateLimitOptions = {
   preBody?: RateLimitWindowOptions;
@@ -48,22 +42,19 @@ function secretsMatch(expected: string, provided: string | undefined): boolean {
 export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps): Hono {
   const { config, logger, onAcceptedRelay } = deps;
   const app = new Hono();
-  const preBodyLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.preBody, {
-    max: 120,
-    windowMs: 60_000,
-    maxKeys: 2_000,
-  });
-  const verifiedLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.verified, {
-    max: 60,
-    windowMs: 60_000,
-    maxKeys: 1_000,
+  const rateLimiters = createRateLimitPair({
+    pre: deps.rateLimit?.preBody,
+    verified: deps.rateLimit?.verified,
+  }, {
+    pre: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 60, windowMs: 60_000, maxKeys: 1_000 },
   });
 
   app.post("/:sourceId", async (c) => {
     const sourceId = c.req.param("sourceId");
     const requestSource = requestSourceKey((name) => c.req.header(name));
 
-    if (preBodyLimiter.isLimited(`slack-relay:${sourceId}:${requestSource}`)) {
+    if (rateLimiters.pre.isLimited(`slack-relay:${sourceId}:${requestSource}`)) {
       logger.warn({ sourceId, requestSource }, "Slack relay webhook rate-limited before source auth");
       return c.json({ ok: false, reason: "rate_limited" }, 429);
     }
@@ -81,7 +72,7 @@ export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps):
       return c.json({ ok: false, reason: "invalid_source_auth" }, 401);
     }
 
-    if (verifiedLimiter.isLimited(`source:${sourceId}`)) {
+    if (rateLimiters.verified.isLimited(`source:${sourceId}`)) {
       logger.warn({ sourceId }, "Slack relay verified source rate-limited");
       return c.json({ ok: false, reason: "rate_limited" }, 429);
     }
