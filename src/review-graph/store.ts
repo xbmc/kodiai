@@ -77,6 +77,25 @@ type BuildRow = DbRow & {
   updated_at: string | Date;
 };
 
+type InsertedNodeRow = DbRow & {
+  id: number | string;
+  stable_key: string;
+};
+
+type WorkspaceGraphRow = DbRow & {
+  files: unknown;
+  nodes: unknown;
+  edges: unknown;
+};
+
+type EdgeInsertPayload = {
+  edge_kind: string;
+  source_node_id: number;
+  target_node_id: number;
+  confidence: number | null;
+  attributes: Record<string, unknown>;
+};
+
 function toIso(value: string | Date | null): string | null {
   if (value === null) return null;
   return typeof value === "string" ? value : value.toISOString();
@@ -99,6 +118,23 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   }
 
   return {};
+}
+
+function parseJsonRows(value: unknown): DbRow[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is DbRow =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item));
+  }
+
+  if (typeof value === "string") {
+    try {
+      return parseJsonRows(JSON.parse(value) as unknown);
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
 }
 
 function mapFileRow(row: FileRow): ReviewGraphFileRecord {
@@ -278,49 +314,91 @@ export function createReviewGraphStore(opts: {
         `;
 
         const nodeIdByStableKey = new Map<string, number>();
-        for (const node of input.nodes) {
-          const rows = await scoped`
-            INSERT INTO review_graph_nodes (
-              repo,
-              workspace_key,
-              file_id,
-              build_id,
-              node_kind,
-              stable_key,
-              symbol_name,
-              qualified_name,
-              language,
-              span_start_line,
-              span_start_col,
-              span_end_line,
-              span_end_col,
-              signature,
-              attributes,
-              confidence
-            ) VALUES (
-              ${input.file.repo},
-              ${input.file.workspaceKey},
-              ${file.id},
-              ${input.file.buildId ?? null},
-              ${node.nodeKind},
-              ${node.stableKey},
-              ${node.symbolName ?? null},
-              ${node.qualifiedName ?? null},
-              ${node.language},
-              ${node.spanStartLine ?? null},
-              ${node.spanStartCol ?? null},
-              ${node.spanEndLine ?? null},
-              ${node.spanEndCol ?? null},
-              ${node.signature ?? null},
-              ${JSON.stringify(node.attributes ?? {})}::jsonb,
-              ${node.confidence ?? null}
-            )
-            RETURNING id
-          `;
-          nodeIdByStableKey.set(node.stableKey, Number(rows[0]!.id));
+        if (input.nodes.length > 0) {
+          const nodePayload = input.nodes.map((node) => ({
+            node_kind: node.nodeKind,
+            stable_key: node.stableKey,
+            symbol_name: node.symbolName ?? null,
+            qualified_name: node.qualifiedName ?? null,
+            language: node.language,
+            span_start_line: node.spanStartLine ?? null,
+            span_start_col: node.spanStartCol ?? null,
+            span_end_line: node.spanEndLine ?? null,
+            span_end_col: node.spanEndCol ?? null,
+            signature: node.signature ?? null,
+            attributes: node.attributes ?? {},
+            confidence: node.confidence ?? null,
+          }));
+
+          const rows = await scoped.unsafe(
+            `
+              INSERT INTO review_graph_nodes (
+                repo,
+                workspace_key,
+                file_id,
+                build_id,
+                node_kind,
+                stable_key,
+                symbol_name,
+                qualified_name,
+                language,
+                span_start_line,
+                span_start_col,
+                span_end_line,
+                span_end_col,
+                signature,
+                attributes,
+                confidence
+              )
+              SELECT
+                $2,
+                $3,
+                $4::bigint,
+                $5::bigint,
+                node_input.node_kind,
+                node_input.stable_key,
+                node_input.symbol_name,
+                node_input.qualified_name,
+                node_input.language,
+                node_input.span_start_line,
+                node_input.span_start_col,
+                node_input.span_end_line,
+                node_input.span_end_col,
+                node_input.signature,
+                COALESCE(node_input.attributes, '{}'::jsonb),
+                node_input.confidence
+              FROM jsonb_to_recordset($1::jsonb) AS node_input (
+                node_kind text,
+                stable_key text,
+                symbol_name text,
+                qualified_name text,
+                language text,
+                span_start_line integer,
+                span_start_col integer,
+                span_end_line integer,
+                span_end_col integer,
+                signature text,
+                attributes jsonb,
+                confidence real
+              )
+              RETURNING stable_key, id
+            `,
+            [
+              JSON.stringify(nodePayload),
+              input.file.repo,
+              input.file.workspaceKey,
+              file.id,
+              input.file.buildId ?? null,
+            ],
+          );
+
+          for (const row of rows) {
+            const inserted = row as unknown as InsertedNodeRow;
+            nodeIdByStableKey.set(inserted.stable_key, Number(inserted.id));
+          }
         }
 
-        let edgesWritten = 0;
+        const edgePayload: EdgeInsertPayload[] = [];
         for (const edge of input.edges) {
           const sourceNodeId = nodeIdByStableKey.get(edge.sourceStableKey);
           const targetNodeId = nodeIdByStableKey.get(edge.targetStableKey);
@@ -331,30 +409,55 @@ export function createReviewGraphStore(opts: {
             );
           }
 
-          await scoped`
-            INSERT INTO review_graph_edges (
-              repo,
-              workspace_key,
-              file_id,
-              build_id,
-              edge_kind,
-              source_node_id,
-              target_node_id,
-              confidence,
-              attributes
-            ) VALUES (
-              ${input.file.repo},
-              ${input.file.workspaceKey},
-              ${file.id},
-              ${input.file.buildId ?? null},
-              ${edge.edgeKind},
-              ${sourceNodeId},
-              ${targetNodeId},
-              ${edge.confidence ?? null},
-              ${JSON.stringify(edge.attributes ?? {})}::jsonb
-            )
-          `;
-          edgesWritten += 1;
+          edgePayload.push({
+            edge_kind: edge.edgeKind,
+            source_node_id: sourceNodeId,
+            target_node_id: targetNodeId,
+            confidence: edge.confidence ?? null,
+            attributes: edge.attributes ?? {},
+          });
+        }
+
+        if (edgePayload.length > 0) {
+          await scoped.unsafe(
+            `
+              INSERT INTO review_graph_edges (
+                repo,
+                workspace_key,
+                file_id,
+                build_id,
+                edge_kind,
+                source_node_id,
+                target_node_id,
+                confidence,
+                attributes
+              )
+              SELECT
+                $2,
+                $3,
+                $4::bigint,
+                $5::bigint,
+                edge_input.edge_kind,
+                edge_input.source_node_id,
+                edge_input.target_node_id,
+                edge_input.confidence,
+                COALESCE(edge_input.attributes, '{}'::jsonb)
+              FROM jsonb_to_recordset($1::jsonb) AS edge_input (
+                edge_kind text,
+                source_node_id bigint,
+                target_node_id bigint,
+                confidence real,
+                attributes jsonb
+              )
+            `,
+            [
+              JSON.stringify(edgePayload),
+              input.file.repo,
+              input.file.workspaceKey,
+              file.id,
+              input.file.buildId ?? null,
+            ],
+          );
         }
 
         logger.debug(
@@ -364,7 +467,7 @@ export function createReviewGraphStore(opts: {
             path: input.file.path,
             fileId: file.id,
             nodesWritten: input.nodes.length,
-            edgesWritten,
+            edgesWritten: edgePayload.length,
             buildId: input.file.buildId ?? null,
           },
           "Replaced review graph records for file",
@@ -373,7 +476,7 @@ export function createReviewGraphStore(opts: {
         return {
           file,
           nodesWritten: input.nodes.length,
-          edgesWritten,
+          edgesWritten: edgePayload.length,
         };
       });
     },
@@ -412,34 +515,45 @@ export function createReviewGraphStore(opts: {
     },
 
     async listWorkspaceGraph(repo: string, workspaceKey: string) {
-      const [fileRows, nodeRows, edgeRows] = await Promise.all([
-        sql`
+      const rows = await sql`
+        WITH file_rows AS (
           SELECT *
           FROM review_graph_files
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
-          ORDER BY path ASC
-        `,
-        sql`
+        ),
+        node_rows AS (
           SELECT *
           FROM review_graph_nodes
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
-          ORDER BY file_id ASC, id ASC
-        `,
-        sql`
+        ),
+        edge_rows AS (
           SELECT *
           FROM review_graph_edges
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
-          ORDER BY file_id ASC, id ASC
-        `,
-      ]);
+        )
+        SELECT
+          COALESCE(
+            (SELECT jsonb_agg(to_jsonb(file_rows) ORDER BY file_rows.path ASC) FROM file_rows),
+            '[]'::jsonb
+          ) AS files,
+          COALESCE(
+            (SELECT jsonb_agg(to_jsonb(node_rows) ORDER BY node_rows.file_id ASC, node_rows.id ASC) FROM node_rows),
+            '[]'::jsonb
+          ) AS nodes,
+          COALESCE(
+            (SELECT jsonb_agg(to_jsonb(edge_rows) ORDER BY edge_rows.file_id ASC, edge_rows.id ASC) FROM edge_rows),
+            '[]'::jsonb
+          ) AS edges
+      `;
+      const row = (rows[0] ?? { files: [], nodes: [], edges: [] }) as unknown as WorkspaceGraphRow;
 
       return {
-        files: fileRows.map((row) => mapFileRow(row as unknown as FileRow)),
-        nodes: nodeRows.map((row) => mapNodeRow(row as unknown as NodeRow)),
-        edges: edgeRows.map((row) => mapEdgeRow(row as unknown as EdgeRow)),
+        files: parseJsonRows(row.files).map((fileRow) => mapFileRow(fileRow as FileRow)),
+        nodes: parseJsonRows(row.nodes).map((nodeRow) => mapNodeRow(nodeRow as NodeRow)),
+        edges: parseJsonRows(row.edges).map((edgeRow) => mapEdgeRow(edgeRow as EdgeRow)),
       };
     },
 
