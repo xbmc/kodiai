@@ -15,6 +15,7 @@
 
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { positiveIntegerBound } from "../lib/bounds.ts";
 import type { SuggestionClusterStore, SuggestionClusterModel } from "./suggestion-cluster-store.ts";
 import { hdbscan } from "./hdbscan.ts";
 
@@ -113,11 +114,6 @@ function meanEmbedding(embeddings: Float32Array[]): Float32Array {
     result[i]! /= embeddings.length;
   }
   return result;
-}
-
-function positiveIntegerBound(value: number | undefined, fallback: number): number {
-  if (value === undefined || !Number.isFinite(value) || value <= 0) return fallback;
-  return Math.floor(value);
 }
 
 // ── Clustering helpers ────────────────────────────────────────────────
@@ -241,14 +237,30 @@ export async function buildClusterModel(
   };
 
   try {
-    // Fetch all learning memories for this repo that have an embedding
+    // Fetch a recent, outcome-balanced sample so the cap is model policy, not incidental row order.
     const rows = await sql`
+      WITH ranked_memories AS (
+        SELECT
+          id,
+          outcome,
+          embedding,
+          row_number() OVER (
+            PARTITION BY CASE
+              WHEN outcome IN ('accepted', 'thumbs_up') THEN 'positive'
+              ELSE 'negative'
+            END
+            ORDER BY created_at DESC, id DESC
+          ) AS class_rank
+        FROM learning_memories
+        WHERE repo = ${repo}
+          AND stale = false
+          AND embedding IS NOT NULL
+          AND outcome IN ('accepted', 'thumbs_up', 'suppressed', 'thumbs_down')
+      )
       SELECT id, outcome, embedding
-      FROM learning_memories
-      WHERE repo = ${repo}
-        AND stale = false
-        AND embedding IS NOT NULL
-      ORDER BY id ASC
+      FROM ranked_memories
+      WHERE class_rank <= ${Math.ceil(maxInputRows / 2) + 1}
+      ORDER BY class_rank ASC, id DESC
       LIMIT ${maxInputRows + 1}
     `;
 

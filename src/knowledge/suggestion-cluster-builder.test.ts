@@ -205,7 +205,7 @@ describe("buildClusterModel — insufficient data", () => {
     expect(result.skipReason).toContain("Insufficient data");
   });
 
-  it("caps fetched rows before parsing and splitting outcomes", async () => {
+  it("caps fetched rows with a recent class-balanced SQL sample", async () => {
     const dim = 4;
     const rows: FakeRow[] = Array.from({ length: 8 }, (_, i) => ({
       id: i + 1,
@@ -214,8 +214,9 @@ describe("buildClusterModel — insufficient data", () => {
     }));
 
     const sqlCalls: unknown[][] = [];
+    const sqlTexts: string[] = [];
     const sql = mock((strings: TemplateStringsArray, ...values: unknown[]) => {
-      void strings;
+      sqlTexts.push(strings.join("?"));
       sqlCalls.push(values);
       return Promise.resolve(rows);
     }) as any;
@@ -232,6 +233,8 @@ describe("buildClusterModel — insufficient data", () => {
 
     expect(result.built).toBe(false);
     expect(result.skipReason).toContain("positive=4");
+    expect(sqlTexts[0]).toContain("PARTITION BY CASE");
+    expect(sqlTexts[0]).toContain("ORDER BY created_at DESC, id DESC");
     expect(sqlCalls[0]).toContain(5);
     expect(logger.warn).toHaveBeenCalled();
   });

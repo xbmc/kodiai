@@ -1,3 +1,5 @@
+import { positiveIntegerBound } from "./bounds.ts";
+
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_SIZE = 500;
 const DEFAULT_EXPIRED_CLEANUP_SCAN_LIMIT = 16;
@@ -75,10 +77,10 @@ export function buildSearchCacheKey(params: SearchCacheKeyParams): string {
 
 export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): SearchCache<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-  const maxSize = Math.max(0, Math.floor(options.maxSize ?? DEFAULT_MAX_SIZE));
-  const expiredCleanupScanLimit = Math.max(
-    0,
-    Math.floor(options.expiredCleanupScanLimit ?? DEFAULT_EXPIRED_CLEANUP_SCAN_LIMIT),
+  const maxSize = positiveIntegerBound(options.maxSize, DEFAULT_MAX_SIZE);
+  const expiredCleanupScanLimit = positiveIntegerBound(
+    options.expiredCleanupScanLimit,
+    DEFAULT_EXPIRED_CLEANUP_SCAN_LIMIT,
   );
   const now = options.now ?? (() => Date.now());
   const store = options.store ?? new Map<string, CacheEntry<T>>();

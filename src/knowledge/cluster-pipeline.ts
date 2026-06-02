@@ -15,6 +15,7 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { TaskRouter } from "../llm/task-router.ts";
+import { positiveIntegerBound } from "../lib/bounds.ts";
 import type { ClusterStore, ClusterRunState, ReviewCluster } from "./cluster-types.ts";
 import { hdbscan } from "./hdbscan.ts";
 import { generateWithFallback } from "../llm/generate.ts";
@@ -90,11 +91,6 @@ function meanEmbedding(embeddings: Float32Array[]): Float32Array {
     result[i]! /= embeddings.length;
   }
   return result;
-}
-
-function positiveIntegerBound(value: number | undefined, fallback: number): number {
-  if (value === undefined || !Number.isFinite(value) || value <= 0) return fallback;
-  return Math.floor(value);
 }
 
 type EmbeddingRow = {

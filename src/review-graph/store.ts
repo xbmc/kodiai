@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { insertJsonbRecordsetBatches, type JsonbRecordsetColumn } from "../db/jsonb-batch.ts";
 import type {
   ReplaceFileGraphInput,
   ReviewGraphBuildRecord,
@@ -89,6 +90,37 @@ type EdgeInsertPayload = {
   confidence: number | null;
   attributes: Record<string, unknown>;
 };
+
+const REVIEW_GRAPH_NODE_BATCH_COLUMNS: JsonbRecordsetColumn[] = [
+  { name: "node_kind", type: "text" },
+  { name: "stable_key", type: "text" },
+  { name: "symbol_name", type: "text" },
+  { name: "qualified_name", type: "text" },
+  { name: "language", type: "text" },
+  { name: "span_start_line", type: "integer" },
+  { name: "span_start_col", type: "integer" },
+  { name: "span_end_line", type: "integer" },
+  { name: "span_end_col", type: "integer" },
+  { name: "signature", type: "text" },
+  {
+    name: "attributes",
+    type: "jsonb",
+    selectExpression: "COALESCE(batch_rows.attributes, '{}'::jsonb)",
+  },
+  { name: "confidence", type: "real" },
+];
+
+const REVIEW_GRAPH_EDGE_BATCH_COLUMNS: JsonbRecordsetColumn[] = [
+  { name: "edge_kind", type: "text" },
+  { name: "source_node_id", type: "bigint" },
+  { name: "target_node_id", type: "bigint" },
+  { name: "confidence", type: "real" },
+  {
+    name: "attributes",
+    type: "jsonb",
+    selectExpression: "COALESCE(batch_rows.attributes, '{}'::jsonb)",
+  },
+];
 
 function toIso(value: string | Date | null): string | null {
   if (value === null) return null;
@@ -307,67 +339,26 @@ export function createReviewGraphStore(opts: {
             confidence: node.confidence ?? null,
           }));
 
-          const rows = await scoped.unsafe(
-            `
-              INSERT INTO review_graph_nodes (
-                repo,
-                workspace_key,
-                file_id,
-                build_id,
-                node_kind,
-                stable_key,
-                symbol_name,
-                qualified_name,
-                language,
-                span_start_line,
-                span_start_col,
-                span_end_line,
-                span_end_col,
-                signature,
-                attributes,
-                confidence
-              )
-              SELECT
-                $2,
-                $3,
-                $4::bigint,
-                $5::bigint,
-                node_input.node_kind,
-                node_input.stable_key,
-                node_input.symbol_name,
-                node_input.qualified_name,
-                node_input.language,
-                node_input.span_start_line,
-                node_input.span_start_col,
-                node_input.span_end_line,
-                node_input.span_end_col,
-                node_input.signature,
-                COALESCE(node_input.attributes, '{}'::jsonb),
-                node_input.confidence
-              FROM jsonb_to_recordset($1::jsonb) AS node_input (
-                node_kind text,
-                stable_key text,
-                symbol_name text,
-                qualified_name text,
-                language text,
-                span_start_line integer,
-                span_start_col integer,
-                span_end_line integer,
-                span_end_col integer,
-                signature text,
-                attributes jsonb,
-                confidence real
-              )
-              RETURNING stable_key, id
-            `,
-            [
-              JSON.stringify(nodePayload),
+          const rows = await insertJsonbRecordsetBatches(scoped, {
+            tableName: "review_graph_nodes",
+            staticColumns: [
+              { name: "repo", selectExpression: "$2" },
+              { name: "workspace_key", selectExpression: "$3" },
+              { name: "file_id", selectExpression: "$4::bigint" },
+              { name: "build_id", selectExpression: "$5::bigint" },
+            ],
+            columns: REVIEW_GRAPH_NODE_BATCH_COLUMNS,
+            rows: nodePayload,
+            batchSize: input.nodes.length,
+            rowToRecord: (row) => row,
+            returningClause: "RETURNING stable_key, id",
+            params: [
               input.file.repo,
               input.file.workspaceKey,
               file.id,
               input.file.buildId ?? null,
             ],
-          );
+          });
 
           for (const row of rows) {
             const inserted = row as unknown as InsertedNodeRow;
@@ -396,45 +387,25 @@ export function createReviewGraphStore(opts: {
         }
 
         if (edgePayload.length > 0) {
-          await scoped.unsafe(
-            `
-              INSERT INTO review_graph_edges (
-                repo,
-                workspace_key,
-                file_id,
-                build_id,
-                edge_kind,
-                source_node_id,
-                target_node_id,
-                confidence,
-                attributes
-              )
-              SELECT
-                $2,
-                $3,
-                $4::bigint,
-                $5::bigint,
-                edge_input.edge_kind,
-                edge_input.source_node_id,
-                edge_input.target_node_id,
-                edge_input.confidence,
-                COALESCE(edge_input.attributes, '{}'::jsonb)
-              FROM jsonb_to_recordset($1::jsonb) AS edge_input (
-                edge_kind text,
-                source_node_id bigint,
-                target_node_id bigint,
-                confidence real,
-                attributes jsonb
-              )
-            `,
-            [
-              JSON.stringify(edgePayload),
+          await insertJsonbRecordsetBatches(scoped, {
+            tableName: "review_graph_edges",
+            staticColumns: [
+              { name: "repo", selectExpression: "$2" },
+              { name: "workspace_key", selectExpression: "$3" },
+              { name: "file_id", selectExpression: "$4::bigint" },
+              { name: "build_id", selectExpression: "$5::bigint" },
+            ],
+            columns: REVIEW_GRAPH_EDGE_BATCH_COLUMNS,
+            rows: edgePayload,
+            batchSize: edgePayload.length,
+            rowToRecord: (row) => row,
+            params: [
               input.file.repo,
               input.file.workspaceKey,
               file.id,
               input.file.buildId ?? null,
             ],
-          );
+          });
         }
 
         logger.debug(

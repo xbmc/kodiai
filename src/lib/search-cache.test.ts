@@ -214,6 +214,20 @@ describe("createSearchCache", () => {
     expect(cache.get("c")).toBe("third");
   });
 
+  test("normalizes invalid maxSize and cleanup bounds to defaults", () => {
+    const cache = createSearchCache<string>({
+      maxSize: Number.NaN,
+      expiredCleanupScanLimit: Number.NaN,
+    });
+
+    for (let i = 0; i < 501; i++) {
+      cache.set(`key-${i}`, `value-${i}`);
+    }
+
+    expect(cache.get("key-0")).toBeUndefined();
+    expect(cache.get("key-500")).toBe("value-500");
+  });
+
   test("cleans up expired entries during later writes", () => {
     let clock = 1_000;
     const store = new Map<string, { value: string; expiresAt: number }>();

@@ -1,10 +1,13 @@
+import { positiveIntegerBound } from "./bounds.ts";
+
 export async function mapWithConcurrency<T, R>(
-  items: T[],
+  items: readonly T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
+  const normalizedConcurrency = positiveIntegerBound(concurrency, 1);
 
   async function worker(): Promise<void> {
     while (nextIndex < items.length) {
@@ -14,7 +17,7 @@ export async function mapWithConcurrency<T, R>(
     }
   }
 
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  const workerCount = Math.min(normalizedConcurrency, items.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   return results;
 }
