@@ -1,5 +1,10 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { runClusterPipeline, cosineSimilarity } from "./cluster-pipeline.ts";
+import {
+  runClusterPipeline,
+  cosineSimilarity,
+  DEFAULT_MAX_CLUSTERING_ROWS,
+  DEFAULT_MAX_EMBEDDING_ROWS,
+} from "./cluster-pipeline.ts";
 import type { ClusterStore, ReviewCluster, ClusterAssignment, ClusterRunState } from "./cluster-types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -85,6 +90,12 @@ describe("cosineSimilarity", () => {
 });
 
 describe("runClusterPipeline", () => {
+  it("exports conservative default memory bounds", () => {
+    expect(DEFAULT_MAX_EMBEDDING_ROWS).toBeGreaterThan(0);
+    expect(DEFAULT_MAX_CLUSTERING_ROWS).toBeGreaterThan(0);
+    expect(DEFAULT_MAX_CLUSTERING_ROWS).toBeLessThanOrEqual(DEFAULT_MAX_EMBEDDING_ROWS);
+  });
+
   it("completes with 0 clusters when no embeddings exist", async () => {
     const mockSql = mock((() => Promise.resolve([])) as any);
     const store = createMockStore();
@@ -134,6 +145,66 @@ describe("runClusterPipeline", () => {
     expect(result.status).toBe("completed");
     expect(result.commentsProcessed).toBe(2);
     expect(result.clustersDiscovered).toBe(0);
+  });
+
+  it("caps fetched embeddings before parsing and processing", async () => {
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      embedding: toVectorString(randomEmbedding(16, i + 1)),
+      file_path: `src/${i}.ts`,
+      chunk_text: `comment ${i}`,
+      github_created_at: "2026-02-01T00:00:00Z",
+    }));
+
+    const sqlCalls: unknown[][] = [];
+    const mockSql = mock(((_strings: TemplateStringsArray, ...values: unknown[]) => {
+      sqlCalls.push(values);
+      return Promise.resolve(rows);
+    }) as any);
+
+    const logger = createMockLogger();
+    const result = await runClusterPipeline({
+      sql: mockSql as any,
+      store: createMockStore(),
+      taskRouter: createMockTaskRouter(),
+      logger,
+      repo: "test/repo",
+      maxEmbeddingRows: 2,
+      minClusterSize: 3,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.commentsProcessed).toBe(2);
+    expect(result.clustersDiscovered).toBe(0);
+    expect(sqlCalls[0]).toContain(3);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("caps the clustering pool before UMAP and HDBSCAN allocation", async () => {
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      embedding: toVectorString(randomEmbedding(16, i + 1)),
+      file_path: `src/${i}.ts`,
+      chunk_text: `comment ${i}`,
+      github_created_at: "2026-02-01T00:00:00Z",
+    }));
+
+    const mockSql = mock((() => Promise.resolve(rows)) as any);
+    const logger = createMockLogger();
+    const result = await runClusterPipeline({
+      sql: mockSql as any,
+      store: createMockStore(),
+      taskRouter: createMockTaskRouter(),
+      logger,
+      repo: "test/repo",
+      minClusterSize: 3,
+      maxClusteringRows: 2,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.commentsProcessed).toBe(5);
+    expect(result.clustersDiscovered).toBe(0);
+    expect(logger.warn).toHaveBeenCalled();
   });
 
   it("saves failed state on error", async () => {

@@ -4,6 +4,8 @@ import {
   MIN_CLUSTER_MEMBERS,
   MIN_ROWS_FOR_CLUSTERING,
   HDBSCAN_MIN_CLUSTER_SIZE,
+  DEFAULT_MAX_INPUT_ROWS,
+  DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING,
 } from "./suggestion-cluster-builder.ts";
 import type { SuggestionClusterStore, SuggestionClusterModel } from "./suggestion-cluster-store.ts";
 
@@ -105,6 +107,12 @@ describe("constants", () => {
   it("HDBSCAN_MIN_CLUSTER_SIZE is 3", () => {
     expect(HDBSCAN_MIN_CLUSTER_SIZE).toBe(3);
   });
+
+  it("exports conservative default memory bounds", () => {
+    expect(DEFAULT_MAX_INPUT_ROWS).toBeGreaterThan(0);
+    expect(DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING).toBeGreaterThan(0);
+    expect(DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING).toBeLessThanOrEqual(DEFAULT_MAX_INPUT_ROWS);
+  });
 });
 
 // ── Insufficient data ─────────────────────────────────────────────────
@@ -195,6 +203,37 @@ describe("buildClusterModel — insufficient data", () => {
 
     expect(result.built).toBe(false);
     expect(result.skipReason).toContain("Insufficient data");
+  });
+
+  it("caps fetched rows before parsing and splitting outcomes", async () => {
+    const dim = 4;
+    const rows: FakeRow[] = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      outcome: "accepted",
+      embedding: toVectorString(makeEmbedding(dim, i + 1)),
+    }));
+
+    const sqlCalls: unknown[][] = [];
+    const sql = mock((strings: TemplateStringsArray, ...values: unknown[]) => {
+      void strings;
+      sqlCalls.push(values);
+      return Promise.resolve(rows);
+    }) as any;
+    const logger = createMockLogger();
+
+    const result = await buildClusterModel({
+      repo: "owner/repo",
+      sql,
+      store: makeStoreStub(),
+      logger,
+      maxInputRows: 4,
+      minRowsForClustering: 5,
+    });
+
+    expect(result.built).toBe(false);
+    expect(result.skipReason).toContain("positive=4");
+    expect(sqlCalls[0]).toContain(5);
+    expect(logger.warn).toHaveBeenCalled();
   });
 });
 
@@ -460,6 +499,39 @@ describe("buildClusterModel — centroid generation", () => {
     });
 
     expect((store.saveModel as any).mock.calls).toHaveLength(1);
+  });
+
+  it("caps each outcome class before HDBSCAN clustering", async () => {
+    const dim = 4;
+    const rows: FakeRow[] = Array.from({ length: 10 }, (_, i) => {
+      const emb = new Float32Array(dim);
+      emb[0] = 1;
+      return {
+        id: i + 1,
+        outcome: "accepted",
+        embedding: toVectorString(emb),
+      };
+    });
+
+    const sql = makeSqlStub(rows);
+    const savedModels: SuggestionClusterModel[] = [];
+    const store = makeStoreStub(savedModels);
+    const logger = createMockLogger();
+
+    const result = await buildClusterModel({
+      repo: "owner/repo",
+      sql,
+      store,
+      logger,
+      minRowsForClustering: 5,
+      minClusterSize: 3,
+      maxRowsPerClassForClustering: 5,
+    });
+
+    expect(result.built).toBe(true);
+    expect(result.positiveMemberCount).toBeLessThanOrEqual(5);
+    expect(savedModels[0]!.positiveMemberCount).toBeLessThanOrEqual(5);
+    expect(logger.warn).toHaveBeenCalled();
   });
 });
 

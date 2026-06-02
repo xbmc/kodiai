@@ -29,6 +29,12 @@ export const MIN_ROWS_FOR_CLUSTERING = 5;
 /** HDBSCAN minClusterSize passed to the algorithm. */
 export const HDBSCAN_MIN_CLUSTER_SIZE = 3;
 
+/** Maximum learning memory rows fetched for one model build. */
+export const DEFAULT_MAX_INPUT_ROWS = 5_000;
+
+/** Maximum rows per outcome class passed into dense HDBSCAN clustering. */
+export const DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING = 2_000;
+
 // ── Positive/negative outcome classification ──────────────────────────
 
 /** Outcomes treated as "positive" signal (team values this kind of finding). */
@@ -49,6 +55,10 @@ export type BuildClusterModelOpts = {
   minClusterSize?: number;
   /** Override minimum rows per class needed to cluster (default: MIN_ROWS_FOR_CLUSTERING). */
   minRowsForClustering?: number;
+  /** Maximum learning memory rows to fetch and parse (default: DEFAULT_MAX_INPUT_ROWS). */
+  maxInputRows?: number;
+  /** Maximum rows per outcome class to pass to HDBSCAN (default: DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING). */
+  maxRowsPerClassForClustering?: number;
 };
 
 /** Result of a build attempt. */
@@ -103,6 +113,11 @@ function meanEmbedding(embeddings: Float32Array[]): Float32Array {
     result[i]! /= embeddings.length;
   }
   return result;
+}
+
+function positiveIntegerBound(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return fallback;
+  return Math.floor(value);
 }
 
 // ── Clustering helpers ────────────────────────────────────────────────
@@ -208,6 +223,11 @@ export async function buildClusterModel(
   const { repo, sql, store, logger } = opts;
   const minClusterSize = opts.minClusterSize ?? HDBSCAN_MIN_CLUSTER_SIZE;
   const minRows = opts.minRowsForClustering ?? MIN_ROWS_FOR_CLUSTERING;
+  const maxInputRows = positiveIntegerBound(opts.maxInputRows, DEFAULT_MAX_INPUT_ROWS);
+  const maxRowsPerClassForClustering = positiveIntegerBound(
+    opts.maxRowsPerClassForClustering,
+    DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING,
+  );
 
   const base: BuildClusterModelResult = {
     repo,
@@ -229,18 +249,27 @@ export async function buildClusterModel(
         AND stale = false
         AND embedding IS NOT NULL
       ORDER BY id ASC
+      LIMIT ${maxInputRows + 1}
     `;
 
+    const boundedRows = rows.length > maxInputRows ? rows.slice(0, maxInputRows) : rows;
+
     logger.info(
-      { repo, totalRows: rows.length },
+      { repo, totalRows: boundedRows.length, fetchedRows: rows.length, maxInputRows },
       "Fetched learning memories for cluster model build",
     );
+    if (rows.length > maxInputRows) {
+      logger.warn(
+        { repo, fetchedRows: rows.length, maxInputRows },
+        "Capped learning memories before cluster model build",
+      );
+    }
 
     // Split by outcome class, parsing embeddings
     const positiveRows: MemoryRow[] = [];
     const negativeRows: MemoryRow[] = [];
 
-    for (const row of rows) {
+    for (const row of boundedRows) {
       const emb = parseEmbedding(row.embedding);
       if (!emb || emb.length === 0) continue;
 
@@ -262,22 +291,52 @@ export async function buildClusterModel(
       "Outcome class split complete",
     );
 
+    const boundedPositiveRows = positiveRows.length > maxRowsPerClassForClustering
+      ? positiveRows.slice(0, maxRowsPerClassForClustering)
+      : positiveRows;
+    const boundedNegativeRows = negativeRows.length > maxRowsPerClassForClustering
+      ? negativeRows.slice(0, maxRowsPerClassForClustering)
+      : negativeRows;
+
+    if (boundedPositiveRows.length < positiveRows.length) {
+      logger.warn(
+        {
+          repo,
+          outcomeClass: "positive",
+          rowCount: positiveRows.length,
+          maxRowsPerClassForClustering,
+        },
+        "Capped outcome class before HDBSCAN clustering",
+      );
+    }
+    if (boundedNegativeRows.length < negativeRows.length) {
+      logger.warn(
+        {
+          repo,
+          outcomeClass: "negative",
+          rowCount: negativeRows.length,
+          maxRowsPerClassForClustering,
+        },
+        "Capped outcome class before HDBSCAN clustering",
+      );
+    }
+
     // Require at least one class to have enough rows to proceed
     const hasSufficientData =
-      positiveRows.length >= minRows || negativeRows.length >= minRows;
+      boundedPositiveRows.length >= minRows || boundedNegativeRows.length >= minRows;
 
     if (!hasSufficientData) {
       const skipReason =
-        `Insufficient data: positive=${positiveRows.length}, negative=${negativeRows.length}, ` +
+        `Insufficient data: positive=${boundedPositiveRows.length}, negative=${boundedNegativeRows.length}, ` +
         `minRowsForClustering=${minRows}`;
       logger.info({ repo, skipReason }, "Skipping cluster model build (insufficient data)");
       return { ...base, skipReason };
     }
 
     // Build centroids per class
-    const posResult = positiveRows.length >= minRows
+    const posResult = boundedPositiveRows.length >= minRows
       ? buildCentroidsFromRows(
-          positiveRows,
+          boundedPositiveRows,
           minClusterSize,
           MIN_CLUSTER_MEMBERS,
           logger,
@@ -285,9 +344,9 @@ export async function buildClusterModel(
         )
       : { centroids: [], memberCount: 0, skippedClusters: 0 };
 
-    const negResult = negativeRows.length >= minRows
+    const negResult = boundedNegativeRows.length >= minRows
       ? buildCentroidsFromRows(
-          negativeRows,
+          boundedNegativeRows,
           minClusterSize,
           MIN_CLUSTER_MEMBERS,
           logger,

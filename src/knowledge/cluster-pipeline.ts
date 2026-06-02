@@ -24,6 +24,8 @@ import { UMAP } from "umap-js";
 // ── Constants ────────────────────────────────────────────────────────
 
 const DEFAULT_MIN_CLUSTER_SIZE = 3;
+export const DEFAULT_MAX_EMBEDDING_ROWS = 5_000;
+export const DEFAULT_MAX_CLUSTERING_ROWS = 2_000;
 const UMAP_N_COMPONENTS = 15;
 const UMAP_N_NEIGHBORS = 15;
 const UMAP_MIN_DIST = 0.0;
@@ -90,6 +92,11 @@ function meanEmbedding(embeddings: Float32Array[]): Float32Array {
   return result;
 }
 
+function positiveIntegerBound(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return fallback;
+  return Math.floor(value);
+}
+
 type EmbeddingRow = {
   id: number;
   embedding: Float32Array;
@@ -107,9 +114,19 @@ export async function runClusterPipeline(opts: {
   logger: Logger;
   repo: string;
   minClusterSize?: number;
+  maxEmbeddingRows?: number;
+  maxClusteringRows?: number;
 }): Promise<ClusterRunState> {
   const { sql, store, taskRouter, logger, repo } = opts;
   const minClusterSize = opts.minClusterSize ?? DEFAULT_MIN_CLUSTER_SIZE;
+  const maxEmbeddingRows = positiveIntegerBound(
+    opts.maxEmbeddingRows,
+    DEFAULT_MAX_EMBEDDING_ROWS,
+  );
+  const maxClusteringRows = positiveIntegerBound(
+    opts.maxClusteringRows,
+    DEFAULT_MAX_CLUSTERING_ROWS,
+  );
 
   // Save running state
   const runState: ClusterRunState = {
@@ -134,10 +151,23 @@ export async function runClusterPipeline(opts: {
         AND embedding IS NOT NULL
         AND github_created_at >= NOW() - INTERVAL '6 months'
       ORDER BY github_created_at DESC
+      LIMIT ${maxEmbeddingRows + 1}
     `;
 
+    const boundedRows = rows.length > maxEmbeddingRows ? rows.slice(0, maxEmbeddingRows) : rows;
+    if (rows.length > maxEmbeddingRows) {
+      logger.warn(
+        {
+          repo,
+          fetchedRows: rows.length,
+          maxEmbeddingRows,
+        },
+        "Capped review comment embeddings before clustering",
+      );
+    }
+
     const embeddings: EmbeddingRow[] = [];
-    for (const row of rows) {
+    for (const row of boundedRows) {
       const emb = parseEmbedding(row.embedding);
       if (emb && emb.length > 0) {
         embeddings.push({
@@ -247,6 +277,20 @@ export async function runClusterPipeline(opts: {
 
     // Step 5: UMAP + HDBSCAN on remaining pool
     let newClustersCount = 0;
+
+    if (poolForClustering.length >= minClusterSize) {
+      if (poolForClustering.length > maxClusteringRows) {
+        logger.warn(
+          {
+            repo,
+            poolSize: poolForClustering.length,
+            maxClusteringRows,
+          },
+          "Capped clustering pool before UMAP/HDBSCAN",
+        );
+        poolForClustering = poolForClustering.slice(0, maxClusteringRows);
+      }
+    }
 
     if (poolForClustering.length >= minClusterSize) {
       // UMAP reduction
