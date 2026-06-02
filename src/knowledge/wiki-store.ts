@@ -23,6 +23,7 @@ function float32ArrayToVectorString(arr: Float32Array): string {
 
 const DEFAULT_WIKI_REPAIR_KEY = "wiki-embedding-repair";
 const DEFAULT_WIKI_REPAIR_MODEL = "voyage-context-3";
+const WIKI_CHUNK_WRITE_BATCH_SIZE = 500;
 
 type WikiRow = {
   id: number;
@@ -93,6 +94,91 @@ function rowToRepairCheckpoint(row: Record<string, unknown>): WikiEmbeddingRepai
   };
 }
 
+function wikiChunkToBatchRow(chunk: WikiPageChunk, embeddingModelOverride?: string): Record<string, unknown> {
+  const hasEmbedding = Boolean(chunk.embedding);
+  return {
+    page_id: chunk.pageId,
+    page_title: chunk.pageTitle,
+    namespace: chunk.namespace,
+    page_url: chunk.pageUrl,
+    section_heading: chunk.sectionHeading ?? null,
+    section_anchor: chunk.sectionAnchor ?? "",
+    section_level: chunk.sectionLevel ?? null,
+    chunk_index: chunk.chunkIndex,
+    chunk_text: chunk.chunkText,
+    raw_text: chunk.rawText,
+    token_count: chunk.tokenCount,
+    embedding: hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null,
+    embedding_model: hasEmbedding ? (embeddingModelOverride ?? "voyage-4") : null,
+    stale: !hasEmbedding,
+    last_modified: chunk.lastModified?.toISOString() ?? null,
+    revision_id: chunk.revisionId ?? null,
+    language_tags: chunk.languageTags ?? ["general"],
+  };
+}
+
+async function insertWikiChunkBatches(
+  sqlClient: Sql,
+  chunks: WikiPageChunk[],
+  embeddingModelOverride?: string,
+): Promise<void> {
+  for (let i = 0; i < chunks.length; i += WIKI_CHUNK_WRITE_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + WIKI_CHUNK_WRITE_BATCH_SIZE);
+    const rows = batch.map((chunk) => wikiChunkToBatchRow(chunk, embeddingModelOverride));
+
+    await sqlClient.unsafe(
+      `
+        INSERT INTO wiki_pages (
+          page_id, page_title, namespace, page_url,
+          section_heading, section_anchor, section_level,
+          chunk_index, chunk_text, raw_text, token_count,
+          embedding, embedding_model, stale,
+          last_modified, revision_id, language_tags
+        )
+        SELECT
+          batch_rows.page_id,
+          batch_rows.page_title,
+          batch_rows.namespace,
+          batch_rows.page_url,
+          batch_rows.section_heading,
+          batch_rows.section_anchor,
+          batch_rows.section_level,
+          batch_rows.chunk_index,
+          batch_rows.chunk_text,
+          batch_rows.raw_text,
+          batch_rows.token_count,
+          CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
+          batch_rows.embedding_model,
+          batch_rows.stale,
+          batch_rows.last_modified,
+          batch_rows.revision_id,
+          ARRAY(SELECT jsonb_array_elements_text(batch_rows.language_tags))
+        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+          page_id integer,
+          page_title text,
+          namespace text,
+          page_url text,
+          section_heading text,
+          section_anchor text,
+          section_level integer,
+          chunk_index integer,
+          chunk_text text,
+          raw_text text,
+          token_count integer,
+          embedding text,
+          embedding_model text,
+          stale boolean,
+          last_modified timestamptz,
+          revision_id integer,
+          language_tags jsonb
+        )
+        ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
+      `,
+      [JSON.stringify(rows)],
+    );
+  }
+}
+
 /**
  * Create a wiki page store backed by PostgreSQL with pgvector.
  * Follows the same factory pattern as createReviewCommentStore.
@@ -108,36 +194,16 @@ export function createWikiPageStore(opts: {
     async writeChunks(chunks: WikiPageChunk[]): Promise<void> {
       if (chunks.length === 0) return;
 
-      for (const chunk of chunks) {
-        try {
-          const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-4") : null;
-          const sectionAnchor = chunk.sectionAnchor ?? "";
-          const languageTags = chunk.languageTags ?? ["general"];
-          await sql`
-            INSERT INTO wiki_pages (
-              page_id, page_title, namespace, page_url,
-              section_heading, section_anchor, section_level,
-              chunk_index, chunk_text, raw_text, token_count,
-              embedding, embedding_model, stale,
-              last_modified, revision_id, language_tags
-            ) VALUES (
-              ${chunk.pageId}, ${chunk.pageTitle}, ${chunk.namespace}, ${chunk.pageUrl},
-              ${chunk.sectionHeading ?? null}, ${sectionAnchor}, ${chunk.sectionLevel ?? null},
-              ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.rawText}, ${chunk.tokenCount},
-              ${embeddingValue}::vector, ${embeddingModel}, ${chunk.embedding ? false : true},
-              ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}, ${sql.array(languageTags)}
-            )
-            ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
-          `;
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.error(
-            { err: message, pageId: chunk.pageId, pageTitle: chunk.pageTitle },
-            "Failed to write wiki page chunk",
-          );
-          throw err;
-        }
+      try {
+        await insertWikiChunkBatches(sql, chunks, opts.embeddingModel);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        const first = chunks[0];
+        logger.error(
+          { err: message, count: chunks.length, pageId: first?.pageId, pageTitle: first?.pageTitle },
+          "Failed to write wiki page chunks",
+        );
+        throw err;
       }
     },
 
@@ -153,28 +219,7 @@ export function createWikiPageStore(opts: {
           DELETE FROM wiki_pages WHERE page_id = ${pageId}
         `;
 
-        for (const chunk of chunks) {
-          const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-4") : null;
-          const sectionAnchor = chunk.sectionAnchor ?? "";
-          const languageTags = chunk.languageTags ?? ["general"];
-          await (tx as unknown as Sql)`
-            INSERT INTO wiki_pages (
-              page_id, page_title, namespace, page_url,
-              section_heading, section_anchor, section_level,
-              chunk_index, chunk_text, raw_text, token_count,
-              embedding, embedding_model, stale,
-              last_modified, revision_id, language_tags
-            ) VALUES (
-              ${chunk.pageId}, ${chunk.pageTitle}, ${chunk.namespace}, ${chunk.pageUrl},
-              ${chunk.sectionHeading ?? null}, ${sectionAnchor}, ${chunk.sectionLevel ?? null},
-              ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.rawText}, ${chunk.tokenCount},
-              ${embeddingValue}::vector, ${embeddingModel}, ${chunk.embedding ? false : true},
-              ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}, ${sql.array(languageTags)}
-            )
-            ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
-          `;
-        }
+        await insertWikiChunkBatches(tx as unknown as Sql, chunks, opts.embeddingModel);
       });
     },
 
