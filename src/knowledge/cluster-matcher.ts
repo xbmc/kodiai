@@ -41,6 +41,64 @@ export type MatchPatternsInput = {
   repo: string;
 };
 
+type ClusterRecencyStats = {
+  recentCount: number;
+  avgAgeDays: number;
+};
+
+async function loadClusterRecencyStats(
+  sql: Sql,
+  clusterIds: number[],
+): Promise<Map<number, ClusterRecencyStats>> {
+  if (clusterIds.length === 0) return new Map();
+
+  const rows = await sql`
+    SELECT
+      rca.cluster_id,
+      COUNT(*)::int AS cnt,
+      AVG(EXTRACT(EPOCH FROM (NOW() - rc.github_created_at)) / 86400)::real AS avg_age_days
+    FROM review_cluster_assignments rca
+    JOIN review_comments rc ON rca.review_comment_id = rc.id
+    WHERE rca.cluster_id = ANY(${clusterIds})
+      AND rc.github_created_at >= NOW() - INTERVAL '60 days'
+      AND rc.deleted = false
+    GROUP BY rca.cluster_id
+  `;
+
+  const stats = new Map<number, ClusterRecencyStats>();
+  for (const row of rows) {
+    stats.set(row.cluster_id as number, {
+      recentCount: (row.cnt as number) ?? 0,
+      avgAgeDays: (row.avg_age_days as number) ?? RECENCY_WINDOW_DAYS,
+    });
+  }
+  return stats;
+}
+
+async function loadRepresentativeSamples(
+  sql: Sql,
+  clusterIds: number[],
+): Promise<Map<number, string>> {
+  if (clusterIds.length === 0) return new Map();
+
+  const rows = await sql`
+    SELECT DISTINCT ON (rca.cluster_id)
+      rca.cluster_id,
+      rc.chunk_text
+    FROM review_cluster_assignments rca
+    JOIN review_comments rc ON rca.review_comment_id = rc.id
+    WHERE rca.cluster_id = ANY(${clusterIds})
+      AND rc.deleted = false
+    ORDER BY rca.cluster_id, rca.probability DESC
+  `;
+
+  const samples = new Map<number, string>();
+  for (const row of rows) {
+    samples.set(row.cluster_id as number, (row.chunk_text as string) ?? "");
+  }
+  return samples;
+}
+
 /**
  * Match PR diff against active clusters using dual signals:
  * 1. Cosine similarity between PR embedding and cluster centroid (60% weight)
@@ -66,6 +124,11 @@ export async function matchClusterPatterns(
     const clusters = await store.getActiveClusters(input.repo);
     if (clusters.length === 0) return [];
 
+    const clusterIds = clusters.map((cluster) => cluster.id);
+    const [recencyStats, representativeSamples] = await Promise.all([
+      loadClusterRecencyStats(sql, clusterIds),
+      loadRepresentativeSamples(sql, clusterIds),
+    ]);
     const candidates: Array<ClusterPatternMatch & { _recencyWeight: number }> = [];
 
     for (const cluster of clusters) {
@@ -77,20 +140,9 @@ export async function matchClusterPatterns(
       // Signal 2: File path overlap (Jaccard)
       const pathOverlap = filePathOverlap(input.prFilePaths, cluster.filePaths);
 
-      // Signal 3: Recency — count recent members and compute recency weight
-      const recentRows = await sql`
-        SELECT
-          COUNT(*)::int AS cnt,
-          AVG(EXTRACT(EPOCH FROM (NOW() - rc.github_created_at)) / 86400)::real AS avg_age_days
-        FROM review_cluster_assignments rca
-        JOIN review_comments rc ON rca.review_comment_id = rc.id
-        WHERE rca.cluster_id = ${cluster.id}
-          AND rc.github_created_at >= NOW() - INTERVAL '60 days'
-          AND rc.deleted = false
-      `;
-
-      const recentCount = (recentRows[0]?.cnt as number) ?? 0;
-      const avgAgeDays = (recentRows[0]?.avg_age_days as number) ?? RECENCY_WINDOW_DAYS;
+      const stats = recencyStats.get(cluster.id);
+      const recentCount = stats?.recentCount ?? 0;
+      const avgAgeDays = stats?.avgAgeDays ?? RECENCY_WINDOW_DAYS;
 
       // Filter: must have 3+ members in 60-day window
       if (recentCount < 3) continue;
@@ -105,18 +157,7 @@ export async function matchClusterPatterns(
       // Filter: minimum threshold
       if (combinedScore < MIN_COMBINED_SCORE) continue;
 
-      // Fetch representative sample
-      const assignments = await store.getAssignmentsByCluster(cluster.id);
-      let representativeSample = "";
-      if (assignments.length > 0) {
-        const topAssignment = assignments[0]!;
-        const sampleRows = await sql`
-          SELECT chunk_text FROM review_comments
-          WHERE id = ${topAssignment.reviewCommentId}
-          LIMIT 1
-        `;
-        representativeSample = (sampleRows[0]?.chunk_text as string) ?? "";
-      }
+      const representativeSample = representativeSamples.get(cluster.id) ?? "";
 
       candidates.push({
         clusterId: cluster.id,

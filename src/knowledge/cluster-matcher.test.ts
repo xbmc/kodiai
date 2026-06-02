@@ -63,14 +63,20 @@ function createMockStore(clusters: ReviewCluster[]): ClusterStore {
 
 /** Mock SQL that returns configurable recent count and age. */
 function createMockSql(recentCount: number = 5, avgAgeDays: number = 10) {
-  let callCount = 0;
-  return mock((() => {
-    callCount++;
-    // Odd calls: recent count query; Even calls: sample text query
-    if (callCount % 2 === 1) {
-      return Promise.resolve([{ cnt: recentCount, avg_age_days: avgAgeDays }]);
+  return mock(((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = strings.join("?");
+    const clusterIds = Array.isArray(values[0]) ? values[0] as number[] : [1];
+    if (query.includes("COUNT(*)::int")) {
+      return Promise.resolve(clusterIds.map((clusterId) => ({
+        cluster_id: clusterId,
+        cnt: recentCount,
+        avg_age_days: avgAgeDays,
+      })));
     }
-    return Promise.resolve([{ chunk_text: "Example review comment text" }]);
+    return Promise.resolve(clusterIds.map((clusterId) => ({
+      cluster_id: clusterId,
+      chunk_text: "Example review comment text",
+    })));
   }) as any);
 }
 
@@ -128,14 +134,16 @@ describe("matchClusterPatterns", () => {
     );
     const store = createMockStore(clusters);
 
+    const sql = createMockSql(5, 5);
     const result = await matchClusterPatterns(
       { prEmbedding: new Float32Array(centroid), prFilePaths: ["src/a.ts"], repo: "test/repo" },
       store,
-      createMockSql(5, 5) as any,
+      sql as any,
       createMockLogger(),
     );
 
     expect(result.length).toBeLessThanOrEqual(3);
+    expect(sql).toHaveBeenCalledTimes(2);
   });
 
   it("filters clusters with fewer than 3 recent members", async () => {
