@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, mock } from "bun:test";
 import { createHmac } from "node:crypto";
 import { Hono } from "hono";
 import type { Logger } from "pino";
@@ -107,7 +107,10 @@ function signRequest(body: string, timestamp: string): string {
   return `v0=${createHmac("sha256", SLACK_SIGNING_SECRET).update(baseString).digest("hex")}`;
 }
 
-function createApp(profileStore: ContributorProfileStore = createMockProfileStore()): Hono {
+function createApp(
+  profileStore: ContributorProfileStore = createMockProfileStore(),
+  rateLimit?: Parameters<typeof createSlackCommandRoutes>[0]["rateLimit"],
+): Hono {
   const app = new Hono();
   app.route(
     "/webhooks/slack/commands",
@@ -115,6 +118,7 @@ function createApp(profileStore: ContributorProfileStore = createMockProfileStor
       config: createTestConfig(),
       logger: createTestLogger(),
       profileStore,
+      rateLimit,
     }),
   );
   return app;
@@ -243,6 +247,63 @@ describe("createSlackCommandRoutes", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+
+  test("rate-limits slash command requests by source before Slack signature verification", async () => {
+    const app = createApp(createMockProfileStore(), {
+      preBody: { max: 1, windowMs: 60_000 },
+    });
+    const body = "command=%2Fkodiai&text=profile&user_id=U001&user_name=test";
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const first = await app.request(
+      "http://localhost/webhooks/slack/commands",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "x-slack-request-timestamp": timestamp,
+          "x-slack-signature": "v0=invalid",
+        },
+        body,
+      },
+    );
+    const second = await app.request(
+      "http://localhost/webhooks/slack/commands",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "x-slack-request-timestamp": timestamp,
+          "x-slack-signature": "v0=invalid",
+        },
+        body,
+      },
+    );
+
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
+  });
+
+  test("rate-limits verified slash commands by Slack team and user", async () => {
+    const getBySlackUserId = mock(async () => makeProfile({
+      githubUsername: "octocat",
+      slackUserId: "U001",
+      displayName: "Octo Cat",
+    }));
+    const app = createApp(
+      createMockProfileStore({ getBySlackUserId }),
+      { verified: { max: 1, windowMs: 60_000 } },
+    );
+    const body =
+      "command=%2Fkodiai&text=profile&team_id=T001&user_id=U001&user_name=test";
+
+    const first = await postSignedCommand(app, body);
+    const second = await postSignedCommand(app, body);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(getBySlackUserId).toHaveBeenCalledTimes(1);
   });
 
   test("missing text param still dispatches (shows help)", async () => {

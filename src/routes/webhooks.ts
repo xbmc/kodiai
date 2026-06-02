@@ -17,13 +17,103 @@ interface WebhookRouteDeps {
   requestTracker: RequestTracker;
   webhookQueueStore: WebhookQueueStore;
   shutdownManager: ShutdownManager;
+  rateLimit?: WebhookRateLimitOptions;
+}
+
+type RateLimitWindowOptions = {
+  max?: number;
+  windowMs?: number;
+  maxKeys?: number;
+};
+
+type WebhookRateLimitOptions = {
+  preBody?: RateLimitWindowOptions;
+  verified?: RateLimitWindowOptions;
+};
+
+type RateLimiter = {
+  isLimited(key: string): boolean;
+};
+
+function createSlidingWindowRateLimiter(
+  options: RateLimitWindowOptions | undefined,
+  defaults: Required<RateLimitWindowOptions>,
+): RateLimiter {
+  const max = options?.max ?? defaults.max;
+  const windowMs = options?.windowMs ?? defaults.windowMs;
+  const maxKeys = options?.maxKeys ?? defaults.maxKeys;
+  const timestampsByKey = new Map<string, number[]>();
+
+  function pruneKeys(cutoff: number): void {
+    if (timestampsByKey.size <= maxKeys) return;
+    for (const [key, timestamps] of timestampsByKey) {
+      if (timestamps.length === 0 || timestamps[timestamps.length - 1]! <= cutoff) {
+        timestampsByKey.delete(key);
+      }
+      if (timestampsByKey.size <= maxKeys) return;
+    }
+
+    for (const key of timestampsByKey.keys()) {
+      timestampsByKey.delete(key);
+      if (timestampsByKey.size <= maxKeys) return;
+    }
+  }
+
+  return {
+    isLimited(key: string): boolean {
+      const now = Date.now();
+      const cutoff = now - windowMs;
+      let timestamps = timestampsByKey.get(key);
+      if (!timestamps) {
+        timestamps = [];
+        timestampsByKey.set(key, timestamps);
+      }
+
+      const validStart = timestamps.findIndex((timestamp) => timestamp > cutoff);
+      if (validStart > 0) {
+        timestamps.splice(0, validStart);
+      } else if (validStart === -1) {
+        timestamps.length = 0;
+      }
+
+      if (timestamps.length >= max) {
+        pruneKeys(cutoff);
+        return true;
+      }
+
+      timestamps.push(now);
+      pruneKeys(cutoff);
+      return false;
+    },
+  };
+}
+
+function requestSourceKey(header: (name: string) => string | undefined): string {
+  const forwardedFor = header("x-forwarded-for")?.split(",")[0]?.trim();
+  return header("cf-connecting-ip") ?? header("x-real-ip") ?? forwardedFor ?? "unknown";
 }
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
   const { config, logger, dedup, eventRouter, requestTracker, webhookQueueStore, shutdownManager } = deps;
   const app = new Hono();
+  const preBodyLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.preBody, {
+    max: 120,
+    windowMs: 60_000,
+    maxKeys: 2_000,
+  });
+  const verifiedLimiter = createSlidingWindowRateLimiter(deps.rateLimit?.verified, {
+    max: 240,
+    windowMs: 60_000,
+    maxKeys: 5_000,
+  });
 
   app.post("/github", async (c) => {
+    const sourceKey = requestSourceKey((name) => c.req.header(name));
+    if (preBodyLimiter.isLimited(`github:${sourceKey}`)) {
+      logger.warn({ sourceKey }, "GitHub webhook request rate-limited before body read");
+      return c.text("", 429);
+    }
+
     const signature = c.req.header("x-hub-signature-256");
     const deliveryId = c.req.header("x-github-delivery") ?? "unknown";
     const eventName = c.req.header("x-github-event") ?? "unknown";
@@ -67,9 +157,22 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
       (repository?.owner?.login && repository.name
         ? `${repository.owner.login}/${repository.name}`
         : undefined);
+    const installation = payload.installation as { id: number } | undefined;
+    const verifiedSourceKey = installation?.id
+      ? `installation:${installation.id}`
+      : repositoryName
+        ? `repository:${repositoryName}`
+        : `event:${eventName}`;
+
+    if (verifiedLimiter.isLimited(verifiedSourceKey)) {
+      logger.warn(
+        { deliveryId, eventName, verifiedSourceKey },
+        "GitHub webhook verified source rate-limited",
+      );
+      return c.text("", 429);
+    }
 
     // Construct the WebhookEvent
-    const installation = payload.installation as { id: number } | undefined;
     const event: WebhookEvent = {
       id: deliveryId,
       name: eventName,

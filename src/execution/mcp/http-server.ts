@@ -4,6 +4,79 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
+type RateLimitWindowOptions = {
+  max?: number;
+  windowMs?: number;
+  maxKeys?: number;
+};
+
+type McpHttpRateLimitOptions = {
+  preAuth?: RateLimitWindowOptions;
+  verified?: RateLimitWindowOptions;
+};
+
+type RateLimiter = {
+  isLimited(key: string): boolean;
+};
+
+function createSlidingWindowRateLimiter(
+  options: RateLimitWindowOptions | undefined,
+  defaults: Required<RateLimitWindowOptions>,
+): RateLimiter {
+  const max = options?.max ?? defaults.max;
+  const windowMs = options?.windowMs ?? defaults.windowMs;
+  const maxKeys = options?.maxKeys ?? defaults.maxKeys;
+  const timestampsByKey = new Map<string, number[]>();
+
+  function pruneKeys(cutoff: number): void {
+    if (timestampsByKey.size <= maxKeys) return;
+    for (const [key, timestamps] of timestampsByKey) {
+      if (timestamps.length === 0 || timestamps[timestamps.length - 1]! <= cutoff) {
+        timestampsByKey.delete(key);
+      }
+      if (timestampsByKey.size <= maxKeys) return;
+    }
+
+    for (const key of timestampsByKey.keys()) {
+      timestampsByKey.delete(key);
+      if (timestampsByKey.size <= maxKeys) return;
+    }
+  }
+
+  return {
+    isLimited(key: string): boolean {
+      const now = Date.now();
+      const cutoff = now - windowMs;
+      let timestamps = timestampsByKey.get(key);
+      if (!timestamps) {
+        timestamps = [];
+        timestampsByKey.set(key, timestamps);
+      }
+
+      const validStart = timestamps.findIndex((timestamp) => timestamp > cutoff);
+      if (validStart > 0) {
+        timestamps.splice(0, validStart);
+      } else if (validStart === -1) {
+        timestamps.length = 0;
+      }
+
+      if (timestamps.length >= max) {
+        pruneKeys(cutoff);
+        return true;
+      }
+
+      timestamps.push(now);
+      pruneKeys(cutoff);
+      return false;
+    },
+  };
+}
+
+function requestSourceKey(header: (name: string) => string | undefined): string {
+  const forwardedFor = header("x-forwarded-for")?.split(",")[0]?.trim();
+  return header("cf-connecting-ip") ?? header("x-real-ip") ?? forwardedFor ?? "unknown";
+}
+
 // ---------------------------------------------------------------------------
 // Per-job registry
 // ---------------------------------------------------------------------------
@@ -117,10 +190,30 @@ export type McpJobRegistry = ReturnType<typeof createMcpJobRegistry>;
 export function createMcpHttpRoutes(
   registry: McpJobRegistry,
   logger?: Logger,
+  options?: { rateLimit?: McpHttpRateLimitOptions } | McpHttpRateLimitOptions,
 ): Hono {
   const app = new Hono();
+  const rateLimitOptions = "rateLimit" in (options ?? {})
+    ? (options as { rateLimit?: McpHttpRateLimitOptions }).rateLimit
+    : options as McpHttpRateLimitOptions | undefined;
+  const preAuthLimiter = createSlidingWindowRateLimiter(rateLimitOptions?.preAuth, {
+    max: 240,
+    windowMs: 60_000,
+    maxKeys: 2_000,
+  });
+  const verifiedLimiter = createSlidingWindowRateLimiter(rateLimitOptions?.verified, {
+    max: 120,
+    windowMs: 60_000,
+    maxKeys: 5_000,
+  });
 
   app.all("/internal/mcp/:serverName", async (c) => {
+    const requestSource = requestSourceKey((name) => c.req.header(name));
+    if (preAuthLimiter.isLimited(`mcp:${requestSource}`)) {
+      logger?.warn({ requestSource }, "MCP HTTP: request rate-limited before auth");
+      return c.json({ error: "Rate limited" }, 429);
+    }
+
     const authHeader = c.req.header("Authorization");
     const token = authHeader?.replace(/^Bearer /, "");
 
@@ -153,11 +246,17 @@ export function createMcpHttpRoutes(
     }
 
     const serverName = c.req.param("serverName");
+    const tokenLogId = registry.getTokenLogId(token);
+    if (verifiedLimiter.isLimited(`token:${tokenLogId}:server:${serverName}`)) {
+      logger?.warn({ serverName, tokenLogId }, "MCP HTTP: verified token rate-limited");
+      return c.json({ error: "Rate limited" }, 429);
+    }
+
     const factory = registry.getFactory(token, serverName);
 
     if (!factory) {
       logger?.warn(
-        { serverName, tokenLogId: registry.getTokenLogId(token) },
+        { serverName, tokenLogId },
         "MCP HTTP: server not found",
       );
       return c.json({ error: "Not Found" }, 404);
