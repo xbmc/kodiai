@@ -99,6 +99,55 @@ function createMockEmbeddingProvider(): EmbeddingProvider & { callCount: number 
   return provider;
 }
 
+function createTrackedEmbeddingProvider(opts: {
+  nullOnCalls?: Set<number>;
+  throwOnCalls?: Set<number>;
+} = {}): EmbeddingProvider & {
+  callCount: number;
+  maxActive: number;
+  texts: string[];
+} {
+  const provider = {
+    callCount: 0,
+    active: 0,
+    maxActive: 0,
+    texts: [] as string[],
+    async generate(text: string, _inputType: "document" | "query") {
+      provider.callCount++;
+      const callNumber = provider.callCount;
+      provider.texts.push(text);
+      provider.active++;
+      provider.maxActive = Math.max(provider.maxActive, provider.active);
+      await Promise.resolve();
+      provider.active--;
+
+      if (opts.throwOnCalls?.has(callNumber)) {
+        throw new Error(`embedding failure ${callNumber}`);
+      }
+      if (opts.nullOnCalls?.has(callNumber)) {
+        return null;
+      }
+
+      return {
+        embedding: new Float32Array([callNumber]),
+        model: "voyage-code-3",
+        dimensions: 1,
+      };
+    },
+    get model() {
+      return "voyage-code-3";
+    },
+    get dimensions() {
+      return 1;
+    },
+  };
+  return provider;
+}
+
+function buildLongCommentBody(wordCount: number): string {
+  return Array.from({ length: wordCount }, (_, i) => `review-token-${i}`).join(" ");
+}
+
 /**
  * Create a mock job queue that executes jobs immediately (synchronously for testing).
  */
@@ -338,6 +387,60 @@ describe("review-comment-sync", () => {
       expect(embeddingProvider.callCount).toBeGreaterThan(0);
     });
 
+    test("embeds all chunks through the bounded batch path", async () => {
+      const router = createMockRouter();
+      const store = createMockStore();
+      const jobQueue = createImmediateJobQueue();
+      const embeddingProvider = createTrackedEmbeddingProvider();
+
+      createReviewCommentSyncHandler({
+        eventRouter: router,
+        jobQueue,
+        store,
+        embeddingProvider,
+        logger: createNoopLogger(),
+      });
+
+      const handler = router.registrations.get("pull_request_review_comment.created")![0]!;
+      await handler(buildCreatedEvent({
+        body: buildLongCommentBody(1_900),
+      }));
+
+      expect(store.writtenChunks.length).toBeGreaterThan(1);
+      expect(embeddingProvider.callCount).toBe(store.writtenChunks.length);
+      expect(embeddingProvider.maxActive).toBeGreaterThan(1);
+      expect(store.writtenChunks.every((chunk) => chunk.embedding instanceof Float32Array)).toBe(true);
+    });
+
+    test("stores all chunks fail-open when batch embeddings return null or throw", async () => {
+      const router = createMockRouter();
+      const store = createMockStore();
+      const jobQueue = createImmediateJobQueue();
+      const embeddingProvider = createTrackedEmbeddingProvider({
+        nullOnCalls: new Set([2]),
+        throwOnCalls: new Set([3]),
+      });
+
+      createReviewCommentSyncHandler({
+        eventRouter: router,
+        jobQueue,
+        store,
+        embeddingProvider,
+        logger: createNoopLogger(),
+      });
+
+      const handler = router.registrations.get("pull_request_review_comment.created")![0]!;
+      await handler(buildCreatedEvent({
+        body: buildLongCommentBody(1_900),
+      }));
+
+      expect(store.writtenChunks.length).toBeGreaterThanOrEqual(3);
+      expect(embeddingProvider.callCount).toBe(store.writtenChunks.length);
+      expect(store.writtenChunks[0]!.embedding).toBeInstanceOf(Float32Array);
+      expect(store.writtenChunks[1]!.embedding).toBeNull();
+      expect(store.writtenChunks[2]!.embedding).toBeNull();
+    });
+
     test("bot comment with login match is skipped", async () => {
       const router = createMockRouter();
       const store = createMockStore();
@@ -431,12 +534,14 @@ describe("review-comment-sync", () => {
       expect(store.writtenChunks.length).toBeGreaterThan(0);
     });
 
-    test("skips duplicate created comment before embedding", async () => {
+    test("skips duplicate created comment before chunking or embedding", async () => {
       const router = createMockRouter();
       const store = createMockStore();
-      store.existingByGithubId = buildStoredCommentRecord();
+      store.existingByGithubId = buildStoredCommentRecord({
+        body: buildLongCommentBody(1_900),
+      });
       const jobQueue = createImmediateJobQueue();
-      const embeddingProvider = createMockEmbeddingProvider();
+      const embeddingProvider = createTrackedEmbeddingProvider();
 
       createReviewCommentSyncHandler({
         eventRouter: router,
@@ -447,7 +552,9 @@ describe("review-comment-sync", () => {
       });
 
       const handler = router.registrations.get("pull_request_review_comment.created")![0]!;
-      await handler(buildCreatedEvent());
+      await handler(buildCreatedEvent({
+        body: buildLongCommentBody(1_900),
+      }));
 
       expect(store.writtenChunks.length).toBe(0);
       expect(embeddingProvider.callCount).toBe(0);
@@ -478,15 +585,11 @@ describe("review-comment-sync", () => {
       expect(embeddingProvider.callCount).toBeGreaterThan(0);
     });
 
-    test("skips no-op edit before embedding", async () => {
+    test("embeds edited comment chunks through the bounded batch path", async () => {
       const router = createMockRouter();
       const store = createMockStore();
-      store.existingByGithubId = buildStoredCommentRecord({
-        body: "Updated: This is definitely a null pointer issue.",
-        githubUpdatedAt: "2026-02-20T10:00:00.000Z",
-      });
       const jobQueue = createImmediateJobQueue();
-      const embeddingProvider = createMockEmbeddingProvider();
+      const embeddingProvider = createTrackedEmbeddingProvider();
 
       createReviewCommentSyncHandler({
         eventRouter: router,
@@ -497,7 +600,38 @@ describe("review-comment-sync", () => {
       });
 
       const handler = router.registrations.get("pull_request_review_comment.edited")![0]!;
-      await handler(buildEditedEvent());
+      await handler(buildEditedEvent({
+        body: buildLongCommentBody(1_900),
+      }));
+
+      expect(store.updatedChunks.length).toBeGreaterThan(1);
+      expect(embeddingProvider.callCount).toBe(store.updatedChunks.length);
+      expect(embeddingProvider.maxActive).toBeGreaterThan(1);
+      expect(store.updatedChunks.every((chunk) => chunk.embedding instanceof Float32Array)).toBe(true);
+    });
+
+    test("skips no-op edit before chunking or embedding", async () => {
+      const router = createMockRouter();
+      const store = createMockStore();
+      store.existingByGithubId = buildStoredCommentRecord({
+        body: buildLongCommentBody(1_900),
+        githubUpdatedAt: "2026-02-20T10:00:00.000Z",
+      });
+      const jobQueue = createImmediateJobQueue();
+      const embeddingProvider = createTrackedEmbeddingProvider();
+
+      createReviewCommentSyncHandler({
+        eventRouter: router,
+        jobQueue,
+        store,
+        embeddingProvider,
+        logger: createNoopLogger(),
+      });
+
+      const handler = router.registrations.get("pull_request_review_comment.edited")![0]!;
+      await handler(buildEditedEvent({
+        body: buildLongCommentBody(1_900),
+      }));
 
       expect(store.updatedChunks.length).toBe(0);
       expect(embeddingProvider.callCount).toBe(0);
