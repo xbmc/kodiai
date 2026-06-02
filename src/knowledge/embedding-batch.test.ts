@@ -39,4 +39,40 @@ describe("generateDocumentEmbeddingsBatch", () => {
     expect(Array.from(embeddings[3]!)).toEqual([4]);
     expect(Array.from(embeddings[4]!)).toEqual([4]);
   });
+
+  test("can return per-item status metadata for fail-open callers", async () => {
+    const thrownError = new Error("provider unavailable");
+    const provider: Pick<EmbeddingProvider, "generate"> = {
+      async generate(text: string) {
+        if (text === "returns-null") return null;
+        if (text === "throws") throw thrownError;
+        return {
+          embedding: new Float32Array([text.length]),
+          model: "test-model",
+          dimensions: 1,
+        };
+      },
+    };
+
+    const results = await generateDocumentEmbeddingsBatch({
+      texts: ["one", "returns-null", "throws"],
+      embeddingProvider: provider,
+      includeResults: true,
+    });
+
+    expect(results[0]).toEqual({
+      status: "success",
+      embedding: new Float32Array([3]),
+      model: "test-model",
+    });
+    expect(results[1]).toEqual({
+      status: "unavailable",
+      embedding: null,
+    });
+    expect(results[2]).toEqual({
+      status: "failed",
+      embedding: null,
+      err: thrownError,
+    });
+  });
 });

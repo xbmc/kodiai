@@ -13,11 +13,13 @@ function createMockLogger() {
 }
 
 function createEmbeddingProvider(config?: {
+  calls?: string[];
   nullFor?: string[];
   throwFor?: string[];
 }): Pick<EmbeddingProvider, "generate"> {
   return {
     async generate(text: string) {
+      config?.calls?.push(text);
       if (config?.throwFor?.some((needle) => text.includes(needle))) {
         throw new Error(`embedding exploded for ${text}`);
       }
@@ -237,10 +239,11 @@ describe("updateCanonicalCodeSnapshot", () => {
       },
     ];
     const harness = createStoreHarness(existingRows);
+    const embeddedTexts: string[] = [];
 
     const result = await updateCanonicalCodeSnapshot({
       store: harness.store,
-      embeddingProvider: createEmbeddingProvider(),
+      embeddingProvider: createEmbeddingProvider({ calls: embeddedTexts }),
       logger: createMockLogger() as never,
       request: {
         repo: "kodi",
@@ -270,6 +273,9 @@ describe("updateCanonicalCodeSnapshot", () => {
     expect(harness.upsertCalls[0]?.symbolName).toBe("boot");
     expect(harness.upsertCalls[0]?.commitSha).toBe("def456");
     expect(harness.upsertCalls[0]?.chunkText).toContain("return !config.enabled;");
+    expect(embeddedTexts).toHaveLength(1);
+    expect(embeddedTexts[0]).toContain("return !config.enabled;");
+    expect(embeddedTexts[0]).not.toContain("export const config = { enabled: true };");
   });
 
   it("removes stale identities when a changed file drops a chunk", async () => {
@@ -414,9 +420,88 @@ describe("updateCanonicalCodeSnapshot", () => {
     });
 
     expect(result.failed).toBe(1);
+    expect(result.fileResults[0]?.failed).toBe(1);
     expect(result.updated).toBe(0);
     expect(result.unchanged).toBe(0);
     expect(harness.upsertCalls).toHaveLength(0);
-    expect((logger.warn as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThan(0);
+    expect((logger.warn as ReturnType<typeof mock>).mock.calls).toContainEqual([
+      {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "def456",
+        filePath: "src/player.ts",
+        startLine: 1,
+        endLine: 3,
+      },
+      "Canonical code update embedding unavailable (fail-open)",
+    ]);
+  });
+
+  it("fails open and logs provider errors for a changed chunk", async () => {
+    const existingRows: CanonicalChunkWriteInput[] = [
+      {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "abc123",
+        filePath: "src/player.ts",
+        language: "TypeScript",
+        startLine: 3,
+        endLine: 5,
+        chunkType: "function",
+        symbolName: "boot",
+        chunkText: "export function boot() {\n  return config.enabled;\n}",
+        contentHash: FUNCTION_HASH,
+        embeddingModel: "voyage-test",
+      },
+    ];
+    const harness = createStoreHarness(existingRows);
+    const logger = createMockLogger();
+
+    const result = await updateCanonicalCodeSnapshot({
+      store: harness.store,
+      embeddingProvider: createEmbeddingProvider({ throwFor: ["!config.enabled"] }),
+      logger: logger as never,
+      request: {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "def456",
+        files: [
+          {
+            filePath: "src/player.ts",
+            fileContent: [
+              "export function boot() {",
+              "  return !config.enabled;",
+              "}",
+            ].join("\n"),
+          },
+        ],
+      },
+    });
+
+    expect(result.failed).toBe(1);
+    expect(result.fileResults[0]?.failed).toBe(1);
+    expect(result.updated).toBe(0);
+    expect(result.unchanged).toBe(0);
+    expect(harness.upsertCalls).toHaveLength(0);
+    expect((logger.warn as ReturnType<typeof mock>).mock.calls).toContainEqual([
+      {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "def456",
+        filePath: "src/player.ts",
+        startLine: 1,
+        endLine: 3,
+        err: [
+          "embedding exploded for export function boot() {",
+          "  return !config.enabled;",
+          "}",
+        ].join("\n"),
+      },
+      "Canonical code update embedding failed (fail-open)",
+    ]);
   });
 });
