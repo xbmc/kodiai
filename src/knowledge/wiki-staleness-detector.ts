@@ -20,6 +20,7 @@ import type {
   WikiStalenessRunState,
   MergedPR,
 } from "./wiki-staleness-types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { parseIssueReferences } from "../lib/issue-reference-parser.ts";
 
 const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -28,27 +29,6 @@ const LLM_CAP = 20; // max pages to LLM-evaluate per cycle
 const MAX_SCAN_WINDOW_DAYS = 7; // cap on commit scan window regardless of threshold
 const PR_FILE_FETCH_CONCURRENCY = 4;
 const LLM_EVALUATION_CONCURRENCY = 3;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await fn(items[index]!, index);
-    }
-  }
-
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
-}
 
 // ── Run state persistence ────────────────────────────────────────────
 

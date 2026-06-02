@@ -11,6 +11,7 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { JobQueue } from "../jobs/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 type SyncCandidate = {
   findingId: number;
@@ -73,27 +74,6 @@ function logReactionFetchFailure(params: {
 const DEFAULT_MAX_CANDIDATES = 100;
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
 const REACTION_FETCH_CONCURRENCY = 4;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await fn(items[index]!, index);
-    }
-  }
-
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
-}
 
 function normalizeLogin(login: string | undefined): string {
   return (login ?? "").trim().toLowerCase().replace(/\[bot\]$/i, "");
