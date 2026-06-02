@@ -424,7 +424,9 @@ describe("updateCanonicalCodeSnapshot", () => {
     expect(result.updated).toBe(0);
     expect(result.unchanged).toBe(0);
     expect(harness.upsertCalls).toHaveLength(0);
-    expect((logger.warn as ReturnType<typeof mock>).mock.calls).toContainEqual([
+    const warnMock = logger.warn as ReturnType<typeof mock>;
+    expect(warnMock).toHaveBeenCalledTimes(1);
+    expect(warnMock.mock.calls).toContainEqual([
       {
         repo: "kodi",
         owner: "xbmc",
@@ -486,7 +488,9 @@ describe("updateCanonicalCodeSnapshot", () => {
     expect(result.updated).toBe(0);
     expect(result.unchanged).toBe(0);
     expect(harness.upsertCalls).toHaveLength(0);
-    expect((logger.warn as ReturnType<typeof mock>).mock.calls).toContainEqual([
+    const warnMock = logger.warn as ReturnType<typeof mock>;
+    expect(warnMock).toHaveBeenCalledTimes(1);
+    expect(warnMock.mock.calls).toContainEqual([
       {
         repo: "kodi",
         owner: "xbmc",

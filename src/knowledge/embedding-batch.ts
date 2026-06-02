@@ -32,6 +32,10 @@ export async function generateDocumentEmbeddingsBatch(
   opts: GenerateDocumentEmbeddingsBatchBaseOptions & { includeResults?: false },
 ): Promise<Array<Float32Array | null>>;
 
+export async function generateDocumentEmbeddingsBatch(
+  opts: GenerateDocumentEmbeddingsBatchBaseOptions & { includeResults: boolean },
+): Promise<Array<Float32Array | null> | DocumentEmbeddingBatchResult[]>;
+
 export async function generateDocumentEmbeddingsBatch(opts: {
   texts: string[];
   embeddingProvider: Pick<EmbeddingProvider, "generate">;
