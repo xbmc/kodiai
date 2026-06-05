@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildJsonbRecordBatches } from "./jsonb-batch.ts";
+import { buildJsonbRecordBatches, executeJsonbRecordBatches } from "./jsonb-batch.ts";
 
 describe("buildJsonbRecordBatches", () => {
   test("builds JSONB payloads in bounded chunks", () => {
@@ -26,5 +26,25 @@ describe("buildJsonbRecordBatches", () => {
     expect(() => buildJsonbRecordBatches([{ id: 1 }], 0, (row) => row)).toThrow(
       "Invalid JSONB recordset batch size",
     );
+  });
+
+  test("executes JSONB batches through one canonical loop", async () => {
+    const seen: unknown[] = [];
+
+    const results = await executeJsonbRecordBatches(
+      [{ id: 1 }, { id: 2 }, { id: 3 }],
+      2,
+      (row) => ({ value_id: row.id }),
+      async (batch) => {
+        seen.push(JSON.parse(batch.json));
+        return batch.rows.length;
+      },
+    );
+
+    expect(results).toEqual([2, 1]);
+    expect(seen).toEqual([
+      [{ value_id: 1 }, { value_id: 2 }],
+      [{ value_id: 3 }],
+    ]);
   });
 });

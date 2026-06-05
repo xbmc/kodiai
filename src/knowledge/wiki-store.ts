@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { buildJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   WikiEmbeddingRepairCheckpoint,
   WikiPageChunk,
@@ -123,64 +123,63 @@ async function insertWikiChunkBatches(
   chunks: WikiPageChunk[],
   embeddingModelOverride?: string,
 ): Promise<void> {
-  const batches = buildJsonbRecordBatches(
+  await executeJsonbRecordBatches(
     chunks,
     WIKI_CHUNK_WRITE_BATCH_SIZE,
     (chunk) => wikiChunkToBatchRow(chunk, embeddingModelOverride),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO wiki_pages (
+            page_id, page_title, namespace, page_url,
+            section_heading, section_anchor, section_level,
+            chunk_index, chunk_text, raw_text, token_count,
+            embedding, embedding_model, stale,
+            last_modified, revision_id, language_tags
+          )
+          SELECT
+            batch_rows.page_id,
+            batch_rows.page_title,
+            batch_rows.namespace,
+            batch_rows.page_url,
+            batch_rows.section_heading,
+            batch_rows.section_anchor,
+            batch_rows.section_level,
+            batch_rows.chunk_index,
+            batch_rows.chunk_text,
+            batch_rows.raw_text,
+            batch_rows.token_count,
+            CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
+            batch_rows.embedding_model,
+            batch_rows.stale,
+            batch_rows.last_modified,
+            batch_rows.revision_id,
+            ARRAY(SELECT jsonb_array_elements_text(batch_rows.language_tags))
+          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+            page_id integer,
+            page_title text,
+            namespace text,
+            page_url text,
+            section_heading text,
+            section_anchor text,
+            section_level integer,
+            chunk_index integer,
+            chunk_text text,
+            raw_text text,
+            token_count integer,
+            embedding text,
+            embedding_model text,
+            stale boolean,
+            last_modified timestamptz,
+            revision_id integer,
+            language_tags jsonb
+          )
+          ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
+        `,
+        [batch.json],
+      );
+    },
   );
-
-  for (const batch of batches) {
-    await sqlClient.unsafe(
-      `
-        INSERT INTO wiki_pages (
-          page_id, page_title, namespace, page_url,
-          section_heading, section_anchor, section_level,
-          chunk_index, chunk_text, raw_text, token_count,
-          embedding, embedding_model, stale,
-          last_modified, revision_id, language_tags
-        )
-        SELECT
-          batch_rows.page_id,
-          batch_rows.page_title,
-          batch_rows.namespace,
-          batch_rows.page_url,
-          batch_rows.section_heading,
-          batch_rows.section_anchor,
-          batch_rows.section_level,
-          batch_rows.chunk_index,
-          batch_rows.chunk_text,
-          batch_rows.raw_text,
-          batch_rows.token_count,
-          CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
-          batch_rows.embedding_model,
-          batch_rows.stale,
-          batch_rows.last_modified,
-          batch_rows.revision_id,
-          ARRAY(SELECT jsonb_array_elements_text(batch_rows.language_tags))
-        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-          page_id integer,
-          page_title text,
-          namespace text,
-          page_url text,
-          section_heading text,
-          section_anchor text,
-          section_level integer,
-          chunk_index integer,
-          chunk_text text,
-          raw_text text,
-          token_count integer,
-          embedding text,
-          embedding_model text,
-          stale boolean,
-          last_modified timestamptz,
-          revision_id integer,
-          language_tags jsonb
-        )
-        ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
-      `,
-      [batch.json],
-    );
-  }
 }
 
 /**

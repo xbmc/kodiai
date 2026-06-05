@@ -24,3 +24,16 @@ export function buildJsonbRecordBatches<T>(
   }
   return batches;
 }
+
+export async function executeJsonbRecordBatches<T, R>(
+  rows: readonly T[],
+  batchSize: number,
+  rowToRecord: (row: T) => Record<string, unknown>,
+  executeBatch: (batch: JsonbRecordBatch<T>) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (const batch of buildJsonbRecordBatches(rows, batchSize, rowToRecord)) {
+    results.push(await executeBatch(batch));
+  }
+  return results;
+}

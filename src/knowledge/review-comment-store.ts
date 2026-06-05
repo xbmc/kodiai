@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { buildJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   ReviewCommentChunk,
   ReviewCommentRecord,
@@ -188,75 +188,74 @@ async function insertReviewCommentChunkBatches(
   const onConflictClause = opts?.onConflictDoNothing
     ? "ON CONFLICT (repo, comment_github_id, chunk_index) DO NOTHING"
     : "";
-  const batches = buildJsonbRecordBatches(
+  await executeJsonbRecordBatches(
     chunks,
     REVIEW_COMMENT_CHUNK_WRITE_BATCH_SIZE,
     reviewCommentChunkToBatchRow,
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO review_comments (
+            repo, owner, pr_number, pr_title, comment_github_id,
+            thread_id, in_reply_to_id, file_path, start_line, end_line,
+            diff_hunk, author_login, author_association, body,
+            chunk_index, chunk_text, token_count,
+            embedding, embedding_model,
+            github_created_at, github_updated_at, backfill_batch
+          )
+          SELECT
+            batch_rows.repo,
+            batch_rows.owner,
+            batch_rows.pr_number,
+            batch_rows.pr_title,
+            batch_rows.comment_github_id,
+            batch_rows.thread_id,
+            batch_rows.in_reply_to_id,
+            batch_rows.file_path,
+            batch_rows.start_line,
+            batch_rows.end_line,
+            batch_rows.diff_hunk,
+            batch_rows.author_login,
+            batch_rows.author_association,
+            batch_rows.body,
+            batch_rows.chunk_index,
+            batch_rows.chunk_text,
+            batch_rows.token_count,
+            CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
+            batch_rows.embedding_model,
+            batch_rows.github_created_at,
+            batch_rows.github_updated_at,
+            batch_rows.backfill_batch
+          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+            repo text,
+            owner text,
+            pr_number integer,
+            pr_title text,
+            comment_github_id bigint,
+            thread_id text,
+            in_reply_to_id bigint,
+            file_path text,
+            start_line integer,
+            end_line integer,
+            diff_hunk text,
+            author_login text,
+            author_association text,
+            body text,
+            chunk_index integer,
+            chunk_text text,
+            token_count integer,
+            embedding text,
+            embedding_model text,
+            github_created_at timestamptz,
+            github_updated_at timestamptz,
+            backfill_batch text
+          )
+          ${onConflictClause}
+        `,
+        [batch.json],
+      );
+    },
   );
-
-  for (const batch of batches) {
-    await sqlClient.unsafe(
-      `
-        INSERT INTO review_comments (
-          repo, owner, pr_number, pr_title, comment_github_id,
-          thread_id, in_reply_to_id, file_path, start_line, end_line,
-          diff_hunk, author_login, author_association, body,
-          chunk_index, chunk_text, token_count,
-          embedding, embedding_model,
-          github_created_at, github_updated_at, backfill_batch
-        )
-        SELECT
-          batch_rows.repo,
-          batch_rows.owner,
-          batch_rows.pr_number,
-          batch_rows.pr_title,
-          batch_rows.comment_github_id,
-          batch_rows.thread_id,
-          batch_rows.in_reply_to_id,
-          batch_rows.file_path,
-          batch_rows.start_line,
-          batch_rows.end_line,
-          batch_rows.diff_hunk,
-          batch_rows.author_login,
-          batch_rows.author_association,
-          batch_rows.body,
-          batch_rows.chunk_index,
-          batch_rows.chunk_text,
-          batch_rows.token_count,
-          CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
-          batch_rows.embedding_model,
-          batch_rows.github_created_at,
-          batch_rows.github_updated_at,
-          batch_rows.backfill_batch
-        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-          repo text,
-          owner text,
-          pr_number integer,
-          pr_title text,
-          comment_github_id bigint,
-          thread_id text,
-          in_reply_to_id bigint,
-          file_path text,
-          start_line integer,
-          end_line integer,
-          diff_hunk text,
-          author_login text,
-          author_association text,
-          body text,
-          chunk_index integer,
-          chunk_text text,
-          token_count integer,
-          embedding text,
-          embedding_model text,
-          github_created_at timestamptz,
-          github_updated_at timestamptz,
-          backfill_batch text
-        )
-        ${onConflictClause}
-      `,
-      [batch.json],
-    );
-  }
 }
 
 /**

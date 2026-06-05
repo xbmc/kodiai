@@ -186,6 +186,45 @@ describe("createReviewGraphStore batching", () => {
     expect(JSON.parse(txCalls[4]?.values[0] as string)).toHaveLength(2);
   });
 
+  test("replaceFileGraph splits large node payloads into bounded batches", async () => {
+    const nodeCount = 501;
+    const nodes = Array.from({ length: nodeCount }, (_, index) => ({
+      nodeKind: "symbol" as const,
+      stableKey: `symbol:src/app.py:item_${index}`,
+      symbolName: `item_${index}`,
+      language: "python",
+    }));
+    const insertedRows = nodes.map((node, index) => ({
+      stable_key: node.stableKey,
+      id: 100 + index,
+    }));
+    const { sql, calls } = createMockSql([
+      [makeFileRow()],
+      [],
+      [],
+      insertedRows.slice(0, 500),
+      insertedRows.slice(500),
+    ]);
+    const store = createReviewGraphStore({ sql, logger: mockLogger });
+
+    const result = await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/app.py",
+        language: "python",
+      },
+      nodes,
+      edges: [],
+    });
+
+    expect(result.nodesWritten).toBe(nodeCount);
+    const unsafeCalls = calls.filter((call) => call.kind === "unsafe");
+    expect(unsafeCalls).toHaveLength(2);
+    expect(JSON.parse(unsafeCalls[0]!.values[0] as string)).toHaveLength(500);
+    expect(JSON.parse(unsafeCalls[1]!.values[0] as string)).toHaveLength(1);
+  });
+
   test("replaceFileGraph skips empty node and edge batch inserts", async () => {
     const { sql, calls } = createMockSql([
       [makeFileRow()],

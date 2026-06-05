@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { buildJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
@@ -63,7 +63,7 @@ function _normalizeDbNumber(value: unknown): number | null {
 const KNOWLEDGE_STORE_WRITE_BATCH_SIZE = 1000;
 
 async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]): Promise<void> {
-  const batches = buildJsonbRecordBatches(
+  await executeJsonbRecordBatches(
     findings,
     KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
     (finding) => ({
@@ -81,53 +81,52 @@ async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]):
       comment_surface: finding.commentSurface ?? null,
       review_output_key: finding.reviewOutputKey ?? null,
     }),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO findings (
+            review_id, file_path, start_line, end_line,
+            severity, category, confidence, title, suppressed, suppression_pattern,
+            comment_id, comment_surface, review_output_key
+          )
+          SELECT
+            batch_rows.review_id,
+            batch_rows.file_path,
+            batch_rows.start_line,
+            batch_rows.end_line,
+            batch_rows.severity,
+            batch_rows.category,
+            batch_rows.confidence,
+            batch_rows.title,
+            batch_rows.suppressed,
+            batch_rows.suppression_pattern,
+            batch_rows.comment_id,
+            batch_rows.comment_surface,
+            batch_rows.review_output_key
+          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+            review_id integer,
+            file_path text,
+            start_line integer,
+            end_line integer,
+            severity text,
+            category text,
+            confidence integer,
+            title text,
+            suppressed boolean,
+            suppression_pattern text,
+            comment_id bigint,
+            comment_surface text,
+            review_output_key text
+          )
+        `,
+        [batch.json],
+      );
+    },
   );
-
-  for (const batch of batches) {
-    await sqlClient.unsafe(
-      `
-        INSERT INTO findings (
-          review_id, file_path, start_line, end_line,
-          severity, category, confidence, title, suppressed, suppression_pattern,
-          comment_id, comment_surface, review_output_key
-        )
-        SELECT
-          batch_rows.review_id,
-          batch_rows.file_path,
-          batch_rows.start_line,
-          batch_rows.end_line,
-          batch_rows.severity,
-          batch_rows.category,
-          batch_rows.confidence,
-          batch_rows.title,
-          batch_rows.suppressed,
-          batch_rows.suppression_pattern,
-          batch_rows.comment_id,
-          batch_rows.comment_surface,
-          batch_rows.review_output_key
-        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-          review_id integer,
-          file_path text,
-          start_line integer,
-          end_line integer,
-          severity text,
-          category text,
-          confidence integer,
-          title text,
-          suppressed boolean,
-          suppression_pattern text,
-          comment_id integer,
-          comment_surface text,
-          review_output_key text
-        )
-      `,
-      [batch.json],
-    );
-  }
 }
 
 async function _insertFeedbackReactionBatches(sqlClient: Sql, reactions: FeedbackReaction[]): Promise<void> {
-  const batches = buildJsonbRecordBatches(
+  await executeJsonbRecordBatches(
     reactions,
     KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
     (reaction) => ({
@@ -145,54 +144,53 @@ async function _insertFeedbackReactionBatches(sqlClient: Sql, reactions: Feedbac
       file_path: reaction.filePath,
       title: reaction.title,
     }),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO feedback_reactions (
+            repo, review_id, finding_id, comment_id, comment_surface,
+            reaction_id, reaction_content, reactor_login, reacted_at,
+            severity, category, file_path, title
+          )
+          SELECT
+            batch_rows.repo,
+            batch_rows.review_id,
+            batch_rows.finding_id,
+            batch_rows.comment_id,
+            batch_rows.comment_surface,
+            batch_rows.reaction_id,
+            batch_rows.reaction_content,
+            batch_rows.reactor_login,
+            batch_rows.reacted_at,
+            batch_rows.severity,
+            batch_rows.category,
+            batch_rows.file_path,
+            batch_rows.title
+          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+            repo text,
+            review_id integer,
+            finding_id integer,
+            comment_id bigint,
+            comment_surface text,
+            reaction_id bigint,
+            reaction_content text,
+            reactor_login text,
+            reacted_at timestamptz,
+            severity text,
+            category text,
+            file_path text,
+            title text
+          )
+          ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING
+        `,
+        [batch.json],
+      );
+    },
   );
-
-  for (const batch of batches) {
-    await sqlClient.unsafe(
-      `
-        INSERT INTO feedback_reactions (
-          repo, review_id, finding_id, comment_id, comment_surface,
-          reaction_id, reaction_content, reactor_login, reacted_at,
-          severity, category, file_path, title
-        )
-        SELECT
-          batch_rows.repo,
-          batch_rows.review_id,
-          batch_rows.finding_id,
-          batch_rows.comment_id,
-          batch_rows.comment_surface,
-          batch_rows.reaction_id,
-          batch_rows.reaction_content,
-          batch_rows.reactor_login,
-          batch_rows.reacted_at,
-          batch_rows.severity,
-          batch_rows.category,
-          batch_rows.file_path,
-          batch_rows.title
-        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-          repo text,
-          review_id integer,
-          finding_id integer,
-          comment_id integer,
-          comment_surface text,
-          reaction_id integer,
-          reaction_content text,
-          reactor_login text,
-          reacted_at timestamptz,
-          severity text,
-          category text,
-          file_path text,
-          title text
-        )
-        ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING
-      `,
-      [batch.json],
-    );
-  }
 }
 
 async function _insertSuppressionLogBatches(sqlClient: Sql, entries: SuppressionLogEntry[]): Promise<void> {
-  const batches = buildJsonbRecordBatches(
+  await executeJsonbRecordBatches(
     entries,
     KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
     (entry) => ({
@@ -201,27 +199,26 @@ async function _insertSuppressionLogBatches(sqlClient: Sql, entries: Suppression
       matched_count: entry.matchedCount,
       finding_ids: entry.findingIds ? JSON.stringify(entry.findingIds) : null,
     }),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
+          SELECT
+            batch_rows.review_id,
+            batch_rows.pattern,
+            batch_rows.matched_count,
+            batch_rows.finding_ids
+          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+            review_id integer,
+            pattern text,
+            matched_count integer,
+            finding_ids text
+          )
+        `,
+        [batch.json],
+      );
+    },
   );
-
-  for (const batch of batches) {
-    await sqlClient.unsafe(
-      `
-        INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
-        SELECT
-          batch_rows.review_id,
-          batch_rows.pattern,
-          batch_rows.matched_count,
-          batch_rows.finding_ids
-        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-          review_id integer,
-          pattern text,
-          matched_count integer,
-          finding_ids text
-        )
-      `,
-      [batch.json],
-    );
-  }
 }
 
 export function createKnowledgeStore(opts: {

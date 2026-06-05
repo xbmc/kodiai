@@ -65,7 +65,14 @@ function makeFinding(index: number) {
   };
 }
 
-function makeFeedbackReaction(index: number) {
+function makeFeedbackReaction(index: number, overrides: Partial<ReturnType<typeof makeFeedbackReactionBase>> = {}) {
+  return {
+    ...makeFeedbackReactionBase(index),
+    ...overrides,
+  };
+}
+
+function makeFeedbackReactionBase(index: number) {
   return {
     repo: "owner/repo",
     reviewId: 10,
@@ -110,6 +117,28 @@ describe("KnowledgeStore batch SQL", () => {
     expect(mockSql.unsafeCalls).toHaveLength(1);
     expect(mockSql.unsafeCalls[0]!.query).toContain("ON CONFLICT");
     expect(mockSql.unsafeCalls[0]!.query).toContain("feedback_reactions");
+  });
+
+  test("batch recordsets preserve GitHub-sized comment ids as bigint", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+    const githubCommentId = 4_153_840_487;
+
+    await batchStore.recordFindings([
+      {
+        ...makeFinding(0),
+        commentId: githubCommentId,
+        commentSurface: "pull_request_review_comment",
+      },
+    ]);
+    await batchStore.recordFeedbackReactions([
+      makeFeedbackReaction(0, { commentId: githubCommentId }),
+    ]);
+
+    expect(mockSql.unsafeCalls[0]!.query).toContain("comment_id bigint");
+    expect(mockSql.unsafeCalls[1]!.query).toContain("comment_id bigint");
+    expect(JSON.parse(mockSql.unsafeCalls[0]!.values[0] as string)[0].comment_id).toBe(githubCommentId);
+    expect(JSON.parse(mockSql.unsafeCalls[1]!.values[0] as string)[0].comment_id).toBe(githubCommentId);
   });
 
   test("recordSuppressionLog batches rows and skips empty input", async () => {
