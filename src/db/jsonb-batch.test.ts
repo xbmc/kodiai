@@ -78,5 +78,8 @@ describe("buildJsonbRecordBatches", () => {
     expect(() => buildJsonbRecordsetSource("batch_rows", [["id", "integer; drop table"]])).toThrow(
       "Invalid JSONB recordset type",
     );
+    expect(() => buildJsonbRecordsetSource("batch_rows", [["id", "money"]])).toThrow(
+      "Unsupported JSONB recordset type",
+    );
   });
 });

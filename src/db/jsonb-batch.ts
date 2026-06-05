@@ -6,7 +6,15 @@ export type JsonbRecordBatch<T> = {
 export type JsonbRecordsetColumn = readonly [name: string, type: string];
 
 const SQL_IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/;
-const SQL_TYPE_RE = /^[a-z][a-z0-9_]*(?:\[\])?$/;
+const JSONB_RECORDSET_TYPES = new Set([
+  "bigint",
+  "boolean",
+  "integer",
+  "jsonb",
+  "real",
+  "text",
+  "timestamptz",
+]);
 
 function assertRecordsetIdentifier(value: string): void {
   if (!SQL_IDENTIFIER_RE.test(value)) {
@@ -15,8 +23,11 @@ function assertRecordsetIdentifier(value: string): void {
 }
 
 function assertRecordsetType(value: string): void {
-  if (!SQL_TYPE_RE.test(value)) {
+  if (value !== value.trim() || /[\s;(),]/.test(value)) {
     throw new Error(`Invalid JSONB recordset type: ${value}`);
+  }
+  if (!JSONB_RECORDSET_TYPES.has(value)) {
+    throw new Error(`Unsupported JSONB recordset type: ${value}`);
   }
 }
 
