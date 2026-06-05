@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { withTransientDbRetry } from "../db/transient-retry.ts";
 import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "./profile-trust.ts";
 import type {
   ContributorExpertise,
@@ -57,6 +58,11 @@ export function createContributorProfileStore(opts: {
 }): ContributorProfileStore {
   const { sql, logger } = opts;
 
+  const writeWithRetry = <T>(
+    operation: () => Promise<T>,
+    context: Record<string, unknown>,
+  ) => withTransientDbRetry(operation, { logger, context });
+
   const store: ContributorProfileStore = {
     async getByGithubUsername(
       username: string,
@@ -92,15 +98,18 @@ export function createContributorProfileStore(opts: {
       displayName: string;
     }): Promise<ContributorProfile> {
       const { slackUserId, githubUsername, displayName } = params;
-      const rows = await sql`
-        INSERT INTO contributor_profiles (github_username, slack_user_id, display_name)
-        VALUES (${githubUsername}, ${slackUserId}, ${displayName})
-        ON CONFLICT (github_username) DO UPDATE SET
-          slack_user_id = EXCLUDED.slack_user_id,
-          display_name = EXCLUDED.display_name,
-          updated_at = now()
-        RETURNING *
-      `;
+      const rows = await writeWithRetry(
+        () => sql`
+          INSERT INTO contributor_profiles (github_username, slack_user_id, display_name)
+          VALUES (${githubUsername}, ${slackUserId}, ${displayName})
+          ON CONFLICT (github_username) DO UPDATE SET
+            slack_user_id = EXCLUDED.slack_user_id,
+            display_name = EXCLUDED.display_name,
+            updated_at = now()
+          RETURNING *
+        `,
+        { githubUsername, slackUserId, writePath: "contributor_link_identity" },
+      );
       logger.debug(
         { githubUsername, slackUserId },
         "Linked contributor identity",
@@ -109,20 +118,26 @@ export function createContributorProfileStore(opts: {
     },
 
     async unlinkSlack(githubUsername: string): Promise<void> {
-      await sql`
-        UPDATE contributor_profiles
-        SET slack_user_id = NULL, updated_at = now()
-        WHERE github_username = ${githubUsername}
-      `;
+      await writeWithRetry(
+        () => sql`
+          UPDATE contributor_profiles
+          SET slack_user_id = NULL, updated_at = now()
+          WHERE github_username = ${githubUsername}
+        `,
+        { githubUsername, writePath: "contributor_unlink_slack" },
+      );
       logger.debug({ githubUsername }, "Unlinked Slack from contributor");
     },
 
     async setOptedOut(githubUsername: string, optedOut: boolean): Promise<void> {
-      await sql`
-        UPDATE contributor_profiles
-        SET opted_out = ${optedOut}, updated_at = now()
-        WHERE github_username = ${githubUsername}
-      `;
+      await writeWithRetry(
+        () => sql`
+          UPDATE contributor_profiles
+          SET opted_out = ${optedOut}, updated_at = now()
+          WHERE github_username = ${githubUsername}
+        `,
+        { githubUsername, optedOut, writePath: "contributor_set_opted_out" },
+      );
       logger.debug({ githubUsername, optedOut }, "Updated contributor opt-out");
     },
 
@@ -145,15 +160,23 @@ export function createContributorProfileStore(opts: {
     }): Promise<void> {
       const { profileId, dimension, topic, score, rawSignals, lastActive } =
         params;
-      await sql`
-        INSERT INTO contributor_expertise (profile_id, dimension, topic, score, raw_signals, last_active)
-        VALUES (${profileId}, ${dimension}, ${topic}, ${score}, ${rawSignals}, ${lastActive})
-        ON CONFLICT (profile_id, dimension, topic) DO UPDATE SET
-          score = EXCLUDED.score,
-          raw_signals = EXCLUDED.raw_signals,
-          last_active = EXCLUDED.last_active,
-          updated_at = now()
-      `;
+      await writeWithRetry(
+        () => sql`
+          INSERT INTO contributor_expertise (profile_id, dimension, topic, score, raw_signals, last_active)
+          VALUES (${profileId}, ${dimension}, ${topic}, ${score}, ${rawSignals}, ${lastActive})
+          ON CONFLICT (profile_id, dimension, topic) DO UPDATE SET
+            score = EXCLUDED.score,
+            raw_signals = EXCLUDED.raw_signals,
+            last_active = EXCLUDED.last_active,
+            updated_at = now()
+        `,
+        {
+          profileId,
+          dimension,
+          topic,
+          writePath: "contributor_upsert_expertise",
+        },
+      );
     },
 
     async updateTier(
@@ -161,14 +184,17 @@ export function createContributorProfileStore(opts: {
       tier: ContributorTier,
       overallScore: number,
     ): Promise<void> {
-      await sql`
-        UPDATE contributor_profiles
-        SET overall_tier = ${tier}, overall_score = ${overallScore},
-            last_scored_at = now(),
-            trust_marker = ${CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER},
-            updated_at = now()
-        WHERE id = ${profileId}
-      `;
+      await writeWithRetry(
+        () => sql`
+          UPDATE contributor_profiles
+          SET overall_tier = ${tier}, overall_score = ${overallScore},
+              last_scored_at = now(),
+              trust_marker = ${CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER},
+              updated_at = now()
+          WHERE id = ${profileId}
+        `,
+        { profileId, tier, writePath: "contributor_update_tier" },
+      );
     },
 
     async getOrCreateByGithubUsername(
@@ -183,12 +209,15 @@ export function createContributorProfileStore(opts: {
         return mapRow(existing[0] as Record<string, unknown>);
       }
 
-      const inserted = await sql`
-        INSERT INTO contributor_profiles (github_username)
-        VALUES (${username})
-        ON CONFLICT (github_username) DO UPDATE SET updated_at = now()
-        RETURNING *
-      `;
+      const inserted = await writeWithRetry(
+        () => sql`
+          INSERT INTO contributor_profiles (github_username)
+          VALUES (${username})
+          ON CONFLICT (github_username) DO UPDATE SET updated_at = now()
+          RETURNING *
+        `,
+        { username, writePath: "contributor_get_or_create" },
+      );
       logger.debug({ username }, "Created contributor profile");
       return mapRow(inserted[0] as Record<string, unknown>);
     },
