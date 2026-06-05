@@ -109,12 +109,16 @@ describe("createCandidateFindingServer", () => {
   test("returns rejected JSON for malformed input without invoking the recorder", async () => {
     const calls: unknown[] = [];
     const warnings: unknown[] = [];
+    const infos: unknown[] = [];
     const recorder: ReviewCandidateFindingRecorder = {
       recordCandidateFinding: (...args) => {
         calls.push(args);
       },
     };
-    const logger = { warn: (...args: unknown[]) => warnings.push(args) };
+    const logger = {
+      info: (...args: unknown[]) => infos.push(args),
+      warn: (...args: unknown[]) => warnings.push(args),
+    };
 
     const server = createCandidateFindingServer({
       recorder,
@@ -136,8 +140,9 @@ describe("createCandidateFindingServer", () => {
       reason: "candidate-finding-rejected",
     });
     expect(calls).toHaveLength(0);
-    expect(warnings).toHaveLength(1);
-    expect(JSON.stringify(warnings)).not.toContain("Candidate body");
+    expect(warnings).toHaveLength(0);
+    expect(infos).toHaveLength(1);
+    expect(JSON.stringify(infos)).not.toContain("Candidate body");
   });
 
   test("returns degraded JSON when the recorder is missing or fails", async () => {

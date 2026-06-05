@@ -58,6 +58,36 @@ type RepairStateRow = {
 
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS: EmbeddingRepairCorpus = "code_snippets";
+const TRANSIENT_WRITE_ATTEMPTS = 2;
+
+function isTransientConnectionEnded(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: unknown }).code;
+  return code === "CONNECTION_ENDED" || err.message.includes("CONNECTION_ENDED");
+}
+
+async function withTransientWriteRetry<T>(
+  operation: () => Promise<T>,
+  logger: Logger,
+  logContext: Record<string, unknown>,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= TRANSIENT_WRITE_ATTEMPTS; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientConnectionEnded(err) || attempt === TRANSIENT_WRITE_ATTEMPTS) {
+        throw err;
+      }
+      logger.debug(
+        { ...logContext, attempt, retryReason: "connection-ended" },
+        "Retrying transient code snippet write",
+      );
+    }
+  }
+  throw lastErr;
+}
 
 function rowToRepairState(row: RepairStateRow): EmbeddingRepairCheckpoint {
   const failureCounts = typeof row.failure_counts === "string"
@@ -122,15 +152,19 @@ export function createCodeSnippetStore(opts: {
     ): Promise<void> {
       const embeddingString = float32ArrayToVectorString(embedding);
       try {
-        const result = await sql`
-          INSERT INTO code_snippets (
-            content_hash, embedded_text, language, embedding, embedding_model
-          ) VALUES (
-            ${record.contentHash}, ${record.embeddedText}, ${record.language},
-            ${embeddingString}::vector, ${record.embeddingModel}
-          )
-          ON CONFLICT (content_hash) DO NOTHING
-        `;
+        const result = await withTransientWriteRetry(
+          () => sql`
+            INSERT INTO code_snippets (
+              content_hash, embedded_text, language, embedding, embedding_model
+            ) VALUES (
+              ${record.contentHash}, ${record.embeddedText}, ${record.language},
+              ${embeddingString}::vector, ${record.embeddingModel}
+            )
+            ON CONFLICT (content_hash) DO NOTHING
+          `,
+          logger,
+          { contentHash: record.contentHash, writePath: "code_snippet" },
+        );
         if (result.count === 0) {
           logger.debug({ contentHash: record.contentHash }, "Snippet already exists (dedup hit)");
         }
@@ -146,17 +180,21 @@ export function createCodeSnippetStore(opts: {
 
     async writeOccurrence(occurrence): Promise<void> {
       try {
-        await sql`
-          INSERT INTO code_snippet_occurrences (
-            content_hash, repo, owner, pr_number, pr_title,
-            file_path, start_line, end_line, function_context
-          ) VALUES (
-            ${occurrence.contentHash}, ${occurrence.repo}, ${occurrence.owner},
-            ${occurrence.prNumber}, ${occurrence.prTitle ?? null},
-            ${occurrence.filePath}, ${occurrence.startLine}, ${occurrence.endLine},
-            ${occurrence.functionContext ?? null}
-          )
-        `;
+        await withTransientWriteRetry(
+          () => sql`
+            INSERT INTO code_snippet_occurrences (
+              content_hash, repo, owner, pr_number, pr_title,
+              file_path, start_line, end_line, function_context
+            ) VALUES (
+              ${occurrence.contentHash}, ${occurrence.repo}, ${occurrence.owner},
+              ${occurrence.prNumber}, ${occurrence.prTitle ?? null},
+              ${occurrence.filePath}, ${occurrence.startLine}, ${occurrence.endLine},
+              ${occurrence.functionContext ?? null}
+            )
+          `,
+          logger,
+          { contentHash: occurrence.contentHash, repo: occurrence.repo, writePath: "code_snippet_occurrence" },
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(

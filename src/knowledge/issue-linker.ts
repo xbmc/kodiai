@@ -130,7 +130,7 @@ export async function linkPRToIssues(params: {
       try {
         const record = await issueStore.getByNumber(repo, ref.issueNumber);
         if (!record) {
-          logger.warn(
+          logger.info(
             { repo, issueNumber: ref.issueNumber },
             "Referenced issue not found in corpus",
           );

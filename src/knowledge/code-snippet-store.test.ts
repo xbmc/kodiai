@@ -68,6 +68,37 @@ describe("createCodeSnippetStore", () => {
     expect(calls[0]!.values).toContain("abc123");
   });
 
+  test("writeSnippet retries transient connection-ended writes", async () => {
+    const calls: Array<{ query: string; values: unknown[] }> = [];
+    let attempts = 0;
+    const sql = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ query: strings.join("?"), values });
+      attempts++;
+      if (attempts === 1) {
+        const err = new Error("write CONNECTION_ENDED kodiai-pg.postgres.database.azure.com:5432");
+        Object.assign(err, { code: "CONNECTION_ENDED" });
+        return Promise.reject(err);
+      }
+      return Promise.resolve(Object.assign([], { count: 1 }));
+    };
+    const store = createCodeSnippetStore({
+      sql: sql as unknown as import("../db/client.ts").Sql,
+      logger: createMockLogger(),
+    });
+
+    await store.writeSnippet(
+      {
+        contentHash: "abc123",
+        embeddedText: "test text",
+        language: "typescript",
+        embeddingModel: "voyage-code-3",
+      },
+      new Float32Array([0.1]),
+    );
+
+    expect(calls).toHaveLength(2);
+  });
+
   test("hasSnippet checks for a non-stale content hash", async () => {
     const calls: Array<{ query: string; values: unknown[] }> = [];
     const sql = (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -109,6 +140,39 @@ describe("createCodeSnippetStore", () => {
     expect(calls[0]!.values).toContain("abc123");
     expect(calls[0]!.values).toContain("owner/repo");
     expect(calls[0]!.values).toContain(42);
+  });
+
+  test("writeOccurrence retries transient connection-ended writes", async () => {
+    const calls: Array<{ query: string; values: unknown[] }> = [];
+    let attempts = 0;
+    const sql = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ query: strings.join("?"), values });
+      attempts++;
+      if (attempts === 1) {
+        const err = new Error("write CONNECTION_ENDED kodiai-pg.postgres.database.azure.com:5432");
+        Object.assign(err, { code: "CONNECTION_ENDED" });
+        return Promise.reject(err);
+      }
+      return Promise.resolve(Object.assign([], { count: 1 }));
+    };
+    const store = createCodeSnippetStore({
+      sql: sql as unknown as import("../db/client.ts").Sql,
+      logger: createMockLogger(),
+    });
+
+    await store.writeOccurrence({
+      contentHash: "abc123",
+      repo: "owner/repo",
+      owner: "owner",
+      prNumber: 42,
+      prTitle: "Fix bug",
+      filePath: "src/main.ts",
+      startLine: 10,
+      endLine: 15,
+      functionContext: "function foo()",
+    });
+
+    expect(calls).toHaveLength(2);
   });
 
   test("close does not throw", () => {

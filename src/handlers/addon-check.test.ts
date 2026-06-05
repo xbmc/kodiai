@@ -318,10 +318,10 @@ describe("createAddonCheckHandler", () => {
 
   // ── Unknown kodi branch ───────────────────────────────────────────────
 
-  it("unknown base branch warns and skips (does not enqueue)", async () => {
+  it("unknown base branch logs an info skip and does not enqueue", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app } = createMockGithubApp(files);
-    const { logger, warnCalls } = createMockLogger();
+    const { logger, infoCalls, warnCalls } = createMockLogger();
     const { manager } = createMockWorkspaceManager();
     const { queue, enqueueArgs } = createMockJobQueue();
 
@@ -340,10 +340,10 @@ describe("createAddonCheckHandler", () => {
 
     // No enqueue
     expect(enqueueArgs).toHaveLength(0);
-    // Warn emitted with baseBranch binding
-    const warnEntry = warnCalls.find((c) => c.message === "addon-check: unknown kodi branch, skipping");
-    expect(warnEntry).toBeDefined();
-    expect(warnEntry!.bindings.baseBranch).toBe("main");
+    const infoEntry = infoCalls.find((c) => c.message === "addon-check: unknown kodi branch, skipping");
+    expect(infoEntry).toBeDefined();
+    expect(infoEntry!.bindings.baseBranch).toBe("main");
+    expect(warnCalls.find((c) => c.message === "addon-check: unknown kodi branch, skipping")).toBeUndefined();
   });
 
   // ── Workspace creation with head branch ──────────────────────────────
