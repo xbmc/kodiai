@@ -8,10 +8,10 @@ import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../life
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import {
-  createRateLimitPair,
+  createRouteRateLimiters,
   requestSourceKey,
-  type RateLimitWindowOptions,
-} from "../lib/sliding-window-rate-limiter.ts";
+  type RouteRateLimitOptions,
+} from "./route-rate-limit.ts";
 
 interface WebhookRouteDeps {
   config: AppConfig;
@@ -22,28 +22,20 @@ interface WebhookRouteDeps {
   requestTracker: RequestTracker;
   webhookQueueStore: WebhookQueueStore;
   shutdownManager: ShutdownManager;
-  rateLimit?: WebhookRateLimitOptions;
+  rateLimit?: RouteRateLimitOptions;
 }
-
-type WebhookRateLimitOptions = {
-  preBody?: RateLimitWindowOptions;
-  verified?: RateLimitWindowOptions;
-};
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
   const { config, logger, dedup, eventRouter, requestTracker, webhookQueueStore, shutdownManager } = deps;
   const app = new Hono();
-  const rateLimiters = createRateLimitPair({
-    pre: deps.rateLimit?.preBody,
-    verified: deps.rateLimit?.verified,
-  }, {
-    pre: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+  const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
+    preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 240, windowMs: 60_000, maxKeys: 5_000 },
   });
 
   app.post("/github", async (c) => {
     const sourceKey = requestSourceKey((name) => c.req.header(name));
-    if (rateLimiters.pre.isLimited(`github:${sourceKey}`)) {
+    if (rateLimiters.preBody.isLimited(`github:${sourceKey}`)) {
       logger.warn({ sourceKey }, "GitHub webhook request rate-limited before body read");
       return c.text("", 429);
     }

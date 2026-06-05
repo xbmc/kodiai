@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { insertJsonbRecordsetBatches, type JsonbRecordsetColumn } from "../db/jsonb-batch.ts";
+import { buildJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
@@ -62,52 +62,11 @@ function _normalizeDbNumber(value: unknown): number | null {
 
 const KNOWLEDGE_STORE_WRITE_BATCH_SIZE = 1000;
 
-const FINDING_BATCH_COLUMNS: JsonbRecordsetColumn[] = [
-  { name: "review_id", type: "integer" },
-  { name: "file_path", type: "text" },
-  { name: "start_line", type: "integer" },
-  { name: "end_line", type: "integer" },
-  { name: "severity", type: "text" },
-  { name: "category", type: "text" },
-  { name: "confidence", type: "integer" },
-  { name: "title", type: "text" },
-  { name: "suppressed", type: "boolean" },
-  { name: "suppression_pattern", type: "text" },
-  { name: "comment_id", type: "integer" },
-  { name: "comment_surface", type: "text" },
-  { name: "review_output_key", type: "text" },
-];
-
-const FEEDBACK_REACTION_BATCH_COLUMNS: JsonbRecordsetColumn[] = [
-  { name: "repo", type: "text" },
-  { name: "review_id", type: "integer" },
-  { name: "finding_id", type: "integer" },
-  { name: "comment_id", type: "integer" },
-  { name: "comment_surface", type: "text" },
-  { name: "reaction_id", type: "integer" },
-  { name: "reaction_content", type: "text" },
-  { name: "reactor_login", type: "text" },
-  { name: "reacted_at", type: "timestamptz" },
-  { name: "severity", type: "text" },
-  { name: "category", type: "text" },
-  { name: "file_path", type: "text" },
-  { name: "title", type: "text" },
-];
-
-const SUPPRESSION_LOG_BATCH_COLUMNS: JsonbRecordsetColumn[] = [
-  { name: "review_id", type: "integer" },
-  { name: "pattern", type: "text" },
-  { name: "matched_count", type: "integer" },
-  { name: "finding_ids", type: "text" },
-];
-
 async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]): Promise<void> {
-  await insertJsonbRecordsetBatches(sqlClient, {
-    tableName: "findings",
-    columns: FINDING_BATCH_COLUMNS,
-    rows: findings,
-    batchSize: KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
-    rowToRecord: (finding) => ({
+  const batches = buildJsonbRecordBatches(
+    findings,
+    KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
+    (finding) => ({
       review_id: finding.reviewId,
       file_path: finding.filePath,
       start_line: finding.startLine ?? null,
@@ -122,16 +81,56 @@ async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]):
       comment_surface: finding.commentSurface ?? null,
       review_output_key: finding.reviewOutputKey ?? null,
     }),
-  });
+  );
+
+  for (const batch of batches) {
+    await sqlClient.unsafe(
+      `
+        INSERT INTO findings (
+          review_id, file_path, start_line, end_line,
+          severity, category, confidence, title, suppressed, suppression_pattern,
+          comment_id, comment_surface, review_output_key
+        )
+        SELECT
+          batch_rows.review_id,
+          batch_rows.file_path,
+          batch_rows.start_line,
+          batch_rows.end_line,
+          batch_rows.severity,
+          batch_rows.category,
+          batch_rows.confidence,
+          batch_rows.title,
+          batch_rows.suppressed,
+          batch_rows.suppression_pattern,
+          batch_rows.comment_id,
+          batch_rows.comment_surface,
+          batch_rows.review_output_key
+        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+          review_id integer,
+          file_path text,
+          start_line integer,
+          end_line integer,
+          severity text,
+          category text,
+          confidence integer,
+          title text,
+          suppressed boolean,
+          suppression_pattern text,
+          comment_id integer,
+          comment_surface text,
+          review_output_key text
+        )
+      `,
+      [batch.json],
+    );
+  }
 }
 
 async function _insertFeedbackReactionBatches(sqlClient: Sql, reactions: FeedbackReaction[]): Promise<void> {
-  await insertJsonbRecordsetBatches(sqlClient, {
-    tableName: "feedback_reactions",
-    columns: FEEDBACK_REACTION_BATCH_COLUMNS,
-    rows: reactions,
-    batchSize: KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
-    rowToRecord: (reaction) => ({
+  const batches = buildJsonbRecordBatches(
+    reactions,
+    KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
+    (reaction) => ({
       repo: reaction.repo,
       review_id: reaction.reviewId,
       finding_id: reaction.findingId,
@@ -146,23 +145,83 @@ async function _insertFeedbackReactionBatches(sqlClient: Sql, reactions: Feedbac
       file_path: reaction.filePath,
       title: reaction.title,
     }),
-    onConflictClause: "ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING",
-  });
+  );
+
+  for (const batch of batches) {
+    await sqlClient.unsafe(
+      `
+        INSERT INTO feedback_reactions (
+          repo, review_id, finding_id, comment_id, comment_surface,
+          reaction_id, reaction_content, reactor_login, reacted_at,
+          severity, category, file_path, title
+        )
+        SELECT
+          batch_rows.repo,
+          batch_rows.review_id,
+          batch_rows.finding_id,
+          batch_rows.comment_id,
+          batch_rows.comment_surface,
+          batch_rows.reaction_id,
+          batch_rows.reaction_content,
+          batch_rows.reactor_login,
+          batch_rows.reacted_at,
+          batch_rows.severity,
+          batch_rows.category,
+          batch_rows.file_path,
+          batch_rows.title
+        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+          repo text,
+          review_id integer,
+          finding_id integer,
+          comment_id integer,
+          comment_surface text,
+          reaction_id integer,
+          reaction_content text,
+          reactor_login text,
+          reacted_at timestamptz,
+          severity text,
+          category text,
+          file_path text,
+          title text
+        )
+        ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING
+      `,
+      [batch.json],
+    );
+  }
 }
 
 async function _insertSuppressionLogBatches(sqlClient: Sql, entries: SuppressionLogEntry[]): Promise<void> {
-  await insertJsonbRecordsetBatches(sqlClient, {
-    tableName: "suppression_log",
-    columns: SUPPRESSION_LOG_BATCH_COLUMNS,
-    rows: entries,
-    batchSize: KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
-    rowToRecord: (entry) => ({
+  const batches = buildJsonbRecordBatches(
+    entries,
+    KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
+    (entry) => ({
       review_id: entry.reviewId,
       pattern: entry.pattern,
       matched_count: entry.matchedCount,
       finding_ids: entry.findingIds ? JSON.stringify(entry.findingIds) : null,
     }),
-  });
+  );
+
+  for (const batch of batches) {
+    await sqlClient.unsafe(
+      `
+        INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
+        SELECT
+          batch_rows.review_id,
+          batch_rows.pattern,
+          batch_rows.matched_count,
+          batch_rows.finding_ids
+        FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
+          review_id integer,
+          pattern text,
+          matched_count integer,
+          finding_ids text
+        )
+      `,
+      [batch.json],
+    );
+  }
 }
 
 export function createKnowledgeStore(opts: {

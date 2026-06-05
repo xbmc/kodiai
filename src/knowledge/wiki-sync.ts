@@ -3,7 +3,7 @@ import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
-import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
+import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -320,7 +320,7 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
   } = opts;
   const baseUrl = opts.baseUrl ?? "https://kodi.wiki";
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
-  const fetchFn = withWikiHeaders(opts.fetchFn ?? globalThis.fetch);
+  const fetchFn = withWikiRequestPolicy(opts.fetchFn ?? globalThis.fetch);
 
   let intervalHandle: ReturnType<typeof setInterval> | null = null;
   let startupHandle: ReturnType<typeof setTimeout> | null = null;

@@ -5,37 +5,29 @@ import type { ContributorProfileStore } from "../contributor/types.ts";
 import { handleKodiaiCommand } from "../slack/slash-command-handler.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
 import {
-  createRateLimitPair,
+  createRouteRateLimiters,
   requestSourceKey,
-  type RateLimitWindowOptions,
-} from "../lib/sliding-window-rate-limiter.ts";
+  type RouteRateLimitOptions,
+} from "./route-rate-limit.ts";
 
 interface SlackCommandRouteDeps {
   config: AppConfig;
   logger: Logger;
   profileStore: ContributorProfileStore;
-  rateLimit?: SlackCommandRateLimitOptions;
+  rateLimit?: RouteRateLimitOptions;
 }
-
-type SlackCommandRateLimitOptions = {
-  preBody?: RateLimitWindowOptions;
-  verified?: RateLimitWindowOptions;
-};
 
 export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
   const { config, logger, profileStore } = deps;
   const app = new Hono();
-  const rateLimiters = createRateLimitPair({
-    pre: deps.rateLimit?.preBody,
-    verified: deps.rateLimit?.verified,
-  }, {
-    pre: { max: 60, windowMs: 60_000, maxKeys: 2_000 },
+  const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
+    preBody: { max: 60, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 30, windowMs: 60_000, maxKeys: 5_000 },
   });
 
   app.post("/", async (c) => {
     const sourceKey = requestSourceKey((name) => c.req.header(name));
-    if (rateLimiters.pre.isLimited(`slack-command:${sourceKey}`)) {
+    if (rateLimiters.preBody.isLimited(`slack-command:${sourceKey}`)) {
       logger.warn({ sourceKey }, "Slash command request rate-limited before body read");
       return c.text("Rate limited", 429);
     }

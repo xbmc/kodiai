@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
-import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
+import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -112,7 +112,7 @@ export async function backfillWikiPages(
     delayMs = 500,
   } = opts;
   const baseUrl = opts.baseUrl ?? "https://kodi.wiki";
-  const fetchFn = withWikiHeaders(opts.fetchFn ?? globalThis.fetch);
+  const fetchFn = withWikiRequestPolicy(opts.fetchFn ?? globalThis.fetch);
 
   const startTime = Date.now();
   let totalPages = 0;

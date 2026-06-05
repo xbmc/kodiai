@@ -32,9 +32,9 @@ export function buildWikiApiUrl(
 }
 
 /**
- * Wrap a fetch function to include the Kodiai User-Agent header.
+ * Wrap a fetch function with the shared MediaWiki request policy.
  */
-export function withWikiHeaders(fetchFn: FetchFn): FetchFn {
+export function withWikiRequestPolicy(fetchFn: FetchFn): FetchFn {
   return (input, init?) =>
     fetchFn(input, {
       ...init,
