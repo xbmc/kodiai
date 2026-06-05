@@ -304,6 +304,7 @@ export async function buildIssueCodeContext(
       });
     }
 
+    const scanPathSet = new Set(scanPaths);
     for (const term of terms) {
       const grepMatches = await grepInFiles({
         workspaceDir: params.workspaceDir,
@@ -314,7 +315,7 @@ export async function buildIssueCodeContext(
 
       for (const match of grepMatches) {
         const repoPath = normalizeToRepoPath(params.workspaceDir, match.path);
-        if (!repoPath || !scanPaths.includes(repoPath)) continue;
+        if (!repoPath || !scanPathSet.has(repoPath)) continue;
 
         const existing = signalByPath.get(repoPath) ?? {
           pathTerms: new Set<string>(),

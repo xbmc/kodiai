@@ -291,6 +291,43 @@ describe("reduceReviewFindings", () => {
     expect(thrown.audit.some((event) => event.source === "guardrail" && event.reason === "failed-open")).toBe(true);
   });
 
+  test("reconciles guardrail output without per-finding linear scans", async () => {
+    const findings = [
+      baseFinding({ commentId: 1, title: "Remove unsafe claim" }),
+      baseFinding({ commentId: 2, title: "Rewrite unsafe claim" }),
+      baseFinding({ commentId: 3, title: "Keep grounded claim" }),
+    ];
+
+    class GuardrailFindings extends Array<ProcessedReviewFinding> {
+      override find(): ProcessedReviewFinding | undefined {
+        throw new Error("guardrail reconciliation must not use Array.find per finding");
+      }
+    }
+
+    const result = await reduceReviewFindings({
+      ...minimalReducerInput(findings),
+      runGuardrailPipeline: async (opts: unknown) => {
+        const { output } = opts as { output: { findings: ProcessedReviewFinding[] } };
+        return {
+          output: {
+            findings: GuardrailFindings.from([
+              { ...output.findings[1]!, title: "Rewritten grounded claim" },
+              output.findings[2]!,
+            ]),
+          },
+          claimsTotal: 3,
+          claimsRemoved: 1,
+          auditRecords: [],
+          suppressed: false,
+          classifierError: false,
+        };
+      },
+    });
+
+    expect(result.findings.find((f) => f.commentId === 1)).toMatchObject({ suppressed: true });
+    expect(result.findings.find((f) => f.commentId === 2)).toMatchObject({ title: "Rewritten grounded claim" });
+  });
+
   test("does not deprioritize findings exactly at the max comment boundary", async () => {
     const result = await reduceReviewFindings({
       ...minimalReducerInput([

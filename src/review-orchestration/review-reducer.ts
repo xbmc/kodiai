@@ -572,8 +572,14 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       if (guardResult.output !== null && !guardResult.suppressed) {
         let guardrailSuppressed = 0;
         let guardrailRewritten = 0;
+        const guardFindingByCommentId = new Map(
+          guardResult.output.findings.map((guardFinding: { commentId: number; title: string }) => [
+            guardFinding.commentId,
+            guardFinding,
+          ]),
+        );
         processedFindings = processedFindings.map((finding) => {
-          const kept = guardResult.output!.findings.find((guardFinding: { commentId: number; title: string }) => guardFinding.commentId === finding.commentId);
+          const kept = guardFindingByCommentId.get(finding.commentId);
           if (!kept) {
             guardrailSuppressed += 1;
             return { ...finding, suppressed: true, filterAction: "guardrail-suppressed" as const, originalTitle: finding.title };

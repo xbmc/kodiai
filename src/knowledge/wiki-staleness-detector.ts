@@ -385,11 +385,12 @@ async function heuristicPass(
     });
 
     // Store PR evidence for each matched PR+file+page combination
+    const dedupedFilePathSet = new Set(dedupedFilePaths);
     for (const pr of mergedPRs) {
       const matches: Array<{ filePath: string; patch: string; pageId: number | null; pageTitle: string | null; score: number }> = [];
       for (const file of pr.files) {
         if (!file.patch) continue; // skip binary/too-large files
-        if (!dedupedFilePaths.includes(file.filename)) continue;
+        if (!dedupedFilePathSet.has(file.filename)) continue;
         matches.push({
           filePath: file.filename,
           patch: file.patch,

@@ -9,6 +9,11 @@ import {
 } from "../slack/thread-session-store.ts";
 import { toSlackEventCallback, toSlackUrlVerification } from "../slack/types.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
+import {
+  createRateLimitPair,
+  requestSourceKey,
+  type RateLimitWindowOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
 
 interface SlackEventsRouteDeps {
   config: AppConfig;
@@ -18,13 +23,26 @@ interface SlackEventsRouteDeps {
   requestTracker?: RequestTracker;
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
   threadSessionStore?: SlackThreadSessionStore;
+  rateLimit?: SlackEventsRateLimitOptions;
 }
+
+type SlackEventsRateLimitOptions = {
+  preBody?: RateLimitWindowOptions;
+  verified?: RateLimitWindowOptions;
+};
 
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const { config, logger, onAllowedBootstrap, shutdownManager, webhookQueueStore, requestTracker } = deps;
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
   const recentAddressed = new Map<string, number>();
   const DUPLICATE_WINDOW_MS = 5000;
+  const rateLimiters = createRateLimitPair({
+    pre: deps.rateLimit?.preBody,
+    verified: deps.rateLimit?.verified,
+  }, {
+    pre: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 60, windowMs: 60_000, maxKeys: 5_000 },
+  });
 
   // Per-channel sliding window rate limiter
   const RATE_LIMIT_MAX_EVENTS = 30;
@@ -86,6 +104,12 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   }
 
   app.post("/events", async (c) => {
+    const sourceKey = requestSourceKey((name) => c.req.header(name));
+    if (rateLimiters.pre.isLimited(`slack-events:${sourceKey}`)) {
+      logger.warn({ sourceKey }, "Slack event request rate-limited before body read");
+      return c.text("Rate limited", 429);
+    }
+
     const timestampHeader = c.req.header("x-slack-request-timestamp");
     const signatureHeader = c.req.header("x-slack-signature");
 
@@ -133,6 +157,12 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
 
     const eventCallback = toSlackEventCallback(payload);
     if (eventCallback) {
+      const teamId = eventCallback.team_id ?? "unknown-team";
+      if (rateLimiters.verified.isLimited(`team:${teamId}`)) {
+        logger.warn({ teamId }, "Slack event verified team rate-limited");
+        return c.json({ ok: true });
+      }
+
       const decision = evaluateSlackV1Rails({
         payload: eventCallback,
         slackBotUserId: config.slackBotUserId,

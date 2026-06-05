@@ -307,17 +307,22 @@ export async function validateGraphAmplifiedFindings<T extends GraphValidationFi
 
     const verdicts = parseValidationResponse(responseText, toValidate.length);
 
+    const amplifiedByOriginalIndex = new Map(
+      toValidate.map((entry, index) => [
+        entry.originalIndex,
+        { entry, pos: index + 1 },
+      ]),
+    );
+
     // Build output findings with validation metadata merged in.
     const resultFindings: ValidatedFinding<T>[] = findings.map((f, globalIdx) => {
-      const amplifiedEntry = toValidate.find((x) => x.originalIndex === globalIdx);
+      const amplifiedEntry = amplifiedByOriginalIndex.get(globalIdx);
       if (!amplifiedEntry) {
         // Not graph-amplified — pass through.
         return { ...f, graphValidated: false, graphValidationVerdict: "skipped" as GraphValidationVerdict };
       }
 
-      // Find position in toValidate for verdict lookup (1-based).
-      const pos = toValidate.indexOf(amplifiedEntry) + 1;
-      const verdict: GraphValidationVerdict = verdicts.get(pos) ?? "uncertain";
+      const verdict: GraphValidationVerdict = verdicts.get(amplifiedEntry.pos) ?? "uncertain";
 
       return { ...f, graphValidated: true, graphValidationVerdict: verdict };
     });

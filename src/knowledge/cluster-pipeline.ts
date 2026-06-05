@@ -225,13 +225,14 @@ export async function runClusterPipeline(opts: {
       if (mergedAssignments.length > 0) {
         // Group by cluster to update centroids
         const byCluster = new Map<number, EmbeddingRow[]>();
+        const existingClusterById = new Map(existingClusters.map((cluster) => [cluster.id, cluster]));
         for (const m of mergedAssignments) {
           if (!byCluster.has(m.clusterId)) byCluster.set(m.clusterId, []);
           byCluster.get(m.clusterId)!.push(m.embRow);
         }
 
         for (const [clusterId, newMembers] of byCluster) {
-          const cluster = existingClusters.find((c) => c.id === clusterId);
+          const cluster = existingClusterById.get(clusterId);
           if (!cluster) continue;
 
           // Update centroid with new members

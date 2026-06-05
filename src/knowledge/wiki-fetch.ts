@@ -6,6 +6,7 @@
  */
 
 const WIKI_USER_AGENT = "Kodiai/1.0 (+https://github.com/xbmc/kodiai)";
+const DEFAULT_WIKI_REQUEST_TIMEOUT_MS = 15_000;
 
 /** Portable fetch signature that avoids Bun's extended `typeof fetch` (which adds `preconnect`). */
 export type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -37,6 +38,7 @@ export function withWikiHeaders(fetchFn: FetchFn): FetchFn {
   return (input, init?) =>
     fetchFn(input, {
       ...init,
+      signal: init?.signal ?? AbortSignal.timeout(DEFAULT_WIKI_REQUEST_TIMEOUT_MS),
       headers: {
         ...(init?.headers as Record<string, string> | undefined),
         "User-Agent": WIKI_USER_AGENT,

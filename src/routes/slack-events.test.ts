@@ -65,7 +65,12 @@ function createHeaders(body: string, timestamp: string, signature?: string): Hea
   return headers;
 }
 
-function createApp(onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => void) {
+function createApp(
+  onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => void,
+  options: {
+    rateLimit?: Parameters<typeof createSlackEventRoutes>[0]["rateLimit"];
+  } = {},
+) {
   const app = new Hono();
   app.route(
     "/webhooks/slack",
@@ -73,6 +78,7 @@ function createApp(onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => vo
       config: createTestConfig(),
       logger: createTestLogger(),
       onAllowedBootstrap,
+      rateLimit: options.rateLimit,
     }),
   );
   return app;
@@ -91,6 +97,30 @@ describe("createSlackEventRoutes", () => {
     });
 
     expect(response.status).toBe(401);
+  });
+
+  test("rate-limits repeated unverified Slack events before verification work", async () => {
+    const app = createApp(undefined, {
+      rateLimit: {
+        preBody: { max: 1, windowMs: 60_000, maxKeys: 10 },
+      },
+    });
+    const invalidJson = "{ this is not valid json";
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(invalidJson, timestamp, "v0=not-valid"),
+      body: invalidJson,
+    });
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(invalidJson, timestamp, "v0=not-valid"),
+      body: invalidJson,
+    });
+
+    expect(response.status).toBe(429);
+    expect(await response.text()).toBe("Rate limited");
   });
 
   test("returns 401 when timestamp is outside replay window", async () => {

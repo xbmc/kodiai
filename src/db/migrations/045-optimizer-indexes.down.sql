@@ -1,0 +1,5 @@
+DROP INDEX IF EXISTS idx_feedback_reactions_repo_title_id_desc;
+DROP INDEX IF EXISTS idx_review_graph_edges_workspace_file_id;
+DROP INDEX IF EXISTS idx_review_graph_nodes_workspace_file_id;
+DROP INDEX IF EXISTS idx_snippet_occ_hash_repo_created;
+DROP INDEX IF EXISTS idx_memories_owner_repo_active;
