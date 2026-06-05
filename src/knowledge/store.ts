@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
+import { fingerprintFindingTitle } from "../lib/review-finding-metadata.ts";
 import type {
   AuthorCacheEntry,
   AuthorCacheTier,
@@ -33,25 +34,12 @@ type CheckpointData = {
   totalFiles: number;
 };
 
-/** FNV-1a fingerprint for title deduplication (duplicated from review.ts to avoid circular imports). */
 function _fingerprintTitle(title: string): string {
-  const normalized = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ");
-
-  let hash = 2166136261;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash ^= normalized.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return fingerprintFindingTitle(title).slice("fp-".length);
 }
 
-/** FNV-1a fingerprint matching review.ts fingerprintFindingTitle (includes fp- prefix). */
 function _feedbackFingerprint(title: string): string {
-  return `fp-${_fingerprintTitle(title)}`;
+  return fingerprintFindingTitle(title);
 }
 
 function _normalizeDbNumber(value: unknown): number | null {

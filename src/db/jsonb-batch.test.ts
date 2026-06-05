@@ -52,6 +52,25 @@ describe("buildJsonbRecordBatches", () => {
     ]);
   });
 
+  test("executes each JSONB batch before serializing the next one", async () => {
+    let serializedRows = 0;
+    const serializedRowsAtExecution: number[] = [];
+
+    await executeJsonbRecordBatches(
+      [{ id: 1 }, { id: 2 }, { id: 3 }],
+      2,
+      (row) => {
+        serializedRows += 1;
+        return { value_id: row.id };
+      },
+      async () => {
+        serializedRowsAtExecution.push(serializedRows);
+      },
+    );
+
+    expect(serializedRowsAtExecution).toEqual([2, 3]);
+  });
+
   test("builds recordset source SQL from named column definitions", () => {
     const source = buildJsonbRecordsetSource("batch_rows", [
       ["review_id", "integer"],

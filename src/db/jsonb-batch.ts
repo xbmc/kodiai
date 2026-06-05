@@ -31,6 +31,14 @@ function assertRecordsetType(value: string): void {
   }
 }
 
+function normalizeBatchSize(batchSize: number): number {
+  const normalizedBatchSize = Math.floor(batchSize);
+  if (!Number.isFinite(normalizedBatchSize) || normalizedBatchSize <= 0) {
+    throw new Error(`Invalid JSONB recordset batch size: ${batchSize}`);
+  }
+  return normalizedBatchSize;
+}
+
 export function buildJsonbRecordsetSource(
   alias: string,
   columns: readonly JsonbRecordsetColumn[],
@@ -60,10 +68,7 @@ export function buildJsonbRecordBatches<T>(
   rowToRecord: (row: T) => Record<string, unknown>,
 ): JsonbRecordBatch<T>[] {
   if (rows.length === 0) return [];
-  const normalizedBatchSize = Math.floor(batchSize);
-  if (!Number.isFinite(normalizedBatchSize) || normalizedBatchSize <= 0) {
-    throw new Error(`Invalid JSONB recordset batch size: ${batchSize}`);
-  }
+  const normalizedBatchSize = normalizeBatchSize(batchSize);
 
   const batches: JsonbRecordBatch<T>[] = [];
   for (let i = 0; i < rows.length; i += normalizedBatchSize) {
@@ -82,8 +87,16 @@ export async function executeJsonbRecordBatches<T, R>(
   rowToRecord: (row: T) => Record<string, unknown>,
   executeBatch: (batch: JsonbRecordBatch<T>) => Promise<R>,
 ): Promise<R[]> {
+  if (rows.length === 0) return [];
+  const normalizedBatchSize = normalizeBatchSize(batchSize);
+
   const results: R[] = [];
-  for (const batch of buildJsonbRecordBatches(rows, batchSize, rowToRecord)) {
+  for (let i = 0; i < rows.length; i += normalizedBatchSize) {
+    const batchRows = rows.slice(i, i + normalizedBatchSize);
+    const batch: JsonbRecordBatch<T> = {
+      rows: batchRows,
+      json: JSON.stringify(batchRows.map((row) => rowToRecord(row))),
+    };
     results.push(await executeBatch(batch));
   }
   return results;
