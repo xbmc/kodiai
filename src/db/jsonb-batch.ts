@@ -3,6 +3,46 @@ export type JsonbRecordBatch<T> = {
   json: string;
 };
 
+export type JsonbRecordsetColumn = readonly [name: string, type: string];
+
+const SQL_IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/;
+const SQL_TYPE_RE = /^[a-z][a-z0-9_]*(?:\[\])?$/;
+
+function assertRecordsetIdentifier(value: string): void {
+  if (!SQL_IDENTIFIER_RE.test(value)) {
+    throw new Error(`Invalid JSONB recordset identifier: ${value}`);
+  }
+}
+
+function assertRecordsetType(value: string): void {
+  if (!SQL_TYPE_RE.test(value)) {
+    throw new Error(`Invalid JSONB recordset type: ${value}`);
+  }
+}
+
+export function buildJsonbRecordsetSource(
+  alias: string,
+  columns: readonly JsonbRecordsetColumn[],
+): string {
+  assertRecordsetIdentifier(alias);
+  if (columns.length === 0) {
+    throw new Error("JSONB recordset requires at least one column");
+  }
+
+  const lines = columns.map(([name, type], index) => {
+    assertRecordsetIdentifier(name);
+    assertRecordsetType(type);
+    const suffix = index === columns.length - 1 ? "" : ",";
+    return `  ${name} ${type}${suffix}`;
+  });
+
+  return [
+    `jsonb_to_recordset($1::jsonb) AS ${alias} (`,
+    ...lines,
+    ")",
+  ].join("\n");
+}
+
 export function buildJsonbRecordBatches<T>(
   rows: readonly T[],
   batchSize: number,

@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   WikiEmbeddingRepairCheckpoint,
   WikiPageChunk,
@@ -25,6 +25,25 @@ function float32ArrayToVectorString(arr: Float32Array): string {
 const DEFAULT_WIKI_REPAIR_KEY = "wiki-embedding-repair";
 const DEFAULT_WIKI_REPAIR_MODEL = "voyage-context-3";
 const WIKI_CHUNK_WRITE_BATCH_SIZE = 500;
+const WIKI_CHUNK_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["page_id", "integer"],
+  ["page_title", "text"],
+  ["namespace", "text"],
+  ["page_url", "text"],
+  ["section_heading", "text"],
+  ["section_anchor", "text"],
+  ["section_level", "integer"],
+  ["chunk_index", "integer"],
+  ["chunk_text", "text"],
+  ["raw_text", "text"],
+  ["token_count", "integer"],
+  ["embedding", "text"],
+  ["embedding_model", "text"],
+  ["stale", "boolean"],
+  ["last_modified", "timestamptz"],
+  ["revision_id", "integer"],
+  ["language_tags", "jsonb"],
+]);
 
 type WikiRow = {
   id: number;
@@ -155,25 +174,7 @@ async function insertWikiChunkBatches(
             batch_rows.last_modified,
             batch_rows.revision_id,
             ARRAY(SELECT jsonb_array_elements_text(batch_rows.language_tags))
-          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-            page_id integer,
-            page_title text,
-            namespace text,
-            page_url text,
-            section_heading text,
-            section_anchor text,
-            section_level integer,
-            chunk_index integer,
-            chunk_text text,
-            raw_text text,
-            token_count integer,
-            embedding text,
-            embedding_model text,
-            stale boolean,
-            last_modified timestamptz,
-            revision_id integer,
-            language_tags jsonb
-          )
+          FROM ${WIKI_CHUNK_BATCH_RECORDSET}
           ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
         `,
         [batch.json],

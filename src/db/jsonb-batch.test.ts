@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildJsonbRecordBatches, executeJsonbRecordBatches } from "./jsonb-batch.ts";
+import {
+  buildJsonbRecordBatches,
+  buildJsonbRecordsetSource,
+  executeJsonbRecordBatches,
+} from "./jsonb-batch.ts";
 
 describe("buildJsonbRecordBatches", () => {
   test("builds JSONB payloads in bounded chunks", () => {
@@ -46,5 +50,33 @@ describe("buildJsonbRecordBatches", () => {
       [{ value_id: 1 }, { value_id: 2 }],
       [{ value_id: 3 }],
     ]);
+  });
+
+  test("builds recordset source SQL from named column definitions", () => {
+    const source = buildJsonbRecordsetSource("batch_rows", [
+      ["review_id", "integer"],
+      ["comment_id", "bigint"],
+      ["created_at", "timestamptz"],
+    ]);
+
+    expect(source).toBe([
+      "jsonb_to_recordset($1::jsonb) AS batch_rows (",
+      "  review_id integer,",
+      "  comment_id bigint,",
+      "  created_at timestamptz",
+      ")",
+    ].join("\n"));
+  });
+
+  test("rejects unsafe recordset identifiers and types", () => {
+    expect(() => buildJsonbRecordsetSource("batch rows", [["id", "integer"]])).toThrow(
+      "Invalid JSONB recordset identifier",
+    );
+    expect(() => buildJsonbRecordsetSource("batch_rows", [["bad-name", "integer"]])).toThrow(
+      "Invalid JSONB recordset identifier",
+    );
+    expect(() => buildJsonbRecordsetSource("batch_rows", [["id", "integer; drop table"]])).toThrow(
+      "Invalid JSONB recordset type",
+    );
   });
 });

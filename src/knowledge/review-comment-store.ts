@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   ReviewCommentChunk,
   ReviewCommentRecord,
@@ -78,6 +78,30 @@ type RepairStateRow = {
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS = "review_comments" as const satisfies EmbeddingRepairCorpus;
 const REVIEW_COMMENT_CHUNK_WRITE_BATCH_SIZE = 500;
+const REVIEW_COMMENT_CHUNK_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["repo", "text"],
+  ["owner", "text"],
+  ["pr_number", "integer"],
+  ["pr_title", "text"],
+  ["comment_github_id", "bigint"],
+  ["thread_id", "text"],
+  ["in_reply_to_id", "bigint"],
+  ["file_path", "text"],
+  ["start_line", "integer"],
+  ["end_line", "integer"],
+  ["diff_hunk", "text"],
+  ["author_login", "text"],
+  ["author_association", "text"],
+  ["body", "text"],
+  ["chunk_index", "integer"],
+  ["chunk_text", "text"],
+  ["token_count", "integer"],
+  ["embedding", "text"],
+  ["embedding_model", "text"],
+  ["github_created_at", "timestamptz"],
+  ["github_updated_at", "timestamptz"],
+  ["backfill_batch", "text"],
+]);
 
 function rowToRecord(row: CommentRow): ReviewCommentRecord {
   return {
@@ -226,30 +250,7 @@ async function insertReviewCommentChunkBatches(
             batch_rows.github_created_at,
             batch_rows.github_updated_at,
             batch_rows.backfill_batch
-          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-            repo text,
-            owner text,
-            pr_number integer,
-            pr_title text,
-            comment_github_id bigint,
-            thread_id text,
-            in_reply_to_id bigint,
-            file_path text,
-            start_line integer,
-            end_line integer,
-            diff_hunk text,
-            author_login text,
-            author_association text,
-            body text,
-            chunk_index integer,
-            chunk_text text,
-            token_count integer,
-            embedding text,
-            embedding_model text,
-            github_created_at timestamptz,
-            github_updated_at timestamptz,
-            backfill_batch text
-          )
+          FROM ${REVIEW_COMMENT_CHUNK_BATCH_RECORDSET}
           ${onConflictClause}
         `,
         [batch.json],

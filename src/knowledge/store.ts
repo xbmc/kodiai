@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
@@ -61,6 +61,46 @@ function _normalizeDbNumber(value: unknown): number | null {
 }
 
 const KNOWLEDGE_STORE_WRITE_BATCH_SIZE = 1000;
+const BATCH_ROWS = "batch_rows";
+
+const FINDING_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
+  ["review_id", "integer"],
+  ["file_path", "text"],
+  ["start_line", "integer"],
+  ["end_line", "integer"],
+  ["severity", "text"],
+  ["category", "text"],
+  ["confidence", "integer"],
+  ["title", "text"],
+  ["suppressed", "boolean"],
+  ["suppression_pattern", "text"],
+  ["comment_id", "bigint"],
+  ["comment_surface", "text"],
+  ["review_output_key", "text"],
+]);
+
+const FEEDBACK_REACTION_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
+  ["repo", "text"],
+  ["review_id", "integer"],
+  ["finding_id", "integer"],
+  ["comment_id", "bigint"],
+  ["comment_surface", "text"],
+  ["reaction_id", "bigint"],
+  ["reaction_content", "text"],
+  ["reactor_login", "text"],
+  ["reacted_at", "timestamptz"],
+  ["severity", "text"],
+  ["category", "text"],
+  ["file_path", "text"],
+  ["title", "text"],
+]);
+
+const SUPPRESSION_LOG_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
+  ["review_id", "integer"],
+  ["pattern", "text"],
+  ["matched_count", "integer"],
+  ["finding_ids", "text"],
+]);
 
 async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]): Promise<void> {
   await executeJsonbRecordBatches(
@@ -103,21 +143,7 @@ async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]):
             batch_rows.comment_id,
             batch_rows.comment_surface,
             batch_rows.review_output_key
-          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-            review_id integer,
-            file_path text,
-            start_line integer,
-            end_line integer,
-            severity text,
-            category text,
-            confidence integer,
-            title text,
-            suppressed boolean,
-            suppression_pattern text,
-            comment_id bigint,
-            comment_surface text,
-            review_output_key text
-          )
+          FROM ${FINDING_BATCH_RECORDSET}
         `,
         [batch.json],
       );
@@ -166,21 +192,7 @@ async function _insertFeedbackReactionBatches(sqlClient: Sql, reactions: Feedbac
             batch_rows.category,
             batch_rows.file_path,
             batch_rows.title
-          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-            repo text,
-            review_id integer,
-            finding_id integer,
-            comment_id bigint,
-            comment_surface text,
-            reaction_id bigint,
-            reaction_content text,
-            reactor_login text,
-            reacted_at timestamptz,
-            severity text,
-            category text,
-            file_path text,
-            title text
-          )
+          FROM ${FEEDBACK_REACTION_BATCH_RECORDSET}
           ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING
         `,
         [batch.json],
@@ -208,12 +220,7 @@ async function _insertSuppressionLogBatches(sqlClient: Sql, entries: Suppression
             batch_rows.pattern,
             batch_rows.matched_count,
             batch_rows.finding_ids
-          FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-            review_id integer,
-            pattern text,
-            matched_count integer,
-            finding_ids text
-          )
+          FROM ${SUPPRESSION_LOG_BATCH_RECORDSET}
         `,
         [batch.json],
       );

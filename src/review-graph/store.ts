@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import { executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   ReplaceFileGraphInput,
   ReviewGraphBuildRecord,
@@ -93,6 +93,27 @@ type EdgeInsertPayload = {
 
 const REVIEW_GRAPH_NODE_WRITE_BATCH_SIZE = 500;
 const REVIEW_GRAPH_EDGE_WRITE_BATCH_SIZE = 500;
+const REVIEW_GRAPH_NODE_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["node_kind", "text"],
+  ["stable_key", "text"],
+  ["symbol_name", "text"],
+  ["qualified_name", "text"],
+  ["language", "text"],
+  ["span_start_line", "integer"],
+  ["span_start_col", "integer"],
+  ["span_end_line", "integer"],
+  ["span_end_col", "integer"],
+  ["signature", "text"],
+  ["attributes", "jsonb"],
+  ["confidence", "real"],
+]);
+const REVIEW_GRAPH_EDGE_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["edge_kind", "text"],
+  ["source_node_id", "bigint"],
+  ["target_node_id", "bigint"],
+  ["confidence", "real"],
+  ["attributes", "jsonb"],
+]);
 
 function toIso(value: string | Date | null): string | null {
   if (value === null) return null;
@@ -340,20 +361,7 @@ export function createReviewGraphStore(opts: {
                     batch_rows.signature,
                     COALESCE(batch_rows.attributes, '{}'::jsonb),
                     batch_rows.confidence
-                  FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-                    node_kind text,
-                    stable_key text,
-                    symbol_name text,
-                    qualified_name text,
-                    language text,
-                    span_start_line integer,
-                    span_start_col integer,
-                    span_end_line integer,
-                    span_end_col integer,
-                    signature text,
-                    attributes jsonb,
-                    confidence real
-                  )
+                  FROM ${REVIEW_GRAPH_NODE_BATCH_RECORDSET}
                   RETURNING stable_key, id
                 `,
                 [
@@ -416,13 +424,7 @@ export function createReviewGraphStore(opts: {
                     batch_rows.target_node_id,
                     batch_rows.confidence,
                     COALESCE(batch_rows.attributes, '{}'::jsonb)
-                  FROM jsonb_to_recordset($1::jsonb) AS batch_rows (
-                    edge_kind text,
-                    source_node_id bigint,
-                    target_node_id bigint,
-                    confidence real,
-                    attributes jsonb
-                  )
+                  FROM ${REVIEW_GRAPH_EDGE_BATCH_RECORDSET}
                 `,
                 [
                   batch.json,
