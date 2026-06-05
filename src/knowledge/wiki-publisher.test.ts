@@ -13,7 +13,7 @@ import {
   createSilentLogger,
   makeGroup,
   makePageResult,
-} from "./wiki-publisher-test-helpers.ts";
+} from "./wiki-publisher.test-helpers.ts";
 import type { Octokit } from "@octokit/rest";
 
 // ── formatPageComment ───────────────────────────────────────────────────

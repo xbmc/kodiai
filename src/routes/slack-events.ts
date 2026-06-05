@@ -12,7 +12,7 @@ import { verifySlackRequest } from "../slack/verify.ts";
 import {
   createRouteRateLimiters,
   requestSourceKey,
-  type RouteRateLimitOptions,
+  type RouteRateLimitOptionsWith,
 } from "./route-rate-limit.ts";
 
 interface SlackEventsRouteDeps {
@@ -23,7 +23,7 @@ interface SlackEventsRouteDeps {
   requestTracker?: RequestTracker;
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
   threadSessionStore?: SlackThreadSessionStore;
-  rateLimit?: RouteRateLimitOptions;
+  rateLimit?: RouteRateLimitOptionsWith<"channel">;
 }
 
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
@@ -34,48 +34,8 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
     preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 60, windowMs: 60_000, maxKeys: 5_000 },
+    channel: { max: 30, windowMs: 60_000, maxKeys: 100 },
   });
-
-  // Per-channel sliding window rate limiter
-  const RATE_LIMIT_MAX_EVENTS = 30;
-  const RATE_LIMIT_WINDOW_MS = 60_000;
-  const channelEventTimestamps = new Map<string, number[]>();
-
-  function isChannelRateLimited(channel: string): boolean {
-    const now = Date.now();
-    const cutoff = now - RATE_LIMIT_WINDOW_MS;
-
-    let timestamps = channelEventTimestamps.get(channel);
-    if (!timestamps) {
-      timestamps = [];
-      channelEventTimestamps.set(channel, timestamps);
-    }
-
-    // Lazily clean old timestamps
-    const validStart = timestamps.findIndex((ts) => ts > cutoff);
-    if (validStart > 0) {
-      timestamps.splice(0, validStart);
-    } else if (validStart === -1) {
-      timestamps.length = 0;
-    }
-
-    if (timestamps.length >= RATE_LIMIT_MAX_EVENTS) {
-      return true;
-    }
-
-    timestamps.push(now);
-
-    // Lazily prune stale channels to keep Map bounded
-    if (channelEventTimestamps.size > 100) {
-      for (const [ch, ts] of channelEventTimestamps) {
-        if (ts.length === 0 || ts[ts.length - 1]! <= cutoff) {
-          channelEventTimestamps.delete(ch);
-        }
-      }
-    }
-
-    return false;
-  }
 
   const app = new Hono();
 
@@ -175,9 +135,9 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
 
       // Per-channel rate limiting
       const channel = decision.bootstrap.channel;
-      if (isChannelRateLimited(channel)) {
+      if (rateLimiters.channel.isLimited(`channel:${channel}`)) {
         logger.warn(
-          { channel, limit: RATE_LIMIT_MAX_EVENTS, windowMs: RATE_LIMIT_WINDOW_MS },
+          { channel },
           "Slack event rate-limited for channel",
         );
         return c.json({ ok: true });

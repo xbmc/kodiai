@@ -1,6 +1,7 @@
 import { mock } from "bun:test";
 import type { Octokit } from "@octokit/rest";
 import type { GitHubApp } from "../auth/github-app.ts";
+import type { Sql } from "../db/client.ts";
 import type { PagePostResult, PageSuggestionGroup } from "./wiki-publisher-types.ts";
 
 export function makeGroup(overrides: Partial<PageSuggestionGroup> = {}): PageSuggestionGroup {
@@ -76,7 +77,7 @@ export function createMockGithubApp(overrides: Partial<GitHubApp> = {}): GitHubA
 }
 
 /** Create a mock SQL tagged template that records queries and returns configurable rows. */
-export function createMockSql(rows: Record<string, unknown>[] = []) {
+export function createMockSql(rows: Record<string, unknown>[] = []): { sql: Sql; calls: string[] } {
   const calls: string[] = [];
   const sqlFn = (...args: unknown[]) => {
     // Tagged template: first arg is string array, rest are values
@@ -91,7 +92,7 @@ export function createMockSql(rows: Record<string, unknown>[] = []) {
       return target.apply(thisArg, argArray);
     },
   });
-  return { sql: proxy as never, calls };
+  return { sql: proxy as unknown as Sql, calls };
 }
 
 export function createSilentLogger() {

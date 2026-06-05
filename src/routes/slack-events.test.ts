@@ -123,6 +123,57 @@ describe("createSlackEventRoutes", () => {
     expect(await response.text()).toBe("Rate limited");
   });
 
+  test("rate-limits accepted Slack events by channel through route limiter options", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload), {
+      rateLimit: {
+        channel: { max: 1, windowMs: 60_000, maxKeys: 10 },
+      },
+    });
+    const firstPayload = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.010001",
+        user: "U777USER",
+        text: "<@U123BOT> first",
+      },
+    });
+    const secondPayload = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.010002",
+        user: "U777USER",
+        text: "<@U123BOT> second",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const first = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(firstPayload, timestamp, signSlackRequest(timestamp, firstPayload)),
+      body: firstPayload,
+    });
+    const second = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(secondPayload, timestamp, signSlackRequest(timestamp, secondPayload)),
+      body: secondPayload,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await Promise.resolve();
+    expect(processed).toHaveLength(1);
+    expect(processed[0]?.text).toBe("<@U123BOT> first");
+  });
+
   test("returns 401 when timestamp is outside replay window", async () => {
     const app = createApp();
     const payload = JSON.stringify({ type: "event_callback", event: { type: "app_mention" } });

@@ -5,7 +5,7 @@ import {
   createMockGithubApp,
   createMockSql,
   createSilentLogger,
-} from "./wiki-publisher-test-helpers.ts";
+} from "./wiki-publisher.test-helpers.ts";
 
 describe("createWikiPublisher — retrofitPreview", () => {
   it("update path: returns action=update with existingCommentId when marker found", async () => {

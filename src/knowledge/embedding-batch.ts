@@ -7,6 +7,7 @@ export type DocumentEmbeddingBatchResult =
     status: "success";
     embedding: Float32Array;
     model: string;
+    dimensions: number;
   }
   | {
     status: "unavailable";
@@ -50,6 +51,7 @@ export async function generateDocumentEmbeddingResultsBatch(
             status: "success",
             embedding: result.embedding,
             model: result.model,
+            dimensions: result.dimensions,
           } satisfies DocumentEmbeddingBatchResult;
         } catch (err) {
           return {

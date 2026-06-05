@@ -38,6 +38,7 @@ describe("generateDocumentEmbeddingResultsBatch", () => {
       status: "success",
       embedding: new Float32Array([3]),
       model: "test-model",
+      dimensions: 1,
     });
     expect(results[1]).toEqual({
       status: "unavailable",
@@ -52,11 +53,13 @@ describe("generateDocumentEmbeddingResultsBatch", () => {
       status: "success",
       embedding: new Float32Array([4]),
       model: "test-model",
+      dimensions: 1,
     });
     expect(results[4]).toEqual({
       status: "success",
       embedding: new Float32Array([4]),
       model: "test-model",
+      dimensions: 1,
     });
   });
 });
