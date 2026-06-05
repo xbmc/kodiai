@@ -8,6 +8,12 @@ export type RateLimiter = {
   isLimited(key: string): boolean;
 };
 
+export type RateLimitOptions<TWindow extends string> = Partial<Record<TWindow, RateLimitWindowOptions>>;
+
+export type RateLimitDefaults<TWindow extends string> = Record<TWindow, Required<RateLimitWindowOptions>>;
+
+export type RateLimiters<TWindow extends string> = Record<TWindow, RateLimiter>;
+
 export type RateLimitPairOptions = {
   pre?: RateLimitWindowOptions;
   verified?: RateLimitWindowOptions;
@@ -79,6 +85,17 @@ export function createRateLimitPair(
     pre: createSlidingWindowRateLimiter(options?.pre, defaults.pre),
     verified: createSlidingWindowRateLimiter(options?.verified, defaults.verified),
   };
+}
+
+export function createNamedRateLimiters<TWindow extends string>(
+  options: RateLimitOptions<TWindow> | undefined,
+  defaults: RateLimitDefaults<TWindow>,
+): RateLimiters<TWindow> {
+  const limiters: Partial<Record<TWindow, RateLimiter>> = {};
+  for (const key of Object.keys(defaults) as TWindow[]) {
+    limiters[key] = createSlidingWindowRateLimiter(options?.[key], defaults[key]);
+  }
+  return limiters as RateLimiters<TWindow>;
 }
 
 export function requestSourceKey(header: (name: string) => string | undefined): string {

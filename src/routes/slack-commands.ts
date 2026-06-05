@@ -5,22 +5,24 @@ import type { ContributorProfileStore } from "../contributor/types.ts";
 import { handleKodiaiCommand } from "../slack/slash-command-handler.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
 import {
-  createRouteRateLimiters,
+  createNamedRateLimiters,
   requestSourceKey,
-  type RouteRateLimitOptions,
-} from "./route-rate-limit.ts";
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type SlackCommandRateLimitWindow = "preBody" | "verified";
 
 interface SlackCommandRouteDeps {
   config: AppConfig;
   logger: Logger;
   profileStore: ContributorProfileStore;
-  rateLimit?: RouteRateLimitOptions;
+  rateLimit?: RateLimitOptions<SlackCommandRateLimitWindow>;
 }
 
 export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
   const { config, logger, profileStore } = deps;
   const app = new Hono();
-  const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
     preBody: { max: 60, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 30, windowMs: 60_000, maxKeys: 5_000 },
   });

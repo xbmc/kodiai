@@ -7,16 +7,18 @@ import {
   type NormalizedWebhookRelayEvent,
 } from "../slack/webhook-relay.ts";
 import {
-  createRouteRateLimiters,
+  createNamedRateLimiters,
   requestSourceKey,
-  type RouteRateLimitOptions,
-} from "./route-rate-limit.ts";
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type SlackRelayRateLimitWindow = "preBody" | "verified";
 
 interface SlackRelayWebhookRouteDeps {
   config: AppConfig;
   logger: Logger;
   onAcceptedRelay?: (event: NormalizedWebhookRelayEvent) => Promise<void> | void;
-  rateLimit?: RouteRateLimitOptions;
+  rateLimit?: RateLimitOptions<SlackRelayRateLimitWindow>;
 }
 
 function secretsMatch(expected: string, provided: string | undefined): boolean {
@@ -37,7 +39,7 @@ function secretsMatch(expected: string, provided: string | undefined): boolean {
 export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps): Hono {
   const { config, logger, onAcceptedRelay } = deps;
   const app = new Hono();
-  const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
     preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 60, windowMs: 60_000, maxKeys: 1_000 },
   });

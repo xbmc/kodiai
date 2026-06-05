@@ -8,10 +8,12 @@ import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../life
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import {
-  createRouteRateLimiters,
+  createNamedRateLimiters,
   requestSourceKey,
-  type RouteRateLimitOptions,
-} from "./route-rate-limit.ts";
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type WebhookRateLimitWindow = "preBody" | "verified";
 
 interface WebhookRouteDeps {
   config: AppConfig;
@@ -22,13 +24,13 @@ interface WebhookRouteDeps {
   requestTracker: RequestTracker;
   webhookQueueStore: WebhookQueueStore;
   shutdownManager: ShutdownManager;
-  rateLimit?: RouteRateLimitOptions;
+  rateLimit?: RateLimitOptions<WebhookRateLimitWindow>;
 }
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
   const { config, logger, dedup, eventRouter, requestTracker, webhookQueueStore, shutdownManager } = deps;
   const app = new Hono();
-  const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
     preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 240, windowMs: 60_000, maxKeys: 5_000 },
   });

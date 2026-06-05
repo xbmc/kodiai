@@ -10,10 +10,12 @@ import {
 import { toSlackEventCallback, toSlackUrlVerification } from "../slack/types.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
 import {
-  createRouteRateLimiters,
+  createNamedRateLimiters,
   requestSourceKey,
-  type RouteRateLimitOptionsWith,
-} from "./route-rate-limit.ts";
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type SlackEventRateLimitWindow = "preBody" | "verified" | "channel";
 
 interface SlackEventsRouteDeps {
   config: AppConfig;
@@ -23,7 +25,7 @@ interface SlackEventsRouteDeps {
   requestTracker?: RequestTracker;
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
   threadSessionStore?: SlackThreadSessionStore;
-  rateLimit?: RouteRateLimitOptionsWith<"channel">;
+  rateLimit?: RateLimitOptions<SlackEventRateLimitWindow>;
 }
 
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
@@ -31,7 +33,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
   const recentAddressed = new Map<string, number>();
   const DUPLICATE_WINDOW_MS = 5000;
-  const rateLimiters = createRouteRateLimiters(deps.rateLimit, {
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
     preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 60, windowMs: 60_000, maxKeys: 5_000 },
     channel: { max: 30, windowMs: 60_000, maxKeys: 100 },

@@ -14578,7 +14578,7 @@ describe("review prompt derived cache", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("reduced-scope retry misses naturally and degraded cache falls back to rebuild", async () => {
+  test("reduced-scope retry misses naturally and rebuilds the prompt", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const queueMetadata = createQueueRunMetadata();
@@ -14587,18 +14587,6 @@ describe("review prompt derived cache", () => {
     const { logger, entries } = createCaptureLogger();
     let queuedRetryJob: ((metadata: JobQueueRunMetadata) => Promise<unknown>) | undefined;
     let promptBuilderCalls = 0;
-
-    const failingStore = {
-      get: () => {
-        throw new Error("cache read unavailable");
-      },
-      set: () => {
-        throw new Error("cache write unavailable");
-      },
-      delete: () => undefined,
-      entries: function* () {
-      },
-    };
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -14709,9 +14697,6 @@ describe("review prompt derived cache", () => {
         updateCheckpointCommentId: () => undefined,
         deleteCheckpoint: () => undefined,
       }) as never,
-      reviewPromptDerivedCacheOptions: {
-        store: failingStore,
-      },
       reviewPromptBuilder: (context) => {
         promptBuilderCalls += 1;
         return {
@@ -14764,17 +14749,12 @@ describe("review prompt derived cache", () => {
     expect(promptTexts[0]).not.toBe(promptTexts[1]);
     expect(promptTexts[1]).toContain("This is a retry of a timed-out review with reduced scope.");
     expect(
-      entries.some((entry) => entry.message === "Review derived prompt cache degraded; bypassing cache for this request"),
-    ).toBeTrue();
-    expect(
-      entries.filter((entry) => entry.message === "Resolved review prompt derived-cache state").every((entry) => entry.data?.gateResult === "degraded"),
+      entries.filter((entry) => entry.message === "Resolved review prompt derived-cache state").every((entry) => entry.data?.gateResult === "miss"),
     ).toBeTrue();
     expect(reviewCacheTelemetry.some((entry) =>
       entry.cacheSurface === "review-derived-prompt"
-      && entry.status === "degraded"
-      && entry.reason === "bookkeeping-failure"
-      && typeof entry.bookkeepingErrorCount === "number"
-      && entry.bookkeepingErrorCount > 0
+      && entry.status === "miss"
+      && entry.reason === "cache-miss"
     )).toBeTrue();
 
     await workspaceFixture.cleanup();

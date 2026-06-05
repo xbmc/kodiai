@@ -639,18 +639,10 @@ describe("upsertWikiPageComment", () => {
   it("calls updateComment when marker found, not createComment", async () => {
     const updateComment = mock(() => Promise.resolve({ data: {} }));
     const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const listComments = mock(() =>
-      Promise.resolve({
-        data: [
-          { id: 5001, body: "<!-- kodiai:wiki-modification:42 --> some content here" },
-        ],
-      }),
-    );
 
     const mockOctokit = {
       rest: {
         issues: {
-          listComments,
           updateComment,
           createComment,
         },
@@ -666,6 +658,7 @@ describe("upsertWikiPageComment", () => {
       42,
       "new body",
       logger,
+      new Map([[42, 5001]]),
     );
 
     expect(updateComment).toHaveBeenCalledTimes(1);
@@ -679,14 +672,10 @@ describe("upsertWikiPageComment", () => {
   it("calls createComment when no marker found, not updateComment", async () => {
     const updateComment = mock(() => Promise.resolve({ data: {} }));
     const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const listComments = mock(() =>
-      Promise.resolve({ data: [] }),
-    );
 
     const mockOctokit = {
       rest: {
         issues: {
-          listComments,
           updateComment,
           createComment,
         },
@@ -702,6 +691,7 @@ describe("upsertWikiPageComment", () => {
       42,
       "new body",
       logger,
+      new Map(),
     );
 
     expect(createComment).toHaveBeenCalledTimes(1);
@@ -710,14 +700,12 @@ describe("upsertWikiPageComment", () => {
   });
 
   it("returns null when API call fails", async () => {
-    const listComments = mock(() => Promise.resolve({ data: [] }));
     const createComment = mock(() => Promise.reject(new Error("API error")));
     const updateComment = mock(() => Promise.resolve({ data: {} }));
 
     const mockOctokit = {
       rest: {
         issues: {
-          listComments,
           updateComment,
           createComment,
         },
@@ -733,39 +721,9 @@ describe("upsertWikiPageComment", () => {
       42,
       "new body",
       logger,
+      new Map(),
     );
 
     expect(result).toBeNull();
-  });
-
-  it("falls through to createComment when scan throws", async () => {
-    const listComments = mock(() => Promise.reject(new Error("scan failed")));
-    const createComment = mock(() => Promise.resolve({ data: { id: 7777 } }));
-    const updateComment = mock(() => Promise.resolve({ data: {} }));
-
-    const mockOctokit = {
-      rest: {
-        issues: {
-          listComments,
-          updateComment,
-          createComment,
-        },
-      },
-    } as unknown as Octokit;
-
-    const logger = createSilentLogger();
-    const result = await upsertWikiPageComment(
-      mockOctokit,
-      "xbmc",
-      "xbmc",
-      100,
-      42,
-      "new body",
-      logger,
-    );
-
-    expect(createComment).toHaveBeenCalledTimes(1);
-    expect(updateComment).not.toHaveBeenCalled();
-    expect(result).toEqual({ commentId: 7777, action: "created" });
   });
 });

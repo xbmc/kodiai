@@ -457,7 +457,7 @@ export function createReviewHandler(deps: {
   /** Optional derived prompt cache store overrides for review prompt reuse tests/fail-open wiring. */
   reviewPromptDerivedCacheOptions?: Pick<
     SearchCacheOptions<PromptBuildResult>,
-    "ttlMs" | "store" | "inFlightStore"
+    "ttlMs" | "maxSize" | "now"
   >;
   /** Optional prompt builder override for review prompt reuse tests. */
   reviewPromptBuilder?: typeof buildReviewPromptDetails;

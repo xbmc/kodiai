@@ -1,8 +1,8 @@
 import { positiveIntegerBound } from "./bounds.ts";
+import { createInMemoryCache } from "./in-memory-cache.ts";
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_SIZE = 500;
-const DEFAULT_EXPIRED_CLEANUP_SCAN_LIMIT = 16;
 
 export type SearchCacheKeyParams = {
   repo: string;
@@ -11,25 +11,10 @@ export type SearchCacheKeyParams = {
   extra?: Record<string, unknown>;
 };
 
-export type KeyValueStore<T> = {
-  get(key: string): T | undefined;
-  set(key: string, value: T): void;
-  delete(key: string): void;
-  entries(): IterableIterator<[string, T]>;
-};
-
-type CacheEntry<T> = {
-  value: T;
-  expiresAt: number;
-};
-
 export type SearchCacheOptions<T> = {
   ttlMs?: number;
   maxSize?: number;
-  expiredCleanupScanLimit?: number;
   now?: () => number;
-  store?: KeyValueStore<CacheEntry<T>>;
-  inFlightStore?: KeyValueStore<Promise<T>>;
   onError?: (error: unknown) => void;
 };
 
@@ -78,15 +63,12 @@ export function buildSearchCacheKey(params: SearchCacheKeyParams): string {
 export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): SearchCache<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const maxSize = positiveIntegerBound(options.maxSize, DEFAULT_MAX_SIZE);
-  const expiredCleanupScanLimit = positiveIntegerBound(
-    options.expiredCleanupScanLimit,
-    DEFAULT_EXPIRED_CLEANUP_SCAN_LIMIT,
-  );
-  const now = options.now ?? (() => Date.now());
-  const store = options.store ?? new Map<string, CacheEntry<T>>();
-  const inFlightStore = options.inFlightStore ?? new Map<string, Promise<T>>();
-  let estimatedSize = 0;
-  let expiredCleanupIterator: IterableIterator<[string, CacheEntry<T>]> | undefined;
+  const store = createInMemoryCache<string, T>({
+    maxSize,
+    ttlMs,
+    now: options.now,
+  });
+  const inFlightStore = new Map<string, Promise<T>>();
 
   const reportCacheError = (error: unknown): void => {
     if (options.onError) {
@@ -98,105 +80,9 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
     }
   };
 
-  const resetExpiredCleanupIterator = (): void => {
-    expiredCleanupIterator = undefined;
-  };
-
-  const deleteStoreKey = (key: string): boolean => {
-    try {
-      store.delete(key);
-      estimatedSize = Math.max(0, estimatedSize - 1);
-      resetExpiredCleanupIterator();
-      return true;
-    } catch (error) {
-      reportCacheError(error);
-      return false;
-    }
-  };
-
-  const entryIsExpired = (entry: CacheEntry<T>, currentTime: number): boolean => {
-    return entry.expiresAt <= currentTime;
-  };
-
-  const estimateInitialSize = (): void => {
-    try {
-      let count = 0;
-      for (const _entry of store.entries()) {
-        count += 1;
-      }
-      estimatedSize = count;
-    } catch (error) {
-      reportCacheError(error);
-      estimatedSize = 0;
-    }
-  };
-
-  const cleanupExpiredAmortized = (): void => {
-    if (expiredCleanupScanLimit <= 0) {
-      return;
-    }
-
-    const currentTime = now();
-
-    try {
-      for (let scanned = 0; scanned < expiredCleanupScanLimit; scanned++) {
-        expiredCleanupIterator ??= store.entries();
-        const next = expiredCleanupIterator.next();
-
-        if (next.done) {
-          resetExpiredCleanupIterator();
-          return;
-        }
-
-        const [key, entry] = next.value;
-        if (entryIsExpired(entry, currentTime)) {
-          deleteStoreKey(key);
-        }
-      }
-    } catch (error) {
-      reportCacheError(error);
-      resetExpiredCleanupIterator();
-    }
-  };
-
-  const enforceMaxSize = (): void => {
-    if (estimatedSize <= maxSize) {
-      return;
-    }
-
-    const currentTime = now();
-
-    try {
-      for (const [key, entry] of store.entries()) {
-        if (entryIsExpired(entry, currentTime) || estimatedSize > maxSize) {
-          deleteStoreKey(key);
-        }
-
-        if (estimatedSize <= maxSize) {
-          return;
-        }
-      }
-    } catch (error) {
-      reportCacheError(error);
-      resetExpiredCleanupIterator();
-    }
-  };
-
-  estimateInitialSize();
-
   const get = (key: string): T | undefined => {
     try {
-      const entry = store.get(key);
-      if (!entry) {
-        return undefined;
-      }
-
-      if (entry.expiresAt <= now()) {
-        deleteStoreKey(key);
-        return undefined;
-      }
-
-      return entry.value;
+      return store.get(key);
     } catch (error) {
       reportCacheError(error);
       return undefined;
@@ -205,17 +91,7 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
 
   const set = (key: string, value: T, entryTtlMs?: number): void => {
     try {
-      const existingEntry = store.get(key);
-      store.set(key, {
-        value,
-        expiresAt: now() + (entryTtlMs ?? ttlMs),
-      });
-      if (!existingEntry) {
-        estimatedSize += 1;
-      }
-      resetExpiredCleanupIterator();
-      cleanupExpiredAmortized();
-      enforceMaxSize();
+      store.set(key, value, entryTtlMs);
     } catch (error) {
       reportCacheError(error);
     }
@@ -263,25 +139,12 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
   };
 
   const purgeExpired = (): number => {
-    let purged = 0;
-    let entries: IterableIterator<[string, CacheEntry<T>]>;
-
     try {
-      entries = store.entries();
+      return store.purgeExpired();
     } catch (error) {
       reportCacheError(error);
       return 0;
     }
-
-    for (const [key, entry] of entries) {
-      if (entry.expiresAt <= now()) {
-        if (deleteStoreKey(key)) {
-          purged += 1;
-        }
-      }
-    }
-
-    return purged;
   };
 
   return {

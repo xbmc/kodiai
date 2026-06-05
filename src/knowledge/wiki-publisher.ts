@@ -166,7 +166,7 @@ export async function postCommentWithRetry(
   return null;
 }
 
-async function scanWikiPageCommentMarkers(
+export async function scanWikiPageCommentMarkers(
   octokit: Octokit,
   owner: string,
   repo: string,
@@ -224,43 +224,9 @@ export async function upsertWikiPageComment(
   pageId: number,
   body: string,
   logger: Logger,
-  knownCommentIds?: Map<number, number>,
+  knownCommentIds: Map<number, number>,
 ): Promise<{ commentId: number; action: 'updated' | 'created' } | null> {
-  const marker = `<!-- kodiai:wiki-modification:${pageId} -->`;
-  let existingCommentId: number | null = knownCommentIds?.get(pageId) ?? null;
-
-  if (!knownCommentIds) {
-    try {
-      for (let page = 1; page <= MAX_COMMENT_SCAN_PAGES; page++) {
-        const { data: comments } = await octokit.rest.issues.listComments({
-          owner,
-          repo,
-          issue_number: issueNumber,
-          per_page: 100,
-          page,
-          sort: "created",
-          direction: "desc",
-        });
-
-        if (comments.length === 0) break;
-
-        for (const comment of comments) {
-          if (comment.body?.includes(marker)) {
-            existingCommentId = comment.id;
-            break;
-          }
-        }
-
-        if (existingCommentId !== null) break;
-        if (comments.length < 100) break;
-      }
-    } catch {
-      logger.debug(
-        { pageId, issueNumber },
-        "Failed to scan for existing wiki comment, will create new",
-      );
-    }
-  }
+  const existingCommentId = knownCommentIds.get(pageId) ?? null;
 
   try {
     if (existingCommentId !== null) {
@@ -274,7 +240,7 @@ export async function upsertWikiPageComment(
         { pageId, commentId: existingCommentId, action: 'updated' },
         "Updated existing wiki comment",
       );
-      knownCommentIds?.set(pageId, existingCommentId);
+      knownCommentIds.set(pageId, existingCommentId);
       return { commentId: existingCommentId, action: 'updated' };
     } else {
       const response = await octokit.rest.issues.createComment({
@@ -287,7 +253,7 @@ export async function upsertWikiPageComment(
         { pageId, commentId: response.data.id, action: 'created' },
         "Created new wiki comment",
       );
-      knownCommentIds?.set(pageId, response.data.id);
+      knownCommentIds.set(pageId, response.data.id);
       return { commentId: response.data.id, action: 'created' };
     }
   } catch {

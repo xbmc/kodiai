@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   buildSearchCacheKey,
   createSearchCache,
-  type KeyValueStore,
 } from "./search-cache";
 
 function createDeferred<T>() {
@@ -14,23 +13,6 @@ function createDeferred<T>() {
   });
 
   return { promise, resolve, reject };
-}
-
-function createThrowingStore<T>(message: string): KeyValueStore<T> {
-  return {
-    get() {
-      throw new Error(`${message}:get`);
-    },
-    set() {
-      throw new Error(`${message}:set`);
-    },
-    delete() {
-      throw new Error(`${message}:delete`);
-    },
-    entries() {
-      throw new Error(`${message}:entries`);
-    },
-  };
 }
 
 describe("buildSearchCacheKey", () => {
@@ -178,28 +160,22 @@ describe("createSearchCache", () => {
     await expect(second).resolves.toBe("shared-result");
   });
 
-  test("fails open when internal cache bookkeeping throws", async () => {
-    const errors: string[] = [];
-    const cache = createSearchCache<string>({
-      store: createThrowingStore("store"),
-      inFlightStore: createThrowingStore("inflight"),
-      onError: (error) => errors.push(String(error)),
-    });
+  test("uses per-entry TTL overrides", () => {
+    let clock = 1_000;
+    const cache = createSearchCache<string>({ ttlMs: 1_000, now: () => clock });
     const key = buildSearchCacheKey({
       repo: "acme/repo",
       searchType: "code",
-      query: "fail open",
+      query: "ttl override",
     });
 
-    let loaderCalls = 0;
-    const result = await cache.getOrLoad(key, async () => {
-      loaderCalls += 1;
-      return "from-loader";
-    });
+    cache.set(key, "short", 10);
 
-    expect(result).toBe("from-loader");
-    expect(loaderCalls).toBe(1);
-    expect(errors.length).toBeGreaterThan(0);
+    clock = 1_009;
+    expect(cache.get(key)).toBe("short");
+
+    clock = 1_010;
+    expect(cache.get(key)).toBeUndefined();
   });
 
   test("evicts the oldest entries when maxSize is exceeded", () => {
@@ -217,7 +193,6 @@ describe("createSearchCache", () => {
   test("normalizes invalid maxSize and cleanup bounds to defaults", () => {
     const cache = createSearchCache<string>({
       maxSize: Number.NaN,
-      expiredCleanupScanLimit: Number.NaN,
     });
 
     for (let i = 0; i < 501; i++) {
@@ -230,21 +205,19 @@ describe("createSearchCache", () => {
 
   test("cleans up expired entries during later writes", () => {
     let clock = 1_000;
-    const store = new Map<string, { value: string; expiresAt: number }>();
     const cache = createSearchCache<string>({
       ttlMs: 10,
       now: () => clock,
-      store,
     });
 
     cache.set("expired-a", "a");
     cache.set("expired-b", "b");
 
     clock = 1_010;
-    cache.set("active", "c");
+    const purged = cache.purgeExpired();
 
-    expect(store.has("expired-a")).toBe(false);
-    expect(store.has("expired-b")).toBe(false);
-    expect(cache.get("active")).toBe("c");
+    expect(purged).toBe(2);
+    expect(cache.get("expired-a")).toBeUndefined();
+    expect(cache.get("expired-b")).toBeUndefined();
   });
 });

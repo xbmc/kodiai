@@ -42,6 +42,23 @@ describe("createInMemoryCache", () => {
     expect(cache.get("key")).toBeUndefined();
   });
 
+  test("per-entry TTL overrides default TTL", () => {
+    const clock = makeClock(1000);
+    const cache = createInMemoryCache<string, string>({
+      maxSize: 10,
+      ttlMs: 5000,
+      now: clock.now,
+    });
+
+    cache.set("key", "value", 25);
+
+    clock.advance(24);
+    expect(cache.get("key")).toBe("value");
+
+    clock.advance(1);
+    expect(cache.get("key")).toBeUndefined();
+  });
+
   test("has returns false for expired entries", () => {
     const clock = makeClock(0);
     const cache = createInMemoryCache<string, boolean>({
@@ -127,6 +144,26 @@ describe("createInMemoryCache", () => {
 
     clock.advance(100);
     expect(cache.size()).toBe(0);
+  });
+
+  test("purgeExpired returns removed entry count", () => {
+    const clock = makeClock(0);
+    const cache = createInMemoryCache<string, number>({
+      maxSize: 10,
+      ttlMs: 100,
+      now: clock.now,
+    });
+
+    cache.set("a", 1);
+    cache.set("b", 2);
+    cache.set("c", 3, 1_000);
+
+    clock.advance(100);
+
+    expect(cache.purgeExpired()).toBe(2);
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBeUndefined();
+    expect(cache.get("c")).toBe(3);
   });
 
   test("re-setting a key refreshes its TTL and position", () => {
