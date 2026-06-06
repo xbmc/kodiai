@@ -1,5 +1,5 @@
 import { positiveIntegerBound } from "./bounds.ts";
-import { createInMemoryCache } from "./in-memory-cache.ts";
+import { createInMemoryCache, type InMemoryCache } from "./in-memory-cache.ts";
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_SIZE = 500;
@@ -15,6 +15,12 @@ export type SearchCacheOptions<T> = {
   ttlMs?: number;
   maxSize?: number;
   now?: () => number;
+  store?: Pick<InMemoryCache<string, T>, "get" | "set" | "purgeExpired">;
+  inFlightStore?: {
+    get(key: string): Promise<T> | undefined;
+    set(key: string, value: Promise<T>): unknown;
+    delete(key: string): unknown;
+  };
   onError?: (error: unknown) => void;
 };
 
@@ -68,7 +74,8 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
     ttlMs,
     now: options.now,
   });
-  const inFlightStore = new Map<string, Promise<T>>();
+  const valueStore = options.store ?? store;
+  const inFlightStore = options.inFlightStore ?? new Map<string, Promise<T>>();
 
   const reportCacheError = (error: unknown): void => {
     if (options.onError) {
@@ -82,7 +89,7 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
 
   const get = (key: string): T | undefined => {
     try {
-      return store.get(key);
+      return valueStore.get(key);
     } catch (error) {
       reportCacheError(error);
       return undefined;
@@ -91,7 +98,7 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
 
   const set = (key: string, value: T, entryTtlMs?: number): void => {
     try {
-      store.set(key, value, entryTtlMs);
+      valueStore.set(key, value, entryTtlMs);
     } catch (error) {
       reportCacheError(error);
     }
@@ -140,7 +147,7 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
 
   const purgeExpired = (): number => {
     try {
-      return store.purgeExpired();
+      return valueStore.purgeExpired();
     } catch (error) {
       reportCacheError(error);
       return 0;

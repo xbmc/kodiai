@@ -1,7 +1,10 @@
+import { positiveIntegerBound } from "./bounds.ts";
+
 export type RateLimitWindowOptions = {
   max?: number;
   windowMs?: number;
   maxKeys?: number;
+  now?: () => number;
 };
 
 export type RateLimiter = {
@@ -28,9 +31,10 @@ export function createSlidingWindowRateLimiter(
   options: RateLimitWindowOptions | undefined,
   defaults: Required<RateLimitWindowOptions>,
 ): RateLimiter {
-  const max = options?.max ?? defaults.max;
-  const windowMs = options?.windowMs ?? defaults.windowMs;
-  const maxKeys = options?.maxKeys ?? defaults.maxKeys;
+  const max = positiveIntegerBound(options?.max, defaults.max);
+  const windowMs = positiveIntegerBound(options?.windowMs, defaults.windowMs);
+  const maxKeys = positiveIntegerBound(options?.maxKeys, defaults.maxKeys);
+  const nowFn = options?.now ?? Date.now;
   const timestampsByKey = new Map<string, number[]>();
 
   function pruneKeys(cutoff: number): void {
@@ -50,7 +54,7 @@ export function createSlidingWindowRateLimiter(
 
   return {
     isLimited(key: string): boolean {
-      const now = Date.now();
+      const now = nowFn();
       const cutoff = now - windowMs;
       let timestamps = timestampsByKey.get(key);
       if (!timestamps) {

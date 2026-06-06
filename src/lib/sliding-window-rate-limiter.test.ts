@@ -13,6 +13,48 @@ describe("createSlidingWindowRateLimiter", () => {
     expect(limiter.isLimited("a")).toBe(true);
     expect(limiter.isLimited("b")).toBe(false);
   });
+
+  test("releases a key after the injected clock leaves the window", () => {
+    let now = 1_000;
+    const limiter = createSlidingWindowRateLimiter(
+      { max: 1, windowMs: 100, maxKeys: 10, now: () => now },
+      { max: 10, windowMs: 60_000, maxKeys: 10 },
+    );
+
+    expect(limiter.isLimited("a")).toBe(false);
+    expect(limiter.isLimited("a")).toBe(true);
+
+    now = 1_101;
+    expect(limiter.isLimited("a")).toBe(false);
+  });
+
+  test("normalizes invalid window options to defaults", () => {
+    const limiter = createSlidingWindowRateLimiter(
+      { max: Number.NaN, windowMs: 0, maxKeys: -1 },
+      { max: 2, windowMs: 60_000, maxKeys: 10 },
+    );
+
+    expect(limiter.isLimited("a")).toBe(false);
+    expect(limiter.isLimited("a")).toBe(false);
+    expect(limiter.isLimited("a")).toBe(true);
+  });
+
+  test("prunes stale keys before falling back to oldest-key eviction", () => {
+    let now = 1_000;
+    const limiter = createSlidingWindowRateLimiter(
+      { max: 1, windowMs: 100, maxKeys: 2, now: () => now },
+      { max: 10, windowMs: 60_000, maxKeys: 10 },
+    );
+
+    expect(limiter.isLimited("expired")).toBe(false);
+
+    now = 1_101;
+    expect(limiter.isLimited("fresh-a")).toBe(false);
+    expect(limiter.isLimited("fresh-b")).toBe(false);
+
+    expect(limiter.isLimited("fresh-a")).toBe(true);
+    expect(limiter.isLimited("fresh-b")).toBe(true);
+  });
 });
 
 describe("createNamedRateLimiters", () => {

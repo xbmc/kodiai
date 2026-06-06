@@ -3,6 +3,7 @@ import {
   buildSearchCacheKey,
   createSearchCache,
 } from "./search-cache";
+import type { InMemoryCache } from "./in-memory-cache.ts";
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -13,6 +14,38 @@ function createDeferred<T>() {
   });
 
   return { promise, resolve, reject };
+}
+
+function createThrowingStore<T>(label: string): Pick<InMemoryCache<string, T>, "get" | "set" | "purgeExpired"> {
+  return {
+    get() {
+      throw new Error(`${label}: get failed`);
+    },
+    set() {
+      throw new Error(`${label}: set failed`);
+    },
+    purgeExpired() {
+      throw new Error(`${label}: purge failed`);
+    },
+  };
+}
+
+function createThrowingInFlightStore<T>() {
+  return {
+    get() {
+      throw new Error("inflight: get failed");
+    },
+    set() {
+      throw new Error("inflight: set failed");
+    },
+    delete() {
+      throw new Error("inflight: delete failed");
+    },
+  } as {
+    get(key: string): Promise<T> | undefined;
+    set(key: string, value: Promise<T>): unknown;
+    delete(key: string): unknown;
+  };
 }
 
 describe("buildSearchCacheKey", () => {
@@ -158,6 +191,35 @@ describe("createSearchCache", () => {
 
     await expect(first).resolves.toBe("shared-result");
     await expect(second).resolves.toBe("shared-result");
+  });
+
+  test("fails open when injected cache stores throw", async () => {
+    const errors: string[] = [];
+    const cache = createSearchCache<string>({
+      store: createThrowingStore("store"),
+      inFlightStore: createThrowingInFlightStore(),
+      onError: (error) => errors.push(String(error)),
+    });
+    const key = buildSearchCacheKey({
+      repo: "acme/repo",
+      searchType: "code",
+      query: "fail open",
+    });
+
+    const result = await cache.getOrLoad(key, async () => "from-loader");
+
+    expect(result).toBe("from-loader");
+    expect(cache.get(key)).toBeUndefined();
+    expect(cache.purgeExpired()).toBe(0);
+    expect(errors).toEqual([
+      "Error: store: get failed",
+      "Error: inflight: get failed",
+      "Error: inflight: set failed",
+      "Error: store: set failed",
+      "Error: inflight: delete failed",
+      "Error: store: get failed",
+      "Error: store: purge failed",
+    ]);
   });
 
   test("uses per-entry TTL overrides", () => {

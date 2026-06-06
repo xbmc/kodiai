@@ -306,7 +306,7 @@ export function createMentionHandler(deps: {
   /** Optional derived-context cache store overrides for mention-context reuse tests/fail-open wiring. */
   mentionDerivedContextCacheOptions?: Pick<
     SearchCacheOptions<PromptBuildResult>,
-    "ttlMs" | "maxSize" | "now"
+    "ttlMs" | "maxSize" | "now" | "store" | "inFlightStore"
   >;
   /** Optional formatter-suggestion subflow override for mention orchestration tests. */
   formatterSuggestionSubflow?: typeof runFormatterSuggestionSubflow;
