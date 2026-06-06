@@ -13,7 +13,9 @@ export type RateLimiter = {
 
 export type RateLimitOptions<TWindow extends string> = Partial<Record<TWindow, RateLimitWindowOptions>>;
 
-export type RateLimitDefaults<TWindow extends string> = Record<TWindow, Required<RateLimitWindowOptions>>;
+export type RateLimitWindowDefaults = Required<Omit<RateLimitWindowOptions, "now">>;
+
+export type RateLimitDefaults<TWindow extends string> = Record<TWindow, RateLimitWindowDefaults>;
 
 export type RateLimiters<TWindow extends string> = Record<TWindow, RateLimiter>;
 
@@ -23,13 +25,13 @@ export type RateLimitPairOptions = {
 };
 
 export type RateLimitPairDefaults = {
-  pre: Required<RateLimitWindowOptions>;
-  verified: Required<RateLimitWindowOptions>;
+  pre: RateLimitWindowDefaults;
+  verified: RateLimitWindowDefaults;
 };
 
 export function createSlidingWindowRateLimiter(
   options: RateLimitWindowOptions | undefined,
-  defaults: Required<RateLimitWindowOptions>,
+  defaults: RateLimitWindowDefaults,
 ): RateLimiter {
   const max = positiveIntegerBound(options?.max, defaults.max);
   const windowMs = positiveIntegerBound(options?.windowMs, defaults.windowMs);
