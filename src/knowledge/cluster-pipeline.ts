@@ -21,6 +21,13 @@ import { hdbscan } from "./hdbscan.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { UMAP } from "umap-js";
+import {
+  cosineSimilarity,
+  meanEmbedding,
+  parsePgVectorEmbedding,
+} from "./embedding-vector.ts";
+
+export { cosineSimilarity } from "./embedding-vector.ts";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -48,49 +55,9 @@ function seedRandom(seed: number): () => number {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-/** Cosine similarity between two Float32Arrays. */
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i]! * b[i]!;
-    normA += a[i]! * a[i]!;
-    normB += b[i]! * b[i]!;
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
-
 /** Parse pgvector string to Float32Array. */
 function parseEmbedding(raw: unknown): Float32Array | null {
-  if (raw instanceof Float32Array) return raw;
-  if (typeof raw === "string") {
-    const nums = raw
-      .replace(/^\[/, "")
-      .replace(/\]$/, "")
-      .split(",")
-      .map(Number);
-    if (nums.some(isNaN)) return null;
-    return new Float32Array(nums);
-  }
-  return null;
-}
-
-/** Compute mean of Float32Arrays. */
-function meanEmbedding(embeddings: Float32Array[]): Float32Array {
-  if (embeddings.length === 0) return new Float32Array(0);
-  const dim = embeddings[0]!.length;
-  const result = new Float32Array(dim);
-  for (const emb of embeddings) {
-    for (let i = 0; i < dim; i++) {
-      result[i]! += emb[i]!;
-    }
-  }
-  for (let i = 0; i < dim; i++) {
-    result[i]! /= embeddings.length;
-  }
-  return result;
+  return parsePgVectorEmbedding(raw);
 }
 
 type EmbeddingRow = {
@@ -238,6 +205,13 @@ export async function runClusterPipeline(opts: {
           // Update centroid with new members
           const allEmbeddings = [cluster.centroid, ...newMembers.map((m) => m.embedding)];
           const newCentroid = meanEmbedding(allEmbeddings);
+          if (!newCentroid) {
+            logger.warn(
+              { repo, clusterId, memberCount: newMembers.length },
+              "Skipping review cluster centroid update due to mixed embedding dimensions",
+            );
+            continue;
+          }
           const newMemberCount = cluster.memberCount + newMembers.length;
           const newFilePaths = [
             ...new Set([

@@ -8,7 +8,7 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { ClusterStore, ClusterPatternMatch } from "./cluster-types.ts";
-import { cosineSimilarity } from "./cluster-pipeline.ts";
+import { cosineSimilarity } from "./embedding-vector.ts";
 
 // ── Constants ────────────────────────────────────────────────────────
 

@@ -18,6 +18,7 @@ import type { Sql } from "../db/client.ts";
 import { positiveIntegerBound } from "../lib/bounds.ts";
 import type { SuggestionClusterStore, SuggestionClusterModel } from "./suggestion-cluster-store.ts";
 import { hdbscan } from "./hdbscan.ts";
+import { meanEmbedding, parsePgVectorEmbedding } from "./embedding-vector.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -86,34 +87,7 @@ export type BuildClusterModelResult = {
  * Returns null on any parse failure.
  */
 function parseEmbedding(raw: unknown): Float32Array | null {
-  if (raw instanceof Float32Array) return raw;
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
-    const nums = trimmed.slice(1, -1).split(",").map(Number);
-    if (nums.length === 0 || nums.some(isNaN)) return null;
-    return new Float32Array(nums);
-  }
-  return null;
-}
-
-/**
- * Compute the element-wise mean of a set of Float32Arrays.
- * All arrays must have the same length. Returns a zero-length array if empty.
- */
-function meanEmbedding(embeddings: Float32Array[]): Float32Array {
-  if (embeddings.length === 0) return new Float32Array(0);
-  const dim = embeddings[0]!.length;
-  const result = new Float32Array(dim);
-  for (const emb of embeddings) {
-    for (let i = 0; i < dim; i++) {
-      result[i]! += emb[i]!;
-    }
-  }
-  for (let i = 0; i < dim; i++) {
-    result[i]! /= embeddings.length;
-  }
-  return result;
+  return parsePgVectorEmbedding(raw);
 }
 
 // ── Clustering helpers ────────────────────────────────────────────────
@@ -184,6 +158,14 @@ function buildCentroidsFromRows(
     }
 
     const centroid = meanEmbedding(members.map((m) => m.embedding));
+    if (!centroid) {
+      logger.warn(
+        { context, clusterLabel, memberCount: members.length },
+        "Skipping cluster with mixed embedding dimensions",
+      );
+      skippedClusters++;
+      continue;
+    }
     centroids.push(centroid);
     totalMemberCount += members.length;
   }

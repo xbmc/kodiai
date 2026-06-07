@@ -198,8 +198,8 @@ async function runSync(opts: {
         const parseRecord = parseData && typeof parseData === "object" ? parseData : undefined;
         if (
           typeof parseRecord?.parse?.title !== "string"
-          || typeof parseRecord.parse?.revid !== "number"
-          || typeof parseRecord.parse?.text?.["*"] !== "string"
+          || typeof parseRecord?.parse?.revid !== "number"
+          || typeof parseRecord?.parse?.text?.["*"] !== "string"
         ) {
           logger.warn(
             {
