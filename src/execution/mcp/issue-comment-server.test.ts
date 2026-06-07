@@ -253,6 +253,51 @@ describe("createIssueCommentServer", () => {
       expect(callCount).toBe(2);
     });
 
+    it("falls back to exponential delay for malformed Retry-After values", async () => {
+      const originalSetTimeout = globalThis.setTimeout;
+      const delays: number[] = [];
+      globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: number) => {
+        delays.push(timeout ?? 0);
+        if (typeof handler === "function") handler();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof globalThis.setTimeout;
+
+      try {
+        let callCount = 0;
+        const mockOctokit = createMockOctokit({
+          createComment: async () => {
+            callCount++;
+            if (callCount === 1) {
+              const err = new Error("Rate limited") as any;
+              err.status = 429;
+              err.response = { headers: { "retry-after": "bad-header" } };
+              throw err;
+            }
+            return {
+              data: { id: 12345, html_url: "https://github.com/test/test/issues/1#issuecomment-12345" },
+            };
+          },
+        });
+
+        const { createCommentHandler } = await import("./issue-comment-server.ts");
+        const result = await createCommentHandler({
+          getOctokit: async () => mockOctokit,
+          owner: "testowner",
+          repo: "testrepo",
+          getTriageConfig: defaultTriageConfig,
+          botHandles: [],
+          params: { issue_number: 42, body: "Test" },
+        });
+
+        const parsed = JSON.parse(result.content[0]!.text);
+        expect(parsed.success).toBe(true);
+        expect(callCount).toBe(2);
+        expect(delays).toEqual([1000]);
+      } finally {
+        globalThis.setTimeout = originalSetTimeout;
+      }
+    });
+
     it("should return TOOL_DISABLED when config disables comment tool", async () => {
       const mockOctokit = createMockOctokit();
 
@@ -420,4 +465,3 @@ describe("outgoing secret scan", () => {
     expect(updateCommentMock).not.toHaveBeenCalled();
   });
 });
-

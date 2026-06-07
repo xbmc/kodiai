@@ -19,6 +19,7 @@ import type {
   RetrofitPageAction,
   RetrofitPreviewResult,
 } from "./wiki-publisher-types.ts";
+import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 
 const MAX_COMMENT_SCAN_PAGES = 10;
 const WIKI_COMMENT_MARKER_RE = /<!--\s*kodiai:wiki-modification:(\d+)\s*-->/;
@@ -151,9 +152,8 @@ export async function postCommentWithRetry(
               )
             : null;
 
-        const waitMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : 60_000 * Math.pow(2, attempt); // 60s, 120s, 240s
+        const waitMs = parseRetryAfterDelayMs(retryAfter)
+          ?? 60_000 * Math.pow(2, attempt); // 60s, 120s, 240s
 
         await delay(waitMs);
         continue;

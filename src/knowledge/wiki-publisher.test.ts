@@ -205,6 +205,36 @@ describe("postCommentWithRetry", () => {
     expect(callCount).toBe(2);
   });
 
+  it("falls back to exponential delay for malformed Retry-After values", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: number) => {
+      delays.push(timeout ?? 0);
+      if (typeof handler === "function") handler();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof globalThis.setTimeout;
+
+    try {
+      const octokit = createMockOctokit();
+      let callCount = 0;
+      (octokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject({ status: 403, response: { headers: { "retry-after": "not-a-number" } } });
+        }
+        return Promise.resolve({ data: { id: 99003 } });
+      });
+
+      const result = await postCommentWithRetry(octokit, "xbmc", "wiki", 1, "body", 1);
+
+      expect(result).toEqual({ commentId: 99003 });
+      expect(callCount).toBe(2);
+      expect(delays).toEqual([60_000]);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+
   it("returns null after max retries on 403", async () => {
     const octokit = createMockOctokit();
     (octokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(() =>
