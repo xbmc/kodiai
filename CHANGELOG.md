@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.43 (2026-06-08)
+
+Token-usage optimization, embedding/batch resilience, and deployed live-review verification.
+
+### Added
+
+- Shared JSONB batch helpers and optimizer indexes for lower-query knowledge-store writes.
+- Embedding batching and vector validation utilities with focused coverage for empty, malformed, and dimension-mismatched vectors.
+- Sliding-window rate limiter and bounded concurrency helpers for mention/review utility paths.
+- Focused retry helpers for transient database failures and `Retry-After` handling.
+
+### Changed
+
+- Review, mention, CI-failure, feedback-sync, and review-comment-sync paths reduce duplicated token/context work and delegate more shared behavior to focused modules.
+- Knowledge-store, wiki-store, review-graph, cluster, and snippet persistence paths batch more writes and retry transient connection-ended failures.
+- Guardrail LLM claim classification and shadow specialist diff snippets now use bounded, deduplicated inputs.
+- Docker app and agent images pin Bun through the deploy path and remove the unused package-manager surface.
+
+### Verification
+
+- PR #185, #186, #187, and #188 merged to `main`.
+- PR #188 CI passed.
+- Local focused tests passed with 67 tests across retry-after, wiki publisher, and issue MCP server coverage.
+- `bun run lint` passed.
+- Deployed revision `ca-kodiai--deploy-5e2c60c391d1-20260608-092015` passed `/healthz` and `/readiness`.
+- Live explicit `@kodiai review` proof on `xbmc/xbmc#28172` published bot output in comment `4651094791`.
+
 ## v0.42 (2026-06-01)
 
 Review utility decomposition, mention state extraction, and Review Details boundary hardening.
