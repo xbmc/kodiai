@@ -100,8 +100,7 @@ import {
   ensureReviewOutputNotPublished,
 } from "../review-orchestration/review-idempotency.ts";
 import {
-  buildReviewLearningMemoryRecord,
-  isReviewLearningMemorySkip,
+  writeReviewLearningMemory,
 } from "./review-learning-memory.ts";
 import {
   buildReviewDetailsMarker,
@@ -458,7 +457,7 @@ export function createReviewHandler(deps: {
   /** Optional derived prompt cache store overrides for review prompt reuse tests/fail-open wiring. */
   reviewPromptDerivedCacheOptions?: Pick<
     SearchCacheOptions<PromptBuildResult>,
-    "ttlMs" | "store" | "inFlightStore"
+    "ttlMs" | "maxSize" | "now" | "store" | "inFlightStore"
   >;
   /** Optional prompt builder override for review prompt reuse tests. */
   reviewPromptBuilder?: typeof buildReviewPromptDetails;
@@ -3963,77 +3962,29 @@ export function createReviewHandler(deps: {
             const skipReasons: Record<string, number> = {};
 
             for (const finding of processedFindings) {
-              const decision = buildReviewLearningMemoryRecord({
-                finding,
-                owner,
-                repo,
-                reviewId,
-                prNumber: pr.number,
-                // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
-                language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
+              const result = await writeReviewLearningMemory({
+                input: {
+                  finding,
+                  owner,
+                  repo,
+                  reviewId,
+                  prNumber: pr.number,
+                  // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
+                  language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
+                },
+                store: learningMemoryStore,
+                embeddingProvider,
+                logger,
+                logContext: baseLog,
               });
 
-              if (isReviewLearningMemorySkip(decision)) {
-                skipped++;
-                skipReasons[decision.reason] = (skipReasons[decision.reason] ?? 0) + 1;
-                logger.info(
-                  {
-                    ...baseLog,
-                    gate: decision.gate,
-                    gateResult: decision.gateResult,
-                    reason: decision.reason,
-                    filePath: decision.filePath,
-                    findingTitle: decision.findingTitle,
-                  },
-                  'Learning memory write skipped for finding',
-                );
-                continue;
-              }
-
-              try {
-                const embeddingResult = await embeddingProvider.generate(decision.embeddingText, 'document');
-                if (!embeddingResult) {
-                  // Embedding failed (already logged by provider), skip this finding
-                  failed++;
-                  continue;
-                }
-
-                const memoryRecord = decision.toRecord({
-                  model: embeddingResult.model,
-                  dimensions: embeddingResult.dimensions,
-                });
-                if (isReviewLearningMemorySkip(memoryRecord)) {
-                  skipped++;
-                  skipReasons[memoryRecord.reason] = (skipReasons[memoryRecord.reason] ?? 0) + 1;
-                  logger.info(
-                    {
-                      ...baseLog,
-                      gate: memoryRecord.gate,
-                      gateResult: memoryRecord.gateResult,
-                      reason: memoryRecord.reason,
-                      filePath: memoryRecord.filePath,
-                      findingTitle: memoryRecord.findingTitle,
-                    },
-                    'Learning memory write skipped for finding',
-                  );
-                  continue;
-                }
-
-                await learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);
+              if (result.status === "written") {
                 written++;
-              } catch (err) {
+              } else if (result.status === "skipped") {
+                skipped++;
+                skipReasons[result.reason] = (skipReasons[result.reason] ?? 0) + 1;
+              } else {
                 failed++;
-                logger.warn(
-                  {
-                    ...baseLog,
-                    gate: 'learning-memory-write',
-                    gateResult: 'failed',
-                    err,
-                    findingTitle: finding.title,
-                    filePath: finding.filePath,
-                  },
-                  'Learning memory write failed for finding (fail-open)',
-                );
               }
             }
 

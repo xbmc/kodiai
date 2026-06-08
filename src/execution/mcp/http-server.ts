@@ -3,6 +3,16 @@ import { Hono } from "hono";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import {
+  createRateLimitPair,
+  requestSourceKey,
+  type RateLimitWindowOptions,
+} from "../../lib/sliding-window-rate-limiter.ts";
+
+type McpHttpRateLimitOptions = {
+  preAuth?: RateLimitWindowOptions;
+  verified?: RateLimitWindowOptions;
+};
 
 // ---------------------------------------------------------------------------
 // Per-job registry
@@ -117,10 +127,27 @@ export type McpJobRegistry = ReturnType<typeof createMcpJobRegistry>;
 export function createMcpHttpRoutes(
   registry: McpJobRegistry,
   logger?: Logger,
+  options?: { rateLimit?: McpHttpRateLimitOptions } | McpHttpRateLimitOptions,
 ): Hono {
   const app = new Hono();
+  const rateLimitOptions = "rateLimit" in (options ?? {})
+    ? (options as { rateLimit?: McpHttpRateLimitOptions }).rateLimit
+    : options as McpHttpRateLimitOptions | undefined;
+  const rateLimiters = createRateLimitPair({
+    pre: rateLimitOptions?.preAuth,
+    verified: rateLimitOptions?.verified,
+  }, {
+    pre: { max: 240, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 120, windowMs: 60_000, maxKeys: 5_000 },
+  });
 
   app.all("/internal/mcp/:serverName", async (c) => {
+    const requestSource = requestSourceKey((name) => c.req.header(name));
+    if (rateLimiters.pre.isLimited(`mcp:${requestSource}`)) {
+      logger?.warn({ requestSource }, "MCP HTTP: request rate-limited before auth");
+      return c.json({ error: "Rate limited" }, 429);
+    }
+
     const authHeader = c.req.header("Authorization");
     const token = authHeader?.replace(/^Bearer /, "");
 
@@ -153,11 +180,17 @@ export function createMcpHttpRoutes(
     }
 
     const serverName = c.req.param("serverName");
+    const tokenLogId = registry.getTokenLogId(token);
+    if (rateLimiters.verified.isLimited(`token:${tokenLogId}:server:${serverName}`)) {
+      logger?.warn({ serverName, tokenLogId }, "MCP HTTP: verified token rate-limited");
+      return c.json({ error: "Rate limited" }, 429);
+    }
+
     const factory = registry.getFactory(token, serverName);
 
     if (!factory) {
       logger?.warn(
-        { serverName, tokenLogId: registry.getTokenLogId(token) },
+        { serverName, tokenLogId },
         "MCP HTTP: server not found",
       );
       return c.json({ error: "Not Found" }, 404);

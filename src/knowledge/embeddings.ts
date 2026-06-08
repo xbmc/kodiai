@@ -26,6 +26,16 @@ interface VoyageRerankResponse {
   model?: string;
 }
 
+function voyageRetryDelayMs(attempt: number): number {
+  const baseDelayMs = 1000 * (attempt + 1);
+  const jitterMs = Math.round(250 * (attempt + 1) * Math.random());
+  return baseDelayMs + jitterMs;
+}
+
+async function sleepVoyageRetryDelay(attempt: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, voyageRetryDelayMs(attempt)));
+}
+
 export type RepairEmbeddingFailureClass =
   | "request_too_large"
   | "timeout_transient"
@@ -68,6 +78,13 @@ async function voyageFetch<T>(opts: {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timerActive = true;
+    const clearRequestTimer = (): void => {
+      if (timerActive) {
+        clearTimeout(timer);
+        timerActive = false;
+      }
+    };
 
     try {
       const response = await fetch(url, {
@@ -80,25 +97,26 @@ async function voyageFetch<T>(opts: {
         signal: controller.signal,
       });
 
-      clearTimeout(timer);
-
       if (!response.ok) {
         const text = await response.text().catch(() => "");
+        clearRequestTimer();
         if (attempt < maxRetries) {
           logger.debug({ status: response.status, attempt }, "Voyage API error, retrying");
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          await sleepVoyageRetryDelay(attempt);
           continue;
         }
         logger.warn({ status: response.status, text: text.slice(0, 200) }, "Voyage API request failed");
         return null;
       }
 
-      return (await response.json()) as T;
+      const payload = (await response.json()) as T;
+      clearRequestTimer();
+      return payload;
     } catch (err: unknown) {
-      clearTimeout(timer);
+      clearRequestTimer();
       if (attempt < maxRetries) {
         logger.debug({ attempt, err: String(err) }, "Voyage API error, retrying");
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        await sleepVoyageRetryDelay(attempt);
         continue;
       }
       logger.warn({ err: String(err) }, "Voyage API request failed after retries");
@@ -346,6 +364,13 @@ export async function contextualizedEmbedChunksForRepair(opts: {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timerActive = true;
+    const clearRequestTimer = (): void => {
+      if (timerActive) {
+        clearTimeout(timer);
+        timerActive = false;
+      }
+    };
 
     try {
       const response = await fetch(VOYAGE_CONTEXTUALIZED_URL, {
@@ -363,14 +388,13 @@ export async function contextualizedEmbedChunksForRepair(opts: {
         signal: controller.signal,
       });
 
-      clearTimeout(timer);
-
       if (!response.ok) {
         const responseBody = await response.text().catch(() => "");
+        clearRequestTimer();
         const classified = classifyContextualizedEmbeddingFailure({ status: response.status, responseBody });
         if (classified.retryable && attempt < maxRetries) {
           logger.debug({ attempt, status: response.status, failureClass: classified.failure_class }, "Repair embedding request failed, retrying");
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          await sleepVoyageRetryDelay(attempt);
           continue;
         }
         return {
@@ -385,6 +409,7 @@ export async function contextualizedEmbedChunksForRepair(opts: {
       }
 
       const payload = await response.json() as VoyageContextualizedResponse;
+      clearRequestTimer();
       const docData = payload.data?.[0]?.data;
       if (!docData) {
         return {
@@ -421,11 +446,11 @@ export async function contextualizedEmbedChunksForRepair(opts: {
         retry_count: attempt,
       };
     } catch (error: unknown) {
-      clearTimeout(timer);
+      clearRequestTimer();
       const classified = classifyContextualizedEmbeddingFailure({ error });
       if (classified.retryable && attempt < maxRetries) {
         logger.debug({ attempt, failureClass: classified.failure_class, err: String(error) }, "Repair embedding request threw, retrying");
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        await sleepVoyageRetryDelay(attempt);
         continue;
       }
       return {

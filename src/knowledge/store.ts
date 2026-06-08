@@ -1,6 +1,8 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
+import { fingerprintFindingTitle } from "../lib/review-finding-metadata.ts";
 import type {
   AuthorCacheEntry,
   AuthorCacheTier,
@@ -32,31 +34,186 @@ type CheckpointData = {
   totalFiles: number;
 };
 
-/** FNV-1a fingerprint for title deduplication (duplicated from review.ts to avoid circular imports). */
 function _fingerprintTitle(title: string): string {
-  const normalized = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ");
-
-  let hash = 2166136261;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash ^= normalized.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return fingerprintFindingTitle(title).slice("fp-".length);
 }
 
-/** FNV-1a fingerprint matching review.ts fingerprintFindingTitle (includes fp- prefix). */
 function _feedbackFingerprint(title: string): string {
-  return `fp-${_fingerprintTitle(title)}`;
+  return fingerprintFindingTitle(title);
 }
 
 function _normalizeDbNumber(value: unknown): number | null {
   if (value == null) return null;
   const normalized = typeof value === "number" ? value : Number(value);
   return Number.isFinite(normalized) ? normalized : null;
+}
+
+const KNOWLEDGE_STORE_WRITE_BATCH_SIZE = 1000;
+const BATCH_ROWS = "batch_rows";
+
+const FINDING_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
+  ["review_id", "integer"],
+  ["file_path", "text"],
+  ["start_line", "integer"],
+  ["end_line", "integer"],
+  ["severity", "text"],
+  ["category", "text"],
+  ["confidence", "integer"],
+  ["title", "text"],
+  ["suppressed", "boolean"],
+  ["suppression_pattern", "text"],
+  ["comment_id", "bigint"],
+  ["comment_surface", "text"],
+  ["review_output_key", "text"],
+]);
+
+const FEEDBACK_REACTION_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
+  ["repo", "text"],
+  ["review_id", "integer"],
+  ["finding_id", "integer"],
+  ["comment_id", "bigint"],
+  ["comment_surface", "text"],
+  ["reaction_id", "bigint"],
+  ["reaction_content", "text"],
+  ["reactor_login", "text"],
+  ["reacted_at", "timestamptz"],
+  ["severity", "text"],
+  ["category", "text"],
+  ["file_path", "text"],
+  ["title", "text"],
+]);
+
+const SUPPRESSION_LOG_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
+  ["review_id", "integer"],
+  ["pattern", "text"],
+  ["matched_count", "integer"],
+  ["finding_ids", "text"],
+]);
+
+async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]): Promise<void> {
+  await executeJsonbRecordBatches(
+    findings,
+    KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
+    (finding) => ({
+      review_id: finding.reviewId,
+      file_path: finding.filePath,
+      start_line: finding.startLine ?? null,
+      end_line: finding.endLine ?? null,
+      severity: finding.severity,
+      category: finding.category,
+      confidence: finding.confidence,
+      title: finding.title,
+      suppressed: finding.suppressed,
+      suppression_pattern: finding.suppressionPattern ?? null,
+      comment_id: finding.commentId ?? null,
+      comment_surface: finding.commentSurface ?? null,
+      review_output_key: finding.reviewOutputKey ?? null,
+    }),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO findings (
+            review_id, file_path, start_line, end_line,
+            severity, category, confidence, title, suppressed, suppression_pattern,
+            comment_id, comment_surface, review_output_key
+          )
+          SELECT
+            batch_rows.review_id,
+            batch_rows.file_path,
+            batch_rows.start_line,
+            batch_rows.end_line,
+            batch_rows.severity,
+            batch_rows.category,
+            batch_rows.confidence,
+            batch_rows.title,
+            batch_rows.suppressed,
+            batch_rows.suppression_pattern,
+            batch_rows.comment_id,
+            batch_rows.comment_surface,
+            batch_rows.review_output_key
+          FROM ${FINDING_BATCH_RECORDSET}
+        `,
+        [batch.json],
+      );
+    },
+  );
+}
+
+async function _insertFeedbackReactionBatches(sqlClient: Sql, reactions: FeedbackReaction[]): Promise<void> {
+  await executeJsonbRecordBatches(
+    reactions,
+    KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
+    (reaction) => ({
+      repo: reaction.repo,
+      review_id: reaction.reviewId,
+      finding_id: reaction.findingId,
+      comment_id: reaction.commentId,
+      comment_surface: reaction.commentSurface,
+      reaction_id: reaction.reactionId,
+      reaction_content: reaction.reactionContent,
+      reactor_login: reaction.reactorLogin,
+      reacted_at: reaction.reactedAt ?? null,
+      severity: reaction.severity,
+      category: reaction.category,
+      file_path: reaction.filePath,
+      title: reaction.title,
+    }),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO feedback_reactions (
+            repo, review_id, finding_id, comment_id, comment_surface,
+            reaction_id, reaction_content, reactor_login, reacted_at,
+            severity, category, file_path, title
+          )
+          SELECT
+            batch_rows.repo,
+            batch_rows.review_id,
+            batch_rows.finding_id,
+            batch_rows.comment_id,
+            batch_rows.comment_surface,
+            batch_rows.reaction_id,
+            batch_rows.reaction_content,
+            batch_rows.reactor_login,
+            batch_rows.reacted_at,
+            batch_rows.severity,
+            batch_rows.category,
+            batch_rows.file_path,
+            batch_rows.title
+          FROM ${FEEDBACK_REACTION_BATCH_RECORDSET}
+          ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING
+        `,
+        [batch.json],
+      );
+    },
+  );
+}
+
+async function _insertSuppressionLogBatches(sqlClient: Sql, entries: SuppressionLogEntry[]): Promise<void> {
+  await executeJsonbRecordBatches(
+    entries,
+    KNOWLEDGE_STORE_WRITE_BATCH_SIZE,
+    (entry) => ({
+      review_id: entry.reviewId,
+      pattern: entry.pattern,
+      matched_count: entry.matchedCount,
+      finding_ids: entry.findingIds ? JSON.stringify(entry.findingIds) : null,
+    }),
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
+          SELECT
+            batch_rows.review_id,
+            batch_rows.pattern,
+            batch_rows.matched_count,
+            batch_rows.finding_ids
+          FROM ${SUPPRESSION_LOG_BATCH_RECORDSET}
+        `,
+        [batch.json],
+      );
+    },
+  );
 }
 
 export function createKnowledgeStore(opts: {
@@ -89,42 +246,14 @@ export function createKnowledgeStore(opts: {
     async recordFindings(findings: FindingRecord[]): Promise<void> {
       if (findings.length === 0) return;
       await sql.begin(async (tx) => {
-        for (const finding of findings) {
-          await (tx as unknown as Sql)`
-            INSERT INTO findings (
-              review_id, file_path, start_line, end_line,
-              severity, category, confidence, title, suppressed, suppression_pattern,
-              comment_id, comment_surface, review_output_key
-            ) VALUES (
-              ${finding.reviewId}, ${finding.filePath}, ${finding.startLine ?? null}, ${finding.endLine ?? null},
-              ${finding.severity}, ${finding.category}, ${finding.confidence}, ${finding.title},
-              ${finding.suppressed}, ${finding.suppressionPattern ?? null},
-              ${finding.commentId ?? null}, ${finding.commentSurface ?? null}, ${finding.reviewOutputKey ?? null}
-            )
-          `;
-        }
+        await _insertFindingBatches(tx as unknown as Sql, findings);
       });
     },
 
     async recordFeedbackReactions(reactions: FeedbackReaction[]): Promise<void> {
       if (reactions.length === 0) return;
       await sql.begin(async (tx) => {
-        for (const reaction of reactions) {
-          await (tx as unknown as Sql)`
-            INSERT INTO feedback_reactions (
-              repo, review_id, finding_id, comment_id, comment_surface,
-              reaction_id, reaction_content, reactor_login, reacted_at,
-              severity, category, file_path, title
-            ) VALUES (
-              ${reaction.repo}, ${reaction.reviewId}, ${reaction.findingId},
-              ${reaction.commentId}, ${reaction.commentSurface},
-              ${reaction.reactionId}, ${reaction.reactionContent}, ${reaction.reactorLogin},
-              ${reaction.reactedAt ?? null},
-              ${reaction.severity}, ${reaction.category}, ${reaction.filePath}, ${reaction.title}
-            )
-            ON CONFLICT (repo, comment_id, reaction_id) DO NOTHING
-          `;
-        }
+        await _insertFeedbackReactionBatches(tx as unknown as Sql, reactions);
       });
     },
 
@@ -171,12 +300,7 @@ export function createKnowledgeStore(opts: {
     async recordSuppressionLog(entries: SuppressionLogEntry[]): Promise<void> {
       if (entries.length === 0) return;
       await sql.begin(async (tx) => {
-        for (const entry of entries) {
-          await (tx as unknown as Sql)`
-            INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
-            VALUES (${entry.reviewId}, ${entry.pattern}, ${entry.matchedCount}, ${entry.findingIds ? JSON.stringify(entry.findingIds) : null})
-          `;
-        }
+        await _insertSuppressionLogBatches(tx as unknown as Sql, entries);
       });
     },
 
@@ -379,21 +503,15 @@ export function createKnowledgeStore(opts: {
           };
         }
 
-        // Find prior runs for the same PR
-        const priorRuns = await (tx as unknown as Sql)`
-          SELECT run_key FROM run_state
+        const supersededRows = await (tx as unknown as Sql)`
+          UPDATE run_state
+          SET status = 'superseded', superseded_by = ${runKey}
           WHERE repo = ${params.repo} AND pr_number = ${params.prNumber}
             AND status NOT IN ('superseded')
+          RETURNING run_key
         `;
 
-        const supersededRunKeys: string[] = [];
-        for (const prior of priorRuns) {
-          await (tx as unknown as Sql)`
-            UPDATE run_state SET status = 'superseded', superseded_by = ${runKey}
-            WHERE run_key = ${prior.run_key}
-          `;
-          supersededRunKeys.push(prior.run_key);
-        }
+        const supersededRunKeys = supersededRows.map((row) => row.run_key as string);
 
         // Insert the new run
         await (tx as unknown as Sql)`

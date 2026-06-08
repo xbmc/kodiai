@@ -1,4 +1,8 @@
+import { positiveIntegerBound } from "./bounds.ts";
+import { createInMemoryCache, type InMemoryCache } from "./in-memory-cache.ts";
+
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_MAX_SIZE = 500;
 
 export type SearchCacheKeyParams = {
   repo: string;
@@ -7,23 +11,16 @@ export type SearchCacheKeyParams = {
   extra?: Record<string, unknown>;
 };
 
-export type KeyValueStore<T> = {
-  get(key: string): T | undefined;
-  set(key: string, value: T): void;
-  delete(key: string): void;
-  entries(): IterableIterator<[string, T]>;
-};
-
-type CacheEntry<T> = {
-  value: T;
-  expiresAt: number;
-};
-
 export type SearchCacheOptions<T> = {
   ttlMs?: number;
+  maxSize?: number;
   now?: () => number;
-  store?: KeyValueStore<CacheEntry<T>>;
-  inFlightStore?: KeyValueStore<Promise<T>>;
+  store?: Pick<InMemoryCache<string, T>, "get" | "set" | "purgeExpired">;
+  inFlightStore?: {
+    get(key: string): Promise<T> | undefined;
+    set(key: string, value: Promise<T>): unknown;
+    delete(key: string): unknown;
+  };
   onError?: (error: unknown) => void;
 };
 
@@ -71,8 +68,13 @@ export function buildSearchCacheKey(params: SearchCacheKeyParams): string {
 
 export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): SearchCache<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-  const now = options.now ?? (() => Date.now());
-  const store = options.store ?? new Map<string, CacheEntry<T>>();
+  const maxSize = positiveIntegerBound(options.maxSize, DEFAULT_MAX_SIZE);
+  const store = createInMemoryCache<string, T>({
+    maxSize,
+    ttlMs,
+    now: options.now,
+  });
+  const valueStore = options.store ?? store;
   const inFlightStore = options.inFlightStore ?? new Map<string, Promise<T>>();
 
   const reportCacheError = (error: unknown): void => {
@@ -87,21 +89,7 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
 
   const get = (key: string): T | undefined => {
     try {
-      const entry = store.get(key);
-      if (!entry) {
-        return undefined;
-      }
-
-      if (entry.expiresAt <= now()) {
-        try {
-          store.delete(key);
-        } catch (error) {
-          reportCacheError(error);
-        }
-        return undefined;
-      }
-
-      return entry.value;
+      return valueStore.get(key);
     } catch (error) {
       reportCacheError(error);
       return undefined;
@@ -110,10 +98,7 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
 
   const set = (key: string, value: T, entryTtlMs?: number): void => {
     try {
-      store.set(key, {
-        value,
-        expiresAt: now() + (entryTtlMs ?? ttlMs),
-      });
+      valueStore.set(key, value, entryTtlMs);
     } catch (error) {
       reportCacheError(error);
     }
@@ -161,28 +146,12 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
   };
 
   const purgeExpired = (): number => {
-    let purged = 0;
-    let entries: IterableIterator<[string, CacheEntry<T>]>;
-
     try {
-      entries = store.entries();
+      return valueStore.purgeExpired();
     } catch (error) {
       reportCacheError(error);
       return 0;
     }
-
-    for (const [key, entry] of entries) {
-      if (entry.expiresAt <= now()) {
-        try {
-          store.delete(key);
-          purged += 1;
-        } catch (error) {
-          reportCacheError(error);
-        }
-      }
-    }
-
-    return purged;
   };
 
   return {

@@ -14,6 +14,8 @@ import type {
   ClusterStore,
 } from "./cluster-types.ts";
 
+const ASSIGNMENT_WRITE_BATCH_SIZE = 500;
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** Convert Float32Array to pgvector string: [0.1,0.2,...] */
@@ -202,21 +204,24 @@ export function createClusterStore(opts: {
     ): Promise<void> {
       if (assignments.length === 0) return;
 
-      for (const a of assignments) {
+      for (let index = 0; index < assignments.length; index += ASSIGNMENT_WRITE_BATCH_SIZE) {
+        const batch = assignments.slice(index, index + ASSIGNMENT_WRITE_BATCH_SIZE);
+        const values = batch.map((a) => ({
+          cluster_id: a.clusterId,
+          review_comment_id: a.reviewCommentId,
+          probability: a.probability,
+        }));
+
         try {
           await sql`
-            INSERT INTO review_cluster_assignments (
-              cluster_id, review_comment_id, probability
-            ) VALUES (
-              ${a.clusterId}, ${a.reviewCommentId}, ${a.probability}
-            )
+            INSERT INTO review_cluster_assignments ${sql(values, "cluster_id", "review_comment_id", "probability")}
             ON CONFLICT (cluster_id, review_comment_id) DO NOTHING
           `;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           logger.error(
-            { err: message, clusterId: a.clusterId, reviewCommentId: a.reviewCommentId },
-            "Failed to write cluster assignment",
+            { err: message, count: batch.length, offset: index },
+            "Failed to write cluster assignment batch",
           );
         }
       }

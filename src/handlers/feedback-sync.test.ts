@@ -384,6 +384,39 @@ describe("createFeedbackSyncHandler", () => {
     ).toBe(true);
   });
 
+  test("fetches reaction pages with bounded concurrency after the permission canary", async () => {
+    let activeFetches = 0;
+    let maxActiveFetches = 0;
+    const { handlers, recorded } = createHarness({
+      candidates: Array.from({ length: 9 }, (_, index) =>
+        buildCandidate({ findingId: index + 1, commentId: 100 + index }),
+      ),
+      listReactions: async (commentId) => {
+        activeFetches += 1;
+        maxActiveFetches = Math.max(maxActiveFetches, activeFetches);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeFetches -= 1;
+        return [
+          {
+            id: 10_000 + commentId,
+            content: "+1",
+            user: { login: `user-${commentId}`, type: "User" },
+            created_at: "2026-02-12T01:00:00Z",
+          },
+        ];
+      },
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!(buildPullRequestOpenedEvent());
+
+    expect(recorded).toHaveLength(9);
+    expect(maxActiveFetches).toBeGreaterThan(1);
+    expect(maxActiveFetches).toBeLessThanOrEqual(4);
+  });
+
   test("ignores non-PR issue comments and avoids write-mode side effects", async () => {
     let reactionsListCalls = 0;
     const { handlers, recorded } = createHarness({

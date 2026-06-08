@@ -11,7 +11,10 @@
  */
 
 import type { Octokit } from "@octokit/rest";
+import { mapWithConcurrency } from "./concurrency.ts";
 import { withTimeBudget } from "./usage-analyzer.ts";
+
+const MODULE_CONTENT_FETCH_CONCURRENCY = 4;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -289,29 +292,33 @@ export async function checkTransitiveDependencies(params: {
     if (moduleFiles.length === 0) return result;
 
     // Parse all modules to build dependency graph
-    const modules: CmakeDependency[] = [];
-    for (const file of moduleFiles) {
-      try {
-        const fileResponse = await octokit.rest.repos.getContent({
-          owner,
-          repo,
-          path: file.path,
-        });
+    const fetchedModules = await mapWithConcurrency(
+      moduleFiles,
+      MODULE_CONTENT_FETCH_CONCURRENCY,
+      async (file) => {
+        try {
+          const fileResponse = await octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path: file.path,
+          });
 
-        const fileData = fileResponse.data as any;
-        if (!fileData.content) continue;
+          const fileData = fileResponse.data as any;
+          if (!fileData.content) return null;
 
-        const content = Buffer.from(fileData.content, fileData.encoding ?? "base64").toString(
-          "utf-8",
-        );
-        const moduleName = file.name.replace(".cmake", "");
-        const parsed = parseCmakeFindModule(content, moduleName);
-        modules.push(parsed);
-      } catch {
-        // Skip individual file errors
-        continue;
-      }
-    }
+          const content = Buffer.from(fileData.content, fileData.encoding ?? "base64").toString(
+            "utf-8",
+          );
+          const moduleName = file.name.replace(".cmake", "");
+          const parsed = parseCmakeFindModule(content, moduleName);
+          return parsed;
+        } catch {
+          // Skip individual file errors
+          return null;
+        }
+      },
+    );
+    const modules = fetchedModules.filter((module): module is CmakeDependency => module !== null);
 
     // --- Find dependents: modules that list the bumped library in their deps ---
     for (const mod of modules) {

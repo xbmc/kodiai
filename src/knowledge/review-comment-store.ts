@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   ReviewCommentChunk,
   ReviewCommentRecord,
@@ -76,6 +77,31 @@ type RepairStateRow = {
 
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS = "review_comments" as const satisfies EmbeddingRepairCorpus;
+const REVIEW_COMMENT_CHUNK_WRITE_BATCH_SIZE = 500;
+const REVIEW_COMMENT_CHUNK_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["repo", "text"],
+  ["owner", "text"],
+  ["pr_number", "integer"],
+  ["pr_title", "text"],
+  ["comment_github_id", "bigint"],
+  ["thread_id", "text"],
+  ["in_reply_to_id", "bigint"],
+  ["file_path", "text"],
+  ["start_line", "integer"],
+  ["end_line", "integer"],
+  ["diff_hunk", "text"],
+  ["author_login", "text"],
+  ["author_association", "text"],
+  ["body", "text"],
+  ["chunk_index", "integer"],
+  ["chunk_text", "text"],
+  ["token_count", "integer"],
+  ["embedding", "text"],
+  ["embedding_model", "text"],
+  ["github_created_at", "timestamptz"],
+  ["github_updated_at", "timestamptz"],
+  ["backfill_batch", "text"],
+]);
 
 function rowToRecord(row: CommentRow): ReviewCommentRecord {
   return {
@@ -150,6 +176,89 @@ function rowToRepairState(row: RepairStateRow): EmbeddingRepairCheckpoint {
   };
 }
 
+function reviewCommentChunkToBatchRow(chunk: ReviewCommentChunk): Record<string, unknown> {
+  const hasEmbedding = Boolean(chunk.embedding && chunk.embedding.length > 0);
+  return {
+    repo: chunk.repo,
+    owner: chunk.owner,
+    pr_number: chunk.prNumber,
+    pr_title: chunk.prTitle ?? null,
+    comment_github_id: chunk.commentGithubId,
+    thread_id: chunk.threadId,
+    in_reply_to_id: chunk.inReplyToId ?? null,
+    file_path: chunk.filePath ?? null,
+    start_line: chunk.startLine ?? null,
+    end_line: chunk.endLine ?? null,
+    diff_hunk: chunk.diffHunk ?? null,
+    author_login: chunk.authorLogin,
+    author_association: chunk.authorAssociation ?? null,
+    body: chunk.body,
+    chunk_index: chunk.chunkIndex,
+    chunk_text: chunk.chunkText,
+    token_count: chunk.tokenCount,
+    embedding: hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null,
+    embedding_model: hasEmbedding ? "voyage-4" : null,
+    github_created_at: chunk.githubCreatedAt.toISOString(),
+    github_updated_at: chunk.githubUpdatedAt?.toISOString() ?? null,
+    backfill_batch: chunk.backfillBatch ?? null,
+  };
+}
+
+async function insertReviewCommentChunkBatches(
+  sqlClient: Sql,
+  chunks: ReviewCommentChunk[],
+  opts?: { onConflictDoNothing?: boolean },
+): Promise<void> {
+  const onConflictClause = opts?.onConflictDoNothing
+    ? "ON CONFLICT (repo, comment_github_id, chunk_index) DO NOTHING"
+    : "";
+  await executeJsonbRecordBatches(
+    chunks,
+    REVIEW_COMMENT_CHUNK_WRITE_BATCH_SIZE,
+    reviewCommentChunkToBatchRow,
+    async (batch) => {
+      await sqlClient.unsafe(
+        `
+          INSERT INTO review_comments (
+            repo, owner, pr_number, pr_title, comment_github_id,
+            thread_id, in_reply_to_id, file_path, start_line, end_line,
+            diff_hunk, author_login, author_association, body,
+            chunk_index, chunk_text, token_count,
+            embedding, embedding_model,
+            github_created_at, github_updated_at, backfill_batch
+          )
+          SELECT
+            batch_rows.repo,
+            batch_rows.owner,
+            batch_rows.pr_number,
+            batch_rows.pr_title,
+            batch_rows.comment_github_id,
+            batch_rows.thread_id,
+            batch_rows.in_reply_to_id,
+            batch_rows.file_path,
+            batch_rows.start_line,
+            batch_rows.end_line,
+            batch_rows.diff_hunk,
+            batch_rows.author_login,
+            batch_rows.author_association,
+            batch_rows.body,
+            batch_rows.chunk_index,
+            batch_rows.chunk_text,
+            batch_rows.token_count,
+            CASE WHEN batch_rows.embedding IS NULL THEN NULL ELSE batch_rows.embedding::vector END,
+            batch_rows.embedding_model,
+            batch_rows.github_created_at,
+            batch_rows.github_updated_at,
+            batch_rows.backfill_batch
+          FROM ${REVIEW_COMMENT_CHUNK_BATCH_RECORDSET}
+          ${onConflictClause}
+        `,
+        [batch.json],
+      );
+    },
+  );
+}
+
 /**
  * Create a review comment store backed by PostgreSQL with pgvector.
  * Follows the same factory pattern as createLearningMemoryStore.
@@ -164,37 +273,16 @@ export function createReviewCommentStore(opts: {
     async writeChunks(chunks: ReviewCommentChunk[]): Promise<void> {
       if (chunks.length === 0) return;
 
-      for (const chunk of chunks) {
-        try {
-          const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
-          const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
-          const embeddingModel = hasEmbedding ? "voyage-4" : null;
-          await sql`
-            INSERT INTO review_comments (
-              repo, owner, pr_number, pr_title, comment_github_id,
-              thread_id, in_reply_to_id, file_path, start_line, end_line,
-              diff_hunk, author_login, author_association, body,
-              chunk_index, chunk_text, token_count,
-              embedding, embedding_model,
-              github_created_at, github_updated_at, backfill_batch
-            ) VALUES (
-              ${chunk.repo}, ${chunk.owner}, ${chunk.prNumber}, ${chunk.prTitle ?? null}, ${chunk.commentGithubId},
-              ${chunk.threadId}, ${chunk.inReplyToId ?? null}, ${chunk.filePath ?? null}, ${chunk.startLine ?? null}, ${chunk.endLine ?? null},
-              ${chunk.diffHunk ?? null}, ${chunk.authorLogin}, ${chunk.authorAssociation ?? null}, ${chunk.body},
-              ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.tokenCount},
-              ${embeddingValue}::vector, ${embeddingModel},
-              ${chunk.githubCreatedAt}, ${chunk.githubUpdatedAt ?? null}, ${chunk.backfillBatch ?? null}
-            )
-            ON CONFLICT (repo, comment_github_id, chunk_index) DO NOTHING
-          `;
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.error(
-            { err: message, repo: chunk.repo, commentGithubId: chunk.commentGithubId },
-            "Failed to write review comment chunk",
-          );
-          throw err;
-        }
+      try {
+        await insertReviewCommentChunkBatches(sql, chunks, { onConflictDoNothing: true });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        const first = chunks[0];
+        logger.error(
+          { err: message, count: chunks.length, repo: first?.repo, commentGithubId: first?.commentGithubId },
+          "Failed to write review comment chunks",
+        );
+        throw err;
       }
     },
 
@@ -219,29 +307,7 @@ export function createReviewCommentStore(opts: {
           WHERE repo = ${repo} AND comment_github_id = ${commentGithubId}
         `;
 
-        // Insert new chunks
-        for (const chunk of chunks) {
-          const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
-          const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
-          const embeddingModel = hasEmbedding ? "voyage-4" : null;
-          await (tx as unknown as Sql)`
-            INSERT INTO review_comments (
-              repo, owner, pr_number, pr_title, comment_github_id,
-              thread_id, in_reply_to_id, file_path, start_line, end_line,
-              diff_hunk, author_login, author_association, body,
-              chunk_index, chunk_text, token_count,
-              embedding, embedding_model,
-              github_created_at, github_updated_at, backfill_batch
-            ) VALUES (
-              ${chunk.repo}, ${chunk.owner}, ${chunk.prNumber}, ${chunk.prTitle ?? null}, ${chunk.commentGithubId},
-              ${chunk.threadId}, ${chunk.inReplyToId ?? null}, ${chunk.filePath ?? null}, ${chunk.startLine ?? null}, ${chunk.endLine ?? null},
-              ${chunk.diffHunk ?? null}, ${chunk.authorLogin}, ${chunk.authorAssociation ?? null}, ${chunk.body},
-              ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.tokenCount},
-              ${embeddingValue}::vector, ${embeddingModel},
-              ${chunk.githubCreatedAt}, ${chunk.githubUpdatedAt ?? null}, ${chunk.backfillBatch ?? null}
-            )
-          `;
-        }
+        await insertReviewCommentChunkBatches(tx as unknown as Sql, chunks);
       });
     },
 

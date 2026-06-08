@@ -82,7 +82,7 @@ export function createCandidateFindingServer(deps: {
         async (input: CandidateFindingInput) => {
           const parsed = candidateFindingInputSchema.safeParse(input);
           if (!parsed.success) {
-            deps.logger?.warn(
+            deps.logger?.info?.(
               logContext(deps, { input: 1, recorded: 0, rejected: 1, errors: 0, reason: "schema-validation-failed" }),
               "Rejected candidate finding MCP input",
             );
@@ -131,7 +131,7 @@ export function createCandidateFindingServer(deps: {
                 );
               }
             }
-            deps.logger?.warn(
+            deps.logger?.info?.(
               logContext(deps, { ...normalized.counts, reason: normalized.reason ?? normalized.rejections[0]?.reason ?? "candidate-rejected" }),
               "Rejected candidate finding after contract normalization",
             );

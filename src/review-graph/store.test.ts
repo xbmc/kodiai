@@ -17,6 +17,276 @@ const mockLogger = {
   level: "silent",
 } as unknown as import("pino").Logger;
 
+type MockSqlCall = {
+  kind: "begin" | "query" | "unsafe";
+  scope: "root" | "tx";
+  text: string;
+  values: unknown[];
+};
+
+function createMockSql(responses: unknown[][] = []): {
+  sql: Sql;
+  calls: MockSqlCall[];
+} {
+  const queue = [...responses];
+  const calls: MockSqlCall[] = [];
+
+  const createTag = (scope: "root" | "tx") => {
+    const tag = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({
+        kind: "query",
+        scope,
+        text: strings.join("?"),
+        values,
+      });
+      return queue.shift() ?? [];
+    }) as unknown as Sql;
+    const mockTag = tag as unknown as {
+      unsafe(query: string, params?: unknown[]): Promise<unknown[]>;
+    };
+
+    mockTag.unsafe = async (query: string, params: unknown[] = []) => {
+      calls.push({
+        kind: "unsafe",
+        scope,
+        text: query,
+        values: params,
+      });
+      return queue.shift() ?? [];
+    };
+
+    return tag;
+  };
+
+  const sql = createTag("root") as Sql & {
+    begin<T>(callback: (tx: Sql) => Promise<T>): Promise<T>;
+    begin<T>(options: string, callback: (tx: Sql) => Promise<T>): Promise<T>;
+    end(): Promise<void>;
+  };
+
+  sql.begin = (async <T,>(
+    optionsOrCallback: string | ((tx: Sql) => Promise<T>),
+    callback?: (tx: Sql) => Promise<T>,
+  ): Promise<T> => {
+    const options = typeof optionsOrCallback === "string" ? optionsOrCallback : "";
+    const txCallback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback!;
+    calls.push({
+      kind: "begin",
+      scope: "root",
+      text: options,
+      values: [],
+    });
+    return await txCallback(createTag("tx"));
+  }) as typeof sql.begin;
+  sql.end = async () => {};
+
+  return { sql: sql as unknown as Sql, calls };
+}
+
+function makeFileRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 7,
+    repo: "owner/repo",
+    workspace_key: "workspace-a",
+    path: "src/app.py",
+    language: "python",
+    content_hash: "hash-v1",
+    indexed_at: "2026-04-04T12:00:00.000Z",
+    build_id: null,
+    created_at: "2026-04-04T12:00:00.000Z",
+    updated_at: "2026-04-04T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeNodeRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 11,
+    repo: "owner/repo",
+    workspace_key: "workspace-a",
+    file_id: 7,
+    build_id: null,
+    node_kind: "file",
+    stable_key: "file:src/app.py",
+    symbol_name: null,
+    qualified_name: null,
+    language: "python",
+    span_start_line: null,
+    span_start_col: null,
+    span_end_line: null,
+    span_end_col: null,
+    signature: null,
+    attributes: {},
+    confidence: null,
+    created_at: "2026-04-04T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeEdgeRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 21,
+    repo: "owner/repo",
+    workspace_key: "workspace-a",
+    file_id: 7,
+    build_id: null,
+    edge_kind: "declares",
+    source_node_id: 11,
+    target_node_id: 12,
+    confidence: null,
+    attributes: {},
+    created_at: "2026-04-04T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("createReviewGraphStore batching", () => {
+  test("replaceFileGraph writes node and edge batches with constant transaction calls", async () => {
+    const { sql, calls } = createMockSql([
+      [makeFileRow()],
+      [],
+      [],
+      [
+        { stable_key: "file:src/app.py", id: 11 },
+        { stable_key: "symbol:src/app.py:handler", id: 12 },
+        { stable_key: "test:src/app.py:test_handler", id: 13 },
+      ],
+      [],
+    ]);
+    const store = createReviewGraphStore({ sql, logger: mockLogger });
+
+    const result = await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/app.py",
+        language: "python",
+        contentHash: "hash-v1",
+      },
+      nodes: [
+        { nodeKind: "file", stableKey: "file:src/app.py", language: "python" },
+        { nodeKind: "symbol", stableKey: "symbol:src/app.py:handler", symbolName: "handler", language: "python" },
+        { nodeKind: "test", stableKey: "test:src/app.py:test_handler", language: "python" },
+      ],
+      edges: [
+        { edgeKind: "declares", sourceStableKey: "file:src/app.py", targetStableKey: "symbol:src/app.py:handler" },
+        { edgeKind: "tests", sourceStableKey: "test:src/app.py:test_handler", targetStableKey: "symbol:src/app.py:handler" },
+      ],
+    });
+
+    expect(result.nodesWritten).toBe(3);
+    expect(result.edgesWritten).toBe(2);
+
+    const txCalls = calls.filter((call) => call.scope === "tx");
+    expect(txCalls).toHaveLength(5);
+    expect(txCalls.filter((call) => call.kind === "unsafe")).toHaveLength(2);
+    expect(txCalls[3]?.text).toContain("jsonb_to_recordset");
+    expect(txCalls[4]?.text).toContain("jsonb_to_recordset");
+    expect(JSON.parse(txCalls[3]?.values[0] as string)).toHaveLength(3);
+    expect(JSON.parse(txCalls[4]?.values[0] as string)).toHaveLength(2);
+  });
+
+  test("replaceFileGraph splits large node payloads into bounded batches", async () => {
+    const nodeCount = 501;
+    const nodes = Array.from({ length: nodeCount }, (_, index) => ({
+      nodeKind: "symbol" as const,
+      stableKey: `symbol:src/app.py:item_${index}`,
+      symbolName: `item_${index}`,
+      language: "python",
+    }));
+    const insertedRows = nodes.map((node, index) => ({
+      stable_key: node.stableKey,
+      id: 100 + index,
+    }));
+    const { sql, calls } = createMockSql([
+      [makeFileRow()],
+      [],
+      [],
+      insertedRows.slice(0, 500),
+      insertedRows.slice(500),
+    ]);
+    const store = createReviewGraphStore({ sql, logger: mockLogger });
+
+    const result = await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/app.py",
+        language: "python",
+      },
+      nodes,
+      edges: [],
+    });
+
+    expect(result.nodesWritten).toBe(nodeCount);
+    const unsafeCalls = calls.filter((call) => call.kind === "unsafe");
+    expect(unsafeCalls).toHaveLength(2);
+    expect(JSON.parse(unsafeCalls[0]!.values[0] as string)).toHaveLength(500);
+    expect(JSON.parse(unsafeCalls[1]!.values[0] as string)).toHaveLength(1);
+  });
+
+  test("replaceFileGraph skips empty node and edge batch inserts", async () => {
+    const { sql, calls } = createMockSql([
+      [makeFileRow()],
+      [],
+      [],
+    ]);
+    const store = createReviewGraphStore({ sql, logger: mockLogger });
+
+    const result = await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/app.py",
+        language: "python",
+      },
+      nodes: [],
+      edges: [],
+    });
+
+    expect(result.nodesWritten).toBe(0);
+    expect(result.edgesWritten).toBe(0);
+    expect(calls.filter((call) => call.scope === "tx")).toHaveLength(3);
+    expect(calls.some((call) => call.kind === "unsafe")).toBe(false);
+  });
+
+  test("listWorkspaceGraph loads files nodes and edges with explicit typed queries", async () => {
+    const { sql, calls } = createMockSql([
+      [makeFileRow()],
+      [
+        makeNodeRow(),
+        makeNodeRow({
+          id: 12,
+          node_kind: "symbol",
+          stable_key: "symbol:src/app.py:handler",
+          symbol_name: "handler",
+        }),
+      ],
+      [makeEdgeRow()],
+    ]);
+    const store = createReviewGraphStore({ sql, logger: mockLogger });
+
+    const snapshot = await store.listWorkspaceGraph("owner/repo", "workspace-a");
+
+    expect(snapshot.files.map((file) => file.path)).toEqual(["src/app.py"]);
+    expect(snapshot.nodes.map((node) => node.stableKey)).toEqual([
+      "file:src/app.py",
+      "symbol:src/app.py:handler",
+    ]);
+    expect(snapshot.edges.map((edge) => edge.edgeKind)).toEqual(["declares"]);
+    const rootCalls = calls.filter((call) => call.scope === "root");
+    const txCalls = calls.filter((call) => call.scope === "tx");
+    expect(rootCalls).toEqual([{
+      kind: "begin",
+      scope: "root",
+      text: "isolation level repeatable read read only",
+      values: [],
+    }]);
+    expect(txCalls).toHaveLength(3);
+    expect(txCalls.some((call) => call.kind === "unsafe")).toBe(false);
+  });
+});
+
 describe.skipIf(!TEST_DB_URL)("createReviewGraphStore", () => {
   let sql: Sql;
   let store: ReviewGraphStore;

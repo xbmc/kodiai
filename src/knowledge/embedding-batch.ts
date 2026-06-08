@@ -1,0 +1,69 @@
+import type { EmbeddingProvider } from "./types.ts";
+
+export const DEFAULT_DOCUMENT_EMBEDDING_BATCH_SIZE = 8;
+
+export type DocumentEmbeddingBatchResult =
+  | {
+    status: "success";
+    embedding: Float32Array;
+    model: string;
+    dimensions: number;
+  }
+  | {
+    status: "unavailable";
+    embedding: null;
+  }
+  | {
+    status: "failed";
+    embedding: null;
+    err: unknown;
+  };
+
+type GenerateDocumentEmbeddingsBatchBaseOptions = {
+  texts: string[];
+  embeddingProvider: Pick<EmbeddingProvider, "generate">;
+  batchSize?: number;
+};
+
+export async function generateDocumentEmbeddingResultsBatch(
+  opts: GenerateDocumentEmbeddingsBatchBaseOptions,
+): Promise<DocumentEmbeddingBatchResult[]> {
+  const { texts, embeddingProvider } = opts;
+  const requestedBatchSize = opts.batchSize ?? DEFAULT_DOCUMENT_EMBEDDING_BATCH_SIZE;
+  const batchSize = Number.isFinite(requestedBatchSize)
+    ? Math.max(1, Math.floor(requestedBatchSize))
+    : DEFAULT_DOCUMENT_EMBEDDING_BATCH_SIZE;
+  const results: DocumentEmbeddingBatchResult[] = [];
+
+  for (let offset = 0; offset < texts.length; offset += batchSize) {
+    const batch = texts.slice(offset, offset + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (text) => {
+        try {
+          const result = await embeddingProvider.generate(text, "document");
+          if (!result) {
+            return {
+              status: "unavailable",
+              embedding: null,
+            } satisfies DocumentEmbeddingBatchResult;
+          }
+          return {
+            status: "success",
+            embedding: result.embedding,
+            model: result.model,
+            dimensions: result.dimensions,
+          } satisfies DocumentEmbeddingBatchResult;
+        } catch (err) {
+          return {
+            status: "failed",
+            embedding: null,
+            err,
+          } satisfies DocumentEmbeddingBatchResult;
+        }
+      }),
+    );
+    results.push(...batchResults);
+  }
+
+  return results;
+}

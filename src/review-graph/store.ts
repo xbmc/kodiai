@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import type {
   ReplaceFileGraphInput,
   ReviewGraphBuildRecord,
@@ -76,6 +77,43 @@ type BuildRow = DbRow & {
   created_at: string | Date;
   updated_at: string | Date;
 };
+
+type InsertedNodeRow = DbRow & {
+  id: number | string;
+  stable_key: string;
+};
+
+type EdgeInsertPayload = {
+  edge_kind: string;
+  source_node_id: number;
+  target_node_id: number;
+  confidence: number | null;
+  attributes: Record<string, unknown>;
+};
+
+const REVIEW_GRAPH_NODE_WRITE_BATCH_SIZE = 500;
+const REVIEW_GRAPH_EDGE_WRITE_BATCH_SIZE = 500;
+const REVIEW_GRAPH_NODE_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["node_kind", "text"],
+  ["stable_key", "text"],
+  ["symbol_name", "text"],
+  ["qualified_name", "text"],
+  ["language", "text"],
+  ["span_start_line", "integer"],
+  ["span_start_col", "integer"],
+  ["span_end_line", "integer"],
+  ["span_end_col", "integer"],
+  ["signature", "text"],
+  ["attributes", "jsonb"],
+  ["confidence", "real"],
+]);
+const REVIEW_GRAPH_EDGE_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
+  ["edge_kind", "text"],
+  ["source_node_id", "bigint"],
+  ["target_node_id", "bigint"],
+  ["confidence", "real"],
+  ["attributes", "jsonb"],
+]);
 
 function toIso(value: string | Date | null): string | null {
   if (value === null) return null;
@@ -278,49 +316,73 @@ export function createReviewGraphStore(opts: {
         `;
 
         const nodeIdByStableKey = new Map<string, number>();
-        for (const node of input.nodes) {
-          const rows = await scoped`
-            INSERT INTO review_graph_nodes (
-              repo,
-              workspace_key,
-              file_id,
-              build_id,
-              node_kind,
-              stable_key,
-              symbol_name,
-              qualified_name,
-              language,
-              span_start_line,
-              span_start_col,
-              span_end_line,
-              span_end_col,
-              signature,
-              attributes,
-              confidence
-            ) VALUES (
-              ${input.file.repo},
-              ${input.file.workspaceKey},
-              ${file.id},
-              ${input.file.buildId ?? null},
-              ${node.nodeKind},
-              ${node.stableKey},
-              ${node.symbolName ?? null},
-              ${node.qualifiedName ?? null},
-              ${node.language},
-              ${node.spanStartLine ?? null},
-              ${node.spanStartCol ?? null},
-              ${node.spanEndLine ?? null},
-              ${node.spanEndCol ?? null},
-              ${node.signature ?? null},
-              ${JSON.stringify(node.attributes ?? {})}::jsonb,
-              ${node.confidence ?? null}
-            )
-            RETURNING id
-          `;
-          nodeIdByStableKey.set(node.stableKey, Number(rows[0]!.id));
+        if (input.nodes.length > 0) {
+          const nodePayload = input.nodes.map((node) => ({
+            node_kind: node.nodeKind,
+            stable_key: node.stableKey,
+            symbol_name: node.symbolName ?? null,
+            qualified_name: node.qualifiedName ?? null,
+            language: node.language,
+            span_start_line: node.spanStartLine ?? null,
+            span_start_col: node.spanStartCol ?? null,
+            span_end_line: node.spanEndLine ?? null,
+            span_end_col: node.spanEndCol ?? null,
+            signature: node.signature ?? null,
+            attributes: node.attributes ?? {},
+            confidence: node.confidence ?? null,
+          }));
+
+          const insertedNodeBatchRows = await executeJsonbRecordBatches(
+            nodePayload,
+            REVIEW_GRAPH_NODE_WRITE_BATCH_SIZE,
+            (row) => row,
+            async (batch) => scoped.unsafe(
+                `
+                  INSERT INTO review_graph_nodes (
+                    repo, workspace_key, file_id, build_id,
+                    node_kind, stable_key, symbol_name, qualified_name,
+                    language, span_start_line, span_start_col, span_end_line,
+                    span_end_col, signature, attributes, confidence
+                  )
+                  SELECT
+                    $2,
+                    $3,
+                    $4::bigint,
+                    $5::bigint,
+                    batch_rows.node_kind,
+                    batch_rows.stable_key,
+                    batch_rows.symbol_name,
+                    batch_rows.qualified_name,
+                    batch_rows.language,
+                    batch_rows.span_start_line,
+                    batch_rows.span_start_col,
+                    batch_rows.span_end_line,
+                    batch_rows.span_end_col,
+                    batch_rows.signature,
+                    COALESCE(batch_rows.attributes, '{}'::jsonb),
+                    batch_rows.confidence
+                  FROM ${REVIEW_GRAPH_NODE_BATCH_RECORDSET}
+                  RETURNING stable_key, id
+                `,
+                [
+                  batch.json,
+                  input.file.repo,
+                  input.file.workspaceKey,
+                  file.id,
+                  input.file.buildId ?? null,
+                ],
+              ),
+          );
+
+          for (const rows of insertedNodeBatchRows) {
+            for (const row of rows) {
+              const inserted = row as unknown as InsertedNodeRow;
+              nodeIdByStableKey.set(inserted.stable_key, Number(inserted.id));
+            }
+          }
         }
 
-        let edgesWritten = 0;
+        const edgePayload: EdgeInsertPayload[] = [];
         for (const edge of input.edges) {
           const sourceNodeId = nodeIdByStableKey.get(edge.sourceStableKey);
           const targetNodeId = nodeIdByStableKey.get(edge.targetStableKey);
@@ -331,30 +393,49 @@ export function createReviewGraphStore(opts: {
             );
           }
 
-          await scoped`
-            INSERT INTO review_graph_edges (
-              repo,
-              workspace_key,
-              file_id,
-              build_id,
-              edge_kind,
-              source_node_id,
-              target_node_id,
-              confidence,
-              attributes
-            ) VALUES (
-              ${input.file.repo},
-              ${input.file.workspaceKey},
-              ${file.id},
-              ${input.file.buildId ?? null},
-              ${edge.edgeKind},
-              ${sourceNodeId},
-              ${targetNodeId},
-              ${edge.confidence ?? null},
-              ${JSON.stringify(edge.attributes ?? {})}::jsonb
-            )
-          `;
-          edgesWritten += 1;
+          edgePayload.push({
+            edge_kind: edge.edgeKind,
+            source_node_id: sourceNodeId,
+            target_node_id: targetNodeId,
+            confidence: edge.confidence ?? null,
+            attributes: edge.attributes ?? {},
+          });
+        }
+
+        if (edgePayload.length > 0) {
+          await executeJsonbRecordBatches(
+            edgePayload,
+            REVIEW_GRAPH_EDGE_WRITE_BATCH_SIZE,
+            (row) => row,
+            async (batch) => {
+              await scoped.unsafe(
+                `
+                  INSERT INTO review_graph_edges (
+                    repo, workspace_key, file_id, build_id,
+                    edge_kind, source_node_id, target_node_id, confidence, attributes
+                  )
+                  SELECT
+                    $2,
+                    $3,
+                    $4::bigint,
+                    $5::bigint,
+                    batch_rows.edge_kind,
+                    batch_rows.source_node_id,
+                    batch_rows.target_node_id,
+                    batch_rows.confidence,
+                    COALESCE(batch_rows.attributes, '{}'::jsonb)
+                  FROM ${REVIEW_GRAPH_EDGE_BATCH_RECORDSET}
+                `,
+                [
+                  batch.json,
+                  input.file.repo,
+                  input.file.workspaceKey,
+                  file.id,
+                  input.file.buildId ?? null,
+                ],
+              );
+            },
+          );
         }
 
         logger.debug(
@@ -364,7 +445,7 @@ export function createReviewGraphStore(opts: {
             path: input.file.path,
             fileId: file.id,
             nodesWritten: input.nodes.length,
-            edgesWritten,
+            edgesWritten: edgePayload.length,
             buildId: input.file.buildId ?? null,
           },
           "Replaced review graph records for file",
@@ -373,7 +454,7 @@ export function createReviewGraphStore(opts: {
         return {
           file,
           nodesWritten: input.nodes.length,
-          edgesWritten,
+          edgesWritten: edgePayload.length,
         };
       });
     },
@@ -412,35 +493,42 @@ export function createReviewGraphStore(opts: {
     },
 
     async listWorkspaceGraph(repo: string, workspaceKey: string) {
-      const [fileRows, nodeRows, edgeRows] = await Promise.all([
-        sql`
+      return await sql.begin("isolation level repeatable read read only", async (tx) => {
+        const scoped = tx as unknown as Sql;
+        const fileRowsQuery = scoped`
           SELECT *
           FROM review_graph_files
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
           ORDER BY path ASC
-        `,
-        sql`
+        `;
+        const nodeRowsQuery = scoped`
           SELECT *
           FROM review_graph_nodes
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
           ORDER BY file_id ASC, id ASC
-        `,
-        sql`
+        `;
+        const edgeRowsQuery = scoped`
           SELECT *
           FROM review_graph_edges
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
           ORDER BY file_id ASC, id ASC
-        `,
-      ]);
+        `;
 
-      return {
-        files: fileRows.map((row) => mapFileRow(row as unknown as FileRow)),
-        nodes: nodeRows.map((row) => mapNodeRow(row as unknown as NodeRow)),
-        edges: edgeRows.map((row) => mapEdgeRow(row as unknown as EdgeRow)),
-      };
+        const [fileRows, nodeRows, edgeRows] = await Promise.all([
+          fileRowsQuery,
+          nodeRowsQuery,
+          edgeRowsQuery,
+        ]) as [unknown[], unknown[], unknown[]];
+
+        return {
+          files: fileRows.map((row) => mapFileRow(row as unknown as FileRow)),
+          nodes: nodeRows.map((row) => mapNodeRow(row as unknown as NodeRow)),
+          edges: edgeRows.map((row) => mapEdgeRow(row as unknown as EdgeRow)),
+        };
+      });
     },
 
     async getBuild(repo: string, workspaceKey: string): Promise<ReviewGraphBuildRecord | null> {

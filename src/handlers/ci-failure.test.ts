@@ -19,6 +19,8 @@ type FlakinessRow = { check_name: string; conclusion: string };
 
 type HarnessOptions = {
   headChecksByRef?: Record<string, CheckRunsPage[]>;
+  headChecksDelayMsByRef?: Record<string, number>;
+  onHeadChecksFetchStart?: (ref: string, active: number) => void;
   headChecksErrorByRef?: Record<string, Error>;
   baseCommitsByRef?: Record<string, Array<{ sha: string }>>;
   baseCommitsErrorByRef?: Record<string, Error>;
@@ -128,6 +130,7 @@ function createHarness(options: HarnessOptions = {}) {
   const router = createCapturedRouter();
   const { logger, debugCalls, warnCalls } = createSharedLogger();
   const queueCalls: QueueCall[] = [];
+  let activeHeadCheckFetches = 0;
 
   const listForRef = mock(async () => ({ data: [] }));
   const iterator = mock((_method: unknown, params: { ref: string }) => {
@@ -141,6 +144,23 @@ function createHarness(options: HarnessOptions = {}) {
     }
 
     const pages = options.headChecksByRef?.[params.ref] ?? [];
+    const delayMs = options.headChecksDelayMsByRef?.[params.ref] ?? 0;
+    if (delayMs > 0) {
+      return {
+        async *[Symbol.asyncIterator]() {
+          activeHeadCheckFetches += 1;
+          options.onHeadChecksFetchStart?.(params.ref, activeHeadCheckFetches);
+          try {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            for (const page of pages) {
+              yield page;
+            }
+          } finally {
+            activeHeadCheckFetches -= 1;
+          }
+        },
+      } as AsyncIterable<CheckRunsPage>;
+    }
     return toAsyncIterable(pages);
   });
   const listCommits = mock(async (params: { sha: string }) => {
@@ -613,6 +633,66 @@ describe("createCIFailureHandler", () => {
     const body = extractPostedBody(harness);
     expect(body).toContain("**All 1 failure appear unrelated to this PR**");
     expect(body).toContain("Also fails on bbbbbbb");
+  });
+
+  it("fetches base commit check runs with bounded concurrency", async () => {
+    const payload = clonePayload();
+    let activeFetches = 0;
+    let maxActiveFetches = 0;
+    const refs = [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "cccccccccccccccccccccccccccccccccccccccc",
+    ];
+
+    const harness = createHarness({
+      headChecksByRef: {
+        [payload.check_suite.head_sha]: [
+          {
+            data: [
+              { name: "build", conclusion: "failure", status: "completed" },
+            ],
+          },
+        ],
+        [refs[0]!]: [
+          {
+            data: [
+              { name: "build", conclusion: "failure", status: "completed" },
+            ],
+          },
+        ],
+        [refs[1]!]: [
+          {
+            data: [
+              { name: "build", conclusion: "failure", status: "completed" },
+            ],
+          },
+        ],
+        [refs[2]!]: [
+          {
+            data: [
+              { name: "build", conclusion: "success", status: "completed" },
+            ],
+          },
+        ],
+      },
+      headChecksDelayMsByRef: Object.fromEntries(refs.map((ref) => [ref, 5])),
+      onHeadChecksFetchStart: (ref, active) => {
+        if (refs.includes(ref)) {
+          maxActiveFetches = Math.max(maxActiveFetches, active);
+        }
+      },
+      baseCommitsByRef: {
+        main: refs.map((sha) => ({ sha })),
+      },
+      commentsByPage: [[]],
+    });
+
+    await harness.router.captured[0]!.handler(makeEvent(payload));
+
+    expect(harness.octokit.rest.issues.createComment).toHaveBeenCalledTimes(1);
+    expect(maxActiveFetches).toBeGreaterThan(1);
+    expect(maxActiveFetches).toBeLessThanOrEqual(2);
   });
 
   it("warns fail-open and avoids escaping the queued job on unexpected GitHub errors", async () => {

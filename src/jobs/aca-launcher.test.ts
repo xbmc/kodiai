@@ -299,6 +299,55 @@ describe("launchAcaJob", () => {
       }
     }
   });
+
+  test("passes abort signals to managed identity and job start fetches", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+
+    const signals: Array<AbortSignal | null | undefined> = [];
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+
+    globalThis.fetch = (async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      signals.push(init?.signal);
+      if (url.startsWith("https://identity.example/token")) {
+        return jsonResponse({ access_token: "test-access-token" });
+      }
+      return jsonResponse({ name: "caj-kodiai-agent-abc123" });
+    }) as typeof fetch;
+
+    try {
+      await launchAcaJob({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        spec: buildAcaJobSpec({
+          jobName: "caj-kodiai-agent",
+          image: "kodiairegistry.azurecr.io/kodiai-agent:latest",
+          workspaceDir: "/mnt/kodiai-workspaces/test-job",
+          mcpBearerToken: "test-token",
+          mcpBaseUrl: "http://ca-kodiai",
+        }),
+      });
+
+      expect(signals).toHaveLength(2);
+      expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -463,6 +512,59 @@ describe("pollUntilComplete", () => {
     expect(result).toEqual({ status: "timed-out", durationMs: 3_001 });
     expect(sleepCalls).toEqual([2_999]);
     expect(statusFetchCount).toBe(1);
+  });
+
+  test("passes abort signals to managed identity and poll fetches", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalSleep = Bun.sleep;
+    const originalNow = Date.now;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+
+    const signals: Array<AbortSignal | null | undefined> = [];
+    let nowIndex = 0;
+    const nowValues = [0, 0, 5];
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+    Date.now = () => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? 0;
+    Bun.sleep = (async () => undefined) as typeof Bun.sleep;
+
+    globalThis.fetch = (async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      signals.push(init?.signal);
+      if (url.startsWith("https://identity.example/token")) {
+        return jsonResponse({ access_token: "test-access-token" });
+      }
+      return jsonResponse({ properties: { status: "Succeeded" } });
+    }) as typeof fetch;
+
+    try {
+      await pollUntilComplete({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        executionName: "exec-123",
+        timeoutMs: 20_000,
+        pollIntervalMs: 1,
+      });
+
+      expect(signals).toHaveLength(2);
+      expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.sleep = originalSleep;
+      Date.now = originalNow;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
   });
 });
 

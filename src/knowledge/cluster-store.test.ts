@@ -8,7 +8,10 @@ function createMockSql(responses: Record<string, unknown[]> = {}) {
   let callIndex = 0;
   const calls: Array<{ query: string; values: unknown[] }> = [];
 
-  const sqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => {
+  const sqlFn = (strings: TemplateStringsArray | unknown[], ...values: unknown[]) => {
+    if (!("raw" in strings)) {
+      return "bulk-values";
+    }
     const query = strings.join("?");
     calls.push({ query, values });
     const keys = Object.keys(responses);
@@ -148,6 +151,22 @@ describe("createClusterStore", () => {
         { clusterId: 1, reviewCommentId: 10, probability: 0.95 },
         { clusterId: 1, reviewCommentId: 20, probability: 0.8 },
       ]);
+
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.query).toContain("INSERT INTO review_cluster_assignments");
+    });
+
+    it("chunks large assignment batches", async () => {
+      const { sql, calls } = createMockSql();
+      const store = createClusterStore({ sql, logger: createMockLogger() });
+
+      await store.writeAssignments(
+        Array.from({ length: 501 }, (_, index) => ({
+          clusterId: 1,
+          reviewCommentId: index + 1,
+          probability: 0.9,
+        })),
+      );
 
       expect(calls.length).toBe(2);
     });

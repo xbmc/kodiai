@@ -84,6 +84,7 @@ function createApp(options?: {
   dedupIsDuplicate?: boolean;
   dispatchImpl?: (event: WebhookEvent) => Promise<void>;
   isShuttingDown?: boolean;
+  rateLimit?: Parameters<typeof createWebhookRoutes>[0]["rateLimit"];
 }) {
   const dispatchedEvents: WebhookEvent[] = [];
   const queuedEntries: Array<Omit<WebhookQueueEntry, "id" | "queuedAt" | "processedAt" | "status">> = [];
@@ -144,6 +145,7 @@ function createApp(options?: {
       requestTracker,
       webhookQueueStore,
       shutdownManager,
+      rateLimit: options?.rateLimit,
     }),
   );
 
@@ -164,6 +166,60 @@ describe("createWebhookRoutes", () => {
     expect(response.status).toBe(401);
     expect(dispatchedEvents).toHaveLength(0);
     expect(trackedJobs).toHaveLength(0);
+  });
+
+  test("rate-limits GitHub webhook requests by source before signature verification", async () => {
+    const body = JSON.stringify({ action: "opened", installation: { id: 42 } });
+    const { app, dispatchedEvents, trackedJobs } = createApp({
+      rateLimit: {
+        preBody: { max: 1, windowMs: 60_000 },
+      },
+    });
+
+    const accepted = await app.request("http://localhost/webhooks/github", {
+      method: "POST",
+      headers: createHeaders(body, { "x-hub-signature-256": "sha256=not-valid" }),
+      body,
+    });
+    const limited = await app.request("http://localhost/webhooks/github", {
+      method: "POST",
+      headers: createHeaders(body, { "x-hub-signature-256": "sha256=not-valid" }),
+      body,
+    });
+
+    expect(accepted.status).toBe(401);
+    expect(limited.status).toBe(429);
+    expect(dispatchedEvents).toHaveLength(0);
+    expect(trackedJobs).toHaveLength(0);
+  });
+
+  test("rate-limits verified GitHub webhook sources after signature verification", async () => {
+    const body = JSON.stringify({
+      action: "opened",
+      installation: { id: 42 },
+      repository: { full_name: "acme/widgets" },
+    });
+    const { app, dispatchedEvents, trackedJobs } = createApp({
+      rateLimit: {
+        verified: { max: 1, windowMs: 60_000 },
+      },
+    });
+
+    const accepted = await app.request("http://localhost/webhooks/github", {
+      method: "POST",
+      headers: createHeaders(body, { "x-github-delivery": "delivery-1" }),
+      body,
+    });
+    const limited = await app.request("http://localhost/webhooks/github", {
+      method: "POST",
+      headers: createHeaders(body, { "x-github-delivery": "delivery-2" }),
+      body,
+    });
+
+    expect(accepted.status).toBe(200);
+    expect(limited.status).toBe(429);
+    expect(dispatchedEvents).toHaveLength(1);
+    expect(trackedJobs).toEqual(["job-1"]);
   });
 
   test("returns 400 before dispatch when the signature is valid but the payload is malformed JSON", async () => {

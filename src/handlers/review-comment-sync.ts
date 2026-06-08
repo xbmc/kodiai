@@ -4,10 +4,12 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type {
   ReviewCommentChunk,
   ReviewCommentInput,
+  ReviewCommentRecord,
   ReviewCommentStore,
 } from "../knowledge/review-comment-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 import { chunkReviewThread } from "../knowledge/review-comment-chunker.ts";
+import { generateDocumentEmbeddingResultsBatch } from "../knowledge/embedding-batch.ts";
 
 const BOT_LOGINS = new Set([
   "dependabot",
@@ -77,15 +79,72 @@ async function embedChunks(
   chunks: ReviewCommentChunk[],
   embeddingProvider: EmbeddingProvider,
 ): Promise<ReviewCommentChunk[]> {
-  for (const chunk of chunks) {
-    try {
-      const result = await embeddingProvider.generate(chunk.chunkText, "document");
-      chunk.embedding = result?.embedding ?? null;
-    } catch {
-      chunk.embedding = null;
-    }
+  const embeddingResults = await generateDocumentEmbeddingResultsBatch({
+    texts: chunks.map((chunk) => chunk.chunkText),
+    embeddingProvider,
+  });
+
+  for (let i = 0; i < chunks.length; i++) {
+    chunks[i]!.embedding = embeddingResults[i]?.embedding ?? null;
   }
   return chunks;
+}
+
+function githubTimestampMs(value: Date | string | null | undefined): number | null {
+  if (value == null) return null;
+  const time = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
+function isStoredDuplicateCreate(record: ReviewCommentRecord | null): boolean {
+  return record != null && !record.deleted;
+}
+
+function isStoredDuplicateEdit(input: ReviewCommentInput, record: ReviewCommentRecord | null): boolean {
+  if (record == null || record.deleted) return false;
+  if (record.body !== input.body) return false;
+  const inputUpdatedAt = githubTimestampMs(input.githubUpdatedAt ?? input.githubCreatedAt);
+  const storedUpdatedAt = githubTimestampMs(record.githubUpdatedAt ?? record.githubCreatedAt);
+  return inputUpdatedAt != null && inputUpdatedAt === storedUpdatedAt;
+}
+
+async function syncReviewCommentChunks(opts: {
+  input: ReviewCommentInput;
+  store: ReviewCommentStore;
+  embeddingProvider: EmbeddingProvider;
+  logger: Logger;
+  isDuplicate: (input: ReviewCommentInput, existing: ReviewCommentRecord | null) => boolean;
+  logDuplicate: (input: ReviewCommentInput, logger: Logger) => void;
+  persistChunks: (store: ReviewCommentStore, chunks: ReviewCommentChunk[]) => Promise<void>;
+}): Promise<number> {
+  const { input, store, embeddingProvider, logger, isDuplicate, logDuplicate, persistChunks } = opts;
+  const existing = await store.getByGithubId(input.repo, input.commentGithubId);
+
+  if (isDuplicate(input, existing)) {
+    logDuplicate(input, logger);
+    return 0;
+  }
+
+  const chunks = chunkReviewThread([input]);
+  if (chunks.length === 0) return 0;
+
+  await embedChunks(chunks, embeddingProvider);
+  await persistChunks(store, chunks);
+  return chunks.length;
+}
+
+function logDuplicateCreatedComment(input: ReviewCommentInput, logger: Logger): void {
+  logger.debug(
+    { repo: input.repo, prNumber: input.prNumber, commentId: input.commentGithubId },
+    "Review comment sync: skipping already-stored created comment",
+  );
+}
+
+function logUnchangedEditedComment(input: ReviewCommentInput, logger: Logger): void {
+  logger.debug(
+    { repo: input.repo, prNumber: input.prNumber, commentId: input.commentGithubId },
+    "Review comment sync: skipping unchanged edited comment",
+  );
 }
 
 /**
@@ -141,14 +200,19 @@ export function createReviewCommentSyncHandler(opts: {
 
     await jobQueue.enqueue(event.installationId, async () => {
       try {
-        const chunks = chunkReviewThread([input]);
-        if (chunks.length === 0) return;
-
-        await embedChunks(chunks, embeddingProvider);
-        await store.writeChunks(chunks);
+        const chunksWritten = await syncReviewCommentChunks({
+          input,
+          store,
+          embeddingProvider,
+          logger,
+          isDuplicate: (_input, existing) => isStoredDuplicateCreate(existing),
+          logDuplicate: logDuplicateCreatedComment,
+          persistChunks: (targetStore, chunks) => targetStore.writeChunks(chunks),
+        });
+        if (chunksWritten === 0) return;
 
         logger.info(
-          { repo: fullName, prNumber, commentId: comment.id, chunksWritten: chunks.length },
+          { repo: fullName, prNumber, commentId: comment.id, chunksWritten },
           "Review comment ingested",
         );
       } catch (err) {
@@ -197,14 +261,19 @@ export function createReviewCommentSyncHandler(opts: {
 
     await jobQueue.enqueue(event.installationId, async () => {
       try {
-        const chunks = chunkReviewThread([input]);
-        if (chunks.length === 0) return;
-
-        await embedChunks(chunks, embeddingProvider);
-        await store.updateChunks(chunks);
+        const chunksUpdated = await syncReviewCommentChunks({
+          input,
+          store,
+          embeddingProvider,
+          logger,
+          isDuplicate: isStoredDuplicateEdit,
+          logDuplicate: logUnchangedEditedComment,
+          persistChunks: (targetStore, chunks) => targetStore.updateChunks(chunks),
+        });
+        if (chunksUpdated === 0) return;
 
         logger.info(
-          { repo: fullName, commentId: comment.id, chunksUpdated: chunks.length },
+          { repo: fullName, commentId: comment.id, chunksUpdated },
           "Review comment re-embedded",
         );
       } catch (err) {

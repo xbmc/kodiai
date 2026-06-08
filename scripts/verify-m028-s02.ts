@@ -137,6 +137,7 @@ async function checkUpsertContract(): Promise<M028S02Check> {
     99,
     "body",
     logger,
+    new Map([[99, 5001]]),
   );
 
   const updatePathOk =
@@ -184,6 +185,7 @@ async function checkUpsertContract(): Promise<M028S02Check> {
     99,
     "body",
     logger,
+    new Map(),
   );
 
   const createPathOk =

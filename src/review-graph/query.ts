@@ -248,6 +248,9 @@ export function queryBlastRadiusFromSnapshot(
   const allCallsiteNodes = snapshot.nodes.filter((node) => node.nodeKind === "callsite");
   const allSymbolNodes = snapshot.nodes.filter((node) => node.nodeKind === "symbol");
   const allTestNodes = snapshot.nodes.filter((node) => node.nodeKind === "test");
+  const symbolByFileAndStableKey = new Map(
+    allSymbolNodes.map((symbol) => [`${symbol.fileId}:${symbol.stableKey}`, symbol]),
+  );
 
   for (const changedPath of changedFiles) {
     const fileNodes = indexes.nodesByFilePath.get(changedPath) ?? [];
@@ -391,7 +394,7 @@ export function queryBlastRadiusFromSnapshot(
         language: callsite.language,
       });
 
-      const owner = allSymbolNodes.find((symbol) => symbol.fileId === callsite.fileId && symbol.stableKey === String(callsite.attributes.callerStableKey ?? ""));
+      const owner = symbolByFileAndStableKey.get(`${callsite.fileId}:${String(callsite.attributes.callerStableKey ?? "")}`);
       if (owner) {
         addDependentSignal(dependents, {
           stableKey: owner.stableKey,
@@ -406,11 +409,15 @@ export function queryBlastRadiusFromSnapshot(
       }
     }
 
+    const symbolAliasList = Array.from(symbolAliases);
     for (const testNode of allTestNodes) {
       const testPath = indexes.filePathById.get(testNode.fileId);
       if (!testPath || changedFileSet.has(testPath)) continue;
       const aliases = collectSymbolAliases(testNode).map((value) => value.toLowerCase());
-      const matchedAlias = aliases.find((alias) => Array.from(symbolAliases).some((candidate) => alias.includes(candidate) || candidate.includes(alias)));
+      const matchedAlias = aliases.find((alias) =>
+        symbolAliases.has(alias)
+        || symbolAliasList.some((candidate) => alias.includes(candidate) || candidate.includes(alias))
+      );
       if (!matchedAlias) continue;
 
       const conf = nodeConfidence(testNode);

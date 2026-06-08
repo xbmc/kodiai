@@ -8,9 +8,11 @@
  * Completely fail-open: any error is logged and silently ignored.
  */
 
+import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import { findPotentialMatches } from "../contributor/identity-matcher.ts";
+import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 
 type SlackMember = {
   userId: string;
@@ -18,22 +20,39 @@ type SlackMember = {
   realName: string;
 };
 
-/** Cache Slack member list for 1 hour to avoid hammering the API. */
-let cachedMembers: SlackMember[] | null = null;
-let cachedMembersAt = 0;
 const MEMBER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_SLACK_MEMBER_CACHE_ENTRIES = 20;
 const MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS = 100;
+const SUGGESTED_USERNAME_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MAX_SUGGESTED_USERNAMES = 10_000;
 
-const slackMemberLookupDisabledReasonsByToken = new Map<string, string>();
+const slackMemberCache = createInMemoryCache<string, SlackMember[]>({
+  maxSize: MAX_SLACK_MEMBER_CACHE_ENTRIES,
+  ttlMs: MEMBER_CACHE_TTL_MS,
+  now: () => Date.now(),
+});
 
-/** Track which GitHub usernames we've already suggested to avoid repeats. */
-const suggestedUsernames = new Set<string>();
+const slackMemberLookupDisabledReasonsByToken = createInMemoryCache<string, string>({
+  maxSize: MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS,
+  ttlMs: 24 * 60 * 60 * 1000,
+  now: () => Date.now(),
+});
+
+/** Track recent GitHub usernames we've already suggested to avoid repeat DMs. */
+const suggestedUsernames = createInMemoryCache<string, true>({
+  maxSize: MAX_SUGGESTED_USERNAMES,
+  ttlMs: SUGGESTED_USERNAME_TTL_MS,
+  now: () => Date.now(),
+});
 
 export function resetIdentitySuggestionStateForTests(): void {
-  cachedMembers = null;
-  cachedMembersAt = 0;
+  slackMemberCache.clear();
   slackMemberLookupDisabledReasonsByToken.clear();
   suggestedUsernames.clear();
+}
+
+function tokenFingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function normalizeSlackErrorCode(error: unknown): string {
@@ -48,7 +67,8 @@ async function fetchSlackMembers(
   botToken: string,
   logger: Logger,
 ): Promise<SlackMember[]> {
-  const disabledReason = slackMemberLookupDisabledReasonsByToken.get(botToken);
+  const tokenCacheKey = tokenFingerprint(botToken);
+  const disabledReason = slackMemberLookupDisabledReasonsByToken.get(tokenCacheKey);
   if (disabledReason) {
     logger.debug(
       { reason: disabledReason },
@@ -57,8 +77,8 @@ async function fetchSlackMembers(
     return [];
   }
 
-  const now = Date.now();
-  if (cachedMembers && now - cachedMembersAt < MEMBER_CACHE_TTL_MS) {
+  const cachedMembers = slackMemberCache.get(tokenCacheKey);
+  if (cachedMembers) {
     return cachedMembers;
   }
 
@@ -99,13 +119,7 @@ async function fetchSlackMembers(
     const errorCode = normalizeSlackErrorCode(data?.error);
     if (isSlackMissingScopeError(errorCode)) {
       const disabledReason = "missing_scope";
-      slackMemberLookupDisabledReasonsByToken.set(botToken, disabledReason);
-      if (slackMemberLookupDisabledReasonsByToken.size > MAX_DISABLED_SLACK_MEMBER_LOOKUP_TOKENS) {
-        const oldestToken = slackMemberLookupDisabledReasonsByToken.keys().next().value;
-        if (oldestToken !== undefined) {
-          slackMemberLookupDisabledReasonsByToken.delete(oldestToken);
-        }
-      }
+      slackMemberLookupDisabledReasonsByToken.set(tokenCacheKey, disabledReason);
       logger.info(
         { reason: disabledReason, slackError: errorCode, httpStatus: response.status },
         "Slack member lookup disabled; missing users.list scope",
@@ -127,8 +141,7 @@ async function fetchSlackMembers(
       realName: member.profile?.real_name ?? "",
     }));
 
-  cachedMembers = members;
-  cachedMembersAt = now;
+  slackMemberCache.set(tokenCacheKey, members);
   logger.debug({ memberCount: members.length }, "Slack member list cached");
   return members;
 }
@@ -204,7 +217,7 @@ async function sendSuggestionDM(
  * send a one-time DM suggesting they link their accounts.
  *
  * Only suggests for high-confidence matches to avoid spam.
- * Tracks previously suggested usernames in memory (resets on restart).
+ * Tracks recently suggested usernames in bounded memory (resets on restart).
  */
 export async function suggestIdentityLink(params: {
   githubUsername: string;
@@ -217,7 +230,8 @@ export async function suggestIdentityLink(params: {
     params;
 
   try {
-    if (suggestedUsernames.has(githubUsername)) {
+    const normalizedGithubUsername = githubUsername.toLowerCase();
+    if (suggestedUsernames.has(normalizedGithubUsername)) {
       return;
     }
 
@@ -237,13 +251,13 @@ export async function suggestIdentityLink(params: {
 
     const highMatches = matches.filter((match) => match.confidence === "high");
     if (highMatches.length === 0) {
-      suggestedUsernames.add(githubUsername);
+      suggestedUsernames.set(normalizedGithubUsername, true);
       return;
     }
 
     const match = highMatches[0]!;
     await sendSuggestionDM(slackBotToken, match.slackUserId, githubUsername, logger);
-    suggestedUsernames.add(githubUsername);
+    suggestedUsernames.set(normalizedGithubUsername, true);
   } catch (err) {
     logger.warn({ githubUsername, err }, "Identity suggestion check failed (non-blocking)");
   }

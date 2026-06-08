@@ -127,7 +127,7 @@ describe("linkPRToIssues", () => {
       expect(generateMock).not.toHaveBeenCalled();
     });
 
-    test("skips issue not found in corpus with warning", async () => {
+    test("skips issue not found in corpus with info log", async () => {
       const issueStore = mockIssueStore({
         getByNumber: mock(() => Promise.resolve(null)),
       });
@@ -144,7 +144,11 @@ describe("linkPRToIssues", () => {
 
       // No referenced issues (not in corpus), falls through to semantic
       expect(result.referencedIssues).toHaveLength(0);
-      expect(logger.warn).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        { repo: "owner/repo", issueNumber: 999 },
+        "Referenced issue not found in corpus",
+      );
+      expect(logger.warn).not.toHaveBeenCalled();
     });
 
     test("skips cross-repo references with debug log", async () => {

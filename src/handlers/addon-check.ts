@@ -213,7 +213,7 @@ export function createAddonCheckHandler(deps: {
       // Resolve Kodi version from base branch name. Unknown branches are skipped.
       const kodiVersion = resolveCheckerBranch(baseBranch);
       if (kodiVersion === null) {
-        handlerLogger.warn({ baseBranch }, "addon-check: unknown kodi branch, skipping");
+        handlerLogger.info({ baseBranch }, "addon-check: unknown kodi branch, skipping");
         return;
       }
 

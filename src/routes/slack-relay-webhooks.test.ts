@@ -68,7 +68,10 @@ async function readFixture(name: "accepted" | "suppressed") {
   return await Bun.file(new URL(`../../fixtures/slack-webhook-relay/${name}.json`, import.meta.url)).text();
 }
 
-function createApp(onAcceptedRelay?: (event: NormalizedWebhookRelayEvent) => void) {
+function createApp(
+  onAcceptedRelay?: (event: NormalizedWebhookRelayEvent) => void,
+  rateLimit?: Parameters<typeof createSlackRelayWebhookRoutes>[0]["rateLimit"],
+) {
   const app = new Hono();
   app.route(
     "/webhooks/slack/relay",
@@ -76,6 +79,7 @@ function createApp(onAcceptedRelay?: (event: NormalizedWebhookRelayEvent) => voi
       config: createTestConfig(),
       logger: createTestLogger(),
       onAcceptedRelay,
+      rateLimit,
     }),
   );
   return app;
@@ -114,6 +118,62 @@ describe("createSlackRelayWebhookRoutes", () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ ok: false, reason: "invalid_source_auth" });
+  });
+
+  test("rate-limits relay webhook requests by source before source lookup semantics", async () => {
+    const app = createApp(undefined, {
+      preBody: { max: 1, windowMs: 60_000 },
+    });
+    const payload = await readFixture("accepted");
+
+    const first = await app.request("http://localhost/webhooks/slack/relay/unknown", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-relay-secret": "super-secret",
+      },
+      body: payload,
+    });
+    const second = await app.request("http://localhost/webhooks/slack/relay/unknown", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-relay-secret": "super-secret",
+      },
+      body: payload,
+    });
+
+    expect(first.status).toBe(404);
+    expect(second.status).toBe(429);
+  });
+
+  test("rate-limits verified relay webhook sources after source auth", async () => {
+    const acceptedEvents: NormalizedWebhookRelayEvent[] = [];
+    const app = createApp((event) => acceptedEvents.push(event), {
+      verified: { max: 1, windowMs: 60_000 },
+    });
+    const payload = await readFixture("accepted");
+
+    const first = await app.request("http://localhost/webhooks/slack/relay/buildkite", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-relay-secret": "super-secret",
+      },
+      body: payload,
+    });
+    const second = await app.request("http://localhost/webhooks/slack/relay/buildkite", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-relay-secret": "super-secret",
+      },
+      body: payload,
+    });
+
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(429);
+    expect(acceptedEvents).toHaveLength(1);
   });
 
   test("returns explicit invalid diagnostics for non-JSON request bodies", async () => {

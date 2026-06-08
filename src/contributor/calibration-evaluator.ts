@@ -484,12 +484,14 @@ function rankPathModels(models: PreliminaryPathModel[]): Map<string, RankedPathM
     overallScore: snapshot.overallScore,
   })));
   const rankedDescending = [...models].sort((left, right) => right.modeledOverallScore - left.modeledOverallScore);
+  const snapshotByNormalizedId = new Map(scoreSnapshots.map((snapshot) => [snapshot.normalizedId, snapshot]));
+  const rankByNormalizedId = new Map(rankedDescending.map((entry, index) => [entry.normalizedId, index + 1]));
   const result = new Map<string, RankedPathModel>();
 
   for (const model of models) {
-    const snapshot = scoreSnapshots.find((entry) => entry.normalizedId === model.normalizedId);
+    const snapshot = snapshotByNormalizedId.get(model.normalizedId);
     const assignment = snapshot ? assignmentByProfileId.get(snapshot.profileId) : null;
-    const rank = rankedDescending.findIndex((entry) => entry.normalizedId === model.normalizedId) + 1;
+    const rank = rankByNormalizedId.get(model.normalizedId) ?? models.length;
     const percentile =
       models.length === 1
         ? 0.5
@@ -518,14 +520,19 @@ function analyzePathInstability(
   const hasAnyTie = scoreGroups.some((group) => group.length > 1);
   const permutations = buildScoreStablePermutations(scoreGroups);
   const snapshots = new Map<string, InstabilitySnapshot>();
+  const scoreGroupByNormalizedId = new Map<string, PreliminaryPathModel[]>();
+  for (const group of scoreGroups) {
+    for (const entry of group) {
+      scoreGroupByNormalizedId.set(entry.normalizedId, group);
+    }
+  }
 
   for (const model of models) {
+    const scoreGroup = scoreGroupByNormalizedId.get(model.normalizedId);
     snapshots.set(model.normalizedId, {
       ranks: [],
       tiers: [],
-      tiedContributorIds: scoreGroups.find((group) =>
-        group.some((entry) => entry.normalizedId === model.normalizedId),
-      )?.map((entry) => entry.normalizedId) ?? [],
+      tiedContributorIds: scoreGroup?.map((entry) => entry.normalizedId) ?? [],
     });
   }
 

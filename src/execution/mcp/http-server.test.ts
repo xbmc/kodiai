@@ -182,6 +182,22 @@ describe("createMcpHttpRoutes", () => {
     expect(text).toContain("capabilities");
   });
 
+  test("rate-limits verified MCP requests by token and server", async () => {
+    const registry = createMcpJobRegistry();
+    registry.register("valid-token", { test_server: makeFactory() });
+    const app = createMcpHttpRoutes(registry, undefined, {
+      verified: { max: 1, windowMs: 60_000 },
+    });
+
+    const first = await mcpPost(app, "test_server", "valid-token");
+    const second = await mcpPost(app, "test_server", "valid-token");
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    const body = await second.json() as { error: string };
+    expect(body.error).toBe("Rate limited");
+  });
+
   test("unregister removes token and logs late requests as expected retired-token auth misses", async () => {
     const registry = createMcpJobRegistry();
     registry.register("valid-token", { test_server: makeFactory() });

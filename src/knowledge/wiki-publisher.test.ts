@@ -6,104 +6,15 @@ import {
   upsertWikiPageComment,
   createWikiPublisher,
 } from "./wiki-publisher.ts";
-import type { PageSuggestionGroup, PagePostResult } from "./wiki-publisher-types.ts";
-import type { GitHubApp } from "../auth/github-app.ts";
+import {
+  createMockGithubApp,
+  createMockOctokit,
+  createMockSql,
+  createSilentLogger,
+  makeGroup,
+  makePageResult,
+} from "./wiki-publisher.test-helpers.ts";
 import type { Octokit } from "@octokit/rest";
-
-// ── Test helpers ────────────────────────────────────────────────────────
-
-function makeGroup(overrides: Partial<PageSuggestionGroup> = {}): PageSuggestionGroup {
-  return {
-    pageId: 100,
-    pageTitle: "Add-on development",
-    suggestions: [
-      {
-        sectionHeading: "Getting Started",
-        suggestion: "The add-on development process now uses the new build system.",
-        whySummary: "Build system was replaced in PR #27901.",
-        citingPrs: [{ prNumber: 27901, prTitle: "New build system" }],
-        voiceMismatchWarning: false,
-      },
-    ],
-    ...overrides,
-  };
-}
-
-function makePageResult(overrides: Partial<PagePostResult> = {}): PagePostResult {
-  return {
-    pageId: 100,
-    pageTitle: "Add-on development",
-    commentId: 12345,
-    success: true,
-    suggestionsCount: 2,
-    prsCount: 1,
-    hasVoiceWarnings: false,
-    ...overrides,
-  };
-}
-
-function createMockOctokit() {
-  return {
-    rest: {
-      issues: {
-        create: mock(() =>
-          Promise.resolve({
-            data: { number: 42, html_url: "https://github.com/xbmc/wiki/issues/42" },
-          }),
-        ),
-        get: mock(() =>
-          Promise.resolve({
-            data: { html_url: "https://github.com/xbmc/wiki/issues/42" },
-          }),
-        ),
-        createComment: mock(() =>
-          Promise.resolve({ data: { id: 99001 } }),
-        ),
-        listComments: mock(() =>
-          Promise.resolve({ data: [] }),
-        ),
-        updateComment: mock(() => Promise.resolve({ data: {} })),
-        update: mock(() => Promise.resolve({ data: {} })),
-      },
-    },
-  } as unknown as Octokit;
-}
-
-function createMockGithubApp(overrides: Partial<GitHubApp> = {}): GitHubApp {
-  const mockOctokit = createMockOctokit();
-  return {
-    getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
-    getAppSlug: mock(() => "kodiai"),
-    initialize: mock(() => Promise.resolve()),
-    checkConnectivity: mock(() => Promise.resolve(true)),
-    getInstallationToken: mock(() => Promise.resolve("token")),
-    getRepoInstallationContext: mock(() =>
-      Promise.resolve({ installationId: 1, defaultBranch: "master" }),
-    ),
-    ...overrides,
-  };
-}
-
-/** Create a mock SQL tagged template that records queries and returns configurable rows. */
-function createMockSql(rows: Record<string, unknown>[] = []) {
-  const calls: string[] = [];
-  const sqlFn = (...args: unknown[]) => {
-    // Tagged template: first arg is string array, rest are values
-    if (Array.isArray(args[0])) {
-      const strings = args[0] as string[];
-      calls.push(strings.join("?"));
-    }
-    return rows;
-  };
-  // sql`` as tagged template returns a fragment that can be composed
-  // For UPDATE statements that return no rows, the mock returns []
-  const proxy = new Proxy(sqlFn, {
-    apply(target, thisArg, argArray) {
-      return target.apply(thisArg, argArray);
-    },
-  });
-  return { sql: proxy as any, calls };
-}
 
 // ── formatPageComment ───────────────────────────────────────────────────
 
@@ -292,6 +203,36 @@ describe("postCommentWithRetry", () => {
     const result = await postCommentWithRetry(octokit, "xbmc", "wiki", 1, "body", 1);
     expect(result).toEqual({ commentId: 99002 });
     expect(callCount).toBe(2);
+  });
+
+  it("falls back to exponential delay for malformed Retry-After values", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: number) => {
+      delays.push(timeout ?? 0);
+      if (typeof handler === "function") handler();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof globalThis.setTimeout;
+
+    try {
+      const octokit = createMockOctokit();
+      let callCount = 0;
+      (octokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject({ status: 403, response: { headers: { "retry-after": "not-a-number" } } });
+        }
+        return Promise.resolve({ data: { id: 99003 } });
+      });
+
+      const result = await postCommentWithRetry(octokit, "xbmc", "wiki", 1, "body", 1);
+
+      expect(result).toEqual({ commentId: 99003 });
+      expect(callCount).toBe(2);
+      expect(delays).toEqual([60_000]);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
   });
 
   it("returns null after max retries on 403", async () => {
@@ -488,6 +429,79 @@ describe("createWikiPublisher", () => {
         { pageTitle: "Failing Page", reason: "Comment post failed after retries" },
       ]);
     });
+
+    it("scans existing issue comments once and reuses markers across page groups", async () => {
+      const listComments = mock(() =>
+        Promise.resolve({
+          data: [
+            { id: 7001, body: "<!-- kodiai:wiki-modification:100 -->\nold page 100" },
+            { id: 7002, body: "<!-- kodiai:wiki-modification:200 -->\nold page 200" },
+          ],
+        }),
+      );
+      const updateComment = mock(() => Promise.resolve({ data: {} }));
+      const createComment = mock(() => Promise.resolve({ data: { id: 99002 } }));
+      const mockOctokit = {
+        rest: {
+          issues: {
+            get: mock(() =>
+              Promise.resolve({
+                data: { html_url: "https://github.com/xbmc/wiki/issues/5" },
+              }),
+            ),
+            create: mock(() =>
+              Promise.resolve({
+                data: { number: 99, html_url: "https://github.com/xbmc/wiki/issues/99" },
+              }),
+            ),
+            createComment,
+            listComments,
+            updateComment,
+            update: mock(() => Promise.resolve({ data: {} })),
+          },
+        },
+      } as unknown as Octokit;
+
+      const githubApp = createMockGithubApp({
+        getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
+      });
+      const { sql } = createMockSql([
+        {
+          id: 1,
+          page_id: 100,
+          page_title: "First Page",
+          section_heading: "Intro",
+          suggestion: "New text",
+          why_summary: "Reason",
+          citing_prs: [],
+          voice_mismatch_warning: false,
+        },
+        {
+          id: 2,
+          page_id: 200,
+          page_title: "Second Page",
+          section_heading: "Intro",
+          suggestion: "Other text",
+          why_summary: "Reason",
+          citing_prs: [],
+          voice_mismatch_warning: false,
+        },
+      ]);
+      const logger = createSilentLogger();
+
+      const publisher = createWikiPublisher({
+        sql,
+        githubApp,
+        logger,
+        commentDelayMs: 0,
+      });
+      const result = await publisher.publish({ issueNumber: 5 });
+
+      expect(result.pagesPosted).toBe(2);
+      expect(listComments).toHaveBeenCalledTimes(1);
+      expect(updateComment).toHaveBeenCalledTimes(2);
+      expect(createComment).not.toHaveBeenCalled();
+    });
   });
 
   describe("issue creation", () => {
@@ -655,18 +669,10 @@ describe("upsertWikiPageComment", () => {
   it("calls updateComment when marker found, not createComment", async () => {
     const updateComment = mock(() => Promise.resolve({ data: {} }));
     const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const listComments = mock(() =>
-      Promise.resolve({
-        data: [
-          { id: 5001, body: "<!-- kodiai:wiki-modification:42 --> some content here" },
-        ],
-      }),
-    );
 
     const mockOctokit = {
       rest: {
         issues: {
-          listComments,
           updateComment,
           createComment,
         },
@@ -682,6 +688,7 @@ describe("upsertWikiPageComment", () => {
       42,
       "new body",
       logger,
+      new Map([[42, 5001]]),
     );
 
     expect(updateComment).toHaveBeenCalledTimes(1);
@@ -695,14 +702,10 @@ describe("upsertWikiPageComment", () => {
   it("calls createComment when no marker found, not updateComment", async () => {
     const updateComment = mock(() => Promise.resolve({ data: {} }));
     const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const listComments = mock(() =>
-      Promise.resolve({ data: [] }),
-    );
 
     const mockOctokit = {
       rest: {
         issues: {
-          listComments,
           updateComment,
           createComment,
         },
@@ -718,6 +721,7 @@ describe("upsertWikiPageComment", () => {
       42,
       "new body",
       logger,
+      new Map(),
     );
 
     expect(createComment).toHaveBeenCalledTimes(1);
@@ -726,14 +730,12 @@ describe("upsertWikiPageComment", () => {
   });
 
   it("returns null when API call fails", async () => {
-    const listComments = mock(() => Promise.resolve({ data: [] }));
     const createComment = mock(() => Promise.reject(new Error("API error")));
     const updateComment = mock(() => Promise.resolve({ data: {} }));
 
     const mockOctokit = {
       rest: {
         issues: {
-          listComments,
           updateComment,
           createComment,
         },
@@ -749,200 +751,9 @@ describe("upsertWikiPageComment", () => {
       42,
       "new body",
       logger,
+      new Map(),
     );
 
     expect(result).toBeNull();
   });
-
-  it("falls through to createComment when scan throws", async () => {
-    const listComments = mock(() => Promise.reject(new Error("scan failed")));
-    const createComment = mock(() => Promise.resolve({ data: { id: 7777 } }));
-    const updateComment = mock(() => Promise.resolve({ data: {} }));
-
-    const mockOctokit = {
-      rest: {
-        issues: {
-          listComments,
-          updateComment,
-          createComment,
-        },
-      },
-    } as unknown as Octokit;
-
-    const logger = createSilentLogger();
-    const result = await upsertWikiPageComment(
-      mockOctokit,
-      "xbmc",
-      "xbmc",
-      100,
-      42,
-      "new body",
-      logger,
-    );
-
-    expect(createComment).toHaveBeenCalledTimes(1);
-    expect(updateComment).not.toHaveBeenCalled();
-    expect(result).toEqual({ commentId: 7777, action: "created" });
-  });
 });
-
-// ── retrofitPreview branch in createWikiPublisher ──────────────────────
-
-describe("createWikiPublisher — retrofitPreview", () => {
-  it("update path: returns action=update with existingCommentId when marker found", async () => {
-    const listComments = mock(() =>
-      Promise.resolve({
-        data: [
-          { id: 7001, body: "<!-- kodiai:wiki-modification:42 -->\n## Test page content" },
-        ],
-      }),
-    );
-    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const updateComment = mock(() => Promise.resolve({ data: {} }));
-
-    const mockOctokit = {
-      rest: {
-        issues: {
-          listComments,
-          createComment,
-          updateComment,
-          create: mock(() => Promise.resolve({ data: { number: 1, html_url: "" } })),
-          update: mock(() => Promise.resolve({ data: {} })),
-        },
-      },
-    } as unknown as Octokit;
-
-    const githubApp = createMockGithubApp({
-      getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
-    });
-    const { sql } = createMockSql([
-      {
-        id: 1,
-        page_id: 42,
-        page_title: "Test Page",
-        section_heading: "Intro",
-        suggestion: "New text",
-        why_summary: "Reason",
-        citing_prs: [],
-        voice_mismatch_warning: false,
-      },
-    ]);
-    const logger = createSilentLogger();
-
-    const publisher = createWikiPublisher({ sql, githubApp, logger, commentDelayMs: 0 });
-    const result = await publisher.publish({ retrofitPreview: true, issueNumber: 50 });
-
-    expect(result.retrofitPreviewResult).toBeDefined();
-    expect(result.retrofitPreviewResult!.issueNumber).toBe(50);
-    expect(result.retrofitPreviewResult!.actions).toHaveLength(1);
-    expect(result.retrofitPreviewResult!.actions[0]!.action).toBe("update");
-    expect(result.retrofitPreviewResult!.actions[0]!.existingCommentId).toBe(7001);
-    expect(result.retrofitPreviewResult!.actions[0]!.pageId).toBe(42);
-  });
-
-  it("create path: returns action=create with existingCommentId=null when no marker found", async () => {
-    const listComments = mock(() =>
-      Promise.resolve({ data: [] }),
-    );
-    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const updateComment = mock(() => Promise.resolve({ data: {} }));
-
-    const mockOctokit = {
-      rest: {
-        issues: {
-          listComments,
-          createComment,
-          updateComment,
-          create: mock(() => Promise.resolve({ data: { number: 1, html_url: "" } })),
-          update: mock(() => Promise.resolve({ data: {} })),
-        },
-      },
-    } as unknown as Octokit;
-
-    const githubApp = createMockGithubApp({
-      getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
-    });
-    const { sql } = createMockSql([
-      {
-        id: 1,
-        page_id: 99,
-        page_title: "PipeWire",
-        section_heading: "Overview",
-        suggestion: "PipeWire replaces PulseAudio",
-        why_summary: "PR #30000",
-        citing_prs: [],
-        voice_mismatch_warning: false,
-      },
-    ]);
-    const logger = createSilentLogger();
-
-    const publisher = createWikiPublisher({ sql, githubApp, logger, commentDelayMs: 0 });
-    const result = await publisher.publish({ retrofitPreview: true, issueNumber: 50 });
-
-    expect(result.retrofitPreviewResult).toBeDefined();
-    expect(result.retrofitPreviewResult!.actions[0]!.action).toBe("create");
-    expect(result.retrofitPreviewResult!.actions[0]!.existingCommentId).toBeNull();
-  });
-
-  it("no-mutation: createComment and updateComment are never called during retrofitPreview", async () => {
-    const listComments = mock(() =>
-      Promise.resolve({
-        data: [
-          { id: 5001, body: "<!-- kodiai:wiki-modification:42 -->\n## Some page" },
-        ],
-      }),
-    );
-    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
-    const updateComment = mock(() => Promise.resolve({ data: {} }));
-
-    const mockOctokit = {
-      rest: {
-        issues: {
-          listComments,
-          createComment,
-          updateComment,
-          create: mock(() => Promise.resolve({ data: { number: 1, html_url: "" } })),
-          update: mock(() => Promise.resolve({ data: {} })),
-        },
-      },
-    } as unknown as Octokit;
-
-    const githubApp = createMockGithubApp({
-      getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
-    });
-    const { sql } = createMockSql([
-      {
-        id: 1,
-        page_id: 42,
-        page_title: "Advanced Settings",
-        section_heading: null,
-        suggestion: "Some text",
-        why_summary: "Reason",
-        citing_prs: [],
-        voice_mismatch_warning: false,
-      },
-    ]);
-    const logger = createSilentLogger();
-
-    const publisher = createWikiPublisher({ sql, githubApp, logger, commentDelayMs: 0 });
-    await publisher.publish({ retrofitPreview: true, issueNumber: 50 });
-
-    expect(createComment).not.toHaveBeenCalled();
-    expect(updateComment).not.toHaveBeenCalled();
-  });
-});
-
-// ── Shared test utilities ───────────────────────────────────────────────
-
-function createSilentLogger() {
-  return {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-    debug: () => {},
-    trace: () => {},
-    fatal: () => {},
-    child: () => createSilentLogger(),
-    level: "silent",
-  } as unknown as import("pino").Logger;
-}

@@ -55,6 +55,89 @@ function makeEmbedding(seed: number = 42): Float32Array {
   return arr;
 }
 
+function createMockSql() {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const unsafeCalls: Array<{ query: string; values: unknown[] }> = [];
+
+  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ query: strings.join("?"), values });
+    return Promise.resolve([]);
+  }) as unknown as Sql & {
+    calls: typeof calls;
+    unsafeCalls: typeof unsafeCalls;
+  };
+
+  sql.unsafe = ((query: string, values: unknown[]) => {
+    unsafeCalls.push({ query, values });
+    return Promise.resolve([]);
+  }) as unknown as Sql["unsafe"];
+  sql.begin = (async (callback: (tx: Sql) => Promise<unknown>) => {
+    const tx = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ query: strings.join("?"), values });
+      return Promise.resolve([]);
+    }) as unknown as Sql;
+    tx.unsafe = sql.unsafe;
+    return callback(tx);
+  }) as unknown as Sql["begin"];
+
+  sql.calls = calls;
+  sql.unsafeCalls = unsafeCalls;
+  return sql;
+}
+
+describe("ReviewCommentStore batch SQL", () => {
+  test("writeChunks batches multiple chunks into one unsafe insert", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.writeChunks([
+      makeChunk({ commentGithubId: 1, chunkIndex: 0, embedding: makeEmbedding(1) }),
+      makeChunk({ commentGithubId: 1, chunkIndex: 1, embedding: makeEmbedding(2) }),
+    ]);
+
+    expect(sql.calls).toHaveLength(0);
+    expect(sql.unsafeCalls).toHaveLength(1);
+    expect(sql.unsafeCalls[0]!.query).toContain("jsonb_to_recordset");
+    expect(sql.unsafeCalls[0]!.query).toContain("ON CONFLICT");
+  });
+
+  test("writeChunks splits large inputs into bounded batches", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+    const chunks = Array.from({ length: 501 }, (_, index) =>
+      makeChunk({ commentGithubId: 2, chunkIndex: index }),
+    );
+
+    await store.writeChunks(chunks);
+
+    expect(sql.unsafeCalls).toHaveLength(2);
+  });
+
+  test("writeChunks skips empty inputs", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.writeChunks([]);
+
+    expect(sql.calls).toHaveLength(0);
+    expect(sql.unsafeCalls).toHaveLength(0);
+  });
+
+  test("updateChunks uses one delete and one batched insert", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.updateChunks([
+      makeChunk({ commentGithubId: 3, chunkIndex: 0 }),
+      makeChunk({ commentGithubId: 3, chunkIndex: 1 }),
+    ]);
+
+    expect(sql.calls).toHaveLength(1);
+    expect(sql.calls[0]!.query).toContain("DELETE FROM review_comments");
+    expect(sql.unsafeCalls).toHaveLength(1);
+  });
+});
+
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!TEST_DB_URL)("ReviewCommentStore (pgvector)", () => {

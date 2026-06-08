@@ -6,10 +6,11 @@ export interface InMemoryCacheOptions {
 
 export interface InMemoryCache<K, V> {
   get(key: K): V | undefined;
-  set(key: K, value: V): void;
+  set(key: K, value: V, ttlMs?: number): void;
   has(key: K): boolean;
   delete(key: K): boolean;
   size(): number;
+  purgeExpired(): number;
   clear(): void;
 }
 
@@ -29,12 +30,15 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
     return clock() >= entry.expiresAt;
   }
 
-  function evictExpired(): void {
+  function evictExpired(): number {
+    let removed = 0;
     for (const [key, entry] of store) {
       if (isExpired(entry)) {
         store.delete(key);
+        removed++;
       }
     }
+    return removed;
   }
 
   function evictOldest(count: number): void {
@@ -57,7 +61,7 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
       return entry.value;
     },
 
-    set(key: K, value: V): void {
+    set(key: K, value: V, entryTtlMs?: number): void {
       // Delete existing entry first so re-insertion moves it to end of Map iteration order
       store.delete(key);
 
@@ -74,7 +78,7 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
         evictOldest(excess);
       }
 
-      store.set(key, { value, expiresAt: clock() + ttlMs });
+      store.set(key, { value, expiresAt: clock() + (entryTtlMs ?? ttlMs) });
     },
 
     has(key: K): boolean {
@@ -92,16 +96,12 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
     },
 
     size(): number {
-      // Only count non-expired entries
-      let count = 0;
-      for (const [key, entry] of store) {
-        if (isExpired(entry)) {
-          store.delete(key);
-        } else {
-          count++;
-        }
-      }
-      return count;
+      this.purgeExpired();
+      return store.size;
+    },
+
+    purgeExpired(): number {
+      return evictExpired();
     },
 
     clear(): void {

@@ -1,4 +1,5 @@
-import type { LearningMemoryRecord } from "../knowledge/types.ts";
+import type { Logger } from "pino";
+import type { EmbeddingProvider, LearningMemoryRecord, LearningMemoryStore } from "../knowledge/types.ts";
 
 export type ReviewLearningMemorySkipReason =
   | "missing-finding-id"
@@ -25,11 +26,21 @@ export type ReviewLearningMemorySkipResult = {
 
 export type ReviewLearningMemoryCandidate = {
   kind: "candidate";
+  memoryKey: {
+    repo: string;
+    findingId: number;
+    outcome: LearningMemoryRecord["outcome"];
+  };
   embeddingText: string;
   toRecord(embedding: ReviewLearningMemoryEmbeddingMetadata): LearningMemoryRecord | ReviewLearningMemorySkipResult;
 };
 
 export type ReviewLearningMemoryDecision = ReviewLearningMemoryCandidate | ReviewLearningMemorySkipResult;
+
+export type ReviewLearningMemoryWriteResult =
+  | { status: "written" }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; err?: unknown };
 
 export type ReviewLearningMemoryEmbeddingMetadata = {
   model: string | null | undefined;
@@ -52,6 +63,14 @@ export type BuildReviewLearningMemoryRecordInput = {
   reviewId?: number | null;
   prNumber?: number;
   language?: string | null;
+};
+
+export type WriteReviewLearningMemoryInput = {
+  input: BuildReviewLearningMemoryRecordInput;
+  store: Pick<LearningMemoryStore, "hasMemoryConflict" | "writeMemory">;
+  embeddingProvider: EmbeddingProvider;
+  logger: Pick<Logger, "debug" | "info" | "warn">;
+  logContext?: Record<string, unknown>;
 };
 
 const VALID_SEVERITIES = new Set<LearningMemoryRecord["severity"]>([
@@ -142,6 +161,11 @@ export function buildReviewLearningMemoryRecord(
 
   return {
     kind: "candidate",
+    memoryKey: {
+      repo,
+      findingId,
+      outcome,
+    },
     embeddingText,
     toRecord(embedding: ReviewLearningMemoryEmbeddingMetadata): LearningMemoryRecord | ReviewLearningMemorySkipResult {
       if (!isNonEmptyString(embedding.model) || !isSafePositiveInteger(embedding.dimensions)) {
@@ -172,4 +196,109 @@ export function isReviewLearningMemorySkip(
   decision: ReviewLearningMemoryDecision | LearningMemoryRecord | ReviewLearningMemorySkipResult,
 ): decision is ReviewLearningMemorySkipResult {
   return typeof decision === "object" && decision !== null && "kind" in decision && decision.kind === "skip";
+}
+
+async function hasExistingReviewLearningMemory(
+  store: Pick<LearningMemoryStore, "hasMemoryConflict">,
+  decision: ReviewLearningMemoryCandidate,
+): Promise<boolean> {
+  return store.hasMemoryConflict(decision.memoryKey);
+}
+
+function logLearningMemorySkip(
+  logger: Pick<Logger, "info">,
+  logContext: Record<string, unknown> | undefined,
+  skip: {
+    reason: string;
+    filePath?: string | null;
+    findingTitle?: string | null;
+  },
+  message: string,
+): void {
+  logger.info(
+    {
+      ...logContext,
+      gate: "learning-memory-write",
+      gateResult: "skipped",
+      reason: skip.reason,
+      filePath: skip.filePath ?? undefined,
+      findingTitle: skip.findingTitle ?? undefined,
+    },
+    message,
+  );
+}
+
+export async function writeReviewLearningMemory(
+  params: WriteReviewLearningMemoryInput,
+): Promise<ReviewLearningMemoryWriteResult> {
+  const { input, store, embeddingProvider, logger, logContext } = params;
+  const decision = buildReviewLearningMemoryRecord(input);
+
+  if (isReviewLearningMemorySkip(decision)) {
+    logLearningMemorySkip(logger, logContext, decision, "Learning memory write skipped for finding");
+    return { status: "skipped", reason: decision.reason };
+  }
+
+  try {
+    let duplicateMemory = false;
+    try {
+      duplicateMemory = await hasExistingReviewLearningMemory(store, decision);
+    } catch (err) {
+      logger.debug(
+        {
+          ...logContext,
+          gate: "learning-memory-write",
+          gateResult: "preflight-unavailable",
+          err,
+          findingTitle: input.finding.title,
+          filePath: input.finding.filePath,
+        },
+        "Learning memory duplicate preflight failed; continuing with embedding",
+      );
+    }
+
+    if (duplicateMemory) {
+      logLearningMemorySkip(
+        logger,
+        logContext,
+        {
+          reason: "duplicate-memory",
+          filePath: input.finding.filePath,
+          findingTitle: input.finding.title,
+        },
+        "Learning memory write skipped for duplicate finding",
+      );
+      return { status: "skipped", reason: "duplicate-memory" };
+    }
+
+    const embeddingResult = await embeddingProvider.generate(decision.embeddingText, "document");
+    if (!embeddingResult) {
+      return { status: "failed" };
+    }
+
+    const memoryRecord = decision.toRecord({
+      model: embeddingResult.model,
+      dimensions: embeddingResult.dimensions,
+    });
+    if (isReviewLearningMemorySkip(memoryRecord)) {
+      logLearningMemorySkip(logger, logContext, memoryRecord, "Learning memory write skipped for finding");
+      return { status: "skipped", reason: memoryRecord.reason };
+    }
+
+    await store.writeMemory(memoryRecord, embeddingResult.embedding);
+    return { status: "written" };
+  } catch (err) {
+    logger.warn(
+      {
+        ...logContext,
+        gate: "learning-memory-write",
+        gateResult: "failed",
+        err,
+        findingTitle: input.finding.title,
+        filePath: input.finding.filePath,
+      },
+      "Learning memory write failed for finding (fail-open)",
+    );
+    return { status: "failed", err };
+  }
 }

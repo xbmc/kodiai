@@ -21,6 +21,145 @@ const mockLogger = {
 let sql: Sql;
 let store: KnowledgeStore;
 
+function createMockSql() {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const unsafeCalls: Array<{ query: string; values: unknown[] }> = [];
+
+  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ query: strings.join("?"), values });
+    return Promise.resolve([]);
+  }) as unknown as Sql & {
+    calls: typeof calls;
+    unsafeCalls: typeof unsafeCalls;
+  };
+
+  sql.unsafe = ((query: string, values: unknown[]) => {
+    unsafeCalls.push({ query, values });
+    return Promise.resolve([]);
+  }) as unknown as Sql["unsafe"];
+  sql.begin = (async (callback: (tx: Sql) => Promise<unknown>) => {
+    const tx = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ query: strings.join("?"), values });
+      return Promise.resolve([]);
+    }) as unknown as Sql;
+    tx.unsafe = sql.unsafe;
+    return callback(tx);
+  }) as unknown as Sql["begin"];
+
+  sql.calls = calls;
+  sql.unsafeCalls = unsafeCalls;
+  return sql;
+}
+
+function makeFinding(index: number) {
+  return {
+    reviewId: 10,
+    filePath: `src/file-${index}.ts`,
+    startLine: index,
+    endLine: index + 1,
+    severity: "major" as const,
+    category: "correctness" as const,
+    confidence: 80,
+    title: `Finding ${index}`,
+    suppressed: false,
+  };
+}
+
+function makeFeedbackReaction(index: number, overrides: Partial<ReturnType<typeof makeFeedbackReactionBase>> = {}) {
+  return {
+    ...makeFeedbackReactionBase(index),
+    ...overrides,
+  };
+}
+
+function makeFeedbackReactionBase(index: number) {
+  return {
+    repo: "owner/repo",
+    reviewId: 10,
+    findingId: 20 + index,
+    commentId: 30 + index,
+    commentSurface: "pull_request_review_comment" as const,
+    reactionId: 40 + index,
+    reactionContent: "+1" as const,
+    reactorLogin: `user-${index}`,
+    reactedAt: "2026-02-12T00:00:00Z",
+    severity: "major" as const,
+    category: "correctness" as const,
+    filePath: `src/file-${index}.ts`,
+    title: `Finding ${index}`,
+  };
+}
+
+describe("KnowledgeStore batch SQL", () => {
+  test("recordFindings batches rows and chunks large inputs", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+    const findings = Array.from({ length: 1001 }, (_, index) => makeFinding(index));
+
+    await batchStore.recordFindings(findings);
+
+    expect(mockSql.calls).toHaveLength(0);
+    expect(mockSql.unsafeCalls).toHaveLength(2);
+    expect(mockSql.unsafeCalls[0]!.query).toContain("jsonb_to_recordset");
+    expect(mockSql.unsafeCalls[0]!.query).toContain("INSERT INTO findings");
+  });
+
+  test("recordFeedbackReactions batches rows with conflict handling", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+
+    await batchStore.recordFeedbackReactions([
+      makeFeedbackReaction(0),
+      makeFeedbackReaction(1),
+    ]);
+
+    expect(mockSql.calls).toHaveLength(0);
+    expect(mockSql.unsafeCalls).toHaveLength(1);
+    expect(mockSql.unsafeCalls[0]!.query).toContain("ON CONFLICT");
+    expect(mockSql.unsafeCalls[0]!.query).toContain("feedback_reactions");
+  });
+
+  test("batch recordsets preserve GitHub-sized comment ids as bigint", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+    const githubCommentId = 4_153_840_487;
+
+    await batchStore.recordFindings([
+      {
+        ...makeFinding(0),
+        commentId: githubCommentId,
+        commentSurface: "pull_request_review_comment",
+      },
+    ]);
+    await batchStore.recordFeedbackReactions([
+      makeFeedbackReaction(0, { commentId: githubCommentId }),
+    ]);
+
+    expect(mockSql.unsafeCalls[0]!.query).toContain("comment_id bigint");
+    expect(mockSql.unsafeCalls[1]!.query).toContain("comment_id bigint");
+    expect(JSON.parse(mockSql.unsafeCalls[0]!.values[0] as string)[0].comment_id).toBe(githubCommentId);
+    expect(JSON.parse(mockSql.unsafeCalls[1]!.values[0] as string)[0].comment_id).toBe(githubCommentId);
+  });
+
+  test("recordSuppressionLog batches rows and skips empty input", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+
+    await batchStore.recordSuppressionLog([]);
+    expect(mockSql.calls).toHaveLength(0);
+    expect(mockSql.unsafeCalls).toHaveLength(0);
+
+    await batchStore.recordSuppressionLog([
+      { reviewId: 10, pattern: "style", matchedCount: 2, findingIds: [1, 2] },
+      { reviewId: 10, pattern: "security", matchedCount: 1, findingIds: [3] },
+    ]);
+
+    expect(mockSql.calls).toHaveLength(0);
+    expect(mockSql.unsafeCalls).toHaveLength(1);
+    expect(mockSql.unsafeCalls[0]!.query).toContain("suppression_log");
+  });
+});
+
 /** Truncate all knowledge-related tables for test isolation. */
 async function truncateAll(): Promise<void> {
   await sql`TRUNCATE

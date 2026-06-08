@@ -6,11 +6,19 @@ import {
   evaluateWebhookRelayPayload,
   type NormalizedWebhookRelayEvent,
 } from "../slack/webhook-relay.ts";
+import {
+  createNamedRateLimiters,
+  requestSourceKey,
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type SlackRelayRateLimitWindow = "preBody" | "verified";
 
 interface SlackRelayWebhookRouteDeps {
   config: AppConfig;
   logger: Logger;
   onAcceptedRelay?: (event: NormalizedWebhookRelayEvent) => Promise<void> | void;
+  rateLimit?: RateLimitOptions<SlackRelayRateLimitWindow>;
 }
 
 function secretsMatch(expected: string, provided: string | undefined): boolean {
@@ -31,9 +39,20 @@ function secretsMatch(expected: string, provided: string | undefined): boolean {
 export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps): Hono {
   const { config, logger, onAcceptedRelay } = deps;
   const app = new Hono();
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
+    preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 60, windowMs: 60_000, maxKeys: 1_000 },
+  });
 
   app.post("/:sourceId", async (c) => {
     const sourceId = c.req.param("sourceId");
+    const requestSource = requestSourceKey((name) => c.req.header(name));
+
+    if (rateLimiters.preBody.isLimited(`slack-relay:${sourceId}:${requestSource}`)) {
+      logger.warn({ sourceId, requestSource }, "Slack relay webhook rate-limited before source auth");
+      return c.json({ ok: false, reason: "rate_limited" }, 429);
+    }
+
     const source = (config.slackWebhookRelaySources ?? []).find((candidate) => candidate.id === sourceId);
 
     if (!source) {
@@ -45,6 +64,11 @@ export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps):
     if (!secretsMatch(source.auth.secret, providedSecret)) {
       logger.warn({ sourceId }, "Slack relay webhook rejected: invalid source auth");
       return c.json({ ok: false, reason: "invalid_source_auth" }, 401);
+    }
+
+    if (rateLimiters.verified.isLimited(`source:${sourceId}`)) {
+      logger.warn({ sourceId }, "Slack relay verified source rate-limited");
+      return c.json({ ok: false, reason: "rate_limited" }, 429);
     }
 
     const rawBody = await c.req.text();

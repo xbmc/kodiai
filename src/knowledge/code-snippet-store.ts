@@ -8,6 +8,7 @@
 
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { withTransientDbRetry } from "../db/transient-retry.ts";
 import type { CodeSnippetSearchResult, CodeSnippetStore } from "./code-snippet-types.ts";
 import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 
@@ -122,15 +123,24 @@ export function createCodeSnippetStore(opts: {
     ): Promise<void> {
       const embeddingString = float32ArrayToVectorString(embedding);
       try {
-        const result = await sql`
-          INSERT INTO code_snippets (
-            content_hash, embedded_text, language, embedding, embedding_model
-          ) VALUES (
-            ${record.contentHash}, ${record.embeddedText}, ${record.language},
-            ${embeddingString}::vector, ${record.embeddingModel}
-          )
-          ON CONFLICT (content_hash) DO NOTHING
-        `;
+        const result = await withTransientDbRetry(
+          () => sql`
+            INSERT INTO code_snippets (
+              content_hash, embedded_text, language, embedding, embedding_model
+            ) VALUES (
+              ${record.contentHash}, ${record.embeddedText}, ${record.language},
+              ${embeddingString}::vector, ${record.embeddingModel}
+            )
+            ON CONFLICT (content_hash) DO NOTHING
+          `,
+          {
+            logger,
+            context: {
+              contentHash: record.contentHash,
+              writePath: "code_snippet",
+            },
+          },
+        );
         if (result.count === 0) {
           logger.debug({ contentHash: record.contentHash }, "Snippet already exists (dedup hit)");
         }
@@ -146,17 +156,27 @@ export function createCodeSnippetStore(opts: {
 
     async writeOccurrence(occurrence): Promise<void> {
       try {
-        await sql`
-          INSERT INTO code_snippet_occurrences (
-            content_hash, repo, owner, pr_number, pr_title,
-            file_path, start_line, end_line, function_context
-          ) VALUES (
-            ${occurrence.contentHash}, ${occurrence.repo}, ${occurrence.owner},
-            ${occurrence.prNumber}, ${occurrence.prTitle ?? null},
-            ${occurrence.filePath}, ${occurrence.startLine}, ${occurrence.endLine},
-            ${occurrence.functionContext ?? null}
-          )
-        `;
+        await withTransientDbRetry(
+          () => sql`
+            INSERT INTO code_snippet_occurrences (
+              content_hash, repo, owner, pr_number, pr_title,
+              file_path, start_line, end_line, function_context
+            ) VALUES (
+              ${occurrence.contentHash}, ${occurrence.repo}, ${occurrence.owner},
+              ${occurrence.prNumber}, ${occurrence.prTitle ?? null},
+              ${occurrence.filePath}, ${occurrence.startLine}, ${occurrence.endLine},
+              ${occurrence.functionContext ?? null}
+            )
+          `,
+          {
+            logger,
+            context: {
+              contentHash: occurrence.contentHash,
+              repo: occurrence.repo,
+              writePath: "code_snippet_occurrence",
+            },
+          },
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(

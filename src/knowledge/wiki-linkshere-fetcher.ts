@@ -12,7 +12,7 @@ import {
   LINKSHERE_MAX_PER_PAGE,
   LINKSHERE_NAMESPACE,
 } from "./wiki-popularity-config.ts";
-import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
+import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 
 // ── MediaWiki API response types ─────────────────────────────────────────
 
@@ -66,7 +66,7 @@ export async function fetchAllLinkshereCounts(opts: {
   logger: Logger;
 }): Promise<Map<number, number>> {
   const { baseUrl, pageIds, logger } = opts;
-  const fetchFn = withWikiHeaders(opts.fetchFn ?? globalThis.fetch);
+  const fetchFn = withWikiRequestPolicy(opts.fetchFn ?? globalThis.fetch);
   const counts = new Map<number, number>();
 
   if (pageIds.length === 0) return counts;

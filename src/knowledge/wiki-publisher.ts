@@ -19,6 +19,10 @@ import type {
   RetrofitPageAction,
   RetrofitPreviewResult,
 } from "./wiki-publisher-types.ts";
+import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
+
+const MAX_COMMENT_SCAN_PAGES = 10;
+const WIKI_COMMENT_MARKER_RE = /<!--\s*kodiai:wiki-modification:(\d+)\s*-->/;
 
 // ── Helpers (exported for testing) ──────────────────────────────────────
 
@@ -148,9 +152,8 @@ export async function postCommentWithRetry(
               )
             : null;
 
-        const waitMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : 60_000 * Math.pow(2, attempt); // 60s, 120s, 240s
+        const waitMs = parseRetryAfterDelayMs(retryAfter)
+          ?? 60_000 * Math.pow(2, attempt); // 60s, 120s, 240s
 
         await delay(waitMs);
         continue;
@@ -161,6 +164,50 @@ export async function postCommentWithRetry(
     }
   }
   return null;
+}
+
+export async function scanWikiPageCommentMarkers(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  logger: Logger,
+): Promise<Map<number, number>> {
+  const markerComments = new Map<number, number>();
+
+  try {
+    for (let page = 1; page <= MAX_COMMENT_SCAN_PAGES; page++) {
+      const { data: comments } = await octokit.rest.issues.listComments({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        per_page: 100,
+        page,
+        sort: "created",
+        direction: "desc",
+      });
+
+      if (comments.length === 0) break;
+
+      for (const comment of comments) {
+        const match = comment.body?.match(WIKI_COMMENT_MARKER_RE);
+        if (!match) continue;
+        const pageId = Number.parseInt(match[1]!, 10);
+        if (Number.isFinite(pageId) && !markerComments.has(pageId)) {
+          markerComments.set(pageId, comment.id);
+        }
+      }
+
+      if (comments.length < 100) break;
+    }
+  } catch {
+    logger.debug(
+      { issueNumber },
+      "Failed to scan for existing wiki comments, will create missing comments",
+    );
+  }
+
+  return markerComments;
 }
 
 /**
@@ -177,40 +224,9 @@ export async function upsertWikiPageComment(
   pageId: number,
   body: string,
   logger: Logger,
+  knownCommentIds: Map<number, number>,
 ): Promise<{ commentId: number; action: 'updated' | 'created' } | null> {
-  const marker = `<!-- kodiai:wiki-modification:${pageId} -->`;
-  let existingCommentId: number | null = null;
-
-  try {
-    for (let page = 1; page <= 10; page++) {
-      const { data: comments } = await octokit.rest.issues.listComments({
-        owner,
-        repo,
-        issue_number: issueNumber,
-        per_page: 100,
-        page,
-        sort: "created",
-        direction: "desc",
-      });
-
-      if (comments.length === 0) break;
-
-      for (const comment of comments) {
-        if (comment.body?.includes(marker)) {
-          existingCommentId = comment.id;
-          break;
-        }
-      }
-
-      if (existingCommentId !== null) break;
-      if (comments.length < 100) break;
-    }
-  } catch {
-    logger.debug(
-      { pageId, issueNumber },
-      "Failed to scan for existing wiki comment, will create new",
-    );
-  }
+  const existingCommentId = knownCommentIds.get(pageId) ?? null;
 
   try {
     if (existingCommentId !== null) {
@@ -224,6 +240,7 @@ export async function upsertWikiPageComment(
         { pageId, commentId: existingCommentId, action: 'updated' },
         "Updated existing wiki comment",
       );
+      knownCommentIds.set(pageId, existingCommentId);
       return { commentId: existingCommentId, action: 'updated' };
     } else {
       const response = await octokit.rest.issues.createComment({
@@ -236,6 +253,7 @@ export async function upsertWikiPageComment(
         { pageId, commentId: response.data.id, action: 'created' },
         "Created new wiki comment",
       );
+      knownCommentIds.set(pageId, response.data.id);
       return { commentId: response.data.id, action: 'created' };
     }
   } catch {
@@ -377,41 +395,16 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
 
         const previewIssueNumber = runOptions.issueNumber;
         const actions: RetrofitPageAction[] = [];
+        const knownCommentIds = await scanWikiPageCommentMarkers(
+          octokit,
+          owner,
+          repo,
+          previewIssueNumber,
+          logger,
+        );
 
         for (const group of groups) {
-          const marker = `<!-- kodiai:wiki-modification:${group.pageId} -->`;
-          let existingCommentId: number | null = null;
-
-          try {
-            for (let page = 1; page <= 10; page++) {
-              const { data: comments } = await octokit.rest.issues.listComments({
-                owner,
-                repo,
-                issue_number: previewIssueNumber,
-                per_page: 100,
-                page,
-                sort: "created",
-                direction: "desc",
-              });
-
-              if (comments.length === 0) break;
-
-              for (const comment of comments) {
-                if (comment.body?.includes(marker)) {
-                  existingCommentId = comment.id;
-                  break;
-                }
-              }
-
-              if (existingCommentId !== null) break;
-              if (comments.length < 100) break;
-            }
-          } catch {
-            logger.debug(
-              { pageId: group.pageId, issueNumber: previewIssueNumber },
-              "Failed to scan for existing wiki comment in retrofit-preview",
-            );
-          }
+          const existingCommentId = knownCommentIds.get(group.pageId) ?? null;
 
           const action: RetrofitPageAction = {
             pageId: group.pageId,
@@ -496,6 +489,13 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
       // ── 6. Post per-page comments (PUB-02 + PUB-03) ──────────────
       const pageResults: PagePostResult[] = [];
       let totalPublished = 0;
+      const knownCommentIds = await scanWikiPageCommentMarkers(
+        octokit!,
+        owner,
+        repo,
+        issueNumber,
+        logger,
+      );
 
       for (let i = 0; i < groups.length; i++) {
         const group = groups[i]!;
@@ -516,6 +516,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
           group.pageId,
           commentBody,
           logger,
+          knownCommentIds,
         );
 
         if (result) {

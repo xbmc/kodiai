@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import { chunkCanonicalCodeFile, type CanonicalChunk, type CanonicalChunkerObservability } from "./canonical-code-chunker.ts";
 import type { CanonicalCodeStore } from "./canonical-code-types.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import type { EmbeddingProvider } from "./types.ts";
 
 export type CanonicalCodeUpdateFile = {
@@ -144,6 +145,7 @@ export async function updateCanonicalCodeSnapshot(params: {
       );
     }
 
+    const changedChunks: CanonicalChunk[] = [];
     for (const chunk of chunkResult.chunks) {
       const identity = chunkIdentityKey(chunk);
       const existing = existingByIdentity.get(identity);
@@ -154,11 +156,19 @@ export async function updateCanonicalCodeSnapshot(params: {
         continue;
       }
 
-      let embeddingResult;
-      try {
-        embeddingResult = await embeddingProvider.generate(chunk.chunkText, "document");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+      changedChunks.push(chunk);
+    }
+
+    const embeddingResults = await generateDocumentEmbeddingResultsBatch({
+      texts: changedChunks.map((chunk) => chunk.chunkText),
+      embeddingProvider,
+    });
+
+    for (const [index, embeddingResult] of embeddingResults.entries()) {
+      const chunk = changedChunks[index]!;
+
+      if (embeddingResult.status === "failed") {
+        const message = embeddingResult.err instanceof Error ? embeddingResult.err.message : String(embeddingResult.err);
         failed += 1;
         fileResult.failed += 1;
         logger.warn(
@@ -177,7 +187,7 @@ export async function updateCanonicalCodeSnapshot(params: {
         continue;
       }
 
-      if (!embeddingResult) {
+      if (embeddingResult.status === "unavailable") {
         failed += 1;
         fileResult.failed += 1;
         logger.warn(

@@ -9,6 +9,13 @@ import {
 } from "../slack/thread-session-store.ts";
 import { toSlackEventCallback, toSlackUrlVerification } from "../slack/types.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
+import {
+  createNamedRateLimiters,
+  requestSourceKey,
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type SlackEventRateLimitWindow = "preBody" | "verified" | "channel";
 
 interface SlackEventsRouteDeps {
   config: AppConfig;
@@ -18,6 +25,7 @@ interface SlackEventsRouteDeps {
   requestTracker?: RequestTracker;
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
   threadSessionStore?: SlackThreadSessionStore;
+  rateLimit?: RateLimitOptions<SlackEventRateLimitWindow>;
 }
 
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
@@ -25,47 +33,11 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
   const recentAddressed = new Map<string, number>();
   const DUPLICATE_WINDOW_MS = 5000;
-
-  // Per-channel sliding window rate limiter
-  const RATE_LIMIT_MAX_EVENTS = 30;
-  const RATE_LIMIT_WINDOW_MS = 60_000;
-  const channelEventTimestamps = new Map<string, number[]>();
-
-  function isChannelRateLimited(channel: string): boolean {
-    const now = Date.now();
-    const cutoff = now - RATE_LIMIT_WINDOW_MS;
-
-    let timestamps = channelEventTimestamps.get(channel);
-    if (!timestamps) {
-      timestamps = [];
-      channelEventTimestamps.set(channel, timestamps);
-    }
-
-    // Lazily clean old timestamps
-    const validStart = timestamps.findIndex((ts) => ts > cutoff);
-    if (validStart > 0) {
-      timestamps.splice(0, validStart);
-    } else if (validStart === -1) {
-      timestamps.length = 0;
-    }
-
-    if (timestamps.length >= RATE_LIMIT_MAX_EVENTS) {
-      return true;
-    }
-
-    timestamps.push(now);
-
-    // Lazily prune stale channels to keep Map bounded
-    if (channelEventTimestamps.size > 100) {
-      for (const [ch, ts] of channelEventTimestamps) {
-        if (ts.length === 0 || ts[ts.length - 1]! <= cutoff) {
-          channelEventTimestamps.delete(ch);
-        }
-      }
-    }
-
-    return false;
-  }
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
+    preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 60, windowMs: 60_000, maxKeys: 5_000 },
+    channel: { max: 30, windowMs: 60_000, maxKeys: 100 },
+  });
 
   const app = new Hono();
 
@@ -86,6 +58,12 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   }
 
   app.post("/events", async (c) => {
+    const sourceKey = requestSourceKey((name) => c.req.header(name));
+    if (rateLimiters.preBody.isLimited(`slack-events:${sourceKey}`)) {
+      logger.warn({ sourceKey }, "Slack event request rate-limited before body read");
+      return c.text("Rate limited", 429);
+    }
+
     const timestampHeader = c.req.header("x-slack-request-timestamp");
     const signatureHeader = c.req.header("x-slack-signature");
 
@@ -133,6 +111,12 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
 
     const eventCallback = toSlackEventCallback(payload);
     if (eventCallback) {
+      const teamId = eventCallback.team_id ?? "unknown-team";
+      if (rateLimiters.verified.isLimited(`team:${teamId}`)) {
+        logger.warn({ teamId }, "Slack event verified team rate-limited");
+        return c.json({ ok: true });
+      }
+
       const decision = evaluateSlackV1Rails({
         payload: eventCallback,
         slackBotUserId: config.slackBotUserId,
@@ -153,9 +137,9 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
 
       // Per-channel rate limiting
       const channel = decision.bootstrap.channel;
-      if (isChannelRateLimited(channel)) {
+      if (rateLimiters.channel.isLimited(`channel:${channel}`)) {
         logger.warn(
-          { channel, limit: RATE_LIMIT_MAX_EVENTS, windowMs: RATE_LIMIT_WINDOW_MS },
+          { channel },
           "Slack event rate-limited for channel",
         );
         return c.json({ ok: true });

@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { MemoryOutcome } from "./types.ts";
 import type { GeneratedRuleProposal } from "./generated-rule-store.ts";
-import { cosineSimilarity } from "./cluster-pipeline.ts";
+import { cosineSimilarity, meanEmbedding, parsePgVectorEmbedding } from "./embedding-vector.ts";
 
 const DEFAULT_LOOKBACK_DAYS = 180;
 const DEFAULT_SIMILARITY_THRESHOLD = 0.75;
@@ -73,34 +73,7 @@ type LearningMemoryRow = {
 };
 
 function parseEmbedding(raw: unknown): Float32Array | null {
-  if (raw instanceof Float32Array) return raw;
-  if (typeof raw === "string") {
-    const values = raw
-      .replace(/^\[/, "")
-      .replace(/\]$/, "")
-      .split(",")
-      .map((value) => Number(value.trim()));
-    if (values.length === 0 || values.some((value) => Number.isNaN(value))) {
-      return null;
-    }
-    return new Float32Array(values);
-  }
-  return null;
-}
-
-function meanEmbedding(embeddings: Float32Array[]): Float32Array {
-  if (embeddings.length === 0) return new Float32Array(0);
-  const dimension = embeddings[0]!.length;
-  const result = new Float32Array(dimension);
-  for (const embedding of embeddings) {
-    for (let i = 0; i < dimension; i++) {
-      result[i]! += embedding[i]!;
-    }
-  }
-  for (let i = 0; i < dimension; i++) {
-    result[i]! /= embeddings.length;
-  }
-  return result;
+  return parsePgVectorEmbedding(raw);
 }
 
 function isPositiveOutcome(outcome: MemoryOutcome): boolean {
@@ -173,7 +146,8 @@ function buildClusters(
 
     if (bestCluster && bestSimilarity >= similarityThreshold) {
       bestCluster.members.push(memory);
-      bestCluster.centroid = meanEmbedding(bestCluster.members.map((member) => member.embedding));
+      bestCluster.centroid = meanEmbedding(bestCluster.members.map((member) => member.embedding))
+        ?? bestCluster.centroid;
     } else {
       clusters.push({
         members: [memory],

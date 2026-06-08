@@ -517,8 +517,12 @@ export function classifyCandidateVerification(
       continue;
     }
 
-    const current = evidenceByCandidate.get(evidence.candidateKey) ?? [];
-    evidenceByCandidate.set(evidence.candidateKey, [...current, evidence]);
+    const current = evidenceByCandidate.get(evidence.candidateKey);
+    if (current) {
+      current.push(evidence);
+    } else {
+      evidenceByCandidate.set(evidence.candidateKey, [evidence]);
+    }
   }
 
   const candidates: CandidateVerificationCandidateResult[] = [];

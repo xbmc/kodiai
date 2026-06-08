@@ -30,6 +30,7 @@ export interface SlackGenericEvent {
 
 export interface SlackEventCallback {
   type: "event_callback";
+  team_id?: string;
   event: SlackAddressableEvent | SlackGenericEvent;
 }
 
@@ -84,12 +85,14 @@ export function toSlackEventCallback(payload: unknown): SlackEventCallback | nul
   if (eventType === "message" || eventType === "app_mention") {
     return {
       type: "event_callback",
+      team_id: getString(record, "team_id"),
       event: parseAddressableEvent(eventRecord, eventType),
     };
   }
 
   return {
     type: "event_callback",
+    team_id: getString(record, "team_id"),
     event: {
       type: eventType,
     },

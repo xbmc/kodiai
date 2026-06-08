@@ -65,7 +65,12 @@ function createHeaders(body: string, timestamp: string, signature?: string): Hea
   return headers;
 }
 
-function createApp(onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => void) {
+function createApp(
+  onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => void,
+  options: {
+    rateLimit?: Parameters<typeof createSlackEventRoutes>[0]["rateLimit"];
+  } = {},
+) {
   const app = new Hono();
   app.route(
     "/webhooks/slack",
@@ -73,6 +78,7 @@ function createApp(onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => vo
       config: createTestConfig(),
       logger: createTestLogger(),
       onAllowedBootstrap,
+      rateLimit: options.rateLimit,
     }),
   );
   return app;
@@ -91,6 +97,81 @@ describe("createSlackEventRoutes", () => {
     });
 
     expect(response.status).toBe(401);
+  });
+
+  test("rate-limits repeated unverified Slack events before verification work", async () => {
+    const app = createApp(undefined, {
+      rateLimit: {
+        preBody: { max: 1, windowMs: 60_000, maxKeys: 10 },
+      },
+    });
+    const invalidJson = "{ this is not valid json";
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(invalidJson, timestamp, "v0=not-valid"),
+      body: invalidJson,
+    });
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(invalidJson, timestamp, "v0=not-valid"),
+      body: invalidJson,
+    });
+
+    expect(response.status).toBe(429);
+    expect(await response.text()).toBe("Rate limited");
+  });
+
+  test("rate-limits accepted Slack events by channel through route limiter options", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload), {
+      rateLimit: {
+        channel: { max: 1, windowMs: 60_000, maxKeys: 10 },
+      },
+    });
+    const firstPayload = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.010001",
+        user: "U777USER",
+        text: "<@U123BOT> first",
+      },
+    });
+    const secondPayload = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.010002",
+        user: "U777USER",
+        text: "<@U123BOT> second",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const first = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(firstPayload, timestamp, signSlackRequest(timestamp, firstPayload)),
+      body: firstPayload,
+    });
+    const second = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(secondPayload, timestamp, signSlackRequest(timestamp, secondPayload)),
+      body: secondPayload,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await Promise.resolve();
+    expect(processed).toHaveLength(1);
+    expect(processed[0]?.text).toBe("<@U123BOT> first");
   });
 
   test("returns 401 when timestamp is outside replay window", async () => {

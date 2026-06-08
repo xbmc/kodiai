@@ -7,6 +7,13 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../lifecycle/types.ts";
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import {
+  createNamedRateLimiters,
+  requestSourceKey,
+  type RateLimitOptions,
+} from "../lib/sliding-window-rate-limiter.ts";
+
+type WebhookRateLimitWindow = "preBody" | "verified";
 
 interface WebhookRouteDeps {
   config: AppConfig;
@@ -17,13 +24,24 @@ interface WebhookRouteDeps {
   requestTracker: RequestTracker;
   webhookQueueStore: WebhookQueueStore;
   shutdownManager: ShutdownManager;
+  rateLimit?: RateLimitOptions<WebhookRateLimitWindow>;
 }
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
   const { config, logger, dedup, eventRouter, requestTracker, webhookQueueStore, shutdownManager } = deps;
   const app = new Hono();
+  const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
+    preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
+    verified: { max: 240, windowMs: 60_000, maxKeys: 5_000 },
+  });
 
   app.post("/github", async (c) => {
+    const sourceKey = requestSourceKey((name) => c.req.header(name));
+    if (rateLimiters.preBody.isLimited(`github:${sourceKey}`)) {
+      logger.warn({ sourceKey }, "GitHub webhook request rate-limited before body read");
+      return c.text("", 429);
+    }
+
     const signature = c.req.header("x-hub-signature-256");
     const deliveryId = c.req.header("x-github-delivery") ?? "unknown";
     const eventName = c.req.header("x-github-event") ?? "unknown";
@@ -67,9 +85,22 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
       (repository?.owner?.login && repository.name
         ? `${repository.owner.login}/${repository.name}`
         : undefined);
+    const installation = payload.installation as { id: number } | undefined;
+    const verifiedSourceKey = installation?.id
+      ? `installation:${installation.id}`
+      : repositoryName
+        ? `repository:${repositoryName}`
+        : `event:${eventName}`;
+
+    if (rateLimiters.verified.isLimited(verifiedSourceKey)) {
+      logger.warn(
+        { deliveryId, eventName, verifiedSourceKey },
+        "GitHub webhook verified source rate-limited",
+      );
+      return c.text("", 429);
+    }
 
     // Construct the WebhookEvent
-    const installation = payload.installation as { id: number } | undefined;
     const event: WebhookEvent = {
       id: deliveryId,
       name: eventName,

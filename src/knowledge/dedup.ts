@@ -9,14 +9,27 @@
 
 import type { UnifiedRetrievalChunk } from "./cross-corpus-rrf.ts";
 
+type TokenizedChunk = {
+  chunk: UnifiedRetrievalChunk;
+  tokens: Set<string>;
+};
+
+function tokenizeForJaccard(text: string): Set<string> {
+  return new Set(text.toLowerCase().split(/\s+/).filter(Boolean));
+}
+
 /**
  * Compute Jaccard similarity between two sets of whitespace-tokenized words.
  * Returns a value in [0, 1] where 1 = identical token sets.
  */
 export function jaccardSimilarity(textA: string, textB: string): number {
-  const tokensA = new Set(textA.toLowerCase().split(/\s+/).filter(Boolean));
-  const tokensB = new Set(textB.toLowerCase().split(/\s+/).filter(Boolean));
+  return jaccardTokenSetSimilarity(
+    tokenizeForJaccard(textA),
+    tokenizeForJaccard(textB),
+  );
+}
 
+function jaccardTokenSetSimilarity(tokensA: Set<string>, tokensB: Set<string>): number {
   if (tokensA.size === 0 && tokensB.size === 0) return 1.0;
   if (tokensA.size === 0 || tokensB.size === 0) return 0.0;
 
@@ -97,21 +110,22 @@ function dedupGroup(
   sorted: UnifiedRetrievalChunk[],
   threshold: number,
 ): UnifiedRetrievalChunk[] {
-  const kept: UnifiedRetrievalChunk[] = [];
+  const kept: TokenizedChunk[] = [];
 
   for (const candidate of sorted) {
+    const candidateTokens = tokenizeForJaccard(candidate.text);
     let isDuplicate = false;
 
     for (const existing of kept) {
-      const similarity = jaccardSimilarity(candidate.text, existing.text);
+      const similarity = jaccardTokenSetSimilarity(candidateTokens, existing.tokens);
       if (similarity >= threshold) {
         // Annotate the surviving chunk with the duplicate's source
-        if (!existing.alternateSources) {
-          existing.alternateSources = [];
+        if (!existing.chunk.alternateSources) {
+          existing.chunk.alternateSources = [];
         }
         const altLabel = candidate.sourceLabel;
-        if (!existing.alternateSources.includes(altLabel)) {
-          existing.alternateSources.push(altLabel);
+        if (!existing.chunk.alternateSources.includes(altLabel)) {
+          existing.chunk.alternateSources.push(altLabel);
         }
         isDuplicate = true;
         break;
@@ -119,9 +133,9 @@ function dedupGroup(
     }
 
     if (!isDuplicate) {
-      kept.push({ ...candidate });
+      kept.push({ chunk: { ...candidate }, tokens: candidateTokens });
     }
   }
 
-  return kept;
+  return kept.map((item) => item.chunk);
 }

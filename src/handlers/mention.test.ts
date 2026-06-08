@@ -13569,7 +13569,7 @@ describe("createMentionHandler mention derived-context cache", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("degrades fail-open when mention derived-context cache bookkeeping throws", async () => {
+  test("records a miss when mention derived-context cache has no reusable entry", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture([
       "mention:",
@@ -13584,19 +13584,7 @@ describe("createMentionHandler mention derived-context cache", () => {
       "      includePrMetadata: true",
       "      includeReviewThread: true",
     ].join("\n") + "\n");
-    const { logger, infoCalls, warnCalls } = createMockLogger();
-    const failingStore = {
-      get: () => {
-        throw new Error("cache get failed");
-      },
-      set: () => {
-        throw new Error("cache set failed");
-      },
-      delete: () => undefined,
-      entries: function* () {
-        return;
-      },
-    };
+    const { logger, infoCalls } = createMockLogger();
 
     let listCommentsCalls = 0;
     let executorCalls = 0;
@@ -13667,9 +13655,6 @@ describe("createMentionHandler mention derived-context cache", () => {
         },
       } as never,
       telemetryStore: noopTelemetryStore,
-      mentionDerivedContextCacheOptions: {
-        store: failingStore as never,
-      },
       logger: logger as never,
     });
 
@@ -13685,11 +13670,8 @@ describe("createMentionHandler mention derived-context cache", () => {
 
     expect(executorCalls).toBe(1);
     expect(listCommentsCalls).toBe(2);
-    expect(
-      warnCalls.some((entry) => entry.message === "Mention derived-context cache degraded; bypassing cache for this request"),
-    ).toBe(true);
     const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
-    expect(completionLog?.bindings.mentionDerivedContextCacheStatus).toBe("degraded");
+    expect(completionLog?.bindings.mentionDerivedContextCacheStatus).toBe("miss");
 
     await workspaceFixture.cleanup();
   });

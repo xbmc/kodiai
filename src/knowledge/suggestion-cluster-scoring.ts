@@ -22,7 +22,7 @@
 import type { Logger } from "pino";
 import type { FindingSeverity, FindingCategory, EmbeddingProvider } from "./types.ts";
 import type { SuggestionClusterModel } from "./suggestion-cluster-store.ts";
-import { cosineSimilarity } from "./cluster-pipeline.ts";
+import { cosineSimilarity } from "./embedding-vector.ts";
 import { isFeedbackSuppressionProtected } from "../feedback/safety-guard.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────

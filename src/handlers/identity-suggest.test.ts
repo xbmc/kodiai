@@ -332,6 +332,70 @@ describe("suggestIdentityLink", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  test("Slack member cache is scoped by non-secret token fingerprint", async () => {
+    const requests: Array<{ url: string; auth: string | null }> = [];
+    const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const authHeader = init?.headers instanceof Headers
+        ? init.headers.get("authorization")
+        : (init?.headers as Record<string, string> | undefined)?.authorization ?? null;
+      requests.push({ url, auth: authHeader });
+
+      if (url === "https://slack.com/api/users.list") {
+        return jsonResponse({
+          ok: true,
+          members: authHeader === "Bearer xoxb-workspace-a"
+            ? [
+                {
+                  id: "U-A",
+                  profile: { display_name: "alpha-user", real_name: "Alpha User" },
+                },
+              ]
+            : [
+                {
+                  id: "U-B",
+                  profile: { display_name: "beta-user", real_name: "Beta User" },
+                },
+              ],
+        });
+      }
+
+      if (url === "https://slack.com/api/conversations.open") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { users?: string };
+        return jsonResponse({ ok: true, channel: { id: `D-${body.users ?? "unknown"}` } });
+      }
+
+      if (url === "https://slack.com/api/chat.postMessage") {
+        return jsonResponse({ ok: true });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const logger = createMockLogger();
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "alpha-user",
+      githubDisplayName: "Alpha User",
+      slackBotToken: "xoxb-workspace-a",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "beta-user",
+      githubDisplayName: "Beta User",
+      slackBotToken: "xoxb-workspace-b",
+      profileStore: createMockProfileStore(),
+      logger,
+    });
+
+    expect(requests.filter((request) => request.url === "https://slack.com/api/users.list")).toEqual([
+      { url: "https://slack.com/api/users.list", auth: "Bearer xoxb-workspace-a" },
+      { url: "https://slack.com/api/users.list", auth: "Bearer xoxb-workspace-b" },
+    ]);
+    expect(logger.info).toHaveBeenCalledTimes(2);
+  });
+
   test("high-confidence match sends one truthful DM body", async () => {
     const requests: Array<{ url: string; body: string | null }> = [];
     const logger = createMockLogger();
@@ -444,6 +508,62 @@ describe("suggestIdentityLink", () => {
       "https://slack.com/api/chat.postMessage",
     ]);
     expect(logger.info).toHaveBeenCalledTimes(1);
+  });
+
+  test("duplicate suggestion suppression expires instead of lasting for the full process", async () => {
+    const originalDateNow = Date.now;
+    let now = new Date("2026-06-01T00:00:00.000Z").getTime();
+    Date.now = () => now;
+    identitySuggest.resetIdentitySuggestionStateForTests();
+
+    try {
+      const requests: string[] = [];
+      const fetchMock = mock(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        requests.push(url);
+
+        if (url === "https://slack.com/api/users.list") {
+          return jsonResponse({
+            ok: true,
+            members: [
+              {
+                id: "U777",
+                profile: { display_name: "octocat", real_name: "Octo Cat" },
+              },
+            ],
+          });
+        }
+
+        if (url === "https://slack.com/api/conversations.open") {
+          return jsonResponse({ ok: true, channel: { id: "D777" } });
+        }
+
+        if (url === "https://slack.com/api/chat.postMessage") {
+          return jsonResponse({ ok: true });
+        }
+
+        return new Response("Not Found", { status: 404 });
+      });
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+      const logger = createMockLogger();
+      const params = {
+        githubUsername: "octocat",
+        githubDisplayName: "Octo Cat",
+        slackBotToken: "xoxb-test-token",
+        profileStore: createMockProfileStore(),
+        logger,
+      };
+
+      await identitySuggest.suggestIdentityLink(params);
+      now += 31 * 24 * 60 * 60 * 1000;
+      await identitySuggest.suggestIdentityLink(params);
+
+      expect(requests.filter((url) => url === "https://slack.com/api/chat.postMessage")).toHaveLength(2);
+      expect(logger.info).toHaveBeenCalledTimes(2);
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   test("malformed Slack DM responses stay non-blocking and log a warning", async () => {

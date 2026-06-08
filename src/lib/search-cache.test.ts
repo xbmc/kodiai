@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   buildSearchCacheKey,
   createSearchCache,
-  type KeyValueStore,
 } from "./search-cache";
+import type { InMemoryCache } from "./in-memory-cache.ts";
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -16,20 +16,35 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createThrowingStore<T>(message: string): KeyValueStore<T> {
+function createThrowingStore<T>(label: string): Pick<InMemoryCache<string, T>, "get" | "set" | "purgeExpired"> {
   return {
     get() {
-      throw new Error(`${message}:get`);
+      throw new Error(`${label}: get failed`);
     },
     set() {
-      throw new Error(`${message}:set`);
+      throw new Error(`${label}: set failed`);
+    },
+    purgeExpired() {
+      throw new Error(`${label}: purge failed`);
+    },
+  };
+}
+
+function createThrowingInFlightStore<T>() {
+  return {
+    get() {
+      throw new Error("inflight: get failed");
+    },
+    set() {
+      throw new Error("inflight: set failed");
     },
     delete() {
-      throw new Error(`${message}:delete`);
+      throw new Error("inflight: delete failed");
     },
-    entries() {
-      throw new Error(`${message}:entries`);
-    },
+  } as {
+    get(key: string): Promise<T> | undefined;
+    set(key: string, value: Promise<T>): unknown;
+    delete(key: string): unknown;
   };
 }
 
@@ -178,11 +193,11 @@ describe("createSearchCache", () => {
     await expect(second).resolves.toBe("shared-result");
   });
 
-  test("fails open when internal cache bookkeeping throws", async () => {
+  test("fails open when injected cache stores throw", async () => {
     const errors: string[] = [];
     const cache = createSearchCache<string>({
       store: createThrowingStore("store"),
-      inFlightStore: createThrowingStore("inflight"),
+      inFlightStore: createThrowingInFlightStore(),
       onError: (error) => errors.push(String(error)),
     });
     const key = buildSearchCacheKey({
@@ -191,14 +206,80 @@ describe("createSearchCache", () => {
       query: "fail open",
     });
 
-    let loaderCalls = 0;
-    const result = await cache.getOrLoad(key, async () => {
-      loaderCalls += 1;
-      return "from-loader";
-    });
+    const result = await cache.getOrLoad(key, async () => "from-loader");
 
     expect(result).toBe("from-loader");
-    expect(loaderCalls).toBe(1);
-    expect(errors.length).toBeGreaterThan(0);
+    expect(cache.get(key)).toBeUndefined();
+    expect(cache.purgeExpired()).toBe(0);
+    expect(errors).toEqual([
+      "Error: store: get failed",
+      "Error: inflight: get failed",
+      "Error: inflight: set failed",
+      "Error: store: set failed",
+      "Error: inflight: delete failed",
+      "Error: store: get failed",
+      "Error: store: purge failed",
+    ]);
+  });
+
+  test("uses per-entry TTL overrides", () => {
+    let clock = 1_000;
+    const cache = createSearchCache<string>({ ttlMs: 1_000, now: () => clock });
+    const key = buildSearchCacheKey({
+      repo: "acme/repo",
+      searchType: "code",
+      query: "ttl override",
+    });
+
+    cache.set(key, "short", 10);
+
+    clock = 1_009;
+    expect(cache.get(key)).toBe("short");
+
+    clock = 1_010;
+    expect(cache.get(key)).toBeUndefined();
+  });
+
+  test("evicts the oldest entries when maxSize is exceeded", () => {
+    const cache = createSearchCache<string>({ maxSize: 2 });
+
+    cache.set("a", "first");
+    cache.set("b", "second");
+    cache.set("c", "third");
+
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBe("second");
+    expect(cache.get("c")).toBe("third");
+  });
+
+  test("normalizes invalid maxSize and cleanup bounds to defaults", () => {
+    const cache = createSearchCache<string>({
+      maxSize: Number.NaN,
+    });
+
+    for (let i = 0; i < 501; i++) {
+      cache.set(`key-${i}`, `value-${i}`);
+    }
+
+    expect(cache.get("key-0")).toBeUndefined();
+    expect(cache.get("key-500")).toBe("value-500");
+  });
+
+  test("cleans up expired entries during later writes", () => {
+    let clock = 1_000;
+    const cache = createSearchCache<string>({
+      ttlMs: 10,
+      now: () => clock,
+    });
+
+    cache.set("expired-a", "a");
+    cache.set("expired-b", "b");
+
+    clock = 1_010;
+    const purged = cache.purgeExpired();
+
+    expect(purged).toBe(2);
+    expect(cache.get("expired-a")).toBeUndefined();
+    expect(cache.get("expired-b")).toBeUndefined();
   });
 });
