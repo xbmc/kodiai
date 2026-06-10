@@ -10,6 +10,7 @@ import { createIssueLabelServer } from "./issue-label-server.ts";
 import { createIssueCommentServer } from "./issue-comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
+import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "./review-output-publication-gate.ts";
 import { createCandidateFindingServer } from "./candidate-finding-server.ts";
 import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
@@ -60,6 +61,7 @@ export function buildMcpServers(deps: {
   totalFiles?: number;
   enableCheckpointTool?: boolean;
   prDiffForCommentValidation?: string;
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
   enableCandidateFindingTool?: boolean;
@@ -124,6 +126,7 @@ export function buildMcpServers(deps: {
       deps.onPublish,
       reviewOutputPublicationGate,
       deps.prDiffForCommentValidation,
+      deps.prDiffCommentabilityIndex,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
@@ -310,6 +313,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublish,
         reviewOutputPublicationGate,
         deps.prDiffForCommentValidation,
+        deps.prDiffCommentabilityIndex,
       ) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>

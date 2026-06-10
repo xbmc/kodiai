@@ -835,7 +835,7 @@ describe("createReviewHandler repository doctrine wiring", () => {
     expect(capturedPrompt).not.toContain("RAW_DOCTRINE_BODY_CANARY");
     expect(capturedPrompt).not.toContain("RAW_MIGRATION_CANARY");
 
-    expect(capturedReducerInput?.repoDoctrine).toMatchObject({
+    expect((capturedReducerInput as ReviewReducerInput | null)?.repoDoctrine).toMatchObject({
       status: "applied",
       contractCount: 2,
       matchedCount: 2,

@@ -319,7 +319,12 @@ export function createReviewCommentStore(opts: {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
       const rows = await sql`
-        SELECT *,
+        SELECT id, created_at, repo, owner, pr_number, pr_title,
+          comment_github_id, thread_id, in_reply_to_id, file_path,
+          start_line, end_line, diff_hunk, author_login, author_association,
+          body, chunk_index, chunk_text, token_count, NULL AS embedding,
+          embedding_model, stale, github_created_at, github_updated_at,
+          deleted, backfill_batch,
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM review_comments
         WHERE repo = ${params.repo}
@@ -344,7 +349,12 @@ export function createReviewCommentStore(opts: {
       if (!params.query.trim()) return [];
 
       const rows = await sql`
-        SELECT *,
+        SELECT id, created_at, repo, owner, pr_number, pr_title,
+          comment_github_id, thread_id, in_reply_to_id, file_path,
+          start_line, end_line, diff_hunk, author_login, author_association,
+          body, chunk_index, chunk_text, token_count, NULL AS embedding,
+          embedding_model, stale, github_created_at, github_updated_at,
+          deleted, backfill_batch,
           ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
         FROM review_comments
         WHERE repo = ${params.repo}

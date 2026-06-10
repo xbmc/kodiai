@@ -7,6 +7,7 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../lifecycle/types.ts";
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import { tryReadBoundedRequestBody } from "../lib/request-body.ts";
 import {
   createNamedRateLimiters,
   requestSourceKey,
@@ -14,6 +15,7 @@ import {
 } from "../lib/sliding-window-rate-limiter.ts";
 
 type WebhookRateLimitWindow = "preBody" | "verified";
+const MAX_GITHUB_WEBHOOK_BODY_BYTES = 5 * 1024 * 1024;
 
 interface WebhookRouteDeps {
   config: AppConfig;
@@ -50,7 +52,12 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
 
     // CRITICAL: Get raw body text BEFORE any JSON parsing.
     // Parsing first can alter whitespace/encoding and break HMAC verification.
-    const body = await c.req.text();
+    const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_GITHUB_WEBHOOK_BODY_BYTES });
+    if (!bodyResult.ok) {
+      logger.warn({ deliveryId, eventName, maxBytes: bodyResult.error.maxBytes }, "GitHub webhook body too large");
+      return c.text("", 413);
+    }
+    const body = bodyResult.body;
 
     // Verify webhook signature
     if (!signature || !(await verifyWebhookSignature(config.webhookSecret, body, signature))) {

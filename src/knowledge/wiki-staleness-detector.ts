@@ -21,7 +21,18 @@ import type {
   MergedPR,
 } from "./wiki-staleness-types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
-import { parseIssueReferences } from "../lib/issue-reference-parser.ts";
+import { retryGitHubTransient } from "../lib/github-retry.ts";
+import {
+  hasTokenOverlap,
+  scoreWikiTokens,
+  tokenizeFilePath,
+  tokenizeWikiTexts,
+  wikiTokenUnion,
+  type WikiTextTokens,
+} from "./wiki-evidence-scoring.ts";
+import { storeWikiPrEvidence } from "./wiki-pr-evidence-store.ts";
+
+export { DOMAIN_STOPWORDS, heuristicScore } from "./wiki-evidence-scoring.ts";
 
 const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 90_000; // 90 seconds
@@ -74,62 +85,6 @@ async function saveRunState(sql: Sql, state: WikiStalenessRunState): Promise<voi
   `;
 }
 
-// ── Heuristic scoring ────────────────────────────────────────────────
-
-/** Tokens too common in the Kodi domain to be meaningful for wiki<->code matching. */
-export const DOMAIN_STOPWORDS = new Set([
-  'player', 'video', 'audio', 'kodi', 'addon', 'addons',
-  'plugin', 'core', 'utils', 'common', 'test', 'tests',
-  'interface', 'service', 'manager', 'handler', 'factory',
-  'component', 'module', 'helper', 'base', 'abstract',
-]);
-
-/** MediaWiki heading syntax: == Heading ==, === Subheading === */
-const HEADING_REGEX = /^={2,4}\s*(.+?)\s*={2,4}$/gm;
-const HEADING_WEIGHT = 3;
-
-/**
- * Token overlap between wiki chunk text and changed file paths.
- * Filters domain stopwords and weights tokens found in MediaWiki headings 3x.
- * Exported for testing.
- */
-export function heuristicScore(chunkTexts: string[], changedFilePaths: string[]): number {
-  const regularTokens = new Set<string>();
-  const headingTokens = new Set<string>();
-
-  for (const text of chunkTexts) {
-    // Extract heading tokens first
-    for (const match of text.matchAll(HEADING_REGEX)) {
-      const headingText = match[1]!;
-      for (const t of headingText.toLowerCase().split(/\W+/)) {
-        if (t.length > 3 && !DOMAIN_STOPWORDS.has(t)) headingTokens.add(t);
-      }
-    }
-
-    // Extract regular (body) tokens, excluding heading lines
-    const bodyText = text.replace(HEADING_REGEX, '');
-    for (const t of bodyText.toLowerCase().split(/\W+/)) {
-      if (t.length > 3 && !DOMAIN_STOPWORDS.has(t)) regularTokens.add(t);
-    }
-  }
-
-  let score = 0;
-  for (const filePath of changedFilePaths) {
-    const pathTokens = filePath
-      .toLowerCase()
-      .split(/[/._-]+/)
-      .filter((t) => t.length > 3 && !DOMAIN_STOPWORDS.has(t));
-    for (const token of pathTokens) {
-      if (headingTokens.has(token)) {
-        score += HEADING_WEIGHT;
-      } else if (regularTokens.has(token)) {
-        score += 1;
-      }
-    }
-  }
-  return score;
-}
-
 // ── PR fetching & evidence storage ───────────────────────────────────
 
 const MAX_PR_PAGES = 10;
@@ -151,15 +106,17 @@ async function fetchMergedPRs(
   for (let page = 1; page <= MAX_PR_PAGES; page++) {
     let prs;
     try {
-      const response = await octokit.rest.pulls.list({
-        owner,
-        repo,
-        state: "closed",
-        sort: "updated",
-        direction: "desc",
-        per_page: 100,
-        page,
-      });
+      const response = await retryGitHubTransient(() =>
+        octokit.rest.pulls.list({
+          owner,
+          repo,
+          state: "closed",
+          sort: "updated",
+          direction: "desc",
+          per_page: 100,
+          page,
+        })
+      );
       prs = response.data;
     } catch (err) {
       logger.error({ err, owner, repo, page }, "Failed to list PRs for staleness scan");
@@ -178,12 +135,14 @@ async function fetchMergedPRs(
       PR_FILE_FETCH_CONCURRENCY,
       async (pr) => {
         try {
-          const filesResponse = await octokit.rest.pulls.listFiles({
-            owner,
-            repo,
-            pull_number: pr.number,
-            per_page: 100,
-          });
+          const filesResponse = await retryGitHubTransient(() =>
+            octokit.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            })
+          );
 
           return {
             number: pr.number,
@@ -216,56 +175,6 @@ async function fetchMergedPRs(
   return merged;
 }
 
-/**
- * Store PR evidence rows for wiki staleness grounding.
- * Uses ON CONFLICT upsert for idempotent inserts per (pr_number, file_path, matched_page_id).
- */
-async function storePREvidence(
-  sql: Sql,
-  pr: MergedPR,
-  matches: Array<{ filePath: string; patch: string; pageId: number | null; pageTitle: string | null; score: number }>,
-  logger: Logger,
-): Promise<void> {
-  // Extract issue references from PR body
-  const refs = parseIssueReferences({
-    prBody: pr.body ?? "",
-    commitMessages: [],
-  });
-  const issueRefsJson = JSON.stringify(
-    refs.map((r) => ({
-      issueNumber: r.issueNumber,
-      keyword: r.keyword,
-      crossRepo: r.crossRepo,
-    })),
-  );
-
-  for (const match of matches) {
-    try {
-      await sql`
-        INSERT INTO wiki_pr_evidence (
-          pr_number, pr_title, pr_description, pr_author, merged_at,
-          file_path, patch, issue_references,
-          matched_page_id, matched_page_title, heuristic_score
-        ) VALUES (
-          ${pr.number}, ${pr.title}, ${pr.body}, ${pr.author}, ${pr.mergedAt},
-          ${match.filePath}, ${match.patch}, ${issueRefsJson}::jsonb,
-          ${match.pageId}, ${match.pageTitle}, ${match.score}
-        )
-        ON CONFLICT (pr_number, file_path, matched_page_id) DO UPDATE SET
-          patch = EXCLUDED.patch,
-          heuristic_score = EXCLUDED.heuristic_score,
-          issue_references = EXCLUDED.issue_references
-      `;
-    } catch (err) {
-      // Fail-open: log error but don't throw (non-critical storage)
-      logger.error(
-        { err, prNumber: pr.number, filePath: match.filePath, pageId: match.pageId },
-        "Failed to store PR evidence row (non-fatal)",
-      );
-    }
-  }
-}
-
 // ── Heuristic pass ───────────────────────────────────────────────────
 
 async function heuristicPass(
@@ -285,7 +194,7 @@ async function heuristicPass(
   // Group chunks by page_id
   const pageMap = new Map<
     number,
-    { pageTitle: string; pageUrl: string; chunkTexts: string[] }
+    { pageTitle: string; pageUrl: string; chunkTexts: string[]; tokens?: WikiTextTokens; tokenUnion?: Set<string> }
   >();
 
   for (const row of rows) {
@@ -320,6 +229,11 @@ async function heuristicPass(
       fileToPRs.get(key)!.push(pr.number);
     }
   }
+  const changedFileTokens = allChangedFiles.map((filePath) => ({
+    filePath,
+    tokens: tokenizeFilePath(filePath),
+  }));
+  const changedFileTokenSets = changedFileTokens.map(({ tokens }) => tokens);
 
   // Build PR mergedAt map for recency sorting
   const prDateMap = new Map<number, number>();
@@ -331,7 +245,8 @@ async function heuristicPass(
   const candidates: WikiPageCandidate[] = [];
 
   for (const [pageId, page] of pageMap) {
-    const score = heuristicScore(page.chunkTexts, allChangedFiles);
+    page.tokens ??= tokenizeWikiTexts(page.chunkTexts);
+    const score = scoreWikiTokens(page.tokens, changedFileTokenSets);
     if (score === 0) continue;
 
     // Determine which files and PRs affected this page
@@ -339,20 +254,10 @@ async function heuristicPass(
     const affectingPRSet = new Set<number>();
 
     // Re-check which specific files had token overlap
-    const chunkTokens = new Set<string>();
-    for (const text of page.chunkTexts) {
-      for (const t of text.toLowerCase().split(/\W+/)) {
-        if (t.length > 3) chunkTokens.add(t);
-      }
-    }
+    page.tokenUnion ??= wikiTokenUnion(page.tokens);
 
-    for (const filePath of allChangedFiles) {
-      const pathTokens = filePath
-        .toLowerCase()
-        .split(/[/._-]+/)
-        .filter((t) => t.length > 3);
-      const hasOverlap = pathTokens.some((token) => chunkTokens.has(token));
-      if (hasOverlap) {
+    for (const { filePath, tokens } of changedFileTokens) {
+      if (hasTokenOverlap(tokens, page.tokenUnion)) {
         affectingFilePaths.push(filePath);
         const prNums = fileToPRs.get(filePath.toLowerCase());
         if (prNums) prNums.forEach((n) => affectingPRSet.add(n));
@@ -400,7 +305,7 @@ async function heuristicPass(
         });
       }
       if (matches.length > 0) {
-        await storePREvidence(sql, pr, matches, logger);
+        await storeWikiPrEvidence({ sql, pr, matches, logger });
       }
     }
   }

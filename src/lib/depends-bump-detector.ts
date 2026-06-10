@@ -58,9 +58,6 @@ const PLATFORM_KEYWORDS = new Set([
 /** Recognized action verbs after the prefix */
 const ACTION_VERB_RE = /^(bump|refresh|update|upgrade)\s+/i;
 
-/** Version pattern: optional v-prefix, then digits/dots/hex (covers semver, commit hashes, unusual formats) */
-const VERSION_RE = /^v?([0-9a-f][0-9a-f.]*)/i;
-
 // ─── Detection + Extraction ───────────────────────────────────────────────────
 
 /**

@@ -304,7 +304,6 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
         allowDangerouslySkipPermissions: true,
         settingSources: ["project"],
         stderr: (line: string) => {
-          console.error("[sdk-stderr]", line);
           void appendDiagnostic(`[sdk-stderr] ${line}`);
         },
       },

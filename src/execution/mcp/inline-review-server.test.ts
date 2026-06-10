@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { buildPrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import { publishInlineReviewComment } from "./inline-review-publisher.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 
@@ -69,6 +70,89 @@ describe("publishInlineReviewComment", () => {
       path: "src/file.ts",
       line: 10,
     }));
+  });
+
+  test("accepts a prebuilt PR diff commentability index", async () => {
+    let createReviewCommentCalls = 0;
+    const octokit = {
+      rest: {
+        pulls: {
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async () => {
+            createReviewCommentCalls++;
+            return {
+              data: {
+                id: 456,
+                html_url: "https://example.test/comment/456",
+                path: "src/file.ts",
+                line: 11,
+                original_line: 11,
+              },
+            };
+          },
+        },
+      },
+    };
+    const prDiffCommentabilityIndex = buildPrDiffCommentabilityIndex([
+      "diff --git a/src/file.ts b/src/file.ts",
+      "--- a/src/file.ts",
+      "+++ b/src/file.ts",
+      "@@ -10,2 +10,2 @@ void f()",
+      " context",
+      "+changed",
+    ].join("\n"));
+
+    const result = await publishInlineReviewComment({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: ["kodiai"],
+      location: { path: "src/file.ts", line: 11, side: "RIGHT" },
+      body: "line comment",
+      prDiffCommentabilityIndex,
+    });
+
+    expect(createReviewCommentCalls).toBe(1);
+    expect(result.status).toBe("published");
+  });
+
+  test("uses a prebuilt PR diff commentability index without reparsing raw diff text", async () => {
+    let createReviewCommentCalls = 0;
+    const octokit = {
+      rest: {
+        pulls: {
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async () => {
+            createReviewCommentCalls++;
+            return { data: { id: 456, html_url: "https://example.test/comment/456" } };
+          },
+        },
+      },
+    };
+    const prDiffCommentabilityIndex = buildPrDiffCommentabilityIndex([
+      "diff --git a/src/file.ts b/src/file.ts",
+      "--- a/src/file.ts",
+      "+++ b/src/file.ts",
+      "@@ -10,2 +10,2 @@ void f()",
+      " context",
+      "+changed",
+    ].join("\n"));
+
+    const result = await publishInlineReviewComment({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: ["kodiai"],
+      location: { path: "src/file.ts", line: 200, side: "RIGHT" },
+      body: "line comment",
+      prDiffCommentabilityIndex,
+    });
+
+    expect(createReviewCommentCalls).toBe(0);
+    expect(result.status).toBe("failed");
+    expect(result.reason).toBe("line-not-commentable-in-pr-diff");
   });
 });
 

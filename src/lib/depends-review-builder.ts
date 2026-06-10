@@ -408,17 +408,32 @@ export function buildDependsInlineComments(
   prFiles: Array<{ filename: string; patch?: string }>,
 ): InlineComment[] {
   const comments: InlineComment[] = [];
+  const prFileByName = new Map(prFiles.map((file) => [file.filename, file]));
+  const versionFiles = prFiles
+    .map((file) => ({
+      file,
+      lowerFilename: file.filename.toLowerCase(),
+      upperFilename: file.filename.toUpperCase(),
+    }))
+    .filter(({ upperFilename }) => upperFilename.includes("VERSION"));
+  const versionFileByPackage = new Map<string, { filename: string; patch?: string }>();
+  for (const hr of data.hashResults) {
+    const packageName = hr.packageName.toLowerCase();
+    const versionFile = versionFiles.find(({ lowerFilename }) =>
+      lowerFilename.includes(packageName)
+    )?.file;
+    if (versionFile) {
+      versionFileByPackage.set(packageName, versionFile);
+    }
+  }
 
   // Hash mismatch inline comments on VERSION files
   for (const hr of data.hashResults) {
     if (hr.result.status !== "mismatch") continue;
 
     // Find the VERSION file for this package in PR files
-    const versionFile = prFiles.find(
-      (f) =>
-        f.filename.toLowerCase().includes(hr.packageName.toLowerCase()) &&
-        f.filename.toUpperCase().includes("VERSION"),
-    );
+    const packageName = hr.packageName.toLowerCase();
+    const versionFile = versionFileByPackage.get(packageName);
 
     if (versionFile?.patch) {
       const sha512Line = findPatchLineNumber(versionFile.patch, "SHA512");
@@ -436,7 +451,7 @@ export function buildDependsInlineComments(
   for (const pc of data.patchChanges) {
     if (pc.action !== "removed") continue;
 
-    const prFile = prFiles.find((f) => f.filename === pc.file);
+    const prFile = prFileByName.get(pc.file);
     if (prFile) {
       comments.push({
         path: pc.file,

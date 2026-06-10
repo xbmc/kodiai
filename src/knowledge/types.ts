@@ -427,6 +427,7 @@ export type LearningMemoryStore = {
     topK: number;
   }): Promise<{ memoryId: number; distance: number }[]>;
   getMemoryRecord(memoryId: number): Promise<LearningMemoryRecord | null>;
+  getMemoryRecords(memoryIds: number[]): Promise<Map<number, LearningMemoryRecord>>;
   searchByFullText?(params: {
     query: string;
     repo: string;

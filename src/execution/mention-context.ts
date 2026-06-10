@@ -93,6 +93,18 @@ type PullRequestMetadata = {
   updated_at?: string | null;
 };
 
+function compareIssueCommentsByCreatedAt(a: IssueComment, b: IssueComment): number {
+  const timeDelta = Date.parse(a.created_at) - Date.parse(b.created_at);
+  if (timeDelta !== 0) return timeDelta;
+  return (a.id ?? 0) - (b.id ?? 0);
+}
+
+function compareReviewCommentsByCreatedAt(a: ReviewComment, b: ReviewComment): number {
+  const timeDelta = Date.parse(a.created_at) - Date.parse(b.created_at);
+  if (timeDelta !== 0) return timeDelta;
+  return a.id - b.id;
+}
+
 function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
@@ -243,12 +255,7 @@ export async function buildMentionContextFingerprint(
         mention.commentCreatedAt,
       )
         .filter((comment) => !isLegacyBotTrackingComment(comment.body))
-        .sort((a, b) => {
-          const aTime = new Date(a.created_at).getTime();
-          const bTime = new Date(b.created_at).getTime();
-          if (aTime !== bTime) return aTime - bTime;
-          return (a.id ?? 0) - (b.id ?? 0);
-        });
+        .sort(compareIssueCommentsByCreatedAt);
       const boundedComments = maxComments > 0 ? safeComments.slice(-maxComments) : [];
       const summarizedComments: Array<Record<string, unknown>> = [];
       for (const comment of boundedComments) {
@@ -360,12 +367,7 @@ export async function buildMentionContextFingerprint(
       const threadComments = (threadResponse.data as ReviewComment[])
         .filter((comment) => comment.id === threadRoot || comment.in_reply_to_id === threadRoot)
         .filter((comment) => comment.id !== mention.commentId)
-        .sort((a, b) => {
-          const aTime = new Date(a.created_at).getTime();
-          const bTime = new Date(b.created_at).getTime();
-          if (aTime !== bTime) return aTime - bTime;
-          return a.id - b.id;
-        });
+        .sort(compareReviewCommentsByCreatedAt);
 
       const summarizedThread: Array<Record<string, unknown>> = [];
       for (const comment of threadComments) {
@@ -472,12 +474,7 @@ export async function buildMentionContextDetails(
         mention.commentCreatedAt,
       ).filter((comment) => !isLegacyBotTrackingComment(comment.body));
 
-      const sortedComments = [...safeComments].sort((a, b) => {
-        const aTime = new Date(a.created_at).getTime();
-        const bTime = new Date(b.created_at).getTime();
-        if (aTime !== bTime) return aTime - bTime;
-        return (a.id ?? 0) - (b.id ?? 0);
-      });
+      const sortedComments = [...safeComments].sort(compareIssueCommentsByCreatedAt);
 
       if (maxComments > 0 && sortedComments.length > maxComments) {
         scaleNotes.push(
@@ -684,12 +681,7 @@ export async function buildMentionContextDetails(
         const threadComments = allReviewComments
           .filter((comment) => comment.id === threadRoot || comment.in_reply_to_id === threadRoot)
           .filter((comment) => comment.id !== mention.commentId)
-          .sort((a, b) => {
-            const aTime = new Date(a.created_at).getTime();
-            const bTime = new Date(b.created_at).getTime();
-            if (aTime !== bTime) return aTime - bTime;
-            return a.id - b.id;
-          });
+          .sort(compareReviewCommentsByCreatedAt);
 
         if (threadComments.length === 0) {
           lines.push("No earlier comments found in this thread.", "");

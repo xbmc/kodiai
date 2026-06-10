@@ -1,8 +1,9 @@
-import { readFile as readFileFromFs } from "node:fs/promises";
+import { readFile as readFileFromFs, stat } from "node:fs/promises";
 import path from "node:path";
 import type { RetrievalResult } from "./types.ts";
 
 const MAX_SNIPPET_CHARS = 180;
+const MAX_SNIPPET_SOURCE_FILE_BYTES = 512 * 1024;
 
 type ReadFileFn = (filePath: string) => Promise<string>;
 
@@ -146,7 +147,13 @@ export async function buildSnippetAnchors(params: {
     return [];
   }
 
-  const readFile = params.readFile ?? (async (filePath: string) => readFileFromFs(filePath, "utf8"));
+  const readFile = params.readFile ?? (async (filePath: string) => {
+    const stats = await stat(filePath);
+    if (stats.size > MAX_SNIPPET_SOURCE_FILE_BYTES) {
+      throw new Error("snippet source file too large");
+    }
+    return readFileFromFs(filePath, "utf8");
+  });
   const fileCache = new Map<string, string | null>();
   const anchors: SnippetAnchor[] = [];
 

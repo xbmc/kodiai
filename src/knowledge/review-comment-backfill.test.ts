@@ -511,7 +511,7 @@ describe("backfill thread isolation", () => {
     embeddingProvider = createMockEmbeddingProvider();
   });
 
-  it("continues processing remaining threads when one thread throws during writeChunks", async () => {
+  it("falls back to per-thread writes when a page batch write fails", async () => {
     let writeCallCount = 0;
     const store = createMockStore({
       writeChunks: mock(async () => {
@@ -536,10 +536,11 @@ describe("backfill thread isolation", () => {
       logger,
     });
 
-    // Both threads should be attempted (writeChunks called twice)
-    expect(writeCallCount).toBe(2);
+    // Initial page batch plus two per-thread fallback writes.
+    expect(writeCallCount).toBe(3);
     // totalComments should include ALL comments (even from failed threads)
     expect(result.totalComments).toBe(2);
+    expect(result.totalChunks).toBe(2);
   });
 
   it("logs thread failure with structured context", async () => {
@@ -606,8 +607,8 @@ describe("backfill thread isolation", () => {
 
     // Both comments counted
     expect(result.totalComments).toBe(2);
-    // Only the successful thread's chunks/embeddings counted
-    expect(result.totalChunks).toBe(1);
-    expect(result.totalEmbeddings).toBe(1);
+    // Both fallback thread writes succeeded after the page batch failed.
+    expect(result.totalChunks).toBe(2);
+    expect(result.totalEmbeddings).toBe(2);
   });
 });

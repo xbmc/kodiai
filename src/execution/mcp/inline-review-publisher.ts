@@ -52,6 +52,7 @@ export type InlineReviewPublisherOptions = {
   onPublish?: () => void;
   publicationGate?: ReviewOutputPublicationGate;
   prDiffForCommentValidation?: string;
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
 };
 
 export type PublishInlineReviewCommentInput = {
@@ -237,9 +238,9 @@ function makeErrorResult(params: {
 }
 
 export function createInlineReviewPublisher(options: InlineReviewPublisherOptions) {
-  const rightCommentableLines = options.prDiffForCommentValidation
+  const rightCommentableLines = options.prDiffCommentabilityIndex ?? (options.prDiffForCommentValidation
     ? buildPrDiffCommentabilityIndex(options.prDiffForCommentValidation)
-    : undefined;
+    : undefined);
   const reviewOutputPublicationGate = options.publicationGate
     ?? (
       options.reviewOutputKey

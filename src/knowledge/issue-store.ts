@@ -268,7 +268,11 @@ export function createIssueStore(opts: {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
       const rows = await sql`
-        SELECT *,
+        SELECT id, created_at, repo, owner, issue_number, title, body, state,
+          author_login, author_association, label_names, template_slug,
+          comment_count, assignees, milestone, reaction_count, is_pull_request,
+          locked, NULL AS embedding, embedding_model, github_created_at,
+          github_updated_at, closed_at,
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM issues
         WHERE repo = ${params.repo}
@@ -293,7 +297,11 @@ export function createIssueStore(opts: {
       if (!params.query.trim()) return [];
 
       const rows = await sql`
-        SELECT *,
+        SELECT id, created_at, repo, owner, issue_number, title, body, state,
+          author_login, author_association, label_names, template_slug,
+          comment_count, assignees, milestone, reaction_count, is_pull_request,
+          locked, NULL AS embedding, embedding_model, github_created_at,
+          github_updated_at, closed_at,
           ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
         FROM issues
         WHERE repo = ${params.repo}
@@ -325,7 +333,11 @@ export function createIssueStore(opts: {
       const sourceEmbedding = sourceRows[0]!.embedding as string;
 
       const rows = await sql`
-        SELECT *,
+        SELECT id, created_at, repo, owner, issue_number, title, body, state,
+          author_login, author_association, label_names, template_slug,
+          comment_count, assignees, milestone, reaction_count, is_pull_request,
+          locked, NULL AS embedding, embedding_model, github_created_at,
+          github_updated_at, closed_at,
           embedding <=> ${sourceEmbedding}::vector AS distance
         FROM issues
         WHERE repo = ${repo}
@@ -401,7 +413,9 @@ export function createIssueStore(opts: {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
       const rows = await sql`
-        SELECT *,
+        SELECT id, created_at, repo, issue_number, comment_github_id,
+          author_login, author_association, body, NULL AS embedding,
+          embedding_model, github_created_at, github_updated_at,
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM issue_comments
         WHERE repo = ${params.repo}

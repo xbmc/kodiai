@@ -235,6 +235,26 @@ describe.skipIf(!TEST_DB_URL)("LearningMemoryStore (pgvector)", () => {
     expect(stored!.stale).toBe(false);
   });
 
+  test("getMemoryRecords retrieves many records in one call", async () => {
+    await store.writeMemory(makeRecord({ findingId: 2001, findingText: "first finding" }), makeEmbedding(42));
+    await store.writeMemory(makeRecord({ findingId: 2002, findingText: "second finding" }), makeEmbedding(43));
+
+    const rows = await sql`
+      SELECT id, finding_id
+      FROM learning_memories
+      WHERE finding_id IN (2001, 2002)
+      ORDER BY finding_id ASC
+    `;
+    const firstId = Number(rows[0]!.id);
+    const secondId = Number(rows[1]!.id);
+
+    const records = await store.getMemoryRecords([secondId, 99999, firstId]);
+
+    expect(records.has(99999)).toBe(false);
+    expect(records.get(firstId)?.findingText).toBe("first finding");
+    expect(records.get(secondId)?.findingText).toBe("second finding");
+  });
+
   test("retrieveMemories returns similar vectors for same repo", async () => {
     const embedding1 = makeEmbedding(100);
     const embedding2 = makeEmbedding(101);

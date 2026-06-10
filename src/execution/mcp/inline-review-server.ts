@@ -2,6 +2,7 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import type { ReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
 import { createInlineReviewPublisher } from "./inline-review-publisher.ts";
 
@@ -17,6 +18,7 @@ export function createInlineReviewServer(
   onPublish?: () => void,
   publicationGate?: ReviewOutputPublicationGate,
   prDiffForCommentValidation?: string,
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex,
 ) {
   const publisher = createInlineReviewPublisher({
     getOctokit,
@@ -30,6 +32,7 @@ export function createInlineReviewServer(
     onPublish,
     publicationGate,
     prDiffForCommentValidation,
+    prDiffCommentabilityIndex,
   });
 
   return createSdkMcpServer({

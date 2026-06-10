@@ -20,9 +20,17 @@ import pino from "pino";
 import { createDbClient } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import { createGitHubApp } from "../src/auth/github-app.ts";
-import { heuristicScore, DOMAIN_STOPWORDS } from "../src/knowledge/wiki-staleness-detector.ts";
-import { parseIssueReferences } from "../src/lib/issue-reference-parser.ts";
-import type { Sql } from "../src/db/client.ts";
+import {
+  hasTokenOverlap,
+  scoreWikiTokens,
+  tokenizeFilePath,
+  tokenizeWikiTexts,
+  wikiTokenUnion,
+  type WikiTextTokens,
+} from "../src/knowledge/wiki-evidence-scoring.ts";
+import { storeWikiPrEvidence } from "../src/knowledge/wiki-pr-evidence-store.ts";
+import { mapWithConcurrency } from "../src/lib/concurrency.ts";
+import { retryGitHubTransient } from "../src/lib/github-retry.ts";
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
@@ -90,60 +98,12 @@ async function loadPrivateKey(): Promise<string> {
   return atob(keyEnv);
 }
 
-// ── Evidence storage ────────────────────────────────────────────────────────
-
 type PRFileDetail = {
   filename: string;
   patch: string | undefined;
   additions: number;
   deletions: number;
 };
-
-async function storeEvidence(
-  sql: Sql,
-  pr: { number: number; title: string; body: string | null; author: string; mergedAt: Date },
-  matches: Array<{ filePath: string; patch: string; pageId: number; pageTitle: string; score: number }>,
-): Promise<number> {
-  const refs = parseIssueReferences({
-    prBody: pr.body ?? "",
-    commitMessages: [],
-  });
-  const issueRefsJson = JSON.stringify(
-    refs.map((r) => ({
-      issueNumber: r.issueNumber,
-      keyword: r.keyword,
-      crossRepo: r.crossRepo,
-    })),
-  );
-
-  let stored = 0;
-  for (const match of matches) {
-    try {
-      await sql`
-        INSERT INTO wiki_pr_evidence (
-          pr_number, pr_title, pr_description, pr_author, merged_at,
-          file_path, patch, issue_references,
-          matched_page_id, matched_page_title, heuristic_score
-        ) VALUES (
-          ${pr.number}, ${pr.title}, ${pr.body}, ${pr.author}, ${pr.mergedAt},
-          ${match.filePath}, ${match.patch}, ${issueRefsJson}::jsonb,
-          ${match.pageId}, ${match.pageTitle}, ${match.score}
-        )
-        ON CONFLICT (pr_number, file_path, matched_page_id) DO UPDATE SET
-          patch = EXCLUDED.patch,
-          heuristic_score = EXCLUDED.heuristic_score,
-          issue_references = EXCLUDED.issue_references
-      `;
-      stored++;
-    } catch (err) {
-      logger.error(
-        { err, prNumber: pr.number, filePath: match.filePath, pageId: match.pageId },
-        "Failed to store PR evidence row (non-fatal)",
-      );
-    }
-  }
-  return stored;
-}
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
@@ -217,7 +177,7 @@ async function main() {
 
   const pageMap = new Map<
     number,
-    { pageTitle: string; pageUrl: string; chunkTexts: string[] }
+    { pageTitle: string; pageUrl: string; chunkTexts: string[]; chunkTokens?: WikiTextTokens; tokenUnion?: Set<string> }
   >();
 
   for (const row of pageRows) {
@@ -251,15 +211,17 @@ async function main() {
   for (let page = 1; page <= MAX_PAGES; page++) {
     let prs;
     try {
-      const response = await octokit.rest.pulls.list({
-        owner,
-        repo: repoName,
-        state: "closed",
-        sort: "updated",
-        direction: "desc",
-        per_page: 100,
-        page,
-      });
+      const response = await retryGitHubTransient(() =>
+        octokit.rest.pulls.list({
+          owner,
+          repo: repoName,
+          state: "closed",
+          sort: "updated",
+          direction: "desc",
+          per_page: 100,
+          page,
+        })
+      );
       prs = response.data;
     } catch (err) {
       logger.error({ err, page }, "Failed to list PRs");
@@ -272,36 +234,47 @@ async function main() {
       (pr) => pr.merged_at && new Date(pr.merged_at) >= since,
     );
 
-    for (const pr of mergedPRs) {
+    const prFileResults = await mapWithConcurrency(mergedPRs, 6, async (pr) => {
+      try {
+        const filesResponse = await retryGitHubTransient(() =>
+          octokit.rest.pulls.listFiles({
+            owner,
+            repo: repoName,
+            pull_number: pr.number,
+            per_page: 100,
+          })
+        );
+        return {
+          pr,
+          files: filesResponse.data.map((f) => ({
+            filename: f.filename,
+            patch: f.patch,
+            additions: f.additions,
+            deletions: f.deletions,
+          })),
+        };
+      } catch (err) {
+        logger.warn({ err, prNumber: pr.number }, "Failed to get PR file details (skipping)");
+        return { pr, files: null };
+      }
+    });
+
+    for (const { pr, files } of prFileResults) {
       totalPRs++;
 
       if (totalPRs % 10 === 0) {
         console.log(`Processing PR ${totalPRs}: #${pr.number} ${pr.title}`);
       }
 
-      let files: PRFileDetail[];
-      try {
-        const filesResponse = await octokit.rest.pulls.listFiles({
-          owner,
-          repo: repoName,
-          pull_number: pr.number,
-          per_page: 100,
-        });
-        files = filesResponse.data.map((f) => ({
-          filename: f.filename,
-          patch: f.patch,
-          additions: f.additions,
-          deletions: f.deletions,
-        }));
-      } catch (err) {
-        logger.warn({ err, prNumber: pr.number }, "Failed to get PR file details (skipping)");
+      if (!files) {
         continue;
       }
 
-      // Rate limit: 300ms between listFiles calls (~80 req/min for content API)
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      const allFilePaths = files.map((f) => f.filename);
+      const tokenizedFiles = files.map((file) => ({
+        file,
+        tokens: tokenizeFilePath(file.filename),
+      }));
+      const changedFileTokenSets = tokenizedFiles.map(({ tokens }) => tokens);
 
       // Match against each wiki page
       const prEvidence = {
@@ -313,26 +286,18 @@ async function main() {
       };
 
       for (const [pageId, page] of pageMap) {
-        const score = heuristicScore(page.chunkTexts, allFilePaths);
+        page.chunkTokens ??= tokenizeWikiTexts(page.chunkTexts);
+        const score = scoreWikiTokens(page.chunkTokens, changedFileTokenSets);
         if (score === 0) continue;
 
         // Find which specific files matched (have token overlap)
-        const chunkTokens = new Set<string>();
-        for (const text of page.chunkTexts) {
-          for (const t of text.toLowerCase().split(/\W+/)) {
-            if (t.length > 3 && !DOMAIN_STOPWORDS.has(t)) chunkTokens.add(t);
-          }
-        }
+        page.tokenUnion ??= wikiTokenUnion(page.chunkTokens);
 
         const matches: Array<{ filePath: string; patch: string; pageId: number; pageTitle: string; score: number }> = [];
 
-        for (const file of files) {
+        for (const { file, tokens } of tokenizedFiles) {
           if (!file.patch) continue;
-          const pathTokens = file.filename
-            .toLowerCase()
-            .split(/[/._-]+/)
-            .filter((t) => t.length > 3 && !DOMAIN_STOPWORDS.has(t));
-          const hasOverlap = pathTokens.some((token) => chunkTokens.has(token));
+          const hasOverlap = hasTokenOverlap(tokens, page.tokenUnion);
           if (hasOverlap) {
             matches.push({
               filePath: file.filename,
@@ -345,7 +310,12 @@ async function main() {
         }
 
         if (matches.length > 0) {
-          totalEvidence += await storeEvidence(db.sql, prEvidence, matches);
+          totalEvidence += await storeWikiPrEvidence({
+            sql: db.sql,
+            pr: prEvidence,
+            matches,
+            logger,
+          });
         }
       }
     }

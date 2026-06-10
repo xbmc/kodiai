@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ReviewCommentChunk, ReviewCommentInput, ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkReviewThread } from "./review-comment-chunker.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -206,7 +207,7 @@ export function groupCommentsIntoThreads(
 
   for (const threadComments of threadMap.values()) {
     // Sort by created_at within thread
-    threadComments.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    threadComments.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 
     const inputs: ReviewCommentInput[] = threadComments.map((c) => ({
       repo,
@@ -245,23 +246,275 @@ export async function embedChunks(
   let embeddingsGenerated = 0;
   let embeddingsFailed = 0;
 
-  for (const chunk of chunks) {
-    try {
-      const result = await embeddingProvider.generate(chunk.chunkText, "document");
-      if (result) {
-        chunk.embedding = result.embedding;
-        embeddingsGenerated++;
-      } else {
-        chunk.embedding = null;
-        embeddingsFailed++;
-      }
-    } catch {
+  const results = await generateDocumentEmbeddingResultsBatch({
+    texts: chunks.map((chunk) => chunk.chunkText),
+    embeddingProvider,
+  });
+
+  for (const [index, result] of results.entries()) {
+    const chunk = chunks[index]!;
+    if (result.status === "success") {
+      chunk.embedding = result.embedding;
+      embeddingsGenerated++;
+    } else {
       chunk.embedding = null;
       embeddingsFailed++;
     }
   }
 
   return { embeddingsGenerated, embeddingsFailed };
+}
+
+type ThreadChunks = {
+  thread: ReviewCommentInput[];
+  chunks: ReviewCommentChunk[];
+};
+
+type EmbeddingCounts = {
+  generated: number;
+  failed: number;
+};
+
+type EmbeddedThreadChunks = ThreadChunks & {
+  embeddingCounts: EmbeddingCounts;
+};
+
+type ReviewCommentPageResult = {
+  humanCommentCount: number;
+  threadCount: number;
+  chunksProduced: number;
+  embeddingsGenerated: number;
+  embeddingsFailed: number;
+  threadFailures: number;
+};
+
+function logThreadProcessingFailure(
+  logger: Logger,
+  repo: string,
+  thread: ReviewCommentInput[],
+  err: unknown,
+): void {
+  logger.error(
+    {
+      err: err instanceof Error ? err.message : String(err),
+      repo,
+      threadRootId: thread[0]?.commentGithubId,
+      prNumber: thread[0]?.prNumber,
+      filePath: thread[0]?.filePath,
+      threadSize: thread.length,
+    },
+    "Thread processing failed -- continuing with remaining threads",
+  );
+}
+
+function buildPageChunks(opts: {
+  comments: GitHubPullComment[];
+  repo: string;
+  botLogins: Set<string>;
+  logger: Logger;
+}): {
+  threads: ReviewCommentInput[][];
+  humanCommentCount: number;
+  threadChunks: ThreadChunks[];
+  threadFailures: number;
+} {
+  const { comments, repo, botLogins, logger } = opts;
+  const threads = groupCommentsIntoThreads(comments, repo, botLogins);
+  const humanCommentCount = threads.reduce((sum, thread) => sum + thread.length, 0);
+  const threadChunks: ThreadChunks[] = [];
+  let threadFailures = 0;
+
+  for (const thread of threads) {
+    try {
+      const chunks = chunkReviewThread(thread, { botLogins });
+      if (chunks.length > 0) {
+        threadChunks.push({ thread, chunks });
+      }
+    } catch (err) {
+      threadFailures++;
+      logThreadProcessingFailure(logger, repo, thread, err);
+    }
+  }
+
+  return { threads, humanCommentCount, threadChunks, threadFailures };
+}
+
+function countChunkEmbeddings(chunks: ReviewCommentChunk[]): EmbeddingCounts {
+  let generated = 0;
+  let failed = 0;
+  for (const chunk of chunks) {
+    if (chunk.embedding) {
+      generated++;
+    } else {
+      failed++;
+    }
+  }
+  return { generated, failed };
+}
+
+async function embedPageChunks(opts: {
+  threadChunks: ThreadChunks[];
+  embeddingProvider: EmbeddingProvider;
+  store: ReviewCommentStore;
+  logger: Logger;
+  dryRun: boolean;
+}): Promise<{
+  pageChunks: ReviewCommentChunk[];
+  embeddedThreadChunks: EmbeddedThreadChunks[];
+  embeddingsGenerated: number;
+  embeddingsFailed: number;
+}> {
+  const { threadChunks, embeddingProvider, store, logger, dryRun } = opts;
+  const pageChunks = threadChunks.flatMap(({ chunks }) => chunks);
+  if (pageChunks.length === 0) {
+    return {
+      pageChunks,
+      embeddedThreadChunks: [],
+      embeddingsGenerated: 0,
+      embeddingsFailed: 0,
+    };
+  }
+
+  const { embeddingsGenerated, embeddingsFailed } = await embedChunks(
+    pageChunks,
+    embeddingProvider,
+    store,
+    logger,
+    dryRun,
+  );
+
+  return {
+    pageChunks,
+    embeddedThreadChunks: threadChunks.map((threadChunk) => ({
+      ...threadChunk,
+      embeddingCounts: countChunkEmbeddings(threadChunk.chunks),
+    })),
+    embeddingsGenerated,
+    embeddingsFailed,
+  };
+}
+
+async function persistPageChunksWithFallback(opts: {
+  pageChunks: ReviewCommentChunk[];
+  embeddedThreadChunks: EmbeddedThreadChunks[];
+  embeddingCounts: EmbeddingCounts;
+  store: ReviewCommentStore;
+  logger: Logger;
+  repo: string;
+  page: number;
+  dryRun: boolean;
+}): Promise<{
+  chunksProduced: number;
+  embeddingsGenerated: number;
+  embeddingsFailed: number;
+  threadFailures: number;
+}> {
+  const { pageChunks, embeddedThreadChunks, embeddingCounts, store, logger, repo, page, dryRun } = opts;
+
+  if (pageChunks.length === 0) {
+    return {
+      chunksProduced: 0,
+      embeddingsGenerated: 0,
+      embeddingsFailed: 0,
+      threadFailures: 0,
+    };
+  }
+
+  if (dryRun) {
+    return {
+      chunksProduced: pageChunks.length,
+      embeddingsGenerated: embeddingCounts.generated,
+      embeddingsFailed: embeddingCounts.failed,
+      threadFailures: 0,
+    };
+  }
+
+  try {
+    await store.writeChunks(pageChunks);
+    return {
+      chunksProduced: pageChunks.length,
+      embeddingsGenerated: embeddingCounts.generated,
+      embeddingsFailed: embeddingCounts.failed,
+      threadFailures: 0,
+    };
+  } catch (err) {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        repo,
+        page,
+        threadCount: embeddedThreadChunks.length,
+        chunkCount: pageChunks.length,
+      },
+      "Page review-comment batch write failed; falling back to per-thread writes",
+    );
+  }
+
+  let chunksProduced = 0;
+  let fallbackEmbeddingsGenerated = 0;
+  let fallbackEmbeddingsFailed = 0;
+  let threadFailures = 0;
+  for (const { thread, chunks, embeddingCounts: threadEmbeddingCounts } of embeddedThreadChunks) {
+    try {
+      await store.writeChunks(chunks);
+      chunksProduced += chunks.length;
+      fallbackEmbeddingsGenerated += threadEmbeddingCounts.generated;
+      fallbackEmbeddingsFailed += threadEmbeddingCounts.failed;
+    } catch (threadErr) {
+      threadFailures++;
+      logThreadProcessingFailure(logger, repo, thread, threadErr);
+    }
+  }
+
+  return {
+    chunksProduced,
+    embeddingsGenerated: fallbackEmbeddingsGenerated,
+    embeddingsFailed: fallbackEmbeddingsFailed,
+    threadFailures,
+  };
+}
+
+async function processReviewCommentPageThreads(opts: {
+  comments: GitHubPullComment[];
+  repo: string;
+  page: number;
+  botLogins: Set<string>;
+  embeddingProvider: EmbeddingProvider;
+  store: ReviewCommentStore;
+  logger: Logger;
+  dryRun: boolean;
+}): Promise<ReviewCommentPageResult> {
+  const { comments, repo, page, botLogins, embeddingProvider, store, logger, dryRun } = opts;
+  const pageChunks = buildPageChunks({ comments, repo, botLogins, logger });
+  const embedded = await embedPageChunks({
+    threadChunks: pageChunks.threadChunks,
+    embeddingProvider,
+    store,
+    logger,
+    dryRun,
+  });
+  const persisted = await persistPageChunksWithFallback({
+    pageChunks: embedded.pageChunks,
+    embeddedThreadChunks: embedded.embeddedThreadChunks,
+    embeddingCounts: {
+      generated: embedded.embeddingsGenerated,
+      failed: embedded.embeddingsFailed,
+    },
+    store,
+    logger,
+    repo,
+    page,
+    dryRun,
+  });
+
+  return {
+    humanCommentCount: pageChunks.humanCommentCount,
+    threadCount: pageChunks.threads.length,
+    chunksProduced: persisted.chunksProduced,
+    embeddingsGenerated: persisted.embeddingsGenerated,
+    embeddingsFailed: persisted.embeddingsFailed,
+    threadFailures: pageChunks.threadFailures + persisted.threadFailures,
+  };
 }
 
 // ── Main backfill ───────────────────────────────────────────────────────────
@@ -364,56 +617,20 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
       page,
     );
 
-    // Group into threads and chunk
-    const threads = groupCommentsIntoThreads(comments, repo, botLogins);
+    const pageResult = await processReviewCommentPageThreads({
+      comments,
+      repo,
+      page,
+      botLogins,
+      embeddingProvider,
+      store,
+      logger,
+      dryRun,
+    });
 
-    let batchChunks = 0;
-    let batchEmbeddings = 0;
-    let batchEmbeddingsFailed = 0;
-    let threadFailures = 0;
-    const humanCommentCount = threads.reduce((sum, t) => sum + t.length, 0);
-
-    for (const thread of threads) {
-      try {
-        const chunks = chunkReviewThread(thread, { botLogins });
-
-        if (chunks.length === 0) continue;
-
-        // Generate embeddings (fail-open: store chunk even without embedding)
-        const { embeddingsGenerated, embeddingsFailed } = await embedChunks(
-          chunks,
-          embeddingProvider,
-          store,
-          logger,
-          dryRun,
-        );
-
-        if (!dryRun) {
-          await store.writeChunks(chunks);
-        }
-
-        batchChunks += chunks.length;
-        batchEmbeddings += embeddingsGenerated;
-        batchEmbeddingsFailed += embeddingsFailed;
-      } catch (err) {
-        threadFailures++;
-        logger.error(
-          {
-            err: err instanceof Error ? err.message : String(err),
-            repo,
-            threadRootId: thread[0]?.commentGithubId,
-            prNumber: thread[0]?.prNumber,
-            filePath: thread[0]?.filePath,
-            threadSize: thread.length,
-          },
-          "Thread processing failed -- continuing with remaining threads",
-        );
-      }
-    }
-
-    totalComments += humanCommentCount;
-    totalChunks += batchChunks;
-    totalEmbeddings += batchEmbeddings;
+    totalComments += pageResult.humanCommentCount;
+    totalChunks += pageResult.chunksProduced;
+    totalEmbeddings += pageResult.embeddingsGenerated;
 
     // Track last comment date for sync state
     const lastComment = comments[comments.length - 1]!;
@@ -424,12 +641,12 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
       {
         page,
         commentsInBatch: comments.length,
-        humanComments: humanCommentCount,
-        threadCount: threads.length,
-        chunksProduced: batchChunks,
-        embeddingsGenerated: batchEmbeddings,
-        embeddingsFailed: batchEmbeddingsFailed,
-        threadFailures,
+        humanComments: pageResult.humanCommentCount,
+        threadCount: pageResult.threadCount,
+        chunksProduced: pageResult.chunksProduced,
+        embeddingsGenerated: pageResult.embeddingsGenerated,
+        embeddingsFailed: pageResult.embeddingsFailed,
+        threadFailures: pageResult.threadFailures,
         totalSoFar: totalComments,
         rateRemaining: response.headers?.["x-ratelimit-remaining"] ?? "unknown",
       },

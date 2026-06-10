@@ -123,7 +123,7 @@ describe("buildMentionPrompt", () => {
     );
 
     expect(prompt).toContain("Concise by default");
-    expect(prompt).toContain('Do NOT include sections like "What Changed"');
+    expect(prompt).toContain("Post one final response");
     expect(prompt).toContain("Prefix first line with: 'Plan only:'");
     expect(prompt).toContain("Do NOT claim any edits were made");
 
@@ -148,10 +148,10 @@ describe("buildMentionPrompt", () => {
       userQuestion: "Can you explain this change?",
     });
 
-    expect(prompt).toContain("ALWAYS wrap your ENTIRE response body in `<details>` tags");
+    expect(prompt).toContain("Wrap the full response body in `<details>` tags");
     expect(prompt).toContain("<details>");
     expect(prompt).toContain("<summary>kodiai response</summary>");
-    expect(prompt).toContain("Important: include a blank line after `<summary>` and before `</details>`");
+    expect(prompt).toContain("include a blank line after `<summary>` and before `</details>`");
   });
 
   test("default (no outputLanguage) does NOT include language instruction", () => {
@@ -626,5 +626,21 @@ describe("epistemic guardrails on mention surfaces (PROMPT-04)", () => {
       userQuestion: "Please review this.",
     });
     expect(prompt.toLowerCase()).toContain("refuse");
+  });
+
+  test("mention response contract stays compact", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Can you explain this?",
+    });
+
+    const contract = prompt.slice(
+      prompt.indexOf("## How to respond"),
+      prompt.indexOf("- If (and only if) the user is asking for a PR review / approval decision"),
+    );
+    expect(contract.length).toBeLessThan(1_800);
+    expect(contract).toContain("Post one final response");
+    expect(contract).toContain("Direct answer first");
   });
 });

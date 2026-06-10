@@ -242,7 +242,10 @@ export function createWikiPageStore(opts: {
 
       const rows = params.namespace
         ? await sql`
-            SELECT *,
+            SELECT id, created_at, page_id, page_title, namespace, page_url,
+              section_heading, section_anchor, section_level, chunk_index,
+              chunk_text, raw_text, token_count, NULL AS embedding, embedding_model,
+              stale, last_modified, revision_id, deleted, language_tags,
               embedding <=> ${queryEmbeddingString}::vector AS distance
             FROM wiki_pages
             WHERE namespace = ${params.namespace}
@@ -253,7 +256,10 @@ export function createWikiPageStore(opts: {
             LIMIT ${params.topK}
           `
         : await sql`
-            SELECT *,
+            SELECT id, created_at, page_id, page_title, namespace, page_url,
+              section_heading, section_anchor, section_level, chunk_index,
+              chunk_text, raw_text, token_count, NULL AS embedding, embedding_model,
+              stale, last_modified, revision_id, deleted, language_tags,
               embedding <=> ${queryEmbeddingString}::vector AS distance
             FROM wiki_pages
             WHERE stale = false
@@ -278,7 +284,10 @@ export function createWikiPageStore(opts: {
 
       const rows = params.namespace
         ? await sql`
-            SELECT *,
+            SELECT id, created_at, page_id, page_title, namespace, page_url,
+              section_heading, section_anchor, section_level, chunk_index,
+              chunk_text, raw_text, token_count, NULL AS embedding, embedding_model,
+              stale, last_modified, revision_id, deleted, language_tags,
               ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
             FROM wiki_pages
             WHERE namespace = ${params.namespace}
@@ -289,7 +298,10 @@ export function createWikiPageStore(opts: {
             LIMIT ${params.topK}
           `
         : await sql`
-            SELECT *,
+            SELECT id, created_at, page_id, page_title, namespace, page_url,
+              section_heading, section_anchor, section_level, chunk_index,
+              chunk_text, raw_text, token_count, NULL AS embedding, embedding_model,
+              stale, last_modified, revision_id, deleted, language_tags,
               ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
             FROM wiki_pages
             WHERE stale = false

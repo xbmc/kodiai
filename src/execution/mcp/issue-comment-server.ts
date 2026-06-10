@@ -2,10 +2,11 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
-import { parseRetryAfterDelayMs } from "../../lib/retry-after.ts";
+import { capRetryDelayMs, parseRetryAfterDelayMs } from "../../lib/retry-after.ts";
 
 const MAX_COMMENT_LENGTH = 60000;
 const TRUNCATION_NOTE = "\n\n---\n*Comment truncated due to length.*";
+const MAX_RETRY_DELAY_MS = 30_000;
 
 interface TriageCommentConfig {
   enabled: boolean;
@@ -25,7 +26,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
     } catch (error: any) {
       if (error?.status === 429 && attempt < maxRetries) {
         const retryAfter = error?.response?.headers?.["retry-after"];
-        const delayMs = parseRetryAfterDelayMs(retryAfter) ?? Math.pow(2, attempt) * 1000;
+        const delayMs = capRetryDelayMs(parseRetryAfterDelayMs(retryAfter), MAX_RETRY_DELAY_MS)
+          ?? Math.min(Math.pow(2, attempt) * 1000, MAX_RETRY_DELAY_MS);
         await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }

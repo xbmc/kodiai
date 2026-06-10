@@ -6,6 +6,7 @@ import type { PromptSectionRecord } from "../telemetry/types.ts";
 import type { CandidateVerificationContext } from "./mcp/review-output-publication-gate.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import type { ReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
+import type { PrDiffCommentabilityIndex } from "./formatter-suggestions.ts";
 
 export type ExecutionPublishEvent = {
   type: "comment";
@@ -95,6 +96,8 @@ export type ExecutionContext = {
 
   /** Optional PR diff used by MCP inline-comment tools to reject non-commentable full-file line numbers before GitHub does. */
   prDiffForCommentValidation?: string;
+  /** Precomputed RIGHT-side PR diff commentability index; preferred over parsing prDiffForCommentValidation in each publisher. */
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
 
   /** Enable private candidate-finding capture during review execution. */
   enableCandidateFindingTool?: boolean;

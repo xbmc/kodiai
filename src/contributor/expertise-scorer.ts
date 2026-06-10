@@ -72,12 +72,6 @@ function classifyLanguage(filePath: string): string | null {
   return lang === "unknown" ? null : lang;
 }
 
-type ExpertiseBucket = {
-  dimension: ExpertiseDimension;
-  topic: string;
-  signals: ActivitySignal[];
-};
-
 type ExpertiseTopic = {
   dimension: ExpertiseDimension;
   topic: string;
@@ -87,35 +81,6 @@ type ExpertiseDimensionScore = Pick<
   ContributorExpertise,
   "dimension" | "topic" | "score"
 >;
-
-function bucketSignals(
-  signals: ActivitySignal[],
-): Map<string, ExpertiseBucket> {
-  const buckets = new Map<string, ExpertiseBucket>();
-
-  for (const signal of signals) {
-    for (const lang of signal.languages) {
-      const key = `language:${lang}`;
-      let bucket = buckets.get(key);
-      if (!bucket) {
-        bucket = { dimension: "language", topic: lang, signals: [] };
-        buckets.set(key, bucket);
-      }
-      bucket.signals.push(signal);
-    }
-    for (const area of signal.fileAreas) {
-      const key = `file_area:${area}`;
-      let bucket = buckets.get(key);
-      if (!bucket) {
-        bucket = { dimension: "file_area", topic: area, signals: [] };
-        buckets.set(key, bucket);
-      }
-      bucket.signals.push(signal);
-    }
-  }
-
-  return buckets;
-}
 
 export function deriveUpdatedOverallScore(params: {
   existingExpertise: ExpertiseDimensionScore[];
@@ -181,196 +146,6 @@ export async function recalculateTierFailOpen(params: {
 }
 
 /**
- * Full expertise scoring from GitHub activity. Fetches commits, PRs, reviews
- * and computes per-dimension expertise scores.
- *
- * NOTE: This function is designed for batch/background use. For real-time
- * per-PR updates, use updateExpertiseIncremental instead.
- */
-export async function computeExpertiseScores(params: {
-  githubUsername: string;
-  octokit: {
-    rest: {
-      repos: {
-        listCommits: (args: Record<string, unknown>) => Promise<{
-          data: Array<{
-            sha: string;
-            commit: { author: { date?: string } };
-            files?: Array<{ filename: string }>;
-          }>;
-        }>;
-      };
-      pulls: {
-        list: (args: Record<string, unknown>) => Promise<{
-          data: Array<{
-            number: number;
-            user: { login: string } | null;
-            merged_at: string | null;
-            files?: Array<{ filename: string }>;
-          }>;
-        }>;
-        listFiles: (args: Record<string, unknown>) => Promise<{
-          data: Array<{ filename: string }>;
-        }>;
-      };
-    };
-  };
-  owner: string;
-  repo: string;
-  profileStore: ContributorProfileStore;
-  logger: Logger;
-  monthsBack?: number;
-}): Promise<void> {
-  const {
-    githubUsername,
-    octokit,
-    owner,
-    repo,
-    profileStore,
-    logger,
-    monthsBack = 12,
-  } = params;
-
-  const profile =
-    await profileStore.getOrCreateByGithubUsername(githubUsername);
-  const since = new Date();
-  since.setMonth(since.getMonth() - monthsBack);
-  const sinceIso = since.toISOString();
-
-  const allSignals: ActivitySignal[] = [];
-  const allFiles: string[] = [];
-
-  try {
-    for (let page = 1; page <= 5; page++) {
-      const resp = await octokit.rest.repos.listCommits({
-        owner,
-        repo,
-        author: githubUsername,
-        since: sinceIso,
-        per_page: 100,
-        page,
-      });
-      if (resp.data.length === 0) break;
-
-      for (const commit of resp.data) {
-        const files = commit.files?.map((f) => f.filename) ?? [];
-        allFiles.push(...files);
-        const languages = [
-          ...new Set(
-            files
-              .map((f) => classifyLanguage(f))
-              .filter((l): l is string => l !== null),
-          ),
-        ];
-        const fileAreas = [...new Set(files.map((f) => extractFileArea(f)))];
-        allSignals.push({
-          type: "commit",
-          date: new Date(commit.commit.author?.date ?? Date.now()),
-          languages,
-          fileAreas,
-        });
-      }
-      await new Promise((r) => setTimeout(r, 200));
-    }
-  } catch (err) {
-    logger.warn({ err, githubUsername }, "Failed to fetch commits (fail-open)");
-  }
-
-  try {
-    for (let page = 1; page <= 3; page++) {
-      const resp = await octokit.rest.pulls.list({
-        owner,
-        repo,
-        state: "closed",
-        per_page: 100,
-        page,
-      });
-      if (resp.data.length === 0) break;
-
-      for (const pr of resp.data) {
-        if (pr.user?.login !== githubUsername || !pr.merged_at) continue;
-
-        let files: string[] = [];
-        try {
-          const filesResp = await octokit.rest.pulls.listFiles({
-            owner,
-            repo,
-            pull_number: pr.number,
-            per_page: 100,
-          });
-          files = filesResp.data.map((f) => f.filename);
-          allFiles.push(...files);
-        } catch {
-          // fail-open
-        }
-
-        const languages = [
-          ...new Set(
-            files
-              .map((f) => classifyLanguage(f))
-              .filter((l): l is string => l !== null),
-          ),
-        ];
-        const fileAreas = [...new Set(files.map((f) => extractFileArea(f)))];
-        allSignals.push({
-          type: "pr_authored",
-          date: new Date(pr.merged_at),
-          languages,
-          fileAreas,
-        });
-      }
-      await new Promise((r) => setTimeout(r, 200));
-    }
-  } catch (err) {
-    logger.warn(
-      { err, githubUsername },
-      "Failed to fetch authored PRs (fail-open)",
-    );
-  }
-
-  const buckets = bucketSignals(allSignals);
-  for (const bucket of buckets.values()) {
-    const raw = computeDecayedScore(bucket.signals);
-    const score = normalizeScore(raw);
-    await profileStore.upsertExpertise({
-      profileId: profile.id,
-      dimension: bucket.dimension,
-      topic: bucket.topic,
-      score,
-      rawSignals: bucket.signals.length,
-      lastActive: bucket.signals[0]?.date ?? new Date(),
-    });
-  }
-
-  const expertise = await profileStore.getExpertise(profile.id);
-  const topScores = expertise.slice(0, 5).map((e) => e.score);
-  const overallScore =
-    topScores.length > 0
-      ? topScores.reduce((a, b) => a + b, 0) / topScores.length
-      : 0;
-
-  const updatedTier = await recalculateTierFailOpen({
-    profileId: profile.id,
-    updatedOverallScore: overallScore,
-    fallbackTier: profile.overallTier,
-    profileStore,
-    logger,
-  });
-
-  await profileStore.updateTier(profile.id, updatedTier, overallScore);
-  logger.info(
-    {
-      githubUsername,
-      signalCount: allSignals.length,
-      bucketCount: buckets.size,
-      overallScore,
-      updatedTier,
-    },
-    "Computed expertise scores",
-  );
-}
-
-/**
  * Lightweight incremental expertise update — fire-and-forget after PR review.
  * Updates scores for languages and file areas touched in a single PR.
  */
@@ -403,31 +178,46 @@ export async function updateExpertiseIncremental(params: {
       { dimension: "file_area", topics: fileAreas },
     ];
 
+  const existingExpertise = await profileStore.getExpertise(profile.id);
+  const scoreByTopic = new Map<string, ExpertiseDimensionScore>();
+  const rawSignalsByTopic = new Map<string, number>();
+  for (const entry of existingExpertise) {
+    const key = `${entry.dimension}:${entry.topic}`;
+    scoreByTopic.set(key, {
+      dimension: entry.dimension,
+      topic: entry.topic,
+      score: entry.score,
+    });
+    rawSignalsByTopic.set(key, entry.rawSignals);
+  }
+  const newRaw = computeDecayedScore([signal]);
+  const normalizedContribution = normalizeScore(newRaw);
+
   for (const { dimension, topics } of dimensions) {
     for (const topic of topics) {
-      const existing = await profileStore.getExpertise(profile.id);
-      const entry = existing.find(
-        (e) => e.dimension === dimension && e.topic === topic,
-      );
+      const key = `${dimension}:${topic}`;
+      const entry = scoreByTopic.get(key);
 
-      const newRaw = computeDecayedScore([signal]);
       const existingScore = entry?.score ?? 0;
-      const blended = existingScore * 0.9 + normalizeScore(newRaw) * 0.1;
+      const blended = Math.min(1, existingScore * 0.9 + normalizedContribution * 0.1);
+      const rawSignals = (rawSignalsByTopic.get(key) ?? 0) + 1;
 
       await profileStore.upsertExpertise({
         profileId: profile.id,
         dimension,
         topic,
-        score: Math.min(1, blended),
-        rawSignals: (entry?.rawSignals ?? 0) + 1,
+        score: blended,
+        rawSignals,
         lastActive: now,
       });
+
+      scoreByTopic.set(key, { dimension, topic, score: blended });
+      rawSignalsByTopic.set(key, rawSignals);
     }
   }
 
-  const allExpertise = await profileStore.getExpertise(profile.id);
   const overallScore = deriveUpdatedOverallScore({
-    existingExpertise: allExpertise,
+    existingExpertise: [...scoreByTopic.values()],
     touchedTopics: [
       ...languages.map((topic) => ({
         dimension: "language" as const,

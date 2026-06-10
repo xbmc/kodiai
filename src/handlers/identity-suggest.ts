@@ -13,11 +13,30 @@ import type { Logger } from "pino";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import { findPotentialMatches } from "../contributor/identity-matcher.ts";
 import { createInMemoryCache } from "../lib/in-memory-cache.ts";
+import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
+import { retryTransient } from "../lib/transient-retry.ts";
 
 type SlackMember = {
   userId: string;
   displayName: string;
   realName: string;
+};
+
+type SlackUsersListResponse = {
+  ok?: boolean;
+  error?: string;
+  members?: Array<{
+    id?: string;
+    deleted?: boolean;
+    is_bot?: boolean;
+    profile?: { display_name?: string; real_name?: string };
+  }>;
+};
+
+type SlackJsonResponse = {
+  ok?: boolean;
+  error?: string;
+  channel?: { id?: string };
 };
 
 const MEMBER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -37,6 +56,7 @@ const slackMemberLookupDisabledReasonsByToken = createInMemoryCache<string, stri
   ttlMs: 24 * 60 * 60 * 1000,
   now: () => Date.now(),
 });
+const slackMemberInflightLoads = new Map<string, Promise<SlackMember[]>>();
 
 /** Track recent GitHub usernames we've already suggested to avoid repeat DMs. */
 const suggestedUsernames = createInMemoryCache<string, true>({
@@ -47,6 +67,7 @@ const suggestedUsernames = createInMemoryCache<string, true>({
 
 export function resetIdentitySuggestionStateForTests(): void {
   slackMemberCache.clear();
+  slackMemberInflightLoads.clear();
   slackMemberLookupDisabledReasonsByToken.clear();
   suggestedUsernames.clear();
 }
@@ -61,6 +82,85 @@ function normalizeSlackErrorCode(error: unknown): string {
 
 function isSlackMissingScopeError(error: unknown): boolean {
   return /(?:^|\b)missing_scope(?:\b|$)/.test(normalizeSlackErrorCode(error));
+}
+
+class SlackRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly headers: Headers,
+    readonly slackError?: string,
+  ) {
+    super(message);
+    this.name = "SlackRequestError";
+  }
+}
+
+function isRetryableSlackError(error: unknown): boolean {
+  if (error instanceof SlackRequestError) {
+    if (isSlackMissingScopeError(error.slackError)) return false;
+    return error.status === 429 || error.status >= 500 || error.slackError === "ratelimited";
+  }
+  return error instanceof TypeError || error instanceof DOMException;
+}
+
+function slackRetryAfterDelayMs(error: unknown): number | null {
+  if (!(error instanceof SlackRequestError)) return null;
+  return parseRetryAfterDelayMs(error.headers.get("retry-after"));
+}
+
+async function fetchSlackJson<T extends SlackJsonResponse>(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<{ response: Response; data: T }> {
+  const response = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(10_000),
+  });
+  let data: T;
+  try {
+    data = (await response.json()) as T;
+  } catch {
+    if (!response.ok) {
+      throw new SlackRequestError(
+        `${label} HTTP ${response.status}`,
+        response.status,
+        response.headers,
+      );
+    }
+    throw new Error(`${label} returned malformed JSON`);
+  }
+
+  if (!response.ok) {
+    if (isSlackMissingScopeError(data.error)) {
+      return { response, data };
+    }
+    throw new SlackRequestError(
+      `${label} HTTP ${response.status}`,
+      response.status,
+      response.headers,
+      data.error,
+    );
+  }
+  if (!data.ok && data.error === "ratelimited") {
+    throw new SlackRequestError(`${label} failed: ratelimited`, 429, response.headers, data.error);
+  }
+  return { response, data };
+}
+
+async function fetchSlackJsonReadWithRetry<T extends SlackJsonResponse>(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<{ response: Response; data: T }> {
+  return retryTransient(
+    () => fetchSlackJson<T>(url, init, label),
+    {
+      shouldRetry: isRetryableSlackError,
+      retryDelayMs: slackRetryAfterDelayMs,
+    },
+  );
 }
 
 async function fetchSlackMembers(
@@ -82,41 +182,35 @@ async function fetchSlackMembers(
     return cachedMembers;
   }
 
-  const response = await fetch("https://slack.com/api/users.list", {
+  const inflightMembers = slackMemberInflightLoads.get(tokenCacheKey);
+  if (inflightMembers) {
+    return inflightMembers;
+  }
+
+  const loadPromise = fetchSlackMembersUncached(botToken, tokenCacheKey, logger);
+  slackMemberInflightLoads.set(tokenCacheKey, loadPromise);
+  try {
+    return await loadPromise;
+  } finally {
+    slackMemberInflightLoads.delete(tokenCacheKey);
+  }
+}
+
+async function fetchSlackMembersUncached(
+  botToken: string,
+  tokenCacheKey: string,
+  logger: Logger,
+): Promise<SlackMember[]> {
+  const { response, data } = await fetchSlackJsonReadWithRetry<SlackUsersListResponse>("https://slack.com/api/users.list", {
     method: "POST",
     headers: {
       authorization: `Bearer ${botToken}`,
       "content-type": "application/json; charset=utf-8",
     },
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  let data: {
-    ok?: boolean;
-    error?: string;
-    members?: Array<{
-      id?: string;
-      deleted?: boolean;
-      is_bot?: boolean;
-      profile?: { display_name?: string; real_name?: string };
-    }>;
-  } | null = null;
-
-  try {
-    data = (await response.json()) as typeof data;
-  } catch {
-    if (!response.ok) {
-      throw new Error(`Slack users.list HTTP ${response.status}`);
-    }
-    throw new Error("Slack users.list returned malformed JSON");
-  }
-
-  if (!response.ok && !isSlackMissingScopeError(data?.error)) {
-    throw new Error(`Slack users.list HTTP ${response.status}`);
-  }
+  }, "Slack users.list");
 
   if (!data?.ok) {
-    const errorCode = normalizeSlackErrorCode(data?.error);
+    const errorCode = normalizeSlackErrorCode(data.error);
     if (isSlackMissingScopeError(errorCode)) {
       const disabledReason = "missing_scope";
       slackMemberLookupDisabledReasonsByToken.set(tokenCacheKey, disabledReason);
@@ -152,25 +246,14 @@ async function sendSuggestionDM(
   githubUsername: string,
   logger: Logger,
 ): Promise<void> {
-  const openRes = await fetch("https://slack.com/api/conversations.open", {
+  const { data: openData } = await fetchSlackJson("https://slack.com/api/conversations.open", {
     method: "POST",
     headers: {
       authorization: `Bearer ${botToken}`,
       "content-type": "application/json; charset=utf-8",
     },
     body: JSON.stringify({ users: slackUserId }),
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!openRes.ok) {
-    throw new Error(`Slack conversations.open HTTP ${openRes.status}`);
-  }
-
-  const openData = (await openRes.json()) as {
-    ok?: boolean;
-    error?: string;
-    channel?: { id?: string };
-  };
+  }, "Slack conversations.open");
 
   if (!openData.ok || !openData.channel?.id) {
     throw new Error(
@@ -184,24 +267,14 @@ async function sendSuggestionDM(
     `If that's you, link your accounts with \`/kodiai link ${githubUsername}\` so Kodiai can use your linked contributor profile when available. ` +
     "If you'd rather keep reviews generic, you can opt out any time with `/kodiai profile opt-out`.";
 
-  const msgRes = await fetch("https://slack.com/api/chat.postMessage", {
+  const { data: msgData } = await fetchSlackJson("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
       authorization: `Bearer ${botToken}`,
       "content-type": "application/json; charset=utf-8",
     },
     body: JSON.stringify({ channel: channelId, text: message }),
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!msgRes.ok) {
-    throw new Error(`Slack chat.postMessage HTTP ${msgRes.status}`);
-  }
-
-  const msgData = (await msgRes.json()) as {
-    ok?: boolean;
-    error?: string;
-  };
+  }, "Slack chat.postMessage");
 
   if (!msgData.ok) {
     throw new Error(

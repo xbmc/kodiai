@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createNamedRateLimiters, createSlidingWindowRateLimiter } from "./sliding-window-rate-limiter.ts";
+import {
+  createNamedRateLimiters,
+  createSlidingWindowRateLimiter,
+  requestSourceKey,
+} from "./sliding-window-rate-limiter.ts";
 
 describe("createSlidingWindowRateLimiter", () => {
   test("limits per key within a sliding window", () => {
@@ -76,5 +80,17 @@ describe("createNamedRateLimiters", () => {
 
     expect(limiters.channel.isLimited("channel")).toBe(false);
     expect(limiters.channel.isLimited("channel")).toBe(true);
+  });
+});
+
+describe("requestSourceKey", () => {
+  test("uses proxy/client headers instead of collapsing all callers into one key", () => {
+    const key = requestSourceKey((name) => ({
+      "x-forwarded-for": "203.0.113.9, 10.0.0.5",
+    })[name]);
+
+    expect(key).toBe("203.0.113.9");
+    expect(requestSourceKey((name) => ({ "x-real-ip": "198.51.100.7" })[name])).toBe("198.51.100.7");
+    expect(requestSourceKey((name) => ({ "cf-connecting-ip": "192.0.2.4" })[name])).toBe("192.0.2.4");
   });
 });

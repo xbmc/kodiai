@@ -4,6 +4,7 @@ import {
   buildPrDiffCommentabilityIndex,
   mapFormatterDiffToSuggestions,
   parseFormatterUnifiedDiff,
+  readProcessStreamForFormatter,
   resolveFormatterCommand,
   runFormatterCommand,
   type FormatterProcessRunner,
@@ -424,6 +425,25 @@ describe("mapFormatterDiffToSuggestions", () => {
 });
 
 describe("runFormatterCommand", () => {
+  test("caps process stream reads before buffering the entire formatter output", async () => {
+    let cancelCalled = false;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("abcdef"));
+        controller.enqueue(encoder.encode("ghijkl"));
+      },
+      cancel() {
+        cancelCalled = true;
+      },
+    });
+
+    const text = await readProcessStreamForFormatter(stream, 5);
+
+    expect(text).toBe("abcde");
+    expect(cancelCalled).toBe(true);
+  });
+
   test("returns no-command without invoking a process for a missing command", async () => {
     let calls = 0;
     const result = await runFormatterCommand({

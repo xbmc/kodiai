@@ -7,6 +7,7 @@ import type {
   ReviewGraphStore,
   ReviewGraphWorkspaceSnapshot,
 } from "./types.ts";
+import { buildAliasSubstringIndex, findMatchingAlias } from "./alias-matcher.ts";
 
 export type ReviewGraphQueryInput = {
   repo: string;
@@ -243,7 +244,6 @@ export function queryBlastRadiusFromSnapshot(
   const dependents = new Map<string, DependentAccumulator>();
   const seedNodes: ReviewGraphNodeRecord[] = [];
 
-  const allFileNodes = snapshot.nodes.filter((node) => node.nodeKind === "file");
   const allImportNodes = snapshot.nodes.filter((node) => node.nodeKind === "import");
   const allCallsiteNodes = snapshot.nodes.filter((node) => node.nodeKind === "callsite");
   const allSymbolNodes = snapshot.nodes.filter((node) => node.nodeKind === "symbol");
@@ -359,6 +359,7 @@ export function queryBlastRadiusFromSnapshot(
 
     const changedSymbols = fileNodes.filter((node) => node.nodeKind === "symbol" || node.nodeKind === "test");
     const symbolAliases = new Set(changedSymbols.flatMap((node) => collectSymbolAliases(node).map((value) => value.toLowerCase())));
+    const symbolAliasSubstringIndex = buildAliasSubstringIndex(symbolAliases);
 
     for (const importNode of allImportNodes) {
       const importPath = indexes.filePathById.get(importNode.fileId);
@@ -409,15 +410,11 @@ export function queryBlastRadiusFromSnapshot(
       }
     }
 
-    const symbolAliasList = Array.from(symbolAliases);
     for (const testNode of allTestNodes) {
       const testPath = indexes.filePathById.get(testNode.fileId);
       if (!testPath || changedFileSet.has(testPath)) continue;
       const aliases = collectSymbolAliases(testNode).map((value) => value.toLowerCase());
-      const matchedAlias = aliases.find((alias) =>
-        symbolAliases.has(alias)
-        || symbolAliasList.some((candidate) => alias.includes(candidate) || candidate.includes(alias))
-      );
+      const matchedAlias = findMatchingAlias(aliases, symbolAliases, symbolAliasSubstringIndex);
       if (!matchedAlias) continue;
 
       const conf = nodeConfidence(testNode);
