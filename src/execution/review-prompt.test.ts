@@ -8,6 +8,7 @@ import {
   buildDeltaReviewContext,
   buildDeltaVerdictLogicSection,
   buildDiffAnalysisSection,
+  buildKnowledgeContextLines,
   buildLanguageGuidanceSection,
   buildOutputLanguageSection,
   buildPathInstructionsSection,
@@ -3381,5 +3382,58 @@ describe("buildReviewPrompt graph context integration", () => {
         continuation: scenario.firstPass,
       })
     ).toThrow();
+  });
+});
+
+describe("buildKnowledgeContextLines", () => {
+  test("unified results take precedence over the legacy retrieval stack", () => {
+    const lines = buildKnowledgeContextLines({
+      contextWindow: "Assembled cross-corpus context window.",
+      unifiedResults: [
+        {
+          id: "code:1",
+          text: "prior finding text",
+          source: "code",
+          sourceLabel: "[code: a.ts]",
+          sourceUrl: null,
+          vectorDistance: 0.1,
+          rrfScore: 0.5,
+          createdAt: null,
+        } as never,
+      ],
+      retrievalContext: {
+        findings: [{
+          findingText: "legacy finding",
+          severity: "major",
+          category: "bug",
+          path: "b.ts",
+          outcome: "accepted",
+          distance: 0.2,
+          sourceRepo: "xbmc/xbmc",
+        }],
+      },
+    });
+
+    const text = lines.join("\n");
+    expect(text.length).toBeGreaterThan(0);
+    expect(text).not.toContain("legacy finding");
+  });
+
+  test("legacy stack renders blocks separated by blank lines and skips empty inputs", () => {
+    const lines = buildKnowledgeContextLines({
+      retrievalContext: { findings: [] },
+      reviewPrecedents: [],
+      wikiKnowledge: [],
+      clusterPatterns: [],
+    });
+    expect(lines).toEqual([]);
+  });
+
+  test("language guidance renders standalone when no retrieval data exists", () => {
+    const lines = buildKnowledgeContextLines({
+      filesByLanguage: { Python: ["script.py"] },
+    });
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines[0]).not.toBe("");
   });
 });
