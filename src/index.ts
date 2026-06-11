@@ -69,8 +69,12 @@ const botUserClient = createBotUserClient(config, logger);
 const forkManager = createForkManager(botUserClient, logger, config.botUserPat || undefined);
 const gistPublisher = createGistPublisher(botUserClient, logger);
 
+// Lifecycle: request tracking (created before the job queue so every enqueued
+// job — including fire-and-forget retries — counts toward shutdown drain)
+const requestTracker = createRequestTracker();
+
 // Job infrastructure
-const jobQueue = createJobQueue(logger);
+const jobQueue = createJobQueue(logger, { requestTracker });
 const reviewWorkCoordinator = createReviewWorkCoordinator();
 const workspaceManager = createWorkspaceManager(githubApp, logger);
 
@@ -109,8 +113,7 @@ if (rateLimitFailureInjectionIdentities.length > 0) {
 // Cost tracker (shared across executor and scheduled jobs)
 const costTracker = createCostTracker({ telemetryStore, logger });
 
-// Lifecycle: request tracking, webhook queuing, shutdown management
-const requestTracker = createRequestTracker();
+// Lifecycle: webhook queuing, shutdown management
 const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore });
 // Mutable reference for wiki sync scheduler (set later, stopped on shutdown)
 let _wikiSyncSchedulerRef: { stop: () => void } | null = null;

@@ -208,3 +208,64 @@ test("createJobQueue updates active job snapshots when setPhase is called", asyn
 
   expect(queue.getActiveJobs(42)).toHaveLength(0);
 });
+
+test("createJobQueue counts jobs as in-flight work for shutdown drain from enqueue to completion", async () => {
+  let active = 0;
+  let peakActive = 0;
+  const requestTracker = {
+    trackRequest: () => () => undefined,
+    trackJob: () => {
+      active++;
+      peakActive = Math.max(peakActive, active);
+      return () => {
+        active--;
+      };
+    },
+    activeCount: () => ({ requests: 0, jobs: active, total: active }),
+    waitForDrain: async () => undefined,
+  } as never;
+
+  const queue = createJobQueue(createNoopLogger(), { requestTracker });
+  const releaseFirst = Promise.withResolvers<void>();
+
+  // Fire-and-forget enqueue (like the review timeout retry) plus a queued
+  // second job behind it on the same lane: both must count as in-flight.
+  const first = queue.enqueue(7, async () => {
+    await releaseFirst.promise;
+  }, { lane: "review", key: "pr-7" });
+  const second = queue.enqueue(7, async () => undefined, { lane: "review", key: "pr-7" });
+
+  expect(active).toBe(2);
+
+  releaseFirst.resolve();
+  await first;
+  await second;
+
+  expect(active).toBe(0);
+  expect(peakActive).toBe(2);
+});
+
+test("createJobQueue releases drain tracking when a job throws", async () => {
+  let active = 0;
+  const requestTracker = {
+    trackRequest: () => () => undefined,
+    trackJob: () => {
+      active++;
+      return () => {
+        active--;
+      };
+    },
+    activeCount: () => ({ requests: 0, jobs: active, total: active }),
+    waitForDrain: async () => undefined,
+  } as never;
+
+  const queue = createJobQueue(createNoopLogger(), { requestTracker });
+
+  await expect(
+    queue.enqueue(7, async () => {
+      throw new Error("job failed");
+    }),
+  ).rejects.toThrow("job failed");
+
+  expect(active).toBe(0);
+});
