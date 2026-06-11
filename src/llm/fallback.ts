@@ -19,8 +19,10 @@ export function isFallbackTrigger(err: unknown): boolean {
   if (status === 429) return true; // Rate limit -> immediate fallback
   if (typeof status === "number" && status >= 500 && status < 600) return true;
 
-  // Timeout detection
-  if (err.message.includes("timeout") || err.name === "AbortError") return true;
+  // Timeout detection. AbortSignal.timeout() aborts with a DOMException named
+  // "TimeoutError" whose message is "The operation timed out." — match name,
+  // not just the "timeout" substring.
+  if (err.message.includes("timeout") || err.name === "AbortError" || err.name === "TimeoutError") return true;
 
   return false;
 }
@@ -34,7 +36,7 @@ export function getFallbackReason(err: unknown): string {
   if (status === 429) return "rate limited (429)";
   if (typeof status === "number" && status >= 500)
     return `server error (${status})`;
-  if (err.message.includes("timeout") || err.name === "AbortError")
+  if (err.message.includes("timeout") || err.name === "AbortError" || err.name === "TimeoutError")
     return "timeout";
   return err.message;
 }

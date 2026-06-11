@@ -16,6 +16,14 @@ import { createProviderModel } from "./providers.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
 import { buildAgentEnv } from "../execution/env.ts";
 
+/**
+ * Hard ceiling for a single AI SDK generateText call. Without it a hung
+ * connection blocks the calling job forever and the fallback never fires
+ * (fallback only triggers on a thrown error). Non-agentic tasks (labels,
+ * classification, synthesis) finish in well under this.
+ */
+export const GENERATE_TEXT_TIMEOUT_MS = 120_000;
+
 /** Result from generateWithFallback. */
 export interface GenerateResult {
   text: string;
@@ -182,6 +190,7 @@ export async function generateWithFallback(opts: {
       prompt: opts.prompt,
       system: opts.system,
       tools: opts.tools,
+      abortSignal: AbortSignal.timeout(GENERATE_TEXT_TIMEOUT_MS),
     });
 
     const durationMs = Date.now() - startTime;
@@ -240,6 +249,7 @@ export async function generateWithFallback(opts: {
           prompt: opts.prompt,
           system: opts.system,
           tools: opts.tools,
+          abortSignal: AbortSignal.timeout(GENERATE_TEXT_TIMEOUT_MS),
         });
 
         const fallbackDurationMs = Date.now() - fallbackStartTime;
