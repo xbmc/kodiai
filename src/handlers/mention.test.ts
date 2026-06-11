@@ -13194,8 +13194,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
         || entry.message === "Submitted approval-shaped comment for explicit mention request",
     );
     expect(publishLog?.bindings.reviewOutputKey).toBe(result.capturedContext?.reviewOutputKey);
-    expect(["submitted-approval", "published-comment-approval"]).toContain(publishLog?.bindings.outcome);
-    expect(["submitted-approval", "submitted-comment"]).toContain(publishLog?.bindings.publishAttemptOutcome);
+    expect(["submitted-approval", "published-comment-approval"]).toContain(String(publishLog?.bindings.outcome));
+    expect(["submitted-approval", "submitted-comment"]).toContain(String(publishLog?.bindings.publishAttemptOutcome));
   });
 
   test("explicit @kodiai review preserves one visible outcome while S06 diagnostics stay private and bounded", async () => {

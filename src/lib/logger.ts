@@ -23,7 +23,7 @@ function copyStringOrNumber(
 ): void {
   const value = readRecordField(source, sourceKey);
   if (typeof value === "string" || typeof value === "number") {
-    target[targetKey] = value;
+    (target as Record<string, string | number | undefined>)[targetKey] = value;
   }
 }
 
@@ -35,7 +35,7 @@ function copyNumber(
 ): void {
   const value = readRecordField(source, sourceKey);
   if (typeof value === "number" && Number.isFinite(value)) {
-    target[targetKey] = value;
+    (target as Record<string, string | number | undefined>)[targetKey] = value;
   }
 }
 

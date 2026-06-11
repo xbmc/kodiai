@@ -15,7 +15,7 @@ export type WikiTextTokens = {
   headingTokens: Set<string>;
 };
 
-function meaningfulToken(token: string): boolean {
+export function meaningfulToken(token: string): boolean {
   return token.length > 3 && !DOMAIN_STOPWORDS.has(token);
 }
 

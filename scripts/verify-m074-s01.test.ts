@@ -104,7 +104,7 @@ describe("verify-m074-s01", () => {
               evidenceRefs: [],
             },
           ],
-        };
+        } as any;
       },
     });
 

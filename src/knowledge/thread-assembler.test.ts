@@ -5,7 +5,7 @@ import {
   computeBudgetDistribution,
   assembleIssueThread,
 } from "./thread-assembler.ts";
-import type { IssueCommentRecord, IssueStore } from "./issue-types.ts";
+import type { IssueCommentRecord, IssueCommentSearchRecord, IssueStore } from "./issue-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 
 const mockLogger = {
@@ -35,6 +35,10 @@ function makeComment(overrides: Partial<IssueCommentRecord> = {}): IssueCommentR
     githubUpdatedAt: null,
     ...overrides,
   };
+}
+
+function makeSearchComment(overrides: Partial<IssueCommentRecord> = {}): IssueCommentSearchRecord {
+  return makeComment(overrides) as IssueCommentSearchRecord;
 }
 
 function makeEmbedding(seed: number = 42): Float32Array {
@@ -220,7 +224,7 @@ describe("assembleIssueThread", () => {
       ],
       searchCommentsByEmbedding: async () => [
         {
-          record: makeComment({ commentGithubId: 10, body: "First comment" }),
+          record: makeSearchComment({ commentGithubId: 10, body: "First comment" }),
           distance: 0.1,
         },
       ],

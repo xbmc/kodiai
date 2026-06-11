@@ -63,7 +63,7 @@ async function retrieveDependsContext(opts: {
       logger,
       triggerType: "pr_review",
     });
-    return result.unifiedResults.length > 0 ? result.unifiedResults.slice(0, 3) : null;
+    return result && result.unifiedResults.length > 0 ? result.unifiedResults.slice(0, 3) : null;
   } catch (err) {
     logger.warn({ ...baseLog, err, gate: "depends-retrieval" }, "Retrieval context failed (fail-open)");
     return null;

@@ -46,7 +46,7 @@ describe("createGitHubApp", () => {
 
     const octokit = await app.getInstallationOctokit(99);
 
-    expect(octokit.request.endpoint.DEFAULTS.request.timeout).toBe(DEFAULT_GITHUB_REQUEST_TIMEOUT_MS);
+    expect(octokit.request.endpoint.DEFAULTS.request?.timeout).toBe(DEFAULT_GITHUB_REQUEST_TIMEOUT_MS);
   });
 
   test("preserves explicit installation Octokit request timeout overrides", async () => {
@@ -54,6 +54,6 @@ describe("createGitHubApp", () => {
 
     const octokit = await app.getInstallationOctokit(99, { requestTimeoutMs: 1_234 });
 
-    expect(octokit.request.endpoint.DEFAULTS.request.timeout).toBe(1_234);
+    expect(octokit.request.endpoint.DEFAULTS.request?.timeout).toBe(1_234);
   });
 });

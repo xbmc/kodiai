@@ -389,7 +389,7 @@ describe("verify-m075 aggregate local proof", () => {
         statusCode: "m075_ok",
         failedCheckIds: [],
         checks: [],
-        observed: { childCount: 6, passedChildCount: 6, failedChildCount: 0, blockedChildCount: 0, packageScriptsChecked: [] },
+        observed: { mode: "local", childCount: 6, passedChildCount: 6, failedChildCount: 0, blockedChildCount: 0, packageScriptsChecked: [] },
         children: [],
         issues: [],
       }),

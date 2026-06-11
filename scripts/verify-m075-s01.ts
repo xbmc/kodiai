@@ -34,6 +34,7 @@ export type M075S01Args = {
   readonly allowBlocked: boolean;
   readonly fixturePath?: string;
 };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type M075S01Check = { readonly id: M075S01CheckId; readonly status: M075S01CheckStatus; readonly message: string; readonly issues: readonly string[] };
 export type M075S01QueryMetadata = {
   readonly mode: "fixture" | "live";
@@ -124,7 +125,7 @@ const FORBIDDEN_RAW_KEY = /(^|_)(Log_s|rawLog|raw_log|rawPayload|raw_payload|pro
 const FORBIDDEN_RAW_VALUE = /(RAW_PROMPT_CANARY|RAW_MODEL_OUTPUT_CANARY|CANDIDATE_BODY_CANARY|TOOL_PAYLOAD_CANARY|RAW_PAYLOAD_CANARY|SECRET_TOKEN_CANARY|DIFF_TEXT_CANARY|diff --git|ghp_|github_pat_|sk-[a-z0-9]|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i;
 
 export function parseM075S01Args(args: readonly string[]): M075S01Args {
-  const parsed: Partial<M075S01Args> = { json: false, help: false, live: false, allowBlocked: false };
+  const parsed: Partial<Mutable<M075S01Args>> = { json: false, help: false, live: false, allowBlocked: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") { parsed.json = true; continue; }
@@ -355,7 +356,6 @@ function validateOwnerMapping(report: ProductionLogBaselineReport): string[] {
       const expected = REQUIRED_OWNER_MAPPING[issueClass.id as ProductionLogIssueClassId];
       if (!expected) continue;
       if (issueClass.downstreamOwner !== expected.owner) issues.push(`${window}.${issueClass.id} downstreamOwner expected ${expected.owner ?? "null"} got ${issueClass.downstreamOwner ?? "null"}.`);
-      if (issueClass.downstreamOwner === "") issues.push(`${window}.${issueClass.id} downstreamOwner must not be empty.`);
     }
   }
   return issues;

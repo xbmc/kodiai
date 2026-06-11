@@ -21,11 +21,11 @@ const taxonomyText = [
   "review-timeout-classification.long-run-threshold",
 ].join("\n");
 
-async function fixture(overrides: (copy: M075S05EvidenceSnapshot) => void = () => undefined): Promise<M075S05EvidenceSnapshot> {
+async function fixture(overrides: (copy: any) => void = () => undefined): Promise<M075S05EvidenceSnapshot> {
   const loaded = await Bun.file(DEFAULT_FIXTURE_PATH).json() as M075S05EvidenceSnapshot;
-  const copy = JSON.parse(JSON.stringify(loaded)) as M075S05EvidenceSnapshot;
+  const copy = JSON.parse(JSON.stringify(loaded));
   overrides(copy);
-  return copy;
+  return copy as M075S05EvidenceSnapshot;
 }
 
 async function reportFor(copy: M075S05EvidenceSnapshot) {
@@ -76,7 +76,7 @@ describe("verify-m075-s05", () => {
 
   test("fails closed when required mode coverage is missing", async () => {
     const copy = await fixture((next) => {
-      next.scenarios = next.scenarios.filter((scenario) => scenario.runtime.mode !== "retry-failed");
+      next.scenarios = next.scenarios.filter((scenario: any) => scenario.runtime.mode !== "retry-failed");
     });
     const report = await reportFor(copy);
 
@@ -131,7 +131,7 @@ describe("verify-m075-s05", () => {
       next.scenarios[0]!.taxonomy.actionable = true;
     });
     const longRunWrongClass = await fixture((next) => {
-      const scenario = next.scenarios.find((entry) => entry.runtime.mode === "long-run-threshold-exceeded")!;
+      const scenario = next.scenarios.find((entry: any) => entry.runtime.mode === "long-run-threshold-exceeded")!;
       scenario.taxonomy.classId = "review-timeout-classification.hard-failure";
     });
     const telemetryDrift = await fixture((next) => {

@@ -344,14 +344,17 @@ function readS01Rows(fixture: unknown, sourceFixturePath: string): S01BaselineSe
   const rows: S01BaselineSectionRow[] = [];
   fixture.promptSections.filter(isRecord).forEach((promptSection) => {
     if (!isNonEmptyString(promptSection.caseId) || !isNonEmptyString(promptSection.deliveryId) || !isNonEmptyString(promptSection.promptKind) || !Array.isArray(promptSection.sections)) return;
+    const caseId = promptSection.caseId;
+    const deliveryId = promptSection.deliveryId;
+    const promptKind = promptSection.promptKind;
     promptSection.sections.filter(isRecord).forEach((section) => {
       if (!isNonEmptyString(section.sectionName) || !isFiniteNonNegativeInteger(section.charCount) || !isFiniteNonNegativeInteger(section.estimatedTokens)) return;
       rows.push({
         sourceFixturePath,
-        sourceId: `${promptSection.caseId}:${promptSection.deliveryId}:${promptSection.promptKind}:${section.sectionName}`,
-        caseId: promptSection.caseId,
-        deliveryId: promptSection.deliveryId,
-        promptKind: promptSection.promptKind,
+        sourceId: `${caseId}:${deliveryId}:${promptKind}:${section.sectionName}`,
+        caseId,
+        deliveryId,
+        promptKind,
         sectionName: section.sectionName,
         baselineChars: section.charCount,
         baselineEstimatedTokens: section.estimatedTokens,

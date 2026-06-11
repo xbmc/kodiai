@@ -57,7 +57,7 @@ describe("createContributorProfileStore transient retries", () => {
       logger: createMockLogger(),
     });
 
-    await store.updateTier(123, "trusted", 0.83);
+    await store.updateTier(123, "established", 0.83);
 
     expect(calls).toHaveLength(2);
     expect(calls[0]!.query).toContain("contributor_profiles");

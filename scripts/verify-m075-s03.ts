@@ -28,6 +28,7 @@ export type M075S03CheckId =
   | "package-wiring.present";
 
 export type M075S03Args = { readonly json: boolean; readonly help: boolean; readonly fixturePath?: string };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type M075S03Check = { readonly id: M075S03CheckId; readonly status: M075S03CheckStatus; readonly message: string; readonly issues: readonly string[] };
 export type M075S03Counts = Record<string, number>;
 export type M075S03EvidenceSnapshot = {
@@ -150,7 +151,7 @@ const EMPTY_OBSERVED: M075S03Observed = {
 };
 
 export function parseM075S03Args(args: readonly string[]): M075S03Args {
-  const parsed: Partial<M075S03Args> = { json: false, help: false };
+  const parsed: Partial<Mutable<M075S03Args>> = { json: false, help: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") { parsed.json = true; continue; }

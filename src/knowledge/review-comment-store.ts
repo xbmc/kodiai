@@ -5,6 +5,7 @@ import type {
   ReviewCommentChunk,
   ReviewCommentRecord,
   ReviewCommentRepairCandidate,
+  ReviewCommentSearchRecord,
   ReviewCommentSearchResult,
   ReviewCommentStore,
   SyncState,
@@ -102,6 +103,16 @@ const REVIEW_COMMENT_CHUNK_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_ro
   ["github_updated_at", "timestamptz"],
   ["backfill_batch", "text"],
 ]);
+function reviewCommentSearchColumns(sql: Sql) {
+  return sql`
+    id, created_at, repo, owner, pr_number, pr_title,
+    comment_github_id, thread_id, in_reply_to_id, file_path,
+    start_line, end_line, diff_hunk, author_login, author_association,
+    body, chunk_index, chunk_text, token_count, NULL AS embedding,
+    embedding_model, stale, github_created_at, github_updated_at,
+    deleted, backfill_batch
+  `;
+}
 
 function rowToRecord(row: CommentRow): ReviewCommentRecord {
   return {
@@ -131,6 +142,13 @@ function rowToRecord(row: CommentRow): ReviewCommentRecord {
     githubUpdatedAt: row.github_updated_at,
     deleted: row.deleted,
     backfillBatch: row.backfill_batch,
+  };
+}
+
+function rowToSearchRecord(row: CommentRow): ReviewCommentSearchRecord {
+  return {
+    ...rowToRecord(row),
+    embedding: null,
   };
 }
 
@@ -319,12 +337,7 @@ export function createReviewCommentStore(opts: {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
       const rows = await sql`
-        SELECT id, created_at, repo, owner, pr_number, pr_title,
-          comment_github_id, thread_id, in_reply_to_id, file_path,
-          start_line, end_line, diff_hunk, author_login, author_association,
-          body, chunk_index, chunk_text, token_count, NULL AS embedding,
-          embedding_model, stale, github_created_at, github_updated_at,
-          deleted, backfill_batch,
+        SELECT ${reviewCommentSearchColumns(sql)},
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM review_comments
         WHERE repo = ${params.repo}
@@ -336,7 +349,7 @@ export function createReviewCommentStore(opts: {
       `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as CommentRow),
+        record: rowToSearchRecord(row as unknown as CommentRow),
         distance: Number((row as Record<string, unknown>).distance),
       }));
     },
@@ -349,12 +362,7 @@ export function createReviewCommentStore(opts: {
       if (!params.query.trim()) return [];
 
       const rows = await sql`
-        SELECT id, created_at, repo, owner, pr_number, pr_title,
-          comment_github_id, thread_id, in_reply_to_id, file_path,
-          start_line, end_line, diff_hunk, author_login, author_association,
-          body, chunk_index, chunk_text, token_count, NULL AS embedding,
-          embedding_model, stale, github_created_at, github_updated_at,
-          deleted, backfill_batch,
+        SELECT ${reviewCommentSearchColumns(sql)},
           ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
         FROM review_comments
         WHERE repo = ${params.repo}
@@ -366,7 +374,7 @@ export function createReviewCommentStore(opts: {
       `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as CommentRow),
+        record: rowToSearchRecord(row as unknown as CommentRow),
         distance: 1 - Number((row as Record<string, unknown>).rank),
       }));
     },

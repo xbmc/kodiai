@@ -191,15 +191,15 @@ describe("createInlineReviewServer output idempotency", () => {
       },
     };
 
-    const firstServer = createInlineReviewServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      101,
-      [],
+    const firstServer = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
       reviewOutputKey,
-      "delivery-123",
-    );
+      deliveryId: "delivery-123",
+    });
     const firstHandler = getToolHandler(firstServer);
 
     const firstResult = await firstHandler({
@@ -213,15 +213,15 @@ describe("createInlineReviewServer output idempotency", () => {
     expect(persistedBodies[0]?.includes(marker)).toBe(true);
     expect(firstResult.content[0]?.text).toContain("\"success\":true");
 
-    const secondServer = createInlineReviewServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      101,
-      [],
+    const secondServer = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
       reviewOutputKey,
-      "delivery-123",
-    );
+      deliveryId: "delivery-123",
+    });
     const secondHandler = getToolHandler(secondServer);
 
     const secondResult = await secondHandler({
@@ -268,13 +268,13 @@ describe("mention sanitization", () => {
       },
     };
 
-    const server = createInlineReviewServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      101,
-      ["kodiai", "claude"],
-    );
+    const server = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: ["kodiai", "claude"],
+    });
     const handler = getToolHandler(server);
 
     const result = await handler({
@@ -310,16 +310,15 @@ describe("createInlineReviewServer validation diagnostics", () => {
     };
 
     const { logger, warnCalls } = createMockLogger();
-    const server = createInlineReviewServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      101,
-      [],
-      undefined,
-      "delivery-123",
-      logger as never,
-    );
+    const server = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      deliveryId: "delivery-123",
+      logger: logger as never,
+    });
     const handler = getToolHandler(server);
 
     const result = await handler({
@@ -358,7 +357,7 @@ describe("createInlineReviewServer validation diagnostics", () => {
         issues: { listComments: async () => ({ data: [] }) },
       },
     };
-    const prDiffForCommentValidation = [
+    const prDiffCommentabilityIndex = buildPrDiffCommentabilityIndex([
       "diff --git a/src/file.ts b/src/file.ts",
       "--- a/src/file.ts",
       "+++ b/src/file.ts",
@@ -366,22 +365,20 @@ describe("createInlineReviewServer validation diagnostics", () => {
       " context",
       "+added",
       " context",
-    ].join("\n");
+    ].join("\n"));
 
     const { logger, infoCalls, warnCalls } = createMockLogger();
-    const server = createInlineReviewServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      101,
-      [],
-      "review-key",
-      "delivery-123",
-      logger as never,
-      undefined,
-      undefined,
-      prDiffForCommentValidation,
-    );
+    const server = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey: "review-key",
+      deliveryId: "delivery-123",
+      logger: logger as never,
+      prDiffCommentabilityIndex,
+    });
     const handler = getToolHandler(server);
 
     const result = await handler({
@@ -438,16 +435,16 @@ describe("createInlineReviewServer validation diagnostics", () => {
     };
 
     const { logger, warnCalls } = createMockLogger();
-    const server = createInlineReviewServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      101,
-      [],
-      "review-key",
-      "delivery-123",
-      logger as never,
-    );
+    const server = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey: "review-key",
+      deliveryId: "delivery-123",
+      logger: logger as never,
+    });
     const handler = getToolHandler(server);
 
     const result = await handler({

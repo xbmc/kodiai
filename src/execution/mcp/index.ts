@@ -60,7 +60,6 @@ export function buildMcpServers(deps: {
   knowledgeStore?: KnowledgeStore;
   totalFiles?: number;
   enableCheckpointTool?: boolean;
-  prDiffForCommentValidation?: string;
   prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
@@ -114,20 +113,19 @@ export function buildMcpServers(deps: {
   const enableInlineTools = deps.enableInlineTools ?? true;
 
   if (enableInlineTools && deps.prNumber !== undefined) {
-    servers.github_inline_comment = createInlineReviewServer(
-      deps.getOctokit,
-      deps.owner,
-      deps.repo,
-      deps.prNumber,
-      deps.botHandles ?? [],
-      deps.reviewOutputKey,
-      deps.deliveryId,
-      deps.logger,
-      deps.onPublish,
-      reviewOutputPublicationGate,
-      deps.prDiffForCommentValidation,
-      deps.prDiffCommentabilityIndex,
-    );
+    servers.github_inline_comment = createInlineReviewServer({
+      getOctokit: deps.getOctokit,
+      owner: deps.owner,
+      repo: deps.repo,
+      prNumber: deps.prNumber,
+      botHandles: deps.botHandles ?? [],
+      reviewOutputKey: deps.reviewOutputKey,
+      deliveryId: deps.deliveryId,
+      logger: deps.logger,
+      onPublish: deps.onPublish,
+      publicationGate: reviewOutputPublicationGate,
+      prDiffCommentabilityIndex: deps.prDiffCommentabilityIndex,
+    });
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
       deps.owner,
@@ -301,20 +299,19 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
 
   if (enableInlineTools && deps.prNumber !== undefined) {
     factories.github_inline_comment = () =>
-      createInlineReviewServer(
-        deps.getOctokit,
-        deps.owner,
-        deps.repo,
-        deps.prNumber!,
-        deps.botHandles ?? [],
-        deps.reviewOutputKey,
-        deps.deliveryId,
-        deps.logger,
-        deps.onPublish,
-        reviewOutputPublicationGate,
-        deps.prDiffForCommentValidation,
-        deps.prDiffCommentabilityIndex,
-      ) as McpSdkServerConfigWithInstance;
+      createInlineReviewServer({
+        getOctokit: deps.getOctokit,
+        owner: deps.owner,
+        repo: deps.repo,
+        prNumber: deps.prNumber!,
+        botHandles: deps.botHandles ?? [],
+        reviewOutputKey: deps.reviewOutputKey,
+        deliveryId: deps.deliveryId,
+        logger: deps.logger,
+        onPublish: deps.onPublish,
+        publicationGate: reviewOutputPublicationGate,
+        prDiffCommentabilityIndex: deps.prDiffCommentabilityIndex,
+      }) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>
       createCIStatusServer(

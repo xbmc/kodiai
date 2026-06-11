@@ -402,12 +402,18 @@ async function readBaselineRows(baselineFixturePath: string, readText: (fixtureP
       if (!isNonEmptyString(section.sectionName) || !isFiniteNonNegativeInteger(section.charCount) || !isFiniteNonNegativeInteger(section.estimatedTokens)) {
         return;
       }
+      const caseId = promptSection.caseId;
+      const deliveryId = promptSection.deliveryId;
+      const promptKind = promptSection.promptKind;
+      if (!isNonEmptyString(caseId) || !isNonEmptyString(deliveryId) || !isNonEmptyString(promptKind)) {
+        return;
+      }
       const row = {
         sourceFixturePath: baselineFixturePath,
-        sourceId: `${promptSection.caseId}:${promptSection.deliveryId}:${promptSection.promptKind}:${section.sectionName}`,
-        caseId: promptSection.caseId,
-        deliveryId: promptSection.deliveryId,
-        promptKind: promptSection.promptKind,
+        sourceId: `${caseId}:${deliveryId}:${promptKind}:${section.sectionName}`,
+        caseId,
+        deliveryId,
+        promptKind,
         sectionName: section.sectionName,
         baselineChars: section.charCount,
         baselineEstimatedTokens: section.estimatedTokens,

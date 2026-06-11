@@ -112,6 +112,21 @@ describe("classifyClaimHeuristic — diff-grounded", () => {
     expect(result.label).toBe("diff-grounded");
   });
 
+  test("grounds diff-reference claims using substring word matches", () => {
+    const result = classifyClaimHeuristic(
+      "This changes the auth config",
+      makeDiffContext({
+        addedLines: ["  authMiddleware: configuration,"],
+      }),
+      null,
+      [],
+    );
+
+    expect(result.label).toBe("diff-grounded");
+    expect(result.evidence).toBe("Claim references visible code change or PR context");
+    expect(result.confidence).toBe(0.8);
+  });
+
   test("classifies claim matching PR description as diff-grounded", () => {
     const result = classifyClaimHeuristic(
       "This adds retry logic to the HTTP client",

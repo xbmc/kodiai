@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from "bun:test";
 import { searchWikiPages } from "./wiki-retrieval.ts";
-import type { WikiPageStore, WikiPageRecord, WikiPageSearchResult } from "./wiki-types.ts";
+import type { WikiPageStore, WikiPageRecord, WikiPageSearchRecord, WikiPageSearchResult } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import type { Logger } from "pino";
 
@@ -16,7 +16,7 @@ function createMockLogger(): Logger {
   } as unknown as Logger;
 }
 
-function createMockRecord(overrides: Partial<WikiPageRecord> = {}): WikiPageRecord {
+function createMockRecord(overrides: Partial<WikiPageRecord> = {}): WikiPageSearchRecord {
   return {
     id: 1,
     createdAt: "2025-01-01T00:00:00Z",
@@ -39,7 +39,7 @@ function createMockRecord(overrides: Partial<WikiPageRecord> = {}): WikiPageReco
     deleted: false,
     languageTags: [],
     ...overrides,
-  };
+  } as WikiPageSearchRecord;
 }
 
 function createMockEmbeddingProvider(shouldReturnNull = false): EmbeddingProvider {

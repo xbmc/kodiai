@@ -11,6 +11,7 @@ import {
 } from "./depends-bump-enrichment.ts";
 import { checkTransitiveDependencies, findDependencyConsumers } from "./depends-impact-analyzer.ts";
 import type { DependsReviewData } from "./depends-review-builder.ts";
+import { buildDependsVersionFileByPackage } from "./depends-version-files.ts";
 
 export type DependsReviewFile = {
   filename: string;
@@ -93,20 +94,15 @@ export function buildDependsVersionDiffs(
     }
   }
 
-  const normalizedVersionFiles = prFiles
-    .map((file) => ({
-      file,
-      lowerFilename: file.filename.toLowerCase(),
-      upperFilename: file.filename.toUpperCase(),
-    }))
-    .filter(({ upperFilename }) => upperFilename.includes("VERSION"));
+  const versionFileByPackage = buildDependsVersionFileByPackage(
+    prFiles,
+    info.packages.map((pkg) => pkg.name),
+  );
 
   const versionDiffs = info.packages.map((pkg) => {
     const packageName = pkg.name.toLowerCase();
-    const versionFile = normalizedVersionFiles.find(({ lowerFilename }) =>
-      lowerFilename.includes(packageName)
-    );
-    const versionFileDiff = versionFile?.file.patch ? parseVersionFileDiff(versionFile.file.patch) : null;
+    const versionFile = versionFileByPackage.get(packageName);
+    const versionFileDiff = versionFile?.patch ? parseVersionFileDiff(versionFile.patch) : null;
     return {
       packageName: pkg.name,
       oldVersion: versionFileDiff?.oldVersion ?? pkg.oldVersion ?? null,

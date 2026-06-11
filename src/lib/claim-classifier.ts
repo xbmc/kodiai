@@ -2,7 +2,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-import { countWordsInSet, significantWords } from "./text-overlap.ts";
+import { countWordsInTextBySubstring, significantWords } from "./text-overlap.ts";
 
 export type ClaimLabel = "diff-grounded" | "external-knowledge" | "inferential";
 export type SummaryLabel = "primarily-diff-grounded" | "primarily-external" | "mixed";
@@ -46,10 +46,6 @@ export type DiffContext = {
 };
 
 const diffTextLowerCache = new WeakMap<DiffContext, string>();
-
-function countWordOverlap(words: readonly string[], targetText: string): number {
-  return countWordsInSet(words, new Set(significantWords(targetText)));
-}
 
 function getDiffTextLower(diff: DiffContext): string {
   const cached = diffTextLowerCache.get(diff);
@@ -166,7 +162,7 @@ function claimReferencesVisibleChange(
 
       // Extract key words from claim and check against diff
       const claimWords = significantWords(claim);
-      const matchCount = countWordOverlap(claimWords, allDiffText);
+      const matchCount = countWordsInTextBySubstring(claimWords, allDiffText);
       if (matchCount >= 2) return true;
     }
   }
@@ -175,14 +171,14 @@ function claimReferencesVisibleChange(
   if (prDescription) {
     // Check for significant word overlap
     const claimWords = significantWords(claim);
-    const matchCount = countWordOverlap(claimWords, prDescription);
+    const matchCount = countWordsInTextBySubstring(claimWords, prDescription);
     if (claimWords.length > 0 && matchCount / claimWords.length >= 0.5) return true;
   }
 
   // Check if claim matches commit messages
   for (const msg of commitMessages) {
     const claimWords = significantWords(claim);
-    const matchCount = countWordOverlap(claimWords, msg);
+    const matchCount = countWordsInTextBySubstring(claimWords, msg);
     if (claimWords.length > 0 && matchCount / claimWords.length >= 0.5) return true;
   }
 

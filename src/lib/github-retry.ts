@@ -34,7 +34,7 @@ export function isRetryableGitHubError(error: unknown): boolean {
     return githubRetryAfterDelayMs(error) !== null
       || /secondary rate|rate limit|abuse/i.test(String(record.message ?? ""));
   }
-  return status === 408 || status === 409 || status === 429 || (status >= 500 && status <= 599);
+  return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
 export function retryGitHubTransient<T>(
@@ -45,5 +45,19 @@ export function retryGitHubTransient<T>(
     ...options,
     shouldRetry: options.shouldRetry ?? isRetryableGitHubError,
     retryDelayMs: githubRetryAfterDelayMs,
+  });
+}
+
+export function retryGitHubRateLimitOnly<T>(
+  operation: () => Promise<T>,
+  options: Omit<GitHubRetryOptions, "shouldRetry"> = {},
+): Promise<T> {
+  return retryGitHubTransient(operation, {
+    maxAttempts: 4,
+    initialDelayMs: 1_000,
+    maxDelayMs: 30_000,
+    ...options,
+    shouldRetry: (error) =>
+      typeof error === "object" && error !== null && (error as { status?: unknown }).status === 429,
   });
 }

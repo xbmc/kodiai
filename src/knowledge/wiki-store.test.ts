@@ -82,7 +82,48 @@ function createMockSql() {
   return sql;
 }
 
+function findTaggedQuery(
+  sql: ReturnType<typeof createMockSql>,
+  pattern: string,
+): { query: string; values: unknown[] } {
+  const call = sql.calls.find((entry) => entry.query.includes(pattern));
+  expect(call).toBeDefined();
+  return call!;
+}
+
 describe("WikiPageStore batch SQL", () => {
+  test("searchByEmbedding uses tagged SQL instead of unsafe query assembly", async () => {
+    const sql = createMockSql();
+    const store = createWikiPageStore({ sql, logger: mockLogger });
+
+    await store.searchByEmbedding({
+      queryEmbedding: new Float32Array([1]),
+      namespace: "Main",
+      topK: 3,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "FROM wiki_pages");
+    expect(query.values).toContain("[1]");
+    expect(query.values).toContain(3);
+    expect(sql.calls.some((entry) => entry.values.includes("Main"))).toBe(true);
+  });
+
+  test("searchByFullText uses tagged SQL instead of unsafe query assembly", async () => {
+    const sql = createMockSql();
+    const store = createWikiPageStore({ sql, logger: mockLogger });
+
+    await store.searchByFullText({
+      query: "hdr crash",
+      topK: 5,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "ts_rank");
+    expect(query.values).toContain("hdr crash");
+    expect(query.values).toContain(5);
+  });
+
   test("writeChunks batches multiple chunks into one unsafe insert", async () => {
     const sql = createMockSql();
     const store = createWikiPageStore({ sql, logger: mockLogger });

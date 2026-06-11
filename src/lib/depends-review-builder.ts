@@ -16,6 +16,7 @@ import type {
   PatchChange,
 } from "./depends-bump-enrichment.ts";
 import type { ImpactResult, TransitiveResult } from "./depends-impact-analyzer.ts";
+import { buildDependsVersionFileByPackage } from "./depends-version-files.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -409,23 +410,10 @@ export function buildDependsInlineComments(
 ): InlineComment[] {
   const comments: InlineComment[] = [];
   const prFileByName = new Map(prFiles.map((file) => [file.filename, file]));
-  const versionFiles = prFiles
-    .map((file) => ({
-      file,
-      lowerFilename: file.filename.toLowerCase(),
-      upperFilename: file.filename.toUpperCase(),
-    }))
-    .filter(({ upperFilename }) => upperFilename.includes("VERSION"));
-  const versionFileByPackage = new Map<string, { filename: string; patch?: string }>();
-  for (const hr of data.hashResults) {
-    const packageName = hr.packageName.toLowerCase();
-    const versionFile = versionFiles.find(({ lowerFilename }) =>
-      lowerFilename.includes(packageName)
-    )?.file;
-    if (versionFile) {
-      versionFileByPackage.set(packageName, versionFile);
-    }
-  }
+  const versionFileByPackage = buildDependsVersionFileByPackage(
+    prFiles,
+    data.hashResults.map((hr) => hr.packageName),
+  );
 
   // Hash mismatch inline comments on VERSION files
   for (const hr of data.hashResults) {

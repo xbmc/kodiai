@@ -358,6 +358,8 @@ describe("createWikiSyncScheduler", () => {
         if (text.includes("Third")) throw new Error("provider failed");
         return {
           embedding: new Float32Array([7, 8, 9]),
+          model: "voyage-code-3",
+          dimensions: 1024,
           tokenCount: 5,
         };
       },

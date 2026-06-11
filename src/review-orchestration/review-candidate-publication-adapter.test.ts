@@ -3,6 +3,7 @@ import {
   createInlineReviewPublisher,
   type InlineReviewPublicationResult,
 } from "../execution/mcp/inline-review-publisher.ts";
+import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import { createReviewOutputPublicationGate } from "../execution/mcp/review-output-publication-gate.ts";
 import {
   createReviewCandidateFindingExecutionResult,
@@ -484,7 +485,7 @@ describe("review candidate publication adapter", () => {
 
     async function publishPath(
       path: string,
-      options: { shouldPublish?: boolean; prDiffForCommentValidation?: string } = {},
+      options: { shouldPublish?: boolean; prDiffCommentabilityIndex?: PrDiffCommentabilityIndex } = {},
     ): Promise<InlineReviewPublicationResult> {
       const payload = payloadByPath.get(path);
       if (!payload) throw new Error(`missing payload for ${path}`);
@@ -498,7 +499,7 @@ describe("review candidate publication adapter", () => {
         publicationGate: {
           resolve: async () => ({ shouldPublish: options.shouldPublish ?? true }) as never,
         },
-        prDiffForCommentValidation: options.prDiffForCommentValidation,
+        prDiffCommentabilityIndex: options.prDiffCommentabilityIndex,
       });
       return publisher.publish(payload.publication);
     }
@@ -506,13 +507,13 @@ describe("review candidate publication adapter", () => {
     const published = await publishPath("src/published.ts");
     const skipped = await publishPath("src/skipped.ts", { shouldPublish: false });
     const nonCommentable = await publishPath("src/non-commentable.ts", {
-      prDiffForCommentValidation: [
+      prDiffCommentabilityIndex: buildPrDiffCommentabilityIndex([
         "diff --git a/src/non-commentable.ts b/src/non-commentable.ts",
         "--- a/src/non-commentable.ts",
         "+++ b/src/non-commentable.ts",
         "@@ -1,1 +10,1 @@",
         "+commentable",
-      ].join("\n"),
+      ].join("\n")),
     });
 
     expect(payloadByPath.has("src/secret.ts")).toBe(false);

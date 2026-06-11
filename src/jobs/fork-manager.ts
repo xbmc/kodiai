@@ -1,7 +1,8 @@
 import type { Logger } from "pino";
 import type { BotUserClient } from "../auth/bot-user.ts";
-import { isRetryableGitHubError, retryGitHubTransient } from "../lib/github-retry.ts";
+import { retryGitHubTransient } from "../lib/github-retry.ts";
 import { createInMemoryCache } from "../lib/in-memory-cache.ts";
+import { dedupeInflight } from "../lib/inflight-dedupe.ts";
 
 export interface ForkManager {
   /** Ensure a fork of owner/repo exists under the bot user. Returns fork coordinates. Uses in-memory cache. */
@@ -135,33 +136,18 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
         logger.debug({ owner, repo, cached }, "Fork cache hit");
         return cached;
       }
-      const inflight = inflightEnsureForks.get(cacheKey);
-      if (inflight) {
-        return inflight;
-      }
-
-      const loadPromise = loadFork(owner, repo, cacheKey);
-      inflightEnsureForks.set(cacheKey, loadPromise);
-      try {
-        return await loadPromise;
-      } finally {
-        inflightEnsureForks.delete(cacheKey);
-      }
+      return dedupeInflight(inflightEnsureForks, cacheKey, () => loadFork(owner, repo, cacheKey));
     },
 
     async syncFork(forkOwner: string, forkRepo: string, branch: string): Promise<void> {
       logger.debug({ forkOwner, forkRepo, branch }, "Syncing fork with upstream");
       try {
-        await retryGitHubTransient(
-          () =>
-            botClient.octokit.request("POST /repos/{owner}/{repo}/merge-upstream", {
-              owner: forkOwner,
-              repo: forkRepo,
-              branch,
-            }),
-          {
-            shouldRetry: (error) => !isConflictError(error) && isRetryableGitHubError(error),
-          },
+        await retryGitHubTransient(() =>
+          botClient.octokit.request("POST /repos/{owner}/{repo}/merge-upstream", {
+            owner: forkOwner,
+            repo: forkRepo,
+            branch,
+          })
         );
         logger.info({ forkOwner, forkRepo, branch }, "Fork synced with upstream");
       } catch (error: unknown) {

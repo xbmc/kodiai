@@ -177,7 +177,7 @@ async function main() {
 
   const pageMap = new Map<
     number,
-    { pageTitle: string; pageUrl: string; chunkTexts: string[]; chunkTokens?: WikiTextTokens; tokenUnion?: Set<string> }
+    { pageTitle: string; pageUrl: string; chunkTexts: string[]; chunkTokens: WikiTextTokens; tokenUnion?: Set<string> }
   >();
 
   for (const row of pageRows) {
@@ -187,12 +187,16 @@ async function main() {
         pageTitle: row.page_title as string,
         pageUrl: row.page_url as string,
         chunkTexts: [],
+        chunkTokens: { regularTokens: new Set(), headingTokens: new Set() },
       });
     }
     const page = pageMap.get(pageId)!;
     if (page.chunkTexts.length < 3) {
       page.chunkTexts.push(row.chunk_text as string);
     }
+  }
+  for (const page of pageMap.values()) {
+    page.chunkTokens = tokenizeWikiTexts(page.chunkTexts);
   }
 
   console.log(`Loaded ${pageMap.size} wiki pages for matching`);
@@ -286,7 +290,6 @@ async function main() {
       };
 
       for (const [pageId, page] of pageMap) {
-        page.chunkTokens ??= tokenizeWikiTexts(page.chunkTexts);
         const score = scoreWikiTokens(page.chunkTokens, changedFileTokenSets);
         if (score === 0) continue;
 

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { classifyClaimHeuristic } from "../claim-classifier.ts";
-import { countWordsInSet, significantWords } from "../text-overlap.ts";
+import { countWordsInTextBySubstring, significantWords } from "../text-overlap.ts";
 import { isAllowlistedClaim } from "./allowlist.ts";
 import type {
   ClaimClassification,
@@ -40,10 +40,6 @@ const OVERLAP_THRESHOLDS: Record<StrictnessLevel, number> = {
   standard: 0.5,
   lenient: 0.7, // Higher ratio required = harder to ground = more claims pass through
 };
-
-function countWordOverlap(words: readonly string[], targetWords: Set<string>): number {
-  return countWordsInSet(words, targetWords);
-}
 
 const providedContextTextCache = new WeakMap<GroundingContext, string>();
 
@@ -171,11 +167,10 @@ export function classifyClaimAgainstContext(
   // 4. Context word overlap grounding
   if (context.providedContext.length > 0) {
     const contextText = getProvidedContextTextLower(context);
-    const contextWords = new Set(significantWords(contextText));
     const claimWords = significantWords(claim);
 
     if (claimWords.length > 0) {
-      const matchCount = countWordOverlap(claimWords, contextWords);
+      const matchCount = countWordsInTextBySubstring(claimWords, contextText);
       const overlapRatio = matchCount / claimWords.length;
       const threshold = OVERLAP_THRESHOLDS[strictness];
 

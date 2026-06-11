@@ -51,6 +51,8 @@ export type M074S07Args = {
   readonly expectStatus?: M074S07StatusCode;
 };
 
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
 export type M074S07Check = {
   readonly id: M074S07CheckId;
   readonly status: M074S07CheckStatus;
@@ -200,7 +202,7 @@ const EMPTY_OBSERVED: M074S07Observed = {
 };
 
 export function parseM074S07Args(args: readonly string[]): M074S07Args {
-  const parsed: Partial<M074S07Args> = { json: false, help: false };
+  const parsed: Partial<Mutable<M074S07Args>> = { json: false, help: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") {

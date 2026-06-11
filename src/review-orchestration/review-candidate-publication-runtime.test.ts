@@ -299,7 +299,7 @@ describe("review candidate publication runtime classifier", () => {
         { fingerprint: "rcf-0000000000000002", status: "skipped", reason: "already-published" },
         { fingerprint: "rcf-0000000000000003", status: "blocked", reason: "secret-detected" },
         { fingerprint: "rcf-0000000000000004", status: "failed", reason: "line-not-commentable-in-pr-diff" },
-        { fingerprint: "rcf-0000000000000005", status: "malformed", reason: "diff --git sk-secret BEGIN PROMPT" },
+        { fingerprint: "rcf-0000000000000005", status: "malformed", reason: "diff --git sk-secret BEGIN PROMPT" as never },
       ]),
       convertedProcessedFindingCount: 1,
       directPublication: { attempted: true, published: 0, allowed: false, reason: "direct fallback blocked before publishing TOKEN=abc123" },
@@ -307,24 +307,24 @@ describe("review candidate publication runtime classifier", () => {
 
     const buckets = outcomeBucketsOf(result);
     expect(buckets.published).toMatchObject({ mode: "published", count: 1 });
-    expect(buckets.published.reasons).toEqual(expect.arrayContaining(["candidate-publisher-published", "published"]));
+    expect(buckets.published!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-published", "published"]));
     expect(buckets.skipped).toMatchObject({ mode: "skipped", count: 1 });
-    expect(buckets.skipped.reasons).toEqual(expect.arrayContaining(["candidate-publisher-skipped", "already-published"]));
+    expect(buckets.skipped!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-skipped", "already-published"]));
     expect(buckets.blocked).toMatchObject({ mode: "blocked", count: 1 });
-    expect(buckets.blocked.reasons).toEqual(expect.arrayContaining(["candidate-publisher-blocked", "secret-detected"]));
+    expect(buckets.blocked!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-blocked", "secret-detected"]));
     expect(buckets.failed).toMatchObject({ mode: "failed", count: 1 });
-    expect(buckets.failed.reasons).toEqual(expect.arrayContaining(["candidate-publisher-failed", "line-not-commentable-in-pr-diff"]));
+    expect(buckets.failed!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-failed", "line-not-commentable-in-pr-diff"]));
     expect(buckets.movedToDetails).toMatchObject({ mode: "moved-to-details", count: 2 });
-    expect(buckets.movedToDetails.reasons).toEqual(expect.arrayContaining(["candidate-moved-to-details"]));
+    expect(buckets.movedToDetails!.reasons).toEqual(expect.arrayContaining(["candidate-moved-to-details"]));
     expect(buckets.fallbackDisallowed).toMatchObject({ mode: "fallback-disallowed", count: 1 });
-    expect(buckets.fallbackDisallowed.reasons).toEqual(expect.arrayContaining(["direct-fallback-disallowed", "direct-fallback-blocked-before-publishing-token-redacted"]));
+    expect(buckets.fallbackDisallowed!.reasons).toEqual(expect.arrayContaining(["direct-fallback-disallowed", "direct-fallback-blocked-before-publishing-token-redacted"]));
     expect(buckets.degraded).toMatchObject({ mode: "degraded", count: 1 });
-    expect(buckets.degraded.reasons).toEqual(expect.arrayContaining(["candidate-publisher-malformed", "malformed-publisher-result", "diff-redacted-redacted-prompt-redacted"]));
+    expect(buckets.degraded!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-malformed", "malformed-publisher-result", "diff-redacted-redacted-prompt-redacted"]));
 
     for (const key of ["published", "skipped", "blocked", "failed", "movedToDetails", "fallbackDisallowed", "degraded"] as const) {
       expectSafeNonZeroBucket(key, buckets[key]);
     }
-    expect(buckets.degraded.count).toBeGreaterThanOrEqual(1);
+    expect(buckets.degraded!.count).toBeGreaterThanOrEqual(1);
 
     const publicText = JSON.stringify(buckets);
     for (const unsafe of ["diff --git", "sk-secret", "BEGIN PROMPT", "TOKEN=abc123", "direct fallback blocked"] as const) {
@@ -354,7 +354,7 @@ describe("review candidate publication runtime classifier", () => {
     expectSafeNonZeroBucket("skipped", buckets.skipped);
     expectSafeNonZeroBucket("blocked", buckets.blocked);
     expectSafeNonZeroBucket("degraded", buckets.degraded);
-    expect(buckets.degraded.reasons).toEqual(expect.arrayContaining(["unknown-publisher-status", "malformed-publisher-result"]));
+    expect(buckets.degraded!.reasons).toEqual(expect.arrayContaining(["unknown-publisher-status", "malformed-publisher-result"]));
 
     const publicText = JSON.stringify(buckets);
     for (const unsafe of ["RAW_PROMPT_CANARY", "diff --git", "TOKEN=abc123", "hidden prompt", "unknown-new-status"] as const) {
@@ -383,7 +383,7 @@ describe("review candidate publication runtime classifier", () => {
     const buckets = outcomeBucketsOf(result);
     for (const key of ["published", "skipped", "blocked", "failed"] as const) {
       expectSafeNonZeroBucket(key, buckets[key]);
-      expect(buckets[key].reasons.length).toBeLessThanOrEqual(8);
+      expect(buckets[key]!.reasons.length).toBeLessThanOrEqual(8);
       expect(JSON.stringify(buckets[key]).length).toBeLessThanOrEqual(900);
     }
     expect(JSON.stringify(buckets).length).toBeLessThanOrEqual(2400);

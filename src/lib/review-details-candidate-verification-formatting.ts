@@ -9,6 +9,10 @@ import {
 
 export type CandidateVerificationPublicationEvidenceReviewDetails = CandidateVerificationPublicationEvidenceSummary;
 
+function yesNo(value: unknown): "y" | "n" {
+  return value === true ? "y" : "n";
+}
+
 function formatCandidateVerificationMetadata(
   metadata: CandidateVerificationPublicationEvidenceSummary["metadata"],
 ): string {
@@ -23,15 +27,15 @@ function formatRedactionFlags(
   flags: CandidateVerificationPublicationEvidenceSummary["redactionFlags"],
 ): string {
   return [
-    `privateOnly:${flags.privateOnly === false ? "n" : "y"}`,
-    `candidateBodies:${flags.candidateBodiesIncluded === true ? "y" : "n"}`,
-    `specialistProse:${flags.specialistProseIncluded === true ? "y" : "n"}`,
-    `rawPrompts:${flags.rawPromptsIncluded === true ? "y" : "n"}`,
-    `rawModelOutput:${flags.rawModelOutputIncluded === true ? "y" : "n"}`,
-    `diffs:${flags.diffsIncluded === true ? "y" : "n"}`,
-    `evidencePayloads:${flags.evidencePayloadsIncluded === true ? "y" : "n"}`,
-    `rawFingerprints:${flags.rawFingerprintsIncluded === true ? "y" : "n"}`,
-    `publicationEvidence:${flags.publicationEvidenceIncluded === true ? "y" : "n"}`,
+    `privateOnly:${yesNo(flags.privateOnly)}`,
+    `candidateBodies:${yesNo(flags.candidateBodiesIncluded)}`,
+    `specialistProse:${yesNo(flags.specialistProseIncluded)}`,
+    `rawPrompts:${yesNo(flags.rawPromptsIncluded)}`,
+    `rawModelOutput:${yesNo(flags.rawModelOutputIncluded)}`,
+    `diffs:${yesNo(flags.diffsIncluded)}`,
+    `evidencePayloads:${yesNo(flags.evidencePayloadsIncluded)}`,
+    `rawFingerprints:${yesNo(flags.rawFingerprintsIncluded)}`,
+    `publicationEvidence:${yesNo(flags.publicationEvidenceIncluded)}`,
     `unsafeFields:${readNonNegativeCount(flags, "unsafeInputFieldCount")}`,
   ].join(",");
 }

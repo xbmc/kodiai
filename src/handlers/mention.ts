@@ -2204,7 +2204,7 @@ export function createMentionHandler(deps: {
           reviewOutputKey,
           result: {
             conclusion: result.conclusion,
-            published: result.published ?? false,
+            published: result.published,
             usedRepoInspectionTools: result.usedRepoInspectionTools,
             resultText: result.resultText,
             toolUseNames: result.toolUseNames,
@@ -2226,7 +2226,7 @@ export function createMentionHandler(deps: {
             reviewOutputKey,
             result: {
               conclusion: result.conclusion,
-              published: result.published ?? false,
+              published: result.published,
               usedRepoInspectionTools: result.usedRepoInspectionTools,
               toolUseNames: result.toolUseNames,
             },

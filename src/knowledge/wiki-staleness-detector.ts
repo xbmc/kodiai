@@ -32,7 +32,6 @@ import {
 } from "./wiki-evidence-scoring.ts";
 import { storeWikiPrEvidence } from "./wiki-pr-evidence-store.ts";
 
-export { DOMAIN_STOPWORDS, heuristicScore } from "./wiki-evidence-scoring.ts";
 
 const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 90_000; // 90 seconds
@@ -194,7 +193,7 @@ async function heuristicPass(
   // Group chunks by page_id
   const pageMap = new Map<
     number,
-    { pageTitle: string; pageUrl: string; chunkTexts: string[]; tokens?: WikiTextTokens; tokenUnion?: Set<string> }
+    { pageTitle: string; pageUrl: string; chunkTexts: string[]; tokens: WikiTextTokens; tokenUnion?: Set<string> }
   >();
 
   for (const row of rows) {
@@ -204,12 +203,16 @@ async function heuristicPass(
         pageTitle: row.page_title as string,
         pageUrl: row.page_url as string,
         chunkTexts: [],
+        tokens: { regularTokens: new Set(), headingTokens: new Set() },
       });
     }
     const page = pageMap.get(pageId)!;
     if (page.chunkTexts.length < 3) {
       page.chunkTexts.push(row.chunk_text as string);
     }
+  }
+  for (const page of pageMap.values()) {
+    page.tokens = tokenizeWikiTexts(page.chunkTexts);
   }
 
   // Build flat list of all changed file paths from merged PRs
@@ -245,7 +248,6 @@ async function heuristicPass(
   const candidates: WikiPageCandidate[] = [];
 
   for (const [pageId, page] of pageMap) {
-    page.tokens ??= tokenizeWikiTexts(page.chunkTexts);
     const score = scoreWikiTokens(page.tokens, changedFileTokenSets);
     if (score === 0) continue;
 

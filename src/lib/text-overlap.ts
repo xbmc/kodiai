@@ -13,3 +13,12 @@ export function countWordsInSet(words: readonly string[], targetWords: ReadonlyS
   }
   return count;
 }
+
+export function countWordsInTextBySubstring(words: readonly string[], targetText: string): number {
+  const lowerTargetText = targetText.toLowerCase();
+  let count = 0;
+  for (const word of words) {
+    if (lowerTargetText.includes(word.toLowerCase())) count++;
+  }
+  return count;
+}

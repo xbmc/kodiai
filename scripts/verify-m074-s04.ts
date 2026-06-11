@@ -278,7 +278,7 @@ function buildLifecycleRecords(): Record<string, ReviewFindingLifecycleRecord> {
   if (normalized.records.length !== CASES.length) {
     throw new Error(`fixture_setup_failed: expected ${CASES.length} records, got ${normalized.records.length}`);
   }
-  return Object.fromEntries(CASES.map((item, index) => [item.id, normalized.records[index]]));
+  return Object.fromEntries(CASES.map((item, index) => [item.id, normalized.records[index]!]));
 }
 
 function finding(caseId: string, index: number): ReviewFindingInput {

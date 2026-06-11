@@ -6,6 +6,7 @@ import {
   buildReviewDetailsBudgetLines,
   buildVisibleBudgetProjection,
   type PromptBudgetEvidenceObservation,
+  type PromptBudgetEvidenceSection,
   type VisibleBudgetProjection,
   type VisibleBudgetScenario,
 } from "../review-visible-budget/visible-budget-behavior.ts";
@@ -14,10 +15,12 @@ export function buildPromptBudgetEvidenceObservations(
   records: readonly PromptSectionRecord[],
 ): PromptBudgetEvidenceObservation[] {
   return records
-    .map((record) => {
-      const sections = record.sections
+    .map((record): PromptBudgetEvidenceObservation | null => {
+      const sections: PromptBudgetEvidenceSection[] = record.sections
         .filter((section) =>
-          typeof section.budgetChars === "number"
+          typeof section.charCount === "number"
+          && typeof section.estimatedTokens === "number"
+          && typeof section.budgetChars === "number"
           && typeof section.budgetTokens === "number"
           && typeof section.includedChars === "number"
           && typeof section.includedTokens === "number"
@@ -29,6 +32,8 @@ export function buildPromptBudgetEvidenceObservations(
         .map((section) => ({
           sectionName: section.sectionName,
           sectionPosition: section.sectionPosition,
+          charCount: section.charCount,
+          estimatedTokens: section.estimatedTokens,
           budgetChars: section.budgetChars!,
           budgetTokens: section.budgetTokens!,
           includedChars: section.includedChars!,

@@ -1,32 +1,35 @@
 import { describe, expect, test } from "bun:test";
-import { buildAliasSubstringIndex, findMatchingAlias } from "./alias-matcher.ts";
+import { buildAliasMatcher, findMatchingAlias } from "./alias-matcher.ts";
 
 describe("alias matcher", () => {
   test("matches exact aliases", () => {
-    const symbolAliases = new Set(["rendertexture"]);
-    const index = buildAliasSubstringIndex(symbolAliases);
+    const matcher = buildAliasMatcher(new Set(["rendertexture"]));
 
-    expect(findMatchingAlias(["rendertexture"], symbolAliases, index)).toBe("rendertexture");
+    expect(findMatchingAlias(["rendertexture"], matcher)).toBe("rendertexture");
   });
 
   test("matches substring aliases through the trigram index", () => {
-    const symbolAliases = new Set(["rendertexturemanager"]);
-    const index = buildAliasSubstringIndex(symbolAliases);
+    const matcher = buildAliasMatcher(new Set(["rendertexturemanager"]));
 
-    expect(findMatchingAlias(["texturemanager"], symbolAliases, index)).toBe("texturemanager");
+    expect(findMatchingAlias(["texturemanager"], matcher)).toBe("texturemanager");
   });
 
   test("handles aliases shorter than the trigram width", () => {
-    const symbolAliases = new Set(["gui"]);
-    const index = buildAliasSubstringIndex(symbolAliases);
+    const matcher = buildAliasMatcher(new Set(["gui"]));
 
-    expect(findMatchingAlias(["ui"], symbolAliases, index)).toBe("ui");
+    expect(findMatchingAlias(["ui"], matcher)).toBe("ui");
+  });
+
+  test("matches short symbol aliases from the matcher side bucket", () => {
+    const matcher = buildAliasMatcher(new Set(["ui"]));
+
+    expect(matcher.shortAliases).toEqual(["ui"]);
+    expect(findMatchingAlias(["guimanager"], matcher)).toBe("guimanager");
   });
 
   test("does not match unrelated aliases", () => {
-    const symbolAliases = new Set(["database"]);
-    const index = buildAliasSubstringIndex(symbolAliases);
+    const matcher = buildAliasMatcher(new Set(["database"]));
 
-    expect(findMatchingAlias(["renderer"], symbolAliases, index)).toBeUndefined();
+    expect(findMatchingAlias(["renderer"], matcher)).toBeUndefined();
   });
 });

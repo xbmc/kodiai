@@ -81,7 +81,7 @@ function createReader(overrides: Record<string, string> = {}) {
   };
   return async (path: string) => {
     if (!(path in files)) throw new Error(`missing fixture ${path}`);
-    return files[path];
+    return files[path]!;
   };
 }
 

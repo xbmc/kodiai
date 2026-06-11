@@ -19,16 +19,30 @@ export function buildAliasSubstringIndex(aliases: Iterable<string>): Map<string,
   return index;
 }
 
+export type AliasMatcher = {
+  aliases: ReadonlySet<string>;
+  substringIndex: ReadonlyMap<string, ReadonlySet<string>>;
+  shortAliases: readonly string[];
+};
+
+export function buildAliasMatcher(aliases: Iterable<string>): AliasMatcher {
+  const aliasSet = new Set(aliases);
+  return {
+    aliases: aliasSet,
+    substringIndex: buildAliasSubstringIndex(aliasSet),
+    shortAliases: [...aliasSet].filter((alias) => alias.length < 3),
+  };
+}
+
 export function findMatchingAlias(
   aliases: readonly string[],
-  symbolAliases: Set<string>,
-  substringIndex: Map<string, Set<string>>,
+  matcher: AliasMatcher,
 ): string | undefined {
   for (const alias of aliases) {
-    if (symbolAliases.has(alias)) return alias;
+    if (matcher.aliases.has(alias)) return alias;
 
     if (alias.length < 3) {
-      for (const candidate of symbolAliases) {
+      for (const candidate of matcher.aliases) {
         if (alias.includes(candidate) || candidate.includes(alias)) {
           return alias;
         }
@@ -36,9 +50,15 @@ export function findMatchingAlias(
       continue;
     }
 
+    for (const candidate of matcher.shortAliases) {
+      if (alias.includes(candidate)) {
+        return alias;
+      }
+    }
+
     const candidates = new Set<string>();
     for (const gram of trigrams(alias)) {
-      const bucket = substringIndex.get(gram);
+      const bucket = matcher.substringIndex.get(gram);
       if (bucket) {
         for (const candidate of bucket) candidates.add(candidate);
       }

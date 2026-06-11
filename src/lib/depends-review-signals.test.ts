@@ -152,11 +152,16 @@ describe("collectDependsReviewSignals", () => {
       },
       findDependencyConsumers: async () => {
         events.push("impact");
-        return { consumers: [], searchedPatterns: [] };
+        return {
+          consumers: [],
+          transitive: { dependents: [], newDependencies: [], circular: [] },
+          timeLimitReached: false,
+          degradationNote: null,
+        };
       },
       checkTransitiveDependencies: async () => {
         events.push("transitive");
-        return { newDependencies: [], removedDependencies: [] };
+        return { dependents: [], newDependencies: [], circular: [] };
       },
     };
 
@@ -182,7 +187,6 @@ describe("collectDependsReviewSignals", () => {
       workspaceDir: "/tmp/workspace",
       logger,
       baseLog: { deliveryId: "test" },
-      dependencies,
     });
 
     expect(events.indexOf("hash:start")).toBeGreaterThan(-1);

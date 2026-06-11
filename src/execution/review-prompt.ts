@@ -25,6 +25,11 @@ import {
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
 import { evaluatePromptBudget, type PromptBudgetOutcome } from "./prompt-budget.ts";
+import {
+  renderReviewInstructionSections,
+  type ReviewInstructionSection,
+  type ReviewInstructionSectionId,
+} from "./review-instruction-budget.ts";
 import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
 import type { RepoDoctrineProjection } from "../repo-doctrine/contracts.ts";
 
@@ -1758,35 +1763,6 @@ function buildRetryPromptCompactionSection(input: RetryPromptCompactionInput): s
   return lines.join("\n");
 }
 
-/**
- * Build the system prompt for PR auto-review.
- *
- * Instructs Claude to review the diff, post inline comments with suggestion
- * blocks for issues, and do nothing if the PR is clean (silent approval is
- * handled by the calling handler).
- */
-type ReviewInstructionSection = {
-  id: string;
-  priority: number;
-  lines: string[];
-};
-
-function renderReviewInstructionSections(sections: ReviewInstructionSection[]): string[] {
-  const rendered: string[] = [];
-  const sorted = [...sections].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-
-  for (const section of sorted) {
-    const lines = section.lines.map((line) => line.trimEnd());
-    while (lines[0] === "") lines.shift();
-    while (lines.at(-1) === "") lines.pop();
-    if (lines.length === 0) continue;
-    if (rendered.length > 0) rendered.push("");
-    rendered.push(...lines);
-  }
-
-  return rendered;
-}
-
 function buildDeltaSummaryInstructionLines(params: {
   deltaContext: DeltaReviewContext;
   prNumber: number;
@@ -1886,15 +1862,22 @@ function buildStandardSummaryInstructionLines(params: {
           "Use suggestive framing for draft findings: say 'Consider...' or 'You might want to...' instead of imperative directives.",
         ]
       : []),
-    "Required summary sections, in order: ## What Changed, optional ## Strengths, ## Observations, optional ## Suggestions, ## Verdict.",
-    "## Observations uses ### Impact for behavioral findings and optional ### Preference for non-blocking cleanup. ### Impact is REQUIRED; ### Preference is optional. CRITICAL and MAJOR findings MUST go under ### Impact; Preference findings are capped at MEDIUM severity. Finding lines start with [CRITICAL], [MAJOR], [MEDIUM], or [MINOR].",
-    "Under ## Suggestions, every item MUST start with 'Optional:' or 'Future consideration:'.",
-    "Suggestion examples: Optional: <low-friction cleanup or improvement>; Future consideration: <larger improvement outside this PR>.",
-    "suggestions are NEVER counted against merge readiness.",
+    "",
+    "Use this body outline inside the `<details>` block:",
+    "## What Changed",
     reviewedLineInstruction,
-    "Under ## Strengths, prefix items with :white_check_mark: and cite a concrete observation.",
-    "Verdict lines: :green_circle: **Ready to merge** -- No blocking issues found; :yellow_circle: **Ready to merge with minor items** -- Optional cleanup suggestions below; :red_circle: **Address before merging** -- [N] blocking issue(s) found (CRITICAL/MAJOR); determine which one using the Verdict Logic rules above.",
-    "Zero blockers = :green_circle: or :yellow_circle: verdict. Never :red_circle: without blockers.",
+    "## Strengths",
+    ":white_check_mark: <concrete observation>",
+    "## Observations",
+    "### Impact",
+    "[CRITICAL] <blocking issue>",
+    "[MAJOR] <blocking issue>",
+    "### Preference",
+    "Optional: [MINOR] <non-blocking cleanup>",
+    "## Suggestions",
+    "Suggestion examples: Optional: <low-friction cleanup or improvement>; Future consideration: <larger improvement outside this PR>.",
+    "## Verdict",
+    "</details>",
     "",
     buildVerdictLogicSection(),
     "",
@@ -2007,7 +1990,7 @@ export function buildReviewPromptDetails(context: {
   gitDiffInstructionsAvailable?: boolean;
   diffContent?: string;
 }): PromptBuildResult {
-  const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number }> = [];
+  const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number; budgetOutcome?: PromptBudgetOutcome }> = [];
   const scaleNotes: string[] = [];
   const mode = context.mode ?? "standard";
   const REVIEW_SECTION_BUDGETS = {
@@ -2018,17 +2001,13 @@ export function buildReviewPromptDetails(context: {
     graphContext: 4_000,
     knowledgeContext: 3_600,
     diffContext: 12_000,
-    instructions: 10_000,
+    instructions: 16_000,
   } as const;
 
-  const pushSection = (sectionName: string, lines: string[], budgetChars?: number) => {
+  const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
     const text = lines.join("\n").trim();
     if (!text) return;
-    sectionBlocks.push({ sectionName, text, budgetChars: budgetChars ?? text.length });
-  };
-
-  const pushBudgetedSection = (sectionName: string, lines: string[], budgetChars: number) => {
-    pushSection(sectionName, lines, budgetChars);
+    sectionBlocks.push({ sectionName, text, budgetChars: budgetChars ?? text.length, budgetOutcome });
   };
 
   const buildBudgetedPromptResult = (): PromptBuildResult => {
@@ -2052,11 +2031,14 @@ export function buildReviewPromptDetails(context: {
         if (!outcome) {
           throw new Error(`Missing prompt budget outcome for section '${section.sectionName}'`);
         }
+        const effectiveOutcome = section.budgetOutcome
+          ? { ...section.budgetOutcome, sectionPosition }
+          : outcome;
         return {
           sectionName: section.sectionName,
-          text: section.text.slice(0, outcome.includedChars),
-          ...(outcome.status !== "included" ? { truncated: true } : {}),
-          budgetOutcome: outcome,
+          text: section.text.slice(0, effectiveOutcome.includedChars),
+          ...(effectiveOutcome.status !== "included" ? { truncated: true } : {}),
+          budgetOutcome: effectiveOutcome,
         };
       })
       .filter((section) => section.text.length > 0);
@@ -2126,11 +2108,11 @@ export function buildReviewPromptDetails(context: {
   if (diffAnalysisSection) {
     changeContextLines.push("", diffAnalysisSection);
   }
-  pushBudgetedSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);
+  pushSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);
 
   const diffContentSanitized = sanitizeContent((context.diffContent ?? "").trim());
   if (diffContentSanitized.length > 0) {
-    pushBudgetedSection(
+    pushSection(
       "review-diff-context",
       [
         "## PR Diff Context",
@@ -2176,7 +2158,7 @@ export function buildReviewPromptDetails(context: {
     if (sizeContextLines.length > 0) sizeContextLines.push("");
     sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
   }
-  pushBudgetedSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);
+  pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);
 
   const graphContextLines: string[] = [];
   if (context.graphBlastRadius) {
@@ -2195,7 +2177,7 @@ export function buildReviewPromptDetails(context: {
       graphContextLines.push(structuralSection);
     }
   }
-  pushBudgetedSection("review-graph-context", graphContextLines, REVIEW_SECTION_BUDGETS.graphContext);
+  pushSection("review-graph-context", graphContextLines, REVIEW_SECTION_BUDGETS.graphContext);
 
   const knowledgeContextLines: string[] = [];
   if (context.unifiedResults && context.unifiedResults.length > 0) {
@@ -2257,7 +2239,7 @@ export function buildReviewPromptDetails(context: {
       knowledgeContextLines.push(langSection);
     }
   }
-  pushBudgetedSection("review-knowledge-context", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);
+  pushSection("review-knowledge-context", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);
 
   const gitDiffInstructionsAvailable = context.gitDiffInstructionsAvailable !== false;
   const candidateFindingMode = normalizePromptCandidateFindingMode(context.candidateFindingMode);
@@ -2268,11 +2250,11 @@ export function buildReviewPromptDetails(context: {
     : "Use the `mcp__github_inline_comment__create_inline_comment` tool to post inline comments on the specific file and line where the issue occurs.";
 
   const instructionSections: ReviewInstructionSection[] = [];
-  const pushInstructionSection = (id: string, priority: number, lines: string[]) => {
-    instructionSections.push({ id, priority, lines });
+  const pushInstructionSection = (id: ReviewInstructionSectionId, lines: string[]) => {
+    instructionSections.push({ id, lines });
   };
 
-  pushInstructionSection("reading-and-reporting", 100, [
+  pushInstructionSection("reading-and-reporting", [
     "## Reading the code",
     "",
     ...(gitDiffInstructionsAvailable
@@ -2308,7 +2290,7 @@ export function buildReviewPromptDetails(context: {
     candidateFindingToolAvailable,
   });
   if (toolAvailabilityContract) {
-    pushInstructionSection("tool-availability", 110, [toolAvailabilityContract]);
+    pushInstructionSection("tool-availability", [toolAvailabilityContract]);
   }
 
   const candidateFindingCaptureSection = buildCandidateFindingCaptureSection({
@@ -2316,11 +2298,11 @@ export function buildReviewPromptDetails(context: {
     mode: candidateFindingMode,
   });
   if (candidateFindingCaptureSection) {
-    pushInstructionSection("candidate-finding-capture", 120, [candidateFindingCaptureSection]);
+    pushInstructionSection("candidate-finding-capture", [candidateFindingCaptureSection]);
   }
 
   if (context.checkpointEnabled === true) {
-    pushInstructionSection("checkpointing", 130, [
+    pushInstructionSection("checkpointing", [
       "IMPORTANT: This review may time out or run out of turns. Preserve progress with the save_review_checkpoint tool.",
       "Before deep inspection, call the save_review_checkpoint tool once after you choose the initial review order. Include:",
       "- filesReviewed: []",
@@ -2340,7 +2322,7 @@ export function buildReviewPromptDetails(context: {
     ]);
   }
 
-  pushInstructionSection("core-rules", 200, [
+  pushInstructionSection("core-rules", [
     "## Rules",
     "",
     "- ONLY report actionable issues that need to be fixed",
@@ -2375,7 +2357,7 @@ export function buildReviewPromptDetails(context: {
     }
 
     if (rendered.length > 0) {
-      pushInstructionSection("focus-hints", 210, [
+      pushInstructionSection("focus-hints", [
         "## Focus Hints",
         "",
         "These tags came from the PR title/commits; treat them as components/platforms to pay extra attention to when reviewing.",
@@ -2386,7 +2368,7 @@ export function buildReviewPromptDetails(context: {
     }
   }
 
-  pushInstructionSection("trust-boundaries", 220, [
+  pushInstructionSection("trust-boundaries", [
     buildEpistemicBoundarySection(),
     "",
     buildSecurityPolicySection(),
@@ -2407,16 +2389,16 @@ export function buildReviewPromptDetails(context: {
     };
     const guidance = typeGuidance[context.conventionalType.type];
     if (guidance) {
-      pushInstructionSection("conventional-commit-context", 230, ["## Conventional Commit Context", "", guidance]);
+      pushInstructionSection("conventional-commit-context", ["## Conventional Commit Context", "", guidance]);
     }
     if (context.conventionalType.isBreaking) {
-      pushInstructionSection("conventional-breaking-change", 231, [
+      pushInstructionSection("conventional-breaking-change", [
         "**BREAKING CHANGE indicated.** Review the diff for: removed or renamed exports, changed function signatures, modified default behavior, and migration guidance in the PR description.",
       ]);
     }
   }
 
-  pushInstructionSection("tone-guidelines", 240, [buildToneGuidelinesSection()]);
+  pushInstructionSection("tone-guidelines", [buildToneGuidelinesSection()]);
 
   const authorExpSection = context.contributorExperienceContract
     ? buildContributorExperiencePromptSection({
@@ -2431,18 +2413,18 @@ export function buildReviewPromptDetails(context: {
         areaExpertise: context.authorExpertise,
       })
     : "";
-  if (authorExpSection) pushInstructionSection("author-experience", 250, [authorExpSection]);
+  if (authorExpSection) pushInstructionSection("author-experience", [authorExpSection]);
 
   if (context.depBumpContext) {
-    pushInstructionSection("dependency-bump-context", 260, [buildDepBumpSection(context.depBumpContext)]);
+    pushInstructionSection("dependency-bump-context", [buildDepBumpSection(context.depBumpContext)]);
   }
 
-  pushInstructionSection("breaking-change-evidence", 270, [
+  pushInstructionSection("breaking-change-evidence", [
     buildBreakingChangeEvidenceInstructions(context.structuralImpact),
   ]);
 
   if (context.searchRateLimitDegradation?.degraded) {
-    pushInstructionSection("search-rate-limit-degradation", 280, [
+    pushInstructionSection("search-rate-limit-degradation", [
       buildSearchRateLimitDegradationSection({
         retryAttempts: context.searchRateLimitDegradation.retryAttempts,
         skippedQueries: context.searchRateLimitDegradation.skippedQueries,
@@ -2452,65 +2434,67 @@ export function buildReviewPromptDetails(context: {
   }
 
   const repoDoctrineSection = buildRepoDoctrinePromptSection(context.repoDoctrine);
-  if (repoDoctrineSection) pushInstructionSection("repo-doctrine", 70, [repoDoctrineSection]);
+  if (repoDoctrineSection) pushInstructionSection("repo-doctrine", [repoDoctrineSection]);
 
   const pathInstructionsSection = buildPathInstructionsSection(
     context.matchedPathInstructions ?? [],
   );
-  if (pathInstructionsSection) pushInstructionSection("path-instructions", 300, [pathInstructionsSection]);
+  if (pathInstructionsSection) pushInstructionSection("path-instructions", [pathInstructionsSection]);
 
-  pushInstructionSection("comment-cap", 310, [buildCommentCapInstructions(context.maxComments ?? 7)]);
+  pushInstructionSection("comment-cap", [buildCommentCapInstructions(context.maxComments ?? 7)]);
 
   const severityFilter = buildSeverityFilterInstructions(
     context.severityMinLevel ?? "minor",
   );
-  if (severityFilter) pushInstructionSection("severity-filter", 320, [severityFilter]);
+  if (severityFilter) pushInstructionSection("severity-filter", [severityFilter]);
 
   const focusInstructions = buildFocusAreaInstructions(
     context.focusAreas ?? [],
     context.ignoredAreas ?? [],
   );
-  if (focusInstructions) pushInstructionSection("focus-area-instructions", 330, [focusInstructions]);
+  if (focusInstructions) pushInstructionSection("focus-area-instructions", [focusInstructions]);
 
   const suppressionRulesSection = buildSuppressionRulesSection(
     context.suppressions ?? [],
   );
   if (suppressionRulesSection) {
-    pushInstructionSection("suppression-rules", 340, [suppressionRulesSection]);
+    pushInstructionSection("suppression-rules", [suppressionRulesSection]);
   }
 
-  pushInstructionSection("confidence-threshold", 350, [buildConfidenceInstructions(context.minConfidence ?? 0)]);
+  pushInstructionSection("confidence-threshold", [buildConfidenceInstructions(context.minConfidence ?? 0)]);
 
   if (context.activeRules && context.activeRules.length > 0) {
     const activeRulesSection = formatActiveRulesSection(context.activeRules);
-    if (activeRulesSection) pushInstructionSection("active-rules", 40, [activeRulesSection]);
+    if (activeRulesSection) pushInstructionSection("active-rules", [activeRulesSection]);
   }
 
   if (context.customInstructions) {
-    pushInstructionSection("custom-instructions", 50, [
+    const customInstructions = truncateDeterministic(sanitizeContent(context.customInstructions), 1_200);
+    pushInstructionSection("custom-instructions", [
       "## Custom instructions",
       "",
-      context.customInstructions,
+      customInstructions.text,
+      ...(customInstructions.truncated ? ["", "(Custom instructions truncated to the review prompt budget.)"] : []),
     ]);
   }
 
   const outputLangSection = buildOutputLanguageSection(context.outputLanguage ?? "en");
-  if (outputLangSection) pushInstructionSection("output-language", 60, [outputLangSection]);
+  if (outputLangSection) pushInstructionSection("output-language", [outputLangSection]);
 
   if (mode === "enhanced") {
-    pushInstructionSection("summary-enhanced-mode", 400, [
+    pushInstructionSection("summary-enhanced-mode", [
       "## Summary comment",
       "",
       "Do NOT post a top-level summary comment. Each inline comment stands alone with its own severity and category metadata.",
       "If NO issues found: do nothing.",
     ]);
   } else if (context.deltaContext) {
-    pushInstructionSection("summary-delta-mode", 400, buildDeltaSummaryInstructionLines({
+    pushInstructionSection("summary-delta-mode", buildDeltaSummaryInstructionLines({
       deltaContext: context.deltaContext,
       prNumber: context.prNumber,
     }));
   } else {
-    pushInstructionSection("summary-standard-mode", 400, buildStandardSummaryInstructionLines({
+    pushInstructionSection("summary-standard-mode", buildStandardSummaryInstructionLines({
       prNumber: context.prNumber,
       isDraft: context.isDraft,
       diffAnalysis: context.diffAnalysis,
@@ -2518,14 +2502,14 @@ export function buildReviewPromptDetails(context: {
   }
 
   if (mode === "enhanced") {
-    pushInstructionSection("after-review-enhanced", 500, [
+    pushInstructionSection("after-review-enhanced", [
       "## After review",
       "",
       "If you found issues: post inline comments only (no summary comment).",
       "If NO issues found: do nothing.",
     ]);
   } else if (!context.deltaContext) {
-    pushInstructionSection("after-review-standard", 500, [
+    pushInstructionSection("after-review-standard", [
       "## After review",
       "",
       "If you found issues: post the summary comment (wrapped in <details>) first, then post inline comments.",
@@ -2533,8 +2517,16 @@ export function buildReviewPromptDetails(context: {
     ]);
   }
 
-  const instructionLines = renderReviewInstructionSections(instructionSections);
-  pushBudgetedSection("review-instructions", instructionLines, REVIEW_SECTION_BUDGETS.instructions);
+  const instructionRender = renderReviewInstructionSections(
+    instructionSections,
+    REVIEW_SECTION_BUDGETS.instructions,
+  );
+  pushSection(
+    "review-instructions",
+    instructionRender.lines,
+    REVIEW_SECTION_BUDGETS.instructions,
+    instructionRender.budgetOutcome,
+  );
 
   return buildBudgetedPromptResult();
 }

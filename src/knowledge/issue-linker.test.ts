@@ -1,6 +1,6 @@
 import { describe, expect, test, mock } from "bun:test";
 import { linkPRToIssues, type LinkResult } from "./issue-linker.ts";
-import type { IssueStore, IssueRecord, IssueSearchResult } from "./issue-types.ts";
+import type { IssueStore, IssueRecord, IssueSearchRecord, IssueSearchResult } from "./issue-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import type { Logger } from "pino";
 
@@ -32,6 +32,10 @@ function mockRecord(overrides: Partial<IssueRecord> = {}): IssueRecord {
     closedAt: null,
     ...overrides,
   };
+}
+
+function mockSearchRecord(overrides: Partial<IssueRecord> = {}): IssueSearchRecord {
+  return mockRecord(overrides) as IssueSearchRecord;
 }
 
 /** Create a no-op logger mock. */
@@ -173,7 +177,7 @@ describe("linkPRToIssues", () => {
   describe("semantic search fallback", () => {
     test("runs semantic search when no explicit refs", async () => {
       const searchResults: IssueSearchResult[] = [
-        { record: mockRecord({ issueNumber: 10, title: "Similar issue" }), distance: 0.15 },
+        { record: mockSearchRecord({ issueNumber: 10, title: "Similar issue" }), distance: 0.15 },
       ];
       const issueStore = mockIssueStore({
         searchByEmbedding: mock(() => Promise.resolve(searchResults)),
@@ -198,8 +202,8 @@ describe("linkPRToIssues", () => {
 
     test("filters results below threshold", async () => {
       const searchResults: IssueSearchResult[] = [
-        { record: mockRecord({ issueNumber: 10 }), distance: 0.15 }, // sim 0.85 - passes 0.80
-        { record: mockRecord({ issueNumber: 20 }), distance: 0.25 }, // sim 0.75 - fails 0.80
+        { record: mockSearchRecord({ issueNumber: 10 }), distance: 0.15 }, // sim 0.85 - passes 0.80
+        { record: mockSearchRecord({ issueNumber: 20 }), distance: 0.25 }, // sim 0.75 - fails 0.80
       ];
       const issueStore = mockIssueStore({
         searchByEmbedding: mock(() => Promise.resolve(searchResults)),
@@ -222,11 +226,11 @@ describe("linkPRToIssues", () => {
 
     test("respects maxSemanticResults", async () => {
       const searchResults: IssueSearchResult[] = [
-        { record: mockRecord({ issueNumber: 1 }), distance: 0.10 },
-        { record: mockRecord({ issueNumber: 2 }), distance: 0.12 },
-        { record: mockRecord({ issueNumber: 3 }), distance: 0.14 },
-        { record: mockRecord({ issueNumber: 4 }), distance: 0.16 },
-        { record: mockRecord({ issueNumber: 5 }), distance: 0.18 },
+        { record: mockSearchRecord({ issueNumber: 1 }), distance: 0.10 },
+        { record: mockSearchRecord({ issueNumber: 2 }), distance: 0.12 },
+        { record: mockSearchRecord({ issueNumber: 3 }), distance: 0.14 },
+        { record: mockSearchRecord({ issueNumber: 4 }), distance: 0.16 },
+        { record: mockSearchRecord({ issueNumber: 5 }), distance: 0.18 },
       ];
       const issueStore = mockIssueStore({
         searchByEmbedding: mock(() => Promise.resolve(searchResults)),

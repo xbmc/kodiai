@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import {
   backfillReviewComments,
+  embedChunks,
   syncSinglePR,
   groupCommentsIntoThreads,
   withRetry,
@@ -131,6 +132,37 @@ function createMockOctokit(pages: Record<number, ReturnType<typeof makeGitHubCom
     },
   };
 }
+
+describe("embedChunks", () => {
+  it("mutates chunk embeddings using only chunks and the embedding provider", async () => {
+    const chunks: ReviewCommentChunk[] = [{
+      repo: "xbmc/xbmc",
+      owner: "xbmc",
+      prNumber: 100,
+      commentGithubId: 1,
+      threadId: "thread-1",
+      inReplyToId: null,
+      filePath: "src/main.ts",
+      startLine: 1,
+      endLine: 1,
+      diffHunk: "@@ -1 +1 @@",
+      authorLogin: "reviewer",
+      authorAssociation: "MEMBER",
+      body: "body",
+      chunkIndex: 0,
+      chunkText: "chunk text",
+      tokenCount: 2,
+      githubCreatedAt: new Date("2025-06-15T10:00:00Z"),
+      githubUpdatedAt: null,
+      backfillBatch: null,
+    }];
+
+    const result = await embedChunks(chunks, createMockEmbeddingProvider());
+
+    expect(result).toEqual({ embeddingsGenerated: 1, embeddingsFailed: 0 });
+    expect(chunks[0]!.embedding).toEqual(new Float32Array([0.1, 0.2, 0.3]));
+  });
+});
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 

@@ -645,7 +645,6 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
     "review-change-context",
     "review-diff-context",
     "review-knowledge-context",
-    "review-instructions",
   ]) {
     const section = byName.get(sectionName);
     expect(section).toBeDefined();
@@ -661,6 +660,7 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
   expect(result.text).not.toContain(diffOverflowSentinel);
   expect(result.text).not.toContain(instructionOverflowSentinel);
   expect(result.text).not.toContain(knowledgeOverflowSentinel);
+  expect(byName.get("review-instructions")?.budgetStatus).toBe("included");
   expect(JSON.stringify(result.sections)).not.toContain(diffOverflowSentinel);
   expect(JSON.stringify(result.sections)).not.toContain(instructionOverflowSentinel);
   expect(JSON.stringify(result.sections)).not.toContain(knowledgeOverflowSentinel);
@@ -673,6 +673,55 @@ test("default config includes severity classification guidelines", () => {
   expect(prompt).toContain("MAJOR");
   expect(prompt).toContain("MEDIUM");
   expect(prompt).toContain("MINOR");
+});
+
+test("default review instructions fit the budget and keep the silent-approval contract", () => {
+  const result = buildReviewPromptDetails(baseContext());
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions?.budgetStatus).toBe("included");
+  expect(instructions?.trimmedChars ?? 0).toBe(0);
+  expect(result.text).toContain("## After review");
+  expect(result.text).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+});
+
+test("oversized custom instructions do not displace core review instructions", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    isDraft: true,
+    checkpointEnabled: true,
+    customInstructions: "User-specific instruction. ".repeat(600),
+    suppressions: [{
+      pattern: "ignore generated files",
+      reason: "generated output is reviewed elsewhere",
+    }],
+  }));
+
+  expect(result.text).toContain("## Custom instructions");
+  expect(result.text).not.toContain("User-specific instruction. ".repeat(200));
+  expect(result.text).toContain("## After review");
+  expect(result.text).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+  expect(result.text).toContain("This is a DRAFT review");
+});
+
+test("instruction budgeting drops whole low-retention sections before core review contracts", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    activeRules: Array.from({ length: 60 }, (_, index) =>
+      makeActiveRule({
+        id: index + 1,
+        title: `Overflow Rule ${index}`,
+        ruleText: `Overflow guidance ${index}. ${"Generated rule detail. ".repeat(80)}`,
+      })
+    ),
+  }));
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions?.budgetStatus).toBe("trimmed");
+  expect(instructions?.trimmedChars).toBeGreaterThan(0);
+  expect(instructions!.includedChars).toBeLessThanOrEqual(instructions!.budgetChars!);
+  expect(result.text).not.toContain("## Generated Review Rules");
+  expect(result.text).toContain("## Summary comment");
+  expect(result.text).toContain("## After review");
+  expect(result.text).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
 });
 
 test("default config includes noise suppression rules", () => {

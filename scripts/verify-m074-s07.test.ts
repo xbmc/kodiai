@@ -263,7 +263,7 @@ describe("verify-m074-s07", () => {
   });
 });
 
-function mutateFixture(overrides: Partial<M074S07EvidenceSnapshot> & Record<string, unknown> = {}): M074S07EvidenceSnapshot {
+function mutateFixture(overrides: Record<string, unknown> = {}): M074S07EvidenceSnapshot {
   return structuredClone({ ...fixture, ...overrides }) as M074S07EvidenceSnapshot;
 }
 

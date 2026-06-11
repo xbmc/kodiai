@@ -3,6 +3,7 @@ import {
   classifyReviewTimeoutOutcome,
   type ReviewTimeoutClassificationInput,
   type ReviewTimeoutClassificationMode,
+  type ReviewTimeoutReasonCode,
 } from "./review-timeout-classification.ts";
 
 function classify(overrides: Partial<ReviewTimeoutClassificationInput> = {}) {
@@ -23,10 +24,6 @@ describe("classifyReviewTimeoutOutcome", () => {
           state: "bounded-first-pass",
           boundedReason: "timeout",
           evidenceSource: "checkpoint",
-          coveredScope: { reviewedFiles: 3, totalFiles: 10 },
-          inspectedScope: { inspectedFiles: 4, totalFiles: 10 },
-          remainingScope: { remainingFiles: 7, totalFiles: 10 },
-          findingCount: 2,
           continuationPending: true,
           zeroEvidenceFailure: false,
         },
@@ -62,8 +59,6 @@ describe("classifyReviewTimeoutOutcome", () => {
           state: "bounded-first-pass",
           boundedReason: "max-turns",
           evidenceSource: "checkpoint",
-          coveredScope: { reviewedFiles: 8, totalFiles: 12 },
-          remainingScope: { remainingFiles: 4, totalFiles: 12 },
           continuationPending: true,
           zeroEvidenceFailure: false,
         },
@@ -132,7 +127,7 @@ describe("classifyReviewTimeoutOutcome", () => {
     ReviewTimeoutClassificationMode,
     boolean,
     boolean,
-    string[],
+    ReviewTimeoutReasonCode[],
   ]>)("classifies %s", (_name, input, mode, hardFailure, expectedBoundedOutcome, reasonCodes) => {
     const result = classify(input);
 

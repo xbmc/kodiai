@@ -1,5 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { heuristicScore, DOMAIN_STOPWORDS, createWikiStalenessDetector } from "./wiki-staleness-detector.ts";
+import { createWikiStalenessDetector } from "./wiki-staleness-detector.ts";
+import { DOMAIN_STOPWORDS, heuristicScore } from "./wiki-evidence-scoring.ts";
 import type { WikiStalenessDetectorOptions } from "./wiki-staleness-types.ts";
 
 describe("heuristicScore", () => {

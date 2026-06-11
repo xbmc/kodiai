@@ -55,9 +55,14 @@ export type IssueRecord = {
   closedAt: string | null;
 };
 
+/** Search rows deliberately omit vector payloads and expose a null embedding. */
+export type IssueSearchRecord = Omit<IssueRecord, "embedding"> & {
+  embedding: null;
+};
+
 /** Search result with cosine distance score. */
 export type IssueSearchResult = {
-  record: IssueRecord;
+  record: IssueSearchRecord;
   distance: number;
 };
 
@@ -90,9 +95,14 @@ export type IssueCommentRecord = {
   githubUpdatedAt: string | null;
 };
 
+/** Search rows deliberately omit vector payloads and expose a null embedding. */
+export type IssueCommentSearchRecord = Omit<IssueCommentRecord, "embedding"> & {
+  embedding: null;
+};
+
 /** Comment search result with cosine distance. */
 export type IssueCommentSearchResult = {
-  record: IssueCommentRecord;
+  record: IssueCommentSearchRecord;
   distance: number;
 };
 

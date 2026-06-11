@@ -201,6 +201,9 @@ function approvalSummary(counts: Partial<NonNullable<ReviewCandidatePublicationR
 }
 
 function adapterSummary(counts: Partial<NonNullable<ReviewCandidatePublicationRuntimeInput["adapter"]>["counts"]> = {}): NonNullable<ReviewCandidatePublicationRuntimeInput["adapter"]> {
+  const detailsOnlyFindings = counts.detailsOnlyFindings ?? 0;
+  const movedToDetails = counts.movedToDetails ?? 0;
+  const detailsOnlyOmitted = counts.detailsOnlyOmitted ?? 0;
   return {
     counts: {
       input: 0,
@@ -208,10 +211,46 @@ function adapterSummary(counts: Partial<NonNullable<ReviewCandidatePublicationRu
       skipped: 0,
       approved: 0,
       rewritten: 0,
+      detailsOnlyFindings,
+      movedToDetails,
+      detailsOnlyOmitted,
       ...counts,
     },
     skipped: [],
     fingerprints: [],
+    fixEligibility: {
+      schema: "same-pr-fix-eligibility.v1",
+      status: "empty",
+      counts: { input: 0, eligible: 0, blocked: 0, omitted: 0, capped: 0 },
+      reasonCounts: {},
+      omittedReasonCounts: {},
+      redaction: {
+        privateOnly: true,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        candidateBodiesIncluded: false,
+        toolPayloadsIncluded: false,
+        diffsIncluded: false,
+        unboundedDiffsIncluded: false,
+        secretDetected: false,
+      },
+    },
+    fixOutcomes: [],
+    detailsOnlyFindings: [],
+    movedToDetails: {
+      counts: { total: movedToDetails, fromFixEligibility: 0, fromPublisherResult: 0, omitted: detailsOnlyOmitted },
+      reasonCounts: {},
+      redaction: {
+        rawCandidatePayloadsIncluded: false,
+        rawPromptsIncluded: false,
+        rawModelOutputIncluded: false,
+        diffsIncluded: false,
+        replacementTextIncluded: false,
+        githubResponsePayloadsIncluded: false,
+        secretLikeValuesIncluded: false,
+        bounded: true,
+      },
+    },
   };
 }
 

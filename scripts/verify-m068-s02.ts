@@ -1,4 +1,5 @@
 import { createInlineReviewPublisher, REVIEW_OUTPUT_MARKER_PREFIX, type InlineReviewPublicationResult } from "../src/execution/mcp/inline-review-publisher.ts";
+import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../src/execution/formatter-suggestions.ts";
 import { coordinateReviewCandidateApproval, type ReviewCandidateApprovalResult } from "../src/review-orchestration/review-candidate-approval.ts";
 import {
   adaptApprovedCandidatesForInlinePublication,
@@ -402,7 +403,7 @@ async function buildScenarioContext(): Promise<ScenarioContext> {
 
   async function publishPayload(
     payload: PublishableReviewCandidateInlinePayload,
-    options: { shouldPublish?: boolean; prDiffForCommentValidation?: string } = {},
+    options: { shouldPublish?: boolean; prDiffCommentabilityIndex?: PrDiffCommentabilityIndex } = {},
   ): Promise<InlineReviewPublicationResult> {
     const publisher = createInlineReviewPublisher({
       getOctokit: async () => octokit as never,
@@ -412,7 +413,7 @@ async function buildScenarioContext(): Promise<ScenarioContext> {
       botHandles: ["kodiai"],
       reviewOutputKey: `review-output-${payload.publication.location.path}`,
       publicationGate: { resolve: async () => ({ shouldPublish: options.shouldPublish ?? true }) as never },
-      prDiffForCommentValidation: options.prDiffForCommentValidation,
+      prDiffCommentabilityIndex: options.prDiffCommentabilityIndex,
     });
     return publisher.publish(payload.publication);
   }
@@ -426,13 +427,13 @@ async function buildScenarioContext(): Promise<ScenarioContext> {
   publicationResults.set(publishedPayload.candidateFingerprint, await publishPayload(publishedPayload));
   publicationResults.set(skippedPayload.candidateFingerprint, await publishPayload(skippedPayload, { shouldPublish: false }));
   publicationResults.set(nonCommentablePayload.candidateFingerprint, await publishPayload(nonCommentablePayload, {
-    prDiffForCommentValidation: [
+    prDiffCommentabilityIndex: buildPrDiffCommentabilityIndex([
       "diff --git a/src/non-commentable.ts b/src/non-commentable.ts",
       "--- a/src/non-commentable.ts",
       "+++ b/src/non-commentable.ts",
       "@@ -1,1 +10,1 @@",
       "+commentable",
-    ].join("\n"),
+    ].join("\n")),
   }));
   publicationResults.set(secretPayload.candidateFingerprint, await publishPayload(secretPayload));
   publicationResults.set(malformedPublisherPayload.candidateFingerprint, {

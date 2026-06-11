@@ -94,7 +94,7 @@ function shouldRenderIncompleteDiagnostic(classification: unknown): boolean {
 
 function renderIncompleteDiagnostic(classification: unknown): string[] {
   const projection = classification as Partial<AddonCheckClassificationResult> | undefined;
-  const counts = projection?.counts ?? {};
+  const counts = (projection?.counts ?? {}) as Partial<AddonCheckClassificationResult["counts"]>;
   const mode = safeMode(projection?.mode);
   const reasonCodes = safeReasonCodes(projection?.reasonCodes);
   const addonCount = boundedNonNegativeInteger(counts.addonCount);

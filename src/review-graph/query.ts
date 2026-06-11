@@ -7,7 +7,7 @@ import type {
   ReviewGraphStore,
   ReviewGraphWorkspaceSnapshot,
 } from "./types.ts";
-import { buildAliasSubstringIndex, findMatchingAlias } from "./alias-matcher.ts";
+import { buildAliasMatcher, findMatchingAlias } from "./alias-matcher.ts";
 
 export type ReviewGraphQueryInput = {
   repo: string;
@@ -359,7 +359,7 @@ export function queryBlastRadiusFromSnapshot(
 
     const changedSymbols = fileNodes.filter((node) => node.nodeKind === "symbol" || node.nodeKind === "test");
     const symbolAliases = new Set(changedSymbols.flatMap((node) => collectSymbolAliases(node).map((value) => value.toLowerCase())));
-    const symbolAliasSubstringIndex = buildAliasSubstringIndex(symbolAliases);
+    const symbolAliasMatcher = buildAliasMatcher(symbolAliases);
 
     for (const importNode of allImportNodes) {
       const importPath = indexes.filePathById.get(importNode.fileId);
@@ -414,7 +414,7 @@ export function queryBlastRadiusFromSnapshot(
       const testPath = indexes.filePathById.get(testNode.fileId);
       if (!testPath || changedFileSet.has(testPath)) continue;
       const aliases = collectSymbolAliases(testNode).map((value) => value.toLowerCase());
-      const matchedAlias = findMatchingAlias(aliases, symbolAliases, symbolAliasSubstringIndex);
+      const matchedAlias = findMatchingAlias(aliases, symbolAliasMatcher);
       if (!matchedAlias) continue;
 
       const conf = nodeConfidence(testNode);

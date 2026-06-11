@@ -13,6 +13,7 @@ import type { Logger } from "pino";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import { findPotentialMatches } from "../contributor/identity-matcher.ts";
 import { createInMemoryCache } from "../lib/in-memory-cache.ts";
+import { dedupeInflight } from "../lib/inflight-dedupe.ts";
 import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 import { retryTransient } from "../lib/transient-retry.ts";
 
@@ -101,6 +102,7 @@ function isRetryableSlackError(error: unknown): boolean {
     if (isSlackMissingScopeError(error.slackError)) return false;
     return error.status === 429 || error.status >= 500 || error.slackError === "ratelimited";
   }
+  // Fetch rejects aborted/network-failed requests as TypeError/DOMException before Slack can return JSON.
   return error instanceof TypeError || error instanceof DOMException;
 }
 
@@ -182,18 +184,9 @@ async function fetchSlackMembers(
     return cachedMembers;
   }
 
-  const inflightMembers = slackMemberInflightLoads.get(tokenCacheKey);
-  if (inflightMembers) {
-    return inflightMembers;
-  }
-
-  const loadPromise = fetchSlackMembersUncached(botToken, tokenCacheKey, logger);
-  slackMemberInflightLoads.set(tokenCacheKey, loadPromise);
-  try {
-    return await loadPromise;
-  } finally {
-    slackMemberInflightLoads.delete(tokenCacheKey);
-  }
+  return dedupeInflight(slackMemberInflightLoads, tokenCacheKey, () =>
+    fetchSlackMembersUncached(botToken, tokenCacheKey, logger)
+  );
 }
 
 async function fetchSlackMembersUncached(

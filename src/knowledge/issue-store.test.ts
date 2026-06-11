@@ -70,6 +70,37 @@ function makeEmbedding(seed: number = 42): Float32Array {
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
+function createMockSql(taggedRows: unknown[][] = []) {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const unsafeCalls: Array<{ query: string; values: unknown[] }> = [];
+  let taggedCallIndex = 0;
+
+  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ query: strings.join("?"), values });
+    return Promise.resolve(taggedRows[taggedCallIndex++] ?? []);
+  }) as unknown as Sql & {
+    calls: typeof calls;
+    unsafeCalls: typeof unsafeCalls;
+  };
+
+  sql.unsafe = ((query: string, values: unknown[]) => {
+    unsafeCalls.push({ query, values });
+    return Promise.resolve([]);
+  }) as unknown as Sql["unsafe"];
+  sql.calls = calls;
+  sql.unsafeCalls = unsafeCalls;
+  return sql;
+}
+
+function findTaggedQuery(
+  sql: ReturnType<typeof createMockSql>,
+  pattern: string,
+): { query: string; values: unknown[] } {
+  const call = sql.calls.find((entry) => entry.query.includes(pattern));
+  expect(call).toBeDefined();
+  return call!;
+}
+
 describe("sanitizePostgresText", () => {
   test("removes NUL bytes while preserving surrounding content", () => {
     expect(sanitizePostgresText("before\u0000middle\u0000after")).toBe("beforemiddleafter");
@@ -77,6 +108,75 @@ describe("sanitizePostgresText", () => {
 
   test("returns unchanged text when no NUL byte is present", () => {
     expect(sanitizePostgresText("plain issue body")).toBe("plain issue body");
+  });
+});
+
+describe("IssueStore search SQL", () => {
+  test("searchByEmbedding uses tagged SQL instead of unsafe query assembly", async () => {
+    const sql = createMockSql();
+    const store = createIssueStore({ sql, logger: mockLogger });
+
+    await store.searchByEmbedding({
+      queryEmbedding: new Float32Array([1]),
+      repo: "xbmc/xbmc",
+      stateFilter: "open",
+      topK: 5,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "FROM issues");
+    expect(query.values).toContain("[1]");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toContain(5);
+    expect(sql.calls.some((entry) => entry.values.includes("open"))).toBe(true);
+  });
+
+  test("searchByFullText uses tagged SQL instead of unsafe query assembly", async () => {
+    const sql = createMockSql();
+    const store = createIssueStore({ sql, logger: mockLogger });
+
+    await store.searchByFullText({
+      query: "hdr crash",
+      repo: "xbmc/xbmc",
+      topK: 3,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "ts_rank");
+    expect(query.values).toContain("hdr crash");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toContain(3);
+  });
+
+  test("findSimilar uses the shared issue projection after loading source embedding", async () => {
+    const sql = createMockSql([[{ embedding: "[1]" }]]);
+    const store = createIssueStore({ sql, logger: mockLogger });
+
+    await store.findSimilar("xbmc/xbmc", 100, 0.5);
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "issue_number !=");
+    expect(query.values).toContain("[1]");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toContain(100);
+    expect(query.values).toContain(0.5);
+  });
+
+  test("searchCommentsByEmbedding uses the shared comment projection with bound values", async () => {
+    const sql = createMockSql();
+    const store = createIssueStore({ sql, logger: mockLogger });
+
+    await store.searchCommentsByEmbedding({
+      queryEmbedding: new Float32Array([1]),
+      repo: "xbmc/xbmc",
+      topK: 7,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "FROM issue_comments");
+    expect(query.values).toContain("[1]");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toContain(7);
   });
 });
 
