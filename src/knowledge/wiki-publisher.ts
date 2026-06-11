@@ -19,9 +19,10 @@ import type {
   RetrofitPageAction,
   RetrofitPreviewResult,
 } from "./wiki-publisher-types.ts";
-import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
+import { capRetryDelayMs, parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 
 const MAX_COMMENT_SCAN_PAGES = 10;
+const MAX_GITHUB_RETRY_DELAY_MS = 120_000;
 const WIKI_COMMENT_MARKER_RE = /<!--\s*kodiai:wiki-modification:(\d+)\s*-->/;
 
 // ── Helpers (exported for testing) ──────────────────────────────────────
@@ -152,8 +153,8 @@ export async function postCommentWithRetry(
               )
             : null;
 
-        const waitMs = parseRetryAfterDelayMs(retryAfter)
-          ?? 60_000 * Math.pow(2, attempt); // 60s, 120s, 240s
+        const waitMs = capRetryDelayMs(parseRetryAfterDelayMs(retryAfter), MAX_GITHUB_RETRY_DELAY_MS)
+          ?? Math.min(60_000 * Math.pow(2, attempt), MAX_GITHUB_RETRY_DELAY_MS); // 60s, 120s, capped
 
         await delay(waitMs);
         continue;
@@ -442,7 +443,10 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
           { pages: groups.length, suggestions: rows.length },
           "Dry-run: formatted suggestions for all pages",
         );
-        logger.info({ dryRunOutput }, "Dry-run output");
+        logger.debug(
+          { dryRunOutputBytes: Buffer.byteLength(dryRunOutput, "utf8") },
+          "Dry-run output formatted",
+        );
         return {
           ...emptyResult,
           pagesPosted: groups.length,

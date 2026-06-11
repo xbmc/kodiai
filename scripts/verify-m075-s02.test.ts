@@ -73,6 +73,7 @@ describe("verify-m075-s02", () => {
   test("fails closed when missing comment ids become candidates instead of bounded skips", async () => {
     const unsafeBuilder = (_input: BuildReviewLearningMemoryRecordInput): ReviewLearningMemoryDecision => ({
       kind: "candidate",
+      memoryKey: { repo: "acme/widgets", findingId: 0, outcome: "accepted" },
       embeddingText: "unsafe candidate",
       toRecord: () => ({
         repo: "acme/widgets",

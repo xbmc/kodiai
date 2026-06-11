@@ -7,7 +7,7 @@ import {
 } from "./formatter-command-sandbox.ts";
 
 export const FORMATTER_STDERR_SUMMARY_MAX_CHARS = 500;
-export const FORMATTER_PROCESS_STREAM_MAX_CHARS = 1_000_000;
+const FORMATTER_PROCESS_STREAM_MAX_CHARS = 1_000_000;
 
 export type FormatterCommandStatus =
   | "success"
@@ -636,45 +636,69 @@ function summarizeFormatterStderr(stderr: unknown): string {
   return redacted.slice(0, FORMATTER_STDERR_SUMMARY_MAX_CHARS);
 }
 
-async function readProcessStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
+export async function readProcessStreamForFormatter(
+  stream: ReadableStream<Uint8Array> | null,
+  maxChars = FORMATTER_PROCESS_STREAM_MAX_CHARS,
+): Promise<string> {
   if (!stream) {
     return "";
   }
 
-  const text = await new Response(stream).text();
-  if (text.length <= FORMATTER_PROCESS_STREAM_MAX_CHARS) {
-    return text;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let charCount = 0;
+  try {
+    while (charCount < maxChars) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const decoded = decoder.decode(value, { stream: true });
+      chunks.push(decoded);
+      charCount += decoded.length;
+      if (charCount >= maxChars) {
+        await reader.cancel();
+        return chunks.join("").slice(0, maxChars);
+      }
+    }
+    const flushed = decoder.decode();
+    if (flushed) {
+      chunks.push(flushed);
+      charCount += flushed.length;
+    }
+  } finally {
+    reader.releaseLock();
   }
-  return text.slice(0, FORMATTER_PROCESS_STREAM_MAX_CHARS);
+  const text = chunks.join("");
+  return text.length <= maxChars ? text : text.slice(0, maxChars);
 }
 
-export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
+const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
   command,
   cwd,
   timeoutMs,
 }) => {
   const startedAt = performance.now();
-  const { spawnArgs, executionMode, rejectionReason } = spawnArgsForFormatterCommand(command);
-  if (executionMode === "rejected") {
+  const commandResolution = spawnArgsForFormatterCommand(command);
+  if (commandResolution.executionMode === "rejected") {
     return {
       exitCode: 126,
       stdout: "",
       stderr: "",
       timedOut: false,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      executionMode,
-      rejectionReason,
+      executionMode: commandResolution.executionMode,
+      rejectionReason: commandResolution.rejectionReason,
     };
   }
 
-  const proc = Bun.spawn(spawnArgs, {
+  const proc = Bun.spawn(commandResolution.spawnArgs, {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
   });
 
-  const stdoutPromise = readProcessStream(proc.stdout);
-  const stderrPromise = readProcessStream(proc.stderr);
+  const stdoutPromise = readProcessStreamForFormatter(proc.stdout);
+  const stderrPromise = readProcessStreamForFormatter(proc.stderr);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
 
@@ -703,7 +727,7 @@ export const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
       stderr,
       timedOut,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      executionMode,
+      executionMode: commandResolution.executionMode,
     };
   } finally {
     if (timer !== undefined) {

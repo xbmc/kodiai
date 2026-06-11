@@ -185,7 +185,7 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
         if (chunks.length === 0) continue;
 
         // Generate embeddings (fail-open)
-        await embedChunks(chunks, embeddingProvider, store, logger, dryRun);
+        await embedChunks(chunks, embeddingProvider);
 
         if (!dryRun) {
           if (hasEdited) {

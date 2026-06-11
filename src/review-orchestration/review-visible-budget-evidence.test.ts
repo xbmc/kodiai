@@ -15,6 +15,8 @@ const samplePromptSectionRecord: PromptSectionRecord = {
   sections: [{
     sectionName: "changed-files",
     sectionPosition: 1,
+    charCount: 500,
+    estimatedTokens: 125,
     budgetChars: 1000,
     budgetTokens: 250,
     includedChars: 500,
@@ -37,6 +39,8 @@ describe("chooseVisibleBudgetScenario", () => {
       sections: [{
         sectionName: "changed-files",
         sectionPosition: 1,
+        charCount: 500,
+        estimatedTokens: 125,
         budgetChars: 1000,
         budgetTokens: 250,
         includedChars: 500,

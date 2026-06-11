@@ -134,7 +134,10 @@ export function formatReviewValidationTruthDetailsLine(
       "missingValidation",
       "missingRevalidation",
     ]) ?? "fresh:0,stale:0,missingValidation:0,missingRevalidation:0";
-    const omitted = isReviewDetailsRecord(validationTruth.omitted) ? validationTruth.omitted : {};
+    const omitted = (isReviewDetailsRecord(validationTruth.omitted) ? validationTruth.omitted : {}) as {
+      reasonCodes?: unknown;
+      references?: unknown;
+    };
     const correlation = [
       `reviewOutputKey:${boundedReviewDetailsValue(validationTruth.reviewOutputKey, 96) ? "y" : "n"}`,
       `deliveryId:${boundedReviewDetailsValue(validationTruth.deliveryId, 96) ? "y" : "n"}`,
@@ -186,7 +189,13 @@ export function formatReviewFindingLifecycleDetailsLine(
       ?? "critical:0,major:0,medium:0,minor:0";
     const actionabilityCounts = formatCountFields(lifecycle.counts?.actionability, ["actionable", "needs-human-review", "needs-reproduction", "blocked", "not-actionable"])
       ?? "actionable:0,needs-human-review:0,needs-reproduction:0,blocked:0,not-actionable:0";
-    const correlation = isReviewDetailsRecord(lifecycle.correlation) ? lifecycle.correlation : {};
+    const correlation = (isReviewDetailsRecord(lifecycle.correlation) ? lifecycle.correlation : {}) as {
+      repoPresent?: unknown;
+      pullNumberPresent?: unknown;
+      reviewOutputKeyPresent?: unknown;
+      deliveryIdPresent?: unknown;
+      commitIdentityPresent?: unknown;
+    };
     const correlationText = [
       `repo:${correlation.repoPresent === true ? "y" : "n"}`,
       `pull:${correlation.pullNumberPresent === true ? "y" : "n"}`,

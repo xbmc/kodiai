@@ -91,6 +91,16 @@ if ! git rev-parse --verify "${SOURCE_COMMIT}^{commit}" >/dev/null 2>&1; then
 fi
 SOURCE_COMMIT=$(git rev-parse --verify "${SOURCE_COMMIT}^{commit}")
 SOURCE_COMMIT_SHORT=$(git rev-parse --short=12 "$SOURCE_COMMIT")
+ACA_MIN_REPLICAS=${ACA_MIN_REPLICAS:-1}
+ACA_MAX_REPLICAS=${ACA_MAX_REPLICAS:-1}
+if ! [[ "$ACA_MIN_REPLICAS" =~ ^[0-9]+$ && "$ACA_MAX_REPLICAS" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: ACA_MIN_REPLICAS and ACA_MAX_REPLICAS must be non-negative integers." >&2
+  exit 1
+fi
+if (( ACA_MIN_REPLICAS < 1 || ACA_MAX_REPLICAS < ACA_MIN_REPLICAS )); then
+  echo "ERROR: ACA_MIN_REPLICAS must be >= 1 and ACA_MAX_REPLICAS must be >= ACA_MIN_REPLICAS." >&2
+  exit 1
+fi
 BUILD_CONTEXT_DIR=$(mktemp -d)
 KEYVAULT_TEMP_FILES=()
 
@@ -699,8 +709,8 @@ ${BOT_USER_SECRET_REF_YAML}
     revisionSuffix: ${REVISION_SUFFIX}
     terminationGracePeriodSeconds: 600
     scale:
-      minReplicas: 1
-      maxReplicas: 1
+      minReplicas: ${ACA_MIN_REPLICAS}
+      maxReplicas: ${ACA_MAX_REPLICAS}
     containers:
       - name: ${APP_NAME}
         image: ${APP_IMAGE}
@@ -786,8 +796,8 @@ else
     --registry-identity "$IDENTITY_RESOURCE_ID" \
     --target-port 3000 \
     --ingress external \
-    --min-replicas 1 \
-    --max-replicas 1 \
+    --min-replicas "$ACA_MIN_REPLICAS" \
+    --max-replicas "$ACA_MAX_REPLICAS" \
     --termination-grace-period 600 \
     --secrets \
       "github-app-id=keyvaultref:${KEY_VAULT_URI}/github-app-id,identityref:${IDENTITY_RESOURCE_ID}" \

@@ -2,7 +2,7 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
-import { parseRetryAfterDelayMs } from "../../lib/retry-after.ts";
+import { retryGitHubRateLimitOnly } from "../../lib/github-retry.ts";
 
 const MAX_COMMENT_LENGTH = 60000;
 const TRUNCATION_NOTE = "\n\n---\n*Comment truncated due to length.*";
@@ -16,23 +16,6 @@ interface ToolResult {
   [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
-}
-
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      if (error?.status === 429 && attempt < maxRetries) {
-        const retryAfter = error?.response?.headers?.["retry-after"];
-        const delayMs = parseRetryAfterDelayMs(retryAfter) ?? Math.pow(2, attempt) * 1000;
-        await new Promise((r) => setTimeout(r, delayMs));
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error("unreachable");
 }
 
 function mapErrorCode(
@@ -165,7 +148,7 @@ export async function createCommentHandler(deps: {
     }
 
     // Post comment with retry
-    const { data } = await withRetry(() =>
+    const { data } = await retryGitHubRateLimitOnly(() =>
       octokit.rest.issues.createComment({
         owner,
         repo,
@@ -265,7 +248,7 @@ export async function updateCommentHandler(deps: {
     }
 
     // Update comment with retry
-    const { data } = await withRetry(() =>
+    const { data } = await retryGitHubRateLimitOnly(() =>
       octokit.rest.issues.updateComment({
         owner,
         repo,

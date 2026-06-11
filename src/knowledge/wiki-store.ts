@@ -5,6 +5,7 @@ import type {
   WikiEmbeddingRepairCheckpoint,
   WikiPageChunk,
   WikiPageRecord,
+  WikiPageSearchRecord,
   WikiPageSearchResult,
   WikiPageStore,
   WikiRepairCandidate,
@@ -44,6 +45,14 @@ const WIKI_CHUNK_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_rows", [
   ["revision_id", "integer"],
   ["language_tags", "jsonb"],
 ]);
+function wikiSearchColumns(sql: Sql) {
+  return sql`
+    id, created_at, page_id, page_title, namespace, page_url,
+    section_heading, section_anchor, section_level, chunk_index,
+    chunk_text, raw_text, token_count, NULL AS embedding, embedding_model,
+    stale, last_modified, revision_id, deleted, language_tags
+  `;
+}
 
 type WikiRow = {
   id: number;
@@ -90,6 +99,13 @@ function rowToRecord(row: WikiRow): WikiPageRecord {
     revisionId: row.revision_id,
     deleted: row.deleted,
     languageTags: row.language_tags ?? [],
+  };
+}
+
+function rowToSearchRecord(row: WikiRow): WikiPageSearchRecord {
+  return {
+    ...rowToRecord(row),
+    embedding: null,
   };
 }
 
@@ -239,32 +255,22 @@ export function createWikiPageStore(opts: {
       namespace?: string;
     }): Promise<WikiPageSearchResult[]> {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
+      const namespaceFilter = params.namespace ? sql`AND namespace = ${params.namespace}` : sql``;
 
-      const rows = params.namespace
-        ? await sql`
-            SELECT *,
-              embedding <=> ${queryEmbeddingString}::vector AS distance
-            FROM wiki_pages
-            WHERE namespace = ${params.namespace}
-              AND stale = false
-              AND deleted = false
-              AND embedding IS NOT NULL
-            ORDER BY embedding <=> ${queryEmbeddingString}::vector
-            LIMIT ${params.topK}
-          `
-        : await sql`
-            SELECT *,
-              embedding <=> ${queryEmbeddingString}::vector AS distance
-            FROM wiki_pages
-            WHERE stale = false
-              AND deleted = false
-              AND embedding IS NOT NULL
-            ORDER BY embedding <=> ${queryEmbeddingString}::vector
-            LIMIT ${params.topK}
-          `;
+      const rows = await sql`
+        SELECT ${wikiSearchColumns(sql)},
+          embedding <=> ${queryEmbeddingString}::vector AS distance
+        FROM wiki_pages
+        WHERE stale = false
+          AND deleted = false
+          AND embedding IS NOT NULL
+          ${namespaceFilter}
+        ORDER BY embedding <=> ${queryEmbeddingString}::vector
+        LIMIT ${params.topK}
+      `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as WikiRow),
+        record: rowToSearchRecord(row as unknown as WikiRow),
         distance: Number((row as Record<string, unknown>).distance),
       }));
     },
@@ -275,32 +281,22 @@ export function createWikiPageStore(opts: {
       namespace?: string;
     }): Promise<WikiPageSearchResult[]> {
       if (!params.query.trim()) return [];
+      const namespaceFilter = params.namespace ? sql`AND namespace = ${params.namespace}` : sql``;
 
-      const rows = params.namespace
-        ? await sql`
-            SELECT *,
-              ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
-            FROM wiki_pages
-            WHERE namespace = ${params.namespace}
-              AND stale = false
-              AND deleted = false
-              AND search_tsv @@ plainto_tsquery('english', ${params.query})
-            ORDER BY rank DESC
-            LIMIT ${params.topK}
-          `
-        : await sql`
-            SELECT *,
-              ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
-            FROM wiki_pages
-            WHERE stale = false
-              AND deleted = false
-              AND search_tsv @@ plainto_tsquery('english', ${params.query})
-            ORDER BY rank DESC
-            LIMIT ${params.topK}
-          `;
+      const rows = await sql`
+        SELECT ${wikiSearchColumns(sql)},
+          ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
+        FROM wiki_pages
+        WHERE stale = false
+          AND deleted = false
+          AND search_tsv @@ plainto_tsquery('english', ${params.query})
+          ${namespaceFilter}
+        ORDER BY rank DESC
+        LIMIT ${params.topK}
+      `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as WikiRow),
+        record: rowToSearchRecord(row as unknown as WikiRow),
         distance: 1 - Number((row as Record<string, unknown>).rank),
       }));
     },

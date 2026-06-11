@@ -2,7 +2,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../review-orchestration/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
-import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
+import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import {
   createReviewOutputPublicationGate,
   type ReviewOutputPublicationGate,
@@ -51,7 +51,7 @@ export type InlineReviewPublisherOptions = {
   logger?: Logger;
   onPublish?: () => void;
   publicationGate?: ReviewOutputPublicationGate;
-  prDiffForCommentValidation?: string;
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
 };
 
 export type PublishInlineReviewCommentInput = {
@@ -237,9 +237,7 @@ function makeErrorResult(params: {
 }
 
 export function createInlineReviewPublisher(options: InlineReviewPublisherOptions) {
-  const rightCommentableLines = options.prDiffForCommentValidation
-    ? buildPrDiffCommentabilityIndex(options.prDiffForCommentValidation)
-    : undefined;
+  const rightCommentableLines = options.prDiffCommentabilityIndex;
   const reviewOutputPublicationGate = options.publicationGate
     ?? (
       options.reviewOutputKey

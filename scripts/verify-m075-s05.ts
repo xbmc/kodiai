@@ -35,6 +35,7 @@ export type M075S05Mode =
   | "long-run-threshold-exceeded"
   | "unknown-malformed-evidence";
 export type M075S05Args = { readonly json: boolean; readonly help: boolean; readonly fixturePath?: string };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type M075S05Check = { readonly id: M075S05CheckId; readonly status: M075S05CheckStatus; readonly message: string; readonly issues: readonly string[] };
 export type M075S05Counts = Record<string, number | boolean | string | null | undefined>;
 export type M075S05Scenario = {
@@ -99,7 +100,7 @@ const FORBIDDEN_RAW_VALUE = /(RAW_PROMPT_CANARY|RAW_MODEL_OUTPUT_CANARY|CANDIDAT
 const EMPTY_OBSERVED: M075S05Observed = { scenarioCount: 0, modeCount: 0, expectedBoundedCount: 0, hardFailureCount: 0, actionableCount: 0 };
 
 export function parseM075S05Args(args: readonly string[]): M075S05Args {
-  const parsed: Partial<M075S05Args> = { json: false, help: false };
+  const parsed: Partial<Mutable<M075S05Args>> = { json: false, help: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") { parsed.json = true; continue; }

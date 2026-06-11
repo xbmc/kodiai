@@ -3,7 +3,9 @@ import type { Logger } from "pino";
 import type { RequestTracker } from "./types.ts";
 import { createShutdownManager } from "./shutdown-manager.ts";
 
-function createTestLogger(): Logger {
+type TestLogger = Logger & { _entries: Array<{ level: string; bindings: Record<string, unknown>; message: string }> };
+
+function createTestLogger(): TestLogger {
   const entries: Array<{ level: string; bindings: Record<string, unknown>; message: string }> = [];
   const logger = {
     info: (bindings: Record<string, unknown>, message: string) => {
@@ -21,7 +23,7 @@ function createTestLogger(): Logger {
     child: () => logger,
     _entries: entries,
   };
-  return logger as unknown as Logger & { _entries: typeof entries };
+  return logger as unknown as TestLogger;
 }
 
 function createRequestTracker(waitForDrain: RequestTracker["waitForDrain"]): RequestTracker {

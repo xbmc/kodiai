@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   classifyAddonCheckOutcome,
+  type AddonCheckClassification,
   type AddonCheckClassificationInput,
   type AddonCheckClassificationMode,
+  type AddonCheckReasonCode,
 } from "./addon-check-classification.ts";
 
 function classify(overrides: Partial<AddonCheckClassificationInput> = {}) {
@@ -86,9 +88,9 @@ describe("classifyAddonCheckOutcome", () => {
     string,
     Partial<AddonCheckClassificationInput>,
     AddonCheckClassificationMode,
-    string,
+    AddonCheckClassification,
     boolean,
-    string[],
+    AddonCheckReasonCode[],
   ]>)("classifies %s", (_name, input, mode, classification, actionableDiagnostic, reasonCodes) => {
     const result = classify(input);
 

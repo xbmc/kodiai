@@ -35,6 +35,7 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
+import { buildPrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import {
   computeFileRiskScores,
   triageFilesByRisk,
@@ -221,6 +222,7 @@ import {
   buildReviewDetailsPhaseTimingSummary,
   buildUnavailableReviewPhase,
   createReviewPhaseTiming,
+  formatTimeoutErrorDetail,
   isValidQueueWaitMetadata,
 } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
@@ -314,19 +316,11 @@ import {
 } from "../lib/search-cache.ts";
 import { detectDependsBump, type DependsBumpInfo } from "../lib/depends-bump-detector.ts";
 import {
-  parseVersionFileDiff,
-  parsePackageListDiff,
-  fetchDependsChangelog,
-  verifyHash,
-  detectPatchChanges,
-} from "../lib/depends-bump-enrichment.ts";
-import { findDependencyConsumers, checkTransitiveDependencies } from "../lib/depends-impact-analyzer.ts";
-import {
   buildDependsReviewComment,
   buildDependsInlineComments,
   computeDependsVerdict,
-  type DependsReviewData,
 } from "../lib/depends-review-builder.ts";
+import { buildDependsReviewContext } from "../lib/depends-review-context.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { createTaskRouter } from "../llm/task-router.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
@@ -1418,6 +1412,10 @@ export function createReviewHandler(deps: {
             pullNumber: pr.number,
           }),
         });
+        const diffContentForValidation = diffContext.diffContent ?? "";
+        const prDiffCommentabilityIndex = diffContentForValidation
+          ? buildPrDiffCommentabilityIndex(diffContentForValidation)
+          : undefined;
         const allChangedFiles = diffContext.changedFiles;
 
         // ── [depends] deep-review detection (DEPS-01/02) ──
@@ -1442,7 +1440,6 @@ export function createReviewHandler(deps: {
         // When a [depends] bump is detected, run enrichment, build structured comment, and post.
         if (dependsBumpInfo) {
           try {
-            // 1. Fetch PR files with status/patch from GitHub API
             const prFilesForDepends = (await fetchAllPullRequestFiles({
               octokit: idempotencyOctokit,
               owner: apiOwner,
@@ -1450,183 +1447,37 @@ export function createReviewHandler(deps: {
               pullNumber: pr.number,
             })).map((file) => ({
               filename: file.filename,
-              status: file.status,
-              patch: file.patch ?? undefined,
+              ...(file.status ? { status: file.status } : {}),
+              ...(file.patch ? { patch: file.patch } : {}),
             }));
-
-            // 2. Parse VERSION file diffs from PR files
-            const versionDiffs: { packageName: string; oldVersion: string | null; newVersion: string | null; versionFileDiff: ReturnType<typeof parseVersionFileDiff> | null }[] = [];
-            for (const pkg of dependsBumpInfo.packages) {
-              const versionFile = prFilesForDepends.find(f =>
-                f.filename.toLowerCase().includes(pkg.name.toLowerCase()) &&
-                f.filename.toUpperCase().includes("VERSION")
-              );
-              const vFileDiff = versionFile?.patch ? parseVersionFileDiff(versionFile.patch) : null;
-              versionDiffs.push({
-                packageName: pkg.name,
-                oldVersion: vFileDiff?.oldVersion ?? pkg.oldVersion ?? null,
-                newVersion: vFileDiff?.newVersion ?? pkg.newVersion ?? null,
-                versionFileDiff: vFileDiff,
-              });
-            }
-
-            // 2b. Fallback: parse .list files for packages missing version info
-            for (const vd of versionDiffs) {
-              if (vd.oldVersion || vd.newVersion) continue; // already have version data
-              const listFiles = prFilesForDepends.filter(f =>
-                f.filename.toLowerCase().includes("0_package.target") &&
-                f.patch
-              );
-              for (const listFile of listFiles) {
-                const entries = parsePackageListDiff(listFile.patch!);
-                const match = entries.find(e =>
-                  e.name.toLowerCase() === vd.packageName.toLowerCase()
-                );
-                if (match) {
-                  vd.oldVersion = match.oldVersion;
-                  vd.newVersion = match.newVersion;
-                  // Leave versionFileDiff as null -- no VERSION file exists
-                  logger.info({ ...baseLog, gate: "depends-list-fallback", packageName: vd.packageName }, "[depends] extracted version from .list file for " + vd.packageName);
-                  break;
-                }
-              }
-            }
-
-            // 3. Fetch changelogs (parallel)
-            const changelogs = await Promise.all(
-              dependsBumpInfo.packages.map(async pkg => {
-                const vd = versionDiffs.find(v => v.packageName === pkg.name);
-                const changelog = await fetchDependsChangelog({
-                  libraryName: pkg.name,
-                  oldVersion: vd?.oldVersion ?? pkg.oldVersion ?? "",
-                  newVersion: vd?.newVersion ?? pkg.newVersion ?? "",
-                  octokit: idempotencyOctokit,
-                  timeoutMs: 4000,
-                  versionFileDiff: vd?.versionFileDiff ?? null,
-                });
-                return { packageName: pkg.name, changelog };
-              })
-            );
-
-            // 4. Verify hashes (parallel)
-            const hashResults = await Promise.all(
-              versionDiffs.map(async vd => {
-                if (!vd.versionFileDiff?.newSha512) {
-                  return { packageName: vd.packageName, result: { status: "skipped" as const, detail: "No hash in VERSION file" } };
-                }
-                const archiveUrl = vd.versionFileDiff.newBaseUrl && vd.versionFileDiff.newArchive
-                  ? `${vd.versionFileDiff.newBaseUrl}/${vd.versionFileDiff.newArchive}`
-                  : null;
-                if (!archiveUrl) {
-                  return { packageName: vd.packageName, result: { status: "skipped" as const, detail: "Cannot construct download URL" } };
-                }
-                const result = await verifyHash({
-                  url: archiveUrl,
-                  expectedSha512: vd.versionFileDiff.newSha512,
-                  timeoutMs: 5000,
-                });
-                return { packageName: vd.packageName, result };
-              })
-            );
-
-            // 5. Detect patch changes
-            const patchChanges = detectPatchChanges(
-              prFilesForDepends.filter((f): f is typeof f & { status: string } => !!f.status)
-            );
-
-            // 6. Impact analysis (workspace required)
-            let dependsImpact = null;
-            let dependsTransitive = null;
-            if (workspace) {
-              try {
-                const primaryPkg = dependsBumpInfo.packages[0];
-                if (primaryPkg) {
-                  dependsImpact = await findDependencyConsumers({
-                    workspaceDir: workspace.dir,
-                    libraryName: primaryPkg.name,
-                    octokit: idempotencyOctokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    timeBudgetMs: 3000,
-                  });
-                  dependsTransitive = await checkTransitiveDependencies({
-                    libraryName: primaryPkg.name,
-                    octokit: idempotencyOctokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                  });
-                }
-              } catch (err) {
-                logger.warn({ ...baseLog, err, gate: "depends-impact" }, "Impact analysis failed (fail-open)");
-              }
-            }
-
-            // 7. Retrieval context (past reviews/wiki about this dependency)
-            let dependsRetrievalContext: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] | null = null;
-            if (retriever) {
-              try {
-                const primaryPkg = dependsBumpInfo.packages[0];
-                if (primaryPkg) {
-                  const result = await retriever.retrieve({
-                    repo: `${apiOwner}/${apiRepo}`,
-                    owner: apiOwner,
-                    queries: [`${primaryPkg.name} dependency bump update`],
-                    workspaceDir: workspace?.dir ?? "",
-                    prLanguages: ["c", "cpp", "cmake"],
-                    logger,
-                    triggerType: "pr_review",
-                  });
-                  if (result && result.unifiedResults && result.unifiedResults.length > 0) {
-                    dependsRetrievalContext = result.unifiedResults.slice(0, 3);
-                  }
-                }
-              } catch (err) {
-                logger.warn({ ...baseLog, err, gate: "depends-retrieval" }, "Retrieval context failed (fail-open)");
-              }
-            }
-
-            // 7b. Generate context summary (fail-open: null on error)
-            let dependsContextSummary: string | null = null;
-            if (dependsRetrievalContext && dependsRetrievalContext.length > 0) {
-              try {
+            const dependsContext = await buildDependsReviewContext({
+              info: dependsBumpInfo,
+              prFiles: prFilesForDepends,
+              octokit: idempotencyOctokit,
+              owner: apiOwner,
+              repo: apiRepo,
+              workspaceDir: workspace?.dir ?? null,
+              logger,
+              baseLog,
+              deliveryId: String(pr.number),
+              retriever,
+              summarize: async ({ packageName, snippets, repo, deliveryId }) => {
                 const taskRouter = createTaskRouter({ models: {} });
                 const resolved = taskRouter.resolve(TASK_TYPES.DEPENDS_CONTEXT_SUMMARY);
-                const pkg = dependsBumpInfo.packages[0]?.name ?? "this dependency";
-                const snippets = dependsRetrievalContext
-                  .map((c, i) => {
-                    const author = (c.metadata?.authorLogin as string | undefined) ?? "unknown";
-                    const date = c.createdAt ? new Date(c.createdAt).toISOString().slice(0, 10) : "?";
-                    return `${i + 1}. @${author} (${date}): ${c.text.trim().slice(0, 200)}`;
-                  })
-                  .join("\n");
                 const summaryResult = await generateWithFallback({
                   taskType: TASK_TYPES.DEPENDS_CONTEXT_SUMMARY,
                   resolved,
                   system: "You summarize past PR discussion snippets into 1–2 plain sentences explaining why they are relevant context for a dependency bump review. No bullet points. No headers. Output only the summary sentences.",
-                  prompt: `Dependency being bumped: ${pkg}\n\nPast discussion snippets:\n${snippets}\n\nSummarize in 1–2 sentences why these past comments are relevant to this bump.`,
+                  prompt: `Dependency being bumped: ${packageName}\n\nPast discussion snippets:\n${snippets}\n\nSummarize in 1–2 sentences why these past comments are relevant to this bump.`,
                   logger,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  deliveryId: String(pr.number),
+                  repo,
+                  deliveryId,
                 });
-                dependsContextSummary = summaryResult.text.trim() || null;
-              } catch (err) {
-                logger.warn({ ...baseLog, err, gate: "depends-context-summary" }, "Context summary generation failed (fail-open)");
-              }
-            }
-
-            // 8. Build and post the deep-review comment
-            const reviewData: DependsReviewData = {
-              info: dependsBumpInfo,
-              versionDiffs,
-              changelogs,
-              hashResults,
-              patchChanges,
-              impact: dependsImpact,
-              transitive: dependsTransitive,
-              retrievalContext: dependsRetrievalContext,
-              contextSummary: dependsContextSummary,
-              platform: dependsBumpInfo.platform,
-            };
+                return summaryResult.text;
+              },
+            });
+            const hasSourceChanges = dependsContext.hasSourceChanges;
+            const reviewData = dependsContext.reviewData;
 
             const verdict = computeDependsVerdict(reviewData);
             const commentBody = buildDependsReviewComment(reviewData);
@@ -1679,18 +1530,11 @@ export function createReviewHandler(deps: {
                 verdict: verdict.level,
                 packagesCount: dependsBumpInfo.packages.length,
                 inlineCommentCount: inlineComments.length,
-                hasRetrievalContext: !!dependsRetrievalContext,
+                hasRetrievalContext: !!reviewData.retrievalContext,
               }, "[depends] deep review posted");
             }
 
             // 9. Determine if standard Claude review should also run
-            const buildConfigPaths = ["tools/depends/", "cmake/modules/", "project/BuildDependencies/", "project/cmake/"];
-            const hasSourceChanges = prFilesForDepends.some(f =>
-              !buildConfigPaths.some(prefix => f.filename.startsWith(prefix)) &&
-              !f.filename.toUpperCase().includes("VERSION") &&
-              !f.filename.endsWith(".patch")
-            );
-
             if (!hasSourceChanges) {
               // Pure dependency bump -- skip standard Claude review
               logger.info({ ...baseLog, gate: "depends-review-skip-standard", verdict: verdict.level }, "[depends] pure dep bump — skipping standard review");
@@ -1902,8 +1746,8 @@ export function createReviewHandler(deps: {
         try {
           shadowSpecialistResult = await shadowSpecialistSubflow({
             changedPaths: changedFiles,
-            diffText: diffContext.diffContent,
-            diffSnippet: buildShadowSpecialistDiffSnippet(diffContext.diffContent),
+            diffText: diffContentForValidation,
+            diffSnippet: buildShadowSpecialistDiffSnippet(diffContentForValidation),
             workspaceDir: workspace.dir,
             deliveryId: event.id,
             reviewOutputKey,
@@ -2882,7 +2726,7 @@ export function createReviewHandler(deps: {
           totalFiles: changedFiles.length,
           enableCheckpointTool: checkpointEnabled,
           enableCandidateFindingTool: true,
-          prDiffForCommentValidation: diffContext.diffContent,
+          prDiffCommentabilityIndex,
           // TMO-04: total timeout = infra overhead cushion + complexity-scaled remote runtime budget
           dynamicTimeoutSeconds: appliedTimeoutBudget
             ? appliedTimeoutBudget.totalTimeoutSeconds
@@ -3122,7 +2966,7 @@ export function createReviewHandler(deps: {
                     handlerCandidateVerificationPublicationEvidenceCollector.record(event);
                   },
                 }),
-                prDiffForCommentValidation: diffContext.diffContent,
+                prDiffCommentabilityIndex,
               });
               const publishResult = await candidatePublisher.publish(payload.publication);
               candidatePublisherResults.set(payload.candidateFingerprint, publishResult);
@@ -4845,7 +4689,7 @@ export function createReviewHandler(deps: {
                       knowledgeStore,
                       totalFiles: timeoutTotalFiles,
                       enableCheckpointTool: retryCheckpointEnabled,
-                      prDiffForCommentValidation: diffContext.diffContent,
+                      prDiffCommentabilityIndex,
                       enableCommentTools: false,
                     });
 

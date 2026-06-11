@@ -835,7 +835,7 @@ describe("createReviewHandler repository doctrine wiring", () => {
     expect(capturedPrompt).not.toContain("RAW_DOCTRINE_BODY_CANARY");
     expect(capturedPrompt).not.toContain("RAW_MIGRATION_CANARY");
 
-    expect(capturedReducerInput?.repoDoctrine).toMatchObject({
+    expect((capturedReducerInput as ReviewReducerInput | null)?.repoDoctrine).toMatchObject({
       status: "applied",
       contractCount: 2,
       matchedCount: 2,
@@ -13894,13 +13894,18 @@ describe("createReviewHandler review prompt section telemetry", () => {
         "review-instructions",
       ]),
     );
-    expect(promptSectionEntries[0]?.sections.some((section) => section.truncated === true)).toBeTrue();
+    // Instruction budget is now always observable in telemetry (within-budget
+    // reviews emit includedChars/budgetChars so the 16k cap can be tuned from data).
     const sectionWithBudgetMetadata = promptSectionEntries[0]?.sections.find((section) => section.sectionName === "review-instructions") as (typeof promptSectionEntries)[number]["sections"][number] & Record<string, unknown> | undefined;
-    expect(sectionWithBudgetMetadata?.budgetStatus).toBe("trimmed");
-    expect(sectionWithBudgetMetadata?.budgetReason).toBe("section-over-budget");
+    expect(sectionWithBudgetMetadata?.budgetStatus).toBe("included");
+    expect(sectionWithBudgetMetadata?.budgetReason).toBe("within-budget");
     expect(sectionWithBudgetMetadata?.budgetChars).toBeGreaterThan(0);
-    expect(sectionWithBudgetMetadata?.includedChars).toBe(sectionWithBudgetMetadata?.budgetChars);
-    expect(sectionWithBudgetMetadata?.trimmedChars).toBeGreaterThan(0);
+    expect(sectionWithBudgetMetadata?.includedChars as number).toBeGreaterThan(0);
+    expect(sectionWithBudgetMetadata?.includedChars as number).toBeLessThanOrEqual(
+      sectionWithBudgetMetadata?.budgetChars as number,
+    );
+    expect(sectionWithBudgetMetadata?.includedTokens as number).toBeGreaterThan(0);
+    expect(sectionWithBudgetMetadata?.trimmedChars).toBe(0);
 
     await workspaceFixture.cleanup();
   });
@@ -14087,12 +14092,14 @@ describe("createReviewHandler review prompt section telemetry", () => {
           "review-instructions",
         ]),
       );
-      expect(entry.sections.some((section) => section.truncated === true)).toBeTrue();
       const sectionWithBudgetMetadata = entry.sections.find((section) => section.sectionName === "review-instructions") as (typeof entry.sections)[number] & Record<string, unknown> | undefined;
-      expect(sectionWithBudgetMetadata?.budgetStatus).toBe("trimmed");
-      expect(sectionWithBudgetMetadata?.budgetReason).toBe("section-over-budget");
-      expect(sectionWithBudgetMetadata?.includedChars).toBe(sectionWithBudgetMetadata?.budgetChars);
-      expect(sectionWithBudgetMetadata?.trimmedChars).toBeGreaterThan(0);
+      expect(sectionWithBudgetMetadata?.budgetStatus).toBe("included");
+      expect(sectionWithBudgetMetadata?.budgetReason).toBe("within-budget");
+      expect(sectionWithBudgetMetadata?.includedChars as number).toBeGreaterThan(0);
+      expect(sectionWithBudgetMetadata?.includedChars as number).toBeLessThanOrEqual(
+        sectionWithBudgetMetadata?.budgetChars as number,
+      );
+      expect(sectionWithBudgetMetadata?.trimmedChars).toBe(0);
     }
 
     await workspaceFixture.cleanup();

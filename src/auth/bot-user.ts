@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import { DEFAULT_GITHUB_REQUEST_TIMEOUT_MS } from "./github-app.ts";
 
 export interface BotUserClient {
   /** PAT-authenticated Octokit for fork/gist operations. */
@@ -17,7 +18,10 @@ export function createBotUserClient(config: AppConfig, logger: Logger): BotUserC
 
   if (pat && login) {
     logger.info({ login }, "Bot user client enabled for fork/gist operations");
-    const octokit = new Octokit({ auth: pat });
+    const octokit = new Octokit({
+      auth: pat,
+      request: { timeout: DEFAULT_GITHUB_REQUEST_TIMEOUT_MS },
+    });
     return { octokit, login, enabled: true };
   }
 

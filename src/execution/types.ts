@@ -6,6 +6,7 @@ import type { PromptSectionRecord } from "../telemetry/types.ts";
 import type { CandidateVerificationContext } from "./mcp/review-output-publication-gate.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../specialists/candidate-verification-publication-evidence.ts";
 import type { ReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
+import type { PrDiffCommentabilityIndex } from "./formatter-suggestions.ts";
 
 export type ExecutionPublishEvent = {
   type: "comment";
@@ -93,8 +94,8 @@ export type ExecutionContext = {
   enableInlineTools?: boolean;
   enableCommentTools?: boolean;
 
-  /** Optional PR diff used by MCP inline-comment tools to reject non-commentable full-file line numbers before GitHub does. */
-  prDiffForCommentValidation?: string;
+  /** Precomputed RIGHT-side PR diff commentability index used by MCP inline-comment tools to reject non-commentable full-file line numbers before GitHub does. */
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
 
   /** Enable private candidate-finding capture during review execution. */
   enableCandidateFindingTool?: boolean;
@@ -125,7 +126,7 @@ export type ExecutionResult = {
   durationMs: number | undefined;
   sessionId: string | undefined;
   /** True if the execution published a GitHub-visible output via MCP tools (best-effort). */
-  published?: boolean;
+  published: boolean;
   /** Populated when conclusion is "error" */
   errorMessage: string | undefined;
   /** Set to true when the execution was terminated by timeout */

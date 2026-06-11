@@ -15,11 +15,11 @@ function packageJson(script = EXPECTED_PACKAGE_SCRIPT): string {
   return JSON.stringify({ scripts: { [COMMAND_NAME]: script } });
 }
 
-async function fixture(overrides: (copy: M075S03EvidenceSnapshot) => void = () => undefined): Promise<M075S03EvidenceSnapshot> {
+async function fixture(overrides: (copy: any) => void = () => undefined): Promise<M075S03EvidenceSnapshot> {
   const loaded = await Bun.file(DEFAULT_FIXTURE_PATH).json() as M075S03EvidenceSnapshot;
-  const copy = JSON.parse(JSON.stringify(loaded)) as M075S03EvidenceSnapshot;
+  const copy = JSON.parse(JSON.stringify(loaded));
   overrides(copy);
-  return copy;
+  return copy as M075S03EvidenceSnapshot;
 }
 
 async function reportFor(copy: M075S03EvidenceSnapshot) {
@@ -162,7 +162,7 @@ describe("verify-m075-s03", () => {
       next.candidatePublication.reasons = [];
       delete next.candidatePublication.movedToDetails.reasonCounts["line-not-commentable"];
       next.fixEligibility.reasonCounts = {};
-      next.reviewDetails.visibleBody.lines = next.reviewDetails.visibleBody.lines.map((line) => line.replace("reason=line-not-commentable", "reason=unknown"));
+      next.reviewDetails.visibleBody.lines = next.reviewDetails.visibleBody.lines.map((line: string) => line.replace("reason=line-not-commentable", "reason=unknown"));
     });
     const report = await reportFor(copy);
 

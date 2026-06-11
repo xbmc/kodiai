@@ -1,8 +1,27 @@
 import type { DegradedReviewPlan, ReviewPlan } from "./review-plan.ts";
 import type { RepoDoctrineProjection } from "../repo-doctrine/contracts.ts";
 
-export function toRepoDoctrineReviewSurfaceProjection(doctrine: RepoDoctrineProjection) {
-  const status = !doctrine.enabled
+type RepoDoctrineReviewSurfaceInput = Pick<
+  RepoDoctrineProjection,
+  | "enabled"
+  | "contractCount"
+  | "consumedContractCount"
+  | "matchedPathCandidateCount"
+  | "omittedContractCount"
+  | "omittedMatchedPathCandidateCount"
+  | "reasonCodes"
+>;
+
+export type RepoDoctrineReviewSurfaceProjection = {
+  status: "disabled" | "skipped" | "degraded" | "applied";
+  contractCount: number;
+  matchedCount: number;
+  omittedCount: number;
+  reasonCodes: string[];
+};
+
+export function toRepoDoctrineReviewSurfaceProjection(doctrine: RepoDoctrineReviewSurfaceInput): RepoDoctrineReviewSurfaceProjection {
+  const status: RepoDoctrineReviewSurfaceProjection["status"] = !doctrine.enabled
     ? "disabled"
     : doctrine.consumedContractCount > 0
       ? "applied"
@@ -25,9 +44,7 @@ export function toRepoDoctrineReviewSurfaceProjection(doctrine: RepoDoctrineProj
   };
 }
 
-export type RepoDoctrineReviewSurfaceProjection = ReturnType<typeof toRepoDoctrineReviewSurfaceProjection>;
-
-export function buildRepoDoctrineLogFields(doctrine: RepoDoctrineProjection): Record<string, unknown> {
+export function buildRepoDoctrineLogFields(doctrine: RepoDoctrineReviewSurfaceInput): Record<string, unknown> {
   const projection = toRepoDoctrineReviewSurfaceProjection(doctrine);
   return {
     repoDoctrineStatus: projection.status,

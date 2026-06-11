@@ -304,7 +304,6 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
         allowDangerouslySkipPermissions: true,
         settingSources: ["project"],
         stderr: (line: string) => {
-          console.error("[sdk-stderr]", line);
           void appendDiagnostic(`[sdk-stderr] ${line}`);
         },
       },
@@ -362,6 +361,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     if (!resultMessage) {
       const errorResult: ExecutionResult = {
         conclusion: "error",
+        published: false,
         costUsd: undefined,
         numTurns: undefined,
         durationMs,
@@ -396,6 +396,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
     const result: ExecutionResult = {
       conclusion: resultMessage.subtype === "success" ? "success" : "failure",
+      published: false,
       costUsd: resultMessage.total_cost_usd,
       numTurns: resultMessage.num_turns,
       durationMs: resultMessage.duration_ms ?? durationMs,
@@ -435,6 +436,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     await appendDiagnostic(`fatal ${errorMessage}`);
     const errorResult: ExecutionResult = {
       conclusion: "error",
+      published: false,
       costUsd: undefined,
       numTurns: undefined,
       durationMs,

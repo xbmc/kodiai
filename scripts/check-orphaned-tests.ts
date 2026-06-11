@@ -44,6 +44,7 @@ export const EXPLICIT_TEST_TARGET_MAP = {
   "src/handlers/review-shadow-specialist-metrics.test.ts": "src/handlers/review-m070-integration-harness.ts",
   "src/handlers/review-shadow-specialist-publication.test.ts": "src/handlers/review-m070-integration-harness.ts",
   "src/handlers/review-shadow-specialist.test.ts": "src/handlers/review.test.ts",
+  "src/knowledge/search-result-types.test.ts": "src/knowledge/issue-types.ts",
   "src/knowledge/wiki-publisher-retrofit-preview.test.ts": "src/knowledge/wiki-publisher.ts",
   "src/slack/v1-safety-contract.test.ts": "src/slack/safety-rails.ts",
   "src/specialists/shadow-specialist-runner.test.ts": "src/specialists/shadow-specialist-subflow.test.ts",

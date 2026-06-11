@@ -9,3 +9,9 @@ export function parseRetryAfterDelayMs(value: unknown): number | null {
 
   return Math.floor(seconds * 1000);
 }
+
+export function capRetryDelayMs(delayMs: number | null, maxDelayMs: number): number | null {
+  if (delayMs === null) return null;
+  if (!Number.isFinite(maxDelayMs) || maxDelayMs < 0) return delayMs;
+  return Math.min(delayMs, Math.floor(maxDelayMs));
+}

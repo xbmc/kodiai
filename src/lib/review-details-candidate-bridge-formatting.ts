@@ -7,6 +7,10 @@ import {
 
 export type CandidatePublicationBridgeReviewDetails = ReviewHandlerPublicationBridgeReviewDetails;
 
+function yesNo(value: unknown): "y" | "n" {
+  return value === true ? "y" : "n";
+}
+
 function hasUnsafeBridgeRedaction(redaction: ReviewHandlerPublicationBridgeReviewDetails["redaction"]): boolean {
   return redaction.privateOnly !== true
     || redaction.rawPayloadsIncluded !== false
@@ -18,15 +22,15 @@ function hasUnsafeBridgeRedaction(redaction: ReviewHandlerPublicationBridgeRevie
 
 function formatBridgeRedactionFlags(redaction: ReviewHandlerPublicationBridgeReviewDetails["redaction"]): string {
   return [
-    `privateOnly:${redaction.privateOnly === true ? "y" : "n"}`,
-    `rawPayloads:${redaction.rawPayloadsIncluded === true ? "y" : "n"}`,
-    `publicationFields:${redaction.publicationFieldsIncluded === true ? "y" : "n"}`,
-    `evidencePayloads:${redaction.evidencePayloadsIncluded === true ? "y" : "n"}`,
-    `githubCommentBody:${redaction.githubCommentBodyIncluded === true ? "y" : "n"}`,
-    `reducerRawPayload:${redaction.reducerHandoffIncludesRawPayload === true ? "y" : "n"}`,
-    `discardedRawPayload:${redaction.discardedRawPayload === true ? "y" : "n"}`,
-    `discardedPublicationFields:${redaction.discardedPublicationFields === true ? "y" : "n"}`,
-    `discardedEvidencePayloads:${redaction.discardedEvidencePayloads === true ? "y" : "n"}`,
+    `privateOnly:${yesNo(redaction.privateOnly)}`,
+    `rawPayloads:${yesNo(redaction.rawPayloadsIncluded)}`,
+    `publicationFields:${yesNo(redaction.publicationFieldsIncluded)}`,
+    `evidencePayloads:${yesNo(redaction.evidencePayloadsIncluded)}`,
+    `githubCommentBody:${yesNo(redaction.githubCommentBodyIncluded)}`,
+    `reducerRawPayload:${yesNo(redaction.reducerHandoffIncludesRawPayload)}`,
+    `discardedRawPayload:${yesNo(redaction.discardedRawPayload)}`,
+    `discardedPublicationFields:${yesNo(redaction.discardedPublicationFields)}`,
+    `discardedEvidencePayloads:${yesNo(redaction.discardedEvidencePayloads)}`,
   ].join(",");
 }
 

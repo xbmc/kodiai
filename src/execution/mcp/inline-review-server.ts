@@ -2,34 +2,37 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import type { ReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
 import { createInlineReviewPublisher } from "./inline-review-publisher.ts";
 
-export function createInlineReviewServer(
-  getOctokit: () => Promise<Octokit>,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  botHandles: string[],
-  reviewOutputKey?: string,
-  deliveryId?: string,
-  logger?: Logger,
-  onPublish?: () => void,
-  publicationGate?: ReviewOutputPublicationGate,
-  prDiffForCommentValidation?: string,
-) {
+export type InlineReviewServerOptions = {
+  getOctokit: () => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  botHandles: string[];
+  reviewOutputKey?: string;
+  deliveryId?: string;
+  logger?: Logger;
+  onPublish?: () => void;
+  publicationGate?: ReviewOutputPublicationGate;
+  prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
+};
+
+export function createInlineReviewServer(options: InlineReviewServerOptions) {
   const publisher = createInlineReviewPublisher({
-    getOctokit,
-    owner,
-    repo,
-    prNumber,
-    botHandles,
-    reviewOutputKey,
-    deliveryId,
-    logger,
-    onPublish,
-    publicationGate,
-    prDiffForCommentValidation,
+    getOctokit: options.getOctokit,
+    owner: options.owner,
+    repo: options.repo,
+    prNumber: options.prNumber,
+    botHandles: options.botHandles,
+    reviewOutputKey: options.reviewOutputKey,
+    deliveryId: options.deliveryId,
+    logger: options.logger,
+    onPublish: options.onPublish,
+    publicationGate: options.publicationGate,
+    prDiffCommentabilityIndex: options.prDiffCommentabilityIndex,
   });
 
   return createSdkMcpServer({

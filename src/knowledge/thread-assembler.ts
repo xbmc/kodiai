@@ -52,12 +52,13 @@ export function selectTailComments(
   for (let i = comments.length - 1; i >= 0; i--) {
     const comment = comments[i]!;
     if (charsUsed + comment.body.length <= charBudget) {
-      selected.unshift(comment); // maintain chronological order
+      selected.push(comment);
       charsUsed += comment.body.length;
     } else {
       break;
     }
   }
+  selected.reverse();
 
   const selectedIds = new Set(selected.map((c) => c.commentGithubId));
   const remaining = comments.filter((c) => !selectedIds.has(c.commentGithubId));

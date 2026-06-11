@@ -78,6 +78,7 @@ import {
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
 import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import {
   resolveReviewRoutingLineCount,
@@ -135,6 +136,7 @@ import {
   runFormatterSuggestionSubflow,
   type FormatterSuggestionSubflowResult,
 } from "./formatter-suggestion-orchestration.ts";
+import { selectExplicitReviewPromptDiffContent } from "./mention-token-budget.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -1769,7 +1771,7 @@ export function createMentionHandler(deps: {
         let explicitReviewPromptFileCount: number | undefined;
         let explicitReviewDynamicTimeoutSeconds: number | undefined;
         let explicitReviewMaxTurnsOverride: number | undefined;
-        let explicitReviewPrDiffForCommentValidation: string | undefined;
+        let explicitReviewPrDiffCommentabilityIndex: PrDiffCommentabilityIndex | undefined;
         let explicitReviewHeadSha: string | undefined;
         let explicitReviewBaseSha: string | undefined;
         let explicitReviewRouting: ReviewTaskRouting = {
@@ -1805,8 +1807,14 @@ export function createMentionHandler(deps: {
               })
             : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
           const promptChangedFiles = promptDiffContext.changedFiles;
-          explicitReviewPrDiffForCommentValidation = promptDiffContext.diffContent;
+          explicitReviewPrDiffCommentabilityIndex = promptDiffContext.diffContent
+            ? buildPrDiffCommentabilityIndex(promptDiffContext.diffContent)
+            : undefined;
           explicitReviewPromptFileCount = promptChangedFiles.length;
+          const explicitReviewPromptDiffContent = selectExplicitReviewPromptDiffContent({
+            diffContent: promptDiffContext.diffContent,
+            changedFileCount: promptChangedFiles.length,
+          });
 
           const diffAnalysis = analyzeDiff({
             changedFiles: promptChangedFiles,
@@ -1913,7 +1921,7 @@ export function createMentionHandler(deps: {
             suppressions: config.review.suppressions,
             minConfidence: config.review.minConfidence,
             diffAnalysis,
-            diffContent: promptDiffContext.diffContent,
+            diffContent: explicitReviewPromptDiffContent,
             matchedPathInstructions,
             retrievalContext,
             reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
@@ -2041,7 +2049,7 @@ export function createMentionHandler(deps: {
             totalFiles: explicitReviewPromptFileCount,
             enableInlineTools: explicitReviewRequest ? true : undefined,
             enableCandidateFindingTool: explicitReviewRequest ? true : undefined,
-            prDiffForCommentValidation: explicitReviewRequest ? explicitReviewPrDiffForCommentValidation : undefined,
+            prDiffCommentabilityIndex: explicitReviewRequest ? explicitReviewPrDiffCommentabilityIndex : undefined,
           });
         } catch (err) {
           if (isCombinedFormatterSuggestionRequest) {

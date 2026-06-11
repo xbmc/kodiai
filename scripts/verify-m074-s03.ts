@@ -1,4 +1,5 @@
 import { createInlineReviewPublisher, type InlineReviewPublicationResult } from "../src/execution/mcp/inline-review-publisher.ts";
+import { buildPrDiffCommentabilityIndex } from "../src/execution/formatter-suggestions.ts";
 import {
   reduceSamePrFixEligibility,
   type SamePrFixCandidateInput,
@@ -147,7 +148,7 @@ const FORBIDDEN_CANARIES = [
   "PRIVATE_REPLACEMENT_CANARY",
 ] as const;
 
-const REQUIRED_REASONS: readonly Array<SamePrFixEligibilityReasonCode | "already-published"> = [
+const REQUIRED_REASONS: ReadonlyArray<SamePrFixEligibilityReasonCode | "already-published"> = [
   "eligible",
   "unmappable-location",
   "duplicate-fix",
@@ -385,7 +386,7 @@ async function exercisePublisher(input: { reviewOutputKey: string; location: { p
     reviewOutputKey: input.reviewOutputKey,
     deliveryId: CORRELATION.deliveryId,
     publicationGate: { resolve: async () => ({ shouldPublish }) as never },
-    prDiffForCommentValidation: PR_DIFF,
+    prDiffCommentabilityIndex: buildPrDiffCommentabilityIndex(PR_DIFF),
   });
   const first = await publisher(true).publish({ location: input.location, body: input.body });
   const replay = await publisher(false).publish({ location: input.location, body: input.body });
@@ -418,7 +419,7 @@ async function exerciseNonCommentablePublisher(input: { reviewOutputKey: string;
     reviewOutputKey: input.reviewOutputKey,
     deliveryId: CORRELATION.deliveryId,
     publicationGate: { resolve: async () => ({ shouldPublish: true }) as never },
-    prDiffForCommentValidation: NON_COMMENTABLE_DIFF,
+    prDiffCommentabilityIndex: buildPrDiffCommentabilityIndex(NON_COMMENTABLE_DIFF),
   });
   return publisher.publish({ location: { path: "src/commentable.ts", line: 90, side: "RIGHT" }, body: input.body });
 }

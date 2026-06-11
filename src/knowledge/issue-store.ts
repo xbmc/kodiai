@@ -2,10 +2,12 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type {
   IssueInput,
+  IssueSearchRecord,
   IssueRecord,
   IssueSearchResult,
   IssueCommentInput,
   IssueCommentRecord,
+  IssueCommentSearchRecord,
   IssueCommentSearchResult,
   IssueStore,
 } from "./issue-types.ts";
@@ -103,6 +105,24 @@ type RepairStateRow = {
 const DEFAULT_REPAIR_KEY = "default";
 const ISSUE_REPAIR_CORPORA = new Set<EmbeddingRepairCorpus>(["issues", "issue_comments"]);
 
+function issueSearchColumns(sql: Sql) {
+  return sql`
+    id, created_at, repo, owner, issue_number, title, body, state,
+    author_login, author_association, label_names, template_slug,
+    comment_count, assignees, milestone, reaction_count, is_pull_request,
+    locked, NULL AS embedding, embedding_model, github_created_at,
+    github_updated_at, closed_at
+  `;
+}
+
+function issueCommentSearchColumns(sql: Sql) {
+  return sql`
+    id, created_at, repo, issue_number, comment_github_id,
+    author_login, author_association, body, NULL AS embedding,
+    embedding_model, github_created_at, github_updated_at
+  `;
+}
+
 function rowToRecord(row: IssueRow): IssueRecord {
   const assignees = typeof row.assignees === "string"
     ? JSON.parse(row.assignees)
@@ -135,6 +155,13 @@ function rowToRecord(row: IssueRow): IssueRecord {
   };
 }
 
+function rowToSearchRecord(row: IssueRow): IssueSearchRecord {
+  return {
+    ...rowToRecord(row),
+    embedding: null,
+  };
+}
+
 function commentRowToRecord(row: IssueCommentRow): IssueCommentRecord {
   return {
     id: row.id,
@@ -149,6 +176,13 @@ function commentRowToRecord(row: IssueCommentRow): IssueCommentRecord {
     embeddingModel: row.embedding_model,
     githubCreatedAt: row.github_created_at,
     githubUpdatedAt: row.github_updated_at,
+  };
+}
+
+function commentRowToSearchRecord(row: IssueCommentRow): IssueCommentSearchRecord {
+  return {
+    ...commentRowToRecord(row),
+    embedding: null,
   };
 }
 
@@ -266,20 +300,21 @@ export function createIssueStore(opts: {
       stateFilter?: string;
     }): Promise<IssueSearchResult[]> {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
+      const stateFilter = params.stateFilter ? sql`AND state = ${params.stateFilter}` : sql``;
 
       const rows = await sql`
-        SELECT *,
+        SELECT ${issueSearchColumns(sql)},
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM issues
         WHERE repo = ${params.repo}
           AND embedding IS NOT NULL
-          ${params.stateFilter ? sql`AND state = ${params.stateFilter}` : sql``}
+          ${stateFilter}
         ORDER BY embedding <=> ${queryEmbeddingString}::vector
         LIMIT ${params.topK}
       `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as IssueRow),
+        record: rowToSearchRecord(row as unknown as IssueRow),
         distance: Number((row as Record<string, unknown>).distance),
       }));
     },
@@ -291,20 +326,21 @@ export function createIssueStore(opts: {
       stateFilter?: string;
     }): Promise<IssueSearchResult[]> {
       if (!params.query.trim()) return [];
+      const stateFilter = params.stateFilter ? sql`AND state = ${params.stateFilter}` : sql``;
 
       const rows = await sql`
-        SELECT *,
+        SELECT ${issueSearchColumns(sql)},
           ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
         FROM issues
         WHERE repo = ${params.repo}
           AND search_tsv @@ plainto_tsquery('english', ${params.query})
-          ${params.stateFilter ? sql`AND state = ${params.stateFilter}` : sql``}
+          ${stateFilter}
         ORDER BY rank DESC
         LIMIT ${params.topK}
       `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as IssueRow),
+        record: rowToSearchRecord(row as unknown as IssueRow),
         distance: 1 - Number((row as Record<string, unknown>).rank),
       }));
     },
@@ -325,7 +361,7 @@ export function createIssueStore(opts: {
       const sourceEmbedding = sourceRows[0]!.embedding as string;
 
       const rows = await sql`
-        SELECT *,
+        SELECT ${issueSearchColumns(sql)},
           embedding <=> ${sourceEmbedding}::vector AS distance
         FROM issues
         WHERE repo = ${repo}
@@ -337,7 +373,7 @@ export function createIssueStore(opts: {
       `;
 
       return rows.map((row) => ({
-        record: rowToRecord(row as unknown as IssueRow),
+        record: rowToSearchRecord(row as unknown as IssueRow),
         distance: Number((row as Record<string, unknown>).distance),
       }));
     },
@@ -401,7 +437,7 @@ export function createIssueStore(opts: {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
       const rows = await sql`
-        SELECT *,
+        SELECT ${issueCommentSearchColumns(sql)},
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM issue_comments
         WHERE repo = ${params.repo}
@@ -411,7 +447,7 @@ export function createIssueStore(opts: {
       `;
 
       return rows.map((row) => ({
-        record: commentRowToRecord(row as unknown as IssueCommentRow),
+        record: commentRowToSearchRecord(row as unknown as IssueCommentRow),
         distance: Number((row as Record<string, unknown>).distance),
       }));
     },

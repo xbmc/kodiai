@@ -3,6 +3,7 @@ import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
 import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -240,17 +241,20 @@ export async function backfillWikiPages(
           continue;
         }
 
-        // Embed each chunk
         let embeddingsGenerated = 0;
-        for (const chunk of chunks) {
-          try {
-            const embedResult = await embeddingProvider.generate(chunk.chunkText, "document");
-            if (embedResult) {
-              chunk.embedding = embedResult.embedding;
-              embeddingsGenerated++;
-            }
-          } catch (err) {
-            logger.warn({ pageId: pageInfo.pageid, chunkIndex: chunk.chunkIndex, err }, "Wiki chunk embedding failed (fail-open)");
+        const embedResults = await generateDocumentEmbeddingResultsBatch({
+          texts: chunks.map((chunk) => chunk.chunkText),
+          embeddingProvider,
+        });
+        for (const [index, embedResult] of embedResults.entries()) {
+          if (embedResult.status === "success") {
+            chunks[index]!.embedding = embedResult.embedding;
+            embeddingsGenerated++;
+          } else if (embedResult.status === "failed") {
+            logger.warn(
+              { pageId: pageInfo.pageid, chunkIndex: chunks[index]!.chunkIndex, err: embedResult.err },
+              "Wiki chunk embedding failed (fail-open)",
+            );
           }
         }
 

@@ -178,7 +178,7 @@ describe("toFindingLifecyclePublicProjection", () => {
     expect(projection.reasonCodes).toContain("missing-rollback");
     expect(projection.references).toHaveLength(2);
     expect(projection.references[0]).toEqual({
-      id: result.records[0]?.id,
+      id: result.records[0]!.id,
       status: "validated",
       severity: "major",
       category: "correctness",

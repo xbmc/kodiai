@@ -9,6 +9,7 @@ import {
 } from "../slack/thread-session-store.ts";
 import { toSlackEventCallback, toSlackUrlVerification } from "../slack/types.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
+import { tryReadBoundedRequestBody } from "../lib/request-body.ts";
 import {
   createNamedRateLimiters,
   requestSourceKey,
@@ -16,6 +17,7 @@ import {
 } from "../lib/sliding-window-rate-limiter.ts";
 
 type SlackEventRateLimitWindow = "preBody" | "verified" | "channel";
+const MAX_SLACK_EVENT_BODY_BYTES = 1 * 1024 * 1024;
 
 interface SlackEventsRouteDeps {
   config: AppConfig;
@@ -67,7 +69,12 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
     const timestampHeader = c.req.header("x-slack-request-timestamp");
     const signatureHeader = c.req.header("x-slack-signature");
 
-    const body = await c.req.text();
+    const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_EVENT_BODY_BYTES });
+    if (!bodyResult.ok) {
+      logger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slack event body too large");
+      return c.text("Payload too large", 413);
+    }
+    const body = bodyResult.body;
     const verification = verifySlackRequest({
       signingSecret: config.slackSigningSecret,
       rawBody: body,

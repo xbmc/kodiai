@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { $ } from "bun";
 import type { Logger } from "pino";
@@ -6,7 +6,24 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { WorkspaceManager } from "../jobs/types.ts";
 import { chunkCanonicalCodeFile } from "./canonical-code-chunker.ts";
 import type { CanonicalCodeStore, CanonicalCorpusBackfillState } from "./canonical-code-types.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import type { EmbeddingProvider } from "./types.ts";
+
+const MAX_CANONICAL_BACKFILL_FILE_BYTES = 512 * 1024;
+const PRE_READ_EXCLUDED_PATH_RE = /(^|\/)(dist|build|out|target|coverage|bin|obj|node_modules|vendor)\//;
+const PRE_READ_EXCLUDED_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|ico|pdf|zip|tar|gz|7z|mp3|mp4|mov|ttf|woff2?|so|dll|dylib|o|a|pyc)$/i;
+
+async function shouldSkipBeforeRead(workspaceDir: string, filePath: string): Promise<boolean> {
+  if (PRE_READ_EXCLUDED_PATH_RE.test(filePath) || PRE_READ_EXCLUDED_EXT_RE.test(filePath)) {
+    return true;
+  }
+  try {
+    const stats = await stat(join(workspaceDir, filePath));
+    return stats.size > MAX_CANONICAL_BACKFILL_FILE_BYTES;
+  } catch {
+    return false;
+  }
+}
 
 export type CanonicalCodeBackfillDeps = {
   githubApp: Pick<GitHubApp, "getRepoInstallationContext">;
@@ -156,6 +173,15 @@ export async function backfillCanonicalCodeSnapshot(
         continue;
       }
 
+      if (await shouldSkipBeforeRead(workspace.dir, filePath)) {
+        filesSkipped += 1;
+        state.filesDone += 1;
+        state.lastFilePath = filePath;
+        await deps.store.saveBackfillState(state);
+        deps.logger.info({ repo: request.repo, canonicalRef, filePath }, "Canonical code backfill skipped pre-read excluded file");
+        continue;
+      }
+
       let fileContent: string;
       try {
         fileContent = await readFile(join(workspace.dir, filePath), "utf8");
@@ -192,12 +218,16 @@ export async function backfillCanonicalCodeSnapshot(
       }
 
       let deletedForFile = false;
-      for (const chunk of chunkResult.chunks) {
-        let embeddingResult;
-        try {
-          embeddingResult = await deps.embeddingProvider.generate(chunk.chunkText, "document");
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+      const embeddingResults = await generateDocumentEmbeddingResultsBatch({
+        texts: chunkResult.chunks.map((chunk) => chunk.chunkText),
+        embeddingProvider: deps.embeddingProvider,
+      });
+
+      for (const [index, embeddingResult] of embeddingResults.entries()) {
+        const chunk = chunkResult.chunks[index]!;
+
+        if (embeddingResult.status === "failed") {
+          const message = embeddingResult.err instanceof Error ? embeddingResult.err.message : String(embeddingResult.err);
           warnings.push({ class: "embedding", filePath, message });
           state.chunksFailed += 1;
           state.status = "partial";
@@ -206,7 +236,7 @@ export async function backfillCanonicalCodeSnapshot(
           continue;
         }
 
-        if (!embeddingResult) {
+        if (embeddingResult.status === "unavailable") {
           const message = `Embedding unavailable for canonical chunk ${filePath}:${chunk.startLine}-${chunk.endLine}`;
           warnings.push({ class: "embedding", filePath, message });
           state.chunksFailed += 1;

@@ -199,13 +199,7 @@ export function buildMentionPromptDetails(params: {
   lines.push("## How to respond");
   lines.push("");
   lines.push(
-    "Important: The handler already added an eyes reaction for tracking. Do not post a separate tracking/ack comment.",
-  );
-  lines.push(
-    "Do NOT create a 'thinking'/'working on it' comment. Create at most ONE comment total, and only when you are ready to provide the final response.",
-  );
-  lines.push(
-    "Do NOT update comments (avoid using update_comment); post a single final response instead.",
+    "The handler already added an eyes reaction. Post one final response only; no ack, working, tracking, or update_comment flow.",
   );
   lines.push(
     "You MUST post a reply when you are mentioned.",
@@ -214,13 +208,13 @@ export function buildMentionPromptDetails(params: {
   lines.push("## Conversational Response Contract");
   lines.push("");
   lines.push(
-    "(1) Direct answer first: open with a direct answer to the user's request before recap or meta commentary.",
+    "(1) Direct answer first: answer the request before recap or meta commentary.",
   );
   lines.push(
-    "(2) Evidence pointers: when claims reference repository code, cite concrete file paths (optionally with :line) tied to each claim; if path context is missing, say so explicitly instead of inventing paths.",
+    "(2) Evidence pointers: cite concrete file paths (optionally with :line) for repository code claims; if path context is missing, say so explicitly.",
   );
   lines.push(
-    "(3) Next-step framing: close with a brief next step or decision prompt that helps the user move forward.",
+    "(3) Next-step framing: close with a brief next step or decision prompt.",
   );
   lines.push(
     "If context is insufficient, ask exactly one targeted clarifying question that requests the minimum missing detail; do not ask multiple questions and do not use generic wording like 'can you clarify?'.",
@@ -261,21 +255,13 @@ export function buildMentionPromptDetails(params: {
     );
   }
   lines.push("");
-  lines.push("Your response should be:");
-  lines.push(
-    "- Concise by default -- provide only what was asked; avoid long recaps",
-  );
-  lines.push(
-    '- Do NOT include sections like "What Changed", "Key Strengths", or "Minor Observations" unless explicitly requested',
-  );
-  lines.push("- Direct and helpful -- answer the question with specific code references where possible");
-  lines.push("- Aware of the conversation context above -- don't repeat what's already been discussed");
-  lines.push("- Formatted in GitHub-flavored markdown");
+  lines.push("Your response should be: Concise by default, direct, context-aware, and formatted in GitHub-flavored markdown.");
+  lines.push("- Do not add stock recap sections unless explicitly requested.");
   lines.push(
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
   );
   lines.push(
-    "- ALWAYS wrap your ENTIRE response body in `<details>` tags to reduce noise in the thread:",
+    "- Wrap the full response body in `<details>` tags to reduce noise in the thread:",
     "  ```",
     "  <details>",
     '  <summary>kodiai response</summary>',
@@ -284,7 +270,7 @@ export function buildMentionPromptDetails(params: {
     "  ",
     "  </details>",
     "  ```",
-    "- Important: include a blank line after `<summary>` and before `</details>` for proper markdown rendering",
+    "- include a blank line after `<summary>` and before `</details>` for proper markdown rendering",
   );
 
   lines.push("- If (and only if) the user is asking for a PR review / approval decision:");

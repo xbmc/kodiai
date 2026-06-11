@@ -380,6 +380,23 @@ export function createLearningMemoryStore(opts: {
       return rowToRecord(rows[0] as unknown as MemoryRow);
     },
 
+    async getMemoryRecords(memoryIds: number[]): Promise<Map<number, LearningMemoryRecord>> {
+      const ids = Array.from(new Set(memoryIds.filter((id) => Number.isSafeInteger(id))));
+      if (ids.length === 0) return new Map();
+
+      const rows = await sql.unsafe(
+        "SELECT * FROM learning_memories WHERE id = ANY($1::bigint[])",
+        [ids],
+      );
+      const records = new Map<number, LearningMemoryRecord>();
+      for (const row of rows) {
+        const memoryRow = row as unknown as MemoryRow;
+        const record = rowToRecord(memoryRow);
+        records.set(normalizeSafeInteger(memoryRow.id, "learning_memories.id"), record);
+      }
+      return records;
+    },
+
     async markStale(embeddingModel: string): Promise<number> {
       const result = await sql`
         UPDATE learning_memories SET stale = true

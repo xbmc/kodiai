@@ -427,6 +427,7 @@ describe("buildReviewPlanPublicationContext", () => {
     expect(result.status).toBe("degraded");
     expect(result.error).toBeInstanceOf(Error);
     expect(result.plan.status).toBe("degraded");
+    if (result.plan.status !== "degraded") throw new Error("expected degraded plan");
     expect(result.plan.degraded.reason).toBe("builder-error");
     expect(result.detailsSummary.status).toBe("degraded");
     expect(result.detailsSummary.text).toContain("reason=builder-error");

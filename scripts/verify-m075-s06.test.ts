@@ -23,11 +23,11 @@ const taxonomyText = [
   "classifyStructuredAddonCheck",
 ].join("\n");
 
-async function fixture(overrides: (copy: M075S06EvidenceSnapshot) => void = () => undefined): Promise<M075S06EvidenceSnapshot> {
+async function fixture(overrides: (copy: any) => void = () => undefined): Promise<M075S06EvidenceSnapshot> {
   const loaded = await Bun.file(DEFAULT_FIXTURE_PATH).json() as M075S06EvidenceSnapshot;
-  const copy = JSON.parse(JSON.stringify(loaded)) as M075S06EvidenceSnapshot;
+  const copy = JSON.parse(JSON.stringify(loaded));
   overrides(copy);
-  return copy;
+  return copy as M075S06EvidenceSnapshot;
 }
 
 async function reportFor(copy: M075S06EvidenceSnapshot) {
@@ -81,7 +81,7 @@ describe("verify-m075-s06", () => {
 
   test("fails closed when required mode coverage is missing", async () => {
     const copy = await fixture((next) => {
-      next.scenarios = next.scenarios.filter((scenario) => scenario.runtime.mode !== "all-timeout");
+      next.scenarios = next.scenarios.filter((scenario: any) => scenario.runtime.mode !== "all-timeout");
     });
     const report = await reportFor(copy);
 
@@ -157,7 +157,7 @@ describe("verify-m075-s06", () => {
       next.scenarios[0]!.taxonomy.actionable = false;
     });
     const malformedWrongClass = await fixture((next) => {
-      const scenario = next.scenarios.find((entry) => entry.runtime.mode === "unknown-malformed-evidence")!;
+      const scenario = next.scenarios.find((entry: any) => entry.runtime.mode === "unknown-malformed-evidence")!;
       scenario.taxonomy.classId = "addon-check-classification.actionable-diagnostic";
     });
     const missingTaxonomy = await evaluateM075S06Contract(parseM075S06Args(["--fixture", DEFAULT_FIXTURE_PATH]), {

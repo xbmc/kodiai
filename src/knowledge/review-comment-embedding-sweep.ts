@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 const EMBEDDING_MODEL = "voyage-4";
 
@@ -71,9 +72,7 @@ export async function sweepNullEmbeddings(
 
     batchNumber++;
 
-    for (const chunk of batch) {
-      processed++;
-
+    const batchResults = await mapWithConcurrency(batch, 8, async (chunk) => {
       try {
         const result = await embeddingProvider.generate(chunk.chunkText, "document");
 
@@ -82,8 +81,7 @@ export async function sweepNullEmbeddings(
             { repo, chunkId: chunk.id, commentGithubId: chunk.commentGithubId },
             "Embedding returned null -- skipping",
           );
-          failed++;
-          continue;
+          return "failed" as const;
         }
 
         if (!dryRun) {
@@ -93,15 +91,21 @@ export async function sweepNullEmbeddings(
             result.model || embeddingProvider.model || EMBEDDING_MODEL,
           );
         }
-        succeeded++;
+        return "succeeded" as const;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(
           { repo, chunkId: chunk.id, commentGithubId: chunk.commentGithubId, err: message },
           "Embedding generation failed -- skipping",
         );
-        failed++;
+        return "failed" as const;
       }
+    });
+
+    processed += batchResults.length;
+    for (const result of batchResults) {
+      if (result === "succeeded") succeeded++;
+      else failed++;
     }
 
     logger.info({ repo, batchNumber, processed, succeeded, failed }, "Embedding sweep batch complete");

@@ -27,6 +27,7 @@ export type M075S04CheckId =
   | "package-wiring.present";
 
 export type M075S04Args = { readonly json: boolean; readonly help: boolean; readonly fixturePath?: string };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type M075S04Check = { readonly id: M075S04CheckId; readonly status: M075S04CheckStatus; readonly message: string; readonly issues: readonly string[] };
 export type M075S04Counts = Record<string, number>;
 export type M075S04OutcomeKey = "published" | "skipped" | "blocked" | "failed" | "movedToDetails" | "fallbackDisallowed" | "degraded";
@@ -124,7 +125,7 @@ const SAFE_REASON = /^[a-z0-9][a-z0-9-]{1,79}$/;
 const EMPTY_OBSERVED: M075S04Observed = { bucketCount: 0, nonEmptyReasonBucketCount: 0, visibleLineCount: 0, publisherSampleCount: 0, directFallbackPublished: 0, fallbackDisallowed: 0 };
 
 export function parseM075S04Args(args: readonly string[]): M075S04Args {
-  const parsed: Partial<M075S04Args> = { json: false, help: false };
+  const parsed: Partial<Mutable<M075S04Args>> = { json: false, help: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") { parsed.json = true; continue; }

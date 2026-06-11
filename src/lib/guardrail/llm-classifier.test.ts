@@ -207,7 +207,7 @@ describe("createLlmClassifier", () => {
       makeClaim("Second claim.", sharedContext),
     ]);
 
-    const prompt = String(deps.generateWithFallback.mock.calls[0]?.[0]?.prompt ?? "");
+    const prompt = String((deps.generateWithFallback.mock.calls as unknown as Array<[any]>)[0]?.[0]?.prompt ?? "");
     expect(prompt).toContain("First claim.");
     expect(prompt).toContain("Second claim.");
     expect(prompt.match(/large shared issue body/g)).toHaveLength(1);
@@ -241,7 +241,7 @@ describe("createLlmClassifier", () => {
     ]);
 
     expect(deps.generateWithFallback).toHaveBeenCalledTimes(1);
-    const prompt = String(deps.generateWithFallback.mock.calls[0]?.[0]?.prompt ?? "");
+    const prompt = String((deps.generateWithFallback.mock.calls as unknown as Array<[any]>)[0]?.[0]?.prompt ?? "");
     expect(prompt.match(/### Claim /g)).toHaveLength(1);
     expect(prompt).toContain("Respond with a JSON array of exactly 1 objects");
   });

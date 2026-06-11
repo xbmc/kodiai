@@ -13,7 +13,7 @@ describe("buildReviewPromptFingerprint", () => {
       baseBranch: "main",
       headBranch: "feature",
       changedFiles: [],
-    } as Parameters<typeof buildReviewPromptFingerprint>[0]);
+    } as unknown as Parameters<typeof buildReviewPromptFingerprint>[0]);
 
     expect(result.fingerprint).toBeNull();
     expect(result.missingSignals).toContain("repo-identity");

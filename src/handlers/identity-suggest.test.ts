@@ -217,6 +217,46 @@ describe("suggestIdentityLink", () => {
     expect(requests).toEqual(["https://slack.com/api/users.list"]);
   });
 
+  test("deduplicates concurrent cold Slack users.list lookups for the same token", async () => {
+    const requests: string[] = [];
+    const fetchMock = mock(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requests.push(url);
+
+      if (url === "https://slack.com/api/users.list") {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return jsonResponse({
+          ok: true,
+          members: [
+            {
+              id: "U001",
+              profile: { display_name: "octocat", real_name: "Octo Cat" },
+            },
+          ],
+        });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const params = {
+      githubUsername: "octocaat",
+      githubDisplayName: null,
+      slackBotToken: "xoxb-test-token",
+      profileStore: createMockProfileStore(),
+      logger: createMockLogger(),
+    };
+
+    await Promise.all([
+      identitySuggest.suggestIdentityLink(params),
+      identitySuggest.suggestIdentityLink(params),
+      identitySuggest.suggestIdentityLink(params),
+    ]);
+
+    expect(requests).toEqual(["https://slack.com/api/users.list"]);
+  });
+
   test("missing Slack users.list scope disables identity suggestions without warning", async () => {
     const logger = createMockLogger();
     const requests: string[] = [];
@@ -457,6 +497,52 @@ describe("suggestIdentityLink", () => {
     );
     expect(postBody.text).not.toContain("personalized code reviews");
     expect(logger.info).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not retry side-effecting Slack DM writes after a transient response failure", async () => {
+    const requests: string[] = [];
+    const logger = createMockLogger();
+
+    const fetchMock = mock(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requests.push(url);
+
+      if (url === "https://slack.com/api/users.list") {
+        return jsonResponse({
+          ok: true,
+          members: [
+            {
+              id: "U777",
+              profile: { display_name: "octocat", real_name: "Octo Cat" },
+            },
+          ],
+        });
+      }
+
+      if (url === "https://slack.com/api/conversations.open") {
+        return jsonResponse({ ok: true, channel: { id: "D777" } });
+      }
+
+      if (url === "https://slack.com/api/chat.postMessage") {
+        return jsonResponse({ ok: false, error: "server_error" }, { status: 500 });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    await expect(
+      identitySuggest.suggestIdentityLink({
+        githubUsername: "octocat",
+        githubDisplayName: "Octo Cat",
+        slackBotToken: "xoxb-test-token",
+        profileStore: createMockProfileStore(),
+        logger,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(requests.filter((url) => url === "https://slack.com/api/chat.postMessage")).toHaveLength(1);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
   test("duplicate suggestion attempts in the same process do not send a second DM", async () => {

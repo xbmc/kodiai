@@ -120,7 +120,7 @@ function checkRequiredFields(prepareRecordForSql: typeof prepareLearningMemoryRe
   const unsafeRecord = makeLearningMemoryRecord({ repo: undefined as unknown as string });
   try {
     const prepared = prepareRecordForSql(unsafeRecord);
-    const hasUndefined = Object.values(prepared).includes(undefined);
+    const hasUndefined = Object.values(prepared).some((value) => value === undefined);
     return {
       id: "memory-store-required-fields",
       passed: false,
@@ -147,7 +147,7 @@ function checkOptionalFields(prepareRecordForSql: typeof prepareLearningMemoryRe
     const passed = prepared.id === null
       && prepared.language === null
       && prepared.createdAt === null
-      && !Object.values(prepared).includes(undefined);
+      && !Object.values(prepared).some((value) => value === undefined);
     return {
       id: "memory-store-optional-fields",
       passed,

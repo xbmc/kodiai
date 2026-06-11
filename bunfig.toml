@@ -1,5 +1,10 @@
 [test]
-# Scan the repo root so targeted script verifiers can be run by path, but ignore
-# vendored reference code under tmp/ so upstream tests are never discovered.
+# root stays "." so individual script verifiers can be run by path
+# (e.g. `bun test scripts/verify-m075.ts`).
+#
+# Bun's test runner has no path-ignore config — `pathIgnorePatterns` is silently
+# ignored — so bare `bun test` would also discover the gitignored, vendored
+# upstream checkout under tmp/, whose *.test.ts files can't resolve their deps.
+# Run the suite via `bun run test`, which scopes discovery to our real roots
+# (scripts, src), mirroring CI.
 root = "."
-pathIgnorePatterns = ["tmp/**"]

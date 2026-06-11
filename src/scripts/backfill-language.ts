@@ -64,7 +64,7 @@ try {
 
     let totalUpdated = 0;
     let failureCount = 0;
-    let offset = 0;
+    let batchNumber = 0;
 
     while (true) {
       // Fetch a batch of records without language
@@ -74,10 +74,10 @@ try {
         WHERE language IS NULL
         ORDER BY id
         LIMIT ${batchSize}
-        OFFSET ${offset}
       `;
 
       if (rows.length === 0) break;
+      batchNumber++;
 
       // Classify each file path
       const classified = rows.map((row) => ({
@@ -86,32 +86,24 @@ try {
       }));
 
       try {
-        // Batch UPDATE using CASE/WHEN for efficiency
-        // Build a VALUES list for the CASE expression
-        const caseExpr = classified
-          .map(({ id, language }) => `WHEN id = ${id} THEN '${language.replace(/'/g, "''")}'`)
-          .join("\n        ");
-
         const ids = classified.map(({ id }) => id);
+        const languages = classified.map(({ language }) => language);
 
-        await sql.unsafe(`
+        await sql`
           UPDATE learning_memories
-          SET language = CASE
-            ${caseExpr}
-          END
-          WHERE id = ANY($1::bigint[])
-            AND language IS NULL
-        `, [ids]);
+          SET language = batch.language
+          FROM unnest(${ids}::bigint[], ${languages}::text[]) AS batch(id, language)
+          WHERE learning_memories.id = batch.id
+            AND learning_memories.language IS NULL
+        `;
 
         totalUpdated += rows.length;
-        logger.debug({ batch: offset / batchSize + 1, count: rows.length }, "Batch updated");
+        logger.debug({ batch: batchNumber, count: rows.length }, "Batch updated");
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        logger.error({ err: message, offset }, "Batch update failed");
+        logger.error({ err: message, batch: batchNumber }, "Batch update failed");
         failureCount += rows.length;
       }
-
-      offset += batchSize;
     }
 
     if (totalUpdated > 0 || failureCount > 0) {

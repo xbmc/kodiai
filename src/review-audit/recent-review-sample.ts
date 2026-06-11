@@ -180,15 +180,33 @@ export async function collectLatestReviewArtifacts(params: {
   for (const pullRequest of params.pullRequests) {
     const candidates: RecentReviewArtifact[] = [];
 
-    const reviewComments = await params.octokit.rest.pulls.listReviewComments({
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: pullRequest.number,
-      per_page: 100,
-      page: 1,
-      sort: "created",
-      direction: "desc",
-    });
+    const [reviewComments, issueComments, reviews] = await Promise.all([
+      params.octokit.rest.pulls.listReviewComments({
+        owner: params.owner,
+        repo: params.repo,
+        pull_number: pullRequest.number,
+        per_page: 100,
+        page: 1,
+        sort: "created",
+        direction: "desc",
+      }),
+      params.octokit.rest.issues.listComments({
+        owner: params.owner,
+        repo: params.repo,
+        issue_number: pullRequest.number,
+        per_page: 100,
+        page: 1,
+        sort: "created",
+        direction: "desc",
+      }),
+      params.octokit.rest.pulls.listReviews({
+        owner: params.owner,
+        repo: params.repo,
+        pull_number: pullRequest.number,
+        per_page: 100,
+        page: 1,
+      }),
+    ]);
     for (const reviewComment of reviewComments.data) {
       const artifact = buildArtifact({
         source: "review-comment",
@@ -204,15 +222,6 @@ export async function collectLatestReviewArtifacts(params: {
       }
     }
 
-    const issueComments = await params.octokit.rest.issues.listComments({
-      owner: params.owner,
-      repo: params.repo,
-      issue_number: pullRequest.number,
-      per_page: 100,
-      page: 1,
-      sort: "created",
-      direction: "desc",
-    });
     for (const issueComment of issueComments.data) {
       const artifact = buildArtifact({
         source: "issue-comment",
@@ -228,13 +237,6 @@ export async function collectLatestReviewArtifacts(params: {
       }
     }
 
-    const reviews = await params.octokit.rest.pulls.listReviews({
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: pullRequest.number,
-      per_page: 100,
-      page: 1,
-    });
     for (const review of reviews.data) {
       const artifact = buildArtifact({
         source: "review",

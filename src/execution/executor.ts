@@ -658,7 +658,7 @@ export function createExecutor(deps: {
           knowledgeStore: context.knowledgeStore,
           totalFiles: context.totalFiles,
           enableCheckpointTool: context.enableCheckpointTool,
-          prDiffForCommentValidation: context.prDiffForCommentValidation,
+          prDiffCommentabilityIndex: context.prDiffCommentabilityIndex,
           enableIssueTools,
           triageConfig,
           enableCandidateFindingTool: context.enableCandidateFindingTool,

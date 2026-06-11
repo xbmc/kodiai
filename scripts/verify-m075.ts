@@ -74,6 +74,7 @@ export type M075Args = {
   readonly allowBlocked: boolean;
   readonly baseUrl?: string;
 };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type M075Check = { readonly id: M075CheckId; readonly status: M075CheckStatus; readonly message: string; readonly issues: readonly string[] };
 export type M075ChildReport = M075S01Report | M075S02Report | M075S03Report | M075S04Report | M075S06Report | M075S05Report;
 export type M075ChildEvaluator = () => Promise<unknown>;
@@ -195,7 +196,7 @@ const STRUCTURED_ACTIONABLE_CLASSES: readonly M075StructuredActionableClassId[] 
 const FORBIDDEN_RAW_VALUE = /(RAW_PROMPT_CANARY|RAW_MODEL_OUTPUT_CANARY|CANDIDATE_BODY_CANARY|TOOL_PAYLOAD_CANARY|RAW_PAYLOAD_CANARY|RAW_CHECKER_OUTPUT_CANARY|SECRET_TOKEN_CANARY|DIFF_TEXT_CANARY|WORKSPACE_PATH_CANARY|GITHUB_PAYLOAD_CANARY|PROMPT_SECRET|TOKEN=|diff --git|sk-[a-z0-9]|ghp_|github_pat_|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/home\/|\/tmp\/)/i;
 
 export function parseM075Args(args: readonly string[]): M075Args {
-  const parsed: Partial<M075Args> = { json: false, help: false, live: false, allowBlocked: false };
+  const parsed: Partial<Mutable<M075Args>> = { json: false, help: false, live: false, allowBlocked: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") { parsed.json = true; continue; }

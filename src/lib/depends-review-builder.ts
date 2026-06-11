@@ -16,6 +16,7 @@ import type {
   PatchChange,
 } from "./depends-bump-enrichment.ts";
 import type { ImpactResult, TransitiveResult } from "./depends-impact-analyzer.ts";
+import { buildDependsVersionFileByPackage } from "./depends-version-files.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -408,17 +409,19 @@ export function buildDependsInlineComments(
   prFiles: Array<{ filename: string; patch?: string }>,
 ): InlineComment[] {
   const comments: InlineComment[] = [];
+  const prFileByName = new Map(prFiles.map((file) => [file.filename, file]));
+  const versionFileByPackage = buildDependsVersionFileByPackage(
+    prFiles,
+    data.hashResults.map((hr) => hr.packageName),
+  );
 
   // Hash mismatch inline comments on VERSION files
   for (const hr of data.hashResults) {
     if (hr.result.status !== "mismatch") continue;
 
     // Find the VERSION file for this package in PR files
-    const versionFile = prFiles.find(
-      (f) =>
-        f.filename.toLowerCase().includes(hr.packageName.toLowerCase()) &&
-        f.filename.toUpperCase().includes("VERSION"),
-    );
+    const packageName = hr.packageName.toLowerCase();
+    const versionFile = versionFileByPackage.get(packageName);
 
     if (versionFile?.patch) {
       const sha512Line = findPatchLineNumber(versionFile.patch, "SHA512");
@@ -436,7 +439,7 @@ export function buildDependsInlineComments(
   for (const pc of data.patchChanges) {
     if (pc.action !== "removed") continue;
 
-    const prFile = prFiles.find((f) => f.filename === pc.file);
+    const prFile = prFileByName.get(pc.file);
     if (prFile) {
       comments.push({
         path: pc.file,

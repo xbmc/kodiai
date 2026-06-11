@@ -85,7 +85,50 @@ function createMockSql() {
   return sql;
 }
 
+function findTaggedQuery(
+  sql: ReturnType<typeof createMockSql>,
+  pattern: string,
+): { query: string; values: unknown[] } {
+  const call = sql.calls.find((entry) => entry.query.includes(pattern));
+  expect(call).toBeDefined();
+  return call!;
+}
+
 describe("ReviewCommentStore batch SQL", () => {
+  test("searchByEmbedding uses tagged SQL instead of unsafe query assembly", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.searchByEmbedding({
+      queryEmbedding: new Float32Array([1]),
+      repo: "xbmc/xbmc",
+      topK: 4,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "FROM review_comments");
+    expect(query.values).toContain("[1]");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toContain(4);
+  });
+
+  test("searchByFullText uses tagged SQL instead of unsafe query assembly", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.searchByFullText({
+      query: "null check",
+      repo: "xbmc/xbmc",
+      topK: 6,
+    });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "ts_rank");
+    expect(query.values).toContain("null check");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toContain(6);
+  });
+
   test("writeChunks batches multiple chunks into one unsafe insert", async () => {
     const sql = createMockSql();
     const store = createReviewCommentStore({ sql, logger: mockLogger });

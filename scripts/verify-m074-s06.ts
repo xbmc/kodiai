@@ -1,5 +1,6 @@
 import { dirname, isAbsolute, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Logger } from "pino";
 import { createGitHubApp } from "../src/auth/github-app.ts";
 import { parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { collectReviewOutputArtifacts, type ReviewOutputArtifactCollection, type ReviewOutputArtifactsOctokit } from "../src/review-audit/review-output-artifacts.ts";
@@ -52,6 +53,8 @@ export type M074S06Args = {
   readonly allowBlocked: boolean;
   readonly expectStatus?: M074S06StatusCode;
 };
+
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 export type M074S06Check = {
   readonly id: M074S06CheckId;
@@ -271,7 +274,7 @@ const EMPTY_OBSERVED: M074S06Observed = {
 };
 
 export function parseM074S06Args(args: readonly string[]): M074S06Args {
-  const parsed: Partial<M074S06Args> = { json: false, help: false, allowBlocked: false };
+  const parsed: Partial<Mutable<M074S06Args>> = { json: false, help: false, allowBlocked: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") {
@@ -286,7 +289,7 @@ export function parseM074S06Args(args: readonly string[]): M074S06Args {
       parsed.allowBlocked = true;
       continue;
     }
-    if (["--fixture", "--owner", "--repo", "--pr", "--review-output-key", "--delivery-id", "--expect-status"].includes(arg)) {
+    if (arg && ["--fixture", "--owner", "--repo", "--pr", "--review-output-key", "--delivery-id", "--expect-status"].includes(arg)) {
       const value = args[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`invalid_cli_args: ${arg} requires a value`);
       if (arg === "--fixture") parsed.fixturePath = value;
@@ -843,7 +846,7 @@ function buildDefaultLiveCollectors(): M074S06LiveCollectors {
     ? async (args: M074S06Args): Promise<M074S06LiveGithubResult> => {
       const parsed = parseReviewOutputKey(args.reviewOutputKey ?? "");
       if (!parsed) return { availability: "blocked", reason: "missing or malformed reviewOutputKey" };
-      const githubApp = createGitHubApp(buildGitHubAppConfig(readGithubPrivateKey(process.env), process.env) as never, silentLogger());
+      const githubApp = createGitHubApp(buildGitHubAppConfig(readGithubPrivateKey(process.env), process.env) as never, silentLogger() as unknown as Logger);
       await githubApp.initialize({ requestTimeoutMs: 15_000 });
       const octokit = await githubApp.getInstallationOctokit(parsed.installationId, { requestTimeoutMs: 15_000 }) as unknown as ReviewOutputArtifactsOctokit;
       const collection = await collectReviewOutputArtifacts({ octokit, reviewOutputKey: parsed.reviewOutputKey });

@@ -305,6 +305,9 @@ export async function runClusterPipeline(opts: {
         for (const [clusterLabel, members] of clusterMembers) {
           const memberEmbeddings = members.map((m) => poolForClustering[m.idx]!.embedding);
           const centroid = meanEmbedding(memberEmbeddings);
+          if (!centroid) {
+            continue;
+          }
           const filePaths = [
             ...new Set(
               members
@@ -355,48 +358,73 @@ export async function runClusterPipeline(opts: {
     }
 
     // Step 6: Check label regeneration for existing clusters
-    for (const cluster of existingClusters) {
-      if (cluster.pinned) continue;
-      if (cluster.memberCountAtLabel === 0) continue;
-
+    const clustersToRelabel = existingClusters.filter((cluster) => {
+      if (cluster.pinned || cluster.memberCountAtLabel === 0) return false;
       const changeRatio = Math.abs(cluster.memberCount - cluster.memberCountAtLabel) / cluster.memberCountAtLabel;
-      if (changeRatio > LABEL_REGEN_THRESHOLD) {
-        // Fetch representative samples for relabeling
-        const assignments = await store.getAssignmentsByCluster(cluster.id);
-        const topAssignments = assignments.slice(0, REPRESENTATIVE_SAMPLE_COUNT);
+      return changeRatio > LABEL_REGEN_THRESHOLD;
+    });
+    const relabelClusterIds = clustersToRelabel.map((cluster) => cluster.id);
+    const relabelSampleRows = relabelClusterIds.length === 0
+      ? []
+      : await sql`
+        WITH ranked_assignments AS (
+          SELECT
+            rca.cluster_id,
+            rc.chunk_text,
+            row_number() OVER (
+              PARTITION BY rca.cluster_id
+              ORDER BY rca.probability DESC
+            ) AS sample_rank
+          FROM review_cluster_assignments rca
+          JOIN review_comments rc ON rca.review_comment_id = rc.id
+          WHERE rca.cluster_id = ANY(${relabelClusterIds}::bigint[])
+        )
+        SELECT cluster_id, chunk_text
+        FROM ranked_assignments
+        WHERE sample_rank <= ${REPRESENTATIVE_SAMPLE_COUNT}
+        ORDER BY cluster_id, sample_rank
+      `;
+    const relabelSamplesByClusterId = new Map<number, string[]>();
+    for (const row of relabelSampleRows) {
+      const clusterId = Number(row.cluster_id);
+      const samples = relabelSamplesByClusterId.get(clusterId) ?? [];
+      samples.push(row.chunk_text as string);
+      relabelSamplesByClusterId.set(clusterId, samples);
+    }
 
-        if (topAssignments.length > 0) {
-          const sampleRows = await sql`
-            SELECT chunk_text FROM review_comments
-            WHERE id = ANY(${topAssignments.map((a) => a.reviewCommentId)}::bigint[])
-          `;
-          const samples = sampleRows.map((r) => r.chunk_text as string);
+    for (const cluster of clustersToRelabel) {
+      const samples = relabelSamplesByClusterId.get(cluster.id) ?? [];
+      if (samples.length === 0) continue;
 
-          if (samples.length > 0) {
-            const { slug, description } = await generateClusterLabel(
-              samples,
-              taskRouter,
-              logger,
-              repo,
-            );
-            await store.updateClusterLabel(cluster.id, slug, description, cluster.memberCount);
-            runState.labelsGenerated++;
-          }
-        }
-      }
+      const { slug, description } = await generateClusterLabel(
+        samples,
+        taskRouter,
+        logger,
+        repo,
+      );
+      await store.updateClusterLabel(cluster.id, slug, description, cluster.memberCount);
+      runState.labelsGenerated++;
     }
 
     // Step 7: Retire stale clusters (< 3 members in 60-day window)
-    for (const cluster of existingClusters) {
-      const recentCountRows = await sql`
-        SELECT COUNT(*)::int AS cnt
+    const clusterIds = existingClusters.map((cluster) => cluster.id);
+    const recentCountRows = clusterIds.length === 0
+      ? []
+      : await sql`
+        SELECT rca.cluster_id, COUNT(*)::int AS cnt
         FROM review_cluster_assignments rca
         JOIN review_comments rc ON rca.review_comment_id = rc.id
-        WHERE rca.cluster_id = ${cluster.id}
+        WHERE rca.cluster_id = ANY(${clusterIds}::bigint[])
           AND rc.github_created_at >= NOW() - INTERVAL '60 days'
           AND rc.deleted = false
+        GROUP BY rca.cluster_id
       `;
-      const recentCount = (recentCountRows[0]?.cnt as number) ?? 0;
+    const recentCountByClusterId = new Map(
+      recentCountRows.map((row) => [Number(row.cluster_id), Number(row.cnt)]),
+    );
+
+    for (const cluster of existingClusters) {
+      const recentCount = recentCountByClusterId.get(cluster.id) ?? 0;
       if (recentCount < RETIREMENT_MEMBER_THRESHOLD) {
         await store.retireCluster(cluster.id);
         logger.info(

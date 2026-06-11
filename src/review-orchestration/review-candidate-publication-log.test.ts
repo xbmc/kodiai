@@ -22,24 +22,98 @@ function createCaptureLogger() {
 }
 
 const baseRuntime: ReviewCandidatePublicationRuntimeResult = {
-  mode: "approved",
+  mode: "candidate-approved",
   counts: {
-    candidateInput: 1,
-    candidateRecorded: 1,
-    candidateRejected: 0,
+    approvedReferences: 1,
+    rewrittenReferences: 1,
     candidatePublishable: 1,
     candidatePublished: 1,
+    candidateSkipped: 0,
     candidateBlocked: 0,
     candidateFailed: 0,
     candidateMalformed: 0,
+    candidateMovedToDetails: 0,
+    candidateDetailsOnlyFindings: 0,
+    candidateDetailsOnlyOmitted: 0,
     fixEligibilityBlocked: 0,
+    nonPublishableReferences: 0,
+    convertedProcessedFindings: 1,
+    directAttempted: 0,
     directPublished: 0,
+    fallbackEvidence: 0,
+    fallbackDisallowed: 0,
     malformed: 0,
   },
   reasons: [],
   outcomeBuckets: {},
+  detailsSummary: {
+    label: "Review candidate publication runtime",
+    text: "summary",
+    mode: "candidate-approved",
+    counts: {
+      approvedReferences: 1,
+      rewrittenReferences: 1,
+      candidatePublishable: 1,
+      candidatePublished: 1,
+      candidateSkipped: 0,
+      candidateBlocked: 0,
+      candidateFailed: 0,
+      candidateMalformed: 0,
+      candidateMovedToDetails: 0,
+      candidateDetailsOnlyFindings: 0,
+      candidateDetailsOnlyOmitted: 0,
+      fixEligibilityBlocked: 0,
+      nonPublishableReferences: 0,
+      convertedProcessedFindings: 1,
+      directAttempted: 0,
+      directPublished: 0,
+      fallbackEvidence: 0,
+      fallbackDisallowed: 0,
+      malformed: 0,
+    },
+    reasons: [],
+  },
+  safeConfigSnapshot: {
+    mode: "candidate-approved",
+    counts: {
+      approvedReferences: 1,
+      rewrittenReferences: 1,
+      candidatePublishable: 1,
+      candidatePublished: 1,
+      candidateSkipped: 0,
+      candidateBlocked: 0,
+      candidateFailed: 0,
+      candidateMalformed: 0,
+      candidateMovedToDetails: 0,
+      candidateDetailsOnlyFindings: 0,
+      candidateDetailsOnlyOmitted: 0,
+      fixEligibilityBlocked: 0,
+      nonPublishableReferences: 0,
+      convertedProcessedFindings: 1,
+      directAttempted: 0,
+      directPublished: 0,
+      fallbackEvidence: 0,
+      fallbackDisallowed: 0,
+      malformed: 0,
+    },
+    reasons: [],
+  },
   publisherResultSample: [],
-  movedToDetails: [],
+  detailsOnlyFindings: [],
+  movedToDetails: {
+    counts: { total: 0, fromFixEligibility: 0, fromPublisherResult: 0, omitted: 0 },
+    reasonCounts: {},
+    redaction: {
+      rawCandidatePayloadsIncluded: false,
+      rawPromptsIncluded: false,
+      rawModelOutputIncluded: false,
+      diffsIncluded: false,
+      replacementTextIncluded: false,
+      githubResponsePayloadsIncluded: false,
+      secretLikeValuesIncluded: false,
+      bounded: true,
+    },
+  },
 };
 
 describe("logReviewCandidatePublicationRuntime", () => {
@@ -57,7 +131,7 @@ describe("logReviewCandidatePublicationRuntime", () => {
     expect(entries[0]!.message).toBe("Review candidate publication completed");
     expect(entries[0]!.bindings).toMatchObject({
       gate: "review-candidate-publication",
-      gateResult: "approved",
+      gateResult: "candidate-approved",
       counts: expect.objectContaining({ candidatePublished: 1 }),
     });
     expect(entries[0]!.bindings.classification).toBeUndefined();
@@ -97,7 +171,7 @@ describe("logReviewCandidatePublicationRuntime", () => {
     logReviewCandidatePublicationRuntime({
       logger,
       baseLog: { repo: "xbmc/xbmc", prNumber: 1 },
-      runtime: { ...baseRuntime, mode: "degraded", reasons: ["publisher-unavailable"] },
+      runtime: { ...baseRuntime, mode: "degraded", reasons: ["candidate-publisher-missing"] },
     });
 
     expect(entries).toHaveLength(1);

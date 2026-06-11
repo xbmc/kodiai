@@ -49,27 +49,27 @@ type ReviewCandidatePublicationProductionLogPublisherSample = Omit<
   reason: string;
 };
 
-const ADDON_CHECK_MODE_ALIASES = {
+const ADDON_CHECK_MODE_ALIASES: Partial<Record<AddonCheckClassificationMode, string>> = {
   "all-timeout": "all-budget-exhausted",
   "partial-timeout": "partial-budget-exhausted",
-} satisfies Partial<Record<AddonCheckClassificationMode, string>>;
+};
 
-const ADDON_CHECK_REASON_ALIASES = {
+const ADDON_CHECK_REASON_ALIASES: Partial<Record<AddonCheckReasonCode, string>> = {
   "all-timeout": "all-budget-exhausted",
   "partial-timeout": "partial-budget-exhausted",
-} satisfies Partial<Record<AddonCheckReasonCode, string>>;
+};
 
-const REVIEW_TIMEOUT_MODE_ALIASES = {
+const REVIEW_TIMEOUT_MODE_ALIASES: Partial<Record<ReviewTimeoutClassificationMode, string>> = {
   "bounded-partial-timeout": "bounded-partial-budget-exhausted",
   "zero-evidence-hard-timeout": "zero-evidence-hard-budget-exhausted",
   "chronic-timeout-skip": "chronic-budget-exhausted-skip",
-} satisfies Partial<Record<ReviewTimeoutClassificationMode, string>>;
+};
 
-const REVIEW_TIMEOUT_REASON_ALIASES = {
+const REVIEW_TIMEOUT_REASON_ALIASES: Partial<Record<ReviewTimeoutReasonCode, string>> = {
   "partial-timeout": "partial-budget-exhausted",
   timeout: "budget-exhausted",
   "chronic-timeout": "chronic-budget-exhausted",
-} satisfies Partial<Record<ReviewTimeoutReasonCode, string>>;
+};
 
 export function toProductionLogBudgetReasoning(reasoning: string): string {
   return reasoning

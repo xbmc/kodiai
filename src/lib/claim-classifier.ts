@@ -2,6 +2,8 @@
 // Types
 // ---------------------------------------------------------------------------
 
+import { countWordsInTextBySubstring, significantWords } from "./text-overlap.ts";
+
 export type ClaimLabel = "diff-grounded" | "external-knowledge" | "inferential";
 export type SummaryLabel = "primarily-diff-grounded" | "primarily-external" | "mixed";
 
@@ -42,6 +44,22 @@ export type DiffContext = {
   removedLines: string[];
   contextLines: string[];
 };
+
+const diffTextLowerCache = new WeakMap<DiffContext, string>();
+
+function getDiffTextLower(diff: DiffContext): string {
+  const cached = diffTextLowerCache.get(diff);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const text = [
+    ...diff.addedLines,
+    ...diff.removedLines,
+    ...diff.contextLines,
+  ].join("\n").toLowerCase();
+  diffTextLowerCache.set(diff, text);
+  return text;
+}
 
 export type ClassifierInput = {
   findings: FindingForClassification[];
@@ -117,7 +135,11 @@ export function extractClaims(text: string): string[] {
  */
 function versionInDiff(version: string, diff: DiffContext | undefined): boolean {
   if (!diff) return false;
-  const allDiffText = [...diff.addedLines, ...diff.removedLines, ...diff.contextLines].join("\n");
+  const allDiffText = [
+    ...diff.addedLines,
+    ...diff.removedLines,
+    ...diff.contextLines,
+  ].join("\n");
   return allDiffText.includes(version);
 }
 
@@ -136,47 +158,27 @@ function claimReferencesVisibleChange(
   if (DIFF_REFERENCE_PATTERN.test(claim)) {
     // Try to match the subject of the reference against diff lines
     if (diff) {
-      const allDiffText = [
-        ...diff.addedLines,
-        ...diff.removedLines,
-        ...diff.contextLines,
-      ].join("\n").toLowerCase();
+      const allDiffText = getDiffTextLower(diff);
 
       // Extract key words from claim and check against diff
-      const claimWords = claim
-        .toLowerCase()
-        .replace(/[^\w\s]/g, "")
-        .split(/\s+/)
-        .filter((w) => w.length > 3);
-
-      const matchCount = claimWords.filter((w) => allDiffText.includes(w)).length;
+      const claimWords = significantWords(claim);
+      const matchCount = countWordsInTextBySubstring(claimWords, allDiffText);
       if (matchCount >= 2) return true;
     }
   }
 
   // Check if claim substantially matches PR description
   if (prDescription) {
-    const descLower = prDescription.toLowerCase();
-    const claimLower = claim.toLowerCase();
-
     // Check for significant word overlap
-    const claimWords = claimLower
-      .replace(/[^\w\s]/g, "")
-      .split(/\s+/)
-      .filter((w) => w.length > 3);
-    const matchCount = claimWords.filter((w) => descLower.includes(w)).length;
+    const claimWords = significantWords(claim);
+    const matchCount = countWordsInTextBySubstring(claimWords, prDescription);
     if (claimWords.length > 0 && matchCount / claimWords.length >= 0.5) return true;
   }
 
   // Check if claim matches commit messages
   for (const msg of commitMessages) {
-    const msgLower = msg.toLowerCase();
-    const claimLower = claim.toLowerCase();
-    const claimWords = claimLower
-      .replace(/[^\w\s]/g, "")
-      .split(/\s+/)
-      .filter((w) => w.length > 3);
-    const matchCount = claimWords.filter((w) => msgLower.includes(w)).length;
+    const claimWords = significantWords(claim);
+    const matchCount = countWordsInTextBySubstring(claimWords, msg);
     if (claimWords.length > 0 && matchCount / claimWords.length >= 0.5) return true;
   }
 

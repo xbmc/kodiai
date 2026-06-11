@@ -345,6 +345,59 @@ describe("review idempotency helpers", () => {
     expect(result.scanStats.reviews.scanned).toBe(0);
   });
 
+  test("ensureReviewOutputNotPublished does not call fallback scans after a review-comment marker hit", async () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const calls = {
+      reviewComments: 0,
+      issueComments: 0,
+      reviews: 0,
+    };
+
+    const result = await ensureReviewOutputNotPublished({
+      octokit: {
+        rest: {
+          pulls: {
+            listReviewComments: async () => {
+              calls.reviewComments += 1;
+              return { data: [{ id: 1, body: `Existing inline output\n\n${marker}` }] };
+            },
+            listReviews: async () => {
+              calls.reviews += 1;
+              return { data: [] };
+            },
+          },
+          issues: {
+            listComments: async () => {
+              calls.issueComments += 1;
+              return { data: [] };
+            },
+          },
+        },
+      } as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+    });
+
+    expect(result.shouldPublish).toBe(false);
+    expect(result.existingLocation).toBe("review-comment");
+    expect(calls).toEqual({
+      reviewComments: 1,
+      issueComments: 0,
+      reviews: 0,
+    });
+  });
+
   test("ensureReviewOutputNotPublished allows publish when marker absent", async () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,

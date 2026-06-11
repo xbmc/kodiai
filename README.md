@@ -102,8 +102,8 @@ For environment variables and application-level settings, see [`.env.example`](.
 ## Testing
 
 ```bash
-# Run tests (discovery configured in bunfig.toml, scans src/)
-bun test
+# Run the suite (scoped to scripts/ and src/, matching CI)
+bun run test
 
 # Type check
 bunx tsc --noEmit

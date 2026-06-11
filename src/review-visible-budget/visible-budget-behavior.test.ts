@@ -21,6 +21,8 @@ const HAPPY_PATH_PROJECTION: VisibleBudgetProjection = buildVisibleBudgetProject
         {
           sectionName: "persona",
           sectionPosition: 0,
+          charCount: 400,
+          estimatedTokens: 100,
           budgetChars: 600,
           budgetTokens: 150,
           includedChars: 400,
@@ -97,6 +99,8 @@ describe("visible budget behavior contract", () => {
             {
               sectionName: "changed-files-summary",
               sectionPosition: 0,
+              charCount: 1800,
+              estimatedTokens: 450,
               budgetChars: 1200,
               budgetTokens: 300,
               includedChars: 1200,
@@ -109,6 +113,8 @@ describe("visible budget behavior contract", () => {
             {
               sectionName: "retrieval-context",
               sectionPosition: 1,
+              charCount: 0,
+              estimatedTokens: 0,
               budgetChars: 0,
               budgetTokens: 0,
               includedChars: 0,
@@ -204,6 +210,8 @@ describe("visible budget behavior contract", () => {
             {
               sectionName: "code-context",
               sectionPosition: 0,
+              charCount: 30,
+              estimatedTokens: 8,
               budgetChars: 10,
               budgetTokens: 3,
               includedChars: 10,

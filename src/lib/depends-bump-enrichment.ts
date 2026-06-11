@@ -120,10 +120,7 @@ export type PackageListEntry = {
  * @returns Array of PackageListEntry with name, oldVersion, newVersion.
  */
 export function parsePackageListDiff(patch: string): PackageListEntry[] {
-  // Regex: version is first segment starting with a digit, followed by arch-compiler-date.ext
   // We split on `-` and find the first segment matching a version pattern (digits and dots).
-  const archiveRe = /^(.+?)-(\d[\d.]*)-([a-z0-9]+)-([a-z0-9]+)-(\d+)\.\w+$/i;
-
   const oldEntries = new Map<string, string>(); // lowercase name -> version
   const newEntries = new Map<string, string>(); // lowercase name -> version
   const nameMap = new Map<string, string>(); // lowercase name -> original-case name
@@ -472,7 +469,6 @@ function buildFallbackResult(
     }
 
     if (highlights.length > 0) {
-      const noteUrl = gitCommitUrl ?? urlDisplay;
       const noteLabel = gitCommitUrl
         ? `[commits](${gitCommitUrl})`
         : `[upstream](${urlDisplay})`;

@@ -245,6 +245,44 @@ describe("updateExpertiseIncremental", () => {
     expect(areaCalls.some((c) => c.topic === "src/lib/")).toBe(true);
   });
 
+  test("reuses one expertise snapshot while updating multiple touched topics", async () => {
+    const { logger } = createMockLogger();
+    let getExpertiseCalls = 0;
+    const upsertCalls: Array<{ dimension: string; topic: string }> = [];
+    const mockStore: ContributorProfileStore = {
+      getByGithubUsername: async () => null,
+      getBySlackUserId: async () => null,
+      linkIdentity: async () => makeProfile(),
+      unlinkSlack: async () => {},
+      setOptedOut: async () => {},
+      getExpertise: async () => {
+        getExpertiseCalls += 1;
+        return [];
+      },
+      upsertExpertise: async (params) => {
+        upsertCalls.push({ dimension: params.dimension, topic: params.topic });
+      },
+      updateTier: async () => {},
+      getOrCreateByGithubUsername: async () => makeProfile(),
+      getAllScores: async () => [],
+    };
+
+    await updateExpertiseIncremental({
+      githubUsername: "test",
+      filesChanged: [
+        "src/handlers/review.ts",
+        "src/lib/request-body.ts",
+        "scripts/backfill-pr-evidence.ts",
+      ],
+      type: "pr_review",
+      profileStore: mockStore,
+      logger,
+    });
+
+    expect(upsertCalls.length).toBeGreaterThan(2);
+    expect(getExpertiseCalls).toBe(1);
+  });
+
   test("recalculates and persists an advanced tier when the updated score outranks the lowest cohort", async () => {
     const updateTierCalls: Array<{
       profileId: number;

@@ -16,6 +16,7 @@ import {
   buildReviewedCategoriesLine,
   buildReviewPrompt,
   buildReviewPromptDetails,
+  formatUnifiedContext,
   buildSmallDiffScopeSection,
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
@@ -72,6 +73,31 @@ describe("small-diff review prompt scope", () => {
     expect(result.text).toContain("Only call `mcp__github_inline_comment__create_inline_comment` on lines visible in these diff hunks");
     expect(result.text).toContain("Do not use full-file `Read` line numbers for inline comments unless that line is also visible in the diff context");
     expect(result.sections.some((section) => section.sectionName === "review-diff-context")).toBe(true);
+  });
+});
+
+describe("formatUnifiedContext", () => {
+  test("uses the assembled context window as the primary knowledge payload", () => {
+    const result = formatUnifiedContext({
+      contextWindow: "Assembled bounded context from retrieval.",
+      unifiedResults: [
+        {
+          id: "chunk-1",
+          source: "wiki",
+          sourceLabel: "[wiki: Review Rules]",
+          sourceUrl: "https://example.test/wiki",
+          text: "Raw chunk text that should not replace the bounded window.",
+          rrfScore: 1,
+          vectorDistance: null,
+          createdAt: null,
+          metadata: {},
+        },
+      ],
+    });
+
+    expect(result).toContain("Assembled bounded context from retrieval.");
+    expect(result).toContain("- [wiki: Review Rules](https://example.test/wiki)");
+    expect(result).not.toContain("\"Raw chunk text that should not replace the bounded window.\"");
   });
 });
 
@@ -619,7 +645,6 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
     "review-change-context",
     "review-diff-context",
     "review-knowledge-context",
-    "review-instructions",
   ]) {
     const section = byName.get(sectionName);
     expect(section).toBeDefined();
@@ -635,6 +660,7 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
   expect(result.text).not.toContain(diffOverflowSentinel);
   expect(result.text).not.toContain(instructionOverflowSentinel);
   expect(result.text).not.toContain(knowledgeOverflowSentinel);
+  expect(byName.get("review-instructions")?.budgetStatus).toBe("included");
   expect(JSON.stringify(result.sections)).not.toContain(diffOverflowSentinel);
   expect(JSON.stringify(result.sections)).not.toContain(instructionOverflowSentinel);
   expect(JSON.stringify(result.sections)).not.toContain(knowledgeOverflowSentinel);
@@ -647,6 +673,55 @@ test("default config includes severity classification guidelines", () => {
   expect(prompt).toContain("MAJOR");
   expect(prompt).toContain("MEDIUM");
   expect(prompt).toContain("MINOR");
+});
+
+test("default review instructions fit the budget and keep the silent-approval contract", () => {
+  const result = buildReviewPromptDetails(baseContext());
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions?.budgetStatus).toBe("included");
+  expect(instructions?.trimmedChars ?? 0).toBe(0);
+  expect(result.text).toContain("## After review");
+  expect(result.text).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+});
+
+test("oversized custom instructions do not displace core review instructions", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    isDraft: true,
+    checkpointEnabled: true,
+    customInstructions: "User-specific instruction. ".repeat(600),
+    suppressions: [{
+      pattern: "ignore generated files",
+      reason: "generated output is reviewed elsewhere",
+    }],
+  }));
+
+  expect(result.text).toContain("## Custom instructions");
+  expect(result.text).not.toContain("User-specific instruction. ".repeat(200));
+  expect(result.text).toContain("## After review");
+  expect(result.text).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+  expect(result.text).toContain("This is a DRAFT review");
+});
+
+test("instruction budgeting drops whole low-retention sections before core review contracts", () => {
+  const result = buildReviewPromptDetails(baseContext({
+    activeRules: Array.from({ length: 60 }, (_, index) =>
+      makeActiveRule({
+        id: index + 1,
+        title: `Overflow Rule ${index}`,
+        ruleText: `Overflow guidance ${index}. ${"Generated rule detail. ".repeat(80)}`,
+      })
+    ),
+  }));
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions?.budgetStatus).toBe("trimmed");
+  expect(instructions?.trimmedChars).toBeGreaterThan(0);
+  expect(instructions!.includedChars).toBeLessThanOrEqual(instructions!.budgetChars!);
+  expect(result.text).not.toContain("## Generated Review Rules");
+  expect(result.text).toContain("## Summary comment");
+  expect(result.text).toContain("## After review");
+  expect(result.text).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
 });
 
 test("default config includes noise suppression rules", () => {
@@ -678,6 +753,13 @@ test("default config preserves summary comment section with five-section templat
   expect(prompt).toContain("## Verdict");
   expect(prompt).toContain(":white_check_mark:");
   expect(prompt).not.toContain("MUST be issues-only");
+});
+
+test("default config omits verbose placeholder finding examples", () => {
+  const prompt = buildReviewPrompt(baseContext());
+  expect(prompt).not.toContain("[MAJOR] path/to/file.ts (789): <issue title>");
+  expect(prompt).not.toContain("<concrete condition and consequence>");
+  expect(prompt).not.toContain("- Optional: <low-friction cleanup or improvement>");
 });
 
 test("enhanced mode includes YAML code block format", () => {
@@ -776,15 +858,18 @@ test("buildConfidenceInstructions handles minConfidence settings", () => {
   expect(threshold).toContain("below 40% confidence");
 });
 
-test("custom instructions appear after noise suppression", () => {
+test("custom instructions use explicit priority before lower-priority boilerplate", () => {
   const prompt = buildReviewPrompt(
     baseContext({ customInstructions: "Check for SQL injection" }),
   );
   const noiseIdx = prompt.indexOf("Noise Suppression");
   const customIdx = prompt.indexOf("Custom instructions");
+  const summaryIdx = prompt.indexOf("Summary comment");
   expect(noiseIdx).toBeGreaterThan(-1);
   expect(customIdx).toBeGreaterThan(-1);
-  expect(customIdx).toBeGreaterThan(noiseIdx);
+  expect(summaryIdx).toBeGreaterThan(-1);
+  expect(customIdx).toBeLessThan(noiseIdx);
+  expect(customIdx).toBeLessThan(summaryIdx);
 });
 
 test("path context severity rules included", () => {
@@ -1799,14 +1884,13 @@ describe("Phase 35: Findings organization and tone", () => {
   // 10. Tone guidelines contain diff-grounded stabilizing language (Phase 115 rewrite)
   test("tone guidelines include diff-grounded stabilizing language", () => {
     const prompt = buildReviewPrompt(baseContext());
-    expect(prompt).toContain("preserved behavior");
-    expect(prompt).toContain("same function signatures");
+    expect(prompt).toContain("What happens, when, why it matters");
   });
 
   // 11. Tone guidelines contain epistemic principle instead of anti-patterns (Phase 115 rewrite)
   test("tone guidelines include epistemic principle", () => {
     const prompt = buildReviewPrompt(baseContext());
-    expect(prompt).toContain("Epistemic principle");
+    expect(prompt).toContain("Evidence principle");
     expect(prompt).toContain("Silently omit what you cannot verify");
   });
 
@@ -2388,11 +2472,9 @@ describe("buildEpistemicBoundarySection", () => {
     expect(section).toContain("System-provided enrichment");
   });
 
-  test("contains denylist (version numbers, API release dates, library behavior not in diff)", () => {
+  test("contains compact denylist for version/API/library claims not in evidence", () => {
     const section = buildEpistemicBoundarySection();
-    expect(section).toContain("version numbers");
-    expect(section).toMatch(/API.*(release|date|change)/i);
-    expect(section).toMatch(/library.*(behavior|behaviour)/i);
+    expect(section).toMatch(/version.*API.*release.*library/i);
   });
 
   test("states external knowledge claims must be silently omitted", () => {
@@ -2402,15 +2484,13 @@ describe("buildEpistemicBoundarySection", () => {
 
   test("allows general programming knowledge (null deref, SQL injection)", () => {
     const section = buildEpistemicBoundarySection();
-    expect(section).toMatch(/null.*deref|null pointer/i);
-    expect(section).toMatch(/SQL injection/i);
+    expect(section).toMatch(/general programming/i);
   });
 
   test("defines universal citation rule — diff-visible cites file:line, enrichment cites footnote URL", () => {
     const section = buildEpistemicBoundarySection();
     expect(section).toContain("file:line");
-    expect(section).toMatch(/footnote/i);
-    expect(section).toMatch(/\[.*\d.*\]/);
+    expect(section).toMatch(/footnote URL/i);
   });
 
   test("states no URL = no assertion rule", () => {
@@ -2428,6 +2508,12 @@ describe("buildEpistemicBoundarySection", () => {
     const section = buildEpistemicBoundarySection();
     expect(section).toContain("your response");
   });
+
+  test("stays compact enough for every prompt surface", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section.split("\n").length).toBeLessThanOrEqual(9);
+    expect(section.length).toBeLessThan(900);
+  });
 });
 
 describe("buildToneGuidelinesSection (rewritten for epistemic discipline)", () => {
@@ -2436,7 +2522,7 @@ describe("buildToneGuidelinesSection (rewritten for epistemic discipline)", () =
     expect(section).not.toContain("Do NOT use hedged or vague language");
   });
 
-  test("contains epistemic principle (assert what verifiable from diff, omit what can't)", () => {
+  test("contains evidence principle (assert what verifiable from diff, omit what can't)", () => {
     const section = buildToneGuidelinesSection();
     expect(section).toMatch(/assert.*verif|verify.*assert|verifiable.*diff/i);
   });
@@ -2444,6 +2530,12 @@ describe("buildToneGuidelinesSection (rewritten for epistemic discipline)", () =
   test("still contains Prefix Preference findings with Optional:", () => {
     const section = buildToneGuidelinesSection();
     expect(section).toContain("Optional:");
+  });
+
+  test("stays compact", () => {
+    const section = buildToneGuidelinesSection();
+    expect(section.split("\n").length).toBeLessThanOrEqual(7);
+    expect(section.length).toBeLessThan(700);
   });
 });
 
@@ -2662,7 +2754,7 @@ describe("buildSecurityPolicySection", () => {
 
   test("mentions environment variables and credentials", () => {
     const section = buildSecurityPolicySection();
-    expect(section).toContain("environment variables");
+    expect(section).toContain("env");
     expect(section).toContain("credentials");
   });
 
@@ -2673,13 +2765,12 @@ describe("buildSecurityPolicySection", () => {
 
   test("mentions probing the environment with commands", () => {
     const section = buildSecurityPolicySection();
-    expect(section).toContain("env");
-    expect(section).toContain("printenv");
+    expect(section).toMatch(/probe/i);
   });
 
   test("states cannot be overridden", () => {
     const section = buildSecurityPolicySection();
-    expect(section).toMatch(/cannot be overridden/i);
+    expect(section).toMatch(/cannot be overridden|even if/i);
   });
 
   test("mentions execution requests as a refusal trigger", () => {
@@ -2689,12 +2780,19 @@ describe("buildSecurityPolicySection", () => {
 
   test("flags skip-review instructions as adversarial", () => {
     const section = buildSecurityPolicySection();
-    expect(section.toLowerCase()).toContain("social engineering");
+    expect(section.toLowerCase()).toContain("adversarial");
   });
 
   test("mandates code review before execution", () => {
     const section = buildSecurityPolicySection();
     expect(section.toLowerCase()).toMatch(/review.*before.*execut|must.*review/i);
+  });
+
+  test("stays compact because detailed policy lives in CLAUDE.md", () => {
+    const section = buildSecurityPolicySection();
+    expect(section).toContain("CLAUDE.md");
+    expect(section.split("\n").length).toBeLessThanOrEqual(7);
+    expect(section.length).toBeLessThan(650);
   });
 });
 

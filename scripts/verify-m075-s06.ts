@@ -34,6 +34,7 @@ export type M075S06Mode =
   | "tool-unavailable"
   | "unknown-malformed-evidence";
 export type M075S06Args = { readonly json: boolean; readonly help: boolean; readonly fixturePath?: string };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type M075S06Check = { readonly id: M075S06CheckId; readonly status: M075S06CheckStatus; readonly message: string; readonly issues: readonly string[] };
 export type M075S06Counts = {
   readonly addonCount: number;
@@ -112,7 +113,7 @@ const FORBIDDEN_RAW_VALUE = /(RAW_PROMPT_CANARY|RAW_MODEL_OUTPUT_CANARY|CANDIDAT
 const EMPTY_OBSERVED: M075S06Observed = { scenarioCount: 0, modeCount: 0, expectedBoundedCount: 0, actionableDiagnosticCount: 0, malformedEvidenceCount: 0 };
 
 export function parseM075S06Args(args: readonly string[]): M075S06Args {
-  const parsed: Partial<M075S06Args> = { json: false, help: false };
+  const parsed: Partial<Mutable<M075S06Args>> = { json: false, help: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--json") { parsed.json = true; continue; }

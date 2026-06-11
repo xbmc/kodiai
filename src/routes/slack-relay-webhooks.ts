@@ -11,8 +11,10 @@ import {
   requestSourceKey,
   type RateLimitOptions,
 } from "../lib/sliding-window-rate-limiter.ts";
+import { tryReadBoundedRequestBody } from "../lib/request-body.ts";
 
 type SlackRelayRateLimitWindow = "preBody" | "verified";
+const MAX_SLACK_RELAY_BODY_BYTES = 1 * 1024 * 1024;
 
 interface SlackRelayWebhookRouteDeps {
   config: AppConfig;
@@ -71,7 +73,12 @@ export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps):
       return c.json({ ok: false, reason: "rate_limited" }, 429);
     }
 
-    const rawBody = await c.req.text();
+    const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_RELAY_BODY_BYTES });
+    if (!bodyResult.ok) {
+      logger.warn({ sourceId, maxBytes: bodyResult.error.maxBytes }, "Slack relay webhook body too large");
+      return c.json({ ok: false, reason: "payload_too_large" }, 413);
+    }
+    const rawBody = bodyResult.body;
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody) as unknown;

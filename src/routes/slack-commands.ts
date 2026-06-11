@@ -4,6 +4,7 @@ import type { AppConfig } from "../config.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import { handleKodiaiCommand } from "../slack/slash-command-handler.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
+import { tryReadBoundedRequestBody } from "../lib/request-body.ts";
 import {
   createNamedRateLimiters,
   requestSourceKey,
@@ -11,6 +12,7 @@ import {
 } from "../lib/sliding-window-rate-limiter.ts";
 
 type SlackCommandRateLimitWindow = "preBody" | "verified";
+const MAX_SLACK_COMMAND_BODY_BYTES = 256 * 1024;
 
 interface SlackCommandRouteDeps {
   config: AppConfig;
@@ -34,7 +36,12 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
       return c.text("Rate limited", 429);
     }
 
-    const rawBody = await c.req.text();
+    const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_COMMAND_BODY_BYTES });
+    if (!bodyResult.ok) {
+      logger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slash command body too large");
+      return c.text("Payload too large", 413);
+    }
+    const rawBody = bodyResult.body;
 
     const verification = verifySlackRequest({
       signingSecret: config.slackSigningSecret,

@@ -24,6 +24,8 @@ type StoreState = {
   repoResults?: Candidate[];
   ownerResults?: Candidate[];
   records?: Record<number, LearningMemoryRecord | null>;
+  singleReadIds?: number[];
+  batchReadIds?: number[][];
 };
 
 function makeRecord(memoryId: number, sourceRepo: string): LearningMemoryRecord {
@@ -49,7 +51,7 @@ function makeRecord(memoryId: number, sourceRepo: string): LearningMemoryRecord 
 function createStore(state: StoreState = {}): LearningMemoryStore {
   const records = state.records ?? {};
 
-  return {
+  const store: LearningMemoryStore = {
     async hasMemoryConflict() {
       return false;
     },
@@ -61,7 +63,17 @@ function createStore(state: StoreState = {}): LearningMemoryStore {
       return state.ownerResults ?? [];
     },
     async getMemoryRecord(memoryId: number) {
+      state.singleReadIds?.push(memoryId);
       return records[memoryId] ?? null;
+    },
+    async getMemoryRecords(memoryIds: number[]) {
+      state.batchReadIds?.push([...memoryIds]);
+      const result = new Map<number, LearningMemoryRecord>();
+      for (const memoryId of memoryIds) {
+        const record = records[memoryId] ?? null;
+        if (record) result.set(memoryId, record);
+      }
+      return result;
     },
     async markStale() {
       return 0;
@@ -71,6 +83,8 @@ function createStore(state: StoreState = {}): LearningMemoryStore {
     },
     close() {},
   };
+
+  return store;
 }
 
 describe("createIsolationLayer", () => {
@@ -198,5 +212,42 @@ describe("createIsolationLayer", () => {
     expect(sharingDisabled.provenance.repoSources).toEqual(["owner/repo"]);
     expect(sharingDisabled.provenance.sharedPoolUsed).toBe(false);
     expect(sharingDisabled.provenance.totalCandidates).toBe(2);
+  });
+
+  test("hydrates selected memories in one batch", async () => {
+    const singleReadIds: number[] = [];
+    const batchReadIds: number[][] = [];
+    const layer = createIsolationLayer({
+      memoryStore: createStore({
+        singleReadIds,
+        batchReadIds,
+        repoResults: [
+          { memoryId: 1, distance: 0.1 },
+          { memoryId: 2, distance: 0.2 },
+          { memoryId: 3, distance: 0.3 },
+        ],
+        records: {
+          1: makeRecord(1, "owner/repo"),
+          2: makeRecord(2, "owner/repo"),
+          3: makeRecord(3, "owner/repo"),
+        },
+      }),
+      logger: createMockLogger(),
+    });
+
+    const result = await layer.retrieveWithIsolation({
+      queryEmbedding: new Float32Array([0.1]),
+      repo: "owner/repo",
+      owner: "owner",
+      sharingEnabled: false,
+      topK: 3,
+      distanceThreshold: 1,
+      adaptive: false,
+      logger: createMockLogger(),
+    });
+
+    expect(result.results.map((entry) => entry.memoryId)).toEqual([1, 2, 3]);
+    expect(batchReadIds).toEqual([[1, 2, 3]]);
+    expect(singleReadIds).toEqual([]);
   });
 });

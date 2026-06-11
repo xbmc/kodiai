@@ -12,6 +12,18 @@ describe("classifyClaimAgainstContext", () => {
     expect(result.label).toBe("diff-grounded");
   });
 
+  test("grounds provided context using substring word matches", () => {
+    const context: GroundingContext = {
+      providedContext: ["authMiddleware configuration"],
+      contextSources: ["issue"],
+    };
+    const result = classifyClaimAgainstContext("This changes the auth config", context);
+
+    expect(result.label).toBe("diff-grounded");
+    expect(result.evidence).toBe("Claim grounded in context (50% word overlap)");
+    expect(result.confidence).toBeCloseTo(0.8);
+  });
+
   test("external-knowledge claim returns external-knowledge label", () => {
     const context: GroundingContext = {
       providedContext: ["fix handler"],

@@ -239,7 +239,7 @@ export async function generatePendingRuleProposals(
       const positiveRatio = clusterSize === 0 ? 0 : positiveCount / clusterSize;
 
       if (clusterSize < minClusterSize) {
-        logger.info(
+        logger.debug(
           { repo, clusterIndex, clusterSize, reason: "cluster-too-small" },
           "Skipped generated-rule proposal cluster",
         );
@@ -247,7 +247,7 @@ export async function generatePendingRuleProposals(
       }
 
       if (positiveCount < minPositiveMembers) {
-        logger.info(
+        logger.debug(
           { repo, clusterIndex, clusterSize, positiveCount, reason: "insufficient-positive-members" },
           "Skipped generated-rule proposal cluster",
         );
@@ -281,7 +281,7 @@ export async function generatePendingRuleProposals(
       }
 
       if (!representative) {
-        logger.info(
+        logger.debug(
           { repo, clusterIndex, clusterSize, positiveCount, reason: "no-representative-positive-member" },
           "Skipped generated-rule proposal cluster",
         );
@@ -290,7 +290,7 @@ export async function generatePendingRuleProposals(
 
       const representativeText = sanitizeProposalTextInput(representative.findingText, maxTextInputChars);
       if (!hasEnoughSignalText(representativeText, minTextChars, minWordCount)) {
-        logger.info(
+        logger.debug(
           {
             repo,
             clusterIndex,
@@ -307,7 +307,7 @@ export async function generatePendingRuleProposals(
       const title = buildProposalTitle(representativeText, maxTitleChars);
       const ruleText = buildProposalRuleText(representativeText, maxRuleTextChars);
       if (!title || !ruleText) {
-        logger.info(
+        logger.debug(
           {
             repo,
             clusterIndex,

@@ -58,9 +58,14 @@ export type WikiPageRecord = {
   languageTags: string[];
 };
 
+/** Search rows deliberately omit vector payloads and expose a null embedding. */
+export type WikiPageSearchRecord = Omit<WikiPageRecord, "embedding"> & {
+  embedding: null;
+};
+
 /** Search result with cosine distance score. */
 export type WikiPageSearchResult = {
-  record: WikiPageRecord;
+  record: WikiPageSearchRecord;
   distance: number;
 };
 

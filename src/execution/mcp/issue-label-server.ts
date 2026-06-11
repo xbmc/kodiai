@@ -1,7 +1,7 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
-import { parseRetryAfterDelayMs } from "../../lib/retry-after.ts";
+import { retryGitHubRateLimitOnly } from "../../lib/github-retry.ts";
 
 interface TriageLabelConfig {
   enabled: boolean;
@@ -12,23 +12,6 @@ interface ToolResult {
   [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
-}
-
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      if (error?.status === 429 && attempt < maxRetries) {
-        const retryAfter = error?.response?.headers?.["retry-after"];
-        const delayMs = parseRetryAfterDelayMs(retryAfter) ?? Math.pow(2, attempt) * 1000;
-        await new Promise((r) => setTimeout(r, delayMs));
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error("unreachable");
 }
 
 function mapErrorCode(error: any): { error_code: string; message: string } {
@@ -152,7 +135,7 @@ export async function addLabelsHandler(deps: {
     }
 
     // Apply valid labels with retry
-    await withRetry(() =>
+    await retryGitHubRateLimitOnly(() =>
       octokit.rest.issues.addLabels({
         owner,
         repo,

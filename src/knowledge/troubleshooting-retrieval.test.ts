@@ -4,7 +4,7 @@ import {
   extractKeywords,
   type TroubleshootingConfig,
 } from "./troubleshooting-retrieval.ts";
-import type { IssueStore, IssueRecord, IssueCommentRecord } from "./issue-types.ts";
+import type { IssueStore, IssueRecord, IssueCommentRecord, IssueSearchRecord } from "./issue-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import type { WikiPageStore } from "./wiki-types.ts";
 
@@ -54,6 +54,10 @@ function makeIssueRecord(overrides: Partial<IssueRecord> = {}): IssueRecord {
     closedAt: "2025-01-15",
     ...overrides,
   };
+}
+
+function makeIssueSearchRecord(overrides: Partial<IssueRecord> = {}): IssueSearchRecord {
+  return makeIssueRecord(overrides) as IssueSearchRecord;
 }
 
 function makeComment(overrides: Partial<IssueCommentRecord> = {}): IssueCommentRecord {
@@ -174,8 +178,8 @@ describe("retrieveTroubleshootingContext", () => {
   test("returns resolved issue matches with assembled threads", async () => {
     const store = createMockIssueStore({
       searchByEmbedding: async () => [
-        { record: makeIssueRecord({ issueNumber: 50 }), distance: 0.2 },
-        { record: makeIssueRecord({ issueNumber: 51 }), distance: 0.25 },
+        { record: makeIssueSearchRecord({ issueNumber: 50 }), distance: 0.2 },
+        { record: makeIssueSearchRecord({ issueNumber: 51 }), distance: 0.25 },
       ],
     });
 
@@ -202,7 +206,7 @@ describe("retrieveTroubleshootingContext", () => {
       searchByEmbedding: async (params) => {
         capturedStateFilter = params.stateFilter;
         return [
-          { record: makeIssueRecord({ issueNumber: 50 }), distance: 0.2 },
+          { record: makeIssueSearchRecord({ issueNumber: 50 }), distance: 0.2 },
         ];
       },
     });
@@ -223,9 +227,9 @@ describe("retrieveTroubleshootingContext", () => {
   test("applies similarity floor", async () => {
     const store = createMockIssueStore({
       searchByEmbedding: async () => [
-        { record: makeIssueRecord({ issueNumber: 50 }), distance: 0.2 },  // sim 0.8 > 0.65 threshold
-        { record: makeIssueRecord({ issueNumber: 51 }), distance: 0.3 },  // sim 0.7 > 0.65 threshold
-        { record: makeIssueRecord({ issueNumber: 52 }), distance: 0.5 },  // sim 0.5 < 0.65 threshold
+        { record: makeIssueSearchRecord({ issueNumber: 50 }), distance: 0.2 },  // sim 0.8 > 0.65 threshold
+        { record: makeIssueSearchRecord({ issueNumber: 51 }), distance: 0.3 },  // sim 0.7 > 0.65 threshold
+        { record: makeIssueSearchRecord({ issueNumber: 52 }), distance: 0.5 },  // sim 0.5 < 0.65 threshold
       ],
     });
 
@@ -246,8 +250,8 @@ describe("retrieveTroubleshootingContext", () => {
   test("excludes pull request records", async () => {
     const store = createMockIssueStore({
       searchByEmbedding: async () => [
-        { record: makeIssueRecord({ issueNumber: 50, isPullRequest: true }), distance: 0.2 },
-        { record: makeIssueRecord({ issueNumber: 51, isPullRequest: false }), distance: 0.25 },
+        { record: makeIssueSearchRecord({ issueNumber: 50, isPullRequest: true }), distance: 0.2 },
+        { record: makeIssueSearchRecord({ issueNumber: 51, isPullRequest: false }), distance: 0.25 },
       ],
     });
 
@@ -269,11 +273,11 @@ describe("retrieveTroubleshootingContext", () => {
   test("respects maxResults config", async () => {
     const store = createMockIssueStore({
       searchByEmbedding: async () => [
-        { record: makeIssueRecord({ issueNumber: 50 }), distance: 0.1 },
-        { record: makeIssueRecord({ issueNumber: 51 }), distance: 0.15 },
-        { record: makeIssueRecord({ issueNumber: 52 }), distance: 0.2 },
-        { record: makeIssueRecord({ issueNumber: 53 }), distance: 0.25 },
-        { record: makeIssueRecord({ issueNumber: 54 }), distance: 0.3 },
+        { record: makeIssueSearchRecord({ issueNumber: 50 }), distance: 0.1 },
+        { record: makeIssueSearchRecord({ issueNumber: 51 }), distance: 0.15 },
+        { record: makeIssueSearchRecord({ issueNumber: 52 }), distance: 0.2 },
+        { record: makeIssueSearchRecord({ issueNumber: 53 }), distance: 0.25 },
+        { record: makeIssueSearchRecord({ issueNumber: 54 }), distance: 0.3 },
       ],
     });
 
@@ -360,8 +364,8 @@ describe("retrieveTroubleshootingContext", () => {
   test("budget is distributed by similarity weight", async () => {
     const store = createMockIssueStore({
       searchByEmbedding: async () => [
-        { record: makeIssueRecord({ issueNumber: 50 }), distance: 0.1 },  // higher similarity
-        { record: makeIssueRecord({ issueNumber: 51 }), distance: 0.3 },  // lower similarity
+        { record: makeIssueSearchRecord({ issueNumber: 50 }), distance: 0.1 },  // higher similarity
+        { record: makeIssueSearchRecord({ issueNumber: 51 }), distance: 0.3 },  // lower similarity
       ],
     });
 

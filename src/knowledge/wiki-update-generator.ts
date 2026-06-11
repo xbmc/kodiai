@@ -19,7 +19,7 @@ import type {
   UpdateGeneratorOptions,
   UpdateGeneratorResult,
 } from "./wiki-update-types.ts";
-import { DOMAIN_STOPWORDS } from "./wiki-staleness-detector.ts";
+import { meaningfulToken } from "./wiki-evidence-scoring.ts";
 import { createVoicePreservingPipeline } from "./wiki-voice-analyzer.ts";
 import type { SectionInput } from "./wiki-voice-analyzer.ts";
 import { generateWithFallback } from "../llm/generate.ts";
@@ -50,7 +50,7 @@ function extractTokens(texts: string[]): Set<string> {
   const tokens = new Set<string>();
   for (const text of texts) {
     for (const t of text.toLowerCase().split(/\W+/)) {
-      if (t.length > 3 && !DOMAIN_STOPWORDS.has(t)) {
+      if (meaningfulToken(t)) {
         tokens.add(t);
       }
     }
@@ -64,7 +64,7 @@ function extractTokens(texts: string[]): Set<string> {
 function extractPathTokens(filePath: string): Set<string> {
   const tokens = new Set<string>();
   for (const t of filePath.toLowerCase().split(/[/._\-]+/)) {
-    if (t.length > 3 && !DOMAIN_STOPWORDS.has(t)) {
+    if (meaningfulToken(t)) {
       tokens.add(t);
     }
   }

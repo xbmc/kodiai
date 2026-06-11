@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildUsageReport,
   renderUsageReportText,
+  renderUsageReportCsv,
   type UsageReportQueryResult,
 } from "./usage-report.ts";
 
@@ -85,6 +86,27 @@ function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): Us
         truncatedExecutions: 0,
       },
     ],
+    sectionBudget: {
+      note: null,
+      rows: [
+        {
+          taskType: "review.small-diff",
+          sectionName: "review-instructions",
+          executions: 12,
+          budgetChars: 16000,
+          budgetTokens: 4000,
+          avgIncludedChars: 11800,
+          p50IncludedChars: 11600,
+          p90IncludedChars: 12900,
+          maxIncludedChars: 13400,
+          avgIncludedTokens: 2950,
+          p90IncludedTokens: 3225,
+          trimmedExecutions: 0,
+          trimmedRate: 0,
+          budgetUtilizationP90: 0.8063,
+        },
+      ],
+    },
     rateLimits: [
       {
         taskType: "review.full",
@@ -176,6 +198,7 @@ describe("buildUsageReport", () => {
     expect(report.summary.totalExecutions).toBe(0);
     expect(report.taskTypes).toEqual([]);
     expect(report.promptSections).toEqual([]);
+    expect(report.sectionBudget).toEqual({ rows: [], note: null });
   });
 
   test("builds truthful attribution surfaces from live-schema aggregates", () => {
@@ -192,6 +215,8 @@ describe("buildUsageReport", () => {
     expect(report.taskTypes[0]?.taskType).toBe("review.full");
     expect(report.deliveryBreakdown[0]?.promptKinds).toContain("review.user-prompt");
     expect(report.promptSections[0]?.sectionName).toBe("review-change-context");
+    expect(report.sectionBudget?.rows[0]?.sectionName).toBe("review-instructions");
+    expect(report.sectionBudget?.rows[0]?.budgetUtilizationP90).toBe(0.8063);
     expect(report.rateLimits[0]?.avgCacheHitRate).toBe(0.5);
     expect(report.reuseEvidence[0]?.evidenceType).toBe("mention.derived-context");
     expect(report.reuseEvidence[1]?.reusedUnits).toBe(2);
@@ -217,6 +242,9 @@ describe("renderUsageReportText", () => {
     expect(text).toContain("review.full");
     expect(text).toContain("Prompt-section summaries");
     expect(text).toContain("conversation-history");
+    expect(text).toContain("Section budget distribution");
+    expect(text).toContain("review.small-diff / review-instructions");
+    expect(text).toContain("p90_utilization=80.6%");
     expect(text).toContain("Reuse evidence");
     expect(text).toContain("retrieval.query-embedding");
     expect(text).toContain("Review cache telemetry");
@@ -263,5 +291,46 @@ describe("renderUsageReportText", () => {
     expect(text).toContain("Database access: unavailable");
     expect(text).toContain("connect ECONNREFUSED");
     expect(text).toContain("No live telemetry data available");
+  });
+});
+
+describe("renderUsageReportCsv", () => {
+  function csvLines(result: Partial<UsageReportQueryResult> = {}): string[] {
+    return renderUsageReportCsv(
+      buildUsageReport({
+        generatedAt: "2026-04-24T00:00:00.000Z",
+        filters: { repo: "xbmc/xbmc", since: "7d" },
+        accessState: "available",
+        accessDetail: "Connected to telemetry Postgres.",
+        result: buildFixtureResult(result),
+      }),
+    ).split("\n");
+  }
+
+  test("emits header, summary, and every section row in declaration order", () => {
+    const lines = csvLines();
+    expect(lines[0]).toBe("section,key,value");
+    expect(lines.some((line) => line.startsWith("summary,total_executions,"))).toBeTrue();
+
+    const labelOrder = ["task_type", "delivery", "prompt_section", "section_budget", "reuse_evidence", "review_cache_telemetry", "rate_limit"];
+    const firstIndexOf = (label: string) => lines.findIndex((line) => line.startsWith(`${label},`));
+    const indices = labelOrder.map(firstIndexOf);
+    expect(indices.every((index) => index >= 0)).toBeTrue();
+    expect(indices).toEqual([...indices].sort((a, b) => a - b));
+  });
+
+  test("appends fail-open notes after their section rows, not before", () => {
+    const lines = csvLines({
+      sectionBudget: { note: "prompt_section_events budget columns are not available; failed open.", rows: [] },
+      reviewCacheTelemetry: { note: "review_cache_events table is not available; failed open.", rows: [] },
+    });
+
+    const sectionBudgetRow = lines.findIndex((line) => line.startsWith("section_budget,"));
+    const sectionBudgetNote = lines.findIndex((line) => line.startsWith("section_budget_note,"));
+    expect(sectionBudgetNote).toBeGreaterThanOrEqual(0);
+    // Note row carries the message; with empty rows there is no preceding data row.
+    expect(sectionBudgetRow).toBe(-1);
+    const cacheNote = lines.findIndex((line) => line.startsWith("review_cache_telemetry_note,"));
+    expect(cacheNote).toBeGreaterThan(sectionBudgetNote);
   });
 });

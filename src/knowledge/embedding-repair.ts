@@ -5,6 +5,7 @@ import type { IssueStore } from "./issue-types.ts";
 import type { CanonicalCodeStore } from "./canonical-code-types.ts";
 import { buildEmbeddingText } from "./code-snippet-chunker.ts";
 import { buildCommentEmbeddingText, buildIssueEmbeddingText } from "./issue-comment-chunker.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 
 export type EmbeddingRepairCorpus = "review_comments" | "learning_memories" | "code_snippets" | "issues" | "issue_comments" | "canonical_code";
 
@@ -739,9 +740,12 @@ async function embedPersistedRepairRows(params: {
     }
 > {
   const embeddings: Array<{ row_id: number; embedding: Float32Array }> = [];
-  for (const row of params.rows) {
-    const result = await params.embeddingProvider.generate(row.text, "document");
-    if (result == null) {
+  const results = await generateDocumentEmbeddingResultsBatch({
+    texts: params.rows.map((row) => row.text),
+    embeddingProvider: params.embeddingProvider,
+  });
+  for (const [index, result] of results.entries()) {
+    if (result.status === "unavailable") {
       return {
         status: "failed",
         failure_class: "embedding_unavailable",
@@ -749,7 +753,15 @@ async function embedPersistedRepairRows(params: {
         retryable: false,
       };
     }
-    embeddings.push({ row_id: row.id, embedding: result.embedding });
+    if (result.status === "failed") {
+      return {
+        status: "failed",
+        failure_class: "embedding_error",
+        message: result.err instanceof Error ? result.err.message : String(result.err),
+        retryable: true,
+      };
+    }
+    embeddings.push({ row_id: params.rows[index]!.id, embedding: result.embedding });
   }
 
   return {
@@ -907,28 +919,6 @@ export async function runCodeSnippetEmbeddingRepair(input: {
   });
 }
 
-export function buildCodeSnippetRepairTextFromParts(params: {
-  prTitle: string;
-  filePath: string;
-  startLine: number;
-  lineCount: number;
-  functionContext?: string;
-  addedLines: string[];
-  language?: string | null;
-}): string {
-  return buildEmbeddingText({
-    prTitle: params.prTitle,
-    hunk: {
-      filePath: params.filePath,
-      startLine: params.startLine,
-      lineCount: params.lineCount,
-      functionContext: params.functionContext ?? "",
-      addedLines: params.addedLines,
-      language: params.language ?? "unknown",
-    },
-  });
-}
-
 // ── Canonical code repair ─────────────────────────────────────────────────────
 
 /**
@@ -955,7 +945,7 @@ const CANONICAL_CODE_REPAIR_LIMIT = 2000;
  * is implicit (re-run until listStaleChunks returns empty). getRepairState /
  * saveRepairState are therefore no-ops that keep the repair framework happy.
  */
-export function createCanonicalCodeRepairStore(
+function createCanonicalCodeRepairStore(
   store: CanonicalCodeStore,
   opts: {
     repo: string;

@@ -59,6 +59,8 @@ export type PromptBudgetEvidenceReason = "within-budget" | "section-over-budget"
 export type PromptBudgetEvidenceSection = {
   readonly sectionName: string;
   readonly sectionPosition: number;
+  readonly charCount: number;
+  readonly estimatedTokens: number;
   readonly budgetChars: number;
   readonly budgetTokens: number;
   readonly includedChars: number;

@@ -15,11 +15,11 @@ function packageJson(script = EXPECTED_PACKAGE_SCRIPT): string {
   return JSON.stringify({ scripts: { [COMMAND_NAME]: script } });
 }
 
-async function fixture(overrides: (copy: M075S04EvidenceSnapshot) => void = () => undefined): Promise<M075S04EvidenceSnapshot> {
+async function fixture(overrides: (copy: any) => void = () => undefined): Promise<M075S04EvidenceSnapshot> {
   const loaded = await Bun.file(DEFAULT_FIXTURE_PATH).json() as M075S04EvidenceSnapshot;
-  const copy = JSON.parse(JSON.stringify(loaded)) as M075S04EvidenceSnapshot;
+  const copy = JSON.parse(JSON.stringify(loaded));
   overrides(copy);
-  return copy;
+  return copy as M075S04EvidenceSnapshot;
 }
 
 async function reportFor(copy: M075S04EvidenceSnapshot) {
@@ -160,9 +160,9 @@ describe("verify-m075-s04", () => {
 
   test("issue output is bounded", async () => {
     const copy = await fixture((next) => {
-      for (const bucket of Object.values(next.runtime.outcomeBuckets)) bucket.reasons = [];
-      for (const bucket of Object.values(next.logs.outcomeBuckets)) bucket.reasons = [];
-      for (const bucket of Object.values(next.reviewDetails.outcomeBuckets)) bucket.reasons = [];
+      for (const bucket of Object.values(next.runtime.outcomeBuckets) as any[]) bucket.reasons = [];
+      for (const bucket of Object.values(next.logs.outcomeBuckets) as any[]) bucket.reasons = [];
+      for (const bucket of Object.values(next.reviewDetails.outcomeBuckets) as any[]) bucket.reasons = [];
       next.reviewDetails.visibleBody.lines = Array.from({ length: 40 }, (_, index) => `${index} ${"x".repeat(220)}`);
       next.reviewDetails.visibleBody.lineCount = 40;
       next.reviewDetails.visibleBody.maxLineCount = 40;

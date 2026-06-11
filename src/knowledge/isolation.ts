@@ -88,9 +88,12 @@ export function createIsolationLayer(opts: {
       // Step 5: Resolve full records and build provenance
       const results: RetrievalResult[] = [];
       const repoSources = new Set<string>();
+      const recordsById = await memoryStore.getMemoryRecords(
+        topCandidates.map((candidate) => candidate.memoryId),
+      );
 
       for (const candidate of topCandidates) {
-        const record = await memoryStore.getMemoryRecord(candidate.memoryId);
+        const record = recordsById.get(candidate.memoryId) ?? null;
         if (!record) continue;
 
         results.push({
