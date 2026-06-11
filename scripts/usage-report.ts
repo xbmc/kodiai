@@ -526,8 +526,8 @@ async function fetchPromptSections(sql: Sql, repo: string | null, since: string 
   return rows;
 }
 
-function isMissingBudgetColumnError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "42703";
+function isPostgresErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
 }
 
 async function fetchSectionBudgetDistribution(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageSectionBudgetResult> {
@@ -576,7 +576,7 @@ async function fetchSectionBudgetDistribution(sql: Sql, repo: string | null, sin
       })),
     };
   } catch (error) {
-    if (isMissingBudgetColumnError(error)) {
+    if (isPostgresErrorCode(error, "42703")) {
       return { rows: [], note: "prompt_section_events budget columns are not available; section budget distribution failed open without blocking the usage report." };
     }
     throw error;
@@ -641,10 +641,6 @@ async function fetchReuseEvidence(sql: Sql, repo: string | null, since: string |
     avgReuseRate: roundRatio(row.avgReuseRate),
     statuses: [...row.statuses].sort(),
   }));
-}
-
-function isMissingReviewCacheTableError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "42P01";
 }
 
 function boundedArray(values: unknown): string[] {
@@ -731,7 +727,7 @@ async function fetchReviewCacheTelemetry(sql: Sql, repo: string | null, since: s
         })),
     };
   } catch (error) {
-    if (isMissingReviewCacheTableError(error)) {
+    if (isPostgresErrorCode(error, "42P01")) {
       return { rows: [], note: "review_cache_events table is not available; cache telemetry section failed open without blocking the usage report." };
     }
     throw error;

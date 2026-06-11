@@ -95,27 +95,12 @@ export function renderReviewInstructionSections(
   if (budgetChars === undefined) {
     return { lines: originalText ? originalText.split("\n") : [] };
   }
-  if (originalText.length <= budgetChars) {
-    // Within budget: still emit an outcome so per-review instruction size is
-    // always observable in prompt-section telemetry (lets us tune the budget
-    // from real data rather than guessing).
-    return {
-      lines: originalText ? originalText.split("\n") : [],
-      budgetOutcome: {
-        sectionName: "review-instructions",
-        sectionPosition: -1,
-        budgetChars,
-        budgetTokens: estimatePromptTokens(budgetChars),
-        includedChars: originalText.length,
-        includedTokens: estimatePromptTokens(originalText.length),
-        trimmedChars: 0,
-        trimmedTokens: 0,
-        status: "included",
-        reason: "within-budget",
-      },
-    };
-  }
 
+  // Shed low-retention sections (then hard-slice as a last resort) until under
+  // budget. A within-budget input simply drops nothing and falls through with
+  // trimmedChars === 0, so a single outcome below covers both cases — and
+  // always emits it, making per-review instruction size observable in
+  // telemetry so the budget can be tuned from real data.
   const included = new Set(normalized);
   const dropOrder = [...normalized].sort((a, b) =>
     reviewInstructionRetentionRank(a) - reviewInstructionRetentionRank(b)
