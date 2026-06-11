@@ -85,6 +85,27 @@ function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): Us
         truncatedExecutions: 0,
       },
     ],
+    sectionBudget: {
+      note: null,
+      rows: [
+        {
+          taskType: "review.small-diff",
+          sectionName: "review-instructions",
+          executions: 12,
+          budgetChars: 16000,
+          budgetTokens: 4000,
+          avgIncludedChars: 11800,
+          p50IncludedChars: 11600,
+          p90IncludedChars: 12900,
+          maxIncludedChars: 13400,
+          avgIncludedTokens: 2950,
+          p90IncludedTokens: 3225,
+          trimmedExecutions: 0,
+          trimmedRate: 0,
+          budgetUtilizationP90: 0.8063,
+        },
+      ],
+    },
     rateLimits: [
       {
         taskType: "review.full",
@@ -176,6 +197,7 @@ describe("buildUsageReport", () => {
     expect(report.summary.totalExecutions).toBe(0);
     expect(report.taskTypes).toEqual([]);
     expect(report.promptSections).toEqual([]);
+    expect(report.sectionBudget).toEqual({ rows: [], note: null });
   });
 
   test("builds truthful attribution surfaces from live-schema aggregates", () => {
@@ -192,6 +214,8 @@ describe("buildUsageReport", () => {
     expect(report.taskTypes[0]?.taskType).toBe("review.full");
     expect(report.deliveryBreakdown[0]?.promptKinds).toContain("review.user-prompt");
     expect(report.promptSections[0]?.sectionName).toBe("review-change-context");
+    expect(report.sectionBudget?.rows[0]?.sectionName).toBe("review-instructions");
+    expect(report.sectionBudget?.rows[0]?.budgetUtilizationP90).toBe(0.8063);
     expect(report.rateLimits[0]?.avgCacheHitRate).toBe(0.5);
     expect(report.reuseEvidence[0]?.evidenceType).toBe("mention.derived-context");
     expect(report.reuseEvidence[1]?.reusedUnits).toBe(2);
@@ -217,6 +241,9 @@ describe("renderUsageReportText", () => {
     expect(text).toContain("review.full");
     expect(text).toContain("Prompt-section summaries");
     expect(text).toContain("conversation-history");
+    expect(text).toContain("Section budget distribution");
+    expect(text).toContain("review.small-diff / review-instructions");
+    expect(text).toContain("p90_utilization=80.6%");
     expect(text).toContain("Reuse evidence");
     expect(text).toContain("retrieval.query-embedding");
     expect(text).toContain("Review cache telemetry");

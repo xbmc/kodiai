@@ -67,6 +67,28 @@ export type UsagePromptSectionRow = {
   truncatedExecutions: number;
 };
 
+export type UsageSectionBudgetRow = {
+  taskType: string;
+  sectionName: string;
+  executions: number;
+  budgetChars: number;
+  budgetTokens: number;
+  avgIncludedChars: number;
+  p50IncludedChars: number;
+  p90IncludedChars: number;
+  maxIncludedChars: number;
+  avgIncludedTokens: number;
+  p90IncludedTokens: number;
+  trimmedExecutions: number;
+  trimmedRate: number;
+  budgetUtilizationP90: number;
+};
+
+export type UsageSectionBudgetResult = {
+  rows: UsageSectionBudgetRow[];
+  note: string | null;
+};
+
 export type UsageRateLimitRow = {
   taskType: string;
   executions: number;
@@ -113,6 +135,7 @@ export type UsageReportQueryResult = {
   taskTypes: UsageTaskTypeRow[];
   deliveryBreakdown: UsageDeliveryRow[];
   promptSections: UsagePromptSectionRow[];
+  sectionBudget?: UsageSectionBudgetResult;
   rateLimits: UsageRateLimitRow[];
   reuseEvidence: UsageReuseEvidenceRow[];
   reviewCacheTelemetry?: UsageReviewCacheTelemetryResult;
@@ -136,6 +159,7 @@ export type UsageReport = {
   taskTypes: UsageTaskTypeRow[];
   deliveryBreakdown: UsageDeliveryRow[];
   promptSections: UsagePromptSectionRow[];
+  sectionBudget?: UsageSectionBudgetResult;
   rateLimits: UsageRateLimitRow[];
   reuseEvidence: UsageReuseEvidenceRow[];
   reviewCacheTelemetry?: UsageReviewCacheTelemetryResult;
@@ -181,6 +205,7 @@ export function buildUsageReport(input: {
     taskTypes: [],
     deliveryBreakdown: [],
     promptSections: [],
+    sectionBudget: { rows: [], note: null },
     rateLimits: [],
     reuseEvidence: [],
     reviewCacheTelemetry: { rows: [], note: null },
@@ -201,6 +226,7 @@ export function buildUsageReport(input: {
     taskTypes: result.taskTypes,
     deliveryBreakdown: result.deliveryBreakdown,
     promptSections: result.promptSections,
+    sectionBudget: result.sectionBudget ?? { rows: [], note: null },
     rateLimits: result.rateLimits,
     reuseEvidence: result.reuseEvidence,
     reviewCacheTelemetry: result.reviewCacheTelemetry ?? { rows: [], note: null },
@@ -287,6 +313,21 @@ export function renderUsageReportText(report: UsageReport): string {
     }
   }
 
+  const sectionBudget = report.sectionBudget ?? { rows: [], note: null };
+  lines.push("", "Section budget distribution");
+  if (sectionBudget.note) {
+    lines.push(`- ${sectionBudget.note}`);
+  }
+  if (sectionBudget.rows.length === 0) {
+    lines.push("- No budgeted prompt_section_events rows matched the requested filters.");
+  } else {
+    for (const row of sectionBudget.rows) {
+      lines.push(
+        `- ${row.taskType} / ${row.sectionName}: executions=${row.executions} budget_chars=${formatNumber(row.budgetChars)} included_chars(avg/p50/p90/max)=${formatNumber(row.avgIncludedChars)}/${formatNumber(row.p50IncludedChars)}/${formatNumber(row.p90IncludedChars)}/${formatNumber(row.maxIncludedChars)} included_tokens(avg/p90)=${formatNumber(row.avgIncludedTokens)}/${formatNumber(row.p90IncludedTokens)} trimmed=${row.trimmedExecutions} (${formatPercent(row.trimmedRate)}) p90_utilization=${formatPercent(row.budgetUtilizationP90)}`,
+      );
+    }
+  }
+
   lines.push("", "Reuse evidence");
   if (report.reuseEvidence.length === 0) {
     lines.push("- No reuse evidence rows matched the requested filters.");
@@ -357,6 +398,13 @@ export function renderUsageReportCsv(report: UsageReport): string {
   }
   for (const row of report.promptSections) {
     lines.push(`prompt_section,${JSON.stringify(`${row.taskType}/${row.promptKind}/${row.sectionName}`)},${JSON.stringify(row)}`);
+  }
+  const sectionBudget = report.sectionBudget ?? { rows: [], note: null };
+  for (const row of sectionBudget.rows) {
+    lines.push(`section_budget,${JSON.stringify(`${row.taskType}/${row.sectionName}`)},${JSON.stringify(row)}`);
+  }
+  if (sectionBudget.note) {
+    lines.push(`section_budget_note,note,${JSON.stringify(sectionBudget.note)}`);
   }
   for (const row of report.reuseEvidence) {
     lines.push(`reuse_evidence,${JSON.stringify(row.evidenceType)},${JSON.stringify(row)}`);
@@ -476,6 +524,63 @@ async function fetchPromptSections(sql: Sql, repo: string | null, since: string 
     LIMIT 30
   `;
   return rows;
+}
+
+function isMissingBudgetColumnError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "42703";
+}
+
+async function fetchSectionBudgetDistribution(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageSectionBudgetResult> {
+  try {
+    const rows = await sql<Array<Omit<UsageSectionBudgetRow, "trimmedRate" | "budgetUtilizationP90">>>`
+      SELECT
+        task_type AS "taskType",
+        section_name AS "sectionName",
+        COUNT(*)::int AS executions,
+        COALESCE(MAX(budget_chars), 0)::int AS "budgetChars",
+        COALESCE(MAX(budget_tokens), 0)::int AS "budgetTokens",
+        COALESCE(AVG(included_chars), 0)::float8 AS "avgIncludedChars",
+        COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY included_chars), 0)::float8 AS "p50IncludedChars",
+        COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY included_chars), 0)::float8 AS "p90IncludedChars",
+        COALESCE(MAX(included_chars), 0)::int AS "maxIncludedChars",
+        COALESCE(AVG(included_tokens), 0)::float8 AS "avgIncludedTokens",
+        COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY included_tokens), 0)::float8 AS "p90IncludedTokens",
+        COALESCE(SUM(CASE WHEN budget_status = 'trimmed' THEN 1 ELSE 0 END), 0)::int AS "trimmedExecutions"
+      FROM prompt_section_events
+      WHERE budget_chars IS NOT NULL
+        AND (${repo}::text IS NULL OR repo = ${repo})
+        AND (${deliveryId}::text IS NULL OR delivery_id = ${deliveryId})
+        AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+      GROUP BY task_type, section_name
+      ORDER BY "budgetChars" DESC, executions DESC, task_type ASC, section_name ASC
+      LIMIT 30
+    `;
+
+    return {
+      note: null,
+      rows: rows.map((row) => ({
+        taskType: row.taskType,
+        sectionName: row.sectionName,
+        executions: row.executions,
+        budgetChars: row.budgetChars,
+        budgetTokens: row.budgetTokens,
+        avgIncludedChars: Math.round(row.avgIncludedChars),
+        p50IncludedChars: Math.round(row.p50IncludedChars),
+        p90IncludedChars: Math.round(row.p90IncludedChars),
+        maxIncludedChars: row.maxIncludedChars,
+        avgIncludedTokens: Math.round(row.avgIncludedTokens),
+        p90IncludedTokens: Math.round(row.p90IncludedTokens),
+        trimmedExecutions: row.trimmedExecutions,
+        trimmedRate: row.executions > 0 ? roundRatio(row.trimmedExecutions / row.executions) : 0,
+        budgetUtilizationP90: row.budgetChars > 0 ? roundRatio(row.p90IncludedChars / row.budgetChars) : 0,
+      })),
+    };
+  } catch (error) {
+    if (isMissingBudgetColumnError(error)) {
+      return { rows: [], note: "prompt_section_events budget columns are not available; section budget distribution failed open without blocking the usage report." };
+    }
+    throw error;
+  }
 }
 
 async function fetchRateLimits(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageRateLimitRow[]> {
@@ -635,11 +740,12 @@ async function fetchReviewCacheTelemetry(sql: Sql, repo: string | null, since: s
 
 export async function queryUsageReport(sql: Sql, filters: { repo: string | null; since: string | null; deliveryId?: string | null }): Promise<UsageReportQueryResult> {
   const deliveryId = filters.deliveryId ?? null;
-  const [summary, taskTypes, deliveryBreakdown, promptSections, rateLimits, reuseEvidence, reviewCacheTelemetry] = await Promise.all([
+  const [summary, taskTypes, deliveryBreakdown, promptSections, sectionBudget, rateLimits, reuseEvidence, reviewCacheTelemetry] = await Promise.all([
     fetchSummary(sql, filters.repo, filters.since, deliveryId),
     fetchTaskTypes(sql, filters.repo, filters.since, deliveryId),
     fetchDeliveryBreakdown(sql, filters.repo, filters.since, deliveryId),
     fetchPromptSections(sql, filters.repo, filters.since, deliveryId),
+    fetchSectionBudgetDistribution(sql, filters.repo, filters.since, deliveryId),
     fetchRateLimits(sql, filters.repo, filters.since, deliveryId),
     fetchReuseEvidence(sql, filters.repo, filters.since, deliveryId),
     fetchReviewCacheTelemetry(sql, filters.repo, filters.since, deliveryId),
@@ -650,6 +756,7 @@ export async function queryUsageReport(sql: Sql, filters: { repo: string | null;
     taskTypes,
     deliveryBreakdown,
     promptSections,
+    sectionBudget,
     rateLimits,
     reuseEvidence,
     reviewCacheTelemetry,
@@ -725,7 +832,7 @@ export function parseUsageReportArgs(args: string[]): CliOptions {
 }
 
 function printUsage(): void {
-  console.log(`Kodiai telemetry usage report\n\nUsage:\n  bun scripts/usage-report.ts [--repo <owner/repo>] [--delivery <delivery-id>] [--since <Nd|YYYY-MM-DD|ISO>] [--json|--csv]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable\n  - Surfaces token totals, cost totals, cache effectiveness, task-path attribution, prompt-section summaries, reuse evidence, and review cache telemetry`);
+  console.log(`Kodiai telemetry usage report\n\nUsage:\n  bun scripts/usage-report.ts [--repo <owner/repo>] [--delivery <delivery-id>] [--since <Nd|YYYY-MM-DD|ISO>] [--json|--csv]\n\nNotes:\n  - Reads live Postgres telemetry through createDbClient()\n  - Fails open with explicit database access status when Postgres is unavailable\n  - Surfaces token totals, cost totals, cache effectiveness, task-path attribution, prompt-section summaries, per-section budget distribution (included-token percentiles + trim rate vs the budget cap), reuse evidence, and review cache telemetry`);
 }
 
 function snapshotProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
