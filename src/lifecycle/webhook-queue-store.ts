@@ -135,10 +135,10 @@ export function createWebhookQueueStore(opts: {
       `;
     },
 
-    async markFailed(id, _error) {
+    async markFailed(id, error) {
       await sql`
         UPDATE webhook_queue
-        SET status = 'failed'
+        SET status = 'failed', error_message = ${error?.slice(0, 2_000) ?? null}
         WHERE id = ${id}
       `;
     },

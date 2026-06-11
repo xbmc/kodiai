@@ -28,8 +28,11 @@ export function createDbClient(opts: {
     );
   }
 
+  const poolMaxRaw = Number.parseInt(process.env.DATABASE_POOL_MAX ?? "", 10);
+  const poolMax = Number.isFinite(poolMaxRaw) && poolMaxRaw > 0 ? poolMaxRaw : 10;
+
   const sql = postgres(connectionString, {
-    max: 10,
+    max: poolMax,
     idle_timeout: 20,
     connect_timeout: 10,
   });

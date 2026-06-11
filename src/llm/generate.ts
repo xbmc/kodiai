@@ -117,7 +117,7 @@ async function generateWithAgentSdk(opts: {
   const totalCacheCreation = modelEntries.reduce((sum, [, u]) => sum + u.cacheCreationInputTokens, 0);
 
   if (opts.costTracker && opts.repo && resultMessage) {
-    opts.costTracker.trackAgentSdkCall({
+    void opts.costTracker.trackAgentSdkCall({
       repo: opts.repo,
       taskType: opts.taskType,
       model: primaryModel,
@@ -201,7 +201,7 @@ export async function generateWithFallback(opts: {
 
     // Track cost (fire-and-forget)
     if (opts.costTracker && opts.repo) {
-      opts.costTracker.trackAiSdkCall({
+      void opts.costTracker.trackAiSdkCall({
         repo: opts.repo,
         taskType,
         model: resolved.modelId,
@@ -260,7 +260,7 @@ export async function generateWithFallback(opts: {
 
         // Track fallback cost
         if (opts.costTracker && opts.repo) {
-          opts.costTracker.trackAiSdkCall({
+          void opts.costTracker.trackAiSdkCall({
             repo: opts.repo,
             taskType,
             model: resolved.fallbackModelId,
@@ -295,7 +295,7 @@ export async function generateWithFallback(opts: {
 
         // Track error cost
         if (opts.costTracker && opts.repo) {
-          opts.costTracker.trackAiSdkCall({
+          void opts.costTracker.trackAiSdkCall({
             repo: opts.repo,
             taskType,
             model: resolved.fallbackModelId,
@@ -317,7 +317,7 @@ export async function generateWithFallback(opts: {
     // Not a fallback trigger or no fallback model -- rethrow
     // Track error cost
     if (opts.costTracker && opts.repo) {
-      opts.costTracker.trackAiSdkCall({
+      void opts.costTracker.trackAiSdkCall({
         repo: opts.repo,
         taskType,
         model: resolved.modelId,

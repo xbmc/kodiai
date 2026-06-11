@@ -650,7 +650,7 @@ try {
       queuedWebhooksProcessed++;
     } catch (err) {
       logger.warn({ err, id: entryId, source: entry.source }, "Failed to replay queued webhook");
-      await webhookQueueStore.markFailed(entryId);
+      await webhookQueueStore.markFailed(entryId, err instanceof Error ? err.message : String(err));
       queuedWebhooksFailed++;
     }
   }

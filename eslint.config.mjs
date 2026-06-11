@@ -1,4 +1,5 @@
 import tsParser from "@typescript-eslint/parser";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
 
 const typescriptFiles = ["src/**/*.ts", "scripts/**/*.ts"];
 const operatorFacingCliFiles = [
@@ -34,6 +35,23 @@ export default [
     rules: {
       // These surfaces intentionally communicate directly with operators.
       "no-console": "off",
+    },
+  },
+  {
+    // Floating promises in the service can become unhandledRejection, which
+    // the fatal-shutdown handlers turn into a full process exit. Type-aware
+    // linting is scoped to src/ — scripts/ is a large verifier tree where the
+    // added lint time buys little.
+    files: ["src/**/*.ts"],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: "latest",
+      sourceType: "module",
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    plugins: { "@typescript-eslint": tsPlugin },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
     },
   },
 ];
