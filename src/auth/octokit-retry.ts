@@ -1,19 +1,8 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import { isRetryableGitHubError, githubRetryAfterDelayMs, retryGitHubTransient } from "../lib/github-retry.ts";
+import { isRetryableGitHubError, isGitHubRateLimitRejection, retryGitHubTransient } from "../lib/github-retry.ts";
 
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD"]);
-
-function isRateLimitRejection(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const status = (error as { status?: unknown }).status;
-  if (status === 429) return true;
-  if (status === 403) {
-    return githubRetryAfterDelayMs(error) !== null
-      || /secondary rate|rate limit|abuse/i.test(String((error as { message?: unknown }).message ?? ""));
-  }
-  return false;
-}
 
 /**
  * Install transparent transient-error retry on every request an Octokit
@@ -27,7 +16,7 @@ function isRateLimitRejection(error: unknown): boolean {
 export function installOctokitRetry(octokit: Octokit, logger: Logger): Octokit {
   octokit.hook.wrap("request", (request, options) => {
     const method = String(options.method ?? "GET").toUpperCase();
-    const shouldRetry = IDEMPOTENT_METHODS.has(method) ? isRetryableGitHubError : isRateLimitRejection;
+    const shouldRetry = IDEMPOTENT_METHODS.has(method) ? isRetryableGitHubError : isGitHubRateLimitRejection;
     return retryGitHubTransient(() => Promise.resolve(request(options)), {
       shouldRetry,
       onRetry: ({ error, attempt, delayMs }) => {

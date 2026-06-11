@@ -7,13 +7,6 @@ function createNoopLogger() {
   return { info: noop, warn: noop, error: noop, debug: noop, child: () => createNoopLogger() } as never;
 }
 
-function httpError(status: number, message = "boom", headers?: Record<string, string>) {
-  return Object.assign(new Error(message), {
-    status,
-    ...(headers ? { response: { status, headers } } : {}),
-  });
-}
-
 /**
  * Drive the hook through Octokit's real hook pipeline with a stubbed fetch
  * so the retry policy is exercised exactly as production requests are.
@@ -111,6 +104,3 @@ describe("installOctokitRetry", () => {
     expect(getAttempts()).toBe(1);
   });
 });
-
-// keep helper referenced for future direct-policy tests
-void httpError;

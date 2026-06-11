@@ -25,16 +25,30 @@ export function githubRetryAfterDelayMs(error: unknown): number | null {
   );
 }
 
-export function isRetryableGitHubError(error: unknown): boolean {
+/**
+ * True when GitHub rejected the request for rate-limiting (429, or 403 with a
+ * retry-after header / secondary-rate message) — i.e. the request was
+ * definitively NOT applied and is always safe to retry, even for mutations.
+ */
+export function isGitHubRateLimitRejection(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const record = error as Record<string, unknown>;
   const status = Number(record.status ?? (record.response as Record<string, unknown> | undefined)?.status);
-  if (!Number.isFinite(status)) return false;
+  if (status === 429) return true;
   if (status === 403) {
     return githubRetryAfterDelayMs(error) !== null
       || /secondary rate|rate limit|abuse/i.test(String(record.message ?? ""));
   }
-  return status === 408 || status === 429 || (status >= 500 && status <= 599);
+  return false;
+}
+
+export function isRetryableGitHubError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if (isGitHubRateLimitRejection(error)) return true;
+  const record = error as Record<string, unknown>;
+  const status = Number(record.status ?? (record.response as Record<string, unknown> | undefined)?.status);
+  if (!Number.isFinite(status)) return false;
+  return status === 408 || (status >= 500 && status <= 599);
 }
 
 export function retryGitHubTransient<T>(

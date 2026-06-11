@@ -7,6 +7,15 @@
  */
 
 /**
+ * Timeout detection. AbortSignal.timeout() aborts with a DOMException named
+ * "TimeoutError" whose message is "The operation timed out." — match name,
+ * not just the "timeout" substring.
+ */
+function isTimeoutError(err: Error): boolean {
+  return err.message.includes("timeout") || err.name === "AbortError" || err.name === "TimeoutError";
+}
+
+/**
  * Determines whether an error should trigger fallback to alternative model.
  */
 export function isFallbackTrigger(err: unknown): boolean {
@@ -19,12 +28,7 @@ export function isFallbackTrigger(err: unknown): boolean {
   if (status === 429) return true; // Rate limit -> immediate fallback
   if (typeof status === "number" && status >= 500 && status < 600) return true;
 
-  // Timeout detection. AbortSignal.timeout() aborts with a DOMException named
-  // "TimeoutError" whose message is "The operation timed out." — match name,
-  // not just the "timeout" substring.
-  if (err.message.includes("timeout") || err.name === "AbortError" || err.name === "TimeoutError") return true;
-
-  return false;
+  return isTimeoutError(err);
 }
 
 /**
@@ -36,7 +40,6 @@ export function getFallbackReason(err: unknown): string {
   if (status === 429) return "rate limited (429)";
   if (typeof status === "number" && status >= 500)
     return `server error (${status})`;
-  if (err.message.includes("timeout") || err.name === "AbortError" || err.name === "TimeoutError")
-    return "timeout";
+  if (isTimeoutError(err)) return "timeout";
   return err.message;
 }
