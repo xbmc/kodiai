@@ -1,6 +1,9 @@
-import type { IssueCommentSearchResult, IssueSearchResult } from "./issue-types.ts";
-import type { ReviewCommentSearchResult } from "./review-comment-types.ts";
-import type { WikiPageSearchResult } from "./wiki-types.ts";
+import type {
+  IssueCommentSearchResult,
+  IssueSearchResult,
+  ReviewCommentSearchResult,
+  WikiPageSearchResult,
+} from "./search-result-types.ts";
 
 type Expect<T extends true> = T;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends
