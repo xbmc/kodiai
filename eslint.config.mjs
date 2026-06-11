@@ -1,6 +1,12 @@
 import tsParser from "@typescript-eslint/parser";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
 
 const typescriptFiles = ["src/**/*.ts", "scripts/**/*.ts"];
+const tsLanguageOptions = {
+  parser: tsParser,
+  ecmaVersion: "latest",
+  sourceType: "module",
+};
 const operatorFacingCliFiles = [
   // Migration progress and rollback status are intentionally printed for humans.
   "src/db/migrate.ts",
@@ -18,11 +24,7 @@ export default [
   },
   {
     files: typescriptFiles,
-    languageOptions: {
-      parser: tsParser,
-      ecmaVersion: "latest",
-      sourceType: "module",
-    },
+    languageOptions: tsLanguageOptions,
     rules: {
       // Start with the repo contract this slice actually needs: catch accidental
       // console usage in normal source files without introducing a noisy day-one gate.
@@ -34,6 +36,21 @@ export default [
     rules: {
       // These surfaces intentionally communicate directly with operators.
       "no-console": "off",
+    },
+  },
+  {
+    // Floating promises in the service can become unhandledRejection, which
+    // the fatal-shutdown handlers turn into a full process exit. Type-aware
+    // linting is scoped to src/ — scripts/ is a large verifier tree where the
+    // added lint time buys little.
+    files: ["src/**/*.ts"],
+    languageOptions: {
+      ...tsLanguageOptions,
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    plugins: { "@typescript-eslint": tsPlugin },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
     },
   },
 ];

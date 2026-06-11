@@ -56,6 +56,24 @@ export function createWebhookQueueStore(opts: {
 
     async dequeuePending() {
       const entries = await sql.begin(async (tx) => {
+        // Recover rows orphaned in 'processing' by a crash mid-replay: nothing
+        // else ever resets that status, so without this they are lost forever.
+        // The age guard keeps a concurrently starting replica from stealing a
+        // row another instance claimed moments ago.
+        const recovered = await (tx as unknown as Sql)`
+          UPDATE webhook_queue
+          SET status = 'pending'
+          WHERE status = 'processing'
+            AND queued_at < NOW() - INTERVAL '60 seconds'
+          RETURNING id
+        `;
+        if (recovered.length > 0) {
+          logger.warn(
+            { count: recovered.length, ids: recovered.map((r: Record<string, unknown>) => r.id) },
+            "Recovered webhook_queue rows stuck in 'processing' from a prior crash",
+          );
+        }
+
         const rows = await (tx as unknown as Sql)`
           SELECT id, source, delivery_id, event_name, headers, body, queued_at, processed_at, status
           FROM webhook_queue
@@ -117,10 +135,10 @@ export function createWebhookQueueStore(opts: {
       `;
     },
 
-    async markFailed(id, _error) {
+    async markFailed(id, error) {
       await sql`
         UPDATE webhook_queue
-        SET status = 'failed'
+        SET status = 'failed', error_message = ${error?.slice(0, 2_000) ?? null}
         WHERE id = ${id}
       `;
     },

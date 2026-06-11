@@ -358,6 +358,23 @@ import {
 
 const SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS = 12_000;
 
+/**
+ * Best-effort checkpoint cleanup. deleteCheckpoint is raw SQL and can reject;
+ * a floating rejection here would trip the fatal unhandledRejection handler,
+ * so failures are logged and swallowed.
+ */
+function discardCheckpointsFailOpen(
+  knowledgeStore: KnowledgeStore | undefined,
+  logger: Logger,
+  reviewOutputKeys: string[],
+): void {
+  for (const reviewOutputKey of reviewOutputKeys) {
+    void knowledgeStore?.deleteCheckpoint?.(reviewOutputKey)?.catch((err) => {
+      logger.warn({ err, reviewOutputKey }, "Checkpoint cleanup failed (non-blocking)");
+    });
+  }
+}
+
 function buildShadowSpecialistDiffSnippet(diffText: string): string {
   if (diffText.length <= SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS) return diffText;
 
@@ -4219,7 +4236,9 @@ export function createReviewHandler(deps: {
                   partialCommentId,
                 });
               } else {
-                knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId);
+                void knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId)?.catch((err) => {
+                  logger.warn({ err, reviewOutputKey }, "Checkpoint comment id update failed (non-blocking)");
+                });
               }
 
               publishedPartialReview = true;
@@ -4862,8 +4881,7 @@ export function createReviewHandler(deps: {
                             projectionStatus: "canonical",
                             reviewOutputKey: retryReviewOutputKey,
                           });
-                          knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
-                          knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                          discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
                           return;
                         }
 
@@ -5053,8 +5071,7 @@ export function createReviewHandler(deps: {
                           });
 
                           // Cleanup checkpoint data after successful merge
-                          knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
-                          knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                          discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
                         }
                       } else {
                         logger.info(
@@ -5158,8 +5175,7 @@ export function createReviewHandler(deps: {
                       // Best-effort checkpoint cleanup even on retry failure.
                       // Retry attempts are capped at 1, so leaving checkpoint rows
                       // behind provides little value and can accumulate stale state.
-                      knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
-                      knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                      discardCheckpointsFailOpen(knowledgeStore, logger, [retryReviewOutputKey, reviewOutputKey]);
                     }
                   }
                 }, {

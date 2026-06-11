@@ -2,6 +2,7 @@ import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import { installOctokitRetry } from "./octokit-retry.ts";
 
 export const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -48,14 +49,14 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
   const CONNECTIVITY_CACHE_MS = 30_000;
 
   // App-level Octokit for non-installation API calls (getAuthenticated, connectivity)
-  const appOctokit = new Octokit({
+  const appOctokit = installOctokitRetry(new Octokit({
     authStrategy: createAppAuth,
     auth: {
       appId: config.githubAppId,
       privateKey: config.githubPrivateKey,
     },
     ...githubRequestOptions(),
-  });
+  }), logger);
 
   return {
     async getInstallationOctokit(
@@ -65,7 +66,7 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
       logger.debug({ installationId }, "Creating installation Octokit client");
 
       // Create a fresh Octokit per call; auth-app handles token caching internally
-      const octokit = new Octokit({
+      const octokit = installOctokitRetry(new Octokit({
         authStrategy: createAppAuth,
         auth: {
           appId: config.githubAppId,
@@ -73,7 +74,7 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
           installationId,
         },
         ...githubRequestOptions(options),
-      });
+      }), logger);
 
       return octokit;
     },

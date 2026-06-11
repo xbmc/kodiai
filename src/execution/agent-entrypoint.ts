@@ -261,7 +261,13 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   const diagnosticsLog = join(workspaceDir!, "agent-diagnostics.log");
 
   const appendDiagnostic = async (line: string): Promise<void> => {
-    await appendFileFn(diagnosticsLog, `${new Date().toISOString()} ${line}\n`);
+    try {
+      await appendFileFn(diagnosticsLog, `${new Date().toISOString()} ${line}\n`);
+    } catch {
+      // Diagnostics are best-effort; a failed append (disk full, workspace
+      // removed) must not surface as an unhandledRejection from the
+      // fire-and-forget call sites (e.g. the SDK stderr callback).
+    }
   };
 
   try {

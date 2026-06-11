@@ -16,6 +16,14 @@ import { createProviderModel } from "./providers.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
 import { buildAgentEnv } from "../execution/env.ts";
 
+/**
+ * Hard ceiling for a single AI SDK generateText call. Without it a hung
+ * connection blocks the calling job forever and the fallback never fires
+ * (fallback only triggers on a thrown error). Non-agentic tasks (labels,
+ * classification, synthesis) finish in well under this.
+ */
+export const GENERATE_TEXT_TIMEOUT_MS = 120_000;
+
 /** Result from generateWithFallback. */
 export interface GenerateResult {
   text: string;
@@ -109,7 +117,7 @@ async function generateWithAgentSdk(opts: {
   const totalCacheCreation = modelEntries.reduce((sum, [, u]) => sum + u.cacheCreationInputTokens, 0);
 
   if (opts.costTracker && opts.repo && resultMessage) {
-    opts.costTracker.trackAgentSdkCall({
+    void opts.costTracker.trackAgentSdkCall({
       repo: opts.repo,
       taskType: opts.taskType,
       model: primaryModel,
@@ -182,6 +190,7 @@ export async function generateWithFallback(opts: {
       prompt: opts.prompt,
       system: opts.system,
       tools: opts.tools,
+      abortSignal: AbortSignal.timeout(GENERATE_TEXT_TIMEOUT_MS),
     });
 
     const durationMs = Date.now() - startTime;
@@ -192,7 +201,7 @@ export async function generateWithFallback(opts: {
 
     // Track cost (fire-and-forget)
     if (opts.costTracker && opts.repo) {
-      opts.costTracker.trackAiSdkCall({
+      void opts.costTracker.trackAiSdkCall({
         repo: opts.repo,
         taskType,
         model: resolved.modelId,
@@ -240,6 +249,7 @@ export async function generateWithFallback(opts: {
           prompt: opts.prompt,
           system: opts.system,
           tools: opts.tools,
+          abortSignal: AbortSignal.timeout(GENERATE_TEXT_TIMEOUT_MS),
         });
 
         const fallbackDurationMs = Date.now() - fallbackStartTime;
@@ -250,7 +260,7 @@ export async function generateWithFallback(opts: {
 
         // Track fallback cost
         if (opts.costTracker && opts.repo) {
-          opts.costTracker.trackAiSdkCall({
+          void opts.costTracker.trackAiSdkCall({
             repo: opts.repo,
             taskType,
             model: resolved.fallbackModelId,
@@ -285,7 +295,7 @@ export async function generateWithFallback(opts: {
 
         // Track error cost
         if (opts.costTracker && opts.repo) {
-          opts.costTracker.trackAiSdkCall({
+          void opts.costTracker.trackAiSdkCall({
             repo: opts.repo,
             taskType,
             model: resolved.fallbackModelId,
@@ -307,7 +317,7 @@ export async function generateWithFallback(opts: {
     // Not a fallback trigger or no fallback model -- rethrow
     // Track error cost
     if (opts.costTracker && opts.repo) {
-      opts.costTracker.trackAiSdkCall({
+      void opts.costTracker.trackAiSdkCall({
         repo: opts.repo,
         taskType,
         model: resolved.modelId,

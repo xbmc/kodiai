@@ -1901,6 +1901,77 @@ function buildStandardSummaryInstructionLines(params: {
   ];
 }
 
+/** Retrieval/knowledge fields consumed by the knowledge-context prompt section. */
+export type KnowledgeContextInput = {
+  unifiedResults?: UnifiedRetrievalChunk[];
+  contextWindow?: string;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      path: string;
+      line?: number;
+      snippet?: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+    maxChars?: number;
+  } | null;
+  reviewPrecedents?: ReviewCommentMatch[];
+  wikiKnowledge?: WikiKnowledgeMatch[];
+  clusterPatterns?: ClusterPatternMatch[];
+  linkedIssues?: LinkResult;
+  filesByLanguage?: Record<string, string[]>;
+};
+
+/**
+ * Assemble the knowledge-context prompt section: unified cross-corpus results
+ * when available (KI-13), otherwise the legacy retrieval/precedent/wiki/cluster
+ * stack, plus linked issues and language guidance. Pure function of its input.
+ */
+export function buildKnowledgeContextLines(context: KnowledgeContextInput): string[] {
+  const lines: string[] = [];
+  const pushBlock = (block: string): void => {
+    if (!block) return;
+    if (lines.length > 0) lines.push("");
+    lines.push(block);
+  };
+
+  if (context.unifiedResults && context.unifiedResults.length > 0) {
+    pushBlock(formatUnifiedContext({
+      unifiedResults: context.unifiedResults,
+      contextWindow: context.contextWindow,
+    }));
+  } else {
+    if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
+      pushBlock(buildRetrievalContextSection({
+        findings: context.retrievalContext.findings,
+        maxChars: context.retrievalContext.maxChars,
+      }));
+    }
+    if (context.reviewPrecedents && context.reviewPrecedents.length > 0) {
+      pushBlock(formatReviewPrecedents(context.reviewPrecedents));
+    }
+    if (context.wikiKnowledge && context.wikiKnowledge.length > 0) {
+      pushBlock(formatWikiKnowledge(context.wikiKnowledge));
+    }
+    if (context.clusterPatterns && context.clusterPatterns.length > 0) {
+      pushBlock(formatClusterPatterns(context.clusterPatterns));
+    }
+  }
+
+  if (context.linkedIssues) {
+    pushBlock(buildLinkedIssuesSection(context.linkedIssues));
+  }
+  if (context.filesByLanguage) {
+    pushBlock(buildLanguageGuidanceSection(context.filesByLanguage));
+  }
+
+  return lines;
+}
+
 export function buildReviewPromptDetails(context: {
   owner: string;
   repo: string;
@@ -2179,67 +2250,7 @@ export function buildReviewPromptDetails(context: {
   }
   pushSection("review-graph-context", graphContextLines, REVIEW_SECTION_BUDGETS.graphContext);
 
-  const knowledgeContextLines: string[] = [];
-  if (context.unifiedResults && context.unifiedResults.length > 0) {
-    const unifiedSection = formatUnifiedContext({
-      unifiedResults: context.unifiedResults,
-      contextWindow: context.contextWindow,
-    });
-    if (unifiedSection) {
-      knowledgeContextLines.push(unifiedSection);
-    }
-  } else {
-    if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
-      const retrievalSection = buildRetrievalContextSection({
-        findings: context.retrievalContext.findings,
-        maxChars: context.retrievalContext.maxChars,
-      });
-      if (retrievalSection) {
-        knowledgeContextLines.push(retrievalSection);
-      }
-    }
-
-    if (context.reviewPrecedents && context.reviewPrecedents.length > 0) {
-      const precedentsSection = formatReviewPrecedents(context.reviewPrecedents);
-      if (precedentsSection) {
-        if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
-        knowledgeContextLines.push(precedentsSection);
-      }
-    }
-
-    if (context.wikiKnowledge && context.wikiKnowledge.length > 0) {
-      const wikiSection = formatWikiKnowledge(context.wikiKnowledge);
-      if (wikiSection) {
-        if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
-        knowledgeContextLines.push(wikiSection);
-      }
-    }
-
-    if (context.clusterPatterns && context.clusterPatterns.length > 0) {
-      const clusterPatternsSection = formatClusterPatterns(context.clusterPatterns);
-      if (clusterPatternsSection) {
-        if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
-        knowledgeContextLines.push(clusterPatternsSection);
-      }
-    }
-  }
-
-  if (context.linkedIssues) {
-    const linkedSection = buildLinkedIssuesSection(context.linkedIssues);
-    if (linkedSection) {
-      if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
-      knowledgeContextLines.push(linkedSection);
-    }
-  }
-
-  if (context.filesByLanguage) {
-    const langSection = buildLanguageGuidanceSection(context.filesByLanguage);
-    if (langSection) {
-      if (knowledgeContextLines.length > 0) knowledgeContextLines.push("");
-      knowledgeContextLines.push(langSection);
-    }
-  }
-  pushSection("review-knowledge-context", knowledgeContextLines, REVIEW_SECTION_BUDGETS.knowledgeContext);
+  pushSection("review-knowledge-context", buildKnowledgeContextLines(context), REVIEW_SECTION_BUDGETS.knowledgeContext);
 
   const gitDiffInstructionsAvailable = context.gitDiffInstructionsAvailable !== false;
   const candidateFindingMode = normalizePromptCandidateFindingMode(context.candidateFindingMode);

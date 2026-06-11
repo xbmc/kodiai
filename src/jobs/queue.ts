@@ -7,6 +7,7 @@ import type {
   JobQueueRunMetadata,
   JobSnapshot,
 } from "./types.ts";
+import type { RequestTracker } from "../lifecycle/types.ts";
 
 const DEFAULT_JOB_LANE: JobLane = "review";
 const QUEUED_PHASE = "queued";
@@ -22,8 +23,13 @@ type InstallationActiveJobs = Map<string, JobSnapshot>;
  * instances. Jobs in different lanes can run in parallel, while jobs in the
  * same lane remain serialized. Active job snapshots are tracked from enqueue
  * through completion so callers can inspect machine-readable queue state.
+ *
+ * When a RequestTracker is provided, every job counts as in-flight work from
+ * enqueue until completion, so graceful-shutdown drain waits for queued jobs
+ * even when the caller fire-and-forgets the enqueue promise.
  */
-export function createJobQueue(logger: Logger): JobQueue {
+export function createJobQueue(logger: Logger, opts?: { requestTracker?: RequestTracker }): JobQueue {
+  const requestTracker = opts?.requestTracker;
   const queueScopes = new Map<number, InstallationQueueScopes>();
   const activeJobs = new Map<number, InstallationActiveJobs>();
   let nextJobId = 1;
@@ -156,6 +162,7 @@ export function createJobQueue(logger: Logger): JobQueue {
         context,
       );
       getOrCreateActiveJobs(installationId).set(jobId, snapshot);
+      const untrackJob = requestTracker?.trackJob();
 
       logger.info(
         {
@@ -272,6 +279,7 @@ export function createJobQueue(logger: Logger): JobQueue {
           }
         });
       } finally {
+        untrackJob?.();
         deleteActiveJob(installationId, jobId);
         pruneQueueScope(installationId, lane, key);
       }
