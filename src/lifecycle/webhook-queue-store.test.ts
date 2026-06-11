@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type { Logger } from "pino";
 import { createWebhookQueueStore } from "./webhook-queue-store.ts";
 import type { Sql } from "../db/client.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 
-function createNoopLogger() {
+function createNoopLogger(): Logger {
   const noop = () => undefined;
   return {
     info: noop,
@@ -11,7 +12,7 @@ function createNoopLogger() {
     error: noop,
     debug: noop,
     child: () => createNoopLogger(),
-  } as never;
+  } as unknown as Logger;
 }
 
 const noopTelemetryStore = {

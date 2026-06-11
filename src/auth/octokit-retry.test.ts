@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import type { Logger } from "pino";
 import { Octokit } from "@octokit/rest";
 import { installOctokitRetry } from "./octokit-retry.ts";
 
-function createNoopLogger() {
+function createNoopLogger(): Logger {
   const noop = () => undefined;
-  return { info: noop, warn: noop, error: noop, debug: noop, child: () => createNoopLogger() } as never;
+  return { info: noop, warn: noop, error: noop, debug: noop, child: () => createNoopLogger() } as unknown as Logger;
 }
 
 /**

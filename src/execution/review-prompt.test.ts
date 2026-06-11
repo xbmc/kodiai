@@ -29,6 +29,7 @@ import {
   matchPathInstructions,
 } from "./review-prompt.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
+import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
@@ -3387,20 +3388,20 @@ describe("buildReviewPrompt graph context integration", () => {
 
 describe("buildKnowledgeContextLines", () => {
   test("unified results take precedence over the legacy retrieval stack", () => {
+    const unifiedChunk: UnifiedRetrievalChunk = {
+      id: "code:1",
+      text: "prior finding text",
+      source: "code",
+      sourceLabel: "[code: a.ts]",
+      sourceUrl: null,
+      vectorDistance: 0.1,
+      rrfScore: 0.5,
+      createdAt: null,
+      metadata: {},
+    };
     const lines = buildKnowledgeContextLines({
       contextWindow: "Assembled cross-corpus context window.",
-      unifiedResults: [
-        {
-          id: "code:1",
-          text: "prior finding text",
-          source: "code",
-          sourceLabel: "[code: a.ts]",
-          sourceUrl: null,
-          vectorDistance: 0.1,
-          rrfScore: 0.5,
-          createdAt: null,
-        } as never,
-      ],
+      unifiedResults: [unifiedChunk],
       retrievalContext: {
         findings: [{
           findingText: "legacy finding",

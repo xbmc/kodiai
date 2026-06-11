@@ -2,6 +2,25 @@ import { expect, test } from "bun:test";
 import type { Logger } from "pino";
 import { createJobQueue } from "./queue.ts";
 import type { JobQueue, JobQueueRunMetadata } from "./types.ts";
+import type { RequestTracker } from "../lifecycle/types.ts";
+
+/** Fully-typed RequestTracker fake counting in-flight jobs. */
+function createRequestTrackerFake(): { tracker: RequestTracker; counts: { active: number; peak: number } } {
+  const counts = { active: 0, peak: 0 };
+  const tracker: RequestTracker = {
+    trackRequest: () => () => undefined,
+    trackJob: () => {
+      counts.active++;
+      counts.peak = Math.max(counts.peak, counts.active);
+      return () => {
+        counts.active--;
+      };
+    },
+    activeCount: () => ({ requests: 0, jobs: counts.active, total: counts.active }),
+    waitForDrain: async () => undefined,
+  };
+  return { tracker, counts };
+}
 
 const _enqueueCallbackRequiresMetadata: Parameters<JobQueue["enqueue"]>[1] = async (
   metadata: JobQueueRunMetadata,
@@ -210,22 +229,8 @@ test("createJobQueue updates active job snapshots when setPhase is called", asyn
 });
 
 test("createJobQueue counts jobs as in-flight work for shutdown drain from enqueue to completion", async () => {
-  let active = 0;
-  let peakActive = 0;
-  const requestTracker = {
-    trackRequest: () => () => undefined,
-    trackJob: () => {
-      active++;
-      peakActive = Math.max(peakActive, active);
-      return () => {
-        active--;
-      };
-    },
-    activeCount: () => ({ requests: 0, jobs: active, total: active }),
-    waitForDrain: async () => undefined,
-  } as never;
-
-  const queue = createJobQueue(createNoopLogger(), { requestTracker });
+  const { tracker, counts } = createRequestTrackerFake();
+  const queue = createJobQueue(createNoopLogger(), { requestTracker: tracker });
   const releaseFirst = Promise.withResolvers<void>();
 
   // Fire-and-forget enqueue (like the review timeout retry) plus a queued
@@ -235,31 +240,19 @@ test("createJobQueue counts jobs as in-flight work for shutdown drain from enque
   }, { lane: "review", key: "pr-7" });
   const second = queue.enqueue(7, async () => undefined, { lane: "review", key: "pr-7" });
 
-  expect(active).toBe(2);
+  expect(counts.active).toBe(2);
 
   releaseFirst.resolve();
   await first;
   await second;
 
-  expect(active).toBe(0);
-  expect(peakActive).toBe(2);
+  expect(counts.active).toBe(0);
+  expect(counts.peak).toBe(2);
 });
 
 test("createJobQueue releases drain tracking when a job throws", async () => {
-  let active = 0;
-  const requestTracker = {
-    trackRequest: () => () => undefined,
-    trackJob: () => {
-      active++;
-      return () => {
-        active--;
-      };
-    },
-    activeCount: () => ({ requests: 0, jobs: active, total: active }),
-    waitForDrain: async () => undefined,
-  } as never;
-
-  const queue = createJobQueue(createNoopLogger(), { requestTracker });
+  const { tracker, counts } = createRequestTrackerFake();
+  const queue = createJobQueue(createNoopLogger(), { requestTracker: tracker });
 
   await expect(
     queue.enqueue(7, async () => {
@@ -267,5 +260,5 @@ test("createJobQueue releases drain tracking when a job throws", async () => {
     }),
   ).rejects.toThrow("job failed");
 
-  expect(active).toBe(0);
+  expect(counts.active).toBe(0);
 });
