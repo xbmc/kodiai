@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import {
@@ -29,6 +28,16 @@ type McpJobEntry = {
  * McpSdkServerConfigWithInstance on every call (required for stateless mode).
  */
 const RETIRED_TOKEN_TTL_MS = 5 * 60 * 1000;
+const MAX_ACTIVE_MCP_TOKENS = 5_000;
+const MAX_RETIRED_TOKEN_FINGERPRINTS = 10_000;
+
+function evictOldestMapEntries<K, V>(map: Map<K, V>, maxSize: number): void {
+  while (map.size > maxSize) {
+    const oldest = map.keys().next();
+    if (oldest.done) break;
+    map.delete(oldest.value);
+  }
+}
 
 export function createMcpJobRegistry() {
   const registry = new Map<string, McpJobEntry>();
@@ -46,11 +55,13 @@ export function createMcpJobRegistry() {
         retiredTokenFingerprints.delete(fingerprint);
       }
     }
+    evictOldestMapEntries(retiredTokenFingerprints, MAX_RETIRED_TOKEN_FINGERPRINTS);
   };
 
   const markRetired = (token: string): void => {
     pruneRetiredTokens();
     retiredTokenFingerprints.set(tokenFingerprint(token), Date.now() + RETIRED_TOKEN_TTL_MS);
+    evictOldestMapEntries(retiredTokenFingerprints, MAX_RETIRED_TOKEN_FINGERPRINTS);
   };
 
   const inspectToken = (token: string):
@@ -80,7 +91,15 @@ export function createMcpJobRegistry() {
       factories: Record<string, () => McpSdkServerConfigWithInstance>,
       ttlMs = 3_600_000,
     ): void {
+      const now = Date.now();
+      for (const [existingToken, entry] of registry) {
+        if (entry.expiresAt <= now) {
+          registry.delete(existingToken);
+          markRetired(existingToken);
+        }
+      }
       registry.set(token, { factories, expiresAt: Date.now() + ttlMs });
+      evictOldestMapEntries(registry, MAX_ACTIVE_MCP_TOKENS);
     },
 
     unregister(token: string): void {
@@ -198,6 +217,7 @@ export function createMcpHttpRoutes(
 
     // Fresh instances per request — required by stateless transport invariant.
     const serverConfig = factory();
+    const { WebStandardStreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js");
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

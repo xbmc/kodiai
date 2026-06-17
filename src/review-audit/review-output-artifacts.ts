@@ -257,73 +257,73 @@ export async function collectReviewOutputArtifacts(params: {
     });
   }
 
-  const reviewComments = await collectPagedArtifacts({
-    endpoint: "reviewComments",
-    fetchPage: async ({ page, per_page }) => {
-      const { data } = await params.octokit.rest.pulls.listReviewComments({
-        owner: parsedRequestedKey.owner,
-        repo: parsedRequestedKey.repo,
-        pull_number: parsedRequestedKey.prNumber,
-        per_page,
-        page,
-        sort: "created",
-        direction: "desc",
-      });
-      return data;
-    },
-    buildArtifact: (item: ReviewCommentLike) => buildArtifact({
-      parsedRequestedKey,
-      source: "review-comment",
-      sourceUrl: item.html_url,
-      updatedAt: item.updated_at,
-      body: item.body,
+  const [reviewComments, issueComments, reviews] = await Promise.all([
+    collectPagedArtifacts({
+      endpoint: "reviewComments",
+      fetchPage: async ({ page, per_page }) => {
+        const { data } = await params.octokit.rest.pulls.listReviewComments({
+          owner: parsedRequestedKey.owner,
+          repo: parsedRequestedKey.repo,
+          pull_number: parsedRequestedKey.prNumber,
+          per_page,
+          page,
+          sort: "created",
+          direction: "desc",
+        });
+        return data;
+      },
+      buildArtifact: (item: ReviewCommentLike) => buildArtifact({
+        parsedRequestedKey,
+        source: "review-comment",
+        sourceUrl: item.html_url,
+        updatedAt: item.updated_at,
+        body: item.body,
+      }),
     }),
-  });
-
-  const issueComments = await collectPagedArtifacts({
-    endpoint: "issueComments",
-    fetchPage: async ({ page, per_page }) => {
-      const { data } = await params.octokit.rest.issues.listComments({
-        owner: parsedRequestedKey.owner,
-        repo: parsedRequestedKey.repo,
-        issue_number: parsedRequestedKey.prNumber,
-        per_page,
-        page,
-        sort: "created",
-        direction: "desc",
-      });
-      return data;
-    },
-    buildArtifact: (item: IssueCommentLike) => buildArtifact({
-      parsedRequestedKey,
-      source: "issue-comment",
-      sourceUrl: item.html_url,
-      updatedAt: item.updated_at,
-      body: item.body,
+    collectPagedArtifacts({
+      endpoint: "issueComments",
+      fetchPage: async ({ page, per_page }) => {
+        const { data } = await params.octokit.rest.issues.listComments({
+          owner: parsedRequestedKey.owner,
+          repo: parsedRequestedKey.repo,
+          issue_number: parsedRequestedKey.prNumber,
+          per_page,
+          page,
+          sort: "created",
+          direction: "desc",
+        });
+        return data;
+      },
+      buildArtifact: (item: IssueCommentLike) => buildArtifact({
+        parsedRequestedKey,
+        source: "issue-comment",
+        sourceUrl: item.html_url,
+        updatedAt: item.updated_at,
+        body: item.body,
+      }),
     }),
-  });
-
-  const reviews = await collectPagedArtifacts({
-    endpoint: "reviews",
-    fetchPage: async ({ page, per_page }) => {
-      const { data } = await params.octokit.rest.pulls.listReviews({
-        owner: parsedRequestedKey.owner,
-        repo: parsedRequestedKey.repo,
-        pull_number: parsedRequestedKey.prNumber,
-        per_page,
-        page,
-      });
-      return data;
-    },
-    buildArtifact: (item: ReviewLike) => buildArtifact({
-      parsedRequestedKey,
-      source: "review",
-      sourceUrl: item.html_url,
-      updatedAt: getReviewTimestamp(item),
-      body: item.body,
-      reviewState: item.state,
+    collectPagedArtifacts({
+      endpoint: "reviews",
+      fetchPage: async ({ page, per_page }) => {
+        const { data } = await params.octokit.rest.pulls.listReviews({
+          owner: parsedRequestedKey.owner,
+          repo: parsedRequestedKey.repo,
+          pull_number: parsedRequestedKey.prNumber,
+          per_page,
+          page,
+        });
+        return data;
+      },
+      buildArtifact: (item: ReviewLike) => buildArtifact({
+        parsedRequestedKey,
+        source: "review",
+        sourceUrl: item.html_url,
+        updatedAt: getReviewTimestamp(item),
+        body: item.body,
+        reviewState: item.state,
+      }),
     }),
-  });
+  ]);
 
   const artifacts = [...reviewComments, ...issueComments, ...reviews];
 

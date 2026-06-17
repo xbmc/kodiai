@@ -95,6 +95,20 @@ describe("createMcpJobRegistry", () => {
       reason: "expired",
     });
   });
+
+  test("registry evicts oldest active tokens under high churn", () => {
+    const reg = createMcpJobRegistry();
+    for (let i = 0; i < 5_010; i++) {
+      reg.register(`tok-${i}`, { test_server: makeFactory() });
+    }
+
+    expect(reg.inspectToken("tok-0")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(reg.hasToken("tok-10")).toBe(true);
+    expect(reg.hasToken("tok-5009")).toBe(true);
+  });
 });
 
 describe("createMcpHttpRoutes", () => {

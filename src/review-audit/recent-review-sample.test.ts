@@ -170,6 +170,81 @@ describe("recent review sample helpers", () => {
     expect(artifacts[0]?.reviewOutputKey).toBe(automaticKey);
   });
 
+  test("collectLatestReviewArtifacts bounds concurrent PR artifact fetches", async () => {
+    const keyByPr = new Map<number, string>();
+    for (const prNumber of [401, 402, 403, 404]) {
+      keyByPr.set(prNumber, buildReviewOutputKey({
+        installationId: 42,
+        owner: "xbmc",
+        repo: "xbmc",
+        prNumber,
+        action: "review_requested",
+        deliveryId: `delivery-${prNumber}`,
+        headSha: `head-${prNumber}`,
+      }));
+    }
+
+    let activePrs = 0;
+    let maxActivePrs = 0;
+    const started = new Set<number>();
+    const releaseByPr = new Map<number, () => void>();
+    const waitForRelease = (prNumber: number) => new Promise<void>((resolve) => {
+      if (!started.has(prNumber)) {
+        started.add(prNumber);
+        activePrs += 1;
+        maxActivePrs = Math.max(maxActivePrs, activePrs);
+      }
+      releaseByPr.set(prNumber, () => {
+        activePrs -= 1;
+        resolve();
+      });
+    });
+
+    const collection = collectLatestReviewArtifacts({
+      octokit: {
+        rest: {
+          pulls: {
+            listReviewComments: async ({ pull_number }: { pull_number: number }) => {
+              await waitForRelease(pull_number);
+              return { data: [] };
+            },
+            listReviews: async () => ({ data: [] }),
+          },
+          issues: {
+            listComments: async ({ issue_number }: { issue_number: number }) => ({
+              data: [{
+                body: `Review details\n\n${buildReviewOutputMarker(keyByPr.get(issue_number)!)} `,
+                html_url: `https://github.com/xbmc/xbmc/pull/${issue_number}#issuecomment-1`,
+                updated_at: "2026-04-08T13:00:00.000Z",
+              }],
+            }),
+          },
+        },
+      } as never,
+      owner: "xbmc",
+      repo: "xbmc",
+      pullRequests: [401, 402, 403, 404].map((number) => ({
+        number,
+        html_url: `https://github.com/xbmc/xbmc/pull/${number}`,
+      })),
+      concurrency: 2,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([...started].sort()).toEqual([401, 402]);
+    releaseByPr.get(401)?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started.has(403)).toBe(true);
+    releaseByPr.get(402)?.();
+    releaseByPr.get(403)?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseByPr.get(404)?.();
+
+    const artifacts = await collection;
+    expect(artifacts).toHaveLength(4);
+    expect(maxActivePrs).toBeLessThanOrEqual(2);
+  });
+
   test("selectRecentReviewSample applies the per-lane cap and fill rule deterministically", () => {
     const automaticArtifacts = Array.from({ length: 10 }, (_, index) => makeArtifact({
       prNumber: 200 + index,

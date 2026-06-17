@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import type { ReviewCommentChunk, ReviewCommentInput, ReviewCommentStore } from "./review-comment-types.ts";
+import type { ReviewCommentChunk, ReviewCommentRecord, ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { withRetry, groupCommentsIntoThreads, embedChunks } from "./review-comment-backfill.ts";
 import { chunkReviewThread } from "./review-comment-chunker.ts";
@@ -34,6 +34,33 @@ const DEFAULT_BOT_LOGINS = new Set([
   "github-actions",
   "codecov",
 ]);
+
+type CatchUpChunkGroup = {
+  thread: ReturnType<typeof groupCommentsIntoThreads>[number];
+  chunks: ReviewCommentChunk[];
+};
+
+async function loadExistingCommentsForPage(params: {
+  store: ReviewCommentStore;
+  repo: string;
+  commentGithubIds: number[];
+}): Promise<Map<number, ReviewCommentRecord | null>> {
+  const uniqueIds = [...new Set(params.commentGithubIds)];
+  if (uniqueIds.length === 0) return new Map();
+
+  if (params.store.getByGithubIds) {
+    return params.store.getByGithubIds(params.repo, uniqueIds);
+  }
+
+  const existingById = new Map<number, ReviewCommentRecord | null>();
+  for (const commentGithubId of uniqueIds) {
+    existingById.set(
+      commentGithubId,
+      await params.store.getByGithubId(params.repo, commentGithubId),
+    );
+  }
+  return existingById;
+}
 
 // ── Main catch-up sync ──────────────────────────────────────────────────────
 
@@ -148,11 +175,18 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
 
     // Group into threads
     const threads = groupCommentsIntoThreads(comments as any, repo, botLogins);
+    const existingByCommentId = await loadExistingCommentsForPage({
+      store,
+      repo,
+      commentGithubIds: comments.map((comment) => comment.id),
+    });
 
     let pageNew = 0;
     let pageUpdated = 0;
     let pageSkipped = 0;
     let pageChunks = 0;
+    const newGroups: CatchUpChunkGroup[] = [];
+    const updatedGroups: CatchUpChunkGroup[] = [];
 
     for (const thread of threads) {
       try {
@@ -161,7 +195,7 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
         let hasEdited = false;
 
         for (const input of thread) {
-          const existing = await store.getByGithubId(repo, input.commentGithubId);
+          const existing = existingByCommentId.get(input.commentGithubId) ?? null;
           if (!existing) {
             hasNew = true;
           } else {
@@ -184,32 +218,11 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
         const chunks = chunkReviewThread(thread, { botLogins });
         if (chunks.length === 0) continue;
 
-        // Generate embeddings (fail-open)
-        await embedChunks(chunks, embeddingProvider);
-
-        if (!dryRun) {
-          if (hasEdited) {
-            await store.updateChunks(chunks);
-            updatedComments += thread.length;
-            pageUpdated += thread.length;
-          } else {
-            await store.writeChunks(chunks);
-            newComments += thread.length;
-            pageNew += thread.length;
-          }
+        if (hasEdited) {
+          updatedGroups.push({ thread, chunks });
         } else {
-          // In dry-run, still count
-          if (hasEdited) {
-            updatedComments += thread.length;
-            pageUpdated += thread.length;
-          } else {
-            newComments += thread.length;
-            pageNew += thread.length;
-          }
+          newGroups.push({ thread, chunks });
         }
-
-        chunksWritten += chunks.length;
-        pageChunks += chunks.length;
       } catch (err) {
         logger.error(
           {
@@ -221,6 +234,76 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
             threadSize: thread.length,
           },
           "Catch-up thread processing failed -- continuing with remaining threads",
+        );
+      }
+    }
+
+    const groups = [...newGroups, ...updatedGroups];
+    const allChunks = groups.flatMap((group) => group.chunks);
+
+    if (allChunks.length > 0) {
+      try {
+        // Generate embeddings once per page instead of once per thread.
+        await embedChunks(allChunks, embeddingProvider);
+
+        const recordGroupSuccess = (group: CatchUpChunkGroup, kind: "new" | "updated") => {
+          if (kind === "updated") {
+            updatedComments += group.thread.length;
+            pageUpdated += group.thread.length;
+          } else {
+            newComments += group.thread.length;
+            pageNew += group.thread.length;
+          }
+          chunksWritten += group.chunks.length;
+          pageChunks += group.chunks.length;
+        };
+
+        if (dryRun) {
+          for (const group of newGroups) recordGroupSuccess(group, "new");
+          for (const group of updatedGroups) recordGroupSuccess(group, "updated");
+        } else {
+          const writeGroupBatch = async (
+            chunkGroups: CatchUpChunkGroup[],
+            kind: "new" | "updated",
+            write: (chunks: ReviewCommentChunk[]) => Promise<void>,
+          ) => {
+            if (chunkGroups.length === 0) return;
+            try {
+              await write(chunkGroups.flatMap((group) => group.chunks));
+              for (const group of chunkGroups) recordGroupSuccess(group, kind);
+            } catch (err) {
+              logger.warn(
+                { err: err instanceof Error ? err.message : String(err), repo, kind, groupCount: chunkGroups.length },
+                "Catch-up batch write failed -- retrying per thread",
+              );
+              for (const group of chunkGroups) {
+                try {
+                  await write(group.chunks);
+                  recordGroupSuccess(group, kind);
+                } catch (threadErr) {
+                  logger.error(
+                    {
+                      err: threadErr instanceof Error ? threadErr.message : String(threadErr),
+                      repo,
+                      threadRootId: group.thread[0]?.commentGithubId,
+                      prNumber: group.thread[0]?.prNumber,
+                      filePath: group.thread[0]?.filePath,
+                      threadSize: group.thread.length,
+                    },
+                    "Catch-up thread write failed -- continuing with remaining threads",
+                  );
+                }
+              }
+            }
+          };
+
+          await writeGroupBatch(newGroups, "new", (chunks) => store.writeChunks(chunks));
+          await writeGroupBatch(updatedGroups, "updated", (chunks) => store.updateChunks(chunks));
+        }
+      } catch (err) {
+        logger.error(
+          { err: err instanceof Error ? err.message : String(err), repo, page, chunkCount: allChunks.length },
+          "Catch-up page embedding failed -- continuing with next page",
         );
       }
     }

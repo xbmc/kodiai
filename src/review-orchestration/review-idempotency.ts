@@ -327,23 +327,59 @@ export async function ensureReviewOutputNotPublished(deps: {
   const marker = buildReviewOutputMarker(deps.reviewOutputKey);
   const scanStats: Partial<ReviewOutputScanStats> = {};
 
-  const reviewCommentsScan = await scanForMarkerInPagedBodies({
-    marker,
-    fetchPage: ({ page, per_page }) =>
-      retryGitHubTransient(async () => {
-        const { data } = await deps.octokit.rest.pulls.listReviewComments({
-          owner: deps.owner,
-          repo: deps.repo,
-          pull_number: deps.prNumber,
-          per_page,
-          page,
-          sort: "created",
-          direction: "desc",
-        });
-        return data;
-      }),
-  });
+  const [reviewCommentsScan, issueCommentsScan, reviewsScan] = await Promise.all([
+    scanForMarkerInPagedBodies({
+      marker,
+      fetchPage: ({ page, per_page }) =>
+        retryGitHubTransient(async () => {
+          const { data } = await deps.octokit.rest.pulls.listReviewComments({
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.prNumber,
+            per_page,
+            page,
+            sort: "created",
+            direction: "desc",
+          });
+          return data;
+        }),
+    }),
+    scanForMarkerInPagedBodies({
+      marker,
+      fetchPage: ({ page, per_page }) =>
+        retryGitHubTransient(async () => {
+          const { data } = await deps.octokit.rest.issues.listComments({
+            owner: deps.owner,
+            repo: deps.repo,
+            issue_number: deps.prNumber,
+            per_page,
+            page,
+            sort: "created",
+            direction: "desc",
+          });
+          return data;
+        }),
+    }),
+    scanForMarkerInPagedBodies({
+      marker,
+      fetchPage: ({ page, per_page }) =>
+        retryGitHubTransient(async () => {
+          const { data } = await deps.octokit.rest.pulls.listReviews({
+            owner: deps.owner,
+            repo: deps.repo,
+            pull_number: deps.prNumber,
+            per_page,
+            page,
+          });
+          return data;
+        }),
+    }),
+  ]);
+
   scanStats.reviewComments = summarizeScan(reviewCommentsScan);
+  scanStats.issueComments = summarizeScan(issueCommentsScan);
+  scanStats.reviews = summarizeScan(reviewsScan);
+
   if (reviewCommentsScan.found) {
     return buildPublicationStatus({
       reviewOutputKey: deps.reviewOutputKey,
@@ -355,23 +391,6 @@ export async function ensureReviewOutputNotPublished(deps: {
     });
   }
 
-  const issueCommentsScan = await scanForMarkerInPagedBodies({
-    marker,
-    fetchPage: ({ page, per_page }) =>
-      retryGitHubTransient(async () => {
-        const { data } = await deps.octokit.rest.issues.listComments({
-          owner: deps.owner,
-          repo: deps.repo,
-          issue_number: deps.prNumber,
-          per_page,
-          page,
-          sort: "created",
-          direction: "desc",
-        });
-        return data;
-      }),
-  });
-  scanStats.issueComments = summarizeScan(issueCommentsScan);
   if (issueCommentsScan.found) {
     return buildPublicationStatus({
       reviewOutputKey: deps.reviewOutputKey,
@@ -382,22 +401,6 @@ export async function ensureReviewOutputNotPublished(deps: {
       scanStats,
     });
   }
-
-  const reviewsScan = await scanForMarkerInPagedBodies({
-    marker,
-    fetchPage: ({ page, per_page }) =>
-      retryGitHubTransient(async () => {
-        const { data } = await deps.octokit.rest.pulls.listReviews({
-          owner: deps.owner,
-          repo: deps.repo,
-          pull_number: deps.prNumber,
-          per_page,
-          page,
-        });
-        return data;
-      }),
-  });
-  scanStats.reviews = summarizeScan(reviewsScan);
 
   if (reviewsScan.found) {
     return buildPublicationStatus({

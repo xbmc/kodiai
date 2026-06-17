@@ -103,8 +103,11 @@ export function createIssueClosedHandler(deps: {
         WHERE repo = ${repo} AND issue_number = ${issueNumber}
       `;
 
-      const triageId = triageRows.length > 0 ? (triageRows[0]!.id as number) : null;
-      const kodiaiPredictedDuplicate = triageRows.length > 0 && (triageRows[0]!.duplicate_count as number) > 0;
+      const triageRow = triageRows[0];
+      const duplicateDetectionCompleted = triageRow !== undefined && triageRow.duplicate_count != null;
+      const triageId = duplicateDetectionCompleted ? (triageRow.id as number) : null;
+      const kodiaiPredictedDuplicate = duplicateDetectionCompleted
+        && (triageRow!.duplicate_count as number) > 0;
 
       // 5. Extract label names for raw signal storage
       const labelNames = labels.map((l) => l.name);

@@ -152,6 +152,13 @@ export type WikiPageStore = {
     targetModel?: string;
   }): Promise<WikiRepairCandidate[]>;
 
+  /** List the next degraded page's chunks for bounded embedding repair. */
+  listRepairCandidatePage?(params?: {
+    pageTitle?: string;
+    afterPageId?: number | null;
+    targetModel?: string;
+  }): Promise<WikiRepairCandidate[]>;
+
   /** Read the dedicated wiki embedding repair checkpoint surface. */
   getRepairCheckpoint(repairKey?: string): Promise<WikiEmbeddingRepairCheckpoint | null>;
 

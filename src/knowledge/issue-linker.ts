@@ -117,41 +117,56 @@ export async function linkPRToIssues(params: {
 
     // Step 2: Fetch referenced issues from corpus
     const referencedIssues: LinkedIssue[] = [];
+    const localRefs = parsedRefs.filter((ref) => {
+      if (ref.crossRepo === null) return true;
+      logger.debug(
+        { crossRepo: ref.crossRepo, issueNumber: ref.issueNumber },
+        "Cross-repo reference not in local corpus, skipping",
+      );
+      return false;
+    });
 
-    for (const ref of parsedRefs) {
-      if (ref.crossRepo !== null) {
-        logger.debug(
-          { crossRepo: ref.crossRepo, issueNumber: ref.issueNumber },
-          "Cross-repo reference not in local corpus, skipping",
+    const recordsByNumber = new Map<number, Awaited<ReturnType<IssueStore["getByNumber"]>>>();
+    if (localRefs.length > 0) {
+      const issueNumbers = localRefs.map((ref) => ref.issueNumber);
+      try {
+        if (issueStore.getReferenceRecordsByNumbers) {
+          for (const record of await issueStore.getReferenceRecordsByNumbers(repo, issueNumbers)) {
+            recordsByNumber.set(record.issueNumber, record);
+          }
+        } else {
+          await Promise.all(issueNumbers.map(async (issueNumber) => {
+            recordsByNumber.set(issueNumber, await issueStore.getByNumber(repo, issueNumber));
+          }));
+        }
+      } catch (err) {
+        logger.warn(
+          { repo, issueNumbers, err },
+          "Failed to fetch referenced issues (fail-open)",
+        );
+      }
+    }
+
+    for (const ref of localRefs) {
+      const record = recordsByNumber.get(ref.issueNumber) ?? null;
+
+      if (!record) {
+        logger.info(
+          { repo, issueNumber: ref.issueNumber },
+          "Referenced issue not found in corpus",
         );
         continue;
       }
 
-      try {
-        const record = await issueStore.getByNumber(repo, ref.issueNumber);
-        if (!record) {
-          logger.info(
-            { repo, issueNumber: ref.issueNumber },
-            "Referenced issue not found in corpus",
-          );
-          continue;
-        }
-
-        referencedIssues.push({
-          issueNumber: record.issueNumber,
-          repo,
-          title: record.title,
-          state: record.state,
-          descriptionSummary: truncateDescription(record.body),
-          linkType: "referenced",
-          keyword: ref.keyword,
-        });
-      } catch (err) {
-        logger.warn(
-          { repo, issueNumber: ref.issueNumber, err },
-          "Failed to fetch referenced issue (fail-open)",
-        );
-      }
+      referencedIssues.push({
+        issueNumber: record.issueNumber,
+        repo,
+        title: record.title,
+        state: record.state,
+        descriptionSummary: truncateDescription(record.body),
+        linkType: "referenced",
+        keyword: ref.keyword,
+      });
     }
 
     // Step 3: If explicit refs found, skip semantic search

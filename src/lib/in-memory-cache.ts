@@ -58,6 +58,8 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
         store.delete(key);
         return undefined;
       }
+      store.delete(key);
+      store.set(key, entry);
       return entry.value;
     },
 
@@ -88,6 +90,8 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
         store.delete(key);
         return false;
       }
+      store.delete(key);
+      store.set(key, entry);
       return true;
     },
 

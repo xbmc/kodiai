@@ -44,6 +44,8 @@ export type ExecutionContext = {
   repo: string;
   /** Set for PR events, undefined for issue-only events */
   prNumber: number | undefined;
+  /** Set for issue and PR mention events; used to bind issue-scoped tools. */
+  issueNumber?: number;
   /** Tracking comment ID for progress updates (set by handler, undefined initially) */
   commentId: number | undefined;
   /** The webhook event type (e.g., "pull_request.opened", "issue_comment.created") */

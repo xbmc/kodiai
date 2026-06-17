@@ -130,11 +130,17 @@ export type IssueStore = {
   /** Upsert an issue (ON CONFLICT UPDATE). */
   upsert(issue: IssueInput): Promise<void>;
 
+  /** Upsert issues in one batch (ON CONFLICT UPDATE). */
+  upsertMany?(issues: IssueInput[]): Promise<void>;
+
   /** Delete an issue and its comments by repo + issue number. */
   delete(repo: string, issueNumber: number): Promise<void>;
 
   /** Get a single issue by repo + issue number. */
   getByNumber(repo: string, issueNumber: number): Promise<IssueRecord | null>;
+
+  /** Get issue records needed for PR reference linking by repo + issue numbers. */
+  getReferenceRecordsByNumbers?(repo: string, issueNumbers: number[]): Promise<IssueRecord[]>;
 
   /** Vector similarity search scoped by repo. */
   searchByEmbedding(params: {
@@ -176,6 +182,21 @@ export type IssueStore = {
 
   /** List degraded persisted rows that need row-local embedding repair. */
   listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
+
+  /** Count degraded persisted rows after the durable cursor without materializing them. */
+  countRepairCandidates?(input: {
+    corpus: EmbeddingRepairCorpus;
+    afterId: number | null;
+    targetModel: string;
+  }): Promise<number>;
+
+  /** Page degraded persisted rows after the durable cursor for bounded repair. */
+  listRepairCandidateBatch?(input: {
+    corpus: EmbeddingRepairCorpus;
+    afterId: number | null;
+    limit: number;
+    targetModel: string;
+  }): Promise<RepairCandidateRow[]>;
 
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;

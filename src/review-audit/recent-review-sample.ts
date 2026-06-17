@@ -2,6 +2,7 @@ import {
   extractReviewOutputKey,
   parseReviewOutputKey,
 } from "../review-orchestration/review-idempotency.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 export type ReviewAuditLane = "automatic" | "explicit";
 export type ReviewArtifactSource = "review" | "issue-comment" | "review-comment";
@@ -174,10 +175,12 @@ export async function collectLatestReviewArtifacts(params: {
   owner: string;
   repo: string;
   pullRequests: PullRequestRef[];
+  concurrency?: number;
 }): Promise<RecentReviewArtifact[]> {
-  const artifacts: RecentReviewArtifact[] = [];
-
-  for (const pullRequest of params.pullRequests) {
+  const artifactsByPr = await mapWithConcurrency(
+    params.pullRequests,
+    params.concurrency ?? 4,
+    async (pullRequest) => {
     const candidates: RecentReviewArtifact[] = [];
 
     const [reviewComments, issueComments, reviews] = await Promise.all([
@@ -253,14 +256,17 @@ export async function collectLatestReviewArtifacts(params: {
     }
 
     if (candidates.length === 0) {
-      continue;
+      return null;
     }
 
     candidates.sort(compareArtifactsByRecency);
-    artifacts.push(candidates[0]!);
-  }
+    return candidates[0]!;
+    },
+  );
 
-  return artifacts.sort(compareArtifactsByRecency);
+  return artifactsByPr
+    .filter((artifact): artifact is RecentReviewArtifact => artifact !== null)
+    .sort(compareArtifactsByRecency);
 }
 
 export function selectRecentReviewSample(

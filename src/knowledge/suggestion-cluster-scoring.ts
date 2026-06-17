@@ -24,6 +24,7 @@ import type { FindingSeverity, FindingCategory, EmbeddingProvider } from "./type
 import type { SuggestionClusterModel } from "./suggestion-cluster-store.ts";
 import { cosineSimilarity } from "./embedding-vector.ts";
 import { isFeedbackSuppressionProtected } from "../feedback/safety-guard.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ export const MIN_CENTROID_MEMBERS_FOR_SCORING = 5;
  * Applied before clamping to [0, 100].
  */
 export const CONFIDENCE_BOOST_DELTA = 15;
+
+const FINDING_EMBEDDING_CONCURRENCY = 4;
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -304,11 +307,10 @@ export async function scoreFindings<T extends ScoringFinding>(
   }
 
   try {
-    const scores: FindingScoreResult[] = [];
-    let suppressedCount = 0;
-    let boostedCount = 0;
-
-    for (const finding of findings) {
+    const scores = await mapWithConcurrency(
+      findings,
+      FINDING_EMBEDDING_CONCURRENCY,
+      async (finding): Promise<FindingScoreResult> => {
       // Embed the finding title as a query (not document) since we're
       // searching against stored centroids.
       let embeddingResult;
@@ -319,34 +321,34 @@ export async function scoreFindings<T extends ScoringFinding>(
           { err: embErr, title: finding.title },
           "Embedding failed for finding; applying no cluster signal (fail-open)",
         );
-        scores.push({
+        return {
           suppress: false,
           adjustedConfidence: finding.confidence,
           negativeScore: null,
           positiveScore: null,
           suppressionReason: null,
-        });
-        continue;
+        };
       }
 
       if (!embeddingResult) {
         // Provider returned null — fail-open for this finding
-        scores.push({
+        return {
           suppress: false,
           adjustedConfidence: finding.confidence,
           negativeScore: null,
           positiveScore: null,
           suppressionReason: null,
-        });
-        continue;
+        };
       }
 
-      const score = scoreFindingEmbedding(finding, embeddingResult.embedding, model);
-      scores.push(score);
+      return scoreFindingEmbedding(finding, embeddingResult.embedding, model);
+      },
+    );
 
-      if (score.suppress) suppressedCount++;
-      if (score.adjustedConfidence > finding.confidence) boostedCount++;
-    }
+    const suppressedCount = scores.filter((score) => score.suppress).length;
+    const boostedCount = scores.filter(
+      (score, index) => score.adjustedConfidence > findings[index]!.confidence,
+    ).length;
 
     logger.info(
       {

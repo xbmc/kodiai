@@ -315,6 +315,41 @@ describe("createIssueClosedHandler", () => {
     expect(insertCall!.values[4]).toBe(true); // kodiai_predicted_duplicate (duplicate_count > 0)
   });
 
+  it("does not link incomplete triage reservations as duplicate predictions", async () => {
+    const mockSql = createMockSql({
+      triageRows: [{ id: 42, duplicate_count: null }],
+    });
+
+    createIssueClosedHandler({
+      eventRouter: router,
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    await router.captured[0]!.handler(makeEvent({
+      issue: {
+        number: 42,
+        title: "Actually duplicate",
+        body: null,
+        state: "closed",
+        state_reason: "duplicate",
+        labels: [],
+        user: { login: "testuser" },
+        closed_at: "2026-02-28T00:00:00Z",
+      },
+    }));
+
+    const insertCall = mockSql.calls.find((call) =>
+      call.strings.join("").includes("INSERT INTO issue_outcome_feedback"),
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall!.values[2]).toBeNull(); // triage_id
+    expect(insertCall!.values[4]).toBe(false); // kodiai_predicted_duplicate
+    expect(mockSql.calls.some((call) =>
+      call.strings.join("").includes("triage_threshold_state"),
+    )).toBe(false);
+  });
+
   it("sets triage_id null when no triage record", async () => {
     const mockSql = createMockSql({
       triageRows: [],

@@ -6,7 +6,6 @@ import type {
 } from "./types.ts";
 import { aggregateSuppressiblePatterns } from "./aggregator.ts";
 import { isFeedbackSuppressionProtected } from "./safety-guard.ts";
-import { adjustConfidenceForFeedback } from "./confidence-adjuster.ts";
 
 // Re-export all types
 export type {

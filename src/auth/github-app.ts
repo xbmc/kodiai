@@ -5,6 +5,8 @@ import type { AppConfig } from "../config.ts";
 import { installOctokitRetry } from "./octokit-retry.ts";
 
 export const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 30_000;
+const INSTALLATION_OCTOKIT_CACHE_TTL_MS = 55 * 60 * 1000;
+const MAX_INSTALLATION_OCTOKIT_CACHE_ENTRIES = 100;
 
 export interface GitHubApp {
   /** Create an Octokit client authenticated as a specific installation. */
@@ -42,6 +44,7 @@ function githubRequestOptions(options?: { requestTimeoutMs?: number }): { reques
 
 export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
   let appSlug = "";
+  const installationOctokitCache = new Map<string, { octokit: Octokit; cachedAt: number }>();
 
   // Connectivity check cache (30-second TTL)
   let lastCheckTime = 0;
@@ -57,15 +60,40 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
     },
     ...githubRequestOptions(),
   }), logger);
+  function installationOctokitCacheKey(
+    installationId: number,
+    options?: { requestTimeoutMs?: number },
+  ): string {
+    return `${installationId}:${options?.requestTimeoutMs ?? DEFAULT_GITHUB_REQUEST_TIMEOUT_MS}`;
+  }
+
+  function rememberInstallationOctokit(key: string, octokit: Octokit): void {
+    if (installationOctokitCache.size >= MAX_INSTALLATION_OCTOKIT_CACHE_ENTRIES) {
+      const oldestKey = installationOctokitCache.keys().next().value as string | undefined;
+      if (oldestKey) {
+        installationOctokitCache.delete(oldestKey);
+      }
+    }
+    installationOctokitCache.set(key, { octokit, cachedAt: Date.now() });
+  }
 
   return {
     async getInstallationOctokit(
       installationId: number,
       options?: { requestTimeoutMs?: number },
     ): Promise<Octokit> {
+      const cacheKey = installationOctokitCacheKey(installationId, options);
+      const cached = installationOctokitCache.get(cacheKey);
+      if (cached && Date.now() - cached.cachedAt < INSTALLATION_OCTOKIT_CACHE_TTL_MS) {
+        logger.debug({ installationId }, "Reusing cached installation Octokit client");
+        return cached.octokit;
+      }
+      if (cached) {
+        installationOctokitCache.delete(cacheKey);
+      }
+
       logger.debug({ installationId }, "Creating installation Octokit client");
 
-      // Create a fresh Octokit per call; auth-app handles token caching internally
       const octokit = installOctokitRetry(new Octokit({
         authStrategy: createAppAuth,
         auth: {
@@ -76,6 +104,7 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
         ...githubRequestOptions(options),
       }), logger);
 
+      rememberInstallationOctokit(cacheKey, octokit);
       return octokit;
     },
 
@@ -121,17 +150,14 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
     },
 
     async getInstallationToken(installationId: number): Promise<string> {
-      // Use createAppAuth directly to get a raw token (not an Octokit client).
-      // auth-app internally caches tokens and refreshes before expiry.
-      const auth = createAppAuth({
-        appId: config.githubAppId,
-        privateKey: config.githubPrivateKey,
-      });
-
-      const result = await auth({
+      const octokit = await this.getInstallationOctokit(installationId);
+      const result = await octokit.auth({
         type: "installation",
         installationId,
-      });
+      }) as { token?: string };
+      if (!result.token) {
+        throw new Error(`GitHub App installation auth returned no token for installation ${installationId}`);
+      }
 
       logger.debug({ installationId }, "Obtained installation token");
 

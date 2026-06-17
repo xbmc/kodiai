@@ -113,7 +113,7 @@ export function createEventRouter(
               deliveryId: event.id,
               event: event.name,
               action,
-              reason: result.reason,
+              err: result.reason,
             },
             "Handler failed during dispatch",
           );

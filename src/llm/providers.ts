@@ -5,11 +5,12 @@
  * Supports Anthropic, OpenAI, and Google providers.
  */
 
-import { anthropic } from "@ai-sdk/anthropic";
-import { openai } from "@ai-sdk/openai";
-import { google } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 import type { Logger } from "pino";
+
+type ProviderName = "anthropic" | "openai" | "google";
+type ProviderFactory = (modelId: string) => LanguageModel;
+type ProviderLoaders = Record<ProviderName, () => Promise<ProviderFactory>>;
 
 /**
  * Extracts the provider name from a model ID string.
@@ -63,19 +64,32 @@ function stripProviderPrefix(modelId: string): string {
  * Routes to the correct provider based on model ID prefix or name pattern.
  * Default provider is Anthropic.
  */
-export function createProviderModel(modelId: string): LanguageModel {
+const defaultProviderLoaders: ProviderLoaders = {
+  anthropic: async () => (await import("@ai-sdk/anthropic")).anthropic,
+  openai: async () => (await import("@ai-sdk/openai")).openai,
+  google: async () => (await import("@ai-sdk/google")).google,
+};
+
+export async function createProviderModelWithLoaders(
+  modelId: string,
+  loaders: ProviderLoaders = defaultProviderLoaders,
+): Promise<LanguageModel> {
   const provider = extractProvider(modelId);
   const strippedId = stripProviderPrefix(modelId);
 
   switch (provider) {
     case "openai":
-      return openai(strippedId);
+      return (await loaders.openai())(strippedId);
     case "google":
-      return google(strippedId);
+      return (await loaders.google())(strippedId);
     case "anthropic":
     default:
-      return anthropic(strippedId);
+      return (await loaders.anthropic())(strippedId);
   }
+}
+
+export async function createProviderModel(modelId: string): Promise<LanguageModel> {
+  return createProviderModelWithLoaders(modelId);
 }
 
 /**

@@ -33,6 +33,7 @@ import {
 import {
   fetchAndCheckoutPullRequestHeadRef,
 } from "../jobs/workspace.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 // Re-exported so tests can reference the type without importing from runner directly.
 export type { AddonFinding };
@@ -101,6 +102,7 @@ async function upsertAddonCheckComment(params: {
 }
 
 export const ADDON_CHECK_RUNNER_TIME_BUDGET_MS = 240_000;
+const ADDON_CHECK_CONCURRENCY = 2;
 
 type AddonCheckRuntimeSummary = {
   completed?: true;
@@ -254,9 +256,10 @@ export function createAddonCheckHandler(deps: {
             const allFindings: AddonFinding[] = [];
             const addonSummaries: AddonCheckRuntimeSummary[] = [];
             const timeBudgetMs = __addonCheckTimeBudgetMsForTests ?? ADDON_CHECK_RUNNER_TIME_BUDGET_MS;
+            const workspaceDir = workspace.dir;
 
-            for (const addonId of addonIds) {
-              const addonDir = path.join(workspace.dir, addonId);
+            const addonResults = await mapWithConcurrency(addonIds, ADDON_CHECK_CONCURRENCY, async (addonId) => {
+              const addonDir = path.join(workspaceDir, addonId);
               const result = await runAddonChecker({
                 addonDir,
                 branch: kodiVersion,
@@ -266,18 +269,16 @@ export function createAddonCheckHandler(deps: {
 
               if (result.toolNotFound) {
                 handlerLogger.warn({ addonId }, "addon-check: kodi-addon-checker not installed, skipping");
-                addonSummaries.push({ toolNotFound: true });
-                continue;
+                return { summary: { toolNotFound: true } satisfies AddonCheckRuntimeSummary, findings: [] };
               }
 
               if (result.timedOut) {
                 handlerLogger.info({ timeBudgetMs }, "addon-check: runner skipped after budget");
-                addonSummaries.push({ timedOut: true });
-                continue;
+                return { summary: { timedOut: true } satisfies AddonCheckRuntimeSummary, findings: [] };
               }
 
               const findingCounts = countFindings(result.findings);
-              addonSummaries.push({ completed: true, ...findingCounts });
+              const summary = { completed: true, ...findingCounts } satisfies AddonCheckRuntimeSummary;
 
               for (const finding of result.findings) {
                 handlerLogger.debug(
@@ -287,8 +288,14 @@ export function createAddonCheckHandler(deps: {
                   },
                   "addon-check: finding detail",
                 );
-                allFindings.push(finding);
               }
+
+              return { summary, findings: result.findings };
+            });
+
+            for (const result of addonResults) {
+              addonSummaries.push(result.summary);
+              allFindings.push(...result.findings);
             }
 
             const classification = classifyAddonCheckOutcome({

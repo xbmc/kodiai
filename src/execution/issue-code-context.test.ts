@@ -72,6 +72,34 @@ describe("buildIssueCodeContext", () => {
     expect(result.contextBlock).toContain("`src/handlers/mention.ts:455`");
   });
 
+  test("default content scanner reads each candidate file once for all terms", async () => {
+    const readCounts = new Map<string, number>();
+    const result = await buildIssueCodeContext({
+      workspaceDir: WORKSPACE_DIR,
+      question: "write mode",
+      adapters: {
+        globFiles: async () => [
+          "src/handlers/mention.ts",
+          "src/execution/mention-context.ts",
+        ],
+        readFile: async (filePath: string) => {
+          readCounts.set(filePath, (readCounts.get(filePath) ?? 0) + 1);
+          if (filePath.endsWith("mention.ts")) {
+            return ["const mode = 'write';", "function writeRequest() {}"].join("\n");
+          }
+          return "export const context = true;";
+        },
+      },
+    });
+
+    expect([...readCounts.values()]).toEqual([1, 1]);
+    expect(result.paths[0]).toEqual({
+      path: "src/handlers/mention.ts",
+      line: 1,
+      reason: "content matches: mode, write",
+    });
+  });
+
   test("weak signal yields empty paths and empty context block", async () => {
     const result = await buildIssueCodeContext({
       workspaceDir: WORKSPACE_DIR,

@@ -1128,9 +1128,9 @@ export function buildLinkedIssuesSection(linkedIssues: LinkResult): string {
     lines.push("This PR addresses these issues:");
     lines.push("");
     for (const issue of linkedIssues.referencedIssues) {
-      lines.push(`- #${issue.issueNumber} (${issue.state}) -- "${issue.title}"`);
+      lines.push(`- #${issue.issueNumber} (${issue.state}) -- "${sanitizeContent(issue.title)}"`);
       if (issue.descriptionSummary) {
-        lines.push(`  Summary: ${issue.descriptionSummary}`);
+        lines.push(`  Summary: ${sanitizeContent(issue.descriptionSummary)}`);
       }
     }
   }
@@ -1141,9 +1141,9 @@ export function buildLinkedIssuesSection(linkedIssues: LinkResult): string {
     lines.push("");
     for (const issue of linkedIssues.semanticMatches) {
       const pct = issue.similarity != null ? `${Math.round(issue.similarity * 100)}% match` : "semantic match";
-      lines.push(`- #${issue.issueNumber} (${issue.state}) -- "${issue.title}" (${pct})`);
+      lines.push(`- #${issue.issueNumber} (${issue.state}) -- "${sanitizeContent(issue.title)}" (${pct})`);
       if (issue.descriptionSummary) {
-        lines.push(`  Summary: ${issue.descriptionSummary}`);
+        lines.push(`  Summary: ${sanitizeContent(issue.descriptionSummary)}`);
       }
     }
   }
@@ -1168,16 +1168,18 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 
   const bullets: string[] = [];
   for (const match of capped) {
-    const label = match.sectionHeading
-      ? `${match.pageTitle} > ${match.sectionHeading}`
-      : match.pageTitle;
+    const label = sanitizeContent(
+      match.sectionHeading
+        ? `${match.pageTitle} > ${match.sectionHeading}`
+        : match.pageTitle,
+    );
 
     const freshness = match.lastModified
       ? ` (updated ${match.lastModified.slice(0, 7)})`
       : "";
 
     const excerpt = truncateAtWordBoundary(
-      match.rawText.replace(/\n/g, " ").trim(),
+      sanitizeContent(match.rawText).replace(/\n/g, " ").trim(),
       MAX_WIKI_EXCERPT_CHARS,
     );
 
@@ -1416,21 +1418,23 @@ function buildChangelogSection(changelog: ChangelogContext): string {
       : "### Release Notes";
     lines.push(heading, "");
     for (const note of changelog.releaseNotes) {
-      const body = note.body.length > 500 ? note.body.slice(0, 500) + "..." : note.body;
-      lines.push(`**${note.tag}:**`, body, "");
+      const body = sanitizeContent(note.body);
+      const cappedBody = body.length > 500 ? body.slice(0, 500) + "..." : body;
+      lines.push(`**${sanitizeContent(note.tag)}:**`, cappedBody, "");
     }
   } else if (changelog.source === "changelog-file" && changelog.releaseNotes.length > 0) {
     lines.push("### Changelog Excerpt", "");
     for (const note of changelog.releaseNotes) {
-      const body = note.body.length > 500 ? note.body.slice(0, 500) + "..." : note.body;
-      lines.push(body, "");
+      const body = sanitizeContent(note.body);
+      const cappedBody = body.length > 500 ? body.slice(0, 500) + "..." : body;
+      lines.push(cappedBody, "");
     }
   }
 
   if (changelog.breakingChanges.length > 0) {
     lines.push("**Breaking Changes Detected:**", "");
     for (const bc of changelog.breakingChanges) {
-      lines.push(`- ${bc}`);
+      lines.push(`- ${sanitizeContent(bc)}`);
     }
     lines.push("");
   }

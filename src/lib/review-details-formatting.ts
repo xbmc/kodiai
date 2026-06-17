@@ -22,16 +22,14 @@ import {
 } from "./review-details-plan-formatting.ts";
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
-import { formatReviewCandidateFindingDetailsLine } from "./review-details-candidate-finding-formatting.ts";
-import { formatReviewCandidatePublicationDetailsLine } from "./review-details-candidate-publication-formatting.ts";
 import {
+  formatReviewCandidateFindingDetailsLine,
+  formatReviewCandidatePublicationDetailsLine,
   formatCandidatePublicationBridgeLine,
   type CandidatePublicationBridgeReviewDetails,
-} from "./review-details-candidate-bridge-formatting.ts";
-import {
   formatCandidateVerificationPublicationEvidenceLine,
   type CandidateVerificationPublicationEvidenceReviewDetails,
-} from "./review-details-candidate-verification-formatting.ts";
+} from "./review-details-candidate-formatting.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 import type { ValidationTruthProjection } from "../review-lifecycle/validation-truth.ts";
 import {

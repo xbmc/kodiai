@@ -1,10 +1,5 @@
 import type {
   IssueCommentCreatedEvent,
-  PullRequestOpenedEvent,
-  PullRequestReadyForReviewEvent,
-  PullRequestReviewCommentCreatedEvent,
-  PullRequestReviewRequestedEvent,
-  PullRequestReviewSubmittedEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -12,6 +7,7 @@ import type { JobQueue } from "../jobs/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { isHumanThumbReaction, type ReactionEntry } from "../lib/github-reactions.ts";
 
 type SyncCandidate = {
   findingId: number;
@@ -25,16 +21,6 @@ type SyncCandidate = {
   filePath: string;
   title: string;
   createdAt: string;
-};
-
-type ReactionEntry = {
-  id: number;
-  content: string;
-  user?: {
-    login?: string;
-    type?: string;
-  } | null;
-  created_at?: string | null;
 };
 
 function isReactionPermissionDenied(err: unknown): boolean {
@@ -75,28 +61,11 @@ const DEFAULT_MAX_CANDIDATES = 100;
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
 const REACTION_FETCH_CONCURRENCY = 4;
 
-function normalizeLogin(login: string | undefined): string {
-  return (login ?? "").trim().toLowerCase().replace(/\[bot\]$/i, "");
-}
-
 function isRecentEnough(createdAt: string, recentWindowDays: number): boolean {
   const parsed = Date.parse(createdAt);
   if (Number.isNaN(parsed)) return false;
   const cutoff = Date.now() - recentWindowDays * 24 * 60 * 60 * 1000;
   return parsed >= cutoff;
-}
-
-function isHumanThumbReaction(reaction: ReactionEntry, appSlug: string): boolean {
-  if (reaction.content !== "+1" && reaction.content !== "-1") return false;
-
-  const userType = (reaction.user?.type ?? "").toLowerCase();
-  if (userType === "bot") return false;
-
-  const reactorLogin = normalizeLogin(reaction.user?.login);
-  if (reactorLogin.length === 0) return false;
-  if (reactorLogin === normalizeLogin(appSlug)) return false;
-
-  return true;
 }
 
 function parseRepoFromEventPayload(event: WebhookEvent): string | undefined {

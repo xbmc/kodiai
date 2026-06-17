@@ -101,6 +101,17 @@ type EmbeddingRepairModule = {
     };
     store: {
       listRepairCandidates: (corpus: EmbeddingRepairCorpus) => Promise<RepairCandidateRow[]>;
+      countRepairCandidates?: (input: {
+        corpus: EmbeddingRepairCorpus;
+        afterId: number | null;
+        targetModel: string;
+      }) => Promise<number>;
+      listRepairCandidateBatch?: (input: {
+        corpus: EmbeddingRepairCorpus;
+        afterId: number | null;
+        limit: number;
+        targetModel: string;
+      }) => Promise<RepairCandidateRow[]>;
       getRepairState: (corpus: EmbeddingRepairCorpus) => Promise<{
         run_id: string;
         corpus: EmbeddingRepairCorpus;
@@ -570,6 +581,64 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
         last_row_id: 51,
         batch_index: 0,
         batches_total: 1,
+      },
+    });
+  });
+
+  test("runEmbeddingRepair uses paged repair candidates when the store supports them", async () => {
+    const module = await loadEmbeddingRepairModule();
+    const listRepairCandidates = mock(async () => {
+      throw new Error("full repair candidate list should not be materialized");
+    });
+    const countRepairCandidates = mock(async () => 3);
+    const listRepairCandidateBatch = mock(async (request: { afterId: number | null }) => {
+      if (request.afterId == null) {
+        return [
+          makeRow({ corpus: "review_comments", id: 10, chunk_text: "row 10", embedding: null, embedding_model: null }),
+          makeRow({ corpus: "review_comments", id: 11, chunk_text: "row 11", embedding: null, embedding_model: null }),
+        ];
+      }
+      return [
+        makeRow({ corpus: "review_comments", id: 12, chunk_text: "row 12", embedding: null, embedding_model: null }),
+      ];
+    });
+    const savedStates: Array<Record<string, unknown>> = [];
+
+    const result = await module.runEmbeddingRepair({
+      corpus: "review_comments",
+      batchSize: 2,
+      store: {
+        listRepairCandidates,
+        countRepairCandidates,
+        listRepairCandidateBatch,
+        getRepairState: mock(async () => null),
+        saveRepairState: mock(async (state) => {
+          savedStates.push(state as Record<string, unknown>);
+        }),
+        writeRepairEmbeddingsBatch: mock(async () => undefined),
+      },
+      embedRows: async (batch) => ({
+        status: "ok",
+        embeddings: batch.map((row) => ({ row_id: row.id, embedding: makeEmbedding(row.id) })),
+      }),
+    });
+
+    expect(listRepairCandidates).not.toHaveBeenCalled();
+    expect(countRepairCandidates).toHaveBeenCalledWith({
+      corpus: "review_comments",
+      afterId: null,
+      targetModel: "voyage-4",
+    });
+    expect(listRepairCandidateBatch).toHaveBeenCalledTimes(2);
+    expect(savedStates.map((state) => state.last_row_id)).toEqual([11, 12]);
+    expect(result).toMatchObject({
+      success: true,
+      processed: 3,
+      repaired: 3,
+      cursor: {
+        last_row_id: 12,
+        batch_index: 1,
+        batches_total: 2,
       },
     });
   });

@@ -174,6 +174,21 @@ describe("WikiPageStore batch SQL", () => {
     expect(sql.calls[0]!.query).toContain("DELETE FROM wiki_pages");
     expect(sql.unsafeCalls).toHaveLength(1);
   });
+
+  test("listRepairCandidatePage reads one candidate page with explicit columns", async () => {
+    const sql = createMockSql();
+    const store = createWikiPageStore({ sql, logger: mockLogger });
+
+    await store.listRepairCandidatePage?.({ afterPageId: 123, targetModel: "voyage-context-3" });
+
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "WITH next_page AS");
+    expect(query.query).toContain("LIMIT 1");
+    expect(query.query).toContain("embedding_model IS DISTINCT FROM");
+    expect(query.query).not.toContain("SELECT *");
+    expect(query.values).toContain(123);
+    expect(query.values).toContain("voyage-context-3");
+  });
 });
 
 describe.skipIf(!TEST_DB_URL)("WikiPageStore (pgvector)", () => {

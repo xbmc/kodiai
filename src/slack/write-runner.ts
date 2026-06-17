@@ -3,12 +3,16 @@ import { $ } from "bun";
 import type { Logger } from "pino";
 import type { Workspace } from "../jobs/types.ts";
 import { createBranchCommitAndPush, WritePolicyError, shouldUseGist, assertOriginIsFork } from "../jobs/workspace.ts";
-import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
+import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
+import { buildSlackWriteCommitMessage, summarizeSlackWriteRequest } from "../lib/write-request-formatting.ts";
+import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import type { ExecutionResult } from "../execution/types.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
+
+const GIST_PATCH_MAX_BYTES = 2 * 1024 * 1024;
 
 export interface SlackWriteRunnerInput {
   owner: string;
@@ -90,14 +94,6 @@ interface SlackWriteRunnerDeps {
   gistPublisher?: GistPublisher;
   /** Logger for fork/gist operations. */
   logger?: Logger;
-}
-
-function summarizeWriteRequest(request: string): string {
-  const normalized = request.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 72) {
-    return normalized.length > 0 ? normalized : "requested update";
-  }
-  return `${normalized.slice(0, 69).trimEnd()}...`;
 }
 
 function isLikelyWritePermissionFailure(err: unknown): boolean {
@@ -290,10 +286,24 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
             // Gist path
             try {
               await $`git -C ${workspace.dir} add -A`.quiet();
-              const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+              const patchResult = await runCommandWithCappedOutput({
+                command: "git",
+                args: ["diff", "--cached"],
+                cwd: workspace.dir,
+                maxStdoutBytes: GIST_PATCH_MAX_BYTES,
+              });
+              const patch = patchResult.stdout;
+
+              if (patchResult.stdoutTruncated) {
+                return {
+                  outcome: "failure",
+                  responseText: `Generated patch is too large to publish as a gist. Split the request into smaller changes.\n\nRetry command: ${retryCommand}`,
+                  retryCommand,
+                };
+              }
 
               if (patch.trim().length > 0) {
-                const requestSummary = summarizeWriteRequest(input.request);
+                const requestSummary = summarizeSlackWriteRequest(input.request);
                 const gist = await gistPublisher.createPatchGist({
                   owner: input.owner,
                   repo: input.repo,
@@ -328,28 +338,8 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
             await assertOriginIsFork(workspace.dir, forkContext.forkOwner);
 
             const branchName = buildDeterministicBranchName(input);
-            const requestSummary = summarizeWriteRequest(input.request);
-            const lower = requestSummary.toLowerCase();
-            let prefix: string;
-            if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
-              prefix = "fix";
-            } else if (/\brefactor\b/.test(lower)) {
-              prefix = "refactor";
-            } else {
-              prefix = "feat";
-            }
-            const commitSubject = `${prefix}: ${requestSummary}`;
-            const maxSubjectLen = 72;
-            const truncatedSubject = commitSubject.length <= maxSubjectLen
-              ? commitSubject
-              : `${commitSubject.slice(0, maxSubjectLen - 3).trimEnd()}...`;
-
-            const commitMessage = [
-              truncatedSubject,
-              "",
-              `source: slack channel ${input.channel} thread ${input.threadTs}`,
-              `request: ${requestSummary}`,
-            ].join("\n");
+            const requestSummary = summarizeSlackWriteRequest(input.request);
+            const commitMessage = buildSlackWriteCommitMessage(input);
 
             const pushed = await commitBranchAndPush({
               dir: workspace.dir,
@@ -420,9 +410,22 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
             if (gistPublisher.enabled) {
               try {
                 await $`git -C ${workspace.dir} add -A`.quiet();
-                const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+                const patchResult = await runCommandWithCappedOutput({
+                  command: "git",
+                  args: ["diff", "--cached"],
+                  cwd: workspace.dir,
+                  maxStdoutBytes: GIST_PATCH_MAX_BYTES,
+                });
+                const patch = patchResult.stdout;
+                if (patchResult.stdoutTruncated) {
+                  return {
+                    outcome: "failure",
+                    responseText: `Generated patch is too large to publish as a gist. Split the request into smaller changes.\n\nRetry command: ${retryCommand}`,
+                    retryCommand,
+                  };
+                }
                 if (patch.trim().length > 0) {
-                  const requestSummary = summarizeWriteRequest(input.request);
+                  const requestSummary = summarizeSlackWriteRequest(input.request);
                   const gist = await gistPublisher.createPatchGist({
                     owner: input.owner,
                     repo: input.repo,
@@ -462,29 +465,8 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
 
         // Legacy path: direct push to target repo (when fork mode not available)
         const branchName = buildDeterministicBranchName(input);
-        const requestSummary = summarizeWriteRequest(input.request);
-        // Derive prefix from request content (same heuristic as mention handler)
-        const lower = requestSummary.toLowerCase();
-        let prefix: string;
-        if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
-          prefix = "fix";
-        } else if (/\brefactor\b/.test(lower)) {
-          prefix = "refactor";
-        } else {
-          prefix = "feat";
-        }
-        const commitSubject = `${prefix}: ${requestSummary}`;
-        const maxSubjectLen = 72;
-        const truncatedSubject = commitSubject.length <= maxSubjectLen
-          ? commitSubject
-          : `${commitSubject.slice(0, maxSubjectLen - 3).trimEnd()}...`;
-
-        const commitMessage = [
-          truncatedSubject,
-          "",
-          `source: slack channel ${input.channel} thread ${input.threadTs}`,
-          `request: ${requestSummary}`,
-        ].join("\n");
+        const requestSummary = summarizeSlackWriteRequest(input.request);
+        const commitMessage = buildSlackWriteCommitMessage(input);
 
         let pushed: { branchName: string; headSha: string };
         try {

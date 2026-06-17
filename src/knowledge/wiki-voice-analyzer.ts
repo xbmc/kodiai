@@ -7,18 +7,16 @@
  */
 
 import type { Logger } from "pino";
-import type { WikiPageRecord, WikiPageStore } from "./wiki-types.ts";
+import type { WikiPageRecord } from "./wiki-types.ts";
 import type {
   PageStyleDescription,
   StyleExemplar,
   VoiceAnalyzerOptions,
-  StyleCacheEntry,
 } from "./wiki-voice-types.ts";
-import type { VoiceValidationResult } from "./wiki-voice-types.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { generateWithVoicePreservation } from "./wiki-voice-validator.ts";
-import type { VoicePreservedSuggestion } from "./wiki-voice-validator.ts";
 
 /** Maximum token budget for style extraction input. */
 const STYLE_EXTRACTION_TOKEN_BUDGET = 3000;
@@ -558,10 +556,7 @@ export function createVoicePreservingPipeline(opts: {
       const exemplarSections = selectExemplarSections(pageChunks);
 
       // Step 4: Process each section
-      const results: import("./wiki-voice-types.ts").VoicePreservedUpdate[] = [];
-      let voiceMismatches = 0;
-
-      for (const section of sections) {
+      const sectionResults = await mapWithConcurrency(sections, 3, async (section) => {
         const prompt = buildVoicePreservingPrompt({
           styleDescription,
           exemplarSections,
@@ -584,18 +579,16 @@ export function createVoicePreservingPipeline(opts: {
           repo: opts.repo,
         });
 
-        if (preserved.voiceMismatchWarning) voiceMismatches++;
-
         // Drop suggestions that failed template check twice (empty suggestion signals failure)
         if (preserved.suggestion === "" && !preserved.templateCheckPassed) {
           logger.warn(
             { pageId, pageTitle, sectionHeading: section.sectionHeading },
             "Dropping section: template preservation failed after retry",
           );
-          continue;
+          return null;
         }
 
-        results.push({
+        return {
           pageId,
           pageTitle,
           sectionHeading: section.sectionHeading,
@@ -607,8 +600,10 @@ export function createVoicePreservingPipeline(opts: {
           headingCheckPassed: preserved.headingCheckPassed,
           formattingAdvisory: preserved.formattingAdvisory,
           sectionLengthAdvisory: preserved.sectionLengthAdvisory,
-        });
-      }
+        };
+      });
+      const results = sectionResults.filter((result) => result !== null);
+      const voiceMismatches = results.filter((result) => result.voiceMismatchWarning).length;
 
       logger.info(
         { pageId, pageTitle, sectionsProcessed: sections.length, voiceMismatches },

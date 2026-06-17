@@ -3,6 +3,7 @@ import type { Sql } from "../db/client.ts";
 import type { LearningMemoryRecord, LearningMemoryStore } from "./types.ts";
 import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 import { classifyFileLanguage } from "../execution/diff-analysis.ts";
+import { buildRepairCandidatePredicate } from "./repair-candidate-pagination.ts";
 
 /**
  * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
@@ -14,6 +15,8 @@ function float32ArrayToVectorString(arr: Float32Array): string {
   }
   return `[${parts.join(",")}]`;
 }
+
+const MAX_REPAIR_EMBEDDING_WRITE_BATCH_SIZE = 100;
 
 type MemoryRow = {
   id: number | string | bigint;
@@ -61,6 +64,11 @@ type RepairStateRow = {
 
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS = "learning_memories" as const satisfies EmbeddingRepairCorpus;
+const MEMORY_RECORD_COLUMNS = `
+  id, repo, owner, finding_id, review_id, source_repo, finding_text,
+  severity, category, file_path, language, outcome, NULL AS embedding,
+  embedding_model, embedding_dim, stale, created_at
+`;
 
 type RequiredLearningMemorySqlField =
   | "repo"
@@ -294,60 +302,49 @@ export function createLearningMemoryStore(opts: {
       excludeRepo: string;
       topK: number;
     }): Promise<{ memoryId: number; distance: number }[]> {
-      // Find repos for the same owner (up to 5 most active)
-      const repoRows = await sql`
-        SELECT repo, COUNT(*) AS cnt
-        FROM learning_memories
-        WHERE owner = ${params.owner} AND repo != ${params.excludeRepo} AND stale = false
-        GROUP BY repo
-        ORDER BY cnt DESC
-        LIMIT 5
-      `;
+      const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
+      try {
+        const rows = await sql`
+          WITH repo_counts AS (
+            SELECT repo, COUNT(*) AS cnt
+            FROM learning_memories
+            WHERE owner = ${params.owner}
+              AND repo != ${params.excludeRepo}
+              AND stale = false
+            GROUP BY repo
+            ORDER BY cnt DESC
+            LIMIT 5
+          ), active_repos AS (
+            SELECT repo, cnt, COUNT(*) OVER () AS repo_count
+            FROM repo_counts
+          )
+          SELECT candidate.memory_id, candidate.distance
+          FROM active_repos ar
+          CROSS JOIN LATERAL (
+            SELECT
+              m.id AS memory_id,
+              m.embedding <=> ${queryEmbeddingString}::vector AS distance
+            FROM learning_memories m
+            WHERE m.repo = ar.repo
+              AND m.stale = false
+            ORDER BY m.embedding <=> ${queryEmbeddingString}::vector
+            LIMIT GREATEST(1, CEIL(${params.topK}::numeric / NULLIF(ar.repo_count, 0)))::int
+          ) candidate
+          ORDER BY candidate.distance ASC
+          LIMIT ${params.topK}
+        `;
 
-      if (repoRows.length === 0) {
+        return rows.map((row) => ({
+          memoryId: Number(row.memory_id),
+          distance: Number(row.distance),
+        }));
+      } catch (err: unknown) {
+        logger.debug(
+          { err, owner: params.owner, excludeRepo: params.excludeRepo },
+          "Failed to retrieve memories from shared owner partition (fail-open)",
+        );
         return [];
       }
-
-      const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
-      const perRepoK = Math.max(1, Math.ceil(params.topK / repoRows.length));
-
-      // Query each repo and merge results
-      const allResults: { memoryId: number; distance: number }[] = [];
-
-      for (const repoRow of repoRows) {
-        try {
-          const rows = await sql`
-            SELECT m.id AS memory_id, m.embedding <=> ${queryEmbeddingString}::vector AS distance
-            FROM learning_memories m
-            WHERE m.repo = ${repoRow.repo} AND m.stale = false
-            ORDER BY m.embedding <=> ${queryEmbeddingString}::vector
-            LIMIT ${perRepoK}
-          `;
-
-          for (const row of rows) {
-            allResults.push({
-              memoryId: Number(row.memory_id),
-              distance: Number(row.distance),
-            });
-          }
-        } catch (err: unknown) {
-          logger.debug(
-            { err, repo: repoRow.repo },
-            "Failed to retrieve memories from shared repo partition (fail-open)",
-          );
-        }
-      }
-
-      // Dedupe by memory_id, sort by distance, take topK
-      const seen = new Set<number>();
-      const deduped = allResults.filter((r) => {
-        if (seen.has(r.memoryId)) return false;
-        seen.add(r.memoryId);
-        return true;
-      });
-
-      deduped.sort((a, b) => a.distance - b.distance);
-      return deduped.slice(0, params.topK);
     },
 
     searchByFullText: async (params: {
@@ -375,7 +372,10 @@ export function createLearningMemoryStore(opts: {
     },
 
     async getMemoryRecord(memoryId: number): Promise<LearningMemoryRecord | null> {
-      const rows = await sql`SELECT * FROM learning_memories WHERE id = ${memoryId}`;
+      const rows = await sql.unsafe(
+        `SELECT ${MEMORY_RECORD_COLUMNS} FROM learning_memories WHERE id = $1`,
+        [memoryId],
+      );
       if (rows.length === 0) return null;
       return rowToRecord(rows[0] as unknown as MemoryRow);
     },
@@ -385,7 +385,7 @@ export function createLearningMemoryStore(opts: {
       if (ids.length === 0) return new Map();
 
       const rows = await sql.unsafe(
-        "SELECT * FROM learning_memories WHERE id = ANY($1::bigint[])",
+        `SELECT ${MEMORY_RECORD_COLUMNS} FROM learning_memories WHERE id = ANY($1::bigint[])`,
         [ids],
       );
       const records = new Map<number, LearningMemoryRecord>();
@@ -418,7 +418,7 @@ export function createLearningMemoryStore(opts: {
       }
 
       const rows = await sql`
-        SELECT id, finding_text, severity, category, file_path, language, embedding, embedding_model, stale
+        SELECT id, finding_text, severity, category, file_path, language, embedding_model, stale
         FROM learning_memories
         WHERE embedding IS NULL
            OR stale = true
@@ -433,7 +433,70 @@ export function createLearningMemoryStore(opts: {
         category: row.category as string,
         file_path: row.file_path as string,
         language: (row.language as string | null) ?? null,
-        embedding: row.embedding,
+        embedding: null,
+        embedding_model: (row.embedding_model as string | null) ?? null,
+        stale: Boolean(row.stale),
+      }));
+    },
+
+    async countRepairCandidates(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      targetModel: string;
+    }): Promise<number> {
+      if (input.corpus !== REPAIR_CORPUS) {
+        throw new Error(`Unsupported repair corpus for LearningMemoryStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        staleColumn: "stale",
+      });
+      const rows = await sql.unsafe(
+        `
+          SELECT COUNT(*)::int AS count
+          FROM learning_memories
+          WHERE ${predicate.text}
+        `,
+        predicate.params,
+      );
+      return Number(rows[0]?.count ?? 0);
+    },
+
+    async listRepairCandidateBatch(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      limit: number;
+      targetModel: string;
+    }): Promise<RepairCandidateRow[]> {
+      if (input.corpus !== REPAIR_CORPUS) {
+        throw new Error(`Unsupported repair corpus for LearningMemoryStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        staleColumn: "stale",
+      });
+      const params = [...predicate.params, input.limit];
+      const rows = await sql.unsafe(
+        `
+          SELECT id, finding_text, severity, category, file_path, language, embedding_model, stale
+          FROM learning_memories
+          WHERE ${predicate.text}
+          ORDER BY id ASC
+          LIMIT $${params.length}::int
+        `,
+        params,
+      );
+      return rows.map((row) => ({
+        id: Number(row.id),
+        corpus: REPAIR_CORPUS,
+        finding_text: row.finding_text as string,
+        severity: row.severity as string,
+        category: row.category as string,
+        file_path: row.file_path as string,
+        language: (row.language as string | null) ?? null,
+        embedding: null,
         embedding_model: (row.embedding_model as string | null) ?? null,
         stale: Boolean(row.stale),
       }));
@@ -507,24 +570,27 @@ export function createLearningMemoryStore(opts: {
       }
       if (payload.embeddings.length === 0) return;
 
-      const ids = payload.embeddings.map((item) => item.row_id);
-      const vectors = payload.embeddings.map((item) => float32ArrayToVectorString(item.embedding));
+      for (let i = 0; i < payload.embeddings.length; i += MAX_REPAIR_EMBEDDING_WRITE_BATCH_SIZE) {
+        const batch = payload.embeddings.slice(i, i + MAX_REPAIR_EMBEDDING_WRITE_BATCH_SIZE);
+        const ids = batch.map((item) => item.row_id);
+        const vectors = batch.map((item) => float32ArrayToVectorString(item.embedding));
 
-      await sql.begin(async (tx) => {
-        await (tx as unknown as Sql).unsafe(
-          `
-            UPDATE learning_memories AS target
-            SET embedding = updates.embedding::vector,
-                embedding_model = $2,
-                stale = false
-            FROM (
-              SELECT UNNEST($1::bigint[]) AS row_id, UNNEST($3::text[]) AS embedding
-            ) AS updates
-            WHERE target.id = updates.row_id
-          `,
-          [ids, payload.target_model, vectors],
-        );
-      });
+        await sql.begin(async (tx) => {
+          await (tx as unknown as Sql).unsafe(
+            `
+              UPDATE learning_memories AS target
+              SET embedding = updates.embedding::vector,
+                  embedding_model = $2,
+                  stale = false
+              FROM (
+                SELECT UNNEST($1::bigint[]) AS row_id, UNNEST($3::text[]) AS embedding
+              ) AS updates
+              WHERE target.id = updates.row_id
+            `,
+            [ids, payload.target_model, vectors],
+          );
+        });
+      }
     },
 
     close(): void {

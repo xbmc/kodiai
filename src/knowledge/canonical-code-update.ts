@@ -3,6 +3,7 @@ import { chunkCanonicalCodeFile, type CanonicalChunk, type CanonicalChunkerObser
 import type { CanonicalCodeStore } from "./canonical-code-types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import type { EmbeddingProvider } from "./types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 export type CanonicalCodeUpdateFile = {
   filePath: string;
@@ -93,7 +94,7 @@ export async function updateCanonicalCodeSnapshot(params: {
     if (chunkResult.observability.excluded) {
       filesExcluded += 1;
       fileResults.push(fileResult);
-      logger.info(
+      logger.debug(
         {
           repo: request.repo,
           owner: request.owner,
@@ -131,7 +132,7 @@ export async function updateCanonicalCodeSnapshot(params: {
       });
       fileResult.removed += removedIdentities.length;
       removed += removedIdentities.length;
-      logger.info(
+      logger.debug(
         {
           repo: request.repo,
           owner: request.owner,
@@ -163,6 +164,12 @@ export async function updateCanonicalCodeSnapshot(params: {
       texts: changedChunks.map((chunk) => chunk.chunkText),
       embeddingProvider,
     });
+
+    const writeRows: Array<{
+      chunk: CanonicalChunk;
+      embeddingModel: string;
+      embedding: Float32Array;
+    }> = [];
 
     for (const [index, embeddingResult] of embeddingResults.entries()) {
       const chunk = changedChunks[index]!;
@@ -205,7 +212,11 @@ export async function updateCanonicalCodeSnapshot(params: {
         continue;
       }
 
-      const outcome = await store.upsertChunk(
+      writeRows.push({ chunk, embeddingModel: embeddingResult.model, embedding: embeddingResult.embedding });
+    }
+
+    const outcomes = await mapWithConcurrency(writeRows, 8, async ({ chunk, embeddingModel, embedding }) =>
+      store.upsertChunk(
         {
           repo: request.repo,
           owner: request.owner,
@@ -219,11 +230,12 @@ export async function updateCanonicalCodeSnapshot(params: {
           symbolName: chunk.symbolName,
           chunkText: chunk.chunkText,
           contentHash: chunk.contentHash,
-          embeddingModel: embeddingResult.model,
+          embeddingModel,
         },
-        embeddingResult.embedding,
-      );
+        embedding,
+      ));
 
+    for (const outcome of outcomes) {
       if (outcome === "dedup") {
         unchanged += 1;
         fileResult.unchanged += 1;
@@ -234,7 +246,7 @@ export async function updateCanonicalCodeSnapshot(params: {
     }
 
     fileResults.push(fileResult);
-    logger.info(
+    logger.debug(
       {
         repo: request.repo,
         owner: request.owner,

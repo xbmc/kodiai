@@ -9,6 +9,7 @@
  */
 
 import type { DepBumpContext } from "./dep-bump-detector.ts";
+import { maxAdvisorySeverity } from "./advisory-severity.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,31 +19,6 @@ export type MergeConfidence = {
   level: MergeConfidenceLevel;
   rationale: string[];
 };
-
-// ─── Severity Ordering ────────────────────────────────────────────────────────
-
-const SEVERITY_ORDER: Record<string, number> = {
-  critical: 4,
-  high: 3,
-  medium: 2,
-  low: 1,
-  unknown: 0,
-};
-
-function getMaxAdvisorySeverity(
-  advisories: Array<{ severity: string }>,
-): string {
-  let max = "unknown";
-  let maxOrder = 0;
-  for (const adv of advisories) {
-    const order = SEVERITY_ORDER[adv.severity] ?? 0;
-    if (order > maxOrder) {
-      maxOrder = order;
-      max = adv.severity;
-    }
-  }
-  return max;
-}
 
 // ─── Downgrade Helper ─────────────────────────────────────────────────────────
 
@@ -89,7 +65,7 @@ export function computeMergeConfidence(ctx: DepBumpContext): MergeConfidence {
   } else if (security.isSecurityBump) {
     rationale.push("Security-motivated bump (patches known vulnerability)");
   } else if (security.advisories.length > 0) {
-    const maxSev = getMaxAdvisorySeverity(security.advisories);
+    const maxSev = maxAdvisorySeverity(security.advisories);
     if (maxSev === "critical" || maxSev === "high") {
       level = "low";
       rationale.push(`${maxSev}-severity advisory affects this package`);

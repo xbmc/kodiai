@@ -1,6 +1,16 @@
+type JsonbBatchValue =
+  | null
+  | string
+  | number
+  | boolean
+  | Date
+  | readonly JsonbBatchValue[]
+  | { toJSON(): unknown }
+  | { readonly [prop: string | number]: undefined | JsonbBatchValue | ((...args: never[]) => unknown) };
+
 export type JsonbRecordBatch<T> = {
   rows: readonly T[];
-  json: string;
+  json: readonly JsonbBatchValue[];
 };
 
 export type JsonbRecordsetColumn = readonly [name: string, type: string];
@@ -74,9 +84,10 @@ export async function executeJsonbRecordBatches<T, R>(
   const results: R[] = [];
   for (let i = 0; i < rows.length; i += normalizedBatchSize) {
     const batchRows = rows.slice(i, i + normalizedBatchSize);
+    const jsonRows = batchRows.map((row) => rowToRecord(row) as JsonbBatchValue);
     const batch: JsonbRecordBatch<T> = {
       rows: batchRows,
-      json: JSON.stringify(batchRows.map((row) => rowToRecord(row))),
+      json: jsonRows,
     };
     results.push(await executeBatch(batch));
   }

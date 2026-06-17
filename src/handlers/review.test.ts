@@ -3025,7 +3025,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(issueCommentUpdateCount).toBe(2);
     expect(createReviewCount).toBe(0);
     expect(updateReviewCount).toBe(0);
-    expect(listReviewsCallCount).toBe(0);
+    expect(listReviewsCallCount).toBe(1);
   });
 
   test("auto-approve includes dep-bump merge confidence inside the shared approval body", async () => {

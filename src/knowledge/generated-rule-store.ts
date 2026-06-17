@@ -87,6 +87,13 @@ type GeneratedRuleRow = {
   retired_at: string | null;
 };
 
+function generatedRuleListColumns(sql: Sql) {
+  return sql`
+    id, repo, title, rule_text, status, origin, signal_score, member_count,
+    NULL AS cluster_centroid, created_at, updated_at, activated_at, retired_at
+  `;
+}
+
 function rowToRecord(row: GeneratedRuleRow): GeneratedRuleRecord {
   return {
     id: Number(row.id),
@@ -162,13 +169,15 @@ export function createGeneratedRuleStore(opts: {
       const limit = opts?.limit ?? 50;
       const rows = opts?.status
         ? await sql`
-            SELECT * FROM generated_rules
+            SELECT ${generatedRuleListColumns(sql)}
+            FROM generated_rules
             WHERE repo = ${repo} AND status = ${opts.status}
             ORDER BY signal_score DESC, member_count DESC, created_at DESC
             LIMIT ${limit}
           `
         : await sql`
-            SELECT * FROM generated_rules
+            SELECT ${generatedRuleListColumns(sql)}
+            FROM generated_rules
             WHERE repo = ${repo}
             ORDER BY
               CASE status
@@ -187,7 +196,8 @@ export function createGeneratedRuleStore(opts: {
 
     async getActiveRulesForRepo(repo: string, limit = 10): Promise<GeneratedRuleRecord[]> {
       const rows = await sql`
-        SELECT * FROM generated_rules
+        SELECT ${generatedRuleListColumns(sql)}
+        FROM generated_rules
         WHERE repo = ${repo} AND status = 'active'
         ORDER BY signal_score DESC, member_count DESC, activated_at DESC, created_at DESC
         LIMIT ${limit}

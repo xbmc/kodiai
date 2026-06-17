@@ -203,8 +203,8 @@ describe("createEventRouter", () => {
     expect(failureLog?.data?.deliveryId).toBe("delivery-123");
     expect(failureLog?.data?.event).toBe("pull_request");
     expect(failureLog?.data?.action).toBe("opened");
-    expect(failureLog?.data?.reason).toBeInstanceOf(Error);
-    expect((failureLog?.data?.reason as Error | undefined)?.message).toBe(
+    expect(failureLog?.data?.err).toBeInstanceOf(Error);
+    expect((failureLog?.data?.err as Error | undefined)?.message).toBe(
       "specific handler exploded",
     );
 

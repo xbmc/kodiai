@@ -4,8 +4,8 @@ import {
   generatePrBody,
   generatePrTitle,
   parseWriteIntent,
-  summarizeWriteRequest,
 } from "./mention-write-formatters.ts";
+import { summarizeWriteRequest } from "../lib/write-request-formatting.ts";
 
 describe("parseWriteIntent", () => {
   test("detects explicit write prefixes", () => {

@@ -120,6 +120,37 @@ describe("production log taxonomy", () => {
     });
   });
 
+  test("classifies JSONB recordset batch failures as app-actionable persistence regressions", () => {
+    const report = buildBaselineWindowFromRows({
+      window: "last12h",
+      rows: [
+        row({
+          msg: "Feedback sync reaction persistence failed; continuing",
+          parsedLog: {
+            msg: "Feedback sync reaction persistence failed; continuing",
+            level: 40,
+            repo: "xbmc/xbmc",
+            err: {
+              type: "PostgresError",
+              message: "cannot call jsonb_to_recordset on a non-array",
+            },
+          },
+        }),
+      ],
+      workspaceCount: 1,
+    });
+
+    expect(classifyProductionLogRow(row({
+      msg: "Feedback sync reaction persistence failed; continuing",
+      parsedLog: {
+        msg: "Feedback sync reaction persistence failed; continuing",
+        err: { message: "cannot call jsonb_to_recordset on a non-array" },
+      },
+    }))).toBe("jsonb-batch.recordset-non-array");
+    expect(count(report, "jsonb-batch.recordset-non-array")).toBe(1);
+    expect(findProductionLogIssueClass(report, "jsonb-batch.recordset-non-array").classification).toBe("app-actionable");
+  });
+
   test("classifies structured S05 timeout outcomes separately from ambiguous timeout noise", () => {
     const bounded = row({
       msg: "Review budget classification",
@@ -291,7 +322,7 @@ describe("production log taxonomy", () => {
     expect(emptyReport.windows.last12h.source.availability).toBe("missing");
     expect(emptyReport.windows.last12h.totalRowCount).toBe(0);
     expect(emptyReport.windows.last7d.source.availability).toBe("missing");
-    expect(emptyReport.windows.last7d.issueClasses).toHaveLength(12);
+    expect(emptyReport.windows.last7d.issueClasses).toHaveLength(13);
     expect(emptyReport.windows.last7d.issueClasses.map((issueClass) => issueClass.id)).toEqual(PRODUCTION_LOG_ISSUE_CLASS_IDS);
   });
 

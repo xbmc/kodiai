@@ -50,6 +50,39 @@ export const APPLICATION_SECRET_NAMES: readonly string[] = [
 ] as const;
 
 export const DEFAULT_ACA_REQUEST_TIMEOUT_MS = 30_000;
+const AZURE_TOKEN_CACHE_REFRESH_MARGIN_MS = 60_000;
+const AZURE_TOKEN_CACHE_DEFAULT_TTL_MS = 5 * 60_000;
+const MAX_DIAGNOSTICS_TAIL_BYTES = 256 * 1024;
+
+type AzureAccessToken = {
+  token: string;
+  subscriptionId: string;
+  expiresAtMs: number;
+};
+
+let cachedAzureAccessToken: AzureAccessToken | null = null;
+let pendingAzureAccessToken: Promise<AzureAccessToken> | null = null;
+
+function parseAzureTokenExpiresAtMs(parsed: { expires_on?: string | number; expires_in?: string | number }): number {
+  const expiresOnSeconds = Number(parsed.expires_on);
+  if (Number.isFinite(expiresOnSeconds) && expiresOnSeconds > 0) {
+    return expiresOnSeconds * 1000;
+  }
+  const expiresInSeconds = Number(parsed.expires_in);
+  if (Number.isFinite(expiresInSeconds) && expiresInSeconds > 0) {
+    return Date.now() + expiresInSeconds * 1000;
+  }
+  return Date.now() + AZURE_TOKEN_CACHE_DEFAULT_TTL_MS;
+}
+
+function isUsableAzureToken(token: AzureAccessToken): boolean {
+  return token.expiresAtMs - Date.now() > AZURE_TOKEN_CACHE_REFRESH_MARGIN_MS;
+}
+
+export function resetAzureAccessTokenCacheForTests(): void {
+  cachedAzureAccessToken = null;
+  pendingAzureAccessToken = null;
+}
 
 // ---------------------------------------------------------------------------
 // Spec builder
@@ -179,11 +212,9 @@ async function fetchManagedIdentityToken(url: string, identityHeader: string): P
  * In ACA (production): uses the managed identity IMDS endpoint.
  * Outside ACA (local dev / CI): falls back to `az account get-access-token`.
  */
-async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: string }> {
-  // Subscription ID for rg-kodiai
-  const subscriptionId = "ca35c409-cc4f-4072-ac43-c50a426f62a4";
-  // Client ID for user-assigned managed identity (id-kodiai)
-  const clientId = "2956d96a-b618-498d-a021-6bb3196fdcdf";
+async function loadAzureAccessToken(): Promise<AzureAccessToken> {
+  const subscriptionId = process.env["AZURE_SUBSCRIPTION_ID"] ?? "ca35c409-cc4f-4072-ac43-c50a426f62a4";
+  const clientId = process.env["AZURE_MANAGED_IDENTITY_CLIENT_ID"] ?? "2956d96a-b618-498d-a021-6bb3196fdcdf";
 
   // ACA injects IDENTITY_ENDPOINT + IDENTITY_HEADER for managed identity auth
   // (different from VM IMDS at 169.254.169.254 — ACA uses a sidecar proxy)
@@ -196,19 +227,19 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
     if (!response.ok) {
       throw new Error(`getAzureAccessToken: MSI endpoint returned ${response.status}: ${body.slice(0, 300)}`);
     }
-    const parsed = JSON.parse(body) as { access_token?: string };
+    const parsed = JSON.parse(body) as { access_token?: string; expires_on?: string | number; expires_in?: string | number };
     const token = parsed.access_token ?? "";
     if (!token) {
       throw new Error(`getAzureAccessToken: MSI endpoint returned no access_token: ${body.slice(0, 300)}`);
     }
-    return { token, subscriptionId };
+    return { token, subscriptionId, expiresAtMs: parseAzureTokenExpiresAtMs(parsed) };
   }
 
   // Fallback: az CLI (local dev only — not available in orchestrator container)
   try {
     const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
     const token = tokenResult.text().trim();
-    if (token) return { token, subscriptionId };
+    if (token) return { token, subscriptionId, expiresAtMs: Date.now() + AZURE_TOKEN_CACHE_DEFAULT_TTL_MS };
   } catch {
     // az not available
   }
@@ -216,6 +247,23 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
   throw new Error(
     "getAzureAccessToken: IDENTITY_ENDPOINT not set (managed identity not configured?) and az CLI not available",
   );
+}
+
+async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: string }> {
+  if (cachedAzureAccessToken && isUsableAzureToken(cachedAzureAccessToken)) {
+    return cachedAzureAccessToken;
+  }
+  if (!pendingAzureAccessToken) {
+    pendingAzureAccessToken = loadAzureAccessToken()
+      .then((token) => {
+        cachedAzureAccessToken = token;
+        return token;
+      })
+      .finally(() => {
+        pendingAzureAccessToken = null;
+      });
+  }
+  return await pendingAzureAccessToken;
 }
 
 /**
@@ -547,5 +595,6 @@ export async function readJobDiagnostics(workspaceDir: string): Promise<string |
   const diagnosticsPath = join(workspaceDir, "agent-diagnostics.log");
   const file = Bun.file(diagnosticsPath);
   if (!(await file.exists())) return undefined;
-  return await file.text();
+  const startOffset = Math.max(0, file.size - MAX_DIAGNOSTICS_TAIL_BYTES);
+  return await file.slice(startOffset).text();
 }

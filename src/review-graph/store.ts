@@ -258,7 +258,21 @@ export function createReviewGraphStore(opts: {
           nodes_written = EXCLUDED.nodes_written,
           edges_written = EXCLUDED.edges_written,
           updated_at = now()
-        RETURNING *
+        RETURNING
+          id,
+          repo,
+          workspace_key,
+          commit_sha,
+          status,
+          started_at,
+          completed_at,
+          last_error,
+          files_indexed,
+          files_failed,
+          nodes_written,
+          edges_written,
+          created_at,
+          updated_at
       `;
 
       return mapBuildRow(rows[0] as unknown as BuildRow);
@@ -296,7 +310,17 @@ export function createReviewGraphStore(opts: {
             indexed_at = now(),
             build_id = EXCLUDED.build_id,
             updated_at = now()
-          RETURNING *
+          RETURNING
+            id,
+            repo,
+            workspace_key,
+            path,
+            language,
+            content_hash,
+            indexed_at,
+            build_id,
+            created_at,
+            updated_at
         `;
 
         const file = mapFileRow(fileRows[0] as unknown as FileRow);
@@ -461,7 +485,8 @@ export function createReviewGraphStore(opts: {
 
     async getFile(repo: string, workspaceKey: string, path: string): Promise<ReviewGraphFileRecord | null> {
       const rows = await sql`
-        SELECT *
+        SELECT id, repo, workspace_key, path, language, content_hash, indexed_at,
+               build_id, created_at, updated_at
         FROM review_graph_files
         WHERE repo = ${repo}
           AND workspace_key = ${workspaceKey}
@@ -474,7 +499,9 @@ export function createReviewGraphStore(opts: {
 
     async listNodesForFile(fileId: number): Promise<ReviewGraphNodeRecord[]> {
       const rows = await sql`
-        SELECT *
+        SELECT id, repo, workspace_key, file_id, build_id, node_kind, stable_key,
+               symbol_name, qualified_name, language, span_start_line, span_start_col,
+               span_end_line, span_end_col, signature, attributes, confidence, created_at
         FROM review_graph_nodes
         WHERE file_id = ${fileId}
         ORDER BY id ASC
@@ -484,7 +511,8 @@ export function createReviewGraphStore(opts: {
 
     async listEdgesForFile(fileId: number): Promise<ReviewGraphEdgeRecord[]> {
       const rows = await sql`
-        SELECT *
+        SELECT id, repo, workspace_key, file_id, build_id, edge_kind,
+               source_node_id, target_node_id, confidence, attributes, created_at
         FROM review_graph_edges
         WHERE file_id = ${fileId}
         ORDER BY id ASC
@@ -496,21 +524,25 @@ export function createReviewGraphStore(opts: {
       return await sql.begin("isolation level repeatable read read only", async (tx) => {
         const scoped = tx as unknown as Sql;
         const fileRowsQuery = scoped`
-          SELECT *
+          SELECT id, repo, workspace_key, path, language, content_hash, indexed_at,
+                 build_id, created_at, updated_at
           FROM review_graph_files
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
           ORDER BY path ASC
         `;
         const nodeRowsQuery = scoped`
-          SELECT *
+          SELECT id, repo, workspace_key, file_id, build_id, node_kind, stable_key,
+                 symbol_name, qualified_name, language, span_start_line, span_start_col,
+                 span_end_line, span_end_col, signature, attributes, confidence, created_at
           FROM review_graph_nodes
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
           ORDER BY file_id ASC, id ASC
         `;
         const edgeRowsQuery = scoped`
-          SELECT *
+          SELECT id, repo, workspace_key, file_id, build_id, edge_kind,
+                 source_node_id, target_node_id, confidence, attributes, created_at
           FROM review_graph_edges
           WHERE repo = ${repo}
             AND workspace_key = ${workspaceKey}
@@ -533,7 +565,9 @@ export function createReviewGraphStore(opts: {
 
     async getBuild(repo: string, workspaceKey: string): Promise<ReviewGraphBuildRecord | null> {
       const rows = await sql`
-        SELECT *
+        SELECT id, repo, workspace_key, commit_sha, status, started_at, completed_at,
+               last_error, files_indexed, files_failed, nodes_written, edges_written,
+               created_at, updated_at
         FROM review_graph_builds
         WHERE repo = ${repo}
           AND workspace_key = ${workspaceKey}

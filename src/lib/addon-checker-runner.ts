@@ -1,5 +1,5 @@
-import { $ } from "bun";
 import { withTimeBudget } from "./usage-analyzer.ts";
+import { runCommandWithCappedOutput } from "./capped-process.ts";
 
 /**
  * The 10 known Kodi release branch names used for --branch validation.
@@ -32,6 +32,7 @@ export type AddonCheckerResult = {
 type SubprocessResult = {
   exitCode: number;
   stdout: string;
+  timedOut?: boolean;
   error?: { code?: string };
 };
 
@@ -87,20 +88,27 @@ export async function runAddonChecker(opts: {
   const runSubprocess: RunSubprocess =
     __runSubprocessForTests ??
     (async (p: { addonDir: string; branch: string }) => {
-      const result = await $`kodi-addon-checker --branch ${p.branch} ${p.addonDir}`
-        .quiet()
-        .nothrow();
+      const result = await runCommandWithCappedOutput({
+        command: "kodi-addon-checker",
+        args: ["--branch", p.branch, p.addonDir],
+        timeoutMs: timeBudgetMs,
+        maxStdoutBytes: 256 * 1024,
+        maxStderrBytes: 64 * 1024,
+      });
       return {
         exitCode: result.exitCode,
-        stdout: result.stdout?.toString() ?? "",
+        stdout: result.stdout,
+        timedOut: result.timedOut,
       };
     });
 
   try {
     const subprocessPromise = runSubprocess({ addonDir, branch });
-    const result = await withTimeBudget(subprocessPromise, timeBudgetMs);
+    const result = __runSubprocessForTests
+      ? await withTimeBudget(subprocessPromise, timeBudgetMs)
+      : await subprocessPromise;
 
-    if (result === null) {
+    if (result === null || result.timedOut) {
       return { findings: [], timedOut: true, toolNotFound: false };
     }
 

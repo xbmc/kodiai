@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 import { extractBreakingChanges } from "./dep-bump-enrichment.ts";
 import { parseSemver } from "./dep-bump-detector.ts";
 
+const HASH_VERIFICATION_MAX_BYTES = 50 * 1024 * 1024;
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type VersionFileDiff = {
@@ -530,10 +532,28 @@ export async function verifyHash(params: {
       };
     }
 
-    const buffer = await response.arrayBuffer();
-    const actualHash = createHash("sha512")
-      .update(Buffer.from(buffer))
-      .digest("hex");
+    const contentLength = Number(response.headers.get("content-length") ?? NaN);
+    if (Number.isFinite(contentLength) && contentLength > HASH_VERIFICATION_MAX_BYTES) {
+      return {
+        status: "unavailable",
+        detail: `Upstream tarball exceeds hash verification limit (${HASH_VERIFICATION_MAX_BYTES} bytes)`,
+      };
+    }
+
+    const hashResult = await hashResponseSha512(response, HASH_VERIFICATION_MAX_BYTES);
+    if (hashResult.unavailable) {
+      return {
+        status: "unavailable",
+        detail: "Could not stream upstream tarball for hash verification",
+      };
+    }
+    if (hashResult.tooLarge) {
+      return {
+        status: "unavailable",
+        detail: `Upstream tarball exceeds hash verification limit (${HASH_VERIFICATION_MAX_BYTES} bytes)`,
+      };
+    }
+    const actualHash = hashResult.hash;
 
     if (actualHash === expectedSha512) {
       return {
@@ -556,6 +576,43 @@ export async function verifyHash(params: {
       detail: "Could not fetch upstream tarball for hash verification",
     };
   }
+}
+
+async function hashResponseSha512(
+  response: Response,
+  maxBytes: number,
+): Promise<
+  | { hash: string; tooLarge: false; unavailable: false }
+  | { hash: null; tooLarge: true; unavailable: false }
+  | { hash: null; tooLarge: false; unavailable: true }
+> {
+  if (!response.body) {
+    return { hash: null, tooLarge: false, unavailable: true };
+  }
+
+  const reader = response.body.getReader();
+  const hash = createHash("sha512");
+  let bytesRead = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { hash: null, tooLarge: true, unavailable: false };
+      }
+      hash.update(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return {
+    hash: hash.digest("hex"),
+    tooLarge: false,
+    unavailable: false,
+  };
 }
 
 // ─── Patch Change Detection ─────────────────────────────────────────────────

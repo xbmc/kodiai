@@ -15,6 +15,16 @@ const mockLogger = {
   level: "silent",
 } as unknown as import("pino").Logger;
 
+function createMockSql() {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ query: strings.join("?"), values });
+    return Promise.resolve([]);
+  }) as unknown as Sql & { calls: typeof calls };
+  sql.calls = calls;
+  return sql;
+}
+
 describe("normalizeSafeInteger", () => {
   test("rejects bigint values before precision-losing Number conversion", () => {
     expect(() => normalizeSafeInteger(9007199254740993n, "test.bigint_id")).toThrow(
@@ -140,6 +150,40 @@ describe("prepareLearningMemoryRecordForSql", () => {
     await expect(
       store.writeMemory(makeRecord({ repo: undefined as unknown as string }), makeEmbedding(9)),
     ).rejects.toThrow("LearningMemoryRecord.repo is undefined before SQL binding");
+  });
+});
+
+describe("LearningMemoryStore query shapes", () => {
+  test("retrieveMemoriesForOwner uses one lateral per-repo vector query instead of per-repo round trips", async () => {
+    const mockSql = createMockSql();
+    const store = createLearningMemoryStore({ sql: mockSql, logger: mockLogger });
+
+    await store.retrieveMemoriesForOwner({
+      queryEmbedding: makeEmbedding(77),
+      owner: "owner",
+      excludeRepo: "owner/repo-a",
+      topK: 8,
+    });
+
+    expect(mockSql.calls).toHaveLength(1);
+    expect(mockSql.calls[0]!.query).toContain("CROSS JOIN LATERAL");
+    expect(mockSql.calls[0]!.query).toContain("active_repos");
+  });
+
+  test("retrieveMemoriesForOwner fails open when the shared vector query fails", async () => {
+    const sql = (() => {
+      throw new Error("vector index unavailable");
+    }) as unknown as Sql;
+    const store = createLearningMemoryStore({ sql, logger: mockLogger });
+
+    const result = await store.retrieveMemoriesForOwner({
+      queryEmbedding: makeEmbedding(78),
+      owner: "owner",
+      excludeRepo: "owner/repo-a",
+      topK: 8,
+    });
+
+    expect(result).toEqual([]);
   });
 });
 

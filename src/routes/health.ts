@@ -8,6 +8,7 @@ interface HealthRouteDeps {
   logger: Logger;
   sql: Sql;
   readinessDependencyTimeoutMs?: number;
+  readinessDependencyCacheTtlMs?: number;
 }
 
 type GitHubConnectivityResult =
@@ -15,6 +16,8 @@ type GitHubConnectivityResult =
   | { kind: "unreachable" }
   | { kind: "timeout" }
   | { kind: "error"; err: unknown };
+
+const DEFAULT_READINESS_DEPENDENCY_CACHE_TTL_MS = 5_000;
 
 function toReadinessDependencyIssueFields(err: unknown): {
   dependencyIssueName: string;
@@ -61,8 +64,39 @@ async function checkGitHubConnectivityWithTimeout(
 }
 
 export function createHealthRoutes(deps: HealthRouteDeps): Hono {
-  const { githubApp, logger, readinessDependencyTimeoutMs = 1_000 } = deps;
+  const {
+    githubApp,
+    logger,
+    readinessDependencyTimeoutMs = 1_000,
+    readinessDependencyCacheTtlMs = DEFAULT_READINESS_DEPENDENCY_CACHE_TTL_MS,
+  } = deps;
   const app = new Hono();
+  let cachedGitHubConnectivity:
+    | { result: GitHubConnectivityResult; expiresAt: number }
+    | null = null;
+  let inFlightGitHubConnectivity: Promise<GitHubConnectivityResult> | null = null;
+
+  async function getGitHubConnectivity(): Promise<GitHubConnectivityResult> {
+    const now = Date.now();
+    if (cachedGitHubConnectivity && cachedGitHubConnectivity.expiresAt > now) {
+      return cachedGitHubConnectivity.result;
+    }
+    if (!inFlightGitHubConnectivity) {
+      inFlightGitHubConnectivity = checkGitHubConnectivityWithTimeout(
+        githubApp,
+        readinessDependencyTimeoutMs,
+      ).then((result) => {
+        cachedGitHubConnectivity = {
+          result,
+          expiresAt: Date.now() + readinessDependencyCacheTtlMs,
+        };
+        return result;
+      }).finally(() => {
+        inFlightGitHubConnectivity = null;
+      });
+    }
+    return inFlightGitHubConnectivity;
+  }
 
   // Liveness probe: process-only. Dependency checks belong in readiness/deep health
   // so transient PostgreSQL or GitHub latency does not make ACA restart a healthy process.
@@ -75,10 +109,7 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
   // checks are bounded and fail open as degraded so transient GitHub latency does
   // not remove healthy replicas from service.
   app.get("/readiness", async (c) => {
-    const githubConnectivity = await checkGitHubConnectivityWithTimeout(
-      githubApp,
-      readinessDependencyTimeoutMs,
-    );
+    const githubConnectivity = await getGitHubConnectivity();
 
     switch (githubConnectivity.kind) {
       case "connected":

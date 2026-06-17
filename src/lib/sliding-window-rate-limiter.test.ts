@@ -43,7 +43,7 @@ describe("createSlidingWindowRateLimiter", () => {
     expect(limiter.isLimited("a")).toBe(true);
   });
 
-  test("prunes stale keys before falling back to oldest-key eviction", () => {
+  test("prunes stale keys without evicting active keys", () => {
     let now = 1_000;
     const limiter = createSlidingWindowRateLimiter(
       { max: 1, windowMs: 100, maxKeys: 2, now: () => now },
@@ -58,6 +58,25 @@ describe("createSlidingWindowRateLimiter", () => {
 
     expect(limiter.isLimited("fresh-a")).toBe(true);
     expect(limiter.isLimited("fresh-b")).toBe(true);
+  });
+
+  test("collapses key spray into an overflow bucket instead of resetting active keys", () => {
+    let now = 1_000;
+    const limiter = createSlidingWindowRateLimiter(
+      { max: 2, windowMs: 1_000, maxKeys: 2, now: () => now },
+      { max: 10, windowMs: 60_000, maxKeys: 10 },
+    );
+
+    expect(limiter.isLimited("active")).toBe(false);
+    expect(limiter.isLimited("second")).toBe(false);
+    expect(limiter.isLimited("spray-1")).toBe(false);
+    expect(limiter.isLimited("spray-2")).toBe(false);
+    expect(limiter.isLimited("spray-3")).toBe(true);
+    expect(limiter.isLimited("active")).toBe(false);
+    expect(limiter.isLimited("active")).toBe(true);
+
+    now = 2_001;
+    expect(limiter.isLimited("spray-4")).toBe(false);
   });
 });
 
@@ -84,13 +103,19 @@ describe("createNamedRateLimiters", () => {
 });
 
 describe("requestSourceKey", () => {
-  test("uses proxy/client headers instead of collapsing all callers into one key", () => {
+  test("collapses proxy/client headers unless explicitly trusted", () => {
+    expect(requestSourceKey((name) => ({
+      "x-forwarded-for": "203.0.113.9, 10.0.0.5",
+    })[name])).toBe("unknown");
+  });
+
+  test("uses proxy/client headers when trust is explicitly enabled", () => {
     const key = requestSourceKey((name) => ({
       "x-forwarded-for": "203.0.113.9, 10.0.0.5",
-    })[name]);
+    })[name], { trustProxyHeaders: true });
 
     expect(key).toBe("203.0.113.9");
-    expect(requestSourceKey((name) => ({ "x-real-ip": "198.51.100.7" })[name])).toBe("198.51.100.7");
-    expect(requestSourceKey((name) => ({ "cf-connecting-ip": "192.0.2.4" })[name])).toBe("192.0.2.4");
+    expect(requestSourceKey((name) => ({ "x-real-ip": "198.51.100.7" })[name], { trustProxyHeaders: true })).toBe("198.51.100.7");
+    expect(requestSourceKey((name) => ({ "cf-connecting-ip": "192.0.2.4" })[name], { trustProxyHeaders: true })).toBe("192.0.2.4");
   });
 });

@@ -159,8 +159,26 @@ export type ReviewCommentStore = {
   /** Get comment by GitHub ID for edit detection in catch-up sync. */
   getByGithubId(repo: string, commentGithubId: number): Promise<ReviewCommentRecord | null>;
 
+  /** Get comments by GitHub IDs for page-level edit detection in catch-up sync. */
+  getByGithubIds?(repo: string, commentGithubIds: number[]): Promise<Map<number, ReviewCommentRecord>>;
+
   /** List degraded persisted rows that need row-local embedding repair. */
   listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
+
+  /** Count degraded persisted rows after the durable cursor without materializing them. */
+  countRepairCandidates?(input: {
+    corpus: EmbeddingRepairCorpus;
+    afterId: number | null;
+    targetModel: string;
+  }): Promise<number>;
+
+  /** Page degraded persisted rows after the durable cursor for bounded repair. */
+  listRepairCandidateBatch?(input: {
+    corpus: EmbeddingRepairCorpus;
+    afterId: number | null;
+    limit: number;
+    targetModel: string;
+  }): Promise<RepairCandidateRow[]>;
 
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;

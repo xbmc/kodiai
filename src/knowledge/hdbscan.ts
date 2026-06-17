@@ -13,8 +13,10 @@ import type { HdbscanOptions, HdbscanResult } from "./cluster-types.ts";
 
 // ── Distance Helpers ─────────────────────────────────────────────────
 
+type NumericVector = ArrayLike<number>;
+
 /** Euclidean distance between two points. */
-function euclidean(a: number[], b: number[]): number {
+function euclidean(a: NumericVector, b: NumericVector): number {
   let sum = 0;
   for (let i = 0; i < a.length; i++) {
     const d = a[i]! - b[i]!;
@@ -23,70 +25,94 @@ function euclidean(a: number[], b: number[]): number {
   return Math.sqrt(sum);
 }
 
-/** Compute full pairwise distance matrix. */
-function computeDistanceMatrix(data: number[][]): Float64Array[] {
-  const n = data.length;
-  const matrix: Float64Array[] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    matrix[i] = new Float64Array(n);
+class PairwiseDistances {
+  readonly values: Float32Array;
+
+  constructor(readonly size: number) {
+    this.values = new Float32Array((size * (size - 1)) / 2);
   }
+
+  get(i: number, j: number): number {
+    if (i === j) return 0;
+    const [left, right] = i < j ? [i, j] : [j, i];
+    return this.values[(right * (right - 1)) / 2 + left]!;
+  }
+
+  set(i: number, j: number, value: number): void {
+    if (i === j) return;
+    const [left, right] = i < j ? [i, j] : [j, i];
+    this.values[(right * (right - 1)) / 2 + left] = value;
+  }
+}
+
+/** Compute compact pairwise distances without storing a full square matrix. */
+function computePairwiseDistances(data: readonly NumericVector[]): PairwiseDistances {
+  const n = data.length;
+  const distances = new PairwiseDistances(n);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const d = euclidean(data[i]!, data[j]!);
-      matrix[i]![j] = d;
-      matrix[j]![i] = d;
+      distances.set(i, j, euclidean(data[i]!, data[j]!));
     }
   }
-  return matrix;
+  return distances;
 }
 
 // ── Core Distances ───────────────────────────────────────────────────
 
 /** Compute core distance for each point: distance to k-th nearest neighbor. */
+function kthSmallestDistance(distances: PairwiseDistances, pointIndex: number, k: number): number {
+  if (k <= 0) return 0;
+  const nearest = new Float64Array(k).fill(Infinity);
+
+  for (let j = 0; j < distances.size; j++) {
+    if (pointIndex === j) continue;
+
+    const distance = distances.get(pointIndex, j);
+    let insertAt = -1;
+    for (let slot = 0; slot < k; slot++) {
+      if (distance < nearest[slot]!) {
+        insertAt = slot;
+        break;
+      }
+    }
+
+    if (insertAt === -1) continue;
+    for (let slot = k - 1; slot > insertAt; slot--) {
+      nearest[slot] = nearest[slot - 1]!;
+    }
+    nearest[insertAt] = distance;
+  }
+
+  return nearest[k - 1] ?? 0;
+}
+
 function computeCoreDistances(
-  distMatrix: Float64Array[],
+  distances: PairwiseDistances,
   minSamples: number,
 ): Float64Array {
-  const n = distMatrix.length;
+  const n = distances.size;
   const coreDistances = new Float64Array(n);
   const k = Math.min(minSamples, n - 1);
 
   for (let i = 0; i < n; i++) {
-    // Get distances from point i to all others, sort ascending
-    const dists = Array.from(distMatrix[i]!).filter((_, j) => j !== i);
-    dists.sort((a, b) => a - b);
-    coreDistances[i] = dists[k - 1] ?? 0;
+    coreDistances[i] = kthSmallestDistance(distances, i, k);
   }
 
   return coreDistances;
 }
 
-// ── Mutual Reachability ──────────────────────────────────────────────
-
 /** Mutual reachability distance: max(core(a), core(b), dist(a,b)). */
-function computeMutualReachability(
-  distMatrix: Float64Array[],
+function mutualReachabilityDistance(
+  distances: PairwiseDistances,
   coreDistances: Float64Array,
-): Float64Array[] {
-  const n = distMatrix.length;
-  const mrd: Float64Array[] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    mrd[i] = new Float64Array(n);
-  }
-
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const d = Math.max(
-        coreDistances[i]!,
-        coreDistances[j]!,
-        distMatrix[i]![j]!,
-      );
-      mrd[i]![j] = d;
-      mrd[j]![i] = d;
-    }
-  }
-
-  return mrd;
+  i: number,
+  j: number,
+): number {
+  return Math.max(
+    coreDistances[i]!,
+    coreDistances[j]!,
+    distances.get(i, j),
+  );
 }
 
 // ── Minimum Spanning Tree (Prim's) ──────────────────────────────────
@@ -94,8 +120,11 @@ function computeMutualReachability(
 type MstEdge = { from: number; to: number; weight: number };
 
 /** Build MST using Prim's algorithm on the mutual reachability graph. */
-function buildMst(mrd: Float64Array[]): MstEdge[] {
-  const n = mrd.length;
+function buildMst(
+  distances: PairwiseDistances,
+  coreDistances: Float64Array,
+): MstEdge[] {
+  const n = distances.size;
   if (n <= 1) return [];
 
   const inMst = new Uint8Array(n);
@@ -106,7 +135,7 @@ function buildMst(mrd: Float64Array[]): MstEdge[] {
   // Start from node 0
   inMst[0] = 1;
   for (let j = 1; j < n; j++) {
-    minWeight[j] = mrd[0]![j]!;
+    minWeight[j] = mutualReachabilityDistance(distances, coreDistances, 0, j);
     minFrom[j] = 0;
   }
 
@@ -128,9 +157,12 @@ function buildMst(mrd: Float64Array[]): MstEdge[] {
 
     // Update minimum weights
     for (let j = 0; j < n; j++) {
-      if (!inMst[j] && mrd[bestNode]![j]! < minWeight[j]!) {
-        minWeight[j] = mrd[bestNode]![j]!;
-        minFrom[j] = bestNode;
+      if (!inMst[j]) {
+        const weight = mutualReachabilityDistance(distances, coreDistances, bestNode, j);
+        if (weight < minWeight[j]!) {
+          minWeight[j] = weight;
+          minFrom[j] = bestNode;
+        }
       }
     }
   }
@@ -352,7 +384,6 @@ function extractClusters(
   // Find all cluster nodes (non-leaf parents)
   const clusterNodes = new Set<number>();
   const clusterBirthLambda = new Map<number, number>();
-  const clusterDeathLambda = new Map<number, number>();
 
   for (const node of condensed) {
     clusterNodes.add(node.parent);
@@ -561,7 +592,7 @@ function extractClusters(
  * @param opts - Algorithm configuration (minClusterSize, minSamples)
  * @returns Cluster labels (-1 = noise), probabilities, and cluster count
  */
-export function hdbscan(data: number[][], opts: HdbscanOptions): HdbscanResult {
+export function hdbscan(data: readonly NumericVector[], opts: HdbscanOptions): HdbscanResult {
   const n = data.length;
 
   if (n === 0) {
@@ -579,24 +610,21 @@ export function hdbscan(data: number[][], opts: HdbscanOptions): HdbscanResult {
   const minSamples = opts.minSamples ?? opts.minClusterSize;
 
   // Step 1: Compute pairwise distances
-  const distMatrix = computeDistanceMatrix(data);
+  const distances = computePairwiseDistances(data);
 
   // Step 2: Compute core distances
-  const coreDistances = computeCoreDistances(distMatrix, minSamples);
+  const coreDistances = computeCoreDistances(distances, minSamples);
 
-  // Step 3: Compute mutual reachability distances
-  const mrd = computeMutualReachability(distMatrix, coreDistances);
+  // Step 3: Build MST with mutual reachability distances computed on demand
+  const mst = buildMst(distances, coreDistances);
 
-  // Step 4: Build MST
-  const mst = buildMst(mrd);
-
-  // Step 5: Build hierarchy
+  // Step 4: Build hierarchy
   const hierarchy = buildHierarchy(mst, n);
 
-  // Step 6: Condense tree
+  // Step 5: Condense tree
   const condensed = condenseTree(hierarchy, n, opts.minClusterSize);
 
-  // Step 7: Extract clusters
+  // Step 6: Extract clusters
   const { labels, probabilities } = extractClusters(condensed, n, opts.minClusterSize);
 
   const clusterCount = new Set(labels.filter((l) => l >= 0)).size;

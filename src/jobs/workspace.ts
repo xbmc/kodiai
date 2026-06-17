@@ -5,46 +5,11 @@ import { $ } from "bun";
 import picomatch from "picomatch";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
+import { runCommandWithCappedOutput, type CappedProcessResult } from "../lib/capped-process.ts";
+import { WritePolicyError } from "../lib/write-policy-error.ts";
 import type { WorkspaceManager, Workspace, CloneOptions } from "./types.ts";
 
-export class WritePolicyError extends Error {
-  readonly code:
-    | "write-policy-denied-path"
-    | "write-policy-not-allowed"
-    | "write-policy-secret-detected"
-    | "write-policy-no-changes";
-
-  /** Best-effort file path involved in the refusal. */
-  readonly path?: string;
-
-  /** Which policy family triggered (denyPaths, allowPaths, secretScan). */
-  readonly rule?: "denyPaths" | "allowPaths" | "secretScan";
-
-  /** Best-effort policy pattern that matched (for glob-based rules). */
-  readonly pattern?: string;
-
-  /** Best-effort secret detector identifier (for secretScan rules). */
-  readonly detector?: string;
-
-  constructor(
-    code: WritePolicyError["code"],
-    message: string,
-    meta?: {
-      path?: string;
-      rule?: WritePolicyError["rule"];
-      pattern?: string;
-      detector?: string;
-    },
-  ) {
-    super(message);
-    this.name = "WritePolicyError";
-    this.code = code;
-    this.path = meta?.path;
-    this.rule = meta?.rule;
-    this.pattern = meta?.pattern;
-    this.detector = meta?.detector;
-  }
-}
+export { WritePolicyError } from "../lib/write-policy-error.ts";
 
 /**
  * Replace all occurrences of a token in a string with [REDACTED].
@@ -135,16 +100,6 @@ export function validateBranchName(branchName: string): void {
   }
 }
 
-async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefined> {
-  try {
-    const url = (await $`git -C ${dir} remote get-url origin`.quiet()).text().trim();
-    const match = url.match(/https:\/\/x-access-token:([^@]+)@github\.com(?:\/|$)/);
-    return match?.[1];
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Given a stripped (no-credential) remote URL and an optional token, return the
  * auth-injected URL for use in a single git command.  If token is absent, the
@@ -154,6 +109,40 @@ async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefi
 function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
   if (!token) return strippedUrl;
   return strippedUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
+}
+
+const GIT_NETWORK_TIMEOUT_MS = 120_000;
+
+async function runGitNetworkCommand(options: {
+  args: string[];
+  cwd?: string;
+  token?: string;
+  allowFailure?: boolean;
+  operation: string;
+}): Promise<CappedProcessResult> {
+  const result = await runCommandWithCappedOutput({
+    command: "git",
+    args: options.args,
+    cwd: options.cwd,
+    timeoutMs: GIT_NETWORK_TIMEOUT_MS,
+    maxStdoutBytes: 64 * 1024,
+    maxStderrBytes: 64 * 1024,
+    env: { GIT_TERMINAL_PROMPT: "0" },
+  });
+
+  if (result.exitCode !== 0 && !options.allowFailure) {
+    const stderr = result.stderr.trim();
+    const suffix = result.timedOut
+      ? ` timed out after ${GIT_NETWORK_TIMEOUT_MS}ms`
+      : stderr
+        ? ` failed: ${stderr}`
+        : ` failed with exit code ${result.exitCode}`;
+    const err = new Error(`git ${options.operation}${suffix}`);
+    redactTokenFromError(err, options.token);
+    throw err;
+  }
+
+  return result;
 }
 
 /**
@@ -191,7 +180,12 @@ export async function fetchRemoteTrackingBranch(options: {
   try {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remoteName}`.quiet()).text().trim();
     const fetchUrl = makeAuthUrl(strippedUrl, token);
-    await $`git -C ${dir} fetch ${fetchUrl} +${branch}:refs/remotes/${remoteName}/${branch} --depth=${depth}`.quiet();
+    await runGitNetworkCommand({
+      args: ["fetch", fetchUrl, `+${branch}:refs/remotes/${remoteName}/${branch}`, `--depth=${depth}`],
+      cwd: dir,
+      token,
+      operation: "fetch",
+    });
   } catch (err) {
     redactTokenFromError(err, token);
     throw err;
@@ -223,10 +217,6 @@ function redactTokenFromError(err: unknown, token: string | undefined): void {
 
 export async function getGitStatusPorcelain(dir: string): Promise<string> {
   return (await $`git -C ${dir} status --porcelain`.quiet()).text();
-}
-
-async function getOriginTokenFromDir(dir: string): Promise<string | undefined> {
-  return await getOriginTokenFromRemoteUrl(dir);
 }
 
 function normalizeGlobPattern(pattern: string): string {
@@ -319,6 +309,25 @@ function extractAddedLines(patch: string): string[] {
     .map((l) => l.slice(1));
 }
 
+function splitGitDiffByPath(patch: string): Map<string, string> {
+  const patches = new Map<string, string>();
+  const starts: Array<{ index: number; path: string }> = [];
+  const headerRegex = /^diff --git a\/(.+) b\/(.+)$/gm;
+  for (const match of patch.matchAll(headerRegex)) {
+    starts.push({ index: match.index ?? 0, path: match[2] ?? match[1] ?? "" });
+  }
+
+  for (let i = 0; i < starts.length; i++) {
+    const current = starts[i]!;
+    const next = starts[i + 1]?.index ?? patch.length;
+    if (current.path) {
+      patches.set(current.path, patch.slice(current.index, next));
+    }
+  }
+
+  return patches;
+}
+
 export async function enforceWritePolicy(options: {
   dir: string;
   stagedPaths: string[];
@@ -377,15 +386,22 @@ export async function enforceWritePolicy(options: {
 
   if (secretScanEnabled) {
     const perFilePatches = new Map<string, string>();
+    const addedLinesByPath = new Map<string, string[]>();
+    const addedTextByPath = new Map<string, string>();
+    const stagedPatch = (await $`git -C ${dir} diff --cached --`.quiet()).text();
+    const patchesByPath = splitGitDiffByPath(stagedPatch);
     for (const p of stagedPaths) {
-      const patch = (await $`git -C ${dir} diff --cached -- ${p}`.quiet()).text();
+      const patch = patchesByPath.get(p) ?? "";
       perFilePatches.set(p, patch);
+      const addedLines = extractAddedLines(patch);
+      addedLinesByPath.set(p, addedLines);
+      addedTextByPath.set(p, addedLines.join("\n"));
     }
 
     for (const { name, regex } of buildSecretRegexes()) {
       let path: string | undefined;
       for (const p of stagedPaths) {
-        const added = extractAddedLines(perFilePatches.get(p) ?? "").join("\n");
+        const added = addedTextByPath.get(p) ?? "";
         if (regex.test(added)) {
           path = p;
           break;
@@ -402,12 +418,12 @@ export async function enforceWritePolicy(options: {
     }
 
     // Best-effort entropy scan on added lines only.
-    const addedLines = stagedPaths.flatMap((p) => extractAddedLines(perFilePatches.get(p) ?? ""));
+    const addedLines = stagedPaths.flatMap((p) => addedLinesByPath.get(p) ?? []);
     const entropyHit = findHighEntropyTokens(addedLines);
     if (entropyHit) {
       let path: string | undefined;
       for (const p of stagedPaths) {
-        const perFileAdded = extractAddedLines(perFilePatches.get(p) ?? "");
+        const perFileAdded = addedLinesByPath.get(p) ?? [];
         if (findHighEntropyTokens(perFileAdded)) {
           path = p;
           break;
@@ -463,7 +479,12 @@ export async function createBranchCommitAndPush(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await $`git -C ${dir} push ${pushUrl} HEAD:${branchName}`.quiet();
+    await runGitNetworkCommand({
+      args: ["push", pushUrl, `HEAD:${branchName}`],
+      cwd: dir,
+      token,
+      operation: "push",
+    });
 
     return { branchName, headSha };
   } catch (err) {
@@ -511,7 +532,12 @@ export async function commitAndPushToRemoteRef(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await $`git -C ${dir} push ${pushUrl} HEAD:${remoteRef}`.quiet();
+    await runGitNetworkCommand({
+      args: ["push", pushUrl, `HEAD:${remoteRef}`],
+      cwd: dir,
+      token,
+      operation: "push",
+    });
 
     return { remoteRef, headSha };
   } catch (err) {
@@ -535,7 +561,12 @@ export async function pushHeadToRemoteRef(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await $`git -C ${dir} push ${pushUrl} HEAD:${remoteRef}`.quiet();
+    await runGitNetworkCommand({
+      args: ["push", pushUrl, `HEAD:${remoteRef}`],
+      cwd: dir,
+      token,
+      operation: "push",
+    });
 
     return { remoteRef, headSha };
   } catch (err) {
@@ -579,13 +610,19 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     const primaryFetchArgs = depth === undefined
       ? ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`]
       : ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`, `--depth=${depth}`];
-    const primaryFetch = await $`git -C ${dir} ${primaryFetchArgs}`.quiet().nothrow();
+    const primaryFetch = await runGitNetworkCommand({
+      args: primaryFetchArgs,
+      cwd: dir,
+      token,
+      allowFailure: true,
+      operation: "fetch",
+    });
     if (primaryFetch.exitCode === 0) {
       await $`git -C ${dir} checkout ${localBranch}`.quiet();
       return { localBranch, source: "pull-ref" };
     }
 
-    const stderr = primaryFetch.stderr.toString();
+    const stderr = primaryFetch.stderr;
     const missingPullRef = stderr.includes(`couldn't find remote ref pull/${prNumber}/head`)
       || stderr.includes(`couldn't find remote ref refs/pull/${prNumber}/head`);
     if (!missingPullRef || !fallbackRemoteUrl || !fallbackRef) {
@@ -598,7 +635,12 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     const fallbackFetchArgs = depth === undefined
       ? ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`]
       : ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`, `--depth=${depth}`];
-    await $`git -C ${dir} ${fallbackFetchArgs}`.quiet();
+    await runGitNetworkCommand({
+      args: fallbackFetchArgs,
+      cwd: dir,
+      token,
+      operation: "fetch",
+    });
     await $`git -C ${dir} checkout ${localBranch}`.quiet();
     return { localBranch, source: "head-ref-fallback" };
   } catch (err) {
@@ -638,7 +680,11 @@ export function createWorkspaceManager(
         if (forkContext) {
           // Fork-aware clone: clone from the bot-owned fork using bot PAT
           const forkCloneUrl = `https://x-access-token:${forkContext.botPat}@github.com/${forkContext.forkOwner}/${forkContext.forkRepo}.git`;
-          await $`git clone --depth=${depth} --single-branch --branch ${ref} ${forkCloneUrl} ${dir}`.quiet();
+          await runGitNetworkCommand({
+            args: ["clone", `--depth=${depth}`, "--single-branch", "--branch", ref, forkCloneUrl, dir],
+            token: forkContext.botPat,
+            operation: "clone",
+          });
 
           // Add upstream remote pointing at the original repo (using installation token)
           const upstreamUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
@@ -650,7 +696,11 @@ export function createWorkspaceManager(
         } else {
           // Standard clone from target repo using installation token
           const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-          await $`git clone --depth=${depth} --single-branch --branch ${ref} ${cloneUrl} ${dir}`.quiet();
+          await runGitNetworkCommand({
+            args: ["clone", `--depth=${depth}`, "--single-branch", "--branch", ref, cloneUrl, dir],
+            token,
+            operation: "clone",
+          });
 
           // Strip credentials from remote immediately — token stays in memory only
           await $`git -C ${dir} remote set-url origin https://github.com/${owner}/${repo}.git`.quiet();
@@ -661,7 +711,15 @@ export function createWorkspaceManager(
         await $`git -C ${dir} config user.email "kodiai[bot]@users.noreply.github.com"`;
       } catch (error: unknown) {
         // Clean up temp dir on failure; never mask the original error
-        await rm(dir, { recursive: true, force: true }).catch(() => {});
+        await rm(dir, { recursive: true, force: true }).catch((cleanupError: unknown) => {
+          logger.warn(
+            {
+              err: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+              dir,
+            },
+            "Failed to clean up workspace after clone failure",
+          );
+        });
 
         // Redact token from error messages to prevent leakage
         redactTokenFromError(error, token);

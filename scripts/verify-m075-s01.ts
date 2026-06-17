@@ -24,6 +24,7 @@ export type M075S01CheckId =
   | "classes.required"
   | "owner.mapping.exact"
   | "classification.separated"
+  | "app-regression.absent"
   | "redaction.safe"
   | "output.bounded"
   | "package-wiring.present";
@@ -91,6 +92,7 @@ const TIMESPAAN_BY_WINDOW: Record<ProductionLogWindowId, "PT12H" | "P7D"> = { la
 const REQUIRED_CLASSES: readonly ProductionLogIssueClassId[] = PRODUCTION_LOG_ISSUE_CLASS_IDS;
 const REQUIRED_OWNER_MAPPING: Record<ProductionLogIssueClassId, { readonly classification: ProductionLogIssueClassification; readonly owner: ProductionLogDownstreamOwner }> = {
   "knowledge-store.undefined-write": { classification: "app-actionable", owner: "S02" },
+  "jsonb-batch.recordset-non-array": { classification: "app-actionable", owner: "S02" },
   "inline-publication.line-not-commentable": { classification: "app-actionable", owner: "S03" },
   "candidate-publication.non-approved-missing-reason": { classification: "app-actionable", owner: "S04" },
   "review-timeout-classification.expected-bounded-outcome": { classification: "transient", owner: "S05" },
@@ -103,6 +105,12 @@ const REQUIRED_OWNER_MAPPING: Record<ProductionLogIssueClassId, { readonly class
   "addon-check.timeout": { classification: "transient", owner: "S06" },
   "azure.platform-noise": { classification: "azure-platform", owner: null },
 };
+const BLOCKING_APP_REGRESSION_CLASSES: readonly ProductionLogIssueClassId[] = [
+  "jsonb-batch.recordset-non-array",
+];
+const LIVE_REGRESSION_MESSAGE_PROBES = [
+  "cannot call jsonb_to_recordset on a non-array",
+] as const;
 const EMPTY_QUERY_METADATA: M075S01QueryMetadata = {
   mode: "fixture",
   source: "fixture",
@@ -303,6 +311,8 @@ export function evaluateEvidence(snapshot: M075S01EvidenceSnapshot, packageCheck
   checks.push(ownerIssues.length === 0 ? pass("owner.mapping.exact", "Issue classes map exactly to downstream owner slices S02-S06 and platform null.") : fail("owner.mapping.exact", "Issue class downstream owner mapping drifted.", ownerIssues));
   const separationIssues = validateClassificationSeparation(snapshot.report);
   checks.push(separationIssues.length === 0 ? pass("classification.separated", "App-actionable classes are separated from Azure/platform and transient classes.") : fail("classification.separated", "Issue class classification separation drifted.", separationIssues));
+  const appRegressionIssues = validateBlockingAppRegressions(snapshot.report);
+  checks.push(appRegressionIssues.length === 0 ? pass("app-regression.absent", "Blocking production app-regression classes are absent.") : fail("app-regression.absent", "Blocking production app-regression classes are present.", appRegressionIssues));
   const redactionIssues = validateRedaction(snapshot);
   checks.push(redactionIssues.length === 0 ? pass("redaction.safe", "Baseline output excludes raw rows and secret-like payloads.") : fail("redaction.safe", "Unsafe raw evidence reached the verifier surface.", redactionIssues));
   const boundIssues = validateBounds(snapshot.report);
@@ -370,6 +380,17 @@ function validateClassificationSeparation(report: ProductionLogBaselineReport): 
       if (issueClass.classification !== expected.classification) issues.push(`${window}.${issueClass.id} classification expected ${expected.classification} got ${issueClass.classification}.`);
       if (issueClass.classification === "azure-platform" && issueClass.downstreamOwner !== null) issues.push(`${window}.${issueClass.id} platform class must not have app owner.`);
       if (issueClass.classification === "app-actionable" && !issueClass.downstreamOwner) issues.push(`${window}.${issueClass.id} app-actionable class must have downstream owner.`);
+    }
+  }
+  return issues;
+}
+
+function validateBlockingAppRegressions(report: ProductionLogBaselineReport): string[] {
+  const issues: string[] = [];
+  for (const window of WINDOWS) {
+    for (const classId of BLOCKING_APP_REGRESSION_CLASSES) {
+      const count = report.windows[window].issueClasses.find((issueClass) => issueClass.id === classId)?.count ?? 0;
+      if (count > 0) issues.push(`${window}.${classId} count expected 0 got ${count}.`);
     }
   }
   return issues;
@@ -446,7 +467,16 @@ function liveSourceUnavailable(generatedAt: string, args: M075S01Args, packageCh
 function buildDefaultLiveCollectors(): M075S01LiveCollectors {
   return hasLogEnv(process.env) ? {
     discoverWorkspaces: async () => resolveWorkspaceIds(process.env),
-    queryLogs: async ({ workspaceIds, timespan, limit }) => queryReviewAuditLogs({ workspaceIds: [...workspaceIds], timespan, limit }),
+    queryLogs: async ({ workspaceIds, timespan, limit }) => {
+      const baseline = await queryReviewAuditLogs({ workspaceIds: [...workspaceIds], timespan, limit });
+      const probes = await Promise.all(LIVE_REGRESSION_MESSAGE_PROBES.map((messageContains) =>
+        queryReviewAuditLogs({ workspaceIds: [...workspaceIds], timespan, limit, messageContains }),
+      ));
+      return {
+        query: [baseline.query, ...probes.map((probe) => probe.query)].join("\n\n-- regression probe\n"),
+        rows: [...baseline.rows, ...probes.flatMap((probe) => probe.rows)],
+      };
+    },
   } : {};
 }
 function hasLogEnv(env: NodeJS.ProcessEnv): boolean { return splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_ID).length > 0 || splitList(env.AZURE_LOG_ANALYTICS_WORKSPACE_IDS).length > 0 || splitList(env.LOG_ANALYTICS_WORKSPACE_ID).length > 0 || splitList(env.LOG_ANALYTICS_WORKSPACE_IDS).length > 0 || Boolean(env.AZURE_RESOURCE_GROUP ?? env.ACA_RESOURCE_GROUP ?? env.RESOURCE_GROUP); }

@@ -1,4 +1,6 @@
 import type { ReviewCommentInput, ReviewCommentChunk } from "./review-comment-types.ts";
+import { countTokens } from "./token-count.ts";
+export { countTokens } from "./token-count.ts";
 
 const DEFAULT_BOT_LOGINS = new Set([
   "dependabot",
@@ -7,11 +9,6 @@ const DEFAULT_BOT_LOGINS = new Set([
   "github-actions",
   "codecov",
 ]);
-
-/** Simple whitespace-based token count approximation. */
-export function countTokens(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
-}
 
 /**
  * Check if a login looks like a bot.

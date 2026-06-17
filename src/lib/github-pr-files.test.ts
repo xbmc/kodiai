@@ -65,4 +65,39 @@ describe("fetchAllPullRequestFiles", () => {
       page: 2,
     });
   });
+
+  test("fetches remaining pages from Link header with bounded parallel pagination", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      filename: `src/page-one-${index}.ts`,
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -1 +1 @@",
+    }));
+    const listFiles = mock((params: { page: number }) => Promise.resolve({
+      headers: params.page === 1
+        ? { link: '<https://api.github.test/repos/acme/repo/pulls/1/files?page=3>; rel="last"' }
+        : {},
+      data: params.page === 1
+        ? firstPage
+        : [{ filename: `src/page-${params.page}.ts`, status: "modified" }],
+    }));
+    const octokit = {
+      rest: {
+        pulls: {
+          listFiles,
+        },
+      },
+    } as unknown as Octokit;
+
+    const files = await fetchAllPullRequestFiles({
+      octokit,
+      owner: "xbmc",
+      repo: "kodiai",
+      pullNumber: 130,
+    });
+
+    expect(files.map((file) => file.filename).slice(-2)).toEqual(["src/page-2.ts", "src/page-3.ts"]);
+    expect(listFiles).toHaveBeenCalledTimes(3);
+  });
 });

@@ -1,7 +1,9 @@
 import type { Logger } from "pino";
 import { chunkCanonicalCodeFile, type CanonicalChunkerObservability } from "./canonical-code-chunker.ts";
 import type { CanonicalCodeStore } from "./canonical-code-types.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import type { EmbeddingProvider } from "./types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 export type CanonicalCodeIngestFile = {
   filePath: string;
@@ -112,12 +114,22 @@ export async function ingestCanonicalCodeSnapshot(params: {
     fileResult.deletedCount = deletedCount;
     deleted += deletedCount;
 
-    for (const chunk of chunkResult.chunks) {
-      let embeddingResult;
-      try {
-        embeddingResult = await embeddingProvider.generate(chunk.chunkText, "document");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+    const embeddingResults = await generateDocumentEmbeddingResultsBatch({
+      texts: chunkResult.chunks.map((chunk) => chunk.chunkText),
+      embeddingProvider,
+    });
+
+    const writeRows: Array<{
+      chunk: (typeof chunkResult.chunks)[number];
+      embeddingModel: string;
+      embedding: Float32Array;
+    }> = [];
+
+    for (const [index, embeddingResult] of embeddingResults.entries()) {
+      const chunk = chunkResult.chunks[index]!;
+
+      if (embeddingResult.status === "failed") {
+        const message = embeddingResult.err instanceof Error ? embeddingResult.err.message : String(embeddingResult.err);
         failed += 1;
         fileResult.failed += 1;
         logger.warn(
@@ -136,7 +148,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
         continue;
       }
 
-      if (!embeddingResult) {
+      if (embeddingResult.status === "unavailable") {
         failed += 1;
         fileResult.failed += 1;
         logger.warn(
@@ -154,7 +166,11 @@ export async function ingestCanonicalCodeSnapshot(params: {
         continue;
       }
 
-      const outcome = await store.upsertChunk(
+      writeRows.push({ chunk, embeddingModel: embeddingResult.model, embedding: embeddingResult.embedding });
+    }
+
+    const outcomes = await mapWithConcurrency(writeRows, 8, async ({ chunk, embeddingModel, embedding }) =>
+      store.upsertChunk(
         {
           repo: request.repo,
           owner: request.owner,
@@ -168,11 +184,12 @@ export async function ingestCanonicalCodeSnapshot(params: {
           symbolName: chunk.symbolName,
           chunkText: chunk.chunkText,
           contentHash: chunk.contentHash,
-          embeddingModel: embeddingResult.model,
+          embeddingModel,
         },
-        embeddingResult.embedding,
-      );
+        embedding,
+      ));
 
+    for (const outcome of outcomes) {
       chunksAttempted += 1;
       if (outcome === "inserted") {
         inserted += 1;

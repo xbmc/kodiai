@@ -307,7 +307,6 @@ export async function prepareAgentWorkspace(params: {
   taskType: string;
   mcpServerNames: string[];
   promptSections?: PromptSectionRecord[];
-  token?: string;
 }): Promise<{ repoCwd?: string; repoBundlePath?: string; repoTransport?: RepoTransport }> {
   let repoCwd: string | undefined;
   let repoBundlePath: string | undefined;
@@ -626,12 +625,14 @@ export function createExecutor(deps: {
         const isIssueMention =
           context.eventType === "issue_comment.created" &&
           context.prNumber === undefined;
-        const enableIssueTools = isIssueMention && repoConfig.triage.enabled;
-        const triageConfig = enableIssueTools
+        const issueTools = isIssueMention && repoConfig.triage.enabled && context.issueNumber !== undefined
           ? {
-              enabled: repoConfig.triage.enabled,
-              label: repoConfig.triage.label,
-              comment: repoConfig.triage.comment,
+              issueNumber: context.issueNumber,
+              triageConfig: {
+                enabled: repoConfig.triage.enabled,
+                label: repoConfig.triage.label,
+                comment: repoConfig.triage.comment,
+              },
             }
           : undefined;
 
@@ -659,8 +660,7 @@ export function createExecutor(deps: {
           totalFiles: context.totalFiles,
           enableCheckpointTool: context.enableCheckpointTool,
           prDiffCommentabilityIndex: context.prDiffCommentabilityIndex,
-          enableIssueTools,
-          triageConfig,
+          issueTools,
           enableCandidateFindingTool: context.enableCandidateFindingTool,
           candidateFindingRecorder: candidateFindingCollector.recorder,
           candidateVerificationContext: context.candidateVerificationContext,
@@ -733,7 +733,6 @@ export function createExecutor(deps: {
           taskType,
           mcpServerNames,
           promptSections: context.promptSections,
-          token: context.workspace.token,
         });
 
         // Generate and register the per-job bearer token only after the remote

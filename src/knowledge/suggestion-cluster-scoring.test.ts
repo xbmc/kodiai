@@ -442,6 +442,45 @@ describe("scoreFindings", () => {
     expect(result.suppressedCount).toBe(1);
   });
 
+  it("embeds multiple findings concurrently while preserving result order", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const provider: EmbeddingProvider = {
+      model: "voyage-test",
+      dimensions: 4,
+      generate: async (text: string): Promise<EmbeddingResult> => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        inFlight--;
+        return {
+          embedding: text.endsWith("1") ? VEC_A_NEAR : VEC_B,
+          model: "voyage-test",
+          dimensions: 4,
+        };
+      },
+    };
+
+    const findings = [
+      makeFinding({ title: "Finding 1", severity: "minor", confidence: 50 }),
+      makeFinding({ title: "Finding 2", severity: "minor", confidence: 50 }),
+      makeFinding({ title: "Finding 3", severity: "minor", confidence: 50 }),
+      makeFinding({ title: "Finding 4", severity: "minor", confidence: 50 }),
+    ];
+
+    const result = await scoreFindings(findings, eligibleModel, provider, makeLogger());
+
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(result.findings.map((finding) => finding.title)).toEqual([
+      "Finding 1",
+      "Finding 2",
+      "Finding 3",
+      "Finding 4",
+    ]);
+    expect(result.findings[0]!.suppress).toBe(true);
+    expect(result.findings.slice(1).every((finding) => finding.suppress === false)).toBe(true);
+  });
+
   it("preserves all original finding fields on merged output", async () => {
     const provider = makeEmbeddingProvider(VEC_B); // orthogonal to negative centroid (VEC_A)
     const finding = {

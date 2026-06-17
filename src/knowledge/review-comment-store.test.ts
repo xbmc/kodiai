@@ -129,6 +129,19 @@ describe("ReviewCommentStore batch SQL", () => {
     expect(query.values).toContain(6);
   });
 
+  test("getByGithubIds uses one tagged array query for a page of comment ids", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    const result = await store.getByGithubIds?.("xbmc/xbmc", [1001, 1002, 1001]);
+
+    expect(result).toBeInstanceOf(Map);
+    expect(sql.unsafeCalls).toHaveLength(0);
+    const query = findTaggedQuery(sql, "comment_github_id = ANY");
+    expect(query.values).toContain("xbmc/xbmc");
+    expect(query.values).toEqual(expect.arrayContaining([[1001, 1002]]));
+  });
+
   test("writeChunks batches multiple chunks into one unsafe insert", async () => {
     const sql = createMockSql();
     const store = createReviewCommentStore({ sql, logger: mockLogger });

@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import type { WebhookQueueStore } from "../lifecycle/types.ts";
 import type { SlackV1BootstrapPayload } from "../slack/safety-rails.ts";
 import { createSlackEventRoutes } from "./slack-events.ts";
 
@@ -69,6 +70,7 @@ function createApp(
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => void,
   options: {
     rateLimit?: Parameters<typeof createSlackEventRoutes>[0]["rateLimit"];
+    webhookQueueStore?: WebhookQueueStore;
   } = {},
 ) {
   const app = new Hono();
@@ -79,6 +81,7 @@ function createApp(
       logger: createTestLogger(),
       onAllowedBootstrap,
       rateLimit: options.rateLimit,
+      webhookQueueStore: options.webhookQueueStore,
     }),
   );
   return app;
@@ -277,6 +280,56 @@ describe("createSlackEventRoutes", () => {
         user: "U777USER",
         text: "<@U123BOT> summarize this thread",
         replyTarget: "thread-only",
+      },
+    ]);
+  });
+
+  test("queues accepted Slack event for replay when async processing fails after ack", async () => {
+    const queued: Array<Parameters<WebhookQueueStore["enqueue"]>[0]> = [];
+    const webhookQueueStore: WebhookQueueStore = {
+      enqueue: async (entry) => {
+        queued.push(entry);
+      },
+      dequeuePending: async () => [],
+      markCompleted: async () => undefined,
+      markFailed: async () => undefined,
+    };
+    const app = createApp(() => {
+      throw new Error("downstream unavailable");
+    }, { webhookQueueStore });
+    const payload = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.000777",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = signSlackRequest(timestamp, payload);
+
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(payload, timestamp, signature),
+      body: payload,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(response.status).toBe(200);
+    expect(queued).toEqual([
+      {
+        source: "slack",
+        eventName: "event_callback",
+        headers: {
+          "x-slack-request-timestamp": timestamp,
+          "x-slack-signature": signature,
+        },
+        body: payload,
       },
     ]);
   });

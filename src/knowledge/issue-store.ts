@@ -12,6 +12,7 @@ import type {
   IssueStore,
 } from "./issue-types.ts";
 import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
+import { buildRepairCandidatePredicate } from "./repair-candidate-pagination.ts";
 
 /**
  * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
@@ -78,6 +79,24 @@ type IssueCommentRow = {
   issue_title?: string;
 };
 
+function issueCommentContextColumns(sql: Sql) {
+  return sql`
+    id, created_at, repo, issue_number, comment_github_id,
+    author_login, author_association, body, NULL AS embedding,
+    embedding_model, github_created_at, github_updated_at
+  `;
+}
+
+function issueReferenceColumns(sql: Sql) {
+  return sql`
+    id, created_at, repo, owner, issue_number, title, body, state,
+    author_login, author_association, label_names, template_slug,
+    comment_count, assignees, milestone, reaction_count, is_pull_request,
+    locked, NULL AS embedding, embedding_model, github_created_at,
+    github_updated_at, closed_at
+  `;
+}
+
 type RepairStateRow = {
   id: number;
   corpus: string;
@@ -104,6 +123,29 @@ type RepairStateRow = {
 
 const DEFAULT_REPAIR_KEY = "default";
 const ISSUE_REPAIR_CORPORA = new Set<EmbeddingRepairCorpus>(["issues", "issue_comments"]);
+
+function rowToIssueRepairCandidate(row: Record<string, unknown>): RepairCandidateRow {
+  return {
+    id: Number(row.id),
+    corpus: "issues",
+    title: row.title as string,
+    body: (row.body as string | null) ?? null,
+    embedding: null,
+    embedding_model: (row.embedding_model as string | null) ?? null,
+  };
+}
+
+function rowToIssueCommentRepairCandidate(row: Record<string, unknown>): RepairCandidateRow {
+  return {
+    id: Number(row.id),
+    corpus: "issue_comments",
+    issue_number: Number(row.issue_number),
+    issue_title: row.issue_title as string,
+    comment_body: row.body as string,
+    embedding: null,
+    embedding_model: (row.embedding_model as string | null) ?? null,
+  };
+}
 
 function issueSearchColumns(sql: Sql) {
   return sql`
@@ -272,6 +314,98 @@ export function createIssueStore(opts: {
       `;
     },
 
+    async upsertMany(issues: IssueInput[]): Promise<void> {
+      if (issues.length === 0) return;
+
+      const payload = issues.map((issue) => ({
+        repo: sanitizePostgresText(issue.repo),
+        owner: sanitizePostgresText(issue.owner),
+        issue_number: issue.issueNumber,
+        title: sanitizePostgresText(issue.title),
+        body: sanitizeNullablePostgresText(issue.body),
+        state: sanitizePostgresText(issue.state),
+        author_login: sanitizePostgresText(issue.authorLogin),
+        author_association: sanitizeNullablePostgresText(issue.authorAssociation),
+        label_names: sanitizePostgresTextArray(issue.labelNames),
+        template_slug: sanitizeNullablePostgresText(issue.templateSlug),
+        comment_count: issue.commentCount,
+        assignees: issue.assignees,
+        milestone: sanitizeNullablePostgresText(issue.milestone),
+        reaction_count: issue.reactionCount,
+        is_pull_request: issue.isPullRequest,
+        locked: issue.locked,
+        embedding: issue.embedding ? float32ArrayToVectorString(issue.embedding) : null,
+        embedding_model: issue.embedding ? "voyage-4" : null,
+        github_created_at: issue.githubCreatedAt.toISOString(),
+        github_updated_at: issue.githubUpdatedAt?.toISOString() ?? null,
+        closed_at: issue.closedAt?.toISOString() ?? null,
+      }));
+
+      await sql.unsafe(
+        `
+        INSERT INTO issues (
+          repo, owner, issue_number, title, body,
+          state, author_login, author_association,
+          label_names, template_slug, comment_count,
+          assignees, milestone, reaction_count,
+          is_pull_request, locked,
+          embedding, embedding_model,
+          github_created_at, github_updated_at, closed_at
+        )
+        SELECT
+          repo, owner, issue_number, title, body,
+          state, author_login, author_association,
+          label_names, template_slug, comment_count,
+          assignees, milestone, reaction_count,
+          is_pull_request, locked,
+          CASE WHEN embedding IS NULL THEN NULL ELSE embedding::vector END,
+          embedding_model,
+          github_created_at, github_updated_at, closed_at
+        FROM jsonb_to_recordset($1::jsonb) AS input(
+          repo text,
+          owner text,
+          issue_number int,
+          title text,
+          body text,
+          state text,
+          author_login text,
+          author_association text,
+          label_names text[],
+          template_slug text,
+          comment_count int,
+          assignees jsonb,
+          milestone text,
+          reaction_count int,
+          is_pull_request boolean,
+          locked boolean,
+          embedding text,
+          embedding_model text,
+          github_created_at timestamptz,
+          github_updated_at timestamptz,
+          closed_at timestamptz
+        )
+        ON CONFLICT (repo, issue_number) DO UPDATE SET
+          title = EXCLUDED.title,
+          body = EXCLUDED.body,
+          state = EXCLUDED.state,
+          author_association = EXCLUDED.author_association,
+          label_names = EXCLUDED.label_names,
+          template_slug = EXCLUDED.template_slug,
+          comment_count = EXCLUDED.comment_count,
+          assignees = EXCLUDED.assignees,
+          milestone = EXCLUDED.milestone,
+          reaction_count = EXCLUDED.reaction_count,
+          is_pull_request = EXCLUDED.is_pull_request,
+          locked = EXCLUDED.locked,
+          embedding = EXCLUDED.embedding,
+          embedding_model = EXCLUDED.embedding_model,
+          github_updated_at = EXCLUDED.github_updated_at,
+          closed_at = EXCLUDED.closed_at
+        `,
+        [JSON.stringify(payload)],
+      );
+    },
+
     async delete(repo: string, issueNumber: number): Promise<void> {
       // Delete comments first
       await sql`
@@ -286,11 +420,26 @@ export function createIssueStore(opts: {
 
     async getByNumber(repo: string, issueNumber: number): Promise<IssueRecord | null> {
       const rows = await sql`
-        SELECT * FROM issues
+        SELECT ${issueReferenceColumns(sql)}
+        FROM issues
         WHERE repo = ${repo} AND issue_number = ${issueNumber}
       `;
       if (rows.length === 0) return null;
       return rowToRecord(rows[0] as unknown as IssueRow);
+    },
+
+    async getReferenceRecordsByNumbers(repo: string, issueNumbers: number[]): Promise<IssueRecord[]> {
+      const numbers = Array.from(new Set(issueNumbers.filter((issueNumber) => Number.isSafeInteger(issueNumber))));
+      if (numbers.length === 0) return [];
+
+      const rows = await sql`
+        SELECT ${issueReferenceColumns(sql)}
+        FROM issues
+        WHERE repo = ${repo}
+          AND issue_number = ANY(${numbers}::int[])
+      `;
+
+      return rows.map((row) => rowToRecord(row as unknown as IssueRow));
     },
 
     async searchByEmbedding(params: {
@@ -422,7 +571,8 @@ export function createIssueStore(opts: {
 
     async getCommentsByIssue(repo: string, issueNumber: number): Promise<IssueCommentRecord[]> {
       const rows = await sql`
-        SELECT * FROM issue_comments
+        SELECT ${issueCommentContextColumns(sql)}
+        FROM issue_comments
         WHERE repo = ${repo} AND issue_number = ${issueNumber}
         ORDER BY github_created_at ASC
       `;
@@ -459,24 +609,17 @@ export function createIssueStore(opts: {
 
       if (corpus === "issues") {
         const rows = await sql`
-          SELECT id, title, body, embedding, embedding_model
+          SELECT id, title, body, embedding_model
           FROM issues
           WHERE embedding IS NULL
              OR embedding_model IS DISTINCT FROM ${"voyage-4"}
           ORDER BY id ASC
         `;
-        return rows.map((row) => ({
-          id: Number(row.id),
-          corpus: "issues",
-          title: row.title as string,
-          body: (row.body as string | null) ?? null,
-          embedding: row.embedding,
-          embedding_model: (row.embedding_model as string | null) ?? null,
-        }));
+        return rows.map(rowToIssueRepairCandidate);
       }
 
       const rows = await sql`
-        SELECT ic.id, ic.issue_number, ic.body, ic.embedding, ic.embedding_model, i.title AS issue_title
+        SELECT ic.id, ic.issue_number, ic.body, ic.embedding_model, i.title AS issue_title
         FROM issue_comments ic
         INNER JOIN issues i
           ON i.repo = ic.repo
@@ -485,15 +628,76 @@ export function createIssueStore(opts: {
            OR ic.embedding_model IS DISTINCT FROM ${"voyage-4"}
         ORDER BY ic.id ASC
       `;
-      return rows.map((row) => ({
-        id: Number(row.id),
-        corpus: "issue_comments",
-        issue_number: Number(row.issue_number),
-        issue_title: row.issue_title as string,
-        comment_body: row.body as string,
-        embedding: row.embedding,
-        embedding_model: (row.embedding_model as string | null) ?? null,
-      }));
+      return rows.map(rowToIssueCommentRepairCandidate);
+    },
+
+    async countRepairCandidates(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      targetModel: string;
+    }): Promise<number> {
+      if (!ISSUE_REPAIR_CORPORA.has(input.corpus)) {
+        throw new Error(`Unsupported repair corpus for IssueStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate(input);
+      const tableName = input.corpus === "issues" ? "issues" : "issue_comments";
+      const rows = await sql.unsafe(
+        `
+          SELECT COUNT(*)::int AS count
+          FROM ${tableName}
+          WHERE ${predicate.text}
+        `,
+        predicate.params,
+      );
+      return Number(rows[0]?.count ?? 0);
+    },
+
+    async listRepairCandidateBatch(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      limit: number;
+      targetModel: string;
+    }): Promise<RepairCandidateRow[]> {
+      if (!ISSUE_REPAIR_CORPORA.has(input.corpus)) {
+        throw new Error(`Unsupported repair corpus for IssueStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        idColumn: input.corpus === "issue_comments" ? "ic.id" : "id",
+        embeddingColumn: input.corpus === "issue_comments" ? "ic.embedding" : "embedding",
+        embeddingModelColumn: input.corpus === "issue_comments" ? "ic.embedding_model" : "embedding_model",
+      });
+      const params = [...predicate.params, input.limit];
+      if (input.corpus === "issues") {
+        const rows = await sql.unsafe(
+          `
+            SELECT id, title, body, embedding_model
+            FROM issues
+            WHERE ${predicate.text}
+            ORDER BY id ASC
+            LIMIT $${params.length}::int
+          `,
+          params,
+        );
+        return rows.map(rowToIssueRepairCandidate);
+      }
+
+      const rows = await sql.unsafe(
+        `
+          SELECT ic.id, ic.issue_number, ic.body, ic.embedding_model, i.title AS issue_title
+          FROM issue_comments ic
+          INNER JOIN issues i
+            ON i.repo = ic.repo
+           AND i.issue_number = ic.issue_number
+          WHERE ${predicate.text}
+          ORDER BY ic.id ASC
+          LIMIT $${params.length}::int
+        `,
+        params,
+      );
+      return rows.map(rowToIssueCommentRepairCandidate);
     },
 
     async getRepairState(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null> {

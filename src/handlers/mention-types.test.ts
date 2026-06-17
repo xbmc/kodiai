@@ -19,6 +19,14 @@ describe("mention-types", () => {
       expect(containsMention("hi @claude123", ["claude"])).toBe(false);
     });
 
+    test("escapes metacharacters in accepted handles", () => {
+      expect(containsMention("hi @kodi.ai", ["kodi.ai"])).toBe(true);
+      expect(containsMention("hi @kod(ai)", ["kod(ai)"])).toBe(true);
+      expect(containsMention("hi @kod+ai", ["kod+ai"])).toBe(true);
+      expect(containsMention("hi @kodXai", ["kod.ai"])).toBe(false);
+      expect(containsMention("hi @kodaai", ["kod+ai"])).toBe(false);
+    });
+
     test("detects @claude only when included in accepted handles", () => {
       expect(containsMention("hi @claude", ["kodiai"])).toBe(false);
       expect(containsMention("hi @claude", ["kodiai", "claude"])).toBe(true);
@@ -44,6 +52,13 @@ describe("mention-types", () => {
       expect(stripMention("@claude123 please help", ["claude"])).toBe(
         "@claude123 please help",
       );
+    });
+
+    test("strips metacharacter handles without stripping regex-like lookalikes", () => {
+      expect(stripMention("@kodi.ai please help", ["kodi.ai"])).toBe("please help");
+      expect(stripMention("@kod(ai) please help", ["kod(ai)"])).toBe("please help");
+      expect(stripMention("@kod+ai please help", ["kod+ai"])).toBe("please help");
+      expect(stripMention("@kodXai please help", ["kod.ai"])).toBe("@kodXai please help");
     });
 
     test("returns empty string when body contains only mentions", () => {

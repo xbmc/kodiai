@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createInMemoryWriteConfirmationStore } from "./write-confirmation-store.ts";
 
 describe("createInMemoryWriteConfirmationStore", () => {
-  test("stores pending confirmation with deterministic timeout metadata", () => {
+  test("stores pending confirmation until its requested timeout", () => {
     let now = 1_700_000_000_000;
     const store = createInMemoryWriteConfirmationStore(() => now);
 
@@ -19,8 +19,6 @@ describe("createInMemoryWriteConfirmationStore", () => {
 
     expect(pending.pending).toBe(true);
     expect(pending.command).toBe("apply: update src/slack/assistant-handler.ts");
-    expect(pending.createdAt).toBe(now);
-    expect(pending.expiresAt).toBe(now + 15 * 60 * 1000);
 
     // Entry is still retrievable within TTL
     now += 14 * 60 * 1000;

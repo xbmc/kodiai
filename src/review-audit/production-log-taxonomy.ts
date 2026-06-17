@@ -8,6 +8,7 @@ export type ProductionLogDownstreamOwner = "S02" | "S03" | "S04" | "S05" | "S06"
 
 export type ProductionLogIssueClassId =
   | "knowledge-store.undefined-write"
+  | "jsonb-batch.recordset-non-array"
   | "inline-publication.line-not-commentable"
   | "candidate-publication.non-approved-missing-reason"
   | "review-timeout-classification.expected-bounded-outcome"
@@ -98,6 +99,12 @@ const ISSUE_CLASS_DEFINITIONS: Record<ProductionLogIssueClassId, Omit<Production
   "knowledge-store.undefined-write": {
     id: "knowledge-store.undefined-write",
     title: "Knowledge store write received undefined payload data",
+    classification: "app-actionable",
+    downstreamOwner: "S02",
+  },
+  "jsonb-batch.recordset-non-array": {
+    id: "jsonb-batch.recordset-non-array",
+    title: "JSONB batch recordset insert received a non-array payload",
     classification: "app-actionable",
     downstreamOwner: "S02",
   },
@@ -282,7 +289,9 @@ function textForClassification(row: NormalizedLogAnalyticsRow): string {
     row.message,
     row.containerAppName,
     row.revisionName,
-    safeString(readPath(parsed, ["msg", "message", "error", "errorMessage", "reason", "reasonCode", "status", "conclusion", "phase", "component", "event", "eventType", "kind"])),
+    safeString(readPath(parsed, ["msg", "message"])),
+    safeString(readPath(parsed, ["err.message", "error.message", "error", "errorMessage"])),
+    safeString(readPath(parsed, ["reason", "reasonCode", "status", "conclusion", "phase", "component", "event", "eventType", "kind"])),
     safeString(readPath(parsed, ["publicationMode", "mode", "publishMode", "candidatePublicationMode"])),
     safeString(readPath(parsed, ["publishResolution", "failureClass", "failureReason"])),
   ];
@@ -375,6 +384,10 @@ export function classifyProductionLogRow(row: NormalizedLogAnalyticsRow): Produc
 
   if (/knowledge store write failed/.test(text) && /undefined/.test(text)) {
     return "knowledge-store.undefined-write";
+  }
+
+  if (/jsonb_to_recordset/.test(text) && /non-array/.test(text)) {
+    return "jsonb-batch.recordset-non-array";
   }
 
   if (/line-not-commentable|not commentable|not part of the pull request diff|line.*not.*pr diff/.test(text)) {

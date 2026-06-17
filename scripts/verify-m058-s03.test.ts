@@ -34,16 +34,18 @@ const PASSING_PACKAGE_JSON = JSON.stringify(
 const PASSING_CI = `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun install
       - run: bun run lint
       - run: bun run verify:m056:s03
       - run: bun run check:orphaned-tests
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
+      - run: bun run test:db
       - run: bunx tsc --noEmit
 `;
 
@@ -123,13 +125,15 @@ describe("verify m058 s03 proof harness", () => {
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun run verify:m056:s03
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
+      - run: bun run test:db
 `;
         }
         if (filePath.endsWith("DECISIONS.md")) {
@@ -181,15 +185,17 @@ jobs:
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun run lint
       - run: bun run check:orphaned-tests
       - run: bun run verify:m056:s03
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
+      - run: bun run test:db
 `;
         }
         if (filePath.endsWith("DECISIONS.md")) return PASSING_DECISIONS;
@@ -214,14 +220,16 @@ jobs:
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun run lint
       - run: bun run verify:m056:s03
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
+      - run: bun run test:db
 `;
         }
         if (filePath.endsWith("DECISIONS.md")) return PASSING_DECISIONS;
@@ -246,12 +254,14 @@ jobs:
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun run lint
       - run: bun run verify:m056:s03
       - run: bun run check:orphaned-tests
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      - run: bun run test:unit
+      - run: bun run test:db
 `;
         }
         if (filePath.endsWith("DECISIONS.md")) return "# Decisions Register\n";

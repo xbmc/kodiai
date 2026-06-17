@@ -262,6 +262,45 @@ describe("catchUpReviewComments", () => {
     expect(apiCall.direction).toBe("asc");
   });
 
+  it("uses batch stored-comment lookup when the store supports it", async () => {
+    const getByGithubIds = mock(async () => new Map<number, ReviewCommentRecord>());
+    const getByGithubId = mock(async () => null);
+    const store = createMockStore({
+      getSyncState: mock(async () => ({
+        id: 1,
+        repo: "xbmc/xbmc",
+        lastSyncedAt: new Date("2025-06-15T10:00:00Z"),
+        lastPageCursor: "10",
+        totalCommentsSynced: 500,
+        backfillComplete: true,
+        updatedAt: "2025-06-15",
+      })),
+      getByGithubId,
+    } as Partial<ReviewCommentStore>) as ReturnType<typeof createMockStore> & {
+      getByGithubIds: typeof getByGithubIds;
+    };
+    store.getByGithubIds = getByGithubIds;
+
+    const octokit = createMockOctokit({
+      1: [
+        makeGitHubComment({ id: 1101, body: "New review comment" }),
+        makeGitHubComment({ id: 1102, body: "Another new comment", path: "src/other.ts" }),
+      ],
+    });
+
+    await catchUpReviewComments({
+      octokit: octokit as any,
+      store,
+      embeddingProvider,
+      repo: "xbmc/xbmc",
+      logger,
+    });
+
+    expect(getByGithubIds).toHaveBeenCalledTimes(1);
+    expect(getByGithubIds).toHaveBeenCalledWith("xbmc/xbmc", [1101, 1102]);
+    expect(getByGithubId).not.toHaveBeenCalled();
+  });
+
   it("detects edited comments (github_updated_at differs) and calls updateChunks", async () => {
     const store = createMockStore({
       getSyncState: mock(async () => ({
@@ -467,7 +506,7 @@ describe("catchUpReviewComments", () => {
       getByGithubId: mock(async () => null),
       writeChunks: mock(async () => {
         writeCallCount++;
-        if (writeCallCount === 1) throw new Error("DB connection lost");
+        if (writeCallCount <= 2) throw new Error("DB connection lost");
       }),
     });
 
@@ -487,8 +526,8 @@ describe("catchUpReviewComments", () => {
       logger,
     });
 
-    // Both threads attempted
-    expect(writeCallCount).toBe(2);
+    // Batch attempted, then both threads attempted individually.
+    expect(writeCallCount).toBe(3);
     // One thread failed, one succeeded
     expect(result.newComments).toBe(1); // only successful thread counted
     // Error should have been logged

@@ -10,7 +10,7 @@ import type {
   FormatterSuggestionSubflowResult,
 } from "./formatter-suggestion-orchestration.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
-import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
+import { scanLinesForFabricatedContent } from "../lib/fabricated-content-detector.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";

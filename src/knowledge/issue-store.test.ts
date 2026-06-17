@@ -3,6 +3,7 @@ import { createIssueStore, sanitizePostgresText } from "./issue-store.ts";
 import { createDbClient, type Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import type { IssueStore, IssueInput, IssueCommentInput } from "./issue-types.ts";
+import { DEFAULT_EMBEDDING_MODEL } from "./runtime.ts";
 
 const mockLogger = {
   info: () => {},
@@ -228,7 +229,7 @@ describe.skipIf(!TEST_DB_URL)("IssueStore (pgvector)", () => {
     expect(record!.reactionCount).toBe(5);
     expect(record!.isPullRequest).toBe(false);
     expect(record!.locked).toBe(false);
-    expect(record!.embeddingModel).toBe("voyage-code-3");
+    expect(record!.embeddingModel).toBe(DEFAULT_EMBEDDING_MODEL);
   });
 
   test("upsert updates existing issue on conflict", async () => {
@@ -349,7 +350,7 @@ describe.skipIf(!TEST_DB_URL)("IssueStore (pgvector)", () => {
     expect(comments.length).toBe(1);
     expect(comments[0]!.body).toBe("I can reproduce this on Android 14.");
     expect(comments[0]!.authorLogin).toBe("bob");
-    expect(comments[0]!.embeddingModel).toBe("voyage-code-3");
+    expect(comments[0]!.embeddingModel).toBe(DEFAULT_EMBEDDING_MODEL);
   });
 
   test("upsertComment updates on conflict", async () => {

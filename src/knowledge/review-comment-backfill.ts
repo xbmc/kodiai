@@ -4,6 +4,7 @@ import type { ReviewCommentChunk, ReviewCommentInput, ReviewCommentStore } from 
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkReviewThread } from "./review-comment-chunker.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
+import { withTransientDbRetry } from "../db/transient-retry.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -202,7 +203,7 @@ export function groupCommentsIntoThreads(
     }
   }
 
-  const [owner, repoName] = repo.split("/");
+  const [owner] = repo.split("/");
   const threads: ReviewCommentInput[][] = [];
 
   for (const threadComments of threadMap.values()) {
@@ -356,7 +357,10 @@ async function processReviewCommentPageThreads(opts: {
   }
 
   try {
-    await store.writeChunks(allChunks);
+    await withTransientDbRetry(
+      () => store.writeChunks(allChunks),
+      { logger, context: { repo, page, operation: "review-comment-page-write" } },
+    );
     return {
       humanCommentCount,
       threadCount: threads.length,
@@ -383,7 +387,10 @@ async function processReviewCommentPageThreads(opts: {
   let fallbackEmbeddingsFailed = 0;
   for (const { thread, chunks } of threadChunks) {
     try {
-      await store.writeChunks(chunks);
+      await withTransientDbRetry(
+        () => store.writeChunks(chunks),
+        { logger, context: { repo, page, operation: "review-comment-thread-write" } },
+      );
       const counts = countChunkEmbeddings(chunks);
       chunksProduced += chunks.length;
       fallbackEmbeddingsGenerated += counts.generated;
@@ -474,6 +481,7 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
   let totalEmbeddings = 0;
   let pagesProcessed = 0;
   let lastCommentDate: Date | null = null;
+  let hadWriteFailures = false;
 
   while (true) {
     const response = await withRetry(
@@ -518,6 +526,9 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
     totalComments += pageResult.humanCommentCount;
     totalChunks += pageResult.chunksProduced;
     totalEmbeddings += pageResult.embeddingsGenerated;
+    if (pageResult.threadFailures > 0) {
+      hadWriteFailures = true;
+    }
 
     // Track last comment date for sync state
     const lastComment = comments[comments.length - 1]!;
@@ -541,7 +552,7 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
     );
 
     // Update sync state after each page
-    if (!dryRun && lastCommentDate) {
+    if (!dryRun && lastCommentDate && pageResult.threadFailures === 0) {
       await store.updateSyncState({
         repo,
         lastSyncedAt: lastCommentDate,
@@ -549,6 +560,8 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
         totalCommentsSynced: totalComments,
         backfillComplete: false,
       });
+    } else if (!dryRun && pageResult.threadFailures > 0) {
+      logger.warn({ repo, page, threadFailures: pageResult.threadFailures }, "Review-comment backfill had thread write failures; preserving previous sync checkpoint");
     }
 
     // If we got fewer than 100 comments, we're at the end
@@ -560,7 +573,7 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
   }
 
   // Mark backfill complete
-  if (!dryRun) {
+  if (!dryRun && !hadWriteFailures) {
     await store.updateSyncState({
       repo,
       lastSyncedAt: lastCommentDate ?? sinceDate,
@@ -568,6 +581,8 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
       totalCommentsSynced: totalComments,
       backfillComplete: true,
     });
+  } else if (!dryRun && hadWriteFailures) {
+    logger.warn({ repo }, "Review-comment backfill had write failures; not marking backfill complete");
   }
 
   const durationMs = Date.now() - startTime;
@@ -651,20 +666,15 @@ export async function syncSinglePR(opts: SyncSinglePROptions): Promise<{ chunksW
   // Group into threads
   const threads = groupCommentsIntoThreads(allComments, repo, botLogins);
 
-  let chunksWritten = 0;
+  const allChunks = threads.flatMap((thread) => chunkReviewThread(thread, { botLogins }));
+  const chunksWritten = allChunks.length;
 
-  for (const thread of threads) {
-    const chunks = chunkReviewThread(thread, { botLogins });
-    if (chunks.length === 0) continue;
-
-    // Generate embeddings (fail-open)
-    await embedChunks(chunks, embeddingProvider);
+  if (allChunks.length > 0) {
+    await embedChunks(allChunks, embeddingProvider);
 
     if (!dryRun) {
-      await store.writeChunks(chunks);
+      await store.writeChunks(allChunks);
     }
-
-    chunksWritten += chunks.length;
   }
 
   logger.info(

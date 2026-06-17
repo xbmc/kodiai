@@ -30,35 +30,16 @@ const PASSING_PACKAGE_JSON = JSON.stringify(
 const PASSING_CI = `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun install
       - run: bun run verify:m056:s03
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
-      - run: bunx tsc --noEmit
-`;
-
-const PASSING_CI_MULTILINE = `name: ci
-jobs:
-  test:
-    steps:
-      - run: bun install
-      - run: bun run verify:m056:s03
-      # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: |
-          mapfile -t non_knowledge_tests < <(
-            {
-              find src -maxdepth 1 -type f -name '*.test.ts'
-              find src -maxdepth 1 -mindepth 1 -type d ! -name knowledge
-            } | sort
-          )
-          bun test --max-concurrency=2 scripts "\${non_knowledge_tests[@]}"
-      - run: bun test --max-concurrency=2 src/knowledge
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
+      - run: bun run test:db
       - run: bunx tsc --noEmit
 `;
 
@@ -131,13 +112,14 @@ describe("verify m058 s01 proof harness", () => {
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src/contributor src/handlers src/webhook
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
       - run: bun run verify:m056:s03
-      - run: bun test --max-concurrency=2 src/webhook
       - run: bunx tsc --noEmit
 `;
         }
@@ -171,8 +153,8 @@ jobs:
         status_code: "ci_verify_step_misordered",
       }),
     ]);
-    expect(report.checks[0]?.detail).toContain("broadened non-knowledge src coverage step");
-    expect(report.checks[1]?.detail).toContain("bun test --max-concurrency=2 src/knowledge");
+    expect(report.checks[0]?.detail).toContain("non-DB unit test lane");
+    expect(report.checks[1]?.detail).toContain("bun run test:db");
     expect(report.checks[2]?.detail).toContain("verify:m058:s01");
     expect(stderr.join(" ")).toContain("ci_split_step_missing");
     expect(stderr.join(" ")).toContain("ci_split_step_missing");
@@ -187,13 +169,15 @@ jobs:
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      - run: bun test --max-concurrency=2 scripts src
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
       - run: bun run verify:m056:s03
-      - run: bun test --max-concurrency=2 src/knowledge
+      - run: bun run test:db
       - run: bunx tsc --noEmit
 `;
         }
@@ -209,7 +193,7 @@ jobs:
       }),
     );
     expect(report.checks[3]?.detail).toContain("bun run verify:m056:s03");
-    expect(report.checks[3]?.detail).toContain("bun test --max-concurrency=2 scripts src");
+    expect(report.checks[3]?.detail).toContain("bun run test:unit");
   });
 
   test("flags stale rationale comments, invalid package json, unreadable files, and malformed cli usage", async () => {
@@ -220,11 +204,13 @@ jobs:
           return `name: ci
 jobs:
   test:
+    env:
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - run: bun run verify:m056:s03
       # Bun used to be flaky, but the old src list is still here.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      - run: bun run test:unit
+      - run: bun run test:db
 `;
         }
         throw new Error(`Unexpected path: ${filePath}`);

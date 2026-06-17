@@ -182,8 +182,8 @@ describe("createReviewGraphStore batching", () => {
     expect(txCalls.filter((call) => call.kind === "unsafe")).toHaveLength(2);
     expect(txCalls[3]?.text).toContain("jsonb_to_recordset");
     expect(txCalls[4]?.text).toContain("jsonb_to_recordset");
-    expect(JSON.parse(txCalls[3]?.values[0] as string)).toHaveLength(3);
-    expect(JSON.parse(txCalls[4]?.values[0] as string)).toHaveLength(2);
+    expect(txCalls[3]?.values[0]).toHaveLength(3);
+    expect(txCalls[4]?.values[0]).toHaveLength(2);
   });
 
   test("replaceFileGraph splits large node payloads into bounded batches", async () => {
@@ -221,8 +221,8 @@ describe("createReviewGraphStore batching", () => {
     expect(result.nodesWritten).toBe(nodeCount);
     const unsafeCalls = calls.filter((call) => call.kind === "unsafe");
     expect(unsafeCalls).toHaveLength(2);
-    expect(JSON.parse(unsafeCalls[0]!.values[0] as string)).toHaveLength(500);
-    expect(JSON.parse(unsafeCalls[1]!.values[0] as string)).toHaveLength(1);
+    expect(unsafeCalls[0]!.values[0]).toHaveLength(500);
+    expect(unsafeCalls[1]!.values[0]).toHaveLength(1);
   });
 
   test("replaceFileGraph skips empty node and edge batch inserts", async () => {

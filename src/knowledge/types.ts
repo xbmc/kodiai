@@ -439,6 +439,21 @@ export type LearningMemoryStore = {
   /** List degraded persisted rows that need row-local embedding repair. */
   listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
 
+  /** Count degraded persisted rows after the durable cursor without materializing them. */
+  countRepairCandidates?(input: {
+    corpus: EmbeddingRepairCorpus;
+    afterId: number | null;
+    targetModel: string;
+  }): Promise<number>;
+
+  /** Page degraded persisted rows after the durable cursor for bounded repair. */
+  listRepairCandidateBatch?(input: {
+    corpus: EmbeddingRepairCorpus;
+    afterId: number | null;
+    limit: number;
+    targetModel: string;
+  }): Promise<RepairCandidateRow[]>;
+
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;
 

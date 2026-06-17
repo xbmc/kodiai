@@ -338,7 +338,7 @@ export function buildMentionPromptDetails(params: {
     lines.push("");
     lines.push("## Custom Instructions");
     lines.push("");
-    lines.push(customInstructions);
+    lines.push(sanitizeContent(customInstructions));
   }
 
   // Triage context for issue mentions

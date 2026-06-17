@@ -11,31 +11,8 @@ import {
   type DepBumpContext,
 } from "../lib/dep-bump-detector.ts";
 import { fetchChangelog, fetchSecurityAdvisories } from "../lib/dep-bump-enrichment.ts";
+import { maxAdvisorySeverity } from "../lib/advisory-severity.ts";
 import { computeMergeConfidence } from "../lib/merge-confidence.ts";
-
-type AdvisorySeverity = "critical" | "high" | "medium" | "low" | "unknown";
-
-function getMaxAdvisorySeverity(severities: string[]): AdvisorySeverity {
-  const order: Record<AdvisorySeverity, number> = {
-    critical: 4,
-    high: 3,
-    medium: 2,
-    low: 1,
-    unknown: 0,
-  };
-
-  let max: AdvisorySeverity = "unknown";
-  let maxOrder = 0;
-  for (const raw of severities) {
-    const sev = (raw ?? "").trim().toLowerCase() as AdvisorySeverity;
-    const sevOrder = order[sev] ?? 0;
-    if (sevOrder > maxOrder) {
-      maxOrder = sevOrder;
-      max = sev;
-    }
-  }
-  return max;
-}
 
 export function createDepBumpMergeHistoryHandler(deps: {
   eventRouter: EventRouter;
@@ -157,7 +134,7 @@ export function createDepBumpMergeHistoryHandler(deps: {
               : "none";
 
         const advisoryMaxSeverity = advisoryCount && advisoryCount > 0
-          ? getMaxAdvisorySeverity(securityContext!.advisories.map((a) => a.severity))
+          ? maxAdvisorySeverity(securityContext!.advisories)
           : null;
 
         ctx.mergeConfidence = computeMergeConfidence(ctx);

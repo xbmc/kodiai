@@ -53,6 +53,18 @@
             "sourceEvidence": "live-sanitized-projection"
           },
           {
+            "id": "jsonb-batch.recordset-non-array",
+            "title": "JSONB batch recordset insert received a non-array payload",
+            "classification": "app-actionable",
+            "downstreamOwner": "S02",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
             "id": "inline-publication.line-not-commentable",
             "title": "Approved inline finding targets a GitHub line that is not commentable",
             "classification": "app-actionable",
@@ -235,6 +247,18 @@
           {
             "id": "knowledge-store.undefined-write",
             "title": "Knowledge store write received undefined payload data",
+            "classification": "app-actionable",
+            "downstreamOwner": "S02",
+            "count": 0,
+            "examples": [],
+            "firstSeenAt": null,
+            "lastSeenAt": null,
+            "baselineStatus": "historical",
+            "sourceEvidence": "live-sanitized-projection"
+          },
+          {
+            "id": "jsonb-batch.recordset-non-array",
+            "title": "JSONB batch recordset insert received a non-array payload",
             "classification": "app-actionable",
             "downstreamOwner": "S02",
             "count": 0,

@@ -1,9 +1,13 @@
-import { readdir, readFile as readFileFromFs } from "node:fs/promises";
+import { readdir, readFile as readFileFromFs, stat } from "node:fs/promises";
 import path from "node:path";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 const DEFAULT_MAX_PATHS = 5;
 const MAX_SCAN_FILES = 400;
+const MAX_ISSUE_CODE_CONTEXT_FILE_BYTES = 512 * 1024;
 const MAX_TERMS = 8;
+const WALK_CONCURRENCY = 8;
+const FILE_SCAN_CONCURRENCY = 16;
 
 const STOPWORDS = new Set([
   "a",
@@ -92,6 +96,8 @@ const IGNORED_EXTENSIONS = new Set([
 ]);
 
 type ReadFileFn = (filePath: string) => Promise<string>;
+type GrepMatch = { path: string; line?: number };
+type TermGrepMatch = GrepMatch & { term: string };
 
 export type IssueCodeContextPath = {
   path: string;
@@ -111,7 +117,7 @@ export type IssueCodeContextAdapters = {
     term: string;
     filePaths: string[];
     readFile: ReadFileFn;
-  }) => Promise<Array<{ path: string; line?: number }>>;
+  }) => Promise<GrepMatch[]>;
   readFile?: ReadFileFn;
 };
 
@@ -187,6 +193,8 @@ async function defaultGlobFiles(workspaceDir: string): Promise<string[]> {
     const entries = await readdir(currentDir, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
 
+    const childDirs: string[] = [];
+
     for (const entry of entries) {
       const absolute = path.join(currentDir, entry.name);
       const repoPath = normalizeToRepoPath(workspaceDir, absolute);
@@ -194,7 +202,7 @@ async function defaultGlobFiles(workspaceDir: string): Promise<string[]> {
 
       if (entry.isDirectory()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
-        await walk(absolute);
+        childDirs.push(absolute);
         continue;
       }
 
@@ -202,6 +210,10 @@ async function defaultGlobFiles(workspaceDir: string): Promise<string[]> {
       if (shouldSkipPath(repoPath)) continue;
       files.push(repoPath);
     }
+
+    await mapWithConcurrency(childDirs, WALK_CONCURRENCY, async (absolute) => {
+      await walk(absolute);
+    });
   }
 
   await walk(workspaceDir);
@@ -209,6 +221,10 @@ async function defaultGlobFiles(workspaceDir: string): Promise<string[]> {
 }
 
 async function defaultReadFile(filePath: string): Promise<string> {
+  const fileStats = await stat(filePath);
+  if (fileStats.size > MAX_ISSUE_CODE_CONTEXT_FILE_BYTES) {
+    throw new Error(`issue_code_context_file_too_large:${fileStats.size}`);
+  }
   return readFileFromFs(filePath, "utf8");
 }
 
@@ -217,18 +233,18 @@ async function defaultGrepInFiles(params: {
   term: string;
   filePaths: string[];
   readFile: ReadFileFn;
-}): Promise<Array<{ path: string; line?: number }>> {
-  const matches: Array<{ path: string; line?: number }> = [];
+}): Promise<GrepMatch[]> {
+  const matches: GrepMatch[] = [];
   const searchTerm = params.term.toLowerCase();
 
-  for (const repoPath of params.filePaths) {
+  const perFileMatches = await mapWithConcurrency(params.filePaths, FILE_SCAN_CONCURRENCY, async (repoPath) => {
     const absolutePath = path.resolve(params.workspaceDir, repoPath);
 
     let content: string;
     try {
       content = await params.readFile(absolutePath);
     } catch {
-      continue;
+      return null;
     }
 
     const lines = content.split(/\r?\n/);
@@ -237,10 +253,61 @@ async function defaultGrepInFiles(params: {
       if (!line) continue;
       if (!line.toLowerCase().includes(searchTerm)) continue;
 
-      matches.push({ path: repoPath, line: index + 1 });
-      break;
+      return { path: repoPath, line: index + 1 };
     }
-  }
+
+    return null;
+  });
+
+  matches.push(...perFileMatches.filter((match) => match !== null));
+
+  return matches;
+}
+
+async function defaultGrepTermsInFiles(params: {
+  workspaceDir: string;
+  terms: string[];
+  filePaths: string[];
+  readFile: ReadFileFn;
+}): Promise<TermGrepMatch[]> {
+  const matches: TermGrepMatch[] = [];
+  const searchTerms = params.terms.map((term) => term.toLowerCase());
+
+  const perFileMatches = await mapWithConcurrency(params.filePaths, FILE_SCAN_CONCURRENCY, async (repoPath) => {
+    const absolutePath = path.resolve(params.workspaceDir, repoPath);
+
+    let content: string;
+    try {
+      content = await params.readFile(absolutePath);
+    } catch {
+      return [];
+    }
+
+    const matches: TermGrepMatch[] = [];
+    const matchedTerms = new Set<string>();
+    const lines = content.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!line) continue;
+      const lowerLine = line.toLowerCase();
+
+      for (let termIndex = 0; termIndex < searchTerms.length; termIndex += 1) {
+        const searchTerm = searchTerms[termIndex]!;
+        const originalTerm = params.terms[termIndex]!;
+        if (matchedTerms.has(originalTerm)) continue;
+        if (!lowerLine.includes(searchTerm)) continue;
+
+        matches.push({ path: repoPath, line: index + 1, term: originalTerm });
+        matchedTerms.add(originalTerm);
+      }
+
+      if (matchedTerms.size === searchTerms.length) break;
+    }
+
+    return matches;
+  });
+
+  matches.push(...perFileMatches.flat());
 
   return matches;
 }
@@ -305,33 +372,46 @@ export async function buildIssueCodeContext(
     }
 
     const scanPathSet = new Set(scanPaths);
-    for (const term of terms) {
-      const grepMatches = await grepInFiles({
+    const termMatches: TermGrepMatch[] = [];
+
+    if (adapters.grepInFiles) {
+      for (const term of terms) {
+        const grepMatches = await grepInFiles({
+          workspaceDir: params.workspaceDir,
+          term,
+          filePaths: scanPaths,
+          readFile,
+        });
+
+        termMatches.push(...grepMatches.map((match) => ({ ...match, term })));
+      }
+    } else {
+      termMatches.push(...await defaultGrepTermsInFiles({
         workspaceDir: params.workspaceDir,
-        term,
+        terms,
         filePaths: scanPaths,
         readFile,
-      });
+      }));
+    }
 
-      for (const match of grepMatches) {
-        const repoPath = normalizeToRepoPath(params.workspaceDir, match.path);
-        if (!repoPath || !scanPathSet.has(repoPath)) continue;
+    for (const match of termMatches) {
+      const repoPath = normalizeToRepoPath(params.workspaceDir, match.path);
+      if (!repoPath || !scanPathSet.has(repoPath)) continue;
 
-        const existing = signalByPath.get(repoPath) ?? {
-          pathTerms: new Set<string>(),
-          contentTerms: new Set<string>(),
-        };
-        existing.contentTerms.add(term);
+      const existing = signalByPath.get(repoPath) ?? {
+        pathTerms: new Set<string>(),
+        contentTerms: new Set<string>(),
+      };
+      existing.contentTerms.add(match.term);
 
-        if (typeof match.line === "number" && match.line > 0) {
-          existing.line =
-            typeof existing.line === "number"
-              ? Math.min(existing.line, match.line)
-              : match.line;
-        }
-
-        signalByPath.set(repoPath, existing);
+      if (typeof match.line === "number" && match.line > 0) {
+        existing.line =
+          typeof existing.line === "number"
+            ? Math.min(existing.line, match.line)
+            : match.line;
       }
+
+      signalByPath.set(repoPath, existing);
     }
 
     const scored = [...signalByPath.entries()]

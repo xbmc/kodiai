@@ -7,12 +7,13 @@ const EXPECTED_LINT_SCRIPT = "eslint src scripts";
 const EXPECTED_LINT_STEP = "bun run lint";
 const EXPECTED_MIGRATION_VERIFY_STEP = "bun run verify:m056:s03";
 const EXPECTED_ORPHANED_TEST_STEP = "bun run check:orphaned-tests";
-const EXPECTED_BROAD_TEST_STEP = "bun test --max-concurrency=2 scripts src";
-const EXPECTED_KNOWLEDGE_TEST_STEP = "bun test --max-concurrency=2 src/knowledge";
+const EXPECTED_BROAD_TEST_STEP = "bun run test:unit";
+const EXPECTED_KNOWLEDGE_TEST_STEP = "bun run test:db";
+const EXPECTED_TEST_DB_ENV = "TEST_DATABASE_URL:";
 const REQUIRED_SPLIT_RATIONALE_MARKERS = [
   "Bun has been unstable on GitHub runners with one monolithic test process.",
-  "Keep DB-backed tests on a low concurrency cap and split the suite into",
-  "two shorter invocations to avoid cross-file schema interference and runner crashes.",
+  "Keep DB-backed tests serialized and split the suite into explicit lanes",
+  "so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.",
 ] as const;
 const DECISION_MARKER = "M058-S03-LINT-TOOL-CONTRACT";
 const DECISION_REQUIRED_TEXT =
@@ -296,7 +297,7 @@ function buildCiRationaleCheck(ciContent: string): Check {
     return failCheck(
       "M058-S03-CI-RATIONALE",
       "ci_broad_test_step_missing",
-      `.github/workflows/ci.yml must retain ${EXPECTED_BROAD_TEST_STEP} as the broadened test step.`,
+      `.github/workflows/ci.yml must retain ${EXPECTED_BROAD_TEST_STEP} as the non-DB unit test lane.`,
     );
   }
 
@@ -304,14 +305,22 @@ function buildCiRationaleCheck(ciContent: string): Check {
     return failCheck(
       "M058-S03-CI-RATIONALE",
       "ci_knowledge_test_step_missing",
-      `.github/workflows/ci.yml must retain ${EXPECTED_KNOWLEDGE_TEST_STEP} as the isolated knowledge test step.`,
+      `.github/workflows/ci.yml must retain ${EXPECTED_KNOWLEDGE_TEST_STEP} as the serialized DB test lane.`,
+    );
+  }
+
+  if (!ciContent.includes(EXPECTED_TEST_DB_ENV)) {
+    return failCheck(
+      "M058-S03-CI-RATIONALE",
+      "ci_test_database_url_missing",
+      `.github/workflows/ci.yml must set ${EXPECTED_TEST_DB_ENV} so ${EXPECTED_KNOWLEDGE_TEST_STEP} runs integration coverage instead of skipping DB-gated tests.`,
     );
   }
 
   return passCheck(
     "M058-S03-CI-RATIONALE",
     "ci_rationale_ok",
-    `.github/workflows/ci.yml preserves the split Bun-test rationale comment plus both split test steps.`,
+    `.github/workflows/ci.yml preserves the split Bun-test rationale comment plus both explicit test lanes.`,
   );
 }
 

@@ -10,8 +10,6 @@ export interface SlackWritePendingConfirmation {
   request: string;
   prompt: string;
   command: string;
-  createdAt: number;
-  expiresAt: number;
 }
 
 export interface SlackWriteConfirmationStore {
@@ -52,7 +50,6 @@ export function createInMemoryWriteConfirmationStore(
 
   return {
     openPending(input) {
-      const createdAt = now();
       const pending: SlackWritePendingConfirmation = {
         pending: true,
         channel: input.channel,
@@ -63,11 +60,9 @@ export function createInMemoryWriteConfirmationStore(
         request: input.request,
         prompt: input.prompt,
         command: buildCommand(input.keyword, input.request),
-        createdAt,
-        expiresAt: createdAt + input.timeoutMs,
       };
 
-      cache.set(buildStoreKey(input.channel, input.threadTs), pending);
+      cache.set(buildStoreKey(input.channel, input.threadTs), pending, input.timeoutMs);
       return pending;
     },
 

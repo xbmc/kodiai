@@ -139,6 +139,7 @@ export function createWikiPopularityStore(opts: {
       const BATCH_SIZE = 100;
       for (let i = 0; i < records.length; i += BATCH_SIZE) {
         const batch = records.slice(i, i + BATCH_SIZE);
+        const batchTimestamp = new Date();
 
         const values = batch.map((r) => ({
           page_id: r.pageId,
@@ -147,8 +148,8 @@ export function createWikiPopularityStore(opts: {
           citation_count: r.citationCount,
           edit_recency_score: r.editRecencyScore,
           composite_score: r.compositeScore,
-          last_scored_at: new Date(),
-          updated_at: new Date(),
+          last_scored_at: batchTimestamp,
+          updated_at: batchTimestamp,
         }));
 
         await sql`

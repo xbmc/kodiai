@@ -76,6 +76,19 @@ const MAX_RELEASE_BODY_CHARS = 500;
 const MAX_CHANGELOG_CHARS = 1500;
 const MAX_SNIPPET_CHARS = 200;
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 // ─── GitHub Advisory Response Type ────────────────────────────────────────────
 
 type GitHubAdvisoryResponse = {
@@ -90,12 +103,6 @@ type GitHubAdvisoryResponse = {
     vulnerable_version_range?: string;
     first_patched_version?: { identifier: string } | null;
   }>;
-};
-
-type GitHubReleaseResponse = {
-  draft: boolean;
-  tag_name: string;
-  body: string | null;
 };
 
 type GitHubContentResponse = {
@@ -137,10 +144,10 @@ export async function fetchSecurityAdvisories(params: {
   try {
     const [oldResult, newResult] = await Promise.allSettled([
       oldVersion
-        ? queryAdvisories(octokit, packageName, advisoryEcosystem, oldVersion)
+        ? withTimeout(queryAdvisories(octokit, packageName, advisoryEcosystem, oldVersion), timeoutMs, "old advisory lookup")
         : Promise.resolve([]),
       newVersion
-        ? queryAdvisories(octokit, packageName, advisoryEcosystem, newVersion)
+        ? withTimeout(queryAdvisories(octokit, packageName, advisoryEcosystem, newVersion), timeoutMs, "new advisory lookup")
         : Promise.resolve([]),
     ]);
 

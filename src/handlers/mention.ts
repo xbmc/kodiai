@@ -21,7 +21,6 @@ import {
   createBranchCommitAndPush,
   commitAndPushToRemoteRef,
   pushHeadToRemoteRef,
-  buildAuthFetchUrl,
   fetchRemoteTrackingBranch,
   WritePolicyError,
   assertOriginIsFork,
@@ -39,11 +38,9 @@ import {
   normalizeIssueComment,
   normalizeReviewComment,
   normalizeReviewBody,
-  containsMention,
   stripMention,
 } from "./mention-types.ts";
 import {
-  buildMentionContext,
   buildMentionContextDetails,
   buildMentionContextFingerprint,
 } from "../execution/mention-context.ts";
@@ -61,8 +58,8 @@ import {
   generatePrBody,
   generatePrTitle,
   parseWriteIntent,
-  summarizeWriteRequest,
 } from "./mention-write-formatters.ts";
+import { summarizeWriteRequest } from "../lib/write-request-formatting.ts";
 import {
   buildIssueWriteFailureReply,
   buildIssueWriteSuccessReply,
@@ -76,8 +73,8 @@ import {
   scanDiffForFabricatedContent,
 } from "./mention-pr-review-diff.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
-import { buildMentionPrompt, buildMentionPromptDetails } from "../execution/mention-prompt.ts";
-import { buildReviewPrompt, buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildMentionPromptDetails } from "../execution/mention-prompt.ts";
+import { buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
 import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import {
@@ -107,12 +104,13 @@ import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
-import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
+import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import {
   createConversationTurnStore,
   createTriageCooldownStore,
   createWriteRateLimitStore,
 } from "../lib/mention-state-stores.ts";
+import { runCommandWithCappedOutput, type CappedProcessResult } from "../lib/capped-process.ts";
 import { splitGitLines } from "../lib/review-git-utils.ts";
 import {
   buildApprovedReviewBody,
@@ -129,7 +127,6 @@ import {
 import {
   attachReviewFindingLifecycle,
   attachReviewValidationTruth,
-  type AttachReviewFindingLifecycleResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 import {
@@ -137,6 +134,38 @@ import {
   type FormatterSuggestionSubflowResult,
 } from "./formatter-suggestion-orchestration.ts";
 import { selectExplicitReviewPromptDiffContent } from "./mention-token-budget.ts";
+
+async function prepareMentionCheckoutAndLoadConfig(params: {
+  workspace: Workspace;
+  usesPrRef: boolean;
+  mention: Pick<MentionEvent, "prNumber" | "baseRef">;
+  cloneDepth: number;
+}): Promise<Awaited<ReturnType<typeof loadRepoConfig>>> {
+  const trustedBaseRepoConfig = params.usesPrRef
+    ? await loadRepoConfig(params.workspace.dir)
+    : null;
+
+  if (params.usesPrRef && params.mention.prNumber !== undefined) {
+    await fetchAndCheckoutPullRequestHeadRef({
+      dir: params.workspace.dir,
+      prNumber: params.mention.prNumber,
+      localBranch: "pr-mention",
+      token: params.workspace.token,
+      depth: params.cloneDepth,
+    });
+
+    if (params.mention.baseRef) {
+      await fetchRemoteTrackingBranch({
+        dir: params.workspace.dir,
+        branch: params.mention.baseRef,
+        token: params.workspace.token,
+        depth: params.cloneDepth,
+      });
+    }
+  }
+
+  return trustedBaseRepoConfig ?? loadRepoConfig(params.workspace.dir);
+}
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -254,6 +283,92 @@ function classifyMentionExecutionFailureSubtype(errorMessage: string | undefined
 }
 
 const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
+const GIST_PATCH_MAX_BYTES = 2 * 1024 * 1024;
+const PR_DIFF_MAX_CHARS = 8_000;
+
+async function collectMentionDiffFilePaths(params: {
+  workspaceDir: string;
+  baseRef: string;
+}): Promise<CappedProcessResult> {
+  let diffResult = await runCommandWithCappedOutput({
+    command: "git",
+    args: ["diff", `origin/${params.baseRef}...HEAD`, "--name-only"],
+    cwd: params.workspaceDir,
+    maxStdoutBytes: 256 * 1024,
+  });
+  if (diffResult.exitCode !== 0) {
+    diffResult = await runCommandWithCappedOutput({
+      command: "git",
+      args: ["diff", `origin/${params.baseRef}..HEAD`, "--name-only"],
+      cwd: params.workspaceDir,
+      maxStdoutBytes: 256 * 1024,
+    });
+  }
+  return diffResult;
+}
+
+async function collectCappedPrDiff(params: {
+  workspaceDir: string;
+  baseRef: string;
+  logger: Logger;
+  logContext: Record<string, unknown>;
+}): Promise<{ stat: string; diff: string; truncated: boolean; fileCount: number } | undefined> {
+  let statResult = await $`git -C ${params.workspaceDir} diff origin/${params.baseRef}...HEAD --stat`.quiet().nothrow();
+  let diffResult = await runCommandWithCappedOutput({
+    command: "git",
+    args: ["diff", `origin/${params.baseRef}...HEAD`],
+    cwd: params.workspaceDir,
+    maxStdoutBytes: PR_DIFF_MAX_CHARS + 4096,
+  });
+  if (statResult.exitCode !== 0 || diffResult.exitCode !== 0) {
+    params.logger.debug(
+      {
+        ...params.logContext,
+        statExitCode: statResult.exitCode,
+        diffExitCode: diffResult.exitCode,
+      },
+      "Three-dot diff failed, falling back to two-dot diff",
+    );
+    statResult = await $`git -C ${params.workspaceDir} diff origin/${params.baseRef}..HEAD --stat`.quiet().nothrow();
+    diffResult = await runCommandWithCappedOutput({
+      command: "git",
+      args: ["diff", `origin/${params.baseRef}..HEAD`],
+      cwd: params.workspaceDir,
+      maxStdoutBytes: PR_DIFF_MAX_CHARS + 4096,
+    });
+  }
+
+  if (statResult.exitCode !== 0 || (diffResult.exitCode !== 0 && !diffResult.stdoutTruncated)) {
+    return undefined;
+  }
+
+  const stat = statResult.text().trim();
+  const fullDiff = diffResult.stdout;
+  const truncated = diffResult.stdoutTruncated || fullDiff.length > PR_DIFF_MAX_CHARS;
+  const cutPoint = fullDiff.lastIndexOf("\n", PR_DIFF_MAX_CHARS);
+  const diff = truncated
+    ? fullDiff.slice(0, cutPoint > 0 ? cutPoint : PR_DIFF_MAX_CHARS)
+    : fullDiff.trim();
+  const fileCount = stat.split("\n").filter((line) => line.includes("|")).length;
+  return { stat, diff, truncated, fileCount };
+}
+
+async function collectWorkspaceChangedFiles(workspaceDir: string): Promise<string[]> {
+  const changedFilesRaw = (await $`git -C ${workspaceDir} diff --name-only HEAD`.quiet().nothrow()).text().trim();
+  const stagedFilesRaw = (await $`git -C ${workspaceDir} diff --cached --name-only`.quiet().nothrow()).text().trim();
+  const allChangedRaw = [changedFilesRaw, stagedFilesRaw].filter(Boolean).join("\n");
+  return [...new Set(splitGitLines(allChangedRaw))];
+}
+
+async function buildStagedPatchForGist(workspaceDir: string): Promise<CappedProcessResult> {
+  await $`git -C ${workspaceDir} add -A`.quiet();
+  return runCommandWithCappedOutput({
+    command: "git",
+    args: ["diff", "--cached"],
+    cwd: workspaceDir,
+    maxStdoutBytes: GIST_PATCH_MAX_BYTES,
+  });
+}
 
 function buildMentionQueueKey(owner: string, repo: string, issueOrPrNumber: number): string {
   return `${owner.trim().toLowerCase()}/${repo.trim().toLowerCase()}#${issueOrPrNumber}`;
@@ -800,33 +915,15 @@ export function createMentionHandler(deps: {
           forkContext,
         });
 
-        // PR mentions: fetch and checkout PR head ref from base repo.
-        if (usesPrRef && mention.prNumber !== undefined) {
-          await fetchAndCheckoutPullRequestHeadRef({
-            dir: workspace.dir,
-            prNumber: mention.prNumber,
-            localBranch: "pr-mention",
-            token: workspace.token,
-            depth: cloneDepth,
-          });
-
-          // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
-          // origin/BASE...HEAD even in --single-branch workspaces.
-          if (mention.baseRef) {
-            await fetchRemoteTrackingBranch({
-              dir: workspace.dir,
-              branch: mention.baseRef,
-              token: workspace.token,
-              depth: cloneDepth,
-            });
-          }
-        }
-
         if (explicitReviewUsesCanonicalHandle) {
           setReviewWorkPhase("load-config");
         }
-        // Load repo config
-        const { config, warnings } = await loadRepoConfig(workspace.dir);
+        const { config, warnings } = await prepareMentionCheckoutAndLoadConfig({
+          workspace,
+          usesPrRef,
+          mention,
+          cloneDepth,
+        });
         for (const w of warnings) {
           logger.warn(
             { section: w.section, issues: w.issues },
@@ -897,7 +994,6 @@ export function createMentionHandler(deps: {
 
         const userQuestion = stripMention(mention.commentBody, acceptedHandles);
         const formatterSuggestionRequest = detectFormatterSuggestionRequest(userQuestion);
-        const normalizedQuestion = userQuestion.trim().toLowerCase();
         if (userQuestion.trim().length === 0) {
           logger.info(
             {
@@ -1544,17 +1640,12 @@ export function createMentionHandler(deps: {
             });
             let filePaths: string[] = [];
             if ((explicitReviewRequest || allowPrDiffContext) && mention.prNumber !== undefined && mention.baseRef) {
-              // Try three-dot diff first; fall back to two-dot if merge-base unreachable (shallow clone).
-              let diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
-                .quiet()
-                .nothrow();
-              if (diffResult.exitCode !== 0) {
-                diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}..HEAD --name-only`
-                  .quiet()
-                  .nothrow();
-              }
+              const diffResult = await collectMentionDiffFilePaths({
+                workspaceDir: workspace.dir,
+                baseRef: mention.baseRef,
+              });
               if (diffResult.exitCode === 0) {
-                filePaths = splitGitLines(diffResult.text());
+                filePaths = splitGitLines(diffResult.stdout);
               } else {
                 logger.warn(
                   {
@@ -1720,43 +1811,28 @@ export function createMentionHandler(deps: {
         // Pre-fetch PR diff for PR mentions — prevents turn exhaustion by giving the model
         // the diff upfront so it does not need to tool-call git to read it.
         // Cap at 8000 chars; truncate at the last newline to avoid splitting mid-line.
-        const PR_DIFF_MAX_CHARS = 8_000;
         let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined;
         // mention.baseRef is the PR base branch (e.g. "main"), set by the event parser.
         if (allowPrDiffContext && mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
           try {
-            // Try three-dot diff first (shows only changes introduced by the PR branch).
-            // Falls back to two-dot diff when the merge base isn't reachable — this can happen
-            // in shallow clones where --depth=1 re-fetch of the base branch truncates history
-            // enough that `git merge-base` fails with exit 128.
-            let statResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --stat`.quiet().nothrow();
-            let diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD`.quiet().nothrow();
-            if (statResult.exitCode !== 0 || diffResult.exitCode !== 0) {
+            prDiffContext = await collectCappedPrDiff({
+              workspaceDir: workspace.dir,
+              baseRef: mention.baseRef,
+              logger,
+              logContext: {
+                surface: mention.surface,
+                prNumber: mention.prNumber,
+                baseRef: mention.baseRef,
+              },
+            });
+            if (prDiffContext) {
               logger.debug(
-                { surface: mention.surface, prNumber: mention.prNumber, baseRef: mention.baseRef,
-                  statExitCode: statResult.exitCode, diffExitCode: diffResult.exitCode },
-                "Three-dot diff failed, falling back to two-dot diff",
-              );
-              statResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}..HEAD --stat`.quiet().nothrow();
-              diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}..HEAD`.quiet().nothrow();
-            }
-            if (statResult.exitCode === 0 && diffResult.exitCode === 0) {
-              const stat = statResult.text().trim();
-              const fullDiff = diffResult.text();
-              const truncated = fullDiff.length > PR_DIFF_MAX_CHARS;
-              // Truncate at last newline to avoid splitting mid-line or mid-hunk.
-              let diff: string;
-              if (truncated) {
-                const cutPoint = fullDiff.lastIndexOf("\n", PR_DIFF_MAX_CHARS);
-                diff = cutPoint > 0 ? fullDiff.slice(0, cutPoint) : fullDiff.slice(0, PR_DIFF_MAX_CHARS);
-              } else {
-                diff = fullDiff.trim();
-              }
-              // Count files from stat output (lines like "path/to/file.ts | 12 +++---")
-              const fileCount = stat.split("\n").filter(l => l.includes("|")).length;
-              prDiffContext = { stat, diff, truncated, fileCount };
-              logger.debug(
-                { surface: mention.surface, prNumber: mention.prNumber, fileCount, truncated },
+                {
+                  surface: mention.surface,
+                  prNumber: mention.prNumber,
+                  fileCount: prDiffContext.fileCount,
+                  truncated: prDiffContext.truncated,
+                },
                 "Pre-fetched PR diff for mention context",
               );
             }
@@ -2030,6 +2106,7 @@ export function createMentionHandler(deps: {
             owner: mention.owner,
             repo: mention.repo,
             prNumber: mention.prNumber,
+            issueNumber: mention.issueNumber,
             // For inline review comment mentions, provide the triggering review comment id
             // so the executor can enable the in-thread reply MCP tool.
             commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
@@ -2680,25 +2757,26 @@ export function createMentionHandler(deps: {
 
           // Fork-based output routing: determine gist vs PR (Phase 127)
           if (forkContext && gistPublisher?.enabled) {
-            // Get list of changed files for routing decision
-            const changedFilesRaw = (await $`git -C ${workspace.dir} diff --name-only HEAD`.quiet().nothrow()).text().trim();
-            const stagedFilesRaw = (await $`git -C ${workspace.dir} diff --cached --name-only`.quiet().nothrow()).text().trim();
-            const allChangedRaw = [changedFilesRaw, stagedFilesRaw].filter(Boolean).join("\n");
-            const changedFiles = allChangedRaw.split("\n").map((f) => f.trim()).filter(Boolean);
-            const uniqueChangedFiles = [...new Set(changedFiles)];
-
-            const useGist = shouldUseGist({ keyword: writeIntent.keyword }, uniqueChangedFiles);
+            const changedFiles = await collectWorkspaceChangedFiles(workspace.dir);
+            const useGist = shouldUseGist({ keyword: writeIntent.keyword }, changedFiles);
 
             if (useGist) {
               // Gist path: generate patch and create gist
               try {
-                // Stage all changes to generate a complete diff
-                await $`git -C ${workspace.dir} add -A`.quiet();
-                const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+                const patchResult = await buildStagedPatchForGist(workspace.dir);
+                const patch = patchResult.stdout;
 
                 if (patch.trim().length === 0) {
                   const replyBody = wrapInDetails(
                     "No diff content to create a patch from.",
+                    "kodiai response",
+                  );
+                  await postMentionReply(replyBody);
+                  return;
+                }
+                if (patchResult.stdoutTruncated) {
+                  const replyBody = wrapInDetails(
+                    "The generated patch is too large to publish as a gist. Please split the request into smaller changes.",
                     "kodiai response",
                   );
                   await postMentionReply(replyBody);
@@ -2723,7 +2801,7 @@ export function createMentionHandler(deps: {
                     `curl -sL ${gist.htmlUrl}.patch | git apply`,
                     "```",
                     "",
-                    `Files changed: ${uniqueChangedFiles.join(", ")}`,
+                    `Files changed: ${changedFiles.join(", ")}`,
                   ].join("\n"),
                   "kodiai response",
                 );
@@ -2740,7 +2818,7 @@ export function createMentionHandler(deps: {
                     repo: `${mention.owner}/${mention.repo}`,
                     gistUrl: gist.htmlUrl,
                     gistId: gist.id,
-                    changedFiles: uniqueChangedFiles,
+                    changedFiles,
                     writeOutputKey,
                     triggerCommentUrl,
                   },
@@ -2884,8 +2962,11 @@ export function createMentionHandler(deps: {
 
               if (gistPublisher.enabled) {
                 try {
-                  await $`git -C ${workspace.dir} add -A`.quiet();
-                  const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+                  const patchResult = await buildStagedPatchForGist(workspace.dir);
+                  const patch = patchResult.stdout;
+                  if (patchResult.stdoutTruncated) {
+                    throw new Error("Generated patch exceeds gist publication limit");
+                  }
                   if (patch.trim().length > 0) {
                     const requestSummary = summarizeWriteRequest(writeIntent.request);
                     const gist = await gistPublisher.createPatchGist({
@@ -2962,8 +3043,12 @@ export function createMentionHandler(deps: {
             // do duplicate work concurrently. This project currently deploys with max-replicas=1.
 
             try {
-              const fetchRemote2 = await buildAuthFetchUrl(workspace.dir, workspace.token);
-              await $`git -C ${workspace.dir} fetch ${fetchRemote2} ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
+              await fetchRemoteTrackingBranch({
+                dir: workspace.dir,
+                branch: headRef,
+                token: workspace.token,
+                depth: 50,
+              });
               const recentMessages = (
                 await $`git -C ${workspace.dir} log -n 50 --pretty=%B refs/remotes/origin/${headRef}`.quiet()
               )
@@ -3077,8 +3162,12 @@ export function createMentionHandler(deps: {
 
               // If another concurrent run already pushed an idempotent commit, treat this as a no-op.
               try {
-                const fetchRemote3 = await buildAuthFetchUrl(workspace.dir, workspace.token);
-                await $`git -C ${workspace.dir} fetch ${fetchRemote3} ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
+                await fetchRemoteTrackingBranch({
+                  dir: workspace.dir,
+                  branch: headRef,
+                  token: workspace.token,
+                  depth: 50,
+                });
                 const recentMessages = (
                   await $`git -C ${workspace.dir} log -n 50 --pretty=%B refs/remotes/origin/${headRef}`.quiet()
                 )
