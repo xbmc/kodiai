@@ -13,6 +13,7 @@ import { cosineSimilarity } from "./embedding-vector.ts";
 // ── Constants ────────────────────────────────────────────────────────
 
 const MAX_PATTERN_MATCHES = 3;
+const MAX_CLUSTER_CANDIDATES = 100;
 const MIN_COMBINED_SCORE = 0.3;
 const EMBEDDING_WEIGHT = 0.6;
 const FILE_PATH_WEIGHT = 0.4;
@@ -45,6 +46,8 @@ type ClusterRecencyStats = {
   recentCount: number;
   avgAgeDays: number;
 };
+
+type ScoredClusterPatternMatch = ClusterPatternMatch & { _recencyWeight: number };
 
 async function loadClusterRecencyStats(
   sql: Sql,
@@ -99,6 +102,14 @@ async function loadRepresentativeSamples(
   return samples;
 }
 
+function pushTopMatch(candidates: ScoredClusterPatternMatch[], candidate: ScoredClusterPatternMatch): void {
+  candidates.push(candidate);
+  candidates.sort((a, b) => b.combinedScore - a.combinedScore);
+  if (candidates.length > MAX_PATTERN_MATCHES) {
+    candidates.length = MAX_PATTERN_MATCHES;
+  }
+}
+
 /**
  * Match PR diff against active clusters using dual signals:
  * 1. Cosine similarity between PR embedding and cluster centroid (60% weight)
@@ -120,8 +131,9 @@ export async function matchClusterPatterns(
   }
 
   try {
-    // Fetch active (non-retired) clusters for this repo
-    const clusters = await store.getActiveClusters(input.repo);
+    const clusters = store.getActiveMatchCandidates
+      ? await store.getActiveMatchCandidates(input.repo, input.prEmbedding, MAX_CLUSTER_CANDIDATES)
+      : await store.getActiveClusters(input.repo);
     if (clusters.length === 0) return [];
 
     const clusterIds = clusters.map((cluster) => cluster.id);
@@ -129,7 +141,7 @@ export async function matchClusterPatterns(
       loadClusterRecencyStats(sql, clusterIds),
       loadRepresentativeSamples(sql, clusterIds),
     ]);
-    const candidates: Array<ClusterPatternMatch & { _recencyWeight: number }> = [];
+    const candidates: ScoredClusterPatternMatch[] = [];
 
     for (const cluster of clusters) {
       if (cluster.centroid.length === 0) continue;
@@ -159,7 +171,7 @@ export async function matchClusterPatterns(
 
       const representativeSample = representativeSamples.get(cluster.id) ?? "";
 
-      candidates.push({
+      pushTopMatch(candidates, {
         clusterId: cluster.id,
         slug: cluster.slug,
         label: cluster.label,
@@ -172,12 +184,8 @@ export async function matchClusterPatterns(
       });
     }
 
-    // Sort by combined score descending, take top 3
-    candidates.sort((a, b) => b.combinedScore - a.combinedScore);
-    const topMatches = candidates.slice(0, MAX_PATTERN_MATCHES);
-
     // Strip internal field
-    return topMatches.map(({ _recencyWeight, ...match }) => match);
+    return candidates.map(({ _recencyWeight, ...match }) => match);
   } catch (err) {
     // Fail-open: log and return empty
     logger.warn({ err, repo: input.repo }, "Cluster pattern matching failed (fail-open)");

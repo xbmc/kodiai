@@ -60,6 +60,10 @@ describe("matchPattern", () => {
   test("returns false for invalid regex patterns", () => {
     expect(matchPattern("regex:[invalid", "anything")).toBe(false);
   });
+
+  test("rejects nested quantified regex patterns instead of executing them", () => {
+    expect(matchPattern("regex:(a+)+$", "aaaa")).toBe(false);
+  });
 });
 
 describe("matchesSuppression", () => {

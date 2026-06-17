@@ -8,7 +8,7 @@ import { buildFileDiffsMap, classifyClaims, type FindingClaimClassification, typ
 import { demoteExternalClaimSeverities, type DemotableFinding } from "../lib/severity-demoter.ts";
 import { filterExternalClaims, type FilterableFinding, type FilteredFindingRecord } from "../lib/output-filter.ts";
 import { prioritizeFindings, type FindingPriorityWeights } from "../lib/finding-prioritizer.ts";
-import { computeConfidence, matchesSuppression, type SuppressionPattern } from "../knowledge/confidence.ts";
+import { computeConfidence, createSuppressionMatcher, type SuppressionPattern } from "../knowledge/confidence.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
@@ -407,19 +407,24 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       );
     }
 
+    const suppressionMatchers = input.reviewSuppressions.map((suppression) => ({
+      suppression,
+      matches: createSuppressionMatcher(suppression),
+    }));
+    const feedbackPatternByFingerprint = new Map(
+      input.feedbackSuppression.patterns.map((pattern) => [pattern.fingerprint, pattern]),
+    );
     const suppressionMatchCounts = new Map<string, number>();
     let processedFindings: ProcessedReviewFinding[] = enforcedFindings.map((finding) => {
       const category = finding.category as FindingCategory;
-      const matchedSuppression = input.reviewSuppressions.find((suppression) =>
-        matchesSuppression(
-          {
-            filePath: finding.filePath,
-            title: finding.title,
-            severity: finding.severity as FindingSeverity,
-            category,
-          },
-          suppression,
-        )
+      const suppressionFinding = {
+        filePath: finding.filePath,
+        title: finding.title,
+        severity: finding.severity as FindingSeverity,
+        category,
+      };
+      const matchedSuppression = suppressionMatchers.find(({ matches }) =>
+        matches(suppressionFinding)
       );
       const dedupSuppressed = input.priorFindingContext
         ? shouldSuppressFinding({
@@ -433,14 +438,16 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       const titleFp = fingerprintFindingTitle(finding.title);
       const feedbackSuppressed = input.feedbackSuppression.suppressedFingerprints.has(titleFp);
       const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed || abbreviatedSuppressed || feedbackSuppressed;
-      const suppressionPattern = typeof matchedSuppression === "string"
-        ? matchedSuppression
-        : matchedSuppression?.pattern;
+      const suppressionPattern = matchedSuppression
+        ? typeof matchedSuppression.suppression === "string"
+          ? matchedSuppression.suppression
+          : matchedSuppression.suppression.pattern
+        : undefined;
       if (suppressionPattern) {
         suppressionMatchCounts.set(suppressionPattern, (suppressionMatchCounts.get(suppressionPattern) ?? 0) + 1);
       }
 
-      const feedbackPattern = input.feedbackSuppression.patterns.find((pattern) => pattern.fingerprint === titleFp);
+      const feedbackPattern = feedbackPatternByFingerprint.get(titleFp);
       const baseConfidence = computeConfidence({
         severity: finding.severity as FindingSeverity,
         category,

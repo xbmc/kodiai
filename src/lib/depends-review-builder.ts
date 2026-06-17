@@ -174,15 +174,19 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
 
   // 2. Version Diff table
   if (data.versionDiffs.length > 0) {
+    const hashResultByPackage = new Map<string, DependsReviewData["hashResults"][number]>();
+    for (const result of data.hashResults) {
+      if (!hashResultByPackage.has(result.packageName)) {
+        hashResultByPackage.set(result.packageName, result);
+      }
+    }
     sections.push("### Version Diff");
     sections.push("");
     sections.push("| Package | Old | New | Hash Status |");
     sections.push("|---------|-----|-----|-------------|");
 
     for (const vd of data.versionDiffs) {
-      const hashResult = data.hashResults.find(
-        (h) => h.packageName === vd.packageName,
-      );
+      const hashResult = hashResultByPackage.get(vd.packageName);
       const hashStatus = hashResult
         ? formatHashStatus(hashResult.result)
         : "\u2014";

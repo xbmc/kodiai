@@ -91,6 +91,40 @@ describe("createInMemoryCache", () => {
     expect(cache.get("d")).toBe(4);
   });
 
+  test("get promotes entries so maxSize eviction keeps hot keys", () => {
+    const cache = createInMemoryCache<string, number>({
+      maxSize: 3,
+      ttlMs: 60_000,
+    });
+
+    cache.set("a", 1);
+    cache.set("b", 2);
+    cache.set("c", 3);
+    expect(cache.get("a")).toBe(1);
+    cache.set("d", 4);
+
+    expect(cache.get("a")).toBe(1);
+    expect(cache.get("b")).toBeUndefined();
+    expect(cache.get("c")).toBe(3);
+    expect(cache.get("d")).toBe(4);
+  });
+
+  test("has promotes entries so membership checks keep hot keys", () => {
+    const cache = createInMemoryCache<string, number>({
+      maxSize: 3,
+      ttlMs: 60_000,
+    });
+
+    cache.set("a", 1);
+    cache.set("b", 2);
+    cache.set("c", 3);
+    expect(cache.has("a")).toBe(true);
+    cache.set("d", 4);
+
+    expect(cache.get("a")).toBe(1);
+    expect(cache.get("b")).toBeUndefined();
+  });
+
   test("expired entries are evicted before counting toward maxSize", () => {
     const clock = makeClock(0);
     const cache = createInMemoryCache<string, number>({

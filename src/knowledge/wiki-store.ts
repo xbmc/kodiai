@@ -54,6 +54,24 @@ function wikiSearchColumns(sql: Sql) {
   `;
 }
 
+function wikiRepairCandidateColumns(sql: Sql) {
+  return sql`
+    id, created_at, page_id, page_title, namespace, page_url,
+    section_heading, section_anchor, section_level, chunk_index,
+    chunk_text, raw_text, token_count, embedding, embedding_model,
+    stale, last_modified, revision_id, deleted, language_tags
+  `;
+}
+
+function wikiPageChunkColumns(sql: Sql) {
+  return sql`
+    id, created_at, page_id, page_title, namespace, page_url,
+    section_heading, section_anchor, section_level, chunk_index,
+    chunk_text, raw_text, token_count, NULL AS embedding, embedding_model,
+    stale, last_modified, revision_id, deleted, language_tags
+  `;
+}
+
 type WikiRow = {
   id: number;
   created_at: string;
@@ -303,7 +321,8 @@ export function createWikiPageStore(opts: {
 
     async getPageChunks(pageId: number): Promise<WikiPageRecord[]> {
       const rows = await sql`
-        SELECT * FROM wiki_pages
+        SELECT ${wikiPageChunkColumns(sql)}
+        FROM wiki_pages
         WHERE page_id = ${pageId} AND deleted = false
         ORDER BY chunk_index
       `;
@@ -372,7 +391,7 @@ export function createWikiPageStore(opts: {
       const targetModel = params?.targetModel ?? DEFAULT_WIKI_REPAIR_MODEL;
       const rows = params?.pageTitle
         ? await sql`
-            SELECT * FROM wiki_pages
+            SELECT ${wikiRepairCandidateColumns(sql)} FROM wiki_pages
             WHERE deleted = false
               AND page_title = ${params.pageTitle}
               AND (
@@ -383,7 +402,7 @@ export function createWikiPageStore(opts: {
             ORDER BY page_id, chunk_index
           `
         : await sql`
-            SELECT * FROM wiki_pages
+            SELECT ${wikiRepairCandidateColumns(sql)} FROM wiki_pages
             WHERE deleted = false
               AND (
                 embedding IS NULL
@@ -391,6 +410,55 @@ export function createWikiPageStore(opts: {
                 OR embedding_model IS DISTINCT FROM ${targetModel}
               )
             ORDER BY page_id, chunk_index
+          `;
+
+      return rows.map((row) => rowToRecord(row as unknown as WikiRow));
+    },
+
+    async listRepairCandidatePage(params?: {
+      pageTitle?: string;
+      afterPageId?: number | null;
+      targetModel?: string;
+    }): Promise<WikiRepairCandidate[]> {
+      const targetModel = params?.targetModel ?? DEFAULT_WIKI_REPAIR_MODEL;
+      const afterPageId = params?.afterPageId ?? null;
+      const rows = params?.pageTitle
+        ? await sql`
+            SELECT ${wikiRepairCandidateColumns(sql)} FROM wiki_pages
+            WHERE deleted = false
+              AND page_title = ${params.pageTitle}
+              AND (
+                embedding IS NULL
+                OR stale = true
+                OR embedding_model IS DISTINCT FROM ${targetModel}
+              )
+            ORDER BY page_id, chunk_index, id
+          `
+        : await sql`
+            WITH next_page AS (
+              SELECT page_id
+              FROM wiki_pages
+              WHERE deleted = false
+                AND (${afterPageId}::int IS NULL OR page_id > ${afterPageId})
+                AND (
+                  embedding IS NULL
+                  OR stale = true
+                  OR embedding_model IS DISTINCT FROM ${targetModel}
+                )
+              GROUP BY page_id
+              ORDER BY page_id
+              LIMIT 1
+            )
+            SELECT ${wikiRepairCandidateColumns(sql)}
+            FROM wiki_pages
+            WHERE page_id = (SELECT page_id FROM next_page)
+              AND deleted = false
+              AND (
+                embedding IS NULL
+                OR stale = true
+                OR embedding_model IS DISTINCT FROM ${targetModel}
+              )
+            ORDER BY page_id, chunk_index, id
           `;
 
       return rows.map((row) => rowToRecord(row as unknown as WikiRow));

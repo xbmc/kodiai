@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, vi } from "bun:test";
 import { createWikiStalenessDetector } from "./wiki-staleness-detector.ts";
 import { DOMAIN_STOPWORDS, heuristicScore } from "./wiki-evidence-scoring.ts";
 import type { WikiStalenessDetectorOptions } from "./wiki-staleness-types.ts";
@@ -154,6 +154,23 @@ describe("createWikiStalenessDetector", () => {
     const result = await detector.runScan();
     expect(result.skipped).toBe(true);
     expect(result.skipReason).toBe("empty_wiki_store");
+  });
+
+  it("start() is idempotent and does not leak duplicate timers", () => {
+    vi.useFakeTimers();
+    try {
+      const opts = makeMockOpts({ intervalMs: 100_000, delayMs: 10 });
+      const detector = createWikiStalenessDetector(opts);
+
+      detector.start();
+      detector.start();
+
+      expect(vi.getTimerCount()).toBe(1);
+      detector.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not post to Slack when no merged PRs found in window", async () => {

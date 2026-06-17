@@ -76,7 +76,6 @@ export function formatSummaryTable(
   pageResults: PagePostResult[],
   totalSuggestions: number,
 ): string {
-  const posted = pageResults.filter((r) => r.success).length;
   const skipped = pageResults.filter((r) => !r.success).length;
 
   const lines: string[] = [

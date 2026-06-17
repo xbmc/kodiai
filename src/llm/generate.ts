@@ -5,8 +5,7 @@
  * NEVER uses streamText() (Bun production build failure: oven-sh/bun#25630).
  */
 
-import { generateText } from "ai";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { generateText as aiGenerateText } from "ai";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { ResolvedModel } from "./task-router.ts";
@@ -23,6 +22,23 @@ import { buildAgentEnv } from "../execution/env.ts";
  * classification, synthesis) finish in well under this.
  */
 export const GENERATE_TEXT_TIMEOUT_MS = 120_000;
+
+type AgentSdkModule = Pick<typeof import("@anthropic-ai/claude-agent-sdk"), "query">;
+type AgentSdkLoader = () => Promise<AgentSdkModule>;
+type AiSdkModule = { generateText: typeof aiGenerateText };
+type AiSdkLoader = () => Promise<AiSdkModule>;
+
+export async function loadAgentSdkQuery(
+  loader: AgentSdkLoader = () => import("@anthropic-ai/claude-agent-sdk"),
+): Promise<AgentSdkModule["query"]> {
+  return (await loader()).query;
+}
+
+export async function loadGenerateText(
+  loader: AiSdkLoader = () => import("ai"),
+): Promise<typeof aiGenerateText> {
+  return (await loader()).generateText;
+}
 
 /** Result from generateWithFallback. */
 export interface GenerateResult {
@@ -60,6 +76,7 @@ async function generateWithAgentSdk(opts: {
   const modelId = opts.resolved.modelId.includes("haiku")
     ? opts.resolved.fallbackModelId
     : opts.resolved.modelId;
+  const query = await loadAgentSdkQuery();
   const sdkQuery = query({
     prompt: opts.prompt,
     options: {
@@ -184,7 +201,8 @@ export async function generateWithFallback(opts: {
       return await generateWithAgentSdk(opts);
     }
 
-    const model = createProviderModel(resolved.modelId);
+    const generateText = await loadGenerateText();
+    const model = await createProviderModel(resolved.modelId);
     const response = await generateText({
       model,
       prompt: opts.prompt,
@@ -242,7 +260,8 @@ export async function generateWithFallback(opts: {
       );
 
       try {
-        const fallbackModel = createProviderModel(resolved.fallbackModelId);
+        const generateText = await loadGenerateText();
+        const fallbackModel = await createProviderModel(resolved.fallbackModelId);
         const fallbackStartTime = Date.now();
         const fallbackResponse = await generateText({
           model: fallbackModel,

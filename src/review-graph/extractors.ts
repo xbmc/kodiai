@@ -371,9 +371,9 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
   }
 
   const finalNodes = dedupeByStableKey(nodes);
+  const finalNodeKeys = new Set(finalNodes.map((node) => node.stableKey));
   const finalEdges = uniqueEdges(edges).filter((edge) =>
-    finalNodes.some((node) => node.stableKey === edge.sourceStableKey)
-    && finalNodes.some((node) => node.stableKey === edge.targetStableKey),
+    finalNodeKeys.has(edge.sourceStableKey) && finalNodeKeys.has(edge.targetStableKey),
   );
 
   return {
@@ -442,7 +442,14 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
   }
 
   for (const symbol of symbolRecords) {
-    const bodyStart = lines.findIndex((line, idx) => idx + 1 >= symbol.line && line.includes(symbol.qualifiedName.split("::").at(-1) ?? symbol.qualifiedName));
+    const bodyName = symbol.qualifiedName.split("::").at(-1) ?? symbol.qualifiedName;
+    let bodyStart = -1;
+    for (let idx = Math.max(0, symbol.line - 1); idx < lines.length; idx++) {
+      if (lines[idx]!.includes(bodyName)) {
+        bodyStart = idx;
+        break;
+      }
+    }
     if (bodyStart === -1) continue;
 
     let braceDepth = 0;
@@ -594,9 +601,9 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
   }
 
   const finalNodes = dedupeByStableKey(nodes);
+  const finalNodeKeys = new Set(finalNodes.map((node) => node.stableKey));
   const finalEdges = uniqueEdges(edges).filter((edge) =>
-    finalNodes.some((node) => node.stableKey === edge.sourceStableKey)
-    && finalNodes.some((node) => node.stableKey === edge.targetStableKey),
+    finalNodeKeys.has(edge.sourceStableKey) && finalNodeKeys.has(edge.targetStableKey),
   );
 
   return {

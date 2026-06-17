@@ -11,6 +11,7 @@ type MigrationLogger = {
 
 type MigrationLogOptions = {
   logger?: MigrationLogger;
+  migrationsDir?: string;
 };
 
 // This module is an operator-facing CLI surface. Direct console output is
@@ -51,7 +52,8 @@ export async function runMigrations(
   sql: Sql,
   options: MigrationLogOptions = {},
 ): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
+  const migrationsDir = options.migrationsDir ?? MIGRATIONS_DIR;
+  const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql") && !f.endsWith(".down.sql"))
     .sort();
 
@@ -86,7 +88,7 @@ export async function runMigrations(
       continue;
     }
 
-    const filePath = join(MIGRATIONS_DIR, file);
+    const filePath = join(migrationsDir, file);
     const sqlContent = readFileSync(filePath, "utf-8");
 
     logMigration(
@@ -124,7 +126,9 @@ export async function runMigrations(
 export async function runRollback(
   sql: Sql,
   targetVersion: number,
+  options: { migrationsDir?: string } = {},
 ): Promise<void> {
+  const migrationsDir = options.migrationsDir ?? MIGRATIONS_DIR;
   const rows = await sql`SELECT id, name FROM _migrations ORDER BY id DESC`;
 
   if (rows.length === 0) {
@@ -146,7 +150,7 @@ export async function runRollback(
     }
 
     const downFile = name.replace(/\.sql$/, ".down.sql");
-    const downPath = join(MIGRATIONS_DIR, downFile);
+    const downPath = join(migrationsDir, downFile);
 
     let downSql: string;
     try {

@@ -69,6 +69,11 @@ type RepairSuccess = {
 
 export type RepairStore = {
   listRepairCandidates: (params?: { pageTitle?: string }) => Promise<RawRepairCandidateRow[]>;
+  listRepairCandidatePage?: (params?: {
+    pageTitle?: string;
+    afterPageId?: number | null;
+    targetModel?: string;
+  }) => Promise<RawRepairCandidateRow[]>;
   getRepairCheckpoint: () => Promise<{
     page_id: number | null;
     page_title: string | null;
@@ -150,6 +155,34 @@ function groupRowsByPage(rows: RepairCandidateRow[]): Map<number, RepairCandidat
     grouped.set(pageId, sortRows(pageRows));
   }
   return grouped;
+}
+
+async function* readRepairCandidatePages(input: {
+  store: RepairStore;
+  pageTitle?: string;
+  checkpointPageId: number | null;
+}): AsyncGenerator<{ rows: RepairCandidateRow[]; checkpointWindowApplies: boolean }> {
+  if (input.store.listRepairCandidatePage) {
+    let afterPageId: number | null = input.checkpointPageId === null ? null : input.checkpointPageId - 1;
+    while (true) {
+      const rows = (await input.store.listRepairCandidatePage({
+        pageTitle: input.pageTitle,
+        afterPageId,
+        targetModel: TARGET_WIKI_EMBEDDING_MODEL,
+      })).map((row) => normalizeCandidateRow(row));
+      if (rows.length === 0) break;
+      yield { rows, checkpointWindowApplies: false };
+      if (input.pageTitle) break;
+      afterPageId = rows[0]!.page_id;
+    }
+    return;
+  }
+
+  const rows = (await input.store.listRepairCandidates(input.pageTitle ? { pageTitle: input.pageTitle } : undefined))
+    .map((row) => normalizeCandidateRow(row));
+  for (const pageRows of groupRowsByPage(rows).values()) {
+    yield { rows: pageRows, checkpointWindowApplies: true };
+  }
 }
 
 function makeWindow(pageRows: RepairCandidateRow[], page_id: number, page_title: string, window_index: number, windows_total: number): RepairWindow {
@@ -384,14 +417,6 @@ export async function runWikiEmbeddingRepair(input: {
     ...input.limits,
   };
   const checkpoint = input.resume ? normalizeCheckpoint(await input.store.getRepairCheckpoint()) : null;
-  const rows = (await input.store.listRepairCandidates(input.pageTitle ? { pageTitle: input.pageTitle } : undefined))
-    .map((row) => normalizeCandidateRow(row));
-  const plan = buildWikiRepairPlan({
-    rows,
-    targetModel: TARGET_WIKI_EMBEDDING_MODEL,
-    checkpoint: checkpoint ? { page_id: checkpoint.page_id, window_index: checkpoint.window_index } : null,
-    limits,
-  });
 
   let repaired = checkpoint?.repaired ?? 0;
   let skipped = checkpoint?.skipped ?? 0;
@@ -416,12 +441,21 @@ export async function runWikiEmbeddingRepair(input: {
     windows_total: null as number | null,
   };
 
-  for (const page of plan.pages) {
-    const pageRows = sortRows(rows.filter((row) => row.page_id === page.page_id && isRepairCandidate(row, TARGET_WIKI_EMBEDDING_MODEL)));
+  for await (const pageBatch of readRepairCandidatePages({
+    store: input.store,
+    pageTitle: input.pageTitle,
+    checkpointPageId: checkpoint?.page_id ?? null,
+  })) {
+    const pageRows = sortRows(pageBatch.rows.filter((row) => isRepairCandidate(row, TARGET_WIKI_EMBEDDING_MODEL)));
+    if (pageRows.length === 0) continue;
+    const page = {
+      page_id: pageRows[0]!.page_id,
+      page_title: pageRows[0]!.page_title,
+    };
     let groups = splitWikiRepairWindows(pageRows, limits).map((window, index) => ({ window, rows: groupsRowsFromWindow(pageRows, window, index) }));
 
     let currentIndex = 0;
-    if (checkpoint && checkpoint.page_id === page.page_id && checkpoint.window_index !== null) {
+    if (checkpoint && pageBatch.checkpointWindowApplies && checkpoint.page_id === page.page_id && checkpoint.window_index !== null) {
       currentIndex = checkpoint.window_index;
       if (currentIndex >= groups.length) {
         continue;

@@ -70,11 +70,17 @@ export function createContributorProfileStore(opts: {
     ): Promise<ContributorProfile | null> {
       const rows = options.includeOptedOut
         ? await sql`
-        SELECT * FROM contributor_profiles
+        SELECT id, github_username, slack_user_id, display_name, overall_tier,
+               overall_score, opted_out, created_at, updated_at, last_scored_at,
+               trust_marker
+        FROM contributor_profiles
         WHERE github_username = ${username}
       `
         : await sql`
-        SELECT * FROM contributor_profiles
+        SELECT id, github_username, slack_user_id, display_name, overall_tier,
+               overall_score, opted_out, created_at, updated_at, last_scored_at,
+               trust_marker
+        FROM contributor_profiles
         WHERE github_username = ${username} AND opted_out = false
       `;
       if (rows.length === 0) return null;
@@ -85,7 +91,10 @@ export function createContributorProfileStore(opts: {
       slackUserId: string,
     ): Promise<ContributorProfile | null> {
       const rows = await sql`
-        SELECT * FROM contributor_profiles
+        SELECT id, github_username, slack_user_id, display_name, overall_tier,
+               overall_score, opted_out, created_at, updated_at, last_scored_at,
+               trust_marker
+        FROM contributor_profiles
         WHERE slack_user_id = ${slackUserId}
       `;
       if (rows.length === 0) return null;
@@ -106,7 +115,9 @@ export function createContributorProfileStore(opts: {
             slack_user_id = EXCLUDED.slack_user_id,
             display_name = EXCLUDED.display_name,
             updated_at = now()
-          RETURNING *
+          RETURNING id, github_username, slack_user_id, display_name, overall_tier,
+                    overall_score, opted_out, created_at, updated_at, last_scored_at,
+                    trust_marker
         `,
         { githubUsername, slackUserId, writePath: "contributor_link_identity" },
       );
@@ -143,7 +154,9 @@ export function createContributorProfileStore(opts: {
 
     async getExpertise(profileId: number): Promise<ContributorExpertise[]> {
       const rows = await sql`
-        SELECT * FROM contributor_expertise
+        SELECT id, profile_id, dimension, topic, score, raw_signals,
+               last_active, created_at, updated_at
+        FROM contributor_expertise
         WHERE profile_id = ${profileId}
         ORDER BY score DESC
       `;
@@ -202,7 +215,10 @@ export function createContributorProfileStore(opts: {
     ): Promise<ContributorProfile> {
       // Try to find existing (including opted-out — this is a system-level lookup)
       const existing = await sql`
-        SELECT * FROM contributor_profiles
+        SELECT id, github_username, slack_user_id, display_name, overall_tier,
+               overall_score, opted_out, created_at, updated_at, last_scored_at,
+               trust_marker
+        FROM contributor_profiles
         WHERE github_username = ${username}
       `;
       if (existing.length > 0) {
@@ -214,7 +230,9 @@ export function createContributorProfileStore(opts: {
           INSERT INTO contributor_profiles (github_username)
           VALUES (${username})
           ON CONFLICT (github_username) DO UPDATE SET updated_at = now()
-          RETURNING *
+          RETURNING id, github_username, slack_user_id, display_name, overall_tier,
+                    overall_score, opted_out, created_at, updated_at, last_scored_at,
+                    trust_marker
         `,
         { username, writePath: "contributor_get_or_create" },
       );

@@ -44,8 +44,8 @@ export interface WebhookQueueEntry {
 export interface WebhookQueueStore {
   /** Queue a webhook for later replay. */
   enqueue(entry: Omit<WebhookQueueEntry, "id" | "queuedAt" | "processedAt" | "status">): Promise<void>;
-  /** Dequeue all pending entries, marking them as 'processing'. Returns the entries. */
-  dequeuePending(): Promise<WebhookQueueEntry[]>;
+  /** Dequeue a bounded pending batch, marking entries as 'processing'. Returns the entries. */
+  dequeuePending(batchSize?: number): Promise<WebhookQueueEntry[]>;
   /** Mark a queued entry as completed. */
   markCompleted(id: number): Promise<void>;
   /** Mark a queued entry as failed. */

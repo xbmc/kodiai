@@ -40,6 +40,10 @@ const MAX_SCAN_WINDOW_DAYS = 7; // cap on commit scan window regardless of thres
 const PR_FILE_FETCH_CONCURRENCY = 4;
 const LLM_EVALUATION_CONCURRENCY = 3;
 
+type WikiPageCandidateWithEvidence = WikiPageCandidate & {
+  evidenceFilePathSet: Set<string>;
+};
+
 // ── Run state persistence ────────────────────────────────────────────
 
 async function loadRunState(sql: Sql): Promise<WikiStalenessRunState> {
@@ -180,7 +184,7 @@ async function heuristicPass(
   sql: Sql,
   mergedPRs: MergedPR[],
   logger: Logger,
-): Promise<WikiPageCandidate[]> {
+): Promise<WikiPageCandidateWithEvidence[]> {
   // Fetch all active wiki page chunks (limit 5000 for reasonable memory usage)
   const rows = await sql`
     SELECT page_id, page_title, page_url, chunk_text, chunk_index
@@ -245,7 +249,7 @@ async function heuristicPass(
   }
 
   // Score each page
-  const candidates: WikiPageCandidate[] = [];
+  const candidates: WikiPageCandidateWithEvidence[] = [];
 
   for (const [pageId, page] of pageMap) {
     const score = scoreWikiTokens(page.tokens, changedFileTokenSets);
@@ -289,27 +293,8 @@ async function heuristicPass(
       affectingPRNumbers,
       affectingFilePaths: dedupedFilePaths,
       sortableRecencyMs,
+      evidenceFilePathSet: new Set(dedupedFilePaths),
     });
-
-    // Store PR evidence for each matched PR+file+page combination
-    const dedupedFilePathSet = new Set(dedupedFilePaths);
-    for (const pr of mergedPRs) {
-      const matches: Array<{ filePath: string; patch: string; pageId: number | null; pageTitle: string | null; score: number }> = [];
-      for (const file of pr.files) {
-        if (!file.patch) continue; // skip binary/too-large files
-        if (!dedupedFilePathSet.has(file.filename)) continue;
-        matches.push({
-          filePath: file.filename,
-          patch: file.patch,
-          pageId,
-          pageTitle: page.pageTitle,
-          score,
-        });
-      }
-      if (matches.length > 0) {
-        await storeWikiPrEvidence({ sql, pr, matches, logger });
-      }
-    }
   }
 
   // Sort: PRIMARY by sortableRecencyMs DESC, SECONDARY by heuristicScore DESC
@@ -321,6 +306,38 @@ async function heuristicPass(
 
   logger.debug({ candidateCount: candidates.length, pageCount: pageMap.size }, "Heuristic pass complete");
   return candidates;
+}
+
+async function storeEvidenceForCandidates(params: {
+  sql: Sql;
+  mergedPRs: MergedPR[];
+  candidates: WikiPageCandidateWithEvidence[];
+  logger: Logger;
+}): Promise<void> {
+  const { sql, mergedPRs, candidates, logger } = params;
+  const prByNumber = new Map(mergedPRs.map((pr) => [pr.number, pr]));
+
+  for (const candidate of candidates) {
+    for (const prNumber of candidate.affectingPRNumbers) {
+      const pr = prByNumber.get(prNumber);
+      if (!pr) continue;
+      const matches: Array<{ filePath: string; patch: string; pageId: number | null; pageTitle: string | null; score: number }> = [];
+      for (const file of pr.files) {
+        if (!file.patch) continue;
+        if (!candidate.evidenceFilePathSet.has(file.filename)) continue;
+        matches.push({
+          filePath: file.filename,
+          patch: file.patch,
+          pageId: candidate.pageId,
+          pageTitle: candidate.pageTitle,
+          score: candidate.heuristicScore,
+        });
+      }
+      if (matches.length > 0) {
+        await storeWikiPrEvidence({ sql, pr, matches, logger });
+      }
+    }
+  }
 }
 
 // ── LLM evaluation ──────────────────────────────────────────────────
@@ -571,6 +588,13 @@ export function createWikiStalenessDetector(
       // heuristicScore DESC secondary.
       const toEvaluate = candidates.slice(0, LLM_CAP);
 
+      await storeEvidenceForCandidates({
+        sql: opts.sql,
+        mergedPRs,
+        candidates: toEvaluate,
+        logger,
+      });
+
       // LLM evaluation
       const evaluatedPages = await mapWithConcurrency(
         toEvaluate,
@@ -665,6 +689,11 @@ export function createWikiStalenessDetector(
     start() {
       const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
       const delayMs = opts.delayMs ?? DEFAULT_STARTUP_DELAY_MS;
+      if (startupHandle || intervalHandle) {
+        logger.debug("Wiki staleness detector already started, skipping duplicate start");
+        return;
+      }
+
       logger.info({ intervalMs, delayMs }, "Wiki staleness detector starting");
       startupHandle = setTimeout(() => {
         void doScan().catch((err) =>

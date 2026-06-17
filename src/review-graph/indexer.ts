@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Logger } from "pino";
 import { extractReviewGraph } from "./extractors.ts";
@@ -59,6 +59,8 @@ const SUPPORTED_EXTENSIONS: Array<{ ext: string; language: SupportedReviewGraphL
   { ext: ".hh", language: "cpp" },
   { ext: ".h", language: "cpp" },
 ];
+const MAX_REVIEW_GRAPH_FILE_BYTES = 512 * 1024;
+const REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX = "review_graph_file_too_large:";
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -93,6 +95,10 @@ function computeContentHash(text: string): string {
 }
 
 async function defaultReadWorkspaceFile(absolutePath: string): Promise<string> {
+  const fileStats = await stat(absolutePath);
+  if (fileStats.size > MAX_REVIEW_GRAPH_FILE_BYTES) {
+    throw new Error(`${REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX}${fileStats.size}`);
+  }
   return await readFile(absolutePath, "utf8");
 }
 
@@ -173,6 +179,7 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
         skipped: [],
         failed: [],
       };
+      const unchangedSkipSamples: Array<{ path: string; contentHash: string }> = [];
 
       try {
         for (const repoPath of supportedPaths) {
@@ -189,15 +196,9 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
             if (existing?.contentHash === contentHash) {
               metrics.skipped += 1;
               files.skipped.push(repoPath);
-              opts.logger.debug(
-                {
-                  repo: input.repo,
-                  workspaceKey: input.workspaceKey,
-                  path: repoPath,
-                  contentHash,
-                },
-                "Skipped review graph index for unchanged file",
-              );
+              if (unchangedSkipSamples.length < 5) {
+                unchangedSkipSamples.push({ path: repoPath, contentHash });
+              }
               continue;
             }
 
@@ -254,6 +255,20 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
             );
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            if (message.startsWith(REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX)) {
+              metrics.skipped += 1;
+              files.skipped.push(repoPath);
+              opts.logger.debug(
+                {
+                  repo: input.repo,
+                  workspaceKey: input.workspaceKey,
+                  path: repoPath,
+                  sizeBytes: Number(message.slice(REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX.length)),
+                },
+                "Skipped review graph index for oversized file",
+              );
+              continue;
+            }
             metrics.failed += 1;
             files.failed.push({ path: repoPath, error: message });
             opts.logger.warn(
@@ -272,6 +287,18 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
               "Failed to index review graph for file",
             );
           }
+        }
+
+        if (unchangedSkipSamples.length > 0) {
+          opts.logger.debug(
+            {
+              repo: input.repo,
+              workspaceKey: input.workspaceKey,
+              skippedUnchanged: metrics.skipped,
+              sample: unchangedSkipSamples,
+            },
+            "Skipped unchanged review graph files",
+          );
         }
 
         build = await opts.store.upsertBuild({

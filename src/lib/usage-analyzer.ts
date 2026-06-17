@@ -1,4 +1,4 @@
-import { $ } from "bun";
+import { runCommandWithCappedOutput } from "./capped-process.ts";
 
 export type UsageEvidence = {
   filePath: string;
@@ -93,6 +93,7 @@ export async function analyzePackageUsage(params: {
   /** Test-only hook for deterministic timeout testing. */
   __runGrepForTests?: (params: { workspaceDir: string; pattern: string }) => Promise<{
     exitCode: number;
+    timedOut?: boolean;
     stdout?: { toString(): string } | string | null;
   }>;
 }): Promise<UsageAnalysisResult> {
@@ -116,15 +117,26 @@ export async function analyzePackageUsage(params: {
     const runGrep =
       __runGrepForTests ??
       (async (p: { workspaceDir: string; pattern: string }) => {
-        return await $`git -C ${p.workspaceDir} grep -rn --max-count=20 ${p.pattern}`
-          .quiet()
-          .nothrow();
+        return await runCommandWithCappedOutput({
+          command: "git",
+          args: ["grep", "-rn", "--max-count=20", p.pattern],
+          cwd: p.workspaceDir,
+          timeoutMs: timeBudgetMs,
+          maxStdoutBytes: 256 * 1024,
+          maxStderrBytes: 64 * 1024,
+          env: { GIT_TERMINAL_PROMPT: "0" },
+        });
       });
 
     const grepPromise = runGrep({ workspaceDir, pattern });
 
-    const result = await withTimeBudget(grepPromise, timeBudgetMs);
+    const result = __runGrepForTests
+      ? await withTimeBudget(grepPromise, timeBudgetMs)
+      : await grepPromise;
     if (result === null) {
+      return { evidence: [], searchTerms, timedOut: true };
+    }
+    if (result.timedOut) {
       return { evidence: [], searchTerms, timedOut: true };
     }
 

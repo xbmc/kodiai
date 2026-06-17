@@ -157,6 +157,28 @@ export function createClusterStore(opts: {
       return rows.map((r) => rowToCluster(r as unknown as ClusterRow));
     },
 
+    async getActiveMatchCandidates(repo: string, embedding: Float32Array, limit: number): Promise<ReviewCluster[]> {
+      const embeddingValue = embedding.length > 0 ? float32ArrayToVectorString(embedding) : null;
+      if (!embeddingValue) return [];
+
+      const rows = await sql`
+        SELECT rc.*
+        FROM review_clusters rc
+        JOIN review_cluster_assignments rca ON rca.cluster_id = rc.id
+        JOIN review_comments review_comment ON review_comment.id = rca.review_comment_id
+        WHERE rc.repo = ${repo}
+          AND rc.retired = false
+          AND rc.centroid IS NOT NULL
+          AND review_comment.deleted = false
+          AND review_comment.github_created_at >= NOW() - INTERVAL '60 days'
+        GROUP BY rc.id
+        HAVING COUNT(*) >= 3
+        ORDER BY rc.centroid <=> ${embeddingValue}::vector
+        LIMIT ${limit}
+      `;
+      return rows.map((r) => rowToCluster(r as unknown as ClusterRow));
+    },
+
     async retireCluster(clusterId: number): Promise<void> {
       await sql`
         UPDATE review_clusters

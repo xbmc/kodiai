@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
 // PR Review Surface Adapter
 // ---------------------------------------------------------------------------
-// Wraps the existing claim-classifier.ts and output-filter.ts to provide
+// Wraps the existing claim-classifier.ts to provide
 // a SurfaceAdapter for the unified guardrail pipeline. This adapter does NOT
-// reimplement classification or filtering -- it delegates to the existing code.
+// reimplement classification.
 // ---------------------------------------------------------------------------
 
 import {
@@ -13,7 +13,6 @@ import {
   type FindingClaimClassification,
 } from "../../claim-classifier.ts";
 import {
-  filterExternalClaims,
   type FilterableFinding,
 } from "../../output-filter.ts";
 import type { SurfaceAdapter, GroundingContext } from "../types.ts";
@@ -47,7 +46,7 @@ export type ReviewOutput = {
 
 /**
  * PR review surface adapter. Wraps existing claim-classifier.ts extractClaims
- * and output-filter.ts filterExternalClaims for zero-behavior-change integration
+ * for zero-behavior-change integration
  * with the unified guardrail pipeline.
  */
 export const reviewAdapter: SurfaceAdapter<ReviewInput, ReviewOutput> = {
@@ -118,7 +117,6 @@ export const reviewAdapter: SurfaceAdapter<ReviewInput, ReviewOutput> = {
 
   /**
    * Reconstruct output by keeping only findings whose claims are in keptClaims.
-   * Delegates to output-filter.ts filterExternalClaims for the actual filtering logic.
    *
    * For findings with mixed claims, rewrites the title to only include kept claims.
    * For findings with all claims removed, drops the finding entirely.

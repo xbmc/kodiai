@@ -12,7 +12,7 @@ import type { Sql } from "../db/client.ts";
 import type { TaskRouter } from "../llm/task-router.ts";
 import type { ClusterScheduler } from "./cluster-types.ts";
 import { createClusterStore } from "./cluster-store.ts";
-import { runClusterPipeline } from "./cluster-pipeline.ts";
+import type { runClusterPipeline } from "./cluster-pipeline.ts";
 
 const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 120_000; // 2 minutes
@@ -34,12 +34,14 @@ export function createClusterScheduler(
 ): ClusterScheduler {
   const { sql, taskRouter, logger, repos } = opts;
   const createStore = opts.createClusterStoreFn ?? createClusterStore;
-  const runPipeline = opts.runClusterPipelineFn ?? runClusterPipeline;
   const store = createStore({ sql, logger });
   let startupTimer: ReturnType<typeof setTimeout> | null = null;
   let intervalTimer: ReturnType<typeof setInterval> | null = null;
 
   async function runAll(): Promise<void> {
+    const runPipeline = opts.runClusterPipelineFn
+      ?? (await import("./cluster-pipeline.ts")).runClusterPipeline;
+
     for (const repo of repos) {
       try {
         logger.info({ repo }, "Starting cluster pipeline for repo");

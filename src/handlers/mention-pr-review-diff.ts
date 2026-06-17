@@ -1,7 +1,7 @@
 import { $ } from "bun";
 import type { Logger } from "pino";
 import { collectDiffContext } from "../review-orchestration/review-diff-collection.ts";
-import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
+import { scanLinesForFabricatedContent } from "../lib/fabricated-content-detector.ts";
 import type { MentionEvent } from "./mention-types.ts";
 
 export async function scanDiffForFabricatedContent(dir: string): Promise<string[]> {

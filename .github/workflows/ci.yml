@@ -25,6 +25,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
+      TEST_DATABASE_URL: postgresql://kodiai:kodiai@localhost:5432/kodiai
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -42,8 +43,7 @@ jobs:
       - run: bun run check:orphaned-tests
       - run: bun run check:review-details-architecture
       # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests on a low concurrency cap and split the suite into
-      # two shorter invocations to avoid cross-file schema interference and runner crashes.
-      # The first run covers scripts plus the full src tree; src/knowledge stays isolated.
-      - run: bun test --max-concurrency=2 scripts src
-      - run: bun test --max-concurrency=2 src/knowledge
+      # Keep DB-backed tests serialized and split the suite into explicit lanes
+      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
+      - run: bun run test:unit
+      - run: bun run test:db

@@ -13,6 +13,7 @@ import {
   LINKSHERE_NAMESPACE,
 } from "./wiki-popularity-config.ts";
 import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 // ── MediaWiki API response types ─────────────────────────────────────────
 
@@ -46,6 +47,8 @@ type LinksHereResponse = {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const LINKSHERE_BATCH_CONCURRENCY = 3;
 
 // ── Linkshere fetcher ────────────────────────────────────────────────────
 
@@ -87,10 +90,11 @@ export async function fetchAllLinkshereCounts(opts: {
     "Fetching linkshere counts",
   );
 
-  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-    const batch = batches[batchIdx]!;
-
+  await mapWithConcurrency(batches, LINKSHERE_BATCH_CONCURRENCY, async (batch, batchIdx) => {
     try {
+      if (batchIdx > 0) {
+        await sleep(LINKSHERE_RATE_LIMIT_MS * batchIdx);
+      }
       await fetchBatchLinkshere({
         baseUrl,
         pageIds: batch,
@@ -105,12 +109,7 @@ export async function fetchAllLinkshereCounts(opts: {
         "Linkshere batch failed, continuing with remaining batches",
       );
     }
-
-    // Rate limit between batch requests (skip after last batch)
-    if (batchIdx < batches.length - 1) {
-      await sleep(LINKSHERE_RATE_LIMIT_MS);
-    }
-  }
+  });
 
   logger.info(
     { totalPages: pageIds.length, pagesWithLinks: [...counts.values()].filter((v) => v > 0).length },

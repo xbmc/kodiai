@@ -6,6 +6,7 @@ interface ShutdownManagerDeps {
   requestTracker: RequestTracker;
   closeDb: () => Promise<void>;
   graceMs?: number;
+  maxTotalGraceMs?: number;
   /** Test-only: override process exit for deterministic shutdown tests. */
   __exitForTests?: (code: number) => void;
 }
@@ -16,12 +17,13 @@ interface ShutdownManagerDeps {
  * On signal:
  * 1. Set shutting-down flag (new webhooks will be queued to PostgreSQL)
  * 2. Wait for in-flight requests and jobs to drain within grace window
- * 3. If drain times out, extend grace once (double), then force-exit with code 1
+ * 3. If drain times out, use the remaining total budget once, then force-exit with code 1
  * 4. On successful drain, close DB and exit 0
  */
 export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManager {
   const { logger, requestTracker, closeDb } = deps;
-  const graceMs = deps.graceMs ?? (parseInt(process.env.SHUTDOWN_GRACE_MS ?? "", 10) || 300_000);
+  const graceMs = deps.graceMs ?? (parseInt(process.env.SHUTDOWN_GRACE_MS ?? "", 10) || 180_000);
+  const maxTotalGraceMs = deps.maxTotalGraceMs ?? (parseInt(process.env.SHUTDOWN_MAX_TOTAL_GRACE_MS ?? "", 10) || 540_000);
   const exitProcess = deps.__exitForTests ?? ((code: number) => process.exit(code));
   let shuttingDown = false;
 
@@ -75,8 +77,9 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
       await safeCloseDb();
       exitProcess(0);
     } catch {
-      // First drain timed out -- extend grace once (double)
-      const extendedGraceMs = graceMs * 2;
+      // First drain timed out -- use the remaining total budget once. The
+      // default total stays below ACA's 600s termination grace period.
+      const extendedGraceMs = Math.max(0, maxTotalGraceMs - graceMs);
       const remainingCounts = requestTracker.activeCount();
       logger.warn(
         {
@@ -87,6 +90,21 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
         },
         "Drain timeout, extending grace window once",
       );
+
+      if (extendedGraceMs <= 0) {
+        const abandonedCounts = requestTracker.activeCount();
+        logger.error(
+          {
+            abandonedRequests: abandonedCounts.requests,
+            abandonedJobs: abandonedCounts.jobs,
+            abandonedTotal: abandonedCounts.total,
+          },
+          "Force exit after shutdown grace budget exhausted, work abandoned",
+        );
+        await safeCloseDb();
+        exitProcess(1);
+        return;
+      }
 
       try {
         await requestTracker.waitForDrain(extendedGraceMs);

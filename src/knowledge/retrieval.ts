@@ -532,12 +532,11 @@ export function createRetriever(deps: {
       const maxVariantConcurrency = 2;
       const variantTopK = Math.max(1, Math.ceil(topK / Math.max(variants.length, 1)));
 
-      // Step 3: Parallel fan-out — all 7 searches (4 vector + 3 BM25) at once
+      // Step 3: Parallel fan-out — vector and BM25 searches at once
       const [
         variantResults,
         reviewVectorResult,
         wikiVectorResult,
-        memoryFullTextResult,
         reviewFullTextResult,
         wikiFullTextResult,
         snippetVectorResult,
@@ -588,30 +587,22 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as WikiKnowledgeMatch[]),
-        // (d) Learning memory BM25 full-text search
-        deps.memoryStore?.searchByFullText
-          ? deps.memoryStore.searchByFullText({
-              query: intentQuery,
-              repo: opts.repo,
-              topK: variantTopK,
-            })
-          : Promise.resolve([] as { memoryId: number; rank: number }[]),
-        // (e) Review comment BM25 full-text search
+        // (d) Review comment BM25 full-text search
         deps.reviewCommentStore?.searchByFullText
           ? deps.reviewCommentStore.searchByFullText({
               query: intentQuery,
               repo: opts.repo,
               topK: 5,
-            })
+          })
           : Promise.resolve([]),
-        // (f) Wiki BM25 full-text search
+        // (e) Wiki BM25 full-text search
         deps.wikiPageStore?.searchByFullText
           ? deps.wikiPageStore.searchByFullText({
               query: intentQuery,
               topK: 5,
-            })
+          })
           : Promise.resolve([]),
-        // (g) Code snippet vector search
+        // (f) Code snippet vector search
         deps.codeSnippetStore
           ? searchCodeSnippets({
               store: deps.codeSnippetStore,
@@ -622,7 +613,7 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as CodeSnippetMatch[]),
-        // (h) Canonical current-code vector search
+        // (g) Canonical current-code vector search
         deps.canonicalCodeStore
           ? searchCanonicalCode({
               store: deps.canonicalCodeStore,
@@ -634,7 +625,7 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as CanonicalCodeMatch[]),
-        // (i) Issue vector search
+        // (h) Issue vector search
         deps.issueStore
           ? searchIssues({
               store: deps.issueStore,
@@ -645,7 +636,7 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as IssueKnowledgeMatch[]),
-        // (j) Issue BM25 full-text search
+        // (i) Issue BM25 full-text search
         deps.issueStore?.searchByFullText
           ? deps.issueStore.searchByFullText({
               query: intentQuery,

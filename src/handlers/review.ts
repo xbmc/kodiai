@@ -1,4 +1,3 @@
-import type { Octokit } from "@octokit/rest";
 import type {
   PullRequestOpenedEvent,
   PullRequestReadyForReviewEvent,
@@ -7,7 +6,7 @@ import type {
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
+import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
 import type {
   ExecutorPhaseTiming,
@@ -25,14 +24,11 @@ import type {
 import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
-import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
+import { buildPriorFindingContext, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
-import { classifyClaims, buildFileDiffsMap, type FindingClaimClassification } from "../lib/claim-classifier.ts";
-import { demoteExternalClaimSeverities, type DemotableFinding } from "../lib/severity-demoter.ts";
-import { filterExternalClaims, formatSuppressedFindingsSection, type FilterableFinding, type FilteredFindingRecord } from "../lib/output-filter.ts";
-import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
+import { formatSuppressedFindingsSection } from "../lib/output-filter.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
-import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { buildPrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
@@ -41,19 +37,13 @@ import {
   triageFilesByRisk,
   capTieredFilesForPromptBudget,
   applyGraphAwareSelection,
-  type TieredFiles,
-  type FileRiskScore,
 } from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
+import { isTrivialChange } from "../review-graph/validation.ts";
 import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
-import {
-  buildReviewPrompt,
-  buildReviewPromptDetails,
-  matchPathInstructions,
-} from "../execution/review-prompt.ts";
+import { buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import {
   DEFAULT_EMPTY_INTENT,
@@ -68,19 +58,13 @@ import {
   resolveReviewTaskRouting,
   resolveReviewMaxTurnsOverride,
 } from "../lib/review-routing.ts";
-import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
-import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
-import { applyEnforcement } from "../enforcement/index.ts";
-import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
+import { evaluateFeedbackSuppressions } from "../feedback/index.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
-import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import {
-  ensureReviewBoundednessDisclosureInSummary,
   resolveReviewBoundedness,
-  type ReviewBoundednessContract,
 } from "../lib/review-boundedness.ts";
 import { formatPartialReviewComment, formatCompletedContinuationReviewComment } from "../lib/partial-review-formatter.ts";
 import {
@@ -96,7 +80,6 @@ import { type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import {
   buildApprovedReviewBody,
-  buildReviewOutputMarker,
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
 } from "../review-orchestration/review-idempotency.ts";
@@ -104,7 +87,6 @@ import {
   writeReviewLearningMemory,
 } from "./review-learning-memory.ts";
 import {
-  buildReviewDetailsMarker,
   formatReviewDetailsSummary,
   classifyRetryFailure,
   resolveReviewDetailsLineCounts,
@@ -118,23 +100,10 @@ import {
   type FindingCategory,
   type ConfidenceBand,
   fingerprintFindingTitle,
-  normalizeSeverity,
-  normalizeCategory,
-  parseInlineCommentMetadata,
-  parseSeverityCountsFromBody,
   toConfidenceBand,
 } from "../lib/review-finding-metadata.ts";
 import {
-  SEARCH_RATE_LIMIT_ERROR_MARKERS,
-  SEARCH_RATE_LIMIT_BACKOFF_MAX_MS,
-  SEARCH_RATE_LIMIT_DISCLOSURE_LINE,
-  ensureSearchRateLimitDisclosureInSummary,
-  extractSearchErrorStatus,
-  extractSearchErrorText,
-} from "../lib/search-rate-limit.ts";
-import {
   normalizeSkipPattern,
-  splitGitLines,
   splitDiffByFile,
 } from "../lib/review-git-utils.ts";
 import {
@@ -146,21 +115,17 @@ import picomatch from "picomatch";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import {
   normalizeRepoDoctrineProjection,
-  type RepoDoctrineProjection,
 } from "../repo-doctrine/contracts.ts";
-import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
   type ReviewWorkPhase,
 } from "../jobs/review-work-coordinator.ts";
-import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
+import type { ContributorProfileStore } from "../contributor/types.ts";
 import {
   projectContributorExperienceContract,
   resolveContributorExperienceRetrievalHint,
-  type ContributorExperienceContract,
-  type ContributorExperienceSource,
 } from "../contributor/experience-contract.ts";
 import {
   type ReviewAuthorClassification,
@@ -177,16 +142,12 @@ import {
 } from "../review-orchestration/review-reducer.ts";
 import {
   toReviewCandidateFindingDetailsSummary,
-  type ReviewCandidateFinding,
   type ReviewCandidateFindingDetailsSummary,
-  type ReviewCandidateFindingExecutionResult,
 } from "../review-orchestration/review-candidate-finding.ts";
 import {
   buildReviewPlan,
   buildReviewPlanPublicationContext,
   resolveGraphValidationPlanStatus,
-  type DegradedReviewPlan,
-  type ReviewPlan,
   type ReviewPlanBuilder,
 } from "../review-orchestration/review-plan.ts";
 import {
@@ -205,7 +166,6 @@ import {
 import {
   classifyReviewCandidatePublicationRuntime,
   createCandidatePublicationFlowEvidence,
-  type ReviewCandidatePublicationRuntimeResult,
 } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import { logReviewCandidatePublicationRuntime } from "../review-orchestration/review-candidate-publication-log.ts";
 import {
@@ -220,7 +180,6 @@ import {
   buildOrderedReviewPhaseSummary,
   buildQueueWaitPhase,
   buildReviewDetailsPhaseTimingSummary,
-  buildUnavailableReviewPhase,
   createReviewPhaseTiming,
   formatTimeoutErrorDetail,
   isValidQueueWaitMetadata,
@@ -262,7 +221,6 @@ import {
 import {
   buildReviewPromptFingerprint,
   type ReviewPromptBuildContext,
-  type ReviewPromptFingerprintResult,
 } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
 import {
@@ -290,7 +248,6 @@ import {
 } from "../review-orchestration/review-candidate-finding-handler.ts";
 import {
   toProductionLogBudgetReasoning,
-  toProductionLogRuntimeBudgetFields,
   toProductionLogTurnBudgetFields,
 } from "../review-audit/production-log-projection.ts";
 import {
@@ -348,7 +305,6 @@ import {
 } from "../review-visible-budget/visible-budget-behavior.ts";
 import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
 import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
-import type { PromptBudgetOutcome } from "../execution/prompt-budget.ts";
 import {
   attachReviewFindingLifecycle,
   attachReviewValidationTruth,
@@ -992,7 +948,6 @@ export function createReviewHandler(deps: {
       });
       const {
         persistContinuationFamilyState,
-        persistDegradedContinuationFamilyState,
         settleRetryWithoutCanonicalUpdate,
         finalizeContinuationAttempt,
         canPublishReviewWorkOutput,
@@ -3178,12 +3133,6 @@ export function createReviewHandler(deps: {
           }
         }
 
-        const suppressedStillOpen = processedFindings.filter(f =>
-          f.suppressed && priorFindingCtx?.suppressionFingerprints.has(
-            `${f.filePath}:${fingerprintFindingTitle(f.title)}`
-          )
-        ).length;
-
         if (shouldProcessReviewOutput && filteredInlineFindings.length > 0) {
           await removeFilteredInlineComments({
             octokit: extractionOctokit,
@@ -3210,7 +3159,6 @@ export function createReviewHandler(deps: {
         });
         const linesChanged = reviewDetailsLineCounts.linesAdded + reviewDetailsLineCounts.linesRemoved;
 
-        const reviewCompletedAt = new Date().toISOString();
         let canonicalReviewDetailsBody: string | null = null;
         const buildReviewDetailsBody = (params?: {
           timeoutProgress?: TimeoutReviewDetailsProgress;

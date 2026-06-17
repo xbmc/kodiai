@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import {
   parseInlineCommentMetadata,
   type FindingCategory,
@@ -104,7 +105,7 @@ export async function removeFilteredInlineComments(params: {
   const { octokit, owner, repo, findings, logger, baseLog } = params;
   const commentIds = new Set<number>(findings.map((finding) => finding.commentId));
 
-  for (const commentId of commentIds) {
+  await mapWithConcurrency([...commentIds], 4, async (commentId) => {
     try {
       await octokit.rest.pulls.deleteReviewComment({
         owner,
@@ -122,5 +123,5 @@ export async function removeFilteredInlineComments(params: {
         "Failed to delete filtered inline review comment; continuing",
       );
     }
-  }
+  });
 }

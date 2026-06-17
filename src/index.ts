@@ -12,7 +12,7 @@ import { createSlackRelayWebhookRoutes } from "./routes/slack-relay-webhooks.ts"
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
 import { createReviewWorkCoordinator } from "./jobs/review-work-coordinator.ts";
-import { createWorkspaceManager, shouldUseGist } from "./jobs/workspace.ts";
+import { createWorkspaceManager } from "./jobs/workspace.ts";
 import { createBotUserClient } from "./auth/bot-user.ts";
 import { createForkManager } from "./jobs/fork-manager.ts";
 import { createGistPublisher } from "./jobs/gist-publisher.ts";
@@ -39,7 +39,7 @@ import { createCostTracker } from "./llm/cost-tracker.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createKnowledgeRuntime, startEmbeddingSmokeTest } from "./knowledge/runtime.ts";
-import { createDbClient, type Sql } from "./db/client.ts";
+import { createDbClient } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { createContributorProfileStore } from "./contributor/index.ts";
 import { createSlackCommandRoutes } from "./routes/slack-commands.ts";
@@ -53,6 +53,19 @@ import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
 import { registerFatalShutdownHandlers } from "./lifecycle/fatal-shutdown-handlers.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
+import type { WebhookQueueEntry } from "./lifecycle/types.ts";
+
+function queuedWebhookLogMetadata(entry: WebhookQueueEntry): Record<string, unknown> {
+  return {
+    id: entry.id,
+    source: entry.source,
+    deliveryId: entry.deliveryId,
+    eventName: entry.eventName,
+    status: entry.status,
+    headerNames: Object.keys(entry.headers ?? {}).sort(),
+    bodyBytes: new TextEncoder().encode(entry.body ?? "").byteLength,
+  };
+}
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -428,7 +441,6 @@ createAddonCheckHandler({
 if (issueStore && embeddingProvider) {
   createIssueOpenedHandler({
     eventRouter,
-    jobQueue,
     githubApp,
     workspaceManager,
     issueStore,
@@ -617,66 +629,91 @@ shutdownManager.start();
 
 registerFatalShutdownHandlers({ logger, shutdownManager });
 
-// Startup webhook queue replay: process any webhooks queued during previous shutdown
-const startupReplayStart = Date.now();
-let queuedWebhooksProcessed = 0;
-let queuedWebhooksFailed = 0;
+const STARTUP_WEBHOOK_REPLAY_BUDGET_MS = parseInt(process.env.WEBHOOK_STARTUP_REPLAY_BUDGET_MS ?? "", 10) || 180_000;
 
-try {
-  const pendingWebhooks = await webhookQueueStore.dequeuePending();
-  const replaySlackThreadSessionStore = createSlackThreadSessionStore();
+function startStartupWebhookQueueReplay(): void {
+  const untrackReplay = requestTracker.trackJob();
 
-  for (const entry of pendingWebhooks) {
-    const entryId = entry.id;
-    if (typeof entryId !== "number") {
-      logger.error({ entry }, "Dequeued webhook entry missing ID; skipping startup replay because completion state cannot be recorded");
-      queuedWebhooksFailed++;
-      continue;
+  void (async () => {
+    const startupReplayStart = Date.now();
+    const replaySlackThreadSessionStore = createSlackThreadSessionStore();
+    let queuedWebhooksProcessed = 0;
+    let queuedWebhooksFailed = 0;
+    let budgetExhausted = false;
+
+    replayLoop:
+    while (Date.now() - startupReplayStart < STARTUP_WEBHOOK_REPLAY_BUDGET_MS) {
+      const pendingWebhooks = await webhookQueueStore.dequeuePending();
+      if (pendingWebhooks.length === 0) break;
+
+      for (const entry of pendingWebhooks) {
+        if (Date.now() - startupReplayStart >= STARTUP_WEBHOOK_REPLAY_BUDGET_MS) {
+          budgetExhausted = true;
+          break replayLoop;
+        }
+
+        const entryId = entry.id;
+        if (typeof entryId !== "number") {
+          logger.error(
+            { entry: queuedWebhookLogMetadata(entry) },
+            "Dequeued webhook entry missing ID; skipping startup replay because completion state cannot be recorded",
+          );
+          queuedWebhooksFailed++;
+          continue;
+        }
+
+        try {
+          await replayQueuedWebhook({
+            entry,
+            config,
+            logger,
+            dispatchGitHubEvent: (event) => eventRouter.dispatch(event),
+            handleSlackAllowedEvent: async (payload) => {
+              await slackAssistantHandler.handle(payload);
+            },
+            slackThreadSessionStore: replaySlackThreadSessionStore,
+          });
+
+          await webhookQueueStore.markCompleted(entryId);
+          queuedWebhooksProcessed++;
+        } catch (err) {
+          logger.warn({ err, id: entryId, source: entry.source }, "Failed to replay queued webhook");
+          await webhookQueueStore.markFailed(entryId, err instanceof Error ? err.message : String(err));
+          queuedWebhooksFailed++;
+        }
+      }
     }
 
-    try {
-      await replayQueuedWebhook({
-        entry,
-        config,
-        logger,
-        dispatchGitHubEvent: (event) => eventRouter.dispatch(event),
-        handleSlackAllowedEvent: async (payload) => {
-          await slackAssistantHandler.handle(payload);
+    const startupDurationMs = Date.now() - startupReplayStart;
+    if (queuedWebhooksProcessed > 0 || queuedWebhooksFailed > 0 || budgetExhausted) {
+      logger.info(
+        {
+          startupDurationMs,
+          queuedWebhooksProcessed,
+          queuedWebhooksFailed,
+          budgetMs: STARTUP_WEBHOOK_REPLAY_BUDGET_MS,
+          budgetExhausted,
+          dbStatus: "connected",
         },
-        slackThreadSessionStore: replaySlackThreadSessionStore,
-      });
-
-      await webhookQueueStore.markCompleted(entryId);
-      queuedWebhooksProcessed++;
-    } catch (err) {
-      logger.warn({ err, id: entryId, source: entry.source }, "Failed to replay queued webhook");
-      await webhookQueueStore.markFailed(entryId, err instanceof Error ? err.message : String(err));
-      queuedWebhooksFailed++;
+        "Startup webhook queue replay complete",
+      );
     }
-  }
-} catch (err) {
-  logger.error({ err }, "Startup webhook queue replay failed (non-fatal)");
+  })().catch((err) => {
+    logger.error({ err }, "Startup webhook queue replay failed (non-fatal)");
+  }).finally(() => {
+    untrackReplay();
+  });
 }
 
-const startupDurationMs = Date.now() - startupReplayStart;
-if (queuedWebhooksProcessed > 0 || queuedWebhooksFailed > 0) {
-  logger.info(
-    {
-      startupDurationMs,
-      queuedWebhooksProcessed,
-      queuedWebhooksFailed,
-      dbStatus: "connected",
-    },
-    "Startup webhook queue replay complete",
-  );
-}
+// Process webhooks queued during previous shutdown without delaying server bind.
+startStartupWebhookQueueReplay();
 
 const SERVER_IDLE_TIMEOUT_SECONDS = 60;
 
-logger.info({ port: config.port, idleBudgetSeconds: SERVER_IDLE_TIMEOUT_SECONDS }, "Kodiai server started");
-
-export default {
+const server = Bun.serve({
   port: config.port,
   idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
   fetch: app.fetch,
-};
+});
+
+logger.info({ port: server.port, idleBudgetSeconds: SERVER_IDLE_TIMEOUT_SECONDS }, "Kodiai server started");

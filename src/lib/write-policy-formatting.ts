@@ -1,12 +1,4 @@
-/**
- * Pure utility functions extracted from src/handlers/mention.ts.
- *
- * All functions here take explicit parameters and have no closure over
- * handler state. This is a light extraction per DECISIONS.md
- * ("M026: Light extraction only for review.ts/mention.ts").
- */
-
-import type { WritePolicyError } from "../jobs/workspace.ts";
+import type { WritePolicyError } from "./write-policy-error.ts";
 
 /**
  * Build a human-readable refusal message for write-policy violations.
@@ -64,43 +56,4 @@ export function buildWritePolicyRefusalMessage(
   }
 
   return lines.join("\n");
-}
-
-/**
- * Pure function that scans added diff lines for fabricated content patterns.
- * Detects repeating hex patterns and low-entropy hex strings that are
- * classic hallucination signatures from LLMs.
- */
-export function scanLinesForFabricatedContent(addedLines: string[]): string[] {
-  const warnings: string[] = [];
-  const hexPattern = /[0-9a-fA-F]{32,}/g;
-
-  for (const line of addedLines) {
-    let match: RegExpExecArray | null;
-    while ((match = hexPattern.exec(line)) !== null) {
-      const hex = match[0];
-      // Check for all-same-character hex strings (e.g. "aaaaaa...") first
-      // since these are a subset of repeating patterns
-      if (hex.length >= 32 && new Set(hex.toLowerCase()).size <= 2) {
-        warnings.push(
-          `Suspicious low-entropy hex pattern in added line: \`${hex.substring(0, 40)}...\``,
-        );
-        break;
-      }
-      // Check for 16-char substring repetition
-      if (hex.length >= 32) {
-        const half = hex.substring(0, 16);
-        if (hex.includes(half, 16)) {
-          warnings.push(
-            `Suspicious repeating hex pattern in added line: \`${hex.substring(0, 40)}...\``,
-          );
-          break;
-        }
-      }
-    }
-    // Reset lastIndex for next line
-    hexPattern.lastIndex = 0;
-  }
-
-  return warnings;
 }

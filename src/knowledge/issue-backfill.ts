@@ -1,14 +1,15 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import type { IssueStore } from "./issue-types.ts";
+import type { IssueInput, IssueStore } from "./issue-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import {
   buildIssueEmbeddingText,
-  buildCommentEmbeddingText,
   chunkIssueComment,
   isBotComment,
 } from "./issue-comment-chunker.ts";
+import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -210,58 +211,55 @@ export async function backfillIssues(opts: IssueBackfillOptions): Promise<IssueB
 
     let issuesOnPage = 0;
     let pageEmbeddings = 0;
+    const issueInputs: IssueInput[] = [];
 
-    for (const item of items) {
+    const issueItems = items.filter((item) => !item.pull_request);
+    const embeddingTexts = issueItems.map((item) => buildIssueEmbeddingText(item.title, item.body ?? null));
+    const embeddingResults = await generateDocumentEmbeddingResultsBatch({
+      texts: embeddingTexts,
+      embeddingProvider,
+    });
+
+    for (const [index, item] of issueItems.entries()) {
       // Filter out PRs (INGEST-03)
-      if (item.pull_request) continue;
-
       issuesOnPage++;
 
-      // Build embedding text
-      const embeddingText = buildIssueEmbeddingText(item.title, item.body ?? null);
       let embedding: Float32Array | null = null;
-
-      try {
-        const result = await embeddingProvider.generate(embeddingText, "document");
-        if (result) {
-          embedding = result.embedding;
-          pageEmbeddings++;
-        } else {
-          failedEmbeddings++;
-        }
-      } catch {
+      const result = embeddingResults[index];
+      if (result?.status === "success") {
+        embedding = result.embedding;
+        pageEmbeddings++;
+      } else {
         failedEmbeddings++;
       }
 
-      if (!dryRun) {
-        await store.upsert({
-          repo,
-          owner,
-          issueNumber: item.number,
-          title: item.title,
-          body: item.body ?? null,
-          state: item.state,
-          authorLogin: item.user?.login ?? "ghost",
-          authorAssociation: item.author_association ?? null,
-          labelNames: (item.labels ?? []).map((l) =>
-            typeof l === "string" ? l : l.name ?? "",
-          ),
-          templateSlug: null,
-          commentCount: item.comments,
-          assignees: (item.assignees ?? []).map((a) => ({
-            id: a.id,
-            login: a.login,
-          })),
-          milestone: item.milestone?.title ?? null,
-          reactionCount: item.reactions?.total_count ?? 0,
-          isPullRequest: false,
-          locked: item.locked,
-          githubCreatedAt: new Date(item.created_at),
-          githubUpdatedAt: item.updated_at ? new Date(item.updated_at) : null,
-          closedAt: item.closed_at ? new Date(item.closed_at) : null,
-          embedding,
-        });
-      }
+      issueInputs.push({
+        repo,
+        owner,
+        issueNumber: item.number,
+        title: item.title,
+        body: item.body ?? null,
+        state: item.state,
+        authorLogin: item.user?.login ?? "ghost",
+        authorAssociation: item.author_association ?? null,
+        labelNames: (item.labels ?? []).map((l) =>
+          typeof l === "string" ? l : l.name ?? "",
+        ),
+        templateSlug: null,
+        commentCount: item.comments,
+        assignees: (item.assignees ?? []).map((a) => ({
+          id: a.id,
+          login: a.login,
+        })),
+        milestone: item.milestone?.title ?? null,
+        reactionCount: item.reactions?.total_count ?? 0,
+        isPullRequest: false,
+        locked: item.locked,
+        githubCreatedAt: new Date(item.created_at),
+        githubUpdatedAt: item.updated_at ? new Date(item.updated_at) : null,
+        closedAt: item.closed_at ? new Date(item.closed_at) : null,
+        embedding,
+      });
 
       // Track latest updated_at for sync state
       if (item.updated_at) {
@@ -269,6 +267,14 @@ export async function backfillIssues(opts: IssueBackfillOptions): Promise<IssueB
         if (!lastUpdatedAt || itemDate > lastUpdatedAt) {
           lastUpdatedAt = itemDate;
         }
+      }
+    }
+
+    if (!dryRun && issueInputs.length > 0) {
+      if (store.upsertMany) {
+        await store.upsertMany(issueInputs);
+      } else {
+        await Promise.all(issueInputs.map((issue) => store.upsert(issue)));
       }
     }
 
@@ -377,64 +383,92 @@ export async function backfillIssueComments(opts: IssueBackfillOptions): Promise
       page,
     );
 
+    const commentContexts: Array<{
+      comment: (typeof comments)[number];
+      issueNumber: number;
+      login: string;
+    }> = [];
+
     for (const comment of comments) {
-      // Extract issue number from issue_url
       const issueMatch = comment.issue_url?.match(/\/issues\/(\d+)$/);
       if (!issueMatch) continue;
       const issueNumber = parseInt(issueMatch[1]!, 10);
 
-      // Skip bot comments
       const login = comment.user?.login;
       if (!login || isBotComment(login)) continue;
 
-      // Get issue title for embedding context prefix
-      let issueTitle = titleCache.get(issueNumber);
-      if (!issueTitle) {
-        const issue = await store.getByNumber(repo, issueNumber);
-        issueTitle = issue?.title ?? `Issue ${issueNumber}`;
-        titleCache.set(issueNumber, issueTitle);
-      }
+      commentContexts.push({ comment, issueNumber, login });
+    }
 
-      // Chunk comment
+    const missingIssueNumbers = [...new Set(
+      commentContexts
+        .map((context) => context.issueNumber)
+        .filter((issueNumber) => !titleCache.has(issueNumber)),
+    )];
+    await mapWithConcurrency(missingIssueNumbers, 8, async (issueNumber) => {
+      if (!titleCache.has(issueNumber)) {
+        const issue = await store.getByNumber(repo, issueNumber);
+        titleCache.set(issueNumber, issue?.title ?? `Issue ${issueNumber}`);
+      }
+    });
+
+    const chunkRows: Array<{
+      comment: (typeof comments)[number];
+      issueNumber: number;
+      login: string;
+      chunkText: string;
+      commentGithubId: number;
+      body: string;
+    }> = [];
+    for (const context of commentContexts) {
+      const { comment, issueNumber, login } = context;
+      const issueTitle = titleCache.get(issueNumber) ?? `Issue ${issueNumber}`;
       const chunks = chunkIssueComment(issueNumber, issueTitle, comment.body ?? "");
 
       for (let i = 0; i < chunks.length; i++) {
         const chunkText = chunks[i]!;
-        let embedding: Float32Array | null = null;
-
-        try {
-          const result = await embeddingProvider.generate(chunkText, "document");
-          if (result) {
-            embedding = result.embedding;
-          } else {
-            failedEmbeddings++;
-          }
-        } catch {
-          failedEmbeddings++;
-        }
-
-        // Use synthetic ID for additional chunks to avoid key collision
         const commentGithubId = i === 0 ? comment.id : comment.id * 1000 + i;
-
-        if (!dryRun) {
-          await store.upsertComment({
-            repo,
-            issueNumber,
-            commentGithubId,
-            authorLogin: login,
-            authorAssociation: comment.author_association ?? null,
-            body: i === 0 ? (comment.body ?? "") : chunkText,
-            githubCreatedAt: new Date(comment.created_at),
-            githubUpdatedAt: comment.updated_at ? new Date(comment.updated_at) : null,
-            embedding,
-          });
-        }
-
-        totalChunks++;
+        chunkRows.push({
+          comment,
+          issueNumber,
+          login,
+          chunkText,
+          commentGithubId,
+          body: i === 0 ? (comment.body ?? "") : chunkText,
+        });
       }
 
       totalComments++;
     }
+
+    const embeddingResults = await generateDocumentEmbeddingResultsBatch({
+      texts: chunkRows.map((row) => row.chunkText),
+      embeddingProvider,
+    });
+
+    await mapWithConcurrency(chunkRows, 8, async (row, index) => {
+      const result = embeddingResults[index];
+      const embedding = result?.status === "success" ? result.embedding : null;
+      if (result?.status !== "success") {
+        failedEmbeddings++;
+      }
+
+      if (!dryRun) {
+        await store.upsertComment({
+          repo,
+          issueNumber: row.issueNumber,
+          commentGithubId: row.commentGithubId,
+          authorLogin: row.login,
+          authorAssociation: row.comment.author_association ?? null,
+          body: row.body,
+          githubCreatedAt: new Date(row.comment.created_at),
+          githubUpdatedAt: row.comment.updated_at ? new Date(row.comment.updated_at) : null,
+          embedding,
+        });
+      }
+
+      totalChunks++;
+    });
 
     logger.info(
       {

@@ -541,7 +541,6 @@ function createTestableExecutor(deps: {
             allowedTools,
             taskType,
             mcpServerNames: Object.keys(mcpFactories),
-            token: context.workspace.token,
           });
         }
 

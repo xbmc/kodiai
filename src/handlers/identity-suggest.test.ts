@@ -499,13 +499,14 @@ describe("suggestIdentityLink", () => {
     expect(logger.info).toHaveBeenCalledTimes(1);
   });
 
-  test("does not retry side-effecting Slack DM writes after a transient response failure", async () => {
-    const requests: string[] = [];
+  test("retries transient Slack DM write failures with a stable idempotency key", async () => {
+    const requests: Array<{ url: string; body: string }> = [];
     const logger = createMockLogger();
+    let postMessageCalls = 0;
 
-    const fetchMock = mock(async (input: string | URL | Request) => {
+    const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
-      requests.push(url);
+      requests.push({ url, body: String(init?.body ?? "") });
 
       if (url === "https://slack.com/api/users.list") {
         return jsonResponse({
@@ -524,7 +525,14 @@ describe("suggestIdentityLink", () => {
       }
 
       if (url === "https://slack.com/api/chat.postMessage") {
-        return jsonResponse({ ok: false, error: "server_error" }, { status: 500 });
+        postMessageCalls++;
+        if (postMessageCalls < 3) {
+          return jsonResponse(
+            { ok: false, error: "server_error" },
+            { status: 500, headers: { "retry-after": "0" } },
+          );
+        }
+        return jsonResponse({ ok: true });
       }
 
       return new Response("Not Found", { status: 404 });
@@ -541,8 +549,15 @@ describe("suggestIdentityLink", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(requests.filter((url) => url === "https://slack.com/api/chat.postMessage")).toHaveLength(1);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const postBodies = requests
+      .filter((request) => request.url === "https://slack.com/api/chat.postMessage")
+      .map((request) => JSON.parse(request.body) as { client_msg_id?: string });
+    expect(postBodies).toHaveLength(3);
+    expect(postBodies[0]?.client_msg_id).toEqual(expect.any(String));
+    expect(postBodies[1]?.client_msg_id).toBe(postBodies[0]?.client_msg_id);
+    expect(postBodies[2]?.client_msg_id).toBe(postBodies[0]?.client_msg_id);
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledTimes(1);
   });
 
   test("duplicate suggestion attempts in the same process do not send a second DM", async () => {

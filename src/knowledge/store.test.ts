@@ -137,8 +137,8 @@ describe("KnowledgeStore batch SQL", () => {
 
     expect(mockSql.unsafeCalls[0]!.query).toContain("comment_id bigint");
     expect(mockSql.unsafeCalls[1]!.query).toContain("comment_id bigint");
-    expect(JSON.parse(mockSql.unsafeCalls[0]!.values[0] as string)[0].comment_id).toBe(githubCommentId);
-    expect(JSON.parse(mockSql.unsafeCalls[1]!.values[0] as string)[0].comment_id).toBe(githubCommentId);
+    expect((mockSql.unsafeCalls[0]!.values[0] as Array<{ comment_id: unknown }>)[0]!.comment_id).toBe(githubCommentId);
+    expect((mockSql.unsafeCalls[1]!.values[0] as Array<{ comment_id: unknown }>)[0]!.comment_id).toBe(githubCommentId);
   });
 
   test("recordSuppressionLog batches rows and skips empty input", async () => {
@@ -157,6 +157,17 @@ describe("KnowledgeStore batch SQL", () => {
     expect(mockSql.calls).toHaveLength(0);
     expect(mockSql.unsafeCalls).toHaveLength(1);
     expect(mockSql.unsafeCalls[0]!.query).toContain("suppression_log");
+  });
+
+  test("aggregateFeedbackPatterns resolves latest metadata with one windowed scan", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+
+    await batchStore.aggregateFeedbackPatterns("owner/repo");
+
+    expect(mockSql.calls).toHaveLength(1);
+    expect(mockSql.calls[0]!.query).toContain("ROW_NUMBER() OVER (PARTITION BY fr.title");
+    expect(mockSql.calls[0]!.query).not.toContain("SELECT fr2.severity");
   });
 });
 

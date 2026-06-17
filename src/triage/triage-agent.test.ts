@@ -174,6 +174,44 @@ Use CSS variables.
     expect(result!.valid).toBe(true);
   });
 
+  it("uses alphabetical filename order to break equal best-fit template scores", async () => {
+    const alphaTemplate = `---
+name: Alpha
+labels: alpha
+---
+
+## Shared
+<!-- Shared details -->
+
+## Alpha Details
+<!-- Alpha-only details -->
+`;
+    const betaTemplate = `---
+name: Beta
+labels: beta
+---
+
+## Shared
+<!-- Shared details -->
+
+## Beta Details
+<!-- Beta-only details -->
+`;
+
+    await writeTemplate("z-beta.md", betaTemplate);
+    await writeTemplate("a-alpha.md", alphaTemplate);
+
+    const result = await validateIssue({
+      workspaceDir: tmpDir,
+      issueBody: `## Shared
+The one heading both templates match.
+`,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.templateSlug).toBe("a-alpha");
+  });
+
   it("detects empty sections in issue body", async () => {
     await writeTemplate("bug-report.md", bugTemplate);
 

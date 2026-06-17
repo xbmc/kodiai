@@ -267,6 +267,52 @@ describe("calibration evaluator", () => {
     });
   });
 
+  test("evaluates large tied cohorts without enumerating score permutations", async () => {
+    const snapshotModule = await loadSnapshotModule();
+    const calibrationModule = await loadCalibrationModule();
+
+    expect(snapshotModule).not.toBeNull();
+    expect(calibrationModule).not.toBeNull();
+    if (!snapshotModule?.assertValidXbmcFixtureSnapshot || !calibrationModule?.evaluateCalibrationSnapshot) {
+      return;
+    }
+
+    const snapshot = clone(
+      snapshotModule.assertValidXbmcFixtureSnapshot(
+        await readJsonFixture("fixtures/contributor-calibration/xbmc-snapshot.json"),
+      ),
+    );
+    const baseRow = snapshot.retained.find(
+      (row: { normalizedId: string }) => row.normalizedId === "fuzzard",
+    );
+    expect(baseRow).toBeDefined();
+
+    const retainedIds = Array.from({ length: 12 }, (_, index) => `tied-${index + 1}`);
+    snapshot.retained = retainedIds.map((normalizedId: string, index: number) => ({
+      ...clone(baseRow),
+      normalizedId,
+      displayName: `Tied ${index + 1}`,
+      githubUsername: normalizedId,
+    }));
+
+    const report = calibrationModule.evaluateCalibrationSnapshot(snapshot, {
+      referenceTime: "2026-04-10T20:42:03.000Z",
+      retainedIds,
+    });
+
+    expect(report.rows).toHaveLength(12);
+    expect(findRow(report, "tied-1").instability.live).toMatchObject({
+      hasScoreTie: true,
+      possibleRankRange: { min: 1, max: 12 },
+      possibleTiers: ["newcomer"],
+    });
+    expect(findRow(report, "tied-1").instability.intended).toMatchObject({
+      hasScoreTie: true,
+      possibleRankRange: { min: 1, max: 12 },
+      possibleTiers: ["newcomer", "developing", "established", "senior"],
+    });
+  }, 1000);
+
   test("treats future provenance timestamps as unknown freshness and reports the data issue", async () => {
     const snapshotModule = await loadSnapshotModule();
     const calibrationModule = await loadCalibrationModule();

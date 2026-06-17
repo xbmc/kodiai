@@ -18,7 +18,6 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue } from "../jobs/types.ts";
 import type { RepoConfig } from "../execution/config.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { findDuplicateCandidates } from "../triage/duplicate-detector.ts";
@@ -28,21 +27,24 @@ import {
   buildTriageMarker,
   TRIAGE_MARKER_PREFIX,
 } from "../triage/triage-comment.ts";
+import {
+  createIssueTriageStateStore,
+  type IssueTriageStateStore,
+} from "../triage/issue-triage-state-store.ts";
 import type { WorkspaceManager } from "../jobs/types.ts";
 
 export function createIssueOpenedHandler(deps: {
   eventRouter: EventRouter;
-  jobQueue: JobQueue;
   githubApp: GitHubApp;
   workspaceManager: WorkspaceManager;
   issueStore: IssueStore;
   embeddingProvider: EmbeddingProvider;
   sql: Sql;
+  issueTriageStateStore?: IssueTriageStateStore;
   logger: Logger;
 }): void {
   const {
     eventRouter,
-    jobQueue,
     githubApp,
     workspaceManager,
     issueStore,
@@ -50,6 +52,8 @@ export function createIssueOpenedHandler(deps: {
     sql,
     logger,
   } = deps;
+  const issueTriageStateStore =
+    deps.issueTriageStateStore ?? createIssueTriageStateStore(sql);
 
   async function handleIssueOpened(event: WebhookEvent): Promise<void> {
     try {
@@ -146,10 +150,16 @@ export function createIssueOpenedHandler(deps: {
         handlerLogger.warn({ err }, "Comment scan failed (fail-open, continuing to DB claim)");
       }
 
-      // Layer 2 idempotency: Atomic DB claim with cooldown window
+      // Layer 2 idempotency: reserve the triage attempt before expensive
+      // duplicate detection so replayed deliveries stop at the cooldown gate.
       const cooldownMinutes = config.triage.cooldownMinutes ?? 30;
-      const claimed = await claimIssueTriage(sql, repo, issueNumber, event.id, cooldownMinutes);
-      if (!claimed) {
+      const triageClaim = await issueTriageStateStore.claim({
+        repo,
+        issueNumber,
+        deliveryId: event.id,
+        cooldownMinutes,
+      });
+      if (!triageClaim) {
         handlerLogger.info("Issue already triaged within cooldown window (DB claim failed), skipping");
         return;
       }
@@ -195,9 +205,32 @@ export function createIssueOpenedHandler(deps: {
         logger: handlerLogger,
       });
 
+      // Store the ML training signal before any user-visible side effects. This
+      // update is intentionally not fail-open; posting a duplicate comment with
+      // stale duplicate_count would corrupt issue-closed feedback labels.
+      const recorded = await triageClaim.recordDuplicateCount({
+        duplicateCount: candidates.length,
+      });
+      if (!recorded) {
+        handlerLogger.info(
+          { claimDeliveryId: triageClaim.deliveryId },
+          "Issue triage claim was superseded before duplicate count could be recorded, skipping",
+        );
+        return;
+      }
+
       // 7. Check results: if no candidates, no comment (zero noise)
       if (candidates.length === 0) {
         handlerLogger.info("No duplicate candidates found, skipping comment");
+        return;
+      }
+
+      const publishClaimStillCurrent = await triageClaim.confirmPublish();
+      if (!publishClaimStillCurrent) {
+        handlerLogger.info(
+          { claimDeliveryId: triageClaim.deliveryId },
+          "Issue triage claim was superseded before publishing side effects, skipping",
+        );
         return;
       }
 
@@ -215,11 +248,9 @@ export function createIssueOpenedHandler(deps: {
 
       // 9b. Store the comment GitHub ID for future reaction tracking (REACT-01)
       try {
-        await sql`
-          UPDATE issue_triage_state
-          SET comment_github_id = ${commentResponse.data.id}
-          WHERE repo = ${repo} AND issue_number = ${issueNumber}
-        `;
+        await triageClaim.storeCommentId({
+          commentGithubId: commentResponse.data.id,
+        });
       } catch (err) {
         handlerLogger.warn({ err, commentGithubId: commentResponse.data.id }, "Failed to store comment GitHub ID (non-fatal)");
       }
@@ -237,17 +268,6 @@ export function createIssueOpenedHandler(deps: {
         handlerLogger.warn({ err, label: duplicateLabel }, "Failed to apply duplicate label (continuing)");
       }
 
-      // 11. Update triage state with duplicate count
-      try {
-        await sql`
-          UPDATE issue_triage_state
-          SET duplicate_count = ${candidates.length}
-          WHERE repo = ${repo} AND issue_number = ${issueNumber}
-        `;
-      } catch (err) {
-        handlerLogger.warn({ err }, "Failed to update triage state duplicate count");
-      }
-
       // 12. Log completion
       handlerLogger.info(
         { candidateCount: candidates.length },
@@ -262,32 +282,4 @@ export function createIssueOpenedHandler(deps: {
   }
 
   eventRouter.register("issues.opened", handleIssueOpened);
-}
-
-/**
- * Atomically claim an issue for triage with cooldown enforcement.
- * Returns true if claimed (we should process), false if already claimed within cooldown window.
- *
- * Uses INSERT ... ON CONFLICT DO UPDATE with a WHERE clause that only updates
- * if the previous triage is older than cooldownMinutes. This is atomic and
- * prevents re-triage within the cooldown window even under concurrent delivery.
- */
-async function claimIssueTriage(
-  sql: Sql,
-  repo: string,
-  issueNumber: number,
-  deliveryId: string,
-  cooldownMinutes: number,
-): Promise<boolean> {
-  const result = await sql`
-    INSERT INTO issue_triage_state (repo, issue_number, delivery_id)
-    VALUES (${repo}, ${issueNumber}, ${deliveryId})
-    ON CONFLICT (repo, issue_number) DO UPDATE
-      SET delivery_id = ${deliveryId},
-          triaged_at = now(),
-          duplicate_count = 0
-      WHERE issue_triage_state.triaged_at < now() - ${cooldownMinutes + ' minutes'}::interval
-    RETURNING id
-  `;
-  return result.length > 0;
 }

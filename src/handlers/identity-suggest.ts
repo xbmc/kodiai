@@ -8,7 +8,7 @@
  * Completely fail-open: any error is logged and silently ignored.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import { findPotentialMatches } from "../contributor/identity-matcher.ts";
@@ -239,7 +239,7 @@ async function sendSuggestionDM(
   githubUsername: string,
   logger: Logger,
 ): Promise<void> {
-  const { data: openData } = await fetchSlackJson("https://slack.com/api/conversations.open", {
+  const { data: openData } = await fetchSlackJsonReadWithRetry("https://slack.com/api/conversations.open", {
     method: "POST",
     headers: {
       authorization: `Bearer ${botToken}`,
@@ -260,13 +260,13 @@ async function sendSuggestionDM(
     `If that's you, link your accounts with \`/kodiai link ${githubUsername}\` so Kodiai can use your linked contributor profile when available. ` +
     "If you'd rather keep reviews generic, you can opt out any time with `/kodiai profile opt-out`.";
 
-  const { data: msgData } = await fetchSlackJson("https://slack.com/api/chat.postMessage", {
+  const { data: msgData } = await fetchSlackJsonReadWithRetry("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
       authorization: `Bearer ${botToken}`,
       "content-type": "application/json; charset=utf-8",
     },
-    body: JSON.stringify({ channel: channelId, text: message }),
+    body: JSON.stringify({ channel: channelId, text: message, client_msg_id: randomUUID() }),
   }, "Slack chat.postMessage");
 
   if (!msgData.ok) {

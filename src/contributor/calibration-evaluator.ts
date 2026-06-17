@@ -517,44 +517,30 @@ function analyzePathInstability(
   models: PreliminaryPathModel[],
 ): Map<string, InstabilitySnapshot> {
   const scoreGroups = buildScoreGroups(models);
-  const hasAnyTie = scoreGroups.some((group) => group.length > 1);
-  const permutations = buildScoreStablePermutations(scoreGroups);
   const snapshots = new Map<string, InstabilitySnapshot>();
-  const scoreGroupByNormalizedId = new Map<string, PreliminaryPathModel[]>();
+
+  let nextRank = 1;
   for (const group of scoreGroups) {
-    for (const entry of group) {
-      scoreGroupByNormalizedId.set(entry.normalizedId, group);
-    }
-  }
-
-  for (const model of models) {
-    const scoreGroup = scoreGroupByNormalizedId.get(model.normalizedId);
-    snapshots.set(model.normalizedId, {
-      ranks: [],
-      tiers: [],
-      tiedContributorIds: scoreGroup?.map((entry) => entry.normalizedId) ?? [],
+    const minRank = nextRank;
+    const maxRank = nextRank + group.length - 1;
+    const ranks = buildInclusiveRange(minRank, maxRank);
+    const tiers = possibleTiersForRankRange({
+      score: group[0]!.modeledOverallScore,
+      total: models.length,
+      minRank,
+      maxRank,
     });
-  }
+    const tiedContributorIds = group.map((entry) => entry.normalizedId);
 
-  if (!hasAnyTie) {
-    const ranked = rankPathModels(models);
-    for (const model of models) {
-      const instability = snapshots.get(model.normalizedId)!;
-      const rankedModel = ranked.get(model.normalizedId)!;
-      instability.ranks.push(rankedModel.rank);
-      instability.tiers.push(rankedModel.tier);
+    for (const model of group) {
+      snapshots.set(model.normalizedId, {
+        ranks,
+        tiers,
+        tiedContributorIds,
+      });
     }
-    return snapshots;
-  }
 
-  for (const ordering of permutations) {
-    const ranked = rankPathModels(ordering);
-    for (const model of ordering) {
-      const instability = snapshots.get(model.normalizedId)!;
-      const rankedModel = ranked.get(model.normalizedId)!;
-      instability.ranks.push(rankedModel.rank);
-      instability.tiers.push(rankedModel.tier);
-    }
+    nextRank = maxRank + 1;
   }
 
   return snapshots;
@@ -576,43 +562,39 @@ function buildScoreGroups(models: PreliminaryPathModel[]): PreliminaryPathModel[
   return groups;
 }
 
-function buildScoreStablePermutations(
-  groups: PreliminaryPathModel[][],
-): PreliminaryPathModel[][] {
-  const perGroupPermutations = groups.map((group) => permutations(group));
-  const results: PreliminaryPathModel[][] = [];
-
-  function visit(index: number, current: PreliminaryPathModel[]): void {
-    if (index >= perGroupPermutations.length) {
-      results.push([...current]);
-      return;
-    }
-
-    for (const candidate of perGroupPermutations[index]!) {
-      current.push(...candidate);
-      visit(index + 1, current);
-      current.splice(current.length - candidate.length, candidate.length);
-    }
-  }
-
-  visit(0, []);
-  return results;
+function buildInclusiveRange(min: number, max: number): number[] {
+  return Array.from({ length: max - min + 1 }, (_, index) => min + index);
 }
 
-function permutations<T>(values: T[]): T[][] {
-  if (values.length <= 1) {
-    return [values];
-  }
-
-  const results: T[][] = [];
-  for (let index = 0; index < values.length; index += 1) {
-    const current = values[index]!;
-    const rest = values.slice(0, index).concat(values.slice(index + 1));
-    for (const remainder of permutations(rest)) {
-      results.push([current, ...remainder]);
+function possibleTiersForRankRange(params: {
+  score: number;
+  total: number;
+  minRank: number;
+  maxRank: number;
+}): ContributorTier[] {
+  const tiers: ContributorTier[] = [];
+  for (let rank = params.minRank; rank <= params.maxRank; rank += 1) {
+    const ascendingIndex = params.total - rank;
+    const percentile = params.total === 1
+      ? 0.5
+      : ascendingIndex / (params.total - 1);
+    const tier = tierForScoreAndPercentile(params.score, percentile);
+    if (!tiers.includes(tier)) {
+      tiers.push(tier);
     }
   }
-  return results;
+  return tiers;
+}
+
+function tierForScoreAndPercentile(
+  overallScore: number,
+  percentile: number,
+): ContributorTier {
+  if (overallScore === 0) return "newcomer";
+  if (percentile < 0.2) return "newcomer";
+  if (percentile < 0.5) return "developing";
+  if (percentile < 0.8) return "established";
+  return "senior";
 }
 
 function toInstabilityReport(

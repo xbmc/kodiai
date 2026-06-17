@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, mock, beforeEach, afterEach, vi } from "bun:test";
 import { createWikiSyncScheduler } from "./wiki-sync.ts";
 import type { WikiPageStore, WikiSyncState } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
@@ -405,8 +405,13 @@ describe("createWikiSyncScheduler", () => {
     expect(chunks[2]!.embedding).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ pageId: 1, chunkIndex: 0, err: expect.any(Error) }),
-      "Wiki sync chunk embedding failed (fail-open)",
+      expect.objectContaining({
+        pageId: 1,
+        failedChunkCount: 1,
+        failedChunkIndexes: [0],
+        firstError: expect.any(Error),
+      }),
+      "Wiki sync chunk embeddings failed (fail-open)",
     );
   });
 
@@ -463,6 +468,30 @@ describe("createWikiSyncScheduler", () => {
 
     // No fetch calls should have been made (stopped before startup delay)
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  test("start() is idempotent and does not leak duplicate timers", () => {
+    vi.useFakeTimers();
+    try {
+      const scheduler = createWikiSyncScheduler({
+        store: createMockStore(),
+        embeddingProvider: createMockEmbeddingProvider(),
+        source: "kodi.wiki",
+        intervalMs: 100_000,
+        delayMs: 0,
+        logger: createMockLogger(),
+        fetchFn: mockFetch(async () => new Response(JSON.stringify(buildRCResponse([])))),
+      });
+
+      scheduler.start();
+      scheduler.start();
+
+      expect(vi.getTimerCount()).toBe(1);
+      scheduler.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("deduplicates pages appearing multiple times in recent changes", async () => {
@@ -522,8 +551,8 @@ describe("createWikiSyncScheduler", () => {
     // Should complete without throwing
     expect(result.pagesChecked).toBe(0);
     expect(result.pagesUpdated).toBe(0);
-    // Still updates sync state even on failure
-    expect(store.updateSyncState).toHaveBeenCalled();
+    // Do not advance the checkpoint after a transient API failure.
+    expect(store.updateSyncState).not.toHaveBeenCalled();
   });
 
   test("paginates through multiple RC pages", async () => {

@@ -345,73 +345,113 @@ export function createKnowledgeStore(opts: {
       const sinceClause = sinceDays !== undefined;
       const days = sinceDays ?? 0;
 
-      const [summary] = sinceClause
+      const statsRows = sinceClause
         ? await sql`
+            WITH filtered_reviews AS (
+              SELECT id, findings_total, suppressions_applied
+              FROM reviews
+              WHERE repo = ${repo}
+                AND created_at >= now() - ${`${days} days`}::interval
+            ),
+            filtered_findings AS (
+              SELECT f.severity, f.confidence, f.file_path
+              FROM findings f
+              INNER JOIN filtered_reviews r ON r.id = f.review_id
+            ),
+            summary AS (
+              SELECT
+                COUNT(*) AS total_reviews,
+                COALESCE(SUM(findings_total), 0) AS total_findings,
+                COALESCE(SUM(suppressions_applied), 0) AS total_suppressed
+              FROM filtered_reviews
+            ),
+            severity_counts AS (
+              SELECT COALESCE(jsonb_object_agg(severity, count), '{}'::jsonb) AS findings_by_severity
+              FROM (
+                SELECT severity, COUNT(*) AS count
+                FROM filtered_findings
+                GROUP BY severity
+              ) severity_rollup
+            ),
+            confidence AS (
+              SELECT COALESCE(AVG(confidence), 0) AS avg_confidence
+              FROM filtered_findings
+            ),
+            top_files AS (
+              SELECT COALESCE(jsonb_agg(jsonb_build_object('path', path, 'finding_count', finding_count)), '[]'::jsonb) AS rows
+              FROM (
+                SELECT file_path AS path, COUNT(*) AS finding_count
+                FROM filtered_findings
+                GROUP BY file_path
+                ORDER BY finding_count DESC, file_path ASC
+                LIMIT 10
+              ) top_file_rollup
+            )
             SELECT
-              COUNT(*) AS total_reviews,
-              COALESCE(SUM(findings_total), 0) AS total_findings,
-              COALESCE(SUM(suppressions_applied), 0) AS total_suppressed
-            FROM reviews
-            WHERE repo = ${repo} AND created_at >= now() - ${`${days} days`}::interval
+              summary.total_reviews,
+              summary.total_findings,
+              summary.total_suppressed,
+              confidence.avg_confidence,
+              severity_counts.findings_by_severity,
+              top_files.rows AS top_files
+            FROM summary
+            CROSS JOIN confidence
+            CROSS JOIN severity_counts
+            CROSS JOIN top_files
           `
         : await sql`
+            WITH filtered_reviews AS (
+              SELECT id, findings_total, suppressions_applied
+              FROM reviews
+              WHERE repo = ${repo}
+            ),
+            filtered_findings AS (
+              SELECT f.severity, f.confidence, f.file_path
+              FROM findings f
+              INNER JOIN filtered_reviews r ON r.id = f.review_id
+            ),
+            summary AS (
+              SELECT
+                COUNT(*) AS total_reviews,
+                COALESCE(SUM(findings_total), 0) AS total_findings,
+                COALESCE(SUM(suppressions_applied), 0) AS total_suppressed
+              FROM filtered_reviews
+            ),
+            severity_counts AS (
+              SELECT COALESCE(jsonb_object_agg(severity, count), '{}'::jsonb) AS findings_by_severity
+              FROM (
+                SELECT severity, COUNT(*) AS count
+                FROM filtered_findings
+                GROUP BY severity
+              ) severity_rollup
+            ),
+            confidence AS (
+              SELECT COALESCE(AVG(confidence), 0) AS avg_confidence
+              FROM filtered_findings
+            ),
+            top_files AS (
+              SELECT COALESCE(jsonb_agg(jsonb_build_object('path', path, 'finding_count', finding_count)), '[]'::jsonb) AS rows
+              FROM (
+                SELECT file_path AS path, COUNT(*) AS finding_count
+                FROM filtered_findings
+                GROUP BY file_path
+                ORDER BY finding_count DESC, file_path ASC
+                LIMIT 10
+              ) top_file_rollup
+            )
             SELECT
-              COUNT(*) AS total_reviews,
-              COALESCE(SUM(findings_total), 0) AS total_findings,
-              COALESCE(SUM(suppressions_applied), 0) AS total_suppressed
-            FROM reviews
-            WHERE repo = ${repo}
+              summary.total_reviews,
+              summary.total_findings,
+              summary.total_suppressed,
+              confidence.avg_confidence,
+              severity_counts.findings_by_severity,
+              top_files.rows AS top_files
+            FROM summary
+            CROSS JOIN confidence
+            CROSS JOIN severity_counts
+            CROSS JOIN top_files
           `;
-
-      const severityRows = sinceClause
-        ? await sql`
-            SELECT f.severity AS severity, COUNT(*) AS count
-            FROM findings f
-            INNER JOIN reviews r ON r.id = f.review_id
-            WHERE r.repo = ${repo} AND r.created_at >= now() - ${`${days} days`}::interval
-            GROUP BY f.severity
-          `
-        : await sql`
-            SELECT f.severity AS severity, COUNT(*) AS count
-            FROM findings f
-            INNER JOIN reviews r ON r.id = f.review_id
-            WHERE r.repo = ${repo}
-            GROUP BY f.severity
-          `;
-
-      const [confidenceRow] = sinceClause
-        ? await sql`
-            SELECT COALESCE(AVG(f.confidence), 0) AS avg_confidence
-            FROM findings f
-            INNER JOIN reviews r ON r.id = f.review_id
-            WHERE r.repo = ${repo} AND r.created_at >= now() - ${`${days} days`}::interval
-          `
-        : await sql`
-            SELECT COALESCE(AVG(f.confidence), 0) AS avg_confidence
-            FROM findings f
-            INNER JOIN reviews r ON r.id = f.review_id
-            WHERE r.repo = ${repo}
-          `;
-
-      const topFilesRows = sinceClause
-        ? await sql`
-            SELECT f.file_path AS path, COUNT(*) AS finding_count
-            FROM findings f
-            INNER JOIN reviews r ON r.id = f.review_id
-            WHERE r.repo = ${repo} AND r.created_at >= now() - ${`${days} days`}::interval
-            GROUP BY f.file_path
-            ORDER BY finding_count DESC, f.file_path ASC
-            LIMIT 10
-          `
-        : await sql`
-            SELECT f.file_path AS path, COUNT(*) AS finding_count
-            FROM findings f
-            INNER JOIN reviews r ON r.id = f.review_id
-            WHERE r.repo = ${repo}
-            GROUP BY f.file_path
-            ORDER BY finding_count DESC, f.file_path ASC
-            LIMIT 10
-          `;
+      const statsRow = statsRows[0]!;
 
       const findingsBySeverity: Record<string, number> = {
         critical: 0,
@@ -419,21 +459,25 @@ export function createKnowledgeStore(opts: {
         medium: 0,
         minor: 0,
       };
-      for (const row of severityRows) {
-        findingsBySeverity[row.severity] = Number(row.count);
+      const severityCounts = statsRow.findings_by_severity as Record<string, string | number> | null;
+      for (const [severity, count] of Object.entries(severityCounts ?? {})) {
+        findingsBySeverity[severity] = Number(count);
       }
 
-      const totalReviews = Number(summary!.total_reviews);
-      const totalFindings = Number(summary!.total_findings);
+      const totalReviews = Number(statsRow.total_reviews);
+      const totalFindings = Number(statsRow.total_findings);
+      const topFiles = Array.isArray(statsRow.top_files)
+        ? statsRow.top_files as Array<{ path: string; finding_count: string | number }>
+        : [];
 
       return {
         totalReviews,
         totalFindings,
         findingsBySeverity,
-        totalSuppressed: Number(summary!.total_suppressed),
+        totalSuppressed: Number(statsRow.total_suppressed),
         avgFindingsPerReview: totalReviews > 0 ? totalFindings / totalReviews : 0,
-        avgConfidence: Number(confidenceRow!.avg_confidence ?? 0),
-        topFiles: topFilesRows.map((row) => ({ path: row.path, findingCount: Number(row.finding_count) })),
+        avgConfidence: Number(statsRow.avg_confidence ?? 0),
+        topFiles: topFiles.map((row) => ({ path: row.path, findingCount: Number(row.finding_count) })),
       };
     },
 
@@ -685,19 +729,30 @@ export function createKnowledgeStore(opts: {
 
     async aggregateFeedbackPatterns(repo: string): Promise<FeedbackPattern[]> {
       const rows = await sql`
+        WITH ranked_feedback AS (
+          SELECT
+            fr.title,
+            fr.reaction_content,
+            fr.reactor_login,
+            fr.severity,
+            fr.category,
+            r.pr_number,
+            ROW_NUMBER() OVER (PARTITION BY fr.title ORDER BY fr.id DESC) AS title_rank
+          FROM feedback_reactions fr
+          INNER JOIN reviews r ON r.id = fr.review_id
+          WHERE fr.repo = ${repo}
+        )
         SELECT
-          fr.title,
-          SUM(CASE WHEN fr.reaction_content = '-1' THEN 1 ELSE 0 END) AS thumbs_down_count,
-          SUM(CASE WHEN fr.reaction_content = '+1' THEN 1 ELSE 0 END) AS thumbs_up_count,
-          COUNT(DISTINCT CASE WHEN fr.reaction_content = '-1' THEN fr.reactor_login END) AS distinct_reactors,
-          COUNT(DISTINCT CASE WHEN fr.reaction_content = '-1' THEN r.pr_number END) AS distinct_prs,
-          (SELECT fr2.severity FROM feedback_reactions fr2 WHERE fr2.repo = ${repo} AND fr2.title = fr.title ORDER BY fr2.id DESC LIMIT 1) AS latest_severity,
-          (SELECT fr2.category FROM feedback_reactions fr2 WHERE fr2.repo = ${repo} AND fr2.title = fr.title ORDER BY fr2.id DESC LIMIT 1) AS latest_category
-        FROM feedback_reactions fr
-        INNER JOIN reviews r ON r.id = fr.review_id
-        WHERE fr.repo = ${repo}
-        GROUP BY fr.title
-        HAVING SUM(CASE WHEN fr.reaction_content = '-1' THEN 1 ELSE 0 END) > 0
+          title,
+          SUM(CASE WHEN reaction_content = '-1' THEN 1 ELSE 0 END) AS thumbs_down_count,
+          SUM(CASE WHEN reaction_content = '+1' THEN 1 ELSE 0 END) AS thumbs_up_count,
+          COUNT(DISTINCT CASE WHEN reaction_content = '-1' THEN reactor_login END) AS distinct_reactors,
+          COUNT(DISTINCT CASE WHEN reaction_content = '-1' THEN pr_number END) AS distinct_prs,
+          MAX(severity) FILTER (WHERE title_rank = 1) AS latest_severity,
+          MAX(category) FILTER (WHERE title_rank = 1) AS latest_category
+        FROM ranked_feedback
+        GROUP BY title
+        HAVING SUM(CASE WHEN reaction_content = '-1' THEN 1 ELSE 0 END) > 0
       `;
       return rows.map((row) => ({
         fingerprint: _feedbackFingerprint(row.title),

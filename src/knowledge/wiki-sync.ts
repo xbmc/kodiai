@@ -3,7 +3,7 @@ import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
-import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
+import { buildWikiApiUrl, fetchWikiJsonWithRetry, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -121,6 +121,7 @@ async function runSync(opts: {
 
   // Deduplicate page IDs across pagination (a page may appear multiple times in RC)
   const processedPageIds = new Set<number>();
+  let hadFailure = false;
 
   while (hasMore) {
     const params = new URLSearchParams({
@@ -142,14 +143,15 @@ async function runSync(opts: {
 
     let rcResponse: RecentChangesResponse;
     try {
-      const response = await fetchFn(buildWikiApiUrl(baseUrl, params));
-      if (!response.ok) {
-        logger.warn({ status: response.status }, "Wiki RecentChanges API request failed");
-        break;
-      }
-      rcResponse = (await response.json()) as RecentChangesResponse;
+      rcResponse = await fetchWikiJsonWithRetry<RecentChangesResponse>({
+        fetchFn,
+        url: buildWikiApiUrl(baseUrl, params),
+        logger,
+        context: { source, request: "recentchanges", continueToken: rccontinue ?? null },
+      });
     } catch (err) {
       logger.error({ err }, "Wiki RecentChanges API network error");
+      hadFailure = true;
       break;
     }
 
@@ -179,18 +181,15 @@ async function runSync(opts: {
 
         let parseData: ParseResponse;
         try {
-          const parseResponse = await fetchFn(buildWikiApiUrl(baseUrl, parseParams));
-          if (!parseResponse.ok) {
-            logger.warn(
-              { pageId: change.pageid, status: parseResponse.status },
-              "Wiki sync parse request failed, skipping page",
-            );
-            await sleep(delayMs);
-            continue;
-          }
-          parseData = (await parseResponse.json()) as ParseResponse;
+          parseData = await fetchWikiJsonWithRetry<ParseResponse>({
+            fetchFn,
+            url: buildWikiApiUrl(baseUrl, parseParams),
+            logger,
+            context: { source, request: "parse", pageId: change.pageid },
+          });
         } catch (err) {
           logger.warn({ pageId: change.pageid, err }, "Wiki sync parse network error, skipping page");
+          hadFailure = true;
           await sleep(delayMs);
           continue;
         }
@@ -210,6 +209,7 @@ async function runSync(opts: {
             },
             "Wiki sync parse response malformed, skipping page",
           );
+          hadFailure = true;
           await sleep(delayMs);
           continue;
         }
@@ -241,6 +241,7 @@ async function runSync(opts: {
             texts: chunks.map((chunk) => chunk.chunkText),
             embeddingProvider,
           });
+          const embeddingFailures: Array<{ chunkIndex: number; err: unknown }> = [];
           for (const [index, embeddingResult] of embeddings.entries()) {
             const chunk = chunks[index]!;
             if (embeddingResult.status === "success") {
@@ -248,11 +249,19 @@ async function runSync(opts: {
               continue;
             }
             if (embeddingResult.status === "failed") {
-              logger.warn(
-                { pageId: change.pageid, chunkIndex: chunk.chunkIndex, err: embeddingResult.err },
-                "Wiki sync chunk embedding failed (fail-open)",
-              );
+              embeddingFailures.push({ chunkIndex: chunk.chunkIndex, err: embeddingResult.err });
             }
+          }
+          if (embeddingFailures.length > 0) {
+            logger.warn(
+              {
+                pageId: change.pageid,
+                failedChunkCount: embeddingFailures.length,
+                failedChunkIndexes: embeddingFailures.slice(0, 5).map((failure) => failure.chunkIndex),
+                firstError: embeddingFailures[0]?.err,
+              },
+              "Wiki sync chunk embeddings failed (fail-open)",
+            );
           }
 
           // Replace all chunks for this page
@@ -263,6 +272,7 @@ async function runSync(opts: {
         await sleep(delayMs);
       } catch (err) {
         logger.warn({ pageId: change.pageid, err }, "Wiki sync page processing failed, continuing");
+        hadFailure = true;
       }
     }
 
@@ -275,14 +285,17 @@ async function runSync(opts: {
     }
   }
 
-  // Update sync state with current timestamp
-  await store.updateSyncState({
-    source,
-    lastSyncedAt: new Date(),
-    lastContinueToken: null,
-    totalPagesSynced: (syncState?.totalPagesSynced ?? 0) + pagesUpdated,
-    backfillComplete: syncState?.backfillComplete ?? false,
-  });
+  if (!hadFailure) {
+    await store.updateSyncState({
+      source,
+      lastSyncedAt: new Date(),
+      lastContinueToken: null,
+      totalPagesSynced: (syncState?.totalPagesSynced ?? 0) + pagesUpdated,
+      backfillComplete: syncState?.backfillComplete ?? false,
+    });
+  } else {
+    logger.warn({ source }, "Wiki incremental sync had failures; preserving previous sync checkpoint");
+  }
 
   const durationMs = Date.now() - startTime;
 
@@ -353,6 +366,11 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
 
   return {
     start() {
+      if (startupHandle || intervalHandle) {
+        logger.debug("Wiki sync scheduler already started, skipping duplicate start");
+        return;
+      }
+
       logger.info(
         { intervalMs, startupDelayMs: STARTUP_DELAY_MS, source },
         "Wiki sync scheduler starting",

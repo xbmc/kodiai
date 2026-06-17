@@ -246,11 +246,6 @@ function chunkPythonFile(filePath: string, language: string, lines: string[]): C
         lines: moduleLines,
       })
     : null;
-  if (moduleChunk) {
-    chunks.unshift(moduleChunk);
-    boundaries.unshift("module");
-  }
-
   if (chunks.length === 0) {
     const blockChunk = createChunk({
       filePath,
@@ -271,12 +266,15 @@ function chunkPythonFile(filePath: string, language: string, lines: string[]): C
     };
   }
 
+  const orderedChunks = moduleChunk ? [moduleChunk, ...chunks] : chunks;
+  const orderedBoundaries: CanonicalChunkBoundary[] = moduleChunk ? ["module", ...boundaries] : boundaries;
+
   return {
-    chunks,
+    chunks: orderedChunks,
     observability: {
       excluded: false,
       exclusionReason: null,
-      boundaryDecisions: boundaries,
+      boundaryDecisions: orderedBoundaries,
     },
   };
 }
@@ -364,17 +362,15 @@ function chunkBraceLanguageFile(filePath: string, language: string, lines: strin
       })
     : null;
 
-  if (moduleChunk) {
-    chunks.unshift(moduleChunk);
-    boundaries.unshift("module");
-  }
+  const orderedChunks = moduleChunk ? [moduleChunk, ...chunks] : chunks;
+  const orderedBoundaries: CanonicalChunkBoundary[] = moduleChunk ? ["module", ...boundaries] : boundaries;
 
   return {
-    chunks,
+    chunks: orderedChunks,
     observability: {
       excluded: false,
       exclusionReason: null,
-      boundaryDecisions: boundaries,
+      boundaryDecisions: orderedBoundaries,
     },
   };
 }

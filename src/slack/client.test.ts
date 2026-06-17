@@ -119,13 +119,12 @@ describe("createSlackClient", () => {
       authorization: "Bearer xoxb-test-token",
       "content-type": "application/json; charset=utf-8",
     });
-    expect(requests[0]?.init?.body).toBe(
-      JSON.stringify({
-        channel: "C123KODIAI",
-        thread_ts: "1700000000.000777",
-        text: "Here is your answer.",
-      }),
-    );
+    expect(JSON.parse(requests[0]?.init?.body as string)).toMatchObject({
+      channel: "C123KODIAI",
+      thread_ts: "1700000000.000777",
+      text: "Here is your answer.",
+      client_msg_id: expect.any(String),
+    });
   });
 
   test("postStandaloneMessage returns ts from response", async () => {
@@ -156,6 +155,59 @@ describe("createSlackClient", () => {
     expect(body.channel).toBe("C12345");
     expect(body.text).toBe("Wiki Staleness Report");
     expect(body.thread_ts).toBeUndefined();
+    expect(body.client_msg_id).toEqual(expect.any(String));
+  });
+
+  test("retries transient Slack write failures and preserves client_msg_id", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let calls = 0;
+    const client = createSlackClient({
+      botToken: "xoxb-test-token",
+      fetchImpl: async (_url, init) => {
+        calls++;
+        bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
+        if (calls === 1) {
+          return new Response(JSON.stringify({ ok: false, error: "ratelimited" }), {
+            status: 429,
+            headers: { "content-type": "application/json", "retry-after": "0" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true, ts: "1234567890.000100" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await client.postStandaloneMessage({ channel: "C12345", text: "Retry me" });
+
+    expect(calls).toBe(2);
+    expect(bodies[0]?.client_msg_id).toBe(bodies[1]?.client_msg_id);
+  });
+
+  test("treats reaction idempotency errors as success", async () => {
+    const client = createSlackClient({
+      botToken: "xoxb-test-token",
+      fetchImpl: async (url) =>
+        new Response(JSON.stringify({
+          ok: false,
+          error: String(url).includes("reactions.add") ? "already_reacted" : "no_reaction",
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    await expect(client.addReaction({
+      channel: "C123KODIAI",
+      timestamp: "1700000000.000777",
+      name: "hourglass_flowing_sand",
+    })).resolves.toBeUndefined();
+    await expect(client.removeReaction({
+      channel: "C123KODIAI",
+      timestamp: "1700000000.000777",
+      name: "hourglass_flowing_sand",
+    })).resolves.toBeUndefined();
   });
 
   test("rejects missing thread target and does not call Slack API", async () => {

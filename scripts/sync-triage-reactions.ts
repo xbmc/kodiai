@@ -21,8 +21,8 @@ import { createDbClient } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import { createGitHubApp } from "../src/auth/github-app.ts";
 import { recordObservation } from "../src/triage/threshold-learner.ts";
-import type { Sql } from "../src/db/client.ts";
-import type { Logger } from "pino";
+import { isHumanThumbReaction, type ReactionEntry } from "../src/lib/github-reactions.ts";
+import { syncTriageReactionRecords, syncTriageReactionRepos } from "./triage-reaction-sync.ts";
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
@@ -86,31 +86,18 @@ Environment:
 
 const lookbackDays = parseInt(values.days!, 10) || 30;
 const dryRun = values["dry-run"]!;
+const TRIAGE_RECORD_PAGE_SIZE = 250;
 
-// ── Reaction filtering ──────────────────────────────────────────────────────
-
-type ReactionEntry = {
-  id: number;
-  content: string;
-  user?: { login?: string; type?: string } | null;
+type TriageReactionRecord = {
+  triage_id: number;
+  repo: string;
+  issue_number: number;
+  comment_github_id: number;
+  duplicate_count: number | null;
+  observation_recorded: boolean;
+  observation_direction: "up" | "down" | null;
+  closure_exists: boolean;
 };
-
-function normalizeLogin(login: string | undefined): string {
-  return (login ?? "").trim().toLowerCase().replace(/\[bot\]$/i, "");
-}
-
-function isHumanThumbReaction(reaction: ReactionEntry, appSlug: string): boolean {
-  if (reaction.content !== "+1" && reaction.content !== "-1") return false;
-
-  const userType = (reaction.user?.type ?? "").toLowerCase();
-  if (userType === "bot") return false;
-
-  const reactorLogin = normalizeLogin(reaction.user?.login);
-  if (reactorLogin.length === 0) return false;
-  if (reactorLogin === normalizeLogin(appSlug)) return false;
-
-  return true;
-}
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
@@ -156,38 +143,44 @@ async function main(): Promise<void> {
     await githubApp.initialize();
     const appSlug = githubApp.getAppSlug();
 
-    // 3. Query triage records with comment_github_id from the lookback window
-    const triageRecords = await sql`
+    async function fetchTriageRecordPage(cursor: {
+      repo: string | null;
+      issueNumber: number | null;
+    }): Promise<TriageReactionRecord[]> {
+      const rows = await sql`
       SELECT
         ts.id AS triage_id,
         ts.repo,
         ts.issue_number,
         ts.comment_github_id,
-        ts.duplicate_count
+        ts.duplicate_count,
+        COALESCE(tcr.observation_recorded, false) AS observation_recorded,
+        tcr.observation_direction,
+        (outcome.id IS NOT NULL) AS closure_exists
       FROM issue_triage_state ts
+      LEFT JOIN triage_comment_reactions tcr
+        ON tcr.repo = ts.repo
+       AND tcr.issue_number = ts.issue_number
+      LEFT JOIN LATERAL (
+        SELECT id
+        FROM issue_outcome_feedback
+        WHERE repo = ts.repo
+          AND issue_number = ts.issue_number
+        LIMIT 1
+      ) outcome ON true
       WHERE ts.comment_github_id IS NOT NULL
         AND ts.triaged_at > now() - make_interval(days => ${lookbackDays})
+        AND (
+          ${cursor.repo}::text IS NULL
+          OR (ts.repo, ts.issue_number) > (${cursor.repo}::text, ${cursor.issueNumber}::int)
+        )
       ORDER BY ts.repo, ts.issue_number
+      LIMIT ${TRIAGE_RECORD_PAGE_SIZE}
     `;
-
-    logger.info(
-      { triageCount: triageRecords.length, lookbackDays, dryRun },
-      "Fetched triage records for reaction sync",
-    );
-
-    if (triageRecords.length === 0) {
-      logger.info("No triage records with comment IDs found, nothing to sync");
-      return;
+      return rows as unknown as TriageReactionRecord[];
     }
 
-    // 4. Group by repo for efficient octokit reuse
-    const byRepo = new Map<string, (typeof triageRecords)[number][]>();
-    for (const record of triageRecords) {
-      const repo = record.repo as string;
-      if (!byRepo.has(repo)) byRepo.set(repo, []);
-      byRepo.get(repo)!.push(record);
-    }
-
+    let totalTriageRecords = 0;
     let synced = 0;
     let observationsRecorded = 0;
     let skippedNoReactions = 0;
@@ -196,12 +189,11 @@ async function main(): Promise<void> {
     let skippedClosureExists = 0;
     let errors = 0;
 
-    // 5. Process each repo
-    for (const [repo, records] of byRepo) {
+    async function processRepoRecords([repo, records]: [string, TriageReactionRecord[]]): Promise<void> {
       const [owner, repoName] = repo.split("/");
       if (!owner || !repoName) {
         logger.warn({ repo }, "Invalid repo format, skipping");
-        continue;
+        return;
       }
 
       let octokit;
@@ -209,16 +201,16 @@ async function main(): Promise<void> {
         const ctx = await githubApp.getRepoInstallationContext(owner, repoName);
         if (!ctx) {
           logger.warn({ repo }, "No installation found for repo, skipping");
-          continue;
+          return;
         }
         octokit = await githubApp.getInstallationOctokit(ctx.installationId);
       } catch (err) {
         logger.error({ err, repo }, "Failed to get octokit for repo, skipping");
         errors++;
-        continue;
+        return;
       }
 
-      for (const record of records) {
+      await syncTriageReactionRecords(records, async (record) => {
         const commentGithubId = record.comment_github_id as number;
         const issueNumber = record.issue_number as number;
         const triageId = record.triage_id as number;
@@ -251,7 +243,7 @@ async function main(): Promise<void> {
               "[DRY RUN] Would sync reaction counts",
             );
             synced++;
-            continue;
+            return;
           }
 
           // 5c. UPSERT reaction counts
@@ -274,12 +266,11 @@ async function main(): Promise<void> {
 
           // 5d. Determine if we should record a threshold observation
           const shouldRecord = await shouldRecordObservation({
-            sql,
-            repo,
-            issueNumber,
             thumbsUp,
             thumbsDown,
-            logger,
+            existingObservationRecorded: record.observation_recorded === true,
+            existingObservationDirection: record.observation_direction as "up" | "down" | null,
+            closureExists: record.closure_exists === true,
           });
 
           if (!shouldRecord.record) {
@@ -289,7 +280,7 @@ async function main(): Promise<void> {
               case "already_recorded": skippedAlreadyRecorded++; break;
               case "closure_exists": skippedClosureExists++; break;
             }
-            continue;
+            return;
           }
 
           // 5e. Record observation into threshold learner
@@ -325,7 +316,40 @@ async function main(): Promise<void> {
           );
           errors++;
         }
+      });
+    }
+
+    let cursor = { repo: null as string | null, issueNumber: null as number | null };
+    while (true) {
+      const triageRecords = await fetchTriageRecordPage(cursor);
+      if (triageRecords.length === 0) {
+        break;
       }
+
+      totalTriageRecords += triageRecords.length;
+      logger.info(
+        { triageCount: triageRecords.length, totalTriageRecords, lookbackDays, dryRun },
+        "Fetched triage record page for reaction sync",
+      );
+
+      const byRepo = new Map<string, TriageReactionRecord[]>();
+      for (const record of triageRecords) {
+        const repo = record.repo;
+        if (!byRepo.has(repo)) byRepo.set(repo, []);
+        byRepo.get(repo)!.push(record);
+      }
+
+      // Process repos with small bounded concurrency. Each repo still uses
+      // record-level bounded concurrency, so keep this cap conservative.
+      await syncTriageReactionRepos(Array.from(byRepo), processRepoRecords);
+
+      const lastRecord = triageRecords[triageRecords.length - 1]!;
+      cursor = { repo: lastRecord.repo, issueNumber: lastRecord.issue_number };
+    }
+
+    if (totalTriageRecords === 0) {
+      logger.info("No triage records with comment IDs found, nothing to sync");
+      return;
     }
 
     logger.info(
@@ -337,7 +361,7 @@ async function main(): Promise<void> {
         skippedAlreadyRecorded,
         skippedClosureExists,
         errors,
-        totalTriageRecords: triageRecords.length,
+        totalTriageRecords,
       },
       "Reaction sync complete",
     );
@@ -353,14 +377,19 @@ type ObservationDecision =
   | { record: true; direction: "up" | "down" };
 
 async function shouldRecordObservation(params: {
-  sql: Sql;
-  repo: string;
-  issueNumber: number;
   thumbsUp: number;
   thumbsDown: number;
-  logger: Logger;
+  existingObservationRecorded: boolean;
+  existingObservationDirection: "up" | "down" | null;
+  closureExists: boolean;
 }): Promise<ObservationDecision> {
-  const { sql, repo, issueNumber, thumbsUp, thumbsDown, logger: _logger } = params;
+  const {
+    thumbsUp,
+    thumbsDown,
+    existingObservationRecorded,
+    existingObservationDirection,
+    closureExists,
+  } = params;
 
   // No reactions = no signal
   if (thumbsUp === 0 && thumbsDown === 0) {
@@ -374,28 +403,12 @@ async function shouldRecordObservation(params: {
 
   const direction: "up" | "down" = thumbsUp > thumbsDown ? "up" : "down";
 
-  // Check if we already recorded an observation with the same direction
-  const existing = await sql`
-    SELECT observation_recorded, observation_direction
-    FROM triage_comment_reactions
-    WHERE repo = ${repo} AND issue_number = ${issueNumber}
-  `;
-
-  if (
-    existing.length > 0 &&
-    existing[0]!.observation_recorded === true &&
-    existing[0]!.observation_direction === direction
-  ) {
+  if (existingObservationRecorded && existingObservationDirection === direction) {
     return { record: false, reason: "already_recorded" };
   }
 
   // Check if a closure-based outcome already exists (primary signal takes precedence)
-  const outcomeRows = await sql`
-    SELECT id FROM issue_outcome_feedback
-    WHERE repo = ${repo} AND issue_number = ${issueNumber}
-  `;
-
-  if (outcomeRows.length > 0) {
+  if (closureExists) {
     return { record: false, reason: "closure_exists" };
   }
 

@@ -169,9 +169,9 @@ function buildMentionRegex(handles: string[], flags: string): RegExp {
     return new RegExp("$^", flags);
   }
 
-  return new RegExp(`@(?:${cleaned.join("|")})\\b`, flags);
+  return new RegExp(`@(?:${cleaned.join("|")})(?=$|[^A-Za-z0-9_])`, flags);
 }
 
 function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

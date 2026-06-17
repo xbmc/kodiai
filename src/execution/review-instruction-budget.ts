@@ -72,10 +72,12 @@ function normalizeReviewInstructionSections(sections: ReviewInstructionSection[]
   const normalized: NormalizedReviewInstructionSection[] = [];
   for (const [position, section] of sortReviewInstructionSections(sections).entries()) {
     const lines = section.lines.map((line) => line.trimEnd());
-    while (lines[0] === "") lines.shift();
-    while (lines.at(-1) === "") lines.pop();
-    if (lines.length === 0) continue;
-    normalized.push({ id: section.id, text: lines.join("\n"), position });
+    let start = 0;
+    let end = lines.length;
+    while (start < end && lines[start] === "") start++;
+    while (end > start && lines[end - 1] === "") end--;
+    if (start === end) continue;
+    normalized.push({ id: section.id, text: lines.slice(start, end).join("\n"), position });
   }
   return normalized;
 }

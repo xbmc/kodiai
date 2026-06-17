@@ -11,6 +11,7 @@ import type { Sql } from "../db/client.ts";
 import { withTransientDbRetry } from "../db/transient-retry.ts";
 import type { CodeSnippetSearchResult, CodeSnippetStore } from "./code-snippet-types.ts";
 import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
+import { buildRepairCandidatePredicate } from "./repair-candidate-pagination.ts";
 
 /**
  * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
@@ -22,16 +23,6 @@ function float32ArrayToVectorString(arr: Float32Array): string {
   }
   return `[${parts.join(",")}]`;
 }
-
-type CodeSnippetRow = {
-  id: number;
-  content_hash: string;
-  embedded_text: string;
-  language: string | null;
-  embedding: unknown;
-  embedding_model: string | null;
-  stale: boolean;
-};
 
 type RepairStateRow = {
   id: number;
@@ -59,6 +50,18 @@ type RepairStateRow = {
 
 const DEFAULT_REPAIR_KEY = "default";
 const REPAIR_CORPUS: EmbeddingRepairCorpus = "code_snippets";
+
+function rowToRepairCandidate(row: Record<string, unknown>): RepairCandidateRow {
+  return {
+    id: Number(row.id),
+    corpus: REPAIR_CORPUS,
+    embedded_text: row.embedded_text as string,
+    language: (row.language as string | null) ?? null,
+    embedding: null,
+    embedding_model: (row.embedding_model as string | null) ?? null,
+    stale: Boolean(row.stale),
+  };
+}
 
 function rowToRepairState(row: RepairStateRow): EmbeddingRepairCheckpoint {
   const failureCounts = typeof row.failure_counts === "string"
@@ -296,7 +299,7 @@ export function createCodeSnippetStore(opts: {
       }
 
       const rows = await sql`
-        SELECT id, embedded_text, language, embedding, embedding_model, stale
+        SELECT id, embedded_text, language, embedding_model, stale
         FROM code_snippets
         WHERE embedded_text IS NOT NULL
           AND (
@@ -306,15 +309,61 @@ export function createCodeSnippetStore(opts: {
           )
         ORDER BY id ASC
       `;
-      return rows.map((row) => ({
-        id: Number(row.id),
-        corpus: REPAIR_CORPUS,
-        embedded_text: row.embedded_text as string,
-        language: (row.language as string | null) ?? null,
-        embedding: row.embedding,
-        embedding_model: (row.embedding_model as string | null) ?? null,
-        stale: Boolean(row.stale),
-      }));
+      return rows.map(rowToRepairCandidate);
+    },
+
+    async countRepairCandidates(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      targetModel: string;
+    }): Promise<number> {
+      if (input.corpus !== REPAIR_CORPUS) {
+        throw new Error(`Unsupported repair corpus for CodeSnippetStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        staleColumn: "stale",
+        extraPredicates: ["embedded_text IS NOT NULL"],
+      });
+      const rows = await sql.unsafe(
+        `
+          SELECT COUNT(*)::int AS count
+          FROM code_snippets
+          WHERE ${predicate.text}
+        `,
+        predicate.params,
+      );
+      return Number(rows[0]?.count ?? 0);
+    },
+
+    async listRepairCandidateBatch(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      limit: number;
+      targetModel: string;
+    }): Promise<RepairCandidateRow[]> {
+      if (input.corpus !== REPAIR_CORPUS) {
+        throw new Error(`Unsupported repair corpus for CodeSnippetStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        staleColumn: "stale",
+        extraPredicates: ["embedded_text IS NOT NULL"],
+      });
+      const params = [...predicate.params, input.limit];
+      const rows = await sql.unsafe(
+        `
+          SELECT id, embedded_text, language, embedding_model, stale
+          FROM code_snippets
+          WHERE ${predicate.text}
+          ORDER BY id ASC
+          LIMIT $${params.length}::int
+        `,
+        params,
+      );
+      return rows.map(rowToRepairCandidate);
     },
 
     async getRepairState(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null> {

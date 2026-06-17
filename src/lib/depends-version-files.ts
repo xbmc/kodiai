@@ -16,13 +16,16 @@ export function buildDependsVersionFileByPackage<T extends DependsVersionFile>(
     .filter(({ upperFilename }) => upperFilename.includes("VERSION"));
 
   const versionFileByPackage = new Map<string, T>();
-  for (const rawPackageName of packageNames) {
-    const packageName = rawPackageName.toLowerCase();
-    const versionFile = versionFiles.find(({ lowerFilename }) =>
-      lowerFilename.includes(packageName)
-    )?.file;
-    if (versionFile) {
-      versionFileByPackage.set(packageName, versionFile);
+  const unmatched = new Set(packageNames.map((name) => name.toLowerCase()));
+  for (const { file, lowerFilename } of versionFiles) {
+    for (const packageName of unmatched) {
+      if (lowerFilename.includes(packageName)) {
+        versionFileByPackage.set(packageName, file);
+        unmatched.delete(packageName);
+      }
+    }
+    if (unmatched.size === 0) {
+      break;
     }
   }
   return versionFileByPackage;

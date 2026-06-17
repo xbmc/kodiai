@@ -247,7 +247,6 @@ export function createCommentServer(
     // --- Five-section template validation ---
 
     const requiredSections = ["## What Changed", "## Observations", "## Verdict"];
-    const optionalSections = ["## Strengths", "## Suggestions"];
     const canonicalOrder = [
       "## What Changed",
       "## Strengths",

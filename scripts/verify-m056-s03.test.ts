@@ -76,7 +76,7 @@ jobs:
     steps:
       - run: bun install
       - run: bun run verify:m056:s03
-      - run: bun test --max-concurrency=2 scripts src
+      - run: bun run test:unit
       - run: bunx tsc --noEmit
 `;
 
@@ -155,7 +155,7 @@ describe("verify m056 s03 proof harness", () => {
           return JSON.stringify({ name: "kodiai", scripts: {} });
         }
         if (filePath.endsWith("ci.yml")) {
-          return `name: ci\njobs:\n  test:\n    steps:\n      - run: bun test --max-concurrency=2 scripts src\n      - run: bun run verify:m056:s03\n`;
+          return `name: ci\njobs:\n  test:\n    steps:\n      - run: bun run test:unit\n      - run: bun run verify:m056:s03\n`;
         }
         throw new Error(`Unexpected path: ${filePath}`);
       },

@@ -4,13 +4,13 @@ import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/json
 import type {
   ReviewCommentChunk,
   ReviewCommentRecord,
-  ReviewCommentRepairCandidate,
   ReviewCommentSearchRecord,
   ReviewCommentSearchResult,
   ReviewCommentStore,
   SyncState,
 } from "./review-comment-types.ts";
 import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
+import { buildRepairCandidatePredicate } from "./repair-candidate-pagination.ts";
 
 /**
  * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
@@ -22,6 +22,8 @@ function float32ArrayToVectorString(arr: Float32Array): string {
   }
   return `[${parts.join(",")}]`;
 }
+
+const MAX_REPAIR_EMBEDDING_WRITE_BATCH_SIZE = 100;
 
 type CommentRow = {
   id: number;
@@ -482,13 +484,32 @@ export function createReviewCommentStore(opts: {
       return rowToRecord(rows[0] as unknown as CommentRow);
     },
 
+    async getByGithubIds(repo: string, commentGithubIds: number[]): Promise<Map<number, ReviewCommentRecord>> {
+      const uniqueIds = [...new Set(commentGithubIds)];
+      if (uniqueIds.length === 0) return new Map();
+
+      const rows = await sql`
+        SELECT DISTINCT ON (comment_github_id) *
+        FROM review_comments
+        WHERE repo = ${repo} AND comment_github_id = ANY(${uniqueIds}) AND deleted = false
+        ORDER BY comment_github_id ASC, chunk_index ASC
+      `;
+      return new Map(
+        rows.map((row) => {
+          const record = rowToRecord(row as unknown as CommentRow);
+          return [record.commentGithubId, record] as const;
+        }),
+      );
+    },
+
     async listRepairCandidates(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]> {
       if (corpus !== REPAIR_CORPUS) {
         throw new Error(`Unsupported repair corpus for ReviewCommentStore: ${corpus}`);
       }
 
       const rows = await sql`
-        SELECT * FROM review_comments
+        SELECT id, embedding_model, stale, deleted, chunk_text
+        FROM review_comments
         WHERE deleted = false
           AND (
             embedding IS NULL
@@ -497,7 +518,67 @@ export function createReviewCommentStore(opts: {
           )
         ORDER BY id ASC
       `;
-      return rows.map((row) => rowToRepairCandidate(row as unknown as CommentRow));
+      return rows.map((row) => rowToRepairCandidate({
+        ...(row as unknown as CommentRow),
+        embedding: null,
+      }));
+    },
+
+    async countRepairCandidates(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      targetModel: string;
+    }): Promise<number> {
+      if (input.corpus !== REPAIR_CORPUS) {
+        throw new Error(`Unsupported repair corpus for ReviewCommentStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        staleColumn: "stale",
+        extraPredicates: ["deleted = false"],
+      });
+      const rows = await sql.unsafe(
+        `
+          SELECT COUNT(*)::int AS count
+          FROM review_comments
+          WHERE ${predicate.text}
+        `,
+        predicate.params,
+      );
+      return Number(rows[0]?.count ?? 0);
+    },
+
+    async listRepairCandidateBatch(input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      limit: number;
+      targetModel: string;
+    }): Promise<RepairCandidateRow[]> {
+      if (input.corpus !== REPAIR_CORPUS) {
+        throw new Error(`Unsupported repair corpus for ReviewCommentStore: ${input.corpus}`);
+      }
+
+      const predicate = buildRepairCandidatePredicate({
+        ...input,
+        staleColumn: "stale",
+        extraPredicates: ["deleted = false"],
+      });
+      const params = [...predicate.params, input.limit];
+      const rows = await sql.unsafe(
+        `
+          SELECT id, embedding_model, stale, deleted, chunk_text
+          FROM review_comments
+          WHERE ${predicate.text}
+          ORDER BY id ASC
+          LIMIT $${params.length}::int
+        `,
+        params,
+      );
+      return rows.map((row) => rowToRepairCandidate({
+        ...(row as unknown as CommentRow),
+        embedding: null,
+      }));
     },
 
     async getRepairState(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null> {
@@ -568,24 +649,27 @@ export function createReviewCommentStore(opts: {
       }
       if (payload.embeddings.length === 0) return;
 
-      const ids = payload.embeddings.map((item) => item.row_id);
-      const vectors = payload.embeddings.map((item) => float32ArrayToVectorString(item.embedding));
+      for (let i = 0; i < payload.embeddings.length; i += MAX_REPAIR_EMBEDDING_WRITE_BATCH_SIZE) {
+        const batch = payload.embeddings.slice(i, i + MAX_REPAIR_EMBEDDING_WRITE_BATCH_SIZE);
+        const ids = batch.map((item) => item.row_id);
+        const vectors = batch.map((item) => float32ArrayToVectorString(item.embedding));
 
-      await sql.begin(async (tx) => {
-        await (tx as unknown as Sql).unsafe(
-          `
-            UPDATE review_comments AS rc
-            SET embedding = updates.embedding::vector,
-                embedding_model = $2,
-                stale = false
-            FROM (
-              SELECT UNNEST($1::bigint[]) AS row_id, UNNEST($3::text[]) AS embedding
-            ) AS updates
-            WHERE rc.id = updates.row_id
-          `,
-          [ids, payload.target_model, vectors],
-        );
-      });
+        await sql.begin(async (tx) => {
+          await (tx as unknown as Sql).unsafe(
+            `
+              UPDATE review_comments AS rc
+              SET embedding = updates.embedding::vector,
+                  embedding_model = $2,
+                  stale = false
+              FROM (
+                SELECT UNNEST($1::bigint[]) AS row_id, UNNEST($3::text[]) AS embedding
+              ) AS updates
+              WHERE rc.id = updates.row_id
+            `,
+            [ids, payload.target_model, vectors],
+          );
+        });
+      }
     },
   };
 

@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import { $ } from "bun";
+import { runCommandWithCappedOutput } from "./capped-process.ts";
 
 export type IncrementalDiffResult = {
   mode: "incremental" | "full";
@@ -50,7 +51,15 @@ export async function computeIncrementalDiff(params: {
         { repo, prNumber, lastHeadSha },
         "Prior SHA unreachable, attempting fetch --deepen=100",
       );
-      await $`git -C ${workspaceDir} fetch --deepen=100`.quiet().nothrow();
+      await runCommandWithCappedOutput({
+        command: "git",
+        args: ["fetch", "--deepen=100"],
+        cwd: workspaceDir,
+        timeoutMs: 120_000,
+        maxStdoutBytes: 64 * 1024,
+        maxStderrBytes: 64 * 1024,
+        env: { GIT_TERMINAL_PROMPT: "0" },
+      });
 
       // Re-check reachability after deepening
       const recheck = await $`git -C ${workspaceDir} cat-file -t ${lastHeadSha}`

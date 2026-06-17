@@ -17,3 +17,5 @@ plan.md
 coverage
 out
 dist
+src/**/*.test.ts
+src/**/test-helpers.ts

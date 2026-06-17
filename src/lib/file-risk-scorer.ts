@@ -6,7 +6,6 @@ import {
 import type {
   ReviewGraphBlastRadiusResult,
   ReviewGraphRankedFile,
-  ReviewGraphLikelyTest,
 } from "../review-graph/query.ts";
 
 export type RiskWeights = {

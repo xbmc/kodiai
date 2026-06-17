@@ -154,7 +154,8 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # -- Optional environment variables with defaults --------------------------------
-SHUTDOWN_GRACE_MS=${SHUTDOWN_GRACE_MS:-300000}
+SHUTDOWN_GRACE_MS=${SHUTDOWN_GRACE_MS:-180000}
+SHUTDOWN_MAX_TOTAL_GRACE_MS=${SHUTDOWN_MAX_TOTAL_GRACE_MS:-540000}
 BOT_USER_ENV_YAML=""
 BOT_USER_SECRET_REF_YAML=""
 BOT_USER_CREATE_SECRET_ARGS=()
@@ -164,6 +165,8 @@ echo "==> Installing / upgrading Azure CLI extensions..."
 if ! az extension show --name containerapp >/dev/null 2>&1; then
   az extension add --name containerapp --upgrade -y 2>/dev/null
 fi
+
+AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}
 
 echo "==> Registering resource providers (may take a minute on first run)..."
 APP_PROVIDER_STATE=$(az provider show --namespace Microsoft.App --query registrationState --output tsv 2>/dev/null || true)
@@ -254,6 +257,12 @@ IDENTITY_RESOURCE_ID=$(az identity show \
   --resource-group "$RESOURCE_GROUP" \
   --query id \
   --output tsv)
+
+AZURE_MANAGED_IDENTITY_CLIENT_ID=${AZURE_MANAGED_IDENTITY_CLIENT_ID:-$(az identity show \
+  --name "$IDENTITY_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query clientId \
+  --output tsv)}
 
 ACR_RESOURCE_ID=$(az acr show \
   --name "$ACR_NAME" \
@@ -738,6 +747,14 @@ ${BOT_USER_SECRET_REF_YAML}
 ${BOT_USER_ENV_YAML}
           - name: SHUTDOWN_GRACE_MS
             value: $(yaml_quote "$SHUTDOWN_GRACE_MS")
+          - name: SHUTDOWN_MAX_TOTAL_GRACE_MS
+            value: $(yaml_quote "$SHUTDOWN_MAX_TOTAL_GRACE_MS")
+          - name: ACA_JOB_IMAGE
+            value: $(yaml_quote "$ACA_JOB_IMAGE")
+          - name: AZURE_SUBSCRIPTION_ID
+            value: $(yaml_quote "$AZURE_SUBSCRIPTION_ID")
+          - name: AZURE_MANAGED_IDENTITY_CLIENT_ID
+            value: $(yaml_quote "$AZURE_MANAGED_IDENTITY_CLIENT_ID")
           - name: PORT
             value: "3000"
           - name: LOG_LEVEL
@@ -821,6 +838,10 @@ else
       SLACK_BOT_USER_ID="$SLACK_BOT_USER_ID" \
       SLACK_KODIAI_CHANNEL_ID="$SLACK_KODIAI_CHANNEL_ID" \
       SHUTDOWN_GRACE_MS="$SHUTDOWN_GRACE_MS" \
+      SHUTDOWN_MAX_TOTAL_GRACE_MS="$SHUTDOWN_MAX_TOTAL_GRACE_MS" \
+      ACA_JOB_IMAGE="$ACA_JOB_IMAGE" \
+      AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID" \
+      AZURE_MANAGED_IDENTITY_CLIENT_ID="$AZURE_MANAGED_IDENTITY_CLIENT_ID" \
       PORT=3000 \
       LOG_LEVEL=info \
       SOURCE_COMMIT="$SOURCE_COMMIT" \
@@ -861,6 +882,14 @@ properties:
 ${BOT_USER_ENV_YAML}
           - name: SHUTDOWN_GRACE_MS
             value: $(yaml_quote "$SHUTDOWN_GRACE_MS")
+          - name: SHUTDOWN_MAX_TOTAL_GRACE_MS
+            value: $(yaml_quote "$SHUTDOWN_MAX_TOTAL_GRACE_MS")
+          - name: ACA_JOB_IMAGE
+            value: $(yaml_quote "$ACA_JOB_IMAGE")
+          - name: AZURE_SUBSCRIPTION_ID
+            value: $(yaml_quote "$AZURE_SUBSCRIPTION_ID")
+          - name: AZURE_MANAGED_IDENTITY_CLIENT_ID
+            value: $(yaml_quote "$AZURE_MANAGED_IDENTITY_CLIENT_ID")
           - name: PORT
             value: "3000"
           - name: LOG_LEVEL

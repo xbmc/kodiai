@@ -3,163 +3,46 @@ import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { CodeSnippetStore } from "./code-snippet-types.ts";
 import type { IssueStore } from "./issue-types.ts";
 import type { CanonicalCodeStore } from "./canonical-code-types.ts";
-import { buildEmbeddingText } from "./code-snippet-chunker.ts";
 import { buildCommentEmbeddingText, buildIssueEmbeddingText } from "./issue-comment-chunker.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
+import {
+  CANONICAL_CODE_TARGET_EMBEDDING_MODEL,
+  NON_WIKI_TARGET_EMBEDDING_MODEL,
+  STALE_SUPPORTED_CORPORA,
+  type EmbeddingRepairCheckpoint,
+  type EmbeddingRepairCorpus,
+  type EmbeddingRepairFailureSummary,
+  type EmbeddingRepairLogger,
+  type EmbeddingRepairPlan,
+  type EmbeddingRepairProgress,
+  type EmbeddingRepairReport,
+  type EmbeddingRepairRun,
+  type EmbeddingRepairRunnerInput,
+  type EmbeddingRepairStore,
+  type RepairCandidateRow,
+  type RepairPlanBatch,
+} from "./embedding-repair-types.ts";
 
-export type EmbeddingRepairCorpus = "review_comments" | "learning_memories" | "code_snippets" | "issues" | "issue_comments" | "canonical_code";
-
-export type RepairCandidateRow = {
-  id: number;
-  corpus: EmbeddingRepairCorpus;
-  embedding_model: string | null;
-  embedding: unknown;
-  stale?: boolean;
-  deleted?: boolean;
-  chunk_text?: string;
-  finding_text?: string;
-  severity?: string;
-  category?: string;
-  file_path?: string;
-  embedded_text?: string;
-  language?: string | null;
-  issue_number?: number;
-  issue_title?: string;
-  title?: string;
-  body?: string | null;
-  comment_body?: string;
-};
-
-export type EmbeddingRepairFailureSummary = {
-  by_class: Record<string, number>;
-  last_failure_class: string | null;
-  last_failure_message: string | null;
-};
-
-export type EmbeddingRepairCheckpoint = {
-  run_id: string;
-  corpus: EmbeddingRepairCorpus;
-  repair_key?: string;
-  target_model?: string;
-  dry_run?: boolean;
-  resumed?: boolean;
-  status?: "running" | "completed" | "failed" | "resume_required" | "not_needed";
-  resume_ready?: boolean;
-  batch_index: number | null;
-  batches_total: number | null;
-  last_row_id: number | null;
-  processed: number;
-  repaired: number;
-  skipped: number;
-  failed: number;
-  failure_summary: EmbeddingRepairFailureSummary;
-  updated_at?: string;
-};
-
-export type RepairPlanBatch = {
-  corpus: EmbeddingRepairCorpus;
-  batch_index: number;
-  batches_total: number;
-  row_ids: number[];
-  last_row_id: number;
-  texts: string[];
-};
-
-export type EmbeddingRepairPlan = {
-  corpus: EmbeddingRepairCorpus;
-  target_model: string;
-  stale_supported: boolean;
-  total_candidates: number;
-  batch_size: number;
-  resume_from: {
-    last_row_id: number | null;
-    processed: number;
-    repaired: number;
-    skipped: number;
-    failed: number;
-  } | null;
-  batches: RepairPlanBatch[];
-};
-
-export type EmbeddingRepairProgress = {
-  corpus: EmbeddingRepairCorpus;
-  batch_index: number;
-  batches_total: number;
-  last_row_id: number;
-  processed: number;
-  repaired: number;
-  skipped: number;
-  failed: number;
-  failure_class: string | null;
-  target_model: string;
-  dry_run: boolean;
-};
-
-export type EmbeddingRepairRun = {
-  run_id: string;
-  status: "running" | "completed" | "failed" | "resume_required" | "not_needed";
-  corpus: EmbeddingRepairCorpus;
-  batch_index: number | null;
-  batches_total: number | null;
-  last_row_id: number | null;
-  processed: number;
-  repaired: number;
-  skipped: number;
-  failed: number;
-  failure_summary: EmbeddingRepairFailureSummary;
-  updated_at: string;
-};
-
-export type EmbeddingRepairReport = {
-  success: boolean;
-  status_code: "repair_completed" | "repair_not_needed" | "repair_failed";
-  corpus: EmbeddingRepairCorpus;
-  target_model: string;
-  resumed: boolean;
-  dry_run: boolean;
-  processed: number;
-  repaired: number;
-  skipped: number;
-  failed: number;
-  failure_summary: EmbeddingRepairFailureSummary;
-  progress: EmbeddingRepairProgress[];
-  cursor: {
-    corpus: EmbeddingRepairCorpus;
-    last_row_id: number | null;
-    batch_index: number | null;
-    batches_total: number | null;
-  };
-  run: EmbeddingRepairRun;
-};
-
-export type EmbeddingRepairStore = {
-  listRepairCandidates: (corpus: EmbeddingRepairCorpus) => Promise<RepairCandidateRow[]>;
-  getRepairState: (corpus: EmbeddingRepairCorpus) => Promise<EmbeddingRepairCheckpoint | null>;
-  saveRepairState: (state: EmbeddingRepairCheckpoint) => Promise<void>;
-  writeRepairEmbeddingsBatch: (payload: {
-    corpus: EmbeddingRepairCorpus;
-    row_ids: number[];
-    target_model: string;
-    embeddings: Array<{ row_id: number; embedding: Float32Array }>;
-  }) => Promise<void>;
-};
-
-export const NON_WIKI_TARGET_EMBEDDING_MODEL = "voyage-4";
-export const CANONICAL_CODE_TARGET_EMBEDDING_MODEL = "voyage-4";
-export const NON_WIKI_REPAIR_CORPORA = [
-  "review_comments",
-  "learning_memories",
-  "code_snippets",
-  "issues",
-  "issue_comments",
-  "canonical_code",
-] as const satisfies readonly EmbeddingRepairCorpus[];
-export const STALE_SUPPORTED_CORPORA = [
-  "review_comments",
-  "learning_memories",
-  "code_snippets",
-  "canonical_code",
-] as const satisfies readonly EmbeddingRepairCorpus[];
+export {
+  CANONICAL_CODE_TARGET_EMBEDDING_MODEL,
+  NON_WIKI_REPAIR_CORPORA,
+  NON_WIKI_TARGET_EMBEDDING_MODEL,
+  STALE_SUPPORTED_CORPORA,
+} from "./embedding-repair-types.ts";
+export type {
+  EmbeddingRepairCheckpoint,
+  EmbeddingRepairCorpus,
+  EmbeddingRepairFailureSummary,
+  EmbeddingRepairLogger,
+  EmbeddingRepairPlan,
+  EmbeddingRepairProgress,
+  EmbeddingRepairReport,
+  EmbeddingRepairRun,
+  EmbeddingRepairRunnerInput,
+  EmbeddingRepairStore,
+  RepairCandidateRow,
+  RepairPlanBatch,
+} from "./embedding-repair-types.ts";
 
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_REPAIR_KEY = "default";
@@ -282,7 +165,6 @@ export function buildEmbeddingRepairPlan(input: {
       batches_total: batchesTotal,
       row_ids: batchRows.map((row) => row.id),
       last_row_id: batchRows[batchRows.length - 1]!.id,
-      texts: batchRows.map((row) => buildRepairEmbeddingText(input.corpus, row)),
     });
   }
 
@@ -382,17 +264,84 @@ function buildState(params: {
   };
 }
 
+type RuntimeRepairBatch = {
+  batch: RepairPlanBatch;
+  rowById: Map<number, RepairCandidateRow>;
+};
+
+async function* iterateRepairBatches(input: {
+  corpus: EmbeddingRepairCorpus;
+  store: EmbeddingRepairStore;
+  checkpoint: EmbeddingRepairCheckpoint | null;
+  batchSize: number;
+  targetModel: string;
+}): AsyncGenerator<RuntimeRepairBatch> {
+  const afterCheckpointId = input.checkpoint?.last_row_id ?? null;
+  if (input.store.countRepairCandidates && input.store.listRepairCandidateBatch) {
+    const totalCandidates = await input.store.countRepairCandidates({
+      corpus: input.corpus,
+      afterId: afterCheckpointId,
+      targetModel: input.targetModel,
+    });
+    const batchesTotal = Math.ceil(totalCandidates / input.batchSize);
+    let afterId = afterCheckpointId;
+
+    for (let batchIndex = 0; batchIndex < batchesTotal; batchIndex++) {
+      const batchRows = sortRepairRows(
+        await input.store.listRepairCandidateBatch({
+          corpus: input.corpus,
+          afterId,
+          limit: input.batchSize,
+          targetModel: input.targetModel,
+        }),
+      ).filter((row) => {
+        if (!isRepairCandidate(input.corpus, row, input.targetModel)) return false;
+        return afterId == null || row.id > afterId;
+      });
+      if (batchRows.length === 0) return;
+      afterId = batchRows[batchRows.length - 1]!.id;
+      yield {
+        batch: {
+          corpus: input.corpus,
+          batch_index: batchIndex,
+          batches_total: batchesTotal,
+          row_ids: batchRows.map((row) => row.id),
+          last_row_id: afterId,
+        },
+        rowById: new Map(batchRows.map((row) => [row.id, row])),
+      };
+    }
+    return;
+  }
+
+  const rows = await input.store.listRepairCandidates(input.corpus);
+  const plan = buildEmbeddingRepairPlan({
+    corpus: input.corpus,
+    rows,
+    checkpoint: input.checkpoint
+      ? {
+          last_row_id: input.checkpoint.last_row_id,
+          processed: input.checkpoint.processed,
+          repaired: input.checkpoint.repaired,
+          skipped: input.checkpoint.skipped,
+          failed: input.checkpoint.failed,
+        }
+      : null,
+    batchSize: input.batchSize,
+    targetModel: input.targetModel,
+  });
+  const rowById = new Map(sortRepairRows(rows).map((row) => [row.id, row]));
+  for (const batch of plan.batches) {
+    yield { batch, rowById };
+  }
+}
+
 export async function runEmbeddingRepair(input: {
   corpus: EmbeddingRepairCorpus;
   resume?: boolean;
   dryRun?: boolean;
   batchSize?: number;
-  logger?: {
-    info?: (...args: unknown[]) => void;
-    warn?: (...args: unknown[]) => void;
-    error?: (...args: unknown[]) => void;
-    debug?: (...args: unknown[]) => void;
-  };
+  logger?: EmbeddingRepairLogger;
   store: EmbeddingRepairStore;
   embedRows: (rows: Array<{ id: number; text: string }>, attempt: number) => Promise<
     | {
@@ -411,21 +360,14 @@ export async function runEmbeddingRepair(input: {
   const logger = input.logger ?? {};
   const existingCheckpoint = normalizeCheckpoint(await input.store.getRepairState(input.corpus));
   const checkpoint = input.resume ? existingCheckpoint : null;
-  const rows = await input.store.listRepairCandidates(input.corpus);
-  const plan = buildEmbeddingRepairPlan({
+  const targetModel = NON_WIKI_TARGET_EMBEDDING_MODEL;
+  const batchSize = Math.max(1, input.batchSize ?? DEFAULT_BATCH_SIZE);
+  const batchIterator = iterateRepairBatches({
     corpus: input.corpus,
-    rows,
-    checkpoint: checkpoint
-      ? {
-          last_row_id: checkpoint.last_row_id,
-          processed: checkpoint.processed,
-          repaired: checkpoint.repaired,
-          skipped: checkpoint.skipped,
-          failed: checkpoint.failed,
-        }
-      : null,
-    batchSize: input.batchSize,
-    targetModel: NON_WIKI_TARGET_EMBEDDING_MODEL,
+    store: input.store,
+    checkpoint,
+    batchSize,
+    targetModel,
   });
 
   const runId = checkpoint?.run_id ?? `embedding-repair-${input.corpus}-${new Date().toISOString()}`;
@@ -444,13 +386,14 @@ export async function runEmbeddingRepair(input: {
     batches_total: checkpoint?.batches_total ?? null,
   };
 
-  if (plan.batches.length === 0) {
+  let nextBatch = await batchIterator.next();
+  if (nextBatch.done) {
     const updatedAt = new Date().toISOString();
     if (!existingCheckpoint) {
       const state = buildState({
         run_id: runId,
         corpus: input.corpus,
-        target_model: plan.target_model,
+        target_model: targetModel,
         dry_run: dryRun,
         resumed,
         status: "not_needed",
@@ -471,7 +414,7 @@ export async function runEmbeddingRepair(input: {
       success: true,
       status_code: "repair_not_needed",
       corpus: input.corpus,
-      target_model: plan.target_model,
+      target_model: targetModel,
       resumed,
       dry_run: dryRun,
       processed,
@@ -503,12 +446,11 @@ export async function runEmbeddingRepair(input: {
     };
   }
 
-  const rowMap = new Map(sortRepairRows(rows).map((row) => [row.id, row]));
-
-  for (const batch of plan.batches) {
-    const batchRows = batch.row_ids.map((rowId, index) => ({
+  while (!nextBatch.done) {
+    const { batch, rowById } = nextBatch.value;
+    const batchRows = batch.row_ids.map((rowId) => ({
       id: rowId,
-      text: batch.texts[index] ?? buildRepairEmbeddingText(input.corpus, rowMap.get(rowId)!),
+      text: buildRepairEmbeddingText(input.corpus, rowById.get(rowId)!),
     }));
 
     const outcome = await input.embedRows(batchRows, 0);
@@ -527,7 +469,7 @@ export async function runEmbeddingRepair(input: {
       const state = buildState({
         run_id: runId,
         corpus: input.corpus,
-        target_model: plan.target_model,
+        target_model: targetModel,
         dry_run: dryRun,
         resumed,
         status: "failed",
@@ -553,7 +495,7 @@ export async function runEmbeddingRepair(input: {
         skipped,
         failed,
         failure_class: outcome.failure_class,
-        target_model: plan.target_model,
+        target_model: targetModel,
         dry_run: dryRun,
       });
       logger.error?.({ corpus: input.corpus, batch_index: batch.batch_index, failure_class: outcome.failure_class }, "Embedding repair batch failed");
@@ -561,7 +503,7 @@ export async function runEmbeddingRepair(input: {
         success: false,
         status_code: "repair_failed",
         corpus: input.corpus,
-        target_model: plan.target_model,
+        target_model: targetModel,
         resumed,
         dry_run: dryRun,
         processed,
@@ -592,7 +534,7 @@ export async function runEmbeddingRepair(input: {
       await input.store.writeRepairEmbeddingsBatch({
         corpus: input.corpus,
         row_ids: batch.row_ids,
-        target_model: plan.target_model,
+        target_model: targetModel,
         embeddings: outcome.embeddings,
       });
     }
@@ -604,13 +546,13 @@ export async function runEmbeddingRepair(input: {
       repaired += batch.row_ids.length;
     }
 
-    const isLastBatch = batch.batch_index === plan.batches.length - 1;
+    const isLastBatch = batch.batch_index === batch.batches_total - 1;
     const updatedAt = new Date().toISOString();
     const status: EmbeddingRepairRun["status"] = isLastBatch ? "completed" : "running";
     const state = buildState({
       run_id: runId,
       corpus: input.corpus,
-      target_model: plan.target_model,
+      target_model: targetModel,
       dry_run: dryRun,
       resumed,
       status,
@@ -636,9 +578,10 @@ export async function runEmbeddingRepair(input: {
       skipped,
       failed,
       failure_class: null,
-      target_model: plan.target_model,
+      target_model: targetModel,
       dry_run: dryRun,
     });
+    nextBatch = await batchIterator.next();
   }
 
   const finalUpdatedAt = new Date().toISOString();
@@ -646,7 +589,7 @@ export async function runEmbeddingRepair(input: {
     success: true,
     status_code: "repair_completed",
     corpus: input.corpus,
-    target_model: plan.target_model,
+    target_model: targetModel,
     resumed,
     dry_run: dryRun,
     processed,
@@ -678,6 +621,17 @@ function createScopedRepairStore(params: {
   corpus: EmbeddingRepairCorpus;
   store: {
     listRepairCandidates?: (corpus: EmbeddingRepairCorpus) => Promise<RepairCandidateRow[]>;
+    countRepairCandidates?: (input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      targetModel: string;
+    }) => Promise<number>;
+    listRepairCandidateBatch?: (input: {
+      corpus: EmbeddingRepairCorpus;
+      afterId: number | null;
+      limit: number;
+      targetModel: string;
+    }) => Promise<RepairCandidateRow[]>;
     getRepairState?: (corpus: EmbeddingRepairCorpus) => Promise<EmbeddingRepairCheckpoint | null>;
     saveRepairState?: (state: EmbeddingRepairCheckpoint) => Promise<void>;
     writeRepairEmbeddingsBatch?: (payload: {
@@ -702,6 +656,22 @@ function createScopedRepairStore(params: {
       }
       return await listRepairCandidates(requestedCorpus);
     },
+    countRepairCandidates: store.countRepairCandidates
+      ? async (request) => {
+          if (request.corpus !== corpus) {
+            throw new Error(`${storeName} repair count only supports ${corpus}, received ${request.corpus}`);
+          }
+          return await store.countRepairCandidates!(request);
+        }
+      : undefined,
+    listRepairCandidateBatch: store.listRepairCandidateBatch
+      ? async (request) => {
+          if (request.corpus !== corpus) {
+            throw new Error(`${storeName} repair batch only supports ${corpus}, received ${request.corpus}`);
+          }
+          return await store.listRepairCandidateBatch!(request);
+        }
+      : undefined,
     getRepairState: async (requestedCorpus) => {
       if (requestedCorpus !== corpus) {
         throw new Error(`${storeName} repair state only supports ${corpus}, received ${requestedCorpus}`);
@@ -802,19 +772,9 @@ export function createCodeSnippetRepairStore(store: CodeSnippetStore): Embedding
   });
 }
 
-export async function runReviewCommentEmbeddingRepair(input: {
-  store: ReviewCommentStore;
-  embeddingProvider: EmbeddingProvider;
-  resume?: boolean;
-  dryRun?: boolean;
-  batchSize?: number;
-  logger?: {
-    info?: (...args: unknown[]) => void;
-    warn?: (...args: unknown[]) => void;
-    error?: (...args: unknown[]) => void;
-    debug?: (...args: unknown[]) => void;
-  };
-}): Promise<EmbeddingRepairReport> {
+export async function runReviewCommentEmbeddingRepair(
+  input: EmbeddingRepairRunnerInput<ReviewCommentStore>,
+): Promise<EmbeddingRepairReport> {
   const repairStore = createReviewCommentRepairStore(input.store);
   return await runEmbeddingRepair({
     corpus: "review_comments",
@@ -831,20 +791,9 @@ export async function runReviewCommentEmbeddingRepair(input: {
   });
 }
 
-export async function runIssueEmbeddingRepair(input: {
-  corpus: "issues" | "issue_comments";
-  store: IssueStore;
-  embeddingProvider: EmbeddingProvider;
-  resume?: boolean;
-  dryRun?: boolean;
-  batchSize?: number;
-  logger?: {
-    info?: (...args: unknown[]) => void;
-    warn?: (...args: unknown[]) => void;
-    error?: (...args: unknown[]) => void;
-    debug?: (...args: unknown[]) => void;
-  };
-}): Promise<EmbeddingRepairReport> {
+export async function runIssueEmbeddingRepair(
+  input: EmbeddingRepairRunnerInput<IssueStore> & { corpus: "issues" | "issue_comments" },
+): Promise<EmbeddingRepairReport> {
   const repairStore = createIssueRepairStore(input.store, input.corpus);
   return await runEmbeddingRepair({
     corpus: input.corpus,
@@ -861,19 +810,9 @@ export async function runIssueEmbeddingRepair(input: {
   });
 }
 
-export async function runLearningMemoryEmbeddingRepair(input: {
-  store: LearningMemoryStore;
-  embeddingProvider: EmbeddingProvider;
-  resume?: boolean;
-  dryRun?: boolean;
-  batchSize?: number;
-  logger?: {
-    info?: (...args: unknown[]) => void;
-    warn?: (...args: unknown[]) => void;
-    error?: (...args: unknown[]) => void;
-    debug?: (...args: unknown[]) => void;
-  };
-}): Promise<EmbeddingRepairReport> {
+export async function runLearningMemoryEmbeddingRepair(
+  input: EmbeddingRepairRunnerInput<LearningMemoryStore>,
+): Promise<EmbeddingRepairReport> {
   const repairStore = createLearningMemoryRepairStore(input.store);
   return await runEmbeddingRepair({
     corpus: "learning_memories",
@@ -890,19 +829,9 @@ export async function runLearningMemoryEmbeddingRepair(input: {
   });
 }
 
-export async function runCodeSnippetEmbeddingRepair(input: {
-  store: CodeSnippetStore;
-  embeddingProvider: EmbeddingProvider;
-  resume?: boolean;
-  dryRun?: boolean;
-  batchSize?: number;
-  logger?: {
-    info?: (...args: unknown[]) => void;
-    warn?: (...args: unknown[]) => void;
-    error?: (...args: unknown[]) => void;
-    debug?: (...args: unknown[]) => void;
-  };
-}): Promise<EmbeddingRepairReport> {
+export async function runCodeSnippetEmbeddingRepair(
+  input: EmbeddingRepairRunnerInput<CodeSnippetStore>,
+): Promise<EmbeddingRepairReport> {
   const repairStore = createCodeSnippetRepairStore(input.store);
   return await runEmbeddingRepair({
     corpus: "code_snippets",
@@ -1022,21 +951,12 @@ function createCanonicalCodeRepairStore(
  * propagate exceptions — the operator can re-run to repair remaining chunks.
  * This matches the behaviour of other corpus repair runners.
  */
-export async function runCanonicalCodeEmbeddingRepair(input: {
-  store: CanonicalCodeStore;
-  embeddingProvider: EmbeddingProvider;
-  repo: string;
-  canonicalRef: string;
-  resume?: boolean;
-  dryRun?: boolean;
-  batchSize?: number;
-  logger?: {
-    info?: (...args: unknown[]) => void;
-    warn?: (...args: unknown[]) => void;
-    error?: (...args: unknown[]) => void;
-    debug?: (...args: unknown[]) => void;
-  };
-}): Promise<EmbeddingRepairReport> {
+export async function runCanonicalCodeEmbeddingRepair(
+  input: EmbeddingRepairRunnerInput<CanonicalCodeStore> & {
+    repo: string;
+    canonicalRef: string;
+  },
+): Promise<EmbeddingRepairReport> {
   const targetModel = CANONICAL_CODE_TARGET_EMBEDDING_MODEL;
   const repairStore = createCanonicalCodeRepairStore(input.store, {
     repo: input.repo,

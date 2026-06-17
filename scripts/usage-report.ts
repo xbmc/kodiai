@@ -8,6 +8,9 @@ import {
   type ReviewCacheTelemetrySurface,
 } from "../src/review-cache-telemetry/cache-telemetry.ts";
 import type { Sql } from "../src/db/client.ts";
+import { renderUsageReportCsv, renderUsageReportText } from "./usage-report-render.ts";
+
+export { renderUsageReportCsv, renderUsageReportText };
 
 type AccessState = "available" | "missing" | "unavailable";
 
@@ -21,6 +24,7 @@ type CliOptions = {
 };
 
 export const USAGE_REPORT_QUERY_TIMEOUT_MS = 5_000;
+const REVIEW_CACHE_SIGNAL_ARRAY_LIMIT = 50;
 
 export type UsageReportSummary = {
   totalExecutions: number;
@@ -109,8 +113,6 @@ export type UsageReuseEvidenceRow = {
   avgReuseRate: number;
   statuses: string[];
 };
-
-
 export type UsageReviewCacheTelemetryRow = {
   cacheSurface: ReviewCacheTelemetrySurface;
   status: ReviewCacheTelemetryStatus;
@@ -233,212 +235,54 @@ export function buildUsageReport(input: {
   };
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString();
-}
-
-function formatCurrency(value: number): string {
-  return `$${value.toFixed(4)}`;
-}
-
-function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-// ---------------------------------------------------------------------------
-// Report sections
-//
-// Every list-style telemetry section renders the same way: a titled block in
-// the text report and one row-per-line in the CSV, with an identical empty
-// state and an optional fail-open note. Declaring each section's title, empty
-// text, row formatter, and CSV key once keeps the two renderers in lockstep
-// and makes adding a section a single descriptor entry instead of parallel
-// edits in two places. The summary is deliberately not a section: it is a
-// single object rendered as a fixed bullet list, not a row stream.
-// ---------------------------------------------------------------------------
-
-type ReportSectionSpec<T> = {
-  title: string;
-  emptyText: string;
-  csvLabel: string;
-  rows: (report: UsageReport) => readonly T[];
-  note?: (report: UsageReport) => string | null;
-  line: (row: T) => string;
-  csvKey: (row: T) => string;
+type UsageFilters = {
+  repo: string | null;
+  since: string | null;
+  deliveryId: string | null;
 };
 
-type RenderableReportSection = {
-  textLines: (report: UsageReport) => string[];
-  csvLines: (report: UsageReport) => string[];
-};
+type UsageSqlParam = string | number | boolean | null;
 
-function defineReportSection<T>(spec: ReportSectionSpec<T>): RenderableReportSection {
+function usageColumn(alias: string | null, column: "repo" | "delivery_id" | "created_at"): string {
+  return alias ? `${alias}.${column}` : column;
+}
+
+function addUsagePredicates(params: UsageSqlParam[], filters: UsageFilters, alias: string | null): string[] {
+  const predicates: string[] = [];
+  if (filters.repo) {
+    params.push(filters.repo);
+    predicates.push(`${usageColumn(alias, "repo")} = $${params.length}`);
+  }
+  if (filters.deliveryId) {
+    params.push(filters.deliveryId);
+    predicates.push(`${usageColumn(alias, "delivery_id")} = $${params.length}`);
+  }
+  if (filters.since) {
+    params.push(filters.since);
+    predicates.push(`${usageColumn(alias, "created_at")} >= $${params.length}::timestamptz`);
+  }
+  return predicates;
+}
+
+function buildUsageWhere(filters: UsageFilters, alias: string | null, extraPredicates: string[] = []): { text: string; params: UsageSqlParam[] } {
+  const params: UsageSqlParam[] = [];
+  const predicates = [...extraPredicates, ...addUsagePredicates(params, filters, alias)];
   return {
-    textLines: (report) => {
-      const lines = ["", spec.title];
-      const note = spec.note?.(report) ?? null;
-      if (note) lines.push(`- ${note}`);
-      const rows = spec.rows(report);
-      if (rows.length === 0) {
-        lines.push(`- ${spec.emptyText}`);
-      } else {
-        for (const row of rows) lines.push(`- ${spec.line(row)}`);
-      }
-      return lines;
-    },
-    csvLines: (report) => {
-      const lines: string[] = [];
-      for (const row of spec.rows(report)) {
-        lines.push(`${spec.csvLabel},${JSON.stringify(spec.csvKey(row))},${JSON.stringify(row)}`);
-      }
-      const note = spec.note?.(report) ?? null;
-      if (note) lines.push(`${spec.csvLabel}_note,note,${JSON.stringify(note)}`);
-      return lines;
-    },
+    text: predicates.length > 0 ? `WHERE ${predicates.join("\n      AND ")}` : "",
+    params,
   };
 }
 
-const REPORT_SECTIONS: readonly RenderableReportSection[] = [
-  defineReportSection<UsageTaskTypeRow>({
-    title: "Task-path attribution",
-    emptyText: "No llm_cost_events rows matched the requested filters.",
-    csvLabel: "task_type",
-    rows: (report) => report.taskTypes,
-    csvKey: (row) => row.taskType,
-    line: (row) =>
-      `${row.taskType}: executions=${row.executions} tokens=${formatNumber(row.totalTokens)} cost=${formatCurrency(row.totalCostUsd)} cache_read=${formatNumber(row.cacheReadTokens)} cache_write=${formatNumber(row.cacheWriteTokens)} cache_effectiveness=${formatPercent(row.cacheEffectiveness)}`,
-  }),
-  defineReportSection<UsageDeliveryRow>({
-    title: "Delivery breakdown",
-    emptyText: "No delivery-level attribution rows matched the requested filters.",
-    csvLabel: "delivery",
-    rows: (report) => report.deliveryBreakdown,
-    csvKey: (row) => row.deliveryId,
-    line: (row) =>
-      `${row.deliveryId} ${row.taskType} repo=${row.repo} prompt_kinds=${row.promptKinds.join(", ")} sections=${row.sectionCount} prompt_tokens=${row.promptEstimatedTokens} input=${row.llmInputTokens} output=${row.llmOutputTokens} cache_read=${row.cacheReadTokens} cache_write=${row.cacheWriteTokens} cost=${formatCurrency(row.estimatedCostUsd)}`,
-  }),
-  defineReportSection<UsagePromptSectionRow>({
-    title: "Prompt-section summaries",
-    emptyText: "No prompt_section_events rows matched the requested filters.",
-    csvLabel: "prompt_section",
-    rows: (report) => report.promptSections,
-    csvKey: (row) => `${row.taskType}/${row.promptKind}/${row.sectionName}`,
-    line: (row) =>
-      `${row.taskType} / ${row.promptKind} / ${row.sectionName}: executions=${row.executions} estimated_tokens=${row.totalEstimatedTokens} chars=${row.totalCharCount} truncated=${row.truncatedExecutions}`,
-  }),
-  defineReportSection<UsageSectionBudgetRow>({
-    title: "Section budget distribution",
-    emptyText: "No budgeted prompt_section_events rows matched the requested filters.",
-    csvLabel: "section_budget",
-    rows: (report) => report.sectionBudget?.rows ?? [],
-    note: (report) => report.sectionBudget?.note ?? null,
-    csvKey: (row) => `${row.taskType}/${row.sectionName}`,
-    line: (row) =>
-      `${row.taskType} / ${row.sectionName}: executions=${row.executions} budget_chars=${formatNumber(row.budgetChars)} included_chars(avg/p50/p90/max)=${formatNumber(row.avgIncludedChars)}/${formatNumber(row.p50IncludedChars)}/${formatNumber(row.p90IncludedChars)}/${formatNumber(row.maxIncludedChars)} included_tokens(avg/p90)=${formatNumber(row.avgIncludedTokens)}/${formatNumber(row.p90IncludedTokens)} trimmed=${row.trimmedExecutions} (${formatPercent(row.trimmedRate)}) p90_utilization=${formatPercent(row.budgetUtilizationP90)}`,
-  }),
-  defineReportSection<UsageReuseEvidenceRow>({
-    title: "Reuse evidence",
-    emptyText: "No reuse evidence rows matched the requested filters.",
-    csvLabel: "reuse_evidence",
-    rows: (report) => report.reuseEvidence,
-    csvKey: (row) => row.evidenceType,
-    line: (row) =>
-      `${row.evidenceType}: executions=${row.executions} hits=${row.hitExecutions} misses=${row.missExecutions} degraded=${row.degradedExecutions} bypass=${row.bypassExecutions} reused_units=${row.reusedUnits} primary_work_units=${row.primaryWorkUnits} avg_reuse_rate=${formatPercent(row.avgReuseRate)} statuses=${row.statuses.join(", ") || "none"}`,
-  }),
-  defineReportSection<UsageReviewCacheTelemetryRow>({
-    title: "Review cache telemetry",
-    emptyText: "No review_cache_events rows matched the requested filters.",
-    csvLabel: "review_cache_telemetry",
-    rows: (report) => report.reviewCacheTelemetry?.rows ?? [],
-    note: (report) => report.reviewCacheTelemetry?.note ?? null,
-    csvKey: (row) => `${row.cacheSurface}/${row.status}/${row.reason}`,
-    line: (row) => {
-      const signalBits = [
-        row.fingerprintVersions.length > 0 ? `fingerprint_versions=${row.fingerprintVersions.join(",")}` : "fingerprint_versions=none",
-        row.safetySignalNames.length > 0 ? `safety_signals=${row.safetySignalNames.join(",")}` : "safety_signals=none",
-        row.missingSignalNames.length > 0 ? `missing_signals=${row.missingSignalNames.join(",")}` : "missing_signals=none",
-        row.invalidationSignalNames.length > 0 ? `invalidation_signals=${row.invalidationSignalNames.join(",")}` : "invalidation_signals=none",
-      ].join(" ");
-      return `${row.cacheSurface} status=${row.status} reason=${row.reason}: executions=${row.executions} deliveries=${row.distinctDeliveries} prs=${row.affectedPrs} bookkeeping_errors=${row.bookkeepingErrorCount} ${signalBits}`;
-    },
-  }),
-  defineReportSection<UsageRateLimitRow>({
-    title: "Cache effectiveness",
-    emptyText: "No rate_limit_events rows matched the requested filters.",
-    csvLabel: "rate_limit",
-    rows: (report) => report.rateLimits,
-    csvKey: (row) => row.taskType,
-    line: (row) =>
-      `${row.taskType}: executions=${row.executions} avg_cache_hit_rate=${formatPercent(row.avgCacheHitRate)} skipped_queries=${row.totalSkippedQueries} degraded=${row.degradationCount}`,
-  }),
-];
-
-export function renderUsageReportText(report: UsageReport): string {
-  const lines = [
-    "Kodiai Telemetry Usage Report",
-    "",
-    `Database access: ${report.preflight.databaseAccess}`,
-    `Preflight detail: ${report.preflight.detail}`,
-    `Generated at: ${report.generatedAt}`,
-  ];
-
-  if (report.filters.since || report.filters.repo || report.filters.deliveryId) {
-    lines.push(
-      `Filters: since=${report.filters.since ?? "none"} repo=${report.filters.repo ?? "none"} delivery=${report.filters.deliveryId ?? "none"}`,
-    );
-  }
-
-  if (report.preflight.databaseAccess !== "available") {
-    lines.push("", "No live telemetry data available. The report failed open so operators can see the access state without relying on stale SQLite data.");
-    return lines.join("\n");
-  }
-
-  lines.push(
-    "",
-    "Summary",
-    `- Executions: ${formatNumber(report.summary.totalExecutions)}`,
-    `- Distinct deliveries: ${formatNumber(report.summary.distinctDeliveries)}`,
-    `- Input tokens: ${formatNumber(report.summary.totalInputTokens)}`,
-    `- Output tokens: ${formatNumber(report.summary.totalOutputTokens)}`,
-    `- Cache read tokens: ${formatNumber(report.summary.totalCacheReadTokens)}`,
-    `- Cache write tokens: ${formatNumber(report.summary.totalCacheWriteTokens)}`,
-    `- Total tokens: ${formatNumber(report.summary.totalTokens)}`,
-    `- Total cost: ${formatCurrency(report.summary.totalCostUsd)}`,
-    `- Cache effectiveness: ${formatPercent(report.summary.cacheEffectiveness)}`,
-  );
-
-  for (const section of REPORT_SECTIONS) {
-    lines.push(...section.textLines(report));
-  }
-
-  return lines.join("\n");
-}
-
-export function renderUsageReportCsv(report: UsageReport): string {
-  const lines = [
-    "section,key,value",
-    `preflight,database_access,${report.preflight.databaseAccess}`,
-    `preflight,detail,${JSON.stringify(report.preflight.detail)}`,
-    `summary,total_executions,${report.summary.totalExecutions}`,
-    `summary,distinct_deliveries,${report.summary.distinctDeliveries}`,
-    `summary,total_input_tokens,${report.summary.totalInputTokens}`,
-    `summary,total_output_tokens,${report.summary.totalOutputTokens}`,
-    `summary,total_cache_read_tokens,${report.summary.totalCacheReadTokens}`,
-    `summary,total_cache_write_tokens,${report.summary.totalCacheWriteTokens}`,
-    `summary,total_tokens,${report.summary.totalTokens}`,
-    `summary,total_cost_usd,${report.summary.totalCostUsd}`,
-    `summary,cache_effectiveness,${report.summary.cacheEffectiveness}`,
-  ];
-
-  for (const section of REPORT_SECTIONS) {
-    lines.push(...section.csvLines(report));
-  }
-
-  return lines.join("\n");
+function buildUsageSinceJoin(params: UsageSqlParam[], since: string | null, alias: string): string {
+  if (!since) return "";
+  params.push(since);
+  return `AND ${usageColumn(alias, "created_at")} >= $${params.length}::timestamptz`;
 }
 
 async function fetchSummary(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageReportSummary> {
-  const rows = await sql<UsageReportSummary[]>`
+  const filters = buildUsageWhere({ repo, since, deliveryId }, null);
+  const rows = await sql.unsafe(
+    `
     SELECT
       COUNT(*)::int AS "totalExecutions",
       COALESCE(SUM(input_tokens), 0)::int AS "totalInputTokens",
@@ -449,15 +293,17 @@ async function fetchSummary(sql: Sql, repo: string | null, since: string | null,
       COALESCE(SUM(estimated_cost_usd), 0)::float8 AS "totalCostUsd",
       COUNT(DISTINCT COALESCE(delivery_id, task_type || ':' || created_at::text))::int AS "distinctDeliveries"
     FROM llm_cost_events
-    WHERE (${repo}::text IS NULL OR repo = ${repo})
-      AND (${deliveryId}::text IS NULL OR delivery_id = ${deliveryId})
-      AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
-  `;
+    ${filters.text}
+    `,
+    filters.params,
+  ) as UsageReportSummary[];
   return rows[0] ?? emptySummary();
 }
 
 async function fetchTaskTypes(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageTaskTypeRow[]> {
-  const rows = await sql<UsageTaskTypeRow[]>`
+  const filters = buildUsageWhere({ repo, since, deliveryId }, null);
+  const rows = await sql.unsafe(
+    `
     SELECT
       task_type AS "taskType",
       COUNT(*)::int AS "executions",
@@ -470,12 +316,12 @@ async function fetchTaskTypes(sql: Sql, repo: string | null, since: string | nul
         0
       )::float8 AS "cacheEffectiveness"
     FROM llm_cost_events
-    WHERE (${repo}::text IS NULL OR repo = ${repo})
-      AND (${deliveryId}::text IS NULL OR delivery_id = ${deliveryId})
-      AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+    ${filters.text}
     GROUP BY task_type
     ORDER BY "totalCostUsd" DESC, task_type ASC
-  `;
+    `,
+    filters.params,
+  ) as UsageTaskTypeRow[];
 
   return rows.map((row) => ({
     ...row,
@@ -485,7 +331,11 @@ async function fetchTaskTypes(sql: Sql, repo: string | null, since: string | nul
 }
 
 async function fetchDeliveryBreakdown(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageDeliveryRow[]> {
-  const rows = await sql<UsageDeliveryRow[]>`
+  const params: UsageSqlParam[] = [];
+  const promptSinceJoin = buildUsageSinceJoin(params, since, "p");
+  const wherePredicates = ["l.delivery_id IS NOT NULL", ...addUsagePredicates(params, { repo, since, deliveryId }, "l")];
+  const rows = await sql.unsafe(
+    `
     SELECT
       l.delivery_id AS "deliveryId",
       l.repo AS repo,
@@ -502,15 +352,14 @@ async function fetchDeliveryBreakdown(sql: Sql, repo: string | null, since: stri
     LEFT JOIN prompt_section_events p
       ON p.delivery_id = l.delivery_id
      AND p.task_type = l.task_type
-     AND (${since}::timestamptz IS NULL OR p.created_at >= ${since}::timestamptz)
-    WHERE l.delivery_id IS NOT NULL
-      AND (${repo}::text IS NULL OR l.repo = ${repo})
-      AND (${deliveryId}::text IS NULL OR l.delivery_id = ${deliveryId})
-      AND (${since}::timestamptz IS NULL OR l.created_at >= ${since}::timestamptz)
+     ${promptSinceJoin}
+    WHERE ${wherePredicates.join("\n      AND ")}
     GROUP BY l.delivery_id, l.repo, l.task_type
     ORDER BY "estimatedCostUsd" DESC, l.delivery_id ASC
     LIMIT 20
-  `;
+    `,
+    params,
+  ) as UsageDeliveryRow[];
 
   return rows.map((row) => ({
     ...row,
@@ -520,7 +369,9 @@ async function fetchDeliveryBreakdown(sql: Sql, repo: string | null, since: stri
 }
 
 async function fetchPromptSections(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsagePromptSectionRow[]> {
-  const rows = await sql<UsagePromptSectionRow[]>`
+  const filters = buildUsageWhere({ repo, since, deliveryId }, null);
+  const rows = await sql.unsafe(
+    `
     SELECT
       task_type AS "taskType",
       prompt_kind AS "promptKind",
@@ -530,13 +381,13 @@ async function fetchPromptSections(sql: Sql, repo: string | null, since: string 
       COALESCE(SUM(char_count), 0)::int AS "totalCharCount",
       COALESCE(SUM(CASE WHEN truncated THEN 1 ELSE 0 END), 0)::int AS "truncatedExecutions"
     FROM prompt_section_events
-    WHERE (${repo}::text IS NULL OR repo = ${repo})
-      AND (${deliveryId}::text IS NULL OR delivery_id = ${deliveryId})
-      AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+    ${filters.text}
     GROUP BY task_type, prompt_kind, section_name
     ORDER BY "totalEstimatedTokens" DESC, task_type ASC, prompt_kind ASC, section_name ASC
     LIMIT 30
-  `;
+    `,
+    filters.params,
+  ) as UsagePromptSectionRow[];
   return rows;
 }
 
@@ -546,7 +397,9 @@ function isPostgresErrorCode(error: unknown, code: string): boolean {
 
 async function fetchSectionBudgetDistribution(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageSectionBudgetResult> {
   try {
-    const rows = await sql<Array<Omit<UsageSectionBudgetRow, "trimmedRate" | "budgetUtilizationP90">>>`
+    const filters = buildUsageWhere({ repo, since, deliveryId }, null, ["budget_chars IS NOT NULL"]);
+    const rows = await sql.unsafe(
+      `
       SELECT
         task_type AS "taskType",
         section_name AS "sectionName",
@@ -561,14 +414,13 @@ async function fetchSectionBudgetDistribution(sql: Sql, repo: string | null, sin
         COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY included_tokens), 0)::float8 AS "p90IncludedTokens",
         COALESCE(SUM(CASE WHEN budget_status = 'trimmed' THEN 1 ELSE 0 END), 0)::int AS "trimmedExecutions"
       FROM prompt_section_events
-      WHERE budget_chars IS NOT NULL
-        AND (${repo}::text IS NULL OR repo = ${repo})
-        AND (${deliveryId}::text IS NULL OR delivery_id = ${deliveryId})
-        AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+      ${filters.text}
       GROUP BY task_type, section_name
       ORDER BY "budgetChars" DESC, executions DESC, task_type ASC, section_name ASC
       LIMIT 30
-    `;
+      `,
+      filters.params,
+    ) as Array<Omit<UsageSectionBudgetRow, "trimmedRate" | "budgetUtilizationP90">>;
 
     return {
       note: null,
@@ -598,7 +450,14 @@ async function fetchSectionBudgetDistribution(sql: Sql, repo: string | null, sin
 }
 
 async function fetchRateLimits(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageRateLimitRow[]> {
-  const rows = await sql<UsageRateLimitRow[]>`
+  const params: UsageSqlParam[] = [];
+  const llmSinceJoin = buildUsageSinceJoin(params, since, "l");
+  const wherePredicates = [
+    ...addUsagePredicates(params, { repo, since, deliveryId }, "r"),
+    "r.event_type NOT LIKE 'reuse.%'",
+  ];
+  const rows = await sql.unsafe(
+    `
     SELECT
       COALESCE(l.task_type, r.event_type) AS "taskType",
       COUNT(*)::int AS executions,
@@ -608,14 +467,13 @@ async function fetchRateLimits(sql: Sql, repo: string | null, since: string | nu
     FROM rate_limit_events r
     LEFT JOIN llm_cost_events l
       ON l.delivery_id = r.delivery_id
-     AND (${since}::timestamptz IS NULL OR l.created_at >= ${since}::timestamptz)
-    WHERE (${repo}::text IS NULL OR r.repo = ${repo})
-      AND (${deliveryId}::text IS NULL OR r.delivery_id = ${deliveryId})
-      AND (${since}::timestamptz IS NULL OR r.created_at >= ${since}::timestamptz)
-      AND r.event_type NOT LIKE 'reuse.%'
+     ${llmSinceJoin}
+    WHERE ${wherePredicates.join("\n      AND ")}
     GROUP BY COALESCE(l.task_type, r.event_type)
     ORDER BY executions DESC, "taskType" ASC
-  `;
+    `,
+    params,
+  ) as UsageRateLimitRow[];
 
   return rows.map((row) => ({
     ...row,
@@ -624,7 +482,9 @@ async function fetchRateLimits(sql: Sql, repo: string | null, since: string | nu
 }
 
 async function fetchReuseEvidence(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageReuseEvidenceRow[]> {
-  const rows = await sql<UsageReuseEvidenceRow[]>`
+  const filters = buildUsageWhere({ repo, since, deliveryId }, "r", ["r.event_type LIKE 'reuse.%'"]);
+  const rows = await sql.unsafe(
+    `
     SELECT
       CASE
         WHEN r.event_type LIKE 'reuse.retrieval-query-embedding%' THEN 'retrieval.query-embedding'
@@ -642,13 +502,12 @@ async function fetchReuseEvidence(sql: Sql, repo: string | null, since: string |
       COALESCE(AVG(r.cache_hit_rate), 0)::float8 AS "avgReuseRate",
       COALESCE(array_remove(array_agg(DISTINCT split_part(COALESCE(r.degradation_path, 'unknown'), ':', 1)), NULL), ARRAY[]::text[]) AS statuses
     FROM rate_limit_events r
-    WHERE (${repo}::text IS NULL OR r.repo = ${repo})
-      AND (${deliveryId}::text IS NULL OR r.delivery_id = ${deliveryId})
-      AND (${since}::timestamptz IS NULL OR r.created_at >= ${since}::timestamptz)
-      AND r.event_type LIKE 'reuse.%'
+    ${filters.text}
     GROUP BY 1
     ORDER BY 1 ASC
-  `;
+    `,
+    filters.params,
+  ) as UsageReuseEvidenceRow[];
 
   return rows.map((row) => ({
     ...row,
@@ -659,12 +518,17 @@ async function fetchReuseEvidence(sql: Sql, repo: string | null, since: string |
 
 function boundedArray(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
-  return values.filter((value): value is string => typeof value === "string" && value.length > 0).sort((a, b) => a.localeCompare(b));
+  return values
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, REVIEW_CACHE_SIGNAL_ARRAY_LIMIT);
 }
 
 async function fetchReviewCacheTelemetry(sql: Sql, repo: string | null, since: string | null, deliveryId: string | null): Promise<UsageReviewCacheTelemetryResult> {
   try {
-    const rows = await sql<UsageReviewCacheTelemetryRow[]>`
+    const filters = buildUsageWhere({ repo, since, deliveryId }, null);
+    const rows = await sql.unsafe(
+      `
       WITH filtered AS (
         SELECT
           cache_surface,
@@ -678,9 +542,10 @@ async function fetchReviewCacheTelemetry(sql: Sql, repo: string | null, since: s
           invalidation_signal_names,
           bookkeeping_error_count
         FROM review_cache_events
-        WHERE (${repo}::text IS NULL OR repo = ${repo})
-          AND (${deliveryId}::text IS NULL OR delivery_id = ${deliveryId})
-          AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+        ${filters.text}
+          ${filters.text ? "AND" : "WHERE"} cache_surface = ANY($${filters.params.length + 1}::text[])
+          AND status = ANY($${filters.params.length + 2}::text[])
+          AND COALESCE(reason, 'none') = ANY($${filters.params.length + 3}::text[])
       ), grouped AS (
         SELECT
           cache_surface AS "cacheSurface",
@@ -689,7 +554,19 @@ async function fetchReviewCacheTelemetry(sql: Sql, repo: string | null, since: s
           COUNT(*)::int AS executions,
           COUNT(DISTINCT delivery_id)::int AS "distinctDeliveries",
           COUNT(DISTINCT pr_number)::int AS "affectedPrs",
-          COALESCE(array_remove(array_agg(DISTINCT fingerprint_version), NULL), ARRAY[]::text[]) AS "fingerprintVersions",
+          COALESCE(ARRAY(
+            SELECT value
+            FROM (
+              SELECT DISTINCT fingerprint_version AS value
+              FROM filtered f2
+              WHERE f2.cache_surface = filtered.cache_surface
+                AND f2.status = filtered.status
+                AND f2.reason = filtered.reason
+                AND f2.fingerprint_version IS NOT NULL
+              ORDER BY value
+              LIMIT $${filters.params.length + 4}::int
+            ) capped
+          ), ARRAY[]::text[]) AS "fingerprintVersions",
           COALESCE(SUM(bookkeeping_error_count), 0)::int AS "bookkeepingErrorCount"
         FROM filtered
         GROUP BY cache_surface, status, reason
@@ -702,28 +579,54 @@ async function fetchReviewCacheTelemetry(sql: Sql, repo: string | null, since: s
         g."distinctDeliveries",
         g."affectedPrs",
         g."fingerprintVersions",
-        ARRAY(
-          SELECT DISTINCT signal
-          FROM filtered f, unnest(f.safety_signal_names) AS signal
-          WHERE f.cache_surface = g."cacheSurface" AND f.status = g.status AND f.reason = g.reason
-          ORDER BY signal
-        ) AS "safetySignalNames",
-        ARRAY(
-          SELECT DISTINCT signal
-          FROM filtered f, unnest(f.missing_signal_names) AS signal
-          WHERE f.cache_surface = g."cacheSurface" AND f.status = g.status AND f.reason = g.reason
-          ORDER BY signal
-        ) AS "missingSignalNames",
-        ARRAY(
-          SELECT DISTINCT signal
-          FROM filtered f, unnest(f.invalidation_signal_names) AS signal
-          WHERE f.cache_surface = g."cacheSurface" AND f.status = g.status AND f.reason = g.reason
-          ORDER BY signal
-        ) AS "invalidationSignalNames",
+        COALESCE(ARRAY(
+          SELECT signal
+          FROM (
+            SELECT DISTINCT signal
+            FROM filtered f2, unnest(f2.safety_signal_names) AS signal
+            WHERE f2.cache_surface = g."cacheSurface"
+              AND f2.status = g.status
+              AND f2.reason = g.reason
+            ORDER BY signal
+            LIMIT $${filters.params.length + 4}::int
+          ) capped
+        ), ARRAY[]::text[]) AS "safetySignalNames",
+        COALESCE(ARRAY(
+          SELECT signal
+          FROM (
+            SELECT DISTINCT signal
+            FROM filtered f2, unnest(f2.missing_signal_names) AS signal
+            WHERE f2.cache_surface = g."cacheSurface"
+              AND f2.status = g.status
+              AND f2.reason = g.reason
+            ORDER BY signal
+            LIMIT $${filters.params.length + 4}::int
+          ) capped
+        ), ARRAY[]::text[]) AS "missingSignalNames",
+        COALESCE(ARRAY(
+          SELECT signal
+          FROM (
+            SELECT DISTINCT signal
+            FROM filtered f2, unnest(f2.invalidation_signal_names) AS signal
+            WHERE f2.cache_surface = g."cacheSurface"
+              AND f2.status = g.status
+              AND f2.reason = g.reason
+            ORDER BY signal
+            LIMIT $${filters.params.length + 4}::int
+          ) capped
+        ), ARRAY[]::text[]) AS "invalidationSignalNames",
         g."bookkeepingErrorCount"
       FROM grouped g
       ORDER BY g."cacheSurface" ASC, g.status ASC, g.reason ASC
-    `;
+      `,
+      [
+        ...filters.params,
+        REVIEW_CACHE_TELEMETRY_SURFACES,
+        REVIEW_CACHE_TELEMETRY_STATUSES,
+        [...REVIEW_CACHE_TELEMETRY_REASONS, "none"],
+        REVIEW_CACHE_SIGNAL_ARRAY_LIMIT,
+      ],
+    ) as UsageReviewCacheTelemetryRow[];
 
     const allowedSurfaces = new Set<string>(REVIEW_CACHE_TELEMETRY_SURFACES);
     const allowedStatuses = new Set<string>(REVIEW_CACHE_TELEMETRY_STATUSES);
@@ -778,14 +681,27 @@ export async function queryUsageReportWithTimeout(
   filters: { repo: string | null; since: string | null; deliveryId?: string | null },
   timeoutMs = USAGE_REPORT_QUERY_TIMEOUT_MS,
 ): Promise<UsageReportQueryResult> {
+  const boundedTimeoutMs = Math.max(1, Math.floor(timeoutMs));
+  const runQuery = async () => {
+    const begin = (sql as unknown as { begin?: Function }).begin;
+    if (typeof begin !== "function") {
+      return queryUsageReport(sql, filters);
+    }
+
+    return begin.call(sql, "read only", async (tx: Sql) => {
+      await tx.unsafe("SELECT set_config('statement_timeout', $1, true)", [`${boundedTimeoutMs}ms`]);
+      return queryUsageReport(tx, filters);
+    }) as Promise<UsageReportQueryResult>;
+  };
+
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      queryUsageReport(sql, filters),
+      runQuery(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          reject(new Error(`Timed out querying telemetry Postgres after ${timeoutMs}ms.`));
-        }, timeoutMs);
+          reject(new Error(`Timed out querying telemetry Postgres after ${boundedTimeoutMs}ms.`));
+        }, boundedTimeoutMs);
       }),
     ]);
   } finally {

@@ -30,7 +30,7 @@ export async function validateIssue(params: {
   let files: string[];
   try {
     const entries = await readdir(templateDir);
-    files = entries.filter((f) => f.endsWith(".md"));
+    files = entries.filter((f) => f.endsWith(".md")).sort();
   } catch {
     // Directory doesn't exist or not readable
     return null;
@@ -92,13 +92,12 @@ function findBestFitTemplate(
 ): TemplateDefinition | null {
   let best: TemplateDefinition | null = null;
   let bestScore = 0;
+  const issueHeadingSet = new Set(issueHeadings);
 
   for (const template of templates) {
     let score = 0;
     for (const section of template.sections) {
-      if (
-        issueHeadings.includes(section.heading.toLowerCase())
-      ) {
+      if (issueHeadingSet.has(section.heading.toLowerCase())) {
         score++;
       }
     }

@@ -8,6 +8,8 @@ import {
   isExcludedPath,
   parseDiffHunks,
 } from "../knowledge/code-snippet-chunker.ts";
+import { generateDocumentEmbeddingResultsBatch } from "../knowledge/embedding-batch.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { toProductionLogHunkEmbeddingCounts } from "../review-audit/production-log-projection.ts";
 
 export async function embedReviewDiffHunks(params: {
@@ -53,15 +55,20 @@ export async function embedReviewDiffHunks(params: {
     if (allHunks.length === 0) return;
 
     const cappedHunks = applyHunkCap(allHunks, hunkConfig.maxHunksPerPr);
+    const hunkPayloads = cappedHunks.map((hunk) => {
+      const embeddedText = buildEmbeddingText({ hunk, prTitle });
+      return {
+        hunk,
+        embeddedText,
+        contentHash: computeContentHash(embeddedText),
+      };
+    });
 
     let embeddedCount = 0;
     let failedCount = 0;
 
-    for (const hunk of cappedHunks) {
+    await mapWithConcurrency(hunkPayloads, 4, async ({ hunk, embeddedText, contentHash }) => {
       try {
-        const embeddedText = buildEmbeddingText({ hunk, prTitle });
-        const contentHash = computeContentHash(embeddedText);
-
         const snippetExists = await codeSnippetStore.hasSnippet?.(contentHash);
         if (snippetExists) {
           await codeSnippetStore.writeOccurrence({
@@ -75,13 +82,20 @@ export async function embedReviewDiffHunks(params: {
             endLine: hunk.startLine + hunk.addedLines.length - 1,
             functionContext: hunk.functionContext || null,
           });
-          continue;
+          return;
         }
 
-        const embeddingResult = await embeddingProvider.generate(embeddedText, "document");
+        const [embeddingResult] = await generateDocumentEmbeddingResultsBatch({
+          texts: [embeddedText],
+          embeddingProvider,
+        });
+        if (embeddingResult?.status !== "success") {
+          failedCount++;
+          return;
+        }
         if (!embeddingResult) {
           failedCount++;
-          continue;
+          return;
         }
 
         await codeSnippetStore.writeSnippet(
@@ -114,7 +128,7 @@ export async function embedReviewDiffHunks(params: {
           "Hunk embedding failed for individual hunk (fail-open)",
         );
       }
-    }
+    });
 
     if (embeddedCount > 0 || failedCount > 0) {
       logger.info(

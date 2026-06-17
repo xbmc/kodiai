@@ -676,13 +676,13 @@ async function writeSnapshotFileDefault(
 
 function sortSnapshot(snapshot: XbmcFixtureSnapshot): XbmcFixtureSnapshot {
   const sortedManifest = sortFixtureManifest(snapshot as unknown as ContributorFixtureManifest);
+  const retainedById = new Map(snapshot.retained.map((entry) => [entry.normalizedId, entry]));
+  const excludedById = new Map(snapshot.excluded.map((entry) => [entry.normalizedId, entry]));
 
   return {
     ...snapshot,
     retained: sortedManifest.retained.map((entry) => {
-      const source = snapshot.retained.find(
-        (candidate) => candidate.normalizedId === entry.normalizedId,
-      );
+      const source = retainedById.get(entry.normalizedId);
       return {
         ...(source ?? (entry as XbmcRetainedContributorSnapshot)),
         provenanceRecords: sortAndValidateProvenanceRecords(
@@ -691,9 +691,7 @@ function sortSnapshot(snapshot: XbmcFixtureSnapshot): XbmcFixtureSnapshot {
       };
     }),
     excluded: sortedManifest.excluded.map((entry) => {
-      const source = snapshot.excluded.find(
-        (candidate) => candidate.normalizedId === entry.normalizedId,
-      );
+      const source = excludedById.get(entry.normalizedId);
       return {
         ...(source ?? (entry as XbmcExcludedContributorSnapshot)),
         relatedNormalizedIds: [...entry.relatedNormalizedIds].sort((left, right) =>

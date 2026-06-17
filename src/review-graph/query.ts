@@ -170,12 +170,26 @@ function addDependentSignal(
   map.set(input.stableKey, existing);
 }
 
+function rankedTieBreakKey(item: object): string {
+  const record = item as Record<string, unknown>;
+  return [
+    typeof record.path === "string" ? record.path : "",
+    typeof record.filePath === "string" ? record.filePath : "",
+    typeof record.stableKey === "string" ? record.stableKey : "",
+    typeof record.qualifiedName === "string" ? record.qualifiedName : "",
+    typeof record.symbolName === "string" ? record.symbolName : "",
+  ].join("\0");
+}
+
 function sortRanked<T extends { score: number; confidence: number }>(items: T[]): T[] {
-  return items.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-    return JSON.stringify(a).localeCompare(JSON.stringify(b));
-  });
+  return items
+    .map((item) => ({ item, tieBreakKey: rankedTieBreakKey(item) }))
+    .sort((a, b) => {
+      if (b.item.score !== a.item.score) return b.item.score - a.item.score;
+      if (b.item.confidence !== a.item.confidence) return b.item.confidence - a.item.confidence;
+      return a.tieBreakKey.localeCompare(b.tieBreakKey);
+    })
+    .map(({ item }) => item);
 }
 
 function collectSymbolAliases(node: ReviewGraphNodeRecord): string[] {
@@ -195,6 +209,67 @@ function fileLikelyImportsChangedPath(filePath: string, changedPath: string): bo
   return normalizedFile.includes(normalizedBase) || normalizedFile.includes(normalizedBase.replace(/_/g, ""));
 }
 
+function textTrigrams(value: string): string[] {
+  if (value.length < 3) return [value];
+  const grams: string[] = [];
+  for (let index = 0; index <= value.length - 3; index += 1) {
+    grams.push(value.slice(index, index + 3));
+  }
+  return grams;
+}
+
+function addNodeBucket(
+  index: Map<string, Set<ReviewGraphNodeRecord>>,
+  key: string,
+  node: ReviewGraphNodeRecord,
+): void {
+  if (!key) return;
+  const bucket = index.get(key) ?? new Set<ReviewGraphNodeRecord>();
+  bucket.add(node);
+  index.set(key, bucket);
+}
+
+function addFuzzyTextBuckets(
+  index: Map<string, Set<ReviewGraphNodeRecord>>,
+  text: string,
+  node: ReviewGraphNodeRecord,
+): void {
+  const normalized = text.toLowerCase();
+  for (const gram of textTrigrams(normalized)) {
+    addNodeBucket(index, gram, node);
+  }
+  if (normalized.length <= 128) {
+    for (let size = 1; size <= 2; size += 1) {
+      for (let start = 0; start <= normalized.length - size; start += 1) {
+        addNodeBucket(index, normalized.slice(start, start + size), node);
+      }
+    }
+  }
+}
+
+function collectFuzzyCandidates(
+  index: Map<string, Set<ReviewGraphNodeRecord>>,
+  text: string,
+): ReviewGraphNodeRecord[] {
+  const candidates = new Set<ReviewGraphNodeRecord>();
+  for (const key of textTrigrams(text.toLowerCase())) {
+    const bucket = index.get(key);
+    if (!bucket) continue;
+    for (const node of bucket) candidates.add(node);
+  }
+  return [...candidates];
+}
+
+function collectCallsiteLookupAliases(node: ReviewGraphNodeRecord): string[] {
+  const callee = (node.qualifiedName ?? node.symbolName ?? "").toLowerCase();
+  if (!callee) return [];
+  return Array.from(new Set([
+    callee,
+    callee.split(".").at(-1) ?? callee,
+    callee.split("::").at(-1) ?? callee,
+  ]));
+}
+
 function buildIndexes(snapshot: ReviewGraphWorkspaceSnapshot) {
   const filePathById = getFilePathById(snapshot.files);
   const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]));
@@ -202,6 +277,10 @@ function buildIndexes(snapshot: ReviewGraphWorkspaceSnapshot) {
   const nodesByFilePath = new Map<string, ReviewGraphNodeRecord[]>();
   const outgoingEdgesByNodeId = new Map<number, ReviewGraphEdgeRecord[]>();
   const incomingEdgesByNodeId = new Map<number, ReviewGraphEdgeRecord[]>();
+  const importNodesByTargetGram = new Map<string, Set<ReviewGraphNodeRecord>>();
+  const callsiteNodesByAlias = new Map<string, Set<ReviewGraphNodeRecord>>();
+  const testNodesByAliasGram = new Map<string, Set<ReviewGraphNodeRecord>>();
+  const symbolByFileAndStableKey = new Map<string, ReviewGraphNodeRecord>();
 
   for (const node of snapshot.nodes) {
     const filePath = filePathById.get(node.fileId);
@@ -209,6 +288,24 @@ function buildIndexes(snapshot: ReviewGraphWorkspaceSnapshot) {
     const existing = nodesByFilePath.get(filePath) ?? [];
     existing.push(node);
     nodesByFilePath.set(filePath, existing);
+
+    if (node.nodeKind === "import") {
+      addFuzzyTextBuckets(
+        importNodesByTargetGram,
+        `${node.qualifiedName ?? ""} ${node.symbolName ?? ""}`,
+        node,
+      );
+    } else if (node.nodeKind === "callsite") {
+      for (const alias of collectCallsiteLookupAliases(node)) {
+        addNodeBucket(callsiteNodesByAlias, alias, node);
+      }
+    } else if (node.nodeKind === "test") {
+      for (const alias of collectSymbolAliases(node).map((value) => value.toLowerCase())) {
+        addFuzzyTextBuckets(testNodesByAliasGram, alias, node);
+      }
+    } else if (node.nodeKind === "symbol") {
+      symbolByFileAndStableKey.set(`${node.fileId}:${node.stableKey}`, node);
+    }
   }
 
   for (const edge of snapshot.edges) {
@@ -228,7 +325,51 @@ function buildIndexes(snapshot: ReviewGraphWorkspaceSnapshot) {
     nodesByFilePath,
     outgoingEdgesByNodeId,
     incomingEdgesByNodeId,
+    importNodesByTargetGram,
+    callsiteNodesByAlias,
+    testNodesByAliasGram,
+    symbolByFileAndStableKey,
   };
+}
+
+function collectImportCandidates(
+  indexes: ReturnType<typeof buildIndexes>,
+  changedPath: string,
+): ReviewGraphNodeRecord[] {
+  const changedBase = changedPath.split("/").at(-1)?.replace(/\.[^.]+$/, "") ?? changedPath;
+  const candidates = new Set<ReviewGraphNodeRecord>();
+  for (const value of [changedBase, changedBase.replace(/_/g, "")]) {
+    for (const node of collectFuzzyCandidates(indexes.importNodesByTargetGram, value)) {
+      candidates.add(node);
+    }
+  }
+  return [...candidates];
+}
+
+function collectCallsiteCandidates(
+  indexes: ReturnType<typeof buildIndexes>,
+  symbolAliases: ReadonlySet<string>,
+): ReviewGraphNodeRecord[] {
+  const candidates = new Set<ReviewGraphNodeRecord>();
+  for (const alias of symbolAliases) {
+    const bucket = indexes.callsiteNodesByAlias.get(alias);
+    if (!bucket) continue;
+    for (const node of bucket) candidates.add(node);
+  }
+  return [...candidates];
+}
+
+function collectTestCandidates(
+  indexes: ReturnType<typeof buildIndexes>,
+  symbolAliases: ReadonlySet<string>,
+): ReviewGraphNodeRecord[] {
+  const candidates = new Set<ReviewGraphNodeRecord>();
+  for (const alias of symbolAliases) {
+    for (const node of collectFuzzyCandidates(indexes.testNodesByAliasGram, alias)) {
+      candidates.add(node);
+    }
+  }
+  return [...candidates];
 }
 
 export function queryBlastRadiusFromSnapshot(
@@ -243,14 +384,6 @@ export function queryBlastRadiusFromSnapshot(
   const likelyTests = new Map<string, FileAccumulator & { testSymbols: Set<string> }>();
   const dependents = new Map<string, DependentAccumulator>();
   const seedNodes: ReviewGraphNodeRecord[] = [];
-
-  const allImportNodes = snapshot.nodes.filter((node) => node.nodeKind === "import");
-  const allCallsiteNodes = snapshot.nodes.filter((node) => node.nodeKind === "callsite");
-  const allSymbolNodes = snapshot.nodes.filter((node) => node.nodeKind === "symbol");
-  const allTestNodes = snapshot.nodes.filter((node) => node.nodeKind === "test");
-  const symbolByFileAndStableKey = new Map(
-    allSymbolNodes.map((symbol) => [`${symbol.fileId}:${symbol.stableKey}`, symbol]),
-  );
 
   for (const changedPath of changedFiles) {
     const fileNodes = indexes.nodesByFilePath.get(changedPath) ?? [];
@@ -361,7 +494,7 @@ export function queryBlastRadiusFromSnapshot(
     const symbolAliases = new Set(changedSymbols.flatMap((node) => collectSymbolAliases(node).map((value) => value.toLowerCase())));
     const symbolAliasMatcher = buildAliasMatcher(symbolAliases);
 
-    for (const importNode of allImportNodes) {
+    for (const importNode of collectImportCandidates(indexes, changedPath)) {
       const importPath = indexes.filePathById.get(importNode.fileId);
       if (!importPath || changedFileSet.has(importPath)) continue;
       const targetText = `${importNode.qualifiedName ?? ""} ${importNode.symbolName ?? ""}`.toLowerCase();
@@ -377,7 +510,7 @@ export function queryBlastRadiusFromSnapshot(
       });
     }
 
-    for (const callsite of allCallsiteNodes) {
+    for (const callsite of collectCallsiteCandidates(indexes, symbolAliases)) {
       const callsitePath = indexes.filePathById.get(callsite.fileId);
       if (!callsitePath || changedFileSet.has(callsitePath)) continue;
       const callee = (callsite.qualifiedName ?? callsite.symbolName ?? "").toLowerCase();
@@ -395,7 +528,7 @@ export function queryBlastRadiusFromSnapshot(
         language: callsite.language,
       });
 
-      const owner = symbolByFileAndStableKey.get(`${callsite.fileId}:${String(callsite.attributes.callerStableKey ?? "")}`);
+      const owner = indexes.symbolByFileAndStableKey.get(`${callsite.fileId}:${String(callsite.attributes.callerStableKey ?? "")}`);
       if (owner) {
         addDependentSignal(dependents, {
           stableKey: owner.stableKey,
@@ -410,7 +543,7 @@ export function queryBlastRadiusFromSnapshot(
       }
     }
 
-    for (const testNode of allTestNodes) {
+    for (const testNode of collectTestCandidates(indexes, symbolAliases)) {
       const testPath = indexes.filePathById.get(testNode.fileId);
       if (!testPath || changedFileSet.has(testPath)) continue;
       const aliases = collectSymbolAliases(testNode).map((value) => value.toLowerCase());

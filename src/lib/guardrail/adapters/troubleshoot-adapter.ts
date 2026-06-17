@@ -77,7 +77,6 @@ export const troubleshootAdapter: SurfaceAdapter<TroubleshootInput, Troubleshoot
   reconstructOutput(output: TroubleshootOutput, keptClaims: string[]): TroubleshootOutput {
     if (keptClaims.length === 0) return "";
 
-    const keptSet = new Set(keptClaims);
     const lines = output.split("\n");
     const result: string[] = [];
 

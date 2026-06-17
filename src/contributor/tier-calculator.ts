@@ -1,5 +1,8 @@
 import type { Logger } from "pino";
 import type { ContributorProfileStore, ContributorTier } from "./types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
+
+const TIER_UPDATE_CONCURRENCY = 8;
 
 export type ContributorScoreSnapshot = {
   profileId: number;
@@ -86,7 +89,7 @@ export async function recalculateTiers(params: {
     senior: 0,
   };
 
-  for (const [profileId, assignment] of tierAssignments) {
+  await mapWithConcurrency([...tierAssignments], TIER_UPDATE_CONCURRENCY, async ([profileId, assignment]) => {
     breakdown[assignment.tier]++;
     await profileStore.updateTier(
       profileId,
@@ -94,7 +97,7 @@ export async function recalculateTiers(params: {
       assignment.overallScore,
     );
     tiersChanged++;
-  }
+  });
 
   logger.info(
     {

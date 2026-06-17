@@ -4,12 +4,13 @@ import path from "node:path";
 const COMMAND_NAME = "verify:m058:s01" as const;
 const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m058-s01.ts";
 const EXPECTED_VERIFY_STEP = "bun run verify:m056:s03";
-const EXPECTED_BROAD_TEST_STEP = "bun test --max-concurrency=2 scripts src";
-const EXPECTED_KNOWLEDGE_TEST_STEP = "bun test --max-concurrency=2 src/knowledge";
+const EXPECTED_BROAD_TEST_STEP = "bun run test:unit";
+const EXPECTED_KNOWLEDGE_TEST_STEP = "bun run test:db";
+const EXPECTED_TEST_DB_ENV = "TEST_DATABASE_URL:";
 const REQUIRED_SPLIT_RATIONALE_MARKERS = [
   "Bun has been unstable on GitHub runners with one monolithic test process.",
-  "Keep DB-backed tests on a low concurrency cap and split the suite into",
-  "two shorter invocations to avoid cross-file schema interference and runner crashes.",
+  "Keep DB-backed tests serialized and split the suite into explicit lanes",
+  "so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.",
 ] as const;
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..");
@@ -154,14 +155,14 @@ function buildCiCoverageBreadthCheck(ciContent: string): Check {
     return failCheck(
       "M058-S01-CI-COVERAGE-BREADTH",
       "ci_coverage_step_missing",
-      ".github/workflows/ci.yml must include either a direct bun test --max-concurrency=2 scripts src step or the multiline non-knowledge src split block so the full src tree, including src/webhook, is exercised.",
+      `.github/workflows/ci.yml must run ${EXPECTED_BROAD_TEST_STEP} so the full non-DB unit test lane is exercised.`,
     );
   }
 
   return passCheck(
     "M058-S01-CI-COVERAGE-BREADTH",
     "ci_coverage_breadth_ok",
-    ".github/workflows/ci.yml includes the broadened non-knowledge src coverage step.",
+    `.github/workflows/ci.yml includes ${EXPECTED_BROAD_TEST_STEP} for the non-DB unit test lane.`,
   );
 }
 
@@ -170,14 +171,22 @@ function buildCiSplitPreservedCheck(ciContent: string): Check {
     return failCheck(
       "M058-S01-CI-SPLIT-PRESERVED",
       "ci_split_step_missing",
-      `.github/workflows/ci.yml must retain ${EXPECTED_KNOWLEDGE_TEST_STEP} as the isolated second Bun test step.`,
+      `.github/workflows/ci.yml must retain ${EXPECTED_KNOWLEDGE_TEST_STEP} as the serialized DB test lane.`,
+    );
+  }
+
+  if (!ciContent.includes(EXPECTED_TEST_DB_ENV)) {
+    return failCheck(
+      "M058-S01-CI-SPLIT-PRESERVED",
+      "ci_test_database_url_missing",
+      `.github/workflows/ci.yml must set ${EXPECTED_TEST_DB_ENV} so ${EXPECTED_KNOWLEDGE_TEST_STEP} runs integration coverage instead of skipping DB-gated tests.`,
     );
   }
 
   return passCheck(
     "M058-S01-CI-SPLIT-PRESERVED",
     "ci_split_preserved_ok",
-    `.github/workflows/ci.yml retains ${EXPECTED_KNOWLEDGE_TEST_STEP} as the isolated second Bun test step.`,
+    `.github/workflows/ci.yml retains ${EXPECTED_KNOWLEDGE_TEST_STEP} as the serialized DB test lane with TEST_DATABASE_URL configured.`,
   );
 }
 
@@ -223,9 +232,7 @@ function buildCiOrderingAndRationaleCheck(ciContent: string): Check {
     );
   }
 
-  const broadStepIndex = hasBroadCoverageStep(ciContent)
-    ? findRunStep(ciContent, EXPECTED_BROAD_TEST_STEP)?.index ?? findBroadCoverageBlockIndex(ciContent) ?? -1
-    : -1;
+  const broadStepIndex = indexOfRunStep(ciContent, EXPECTED_BROAD_TEST_STEP);
   const knowledgeStepIndex = indexOfRunStep(ciContent, EXPECTED_KNOWLEDGE_TEST_STEP);
 
   if (broadStepIndex !== -1 && verifyStepIndex > broadStepIndex) {
@@ -263,8 +270,7 @@ function buildCiOrderingAndRationaleCheck(ciContent: string): Check {
 }
 
 function hasBroadCoverageStep(ciContent: string): boolean {
-  return findRunStep(ciContent, EXPECTED_BROAD_TEST_STEP) !== undefined
-    || findBroadCoverageBlockIndex(ciContent) !== undefined;
+  return findRunStep(ciContent, EXPECTED_BROAD_TEST_STEP) !== undefined;
 }
 
 function hasRunStep(ciContent: string, command: string): boolean {
@@ -273,21 +279,6 @@ function hasRunStep(ciContent: string, command: string): boolean {
 
 function indexOfRunStep(ciContent: string, command: string): number {
   return findRunStep(ciContent, command)?.index ?? -1;
-}
-
-function findBroadCoverageBlockIndex(ciContent: string): number | undefined {
-  for (const step of extractRunSteps(ciContent)) {
-    if (
-      step.text.includes("bun test --max-concurrency=2 scripts")
-      && step.text.includes("find src -maxdepth 1")
-      && step.text.includes("! -name knowledge")
-      && step.text.includes("non_knowledge_tests")
-    ) {
-      return step.index;
-    }
-  }
-
-  return undefined;
 }
 
 function findRunStep(ciContent: string, command: string): { index: number } | undefined {

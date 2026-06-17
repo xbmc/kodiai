@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildUsageReport,
+  queryUsageReport,
+  queryUsageReportWithTimeout,
   renderUsageReportText,
   renderUsageReportCsv,
   type UsageReportQueryResult,
 } from "./usage-report.ts";
+import type { Sql } from "../src/db/client.ts";
 
 function buildFixtureResult(overrides: Partial<UsageReportQueryResult> = {}): UsageReportQueryResult {
   return {
@@ -222,6 +225,59 @@ describe("buildUsageReport", () => {
     expect(report.reuseEvidence[1]?.reusedUnits).toBe(2);
     expect(report.reviewCacheTelemetry?.rows[0]?.cacheSurface).toBe("review-derived-prompt");
     expect(report.reviewCacheTelemetry?.rows[1]?.reason).toBe("incomplete-fingerprint");
+  });
+});
+
+describe("queryUsageReport", () => {
+  test("bounds review cache telemetry signal arrays in SQL", async () => {
+    const calls: string[] = [];
+    const sql = {
+      unsafe: async (query: string) => {
+        calls.push(query);
+        return [];
+      },
+    } as unknown as Sql;
+
+    await queryUsageReport(sql, { repo: null, since: null, deliveryId: null });
+
+    const query = calls.find((call) => call.includes("FROM review_cache_events"));
+    expect(query).toBeString();
+    expect(query).toContain("cache_surface = ANY");
+    expect(query).toContain("LIMIT $4::int");
+    expect(query).toContain("unnest(f2.safety_signal_names)");
+    expect(query).not.toContain("FROM filtered f, unnest");
+    expect(query).not.toContain("array_agg(DISTINCT signal");
+    expect(calls.join("\n")).not.toContain(" IS NULL OR ");
+  });
+
+  test("times out instead of waiting indefinitely on live telemetry queries", async () => {
+    const sql = {
+      unsafe: async () => new Promise<never>(() => {}),
+    } as unknown as Sql;
+
+    await expect(
+      queryUsageReportWithTimeout(sql, { repo: null, since: null, deliveryId: null }, 1),
+    ).rejects.toThrow("Timed out querying telemetry Postgres after 1ms.");
+  });
+
+  test("sets a transaction-local Postgres statement timeout for report queries", async () => {
+    const calls: Array<{ query: string; params?: unknown[] }> = [];
+    const tx = {
+      unsafe: async (query: string, params?: unknown[]) => {
+        calls.push({ query, params });
+        return [];
+      },
+    } as unknown as Sql;
+    const sql = {
+      begin: async (_mode: string, fn: (tx: Sql) => Promise<unknown>) => fn(tx),
+    } as unknown as Sql;
+
+    await queryUsageReportWithTimeout(sql, { repo: null, since: null, deliveryId: null }, 1234);
+
+    expect(calls[0]).toEqual({
+      query: "SELECT set_config('statement_timeout', $1, true)",
+      params: ["1234ms"],
+    });
   });
 });
 

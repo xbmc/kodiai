@@ -1,7 +1,9 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
-import type { WebhookQueueEntry, WebhookQueueStore } from "./types.ts";
+import type { WebhookQueueStore } from "./types.ts";
+
+const DEFAULT_DEQUEUE_BATCH_SIZE = 100;
 
 /**
  * Create a PostgreSQL-backed webhook queue store for durable queuing during shutdown drain.
@@ -54,7 +56,10 @@ export function createWebhookQueueStore(opts: {
       });
     },
 
-    async dequeuePending() {
+    async dequeuePending(batchSize = DEFAULT_DEQUEUE_BATCH_SIZE) {
+      const limit = Number.isFinite(batchSize)
+        ? Math.max(1, Math.floor(batchSize))
+        : DEFAULT_DEQUEUE_BATCH_SIZE;
       const entries = await sql.begin(async (tx) => {
         // Recover rows orphaned in 'processing' by a crash mid-replay: nothing
         // else ever resets that status, so without this they are lost forever.
@@ -79,7 +84,8 @@ export function createWebhookQueueStore(opts: {
           FROM webhook_queue
           WHERE status = 'pending'
           ORDER BY queued_at ASC
-          FOR UPDATE
+          LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED
         `;
 
         if (rows.length === 0) {

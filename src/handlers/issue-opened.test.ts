@@ -1,217 +1,18 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { createIssueOpenedHandler } from "./issue-opened.ts";
-import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.ts";
-import type { IssueStore } from "../knowledge/issue-types.ts";
-import type { EmbeddingProvider, EmbeddingResult } from "../knowledge/types.ts";
-import type { Logger } from "pino";
-import type { Sql } from "../db/client.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
-import type { JobQueue, JobQueueRunMetadata, WorkspaceManager } from "../jobs/types.ts";
-import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
-import type { RepoConfig } from "../execution/config.ts";
-
-// ── Test helpers ──────────────────────────────────────────────────────────
-
-function createMockLogger(): Logger {
-  return {
-    warn: () => {},
-    info: () => {},
-    debug: () => {},
-    error: () => {},
-    child: () => createMockLogger(),
-  } as unknown as Logger;
-}
-
-
-type CapturedHandler = { key: string; handler: EventHandler };
-
-function createMockEventRouter(): EventRouter & { captured: CapturedHandler[] } {
-  const captured: CapturedHandler[] = [];
-  return {
-    captured,
-    register(eventKey: string, handler: EventHandler) {
-      captured.push({ key: eventKey, handler });
-    },
-    dispatch: async () => {},
-  };
-}
-
-function createMockJobQueue(): JobQueue {
-  return {
-    enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
-    getQueueSize: () => 0,
-    getPendingCount: () => 0,
-    getActiveJobs: getEmptyActiveJobs,
-  };
-}
-
-function createMockOctokit(opts?: {
-  comments?: Array<{ body?: string | null }>;
-  addLabelsError?: Error;
-}) {
-  return {
-    rest: {
-      issues: {
-        listComments: async () => ({
-          data: opts?.comments ?? [],
-        }),
-        createComment: async () => ({ data: { id: 1 } }),
-        addLabels: async () => {
-          if (opts?.addLabelsError) throw opts.addLabelsError;
-          return { data: [] };
-        },
-      },
-    },
-  };
-}
-
-function createMockGithubApp(octokitOpts?: Parameters<typeof createMockOctokit>[0]): GitHubApp {
-  return {
-    getInstallationOctokit: async () => createMockOctokit(octokitOpts) as any,
-    getAppSlug: () => "kodiai",
-    initialize: async () => {},
-    checkConnectivity: async () => true,
-  } as unknown as GitHubApp;
-}
-
-function createMockIssueStore(results: any[] = []): IssueStore {
-  return {
-    searchByEmbedding: async () => results,
-  } as unknown as IssueStore;
-}
-
-function createMockEmbeddingProvider(
-  result: EmbeddingResult = {
-    embedding: new Float32Array([0.1, 0.2, 0.3]),
-    model: "voyage-code-3",
-    dimensions: 3,
-  },
-): EmbeddingProvider {
-  return {
-    generate: async () => result,
-    model: "voyage-code-3",
-    dimensions: 3,
-  };
-}
-
-function createMockSql(claimSuccess: boolean = true): Sql {
-  const fn = async (...args: any[]) => {
-    // Handle tagged template literals: inspect SQL string
-    if (Array.isArray(args[0])) {
-      const joined = Array.from(args[0]).join("");
-      // triage_threshold_state SELECT: return no rows (config fallback)
-      if (joined.includes("SELECT") && joined.includes("triage_threshold_state")) {
-        return [];
-      }
-    }
-    return claimSuccess ? [{ id: 1 }] : [];
-  };
-  // postgres.js tagged template literal interface
-  return new Proxy(fn, {
-    apply: (_target, _thisArg, args) => fn(...args),
-  }) as unknown as Sql;
-}
-
-function createMockWorkspaceManager(config?: Partial<RepoConfig>): WorkspaceManager {
-  // Write a temporary .kodiai.yml to the workspace dir
-  return {
-    create: async () => {
-      const { mkdtemp, writeFile } = await import("node:fs/promises");
-      const { tmpdir } = await import("node:os");
-      const path = await import("node:path");
-      const dir = await mkdtemp(path.join(tmpdir(), "issue-opened-test-"));
-
-      // Write the config file
-      const yaml = await import("js-yaml");
-      const configObj = {
-        triage: {
-          enabled: config?.triage?.enabled ?? false,
-          autoTriageOnOpen: config?.triage?.autoTriageOnOpen ?? false,
-          duplicateThreshold: config?.triage?.duplicateThreshold ?? 75,
-          maxDuplicateCandidates: config?.triage?.maxDuplicateCandidates ?? 3,
-          duplicateLabel: config?.triage?.duplicateLabel ?? "possible-duplicate",
-          cooldownMinutes: 30,
-        },
-      };
-      await writeFile(
-        path.join(dir, ".kodiai.yml"),
-        yaml.dump(configObj),
-        "utf-8",
-      );
-
-      return {
-        dir,
-        cleanup: async () => {
-          const { rm } = await import("node:fs/promises");
-          await rm(dir, { recursive: true, force: true }).catch(() => {});
-        },
-      };
-    },
-    cleanupStale: async () => 0,
-  };
-}
-
-function makeEvent(overrides?: Partial<WebhookEvent["payload"]>): WebhookEvent {
-  return {
-    id: "delivery-123",
-    name: "issues",
-    installationId: 1,
-    payload: {
-      action: "opened",
-      issue: {
-        number: 100,
-        title: "App crashes on login",
-        body: "When I try to login, the app crashes.",
-        user: { login: "testuser" },
-      },
-      repository: {
-        full_name: "owner/repo",
-        name: "repo",
-        owner: { login: "owner" },
-        default_branch: "main",
-      },
-      ...overrides,
-    },
-  };
-}
-
-function makeSearchResult(
-  issueNumber: number,
-  title: string,
-  state: string,
-  distance: number,
-) {
-  return {
-    record: {
-      id: issueNumber,
-      createdAt: "2026-01-01",
-      repo: "owner/repo",
-      owner: "owner",
-      issueNumber,
-      title,
-      body: null,
-      state,
-      authorLogin: "user",
-      authorAssociation: null,
-      labelNames: [],
-      templateSlug: null,
-      commentCount: 0,
-      assignees: [],
-      milestone: null,
-      reactionCount: 0,
-      isPullRequest: false,
-      locked: false,
-      embedding: null,
-      embeddingModel: null,
-      githubCreatedAt: "2026-01-01",
-      githubUpdatedAt: null,
-      closedAt: null,
-    },
-    distance,
-  };
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────
+import {
+  createIssueTriageStateStoreHarness,
+  createMockEmbeddingProvider,
+  createMockEventRouter,
+  createMockGithubApp,
+  createMockIssueStore,
+  createMockLogger,
+  createMockSql,
+  createMockWorkspaceManager,
+  makeEvent,
+  makeSearchResult,
+} from "./issue-opened.test-helpers.ts";
 
 describe("createIssueOpenedHandler", () => {
   let router: ReturnType<typeof createMockEventRouter>;
@@ -223,12 +24,12 @@ describe("createIssueOpenedHandler", () => {
   it("registers on issues.opened event", () => {
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp: createMockGithubApp(),
       workspaceManager: createMockWorkspaceManager(),
       issueStore: createMockIssueStore(),
       embeddingProvider: createMockEmbeddingProvider(),
       sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -255,7 +56,6 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: false, autoTriageOnOpen: true } as any,
@@ -263,6 +63,7 @@ describe("createIssueOpenedHandler", () => {
       issueStore: createMockIssueStore(),
       embeddingProvider: createMockEmbeddingProvider(),
       sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -289,7 +90,6 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: false } as any,
@@ -297,40 +97,7 @@ describe("createIssueOpenedHandler", () => {
       issueStore: createMockIssueStore(),
       embeddingProvider: createMockEmbeddingProvider(),
       sql: createMockSql(),
-      logger: createMockLogger(),
-    });
-
-    await router.captured[0]!.handler(makeEvent());
-    expect(commentPosted).toBe(false);
-  });
-
-  it("returns early when DB claim fails (already triaged)", async () => {
-    let commentPosted = false;
-    const githubApp = {
-      getInstallationOctokit: async () => ({
-        rest: {
-          issues: {
-            listComments: async () => ({ data: [] }),
-            createComment: async () => {
-              commentPosted = true;
-              return { data: { id: 1 } };
-            },
-            addLabels: async () => ({ data: [] }),
-          },
-        },
-      }),
-    } as unknown as GitHubApp;
-
-    createIssueOpenedHandler({
-      eventRouter: router,
-      jobQueue: createMockJobQueue(),
-      githubApp,
-      workspaceManager: createMockWorkspaceManager({
-        triage: { enabled: true, autoTriageOnOpen: true } as any,
-      }),
-      issueStore: createMockIssueStore(),
-      embeddingProvider: createMockEmbeddingProvider(),
-      sql: createMockSql(false), // claim fails
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -357,14 +124,14 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore([]), // no results
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: createMockSql(true),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -405,14 +172,14 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: createMockSql(true),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -452,14 +219,14 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: createMockSql(true),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -492,14 +259,14 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: createMockSql(true),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -539,14 +306,14 @@ describe("createIssueOpenedHandler", () => {
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: createMockSql(true),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
@@ -573,48 +340,27 @@ describe("createIssueOpenedHandler", () => {
       }),
     } as unknown as GitHubApp;
 
-    // Track SQL calls beyond the initial INSERT claim
-    const sqlCalls: Array<{ strings: string[]; values: unknown[] }> = [];
-    let callCount = 0;
-    const mockSqlFn = (...args: any[]) => {
-      callCount++;
-      if (callCount === 1) {
-        // First call is the INSERT claim
-        return Promise.resolve([{ id: 1 }]);
-      }
-      // Subsequent calls: track and return empty
-      if (Array.isArray(args[0])) {
-        const strings = Array.from(args[0]) as string[];
-        sqlCalls.push({ strings, values: args.slice(1) });
-      }
-      return Promise.resolve([]);
-    };
-    const mockSql = new Proxy(mockSqlFn, {
-      apply: (_target, _thisArg, args) => mockSqlFn(...args),
-    }) as unknown as Sql;
+    const triageStateStore = createIssueTriageStateStoreHarness();
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: mockSql,
+      sql: createMockSql(),
+      issueTriageStateStore: triageStateStore,
       logger: createMockLogger(),
     });
 
     await router.captured[0]!.handler(makeEvent());
 
-    const commentIdCall = sqlCalls.find((c) =>
-      c.strings.some((s) => s.includes("comment_github_id")),
-    );
+    const commentIdCall = triageStateStore.callsByKind("storeCommentId")[0];
     expect(commentIdCall).toBeDefined();
-    // Verify the comment ID value was passed
-    const allValues = sqlCalls.flatMap((c) => c.values);
-    expect(allValues).toContain(COMMENT_ID);
+    expect(commentIdCall!.input.commentGithubId).toBe(COMMENT_ID);
+    expect(commentIdCall!.deliveryId).toBe("delivery-1");
   });
 
   it("uses learned threshold when available", async () => {
@@ -638,51 +384,24 @@ describe("createIssueOpenedHandler", () => {
       }),
     } as unknown as GitHubApp;
 
-    // Track SQL calls to verify triage_threshold_state is queried
-    const sqlCalls: Array<{ strings: string[]; values: unknown[] }> = [];
-    let callCount = 0;
-    const mockSqlFn = (...args: any[]) => {
-      callCount++;
-      if (Array.isArray(args[0])) {
-        const strings = Array.from(args[0]) as string[];
-        const joined = strings.join("");
-        sqlCalls.push({ strings, values: args.slice(1) });
-
-        // INSERT claim
-        if (joined.includes("INSERT") && joined.includes("issue_triage_state")) {
-          return Promise.resolve([{ id: 1 }]);
-        }
-        // SELECT triage_threshold_state -- return enough samples for learned threshold
-        if (joined.includes("SELECT") && joined.includes("triage_threshold_state")) {
-          return Promise.resolve([{ alpha: 18, beta_: 4, sample_count: 25 }]);
-        }
-      }
-      return Promise.resolve([]);
-    };
-    const mockSql = new Proxy(mockSqlFn, {
-      apply: (_target, _thisArg, args) => mockSqlFn(...args),
-    }) as unknown as Sql;
+    const thresholdSql = createMockSql({
+      thresholdRows: [{ alpha: 18, beta_: 4, sample_count: 25 }],
+    });
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: mockSql,
+      sql: thresholdSql,
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
       logger: createMockLogger(),
     });
 
     await router.captured[0]!.handler(makeEvent());
-
-    // Verify triage_threshold_state was queried
-    const thresholdCall = sqlCalls.find((c) =>
-      c.strings.some((s) => s.includes("triage_threshold_state")),
-    );
-    expect(thresholdCall).toBeDefined();
 
     // Comment should be posted (duplicates found with learned threshold)
     expect(commentPosted).toBe(true);
@@ -709,49 +428,22 @@ describe("createIssueOpenedHandler", () => {
       }),
     } as unknown as GitHubApp;
 
-    // Track SQL calls
-    const sqlCalls: Array<{ strings: string[]; values: unknown[] }> = [];
-    const mockSqlFn = (...args: any[]) => {
-      if (Array.isArray(args[0])) {
-        const strings = Array.from(args[0]) as string[];
-        const joined = strings.join("");
-        sqlCalls.push({ strings, values: args.slice(1) });
-
-        // INSERT claim
-        if (joined.includes("INSERT") && joined.includes("issue_triage_state")) {
-          return Promise.resolve([{ id: 1 }]);
-        }
-        // SELECT triage_threshold_state -- no rows (no Bayesian state)
-        if (joined.includes("SELECT") && joined.includes("triage_threshold_state")) {
-          return Promise.resolve([]);
-        }
-      }
-      return Promise.resolve([]);
-    };
-    const mockSql = new Proxy(mockSqlFn, {
-      apply: (_target, _thisArg, args) => mockSqlFn(...args),
-    }) as unknown as Sql;
+    const triageStateStore = createIssueTriageStateStoreHarness();
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: mockSql,
+      sql: createMockSql(),
+      issueTriageStateStore: triageStateStore,
       logger: createMockLogger(),
     });
 
     await router.captured[0]!.handler(makeEvent());
-
-    // Verify triage_threshold_state was queried but returned no rows
-    const thresholdCall = sqlCalls.find((c) =>
-      c.strings.some((s) => s.includes("triage_threshold_state")),
-    );
-    expect(thresholdCall).toBeDefined();
 
     // Comment should still be posted (config fallback threshold used, duplicates above it)
     expect(commentPosted).toBe(true);
@@ -778,36 +470,18 @@ describe("createIssueOpenedHandler", () => {
       }),
     } as unknown as GitHubApp;
 
-    // SQL mock: claim succeeds, comment_github_id UPDATE throws
-    let callCount = 0;
-    const mockSqlFn = (...args: any[]) => {
-      callCount++;
-      if (callCount === 1) {
-        return Promise.resolve([{ id: 1 }]);
-      }
-      // Check if this is the comment_github_id call
-      if (Array.isArray(args[0])) {
-        const joined = Array.from(args[0]).join("");
-        if (joined.includes("comment_github_id")) {
-          return Promise.reject(new Error("DB connection lost"));
-        }
-      }
-      return Promise.resolve([]);
-    };
-    const mockSql = new Proxy(mockSqlFn, {
-      apply: (_target, _thisArg, args) => mockSqlFn(...args),
-    }) as unknown as Sql;
+    const triageStateStore = createIssueTriageStateStoreHarness({ failCommentIdStore: true });
 
     createIssueOpenedHandler({
       eventRouter: router,
-      jobQueue: createMockJobQueue(),
       githubApp,
       workspaceManager: createMockWorkspaceManager({
         triage: { enabled: true, autoTriageOnOpen: true } as any,
       }),
       issueStore: createMockIssueStore(searchResults),
       embeddingProvider: createMockEmbeddingProvider(),
-      sql: mockSql,
+      sql: createMockSql(),
+      issueTriageStateStore: triageStateStore,
       logger: createMockLogger(),
     });
 

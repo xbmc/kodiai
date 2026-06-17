@@ -11,7 +11,6 @@
  *   ANTHROPIC_API_KEY      — Anthropic API key (or CLAUDE_CODE_OAUTH_TOKEN as fallback)
  */
 
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from "@anthropic-ai/claude-agent-sdk";
 import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile, mkdtemp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,6 +20,7 @@ import { buildSecurityClaudeMd } from "./executor.ts";
 import { resolveRepoTransport } from "./repo-transport.ts";
 import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
+import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -60,16 +60,15 @@ export const MCP_SERVER_NAMES = [
 // ---------------------------------------------------------------------------
 
 export interface EntrypointDeps {
-  queryFn: (params: { prompt: string; options?: object }) => Query;
+  queryFn?: (params: { prompt: string; options?: object }) => Query;
   writeFileFn: (path: string, content: string) => Promise<void>;
   appendFileFn: (path: string, content: string) => Promise<void>;
   readFileFn: (path: string, encoding: "utf-8") => Promise<string>;
   exitFn: (code: number) => never;
 }
 
-function defaultDeps(): EntrypointDeps {
+function defaultDeps(): Omit<EntrypointDeps, "queryFn"> {
   return {
-    queryFn: sdkQuery,
     writeFileFn: (path, content) => fsWriteFile(path, content),
     appendFileFn: (path, content) => fsAppendFile(path, content),
     readFileFn: readFile,
@@ -156,12 +155,29 @@ function isRepoInspectionToolUse(part: AssistantContentPart): boolean {
   return /^git(?:\s+-C\s+\S+)?\s+(diff|log|show)\b/.test(command);
 }
 
+async function cloneRepoBundle(args: string[]): Promise<void> {
+  const result = await runCommandWithCappedOutput({
+    command: "git",
+    args: ["clone", ...args],
+    timeoutMs: 120_000,
+    maxStdoutBytes: 64 * 1024,
+    maxStderrBytes: 64 * 1024,
+    env: { GIT_TERMINAL_PROMPT: "0" },
+  });
+  if (result.exitCode !== 0) {
+    const reason = result.timedOut
+      ? "timed out after 120000ms"
+      : result.stderr.trim() || `exited with code ${result.exitCode}`;
+    throw new Error(`git clone failed: ${reason}`);
+  }
+}
+
 async function materializeRepoTransport(transport: RepoTransport): Promise<string> {
   const cloneRoot = await mkdtemp(join(tmpdir(), "kodiai-agent-repo-"));
   const repoDir = join(cloneRoot, "repo");
 
   if (transport.kind === "review-bundle") {
-    await $`git clone -b ${transport.headRef} ${transport.bundlePath} ${repoDir}`.quiet();
+    await cloneRepoBundle(["-b", transport.headRef, transport.bundlePath, repoDir]);
     if (transport.originUrl) {
       await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
     }
@@ -174,7 +190,7 @@ async function materializeRepoTransport(transport: RepoTransport): Promise<strin
     return repoDir;
   }
 
-  await $`git clone ${transport.bundlePath} ${repoDir}`.quiet();
+  await cloneRepoBundle([transport.bundlePath, repoDir]);
   if (transport.originUrl) {
     await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
   }
@@ -298,7 +314,9 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       );
     }
 
-    const sdkQueryResult = queryFn({
+    const effectiveQueryFn = queryFn
+      ?? (await import("@anthropic-ai/claude-agent-sdk")).query;
+    const sdkQueryResult = effectiveQueryFn({
       prompt: agentConfig.prompt,
       options: {
         cwd: sdkCwd,
@@ -318,6 +336,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     let resultMessage: SDKResultMessage | undefined;
     let lastRateLimitEvent: SDKRateLimitEvent | undefined;
     const toolUseNames: string[] = [];
+    const seenToolUseNames = new Set<string>();
     let usedRepoInspectionTools = false;
     let currentTurn = 0;
 
@@ -344,7 +363,8 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
           if (!toolName) {
             continue;
           }
-          if (!toolUseNames.includes(toolName)) {
+          if (!seenToolUseNames.has(toolName)) {
+            seenToolUseNames.add(toolName);
             toolUseNames.push(toolName);
           }
           if (isRepoInspectionToolUse(part)) {

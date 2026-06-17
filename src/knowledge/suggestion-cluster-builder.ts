@@ -119,9 +119,7 @@ function buildCentroidsFromRows(
     return { centroids: [], memberCount: 0, skippedClusters: 0 };
   }
 
-  // Convert to number[][] for HDBSCAN (works in reduced or full-dim space)
-  const data: number[][] = rows.map((r) => Array.from(r.embedding));
-
+  const data = rows.map((r) => r.embedding);
   const result = hdbscan(data, { minClusterSize });
 
   logger.info(

@@ -56,4 +56,23 @@ describe("createGitHubApp", () => {
 
     expect(octokit.request.endpoint.DEFAULTS.request?.timeout).toBe(1_234);
   });
+
+  test("reuses installation clients for the same installation and timeout", async () => {
+    const app = createGitHubApp(config, logger);
+
+    const first = await app.getInstallationOctokit(99);
+    const second = await app.getInstallationOctokit(99);
+
+    expect(second).toBe(first);
+  });
+
+  test("keeps installation client cache entries separate by timeout", async () => {
+    const app = createGitHubApp(config, logger);
+
+    const defaultTimeout = await app.getInstallationOctokit(99);
+    const customTimeout = await app.getInstallationOctokit(99, { requestTimeoutMs: 1_234 });
+
+    expect(customTimeout).not.toBe(defaultTimeout);
+    expect(customTimeout.request.endpoint.DEFAULTS.request?.timeout).toBe(1_234);
+  });
 });

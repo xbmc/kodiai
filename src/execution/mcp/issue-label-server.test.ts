@@ -1,30 +1,35 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { createIssueLabelServer } from "./issue-label-server.ts";
-
-// Helper to extract tool result from MCP server
-function getTools(server: ReturnType<typeof createIssueLabelServer>) {
-  // The server is a McpServerConfig which has a transport/tools structure
-  // For testing, we invoke the tool handler directly
-  return server;
-}
+import { getToolHandler } from "./test-helpers.ts";
 
 // Mock Octokit factory
 function createMockOctokit(overrides: {
   listLabelsForRepo?: () => Promise<any>;
+  getLabel?: (params: { name: string }) => Promise<any>;
   addLabels?: () => Promise<any>;
   getIssue?: () => Promise<any>;
 } = {}) {
+  const repoLabels = [
+    { name: "bug" },
+    { name: "enhancement" },
+    { name: "priority:high" },
+    { name: "Documentation" },
+  ];
   return {
     rest: {
       issues: {
         listLabelsForRepo: overrides.listLabelsForRepo ?? (async () => ({
-          data: [
-            { name: "bug" },
-            { name: "enhancement" },
-            { name: "priority:high" },
-            { name: "Documentation" },
-          ],
+          data: repoLabels,
         })),
+        getLabel: overrides.getLabel ?? (async ({ name }: { name: string }) => {
+          const label = repoLabels.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
+          if (!label) {
+            const err = new Error("Not Found") as any;
+            err.status = 404;
+            throw err;
+          }
+          return { data: label };
+        }),
         addLabels: overrides.addLabels ?? (async () => ({
           data: [{ name: "bug" }, { name: "priority:high" }],
         })),
@@ -55,9 +60,11 @@ describe("createIssueLabelServer", () => {
       const addLabelsMock = mock(async () => ({
         data: [{ name: "bug" }, { name: "priority:high" }],
       }));
+      const listLabelsMock = mock(async () => ({ data: [] }));
 
       const mockOctokit = createMockOctokit({
         addLabels: addLabelsMock,
+        listLabelsForRepo: listLabelsMock,
       });
 
       const { addLabelsHandler } = await import("./issue-label-server.ts");
@@ -66,7 +73,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["bug", "priority:high"] },
+        issueNumber: 42,
+        params: { labels: ["bug", "priority:high"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -77,6 +85,33 @@ describe("createIssueLabelServer", () => {
       expect(parsed.repo).toBe("testowner/testrepo");
       expect(parsed.timestamp).toBeDefined();
       expect(addLabelsMock).toHaveBeenCalled();
+      expect(listLabelsMock).not.toHaveBeenCalled();
+    });
+
+    it("uses the bound triggering issue without model-supplied issue number", async () => {
+      const addLabelsMock = mock(async () => ({
+        data: [{ name: "bug" }],
+      }));
+      const mockOctokit = createMockOctokit({
+        addLabels: addLabelsMock,
+      });
+      const server = createIssueLabelServer({
+        getOctokit: async () => mockOctokit,
+        owner: "testowner",
+        repo: "testrepo",
+        getTriageConfig: defaultTriageConfig,
+        issueNumber: 42,
+      });
+      const addLabels = getToolHandler(server, "add_labels");
+
+      const result = await addLabels({ labels: ["bug"] });
+
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.success).toBe(true);
+      expect(addLabelsMock).toHaveBeenCalledWith(expect.objectContaining({
+        issue_number: 42,
+        labels: ["bug"],
+      }));
     });
 
     it("should match labels case-insensitively", async () => {
@@ -94,7 +129,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["BUG"] },
+        issueNumber: 42,
+        params: { labels: ["BUG"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -117,7 +153,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["bug", "nonexistent"] },
+        issueNumber: 42,
+        params: { labels: ["bug", "nonexistent"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -138,7 +175,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["fake1", "fake2"] },
+        issueNumber: 42,
+        params: { labels: ["fake1", "fake2"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -161,7 +199,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["bug"] },
+        issueNumber: 42,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -184,7 +223,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 999, labels: ["bug"] },
+        issueNumber: 999,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -207,7 +247,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["bug"] },
+        issueNumber: 42,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -236,7 +277,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["bug"] },
+        issueNumber: 42,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -274,7 +316,8 @@ describe("createIssueLabelServer", () => {
           owner: "testowner",
           repo: "testrepo",
           getTriageConfig: defaultTriageConfig,
-          params: { issue_number: 42, labels: ["bug"] },
+          issueNumber: 42,
+          params: { labels: ["bug"] },
         });
 
         const parsed = JSON.parse(result.content[0]!.text);
@@ -295,7 +338,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: () => ({ enabled: true, label: { enabled: false } }),
-        params: { issue_number: 42, labels: ["bug"] },
+        issueNumber: 42,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -312,7 +356,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: () => ({ enabled: false, label: { enabled: true } }),
-        params: { issue_number: 42, labels: ["bug"] },
+        issueNumber: 42,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -329,7 +374,8 @@ describe("createIssueLabelServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
-        params: { issue_number: 42, labels: ["bug"] },
+        issueNumber: 42,
+        params: { labels: ["bug"] },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);

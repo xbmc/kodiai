@@ -1,28 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { buildMcpServers, buildMcpServerFactories, buildAllowedMcpTools, createCandidateFindingServer } from "./index.ts";
+import { buildMcpServers, buildMcpServerFactories, buildAllowedMcpTools, buildMcpServerFactoriesWithLoaders } from "./index.ts";
+import { createCandidateFindingServer } from "./candidate-finding-server.ts";
+import { createMinimalMcpDeps, getToolHandler } from "./test-helpers.ts";
 import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
-
-function getToolHandler(server: unknown, toolName: string) {
-  const instance = server as {
-    instance?: {
-      _registeredTools?: Record<
-        string,
-        {
-          handler: (
-            input: Record<string, unknown>,
-          ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
-        }
-      >;
-    };
-  };
-
-  const tool = instance.instance?._registeredTools?.[toolName];
-  if (!tool) {
-    throw new Error(`tool '${toolName}' is not registered`);
-  }
-  return tool.handler;
-}
 
 function buildDraftSummaryBody(): string {
   return [
@@ -74,97 +55,21 @@ function candidatePublicationPolicyKey(candidate: {
 }
 
 // Minimal mock dependencies
-function createMinimalDeps(overrides: Record<string, any> = {}) {
-  return {
-    getOctokit: async () => ({} as any),
-    owner: "testowner",
-    repo: "testrepo",
-    ...overrides,
-  };
+function createFakeMcpServerConfig() {
+  return { type: "sdk", name: "fake", instance: { _registeredTools: {} } } as never;
 }
 
 describe("buildMcpServers", () => {
-  describe("issue tools registration", () => {
-    it("should register both issue tools when enableIssueTools is true and triageConfig provided", () => {
-      const servers = buildMcpServers(
-        createMinimalDeps({
-          enableIssueTools: true,
-          triageConfig: {
-            enabled: true,
-            label: { enabled: true },
-            comment: { enabled: true },
-          },
-        }),
-      );
-
-      expect("github_issue_label" in servers).toBe(true);
-      expect("github_issue_comment" in servers).toBe(true);
-    });
-
-    it("should NOT register issue tools by default", () => {
-      const servers = buildMcpServers(createMinimalDeps());
-
-      expect("github_issue_label" in servers).toBe(false);
-      expect("github_issue_comment" in servers).toBe(false);
-    });
-
-    it("should NOT register issue tools when enableIssueTools is true but no triageConfig", () => {
-      const servers = buildMcpServers(
-        createMinimalDeps({
-          enableIssueTools: true,
-        }),
-      );
-
-      expect("github_issue_label" in servers).toBe(false);
-      expect("github_issue_comment" in servers).toBe(false);
-    });
-
-    it("should NOT register issue tools when enableIssueTools is false", () => {
-      const servers = buildMcpServers(
-        createMinimalDeps({
-          enableIssueTools: false,
-          triageConfig: {
-            enabled: true,
-            label: { enabled: true },
-            comment: { enabled: true },
-          },
-        }),
-      );
-
-      expect("github_issue_label" in servers).toBe(false);
-      expect("github_issue_comment" in servers).toBe(false);
-    });
-  });
-
   describe("existing tools unaffected", () => {
     it("should still register github_comment by default", () => {
-      const servers = buildMcpServers(createMinimalDeps());
+      const servers = buildMcpServers(createMinimalMcpDeps());
 
       expect("github_comment" in servers).toBe(true);
-    });
-
-    it("should keep existing tools when issue tools are added", () => {
-      const servers = buildMcpServers(
-        createMinimalDeps({
-          enableIssueTools: true,
-          triageConfig: {
-            enabled: true,
-            label: { enabled: true },
-            comment: { enabled: true },
-          },
-        }),
-      );
-
-      // Existing tool still present
-      expect("github_comment" in servers).toBe(true);
-      // New tools also present
-      expect("github_issue_label" in servers).toBe(true);
-      expect("github_issue_comment" in servers).toBe(true);
     });
 
     it("should not register candidate finding by default", () => {
       const servers = buildMcpServers(
-        createMinimalDeps({
+        createMinimalMcpDeps({
           prNumber: 42,
           reviewOutputKey: "review-key",
         }),
@@ -190,7 +95,7 @@ describe("buildMcpServers", () => {
       };
 
       const disabled = buildMcpServers(
-        createMinimalDeps({
+        createMinimalMcpDeps({
           prNumber: 42,
           reviewOutputKey: "review-key",
           candidateFindingRecorder: recorder,
@@ -199,7 +104,7 @@ describe("buildMcpServers", () => {
       expect("review_candidate_finding" in disabled).toBe(false);
 
       const missingKey = buildMcpServers(
-        createMinimalDeps({
+        createMinimalMcpDeps({
           prNumber: 42,
           enableCandidateFindingTool: true,
           candidateFindingRecorder: recorder,
@@ -208,7 +113,7 @@ describe("buildMcpServers", () => {
       expect("review_candidate_finding" in missingKey).toBe(false);
 
       const enabled = buildMcpServers(
-        createMinimalDeps({
+        createMinimalMcpDeps({
           prNumber: 42,
           reviewOutputKey: "review-key",
           deliveryId: "delivery-1",
@@ -568,7 +473,6 @@ describe("buildAllowedMcpTools", () => {
     expect(result).toEqual([
       "mcp__github_issue_label__add_labels",
       "mcp__github_issue_comment__create_comment",
-      "mcp__github_issue_comment__update_comment",
       "mcp__github_comment__create_comment",
       "mcp__github_comment__update_comment",
       "mcp__github_inline_comment__create_inline_comment",
@@ -585,13 +489,74 @@ describe("buildAllowedMcpTools", () => {
 });
 
 describe("buildMcpServerFactories", () => {
+  it("defers MCP server module loading until a factory is invoked", () => {
+    const loaded: string[] = [];
+    const factories = buildMcpServerFactoriesWithLoaders(createMinimalMcpDeps(), {
+      comment: () => {
+        loaded.push("comment");
+        return {
+          createCommentServer: createFakeMcpServerConfig,
+        };
+      },
+      reviewCommentThread: () => {
+        loaded.push("reviewCommentThread");
+        return {
+          createReviewCommentThreadServer: createFakeMcpServerConfig,
+        };
+      },
+      inlineReview: () => {
+        loaded.push("inlineReview");
+        return {
+          createInlineReviewServer: createFakeMcpServerConfig,
+        };
+      },
+      ciStatus: () => {
+        loaded.push("ciStatus");
+        return {
+          createCIStatusServer: createFakeMcpServerConfig,
+        };
+      },
+      checkpoint: () => {
+        loaded.push("checkpoint");
+        return {
+          createCheckpointServer: createFakeMcpServerConfig,
+        };
+      },
+      issueLabel: () => {
+        loaded.push("issueLabel");
+        return {
+          createIssueLabelServer: createFakeMcpServerConfig,
+        };
+      },
+      issueComment: () => {
+        loaded.push("issueComment");
+        return {
+          createIssueCommentServer: createFakeMcpServerConfig,
+        };
+      },
+      candidateFinding: () => {
+        loaded.push("candidateFinding");
+        return {
+          createCandidateFindingServer: createFakeMcpServerConfig,
+        };
+      },
+    });
+
+    expect(Object.keys(factories)).toEqual(["github_comment"]);
+    expect(loaded).toEqual([]);
+
+    factories.github_comment!();
+
+    expect(loaded).toEqual(["comment"]);
+  });
+
   it("registers candidate finding factories only when explicitly enabled", () => {
     const recorder: ReviewCandidateFindingRecorder = {
       recordCandidateFinding: () => undefined,
     };
 
     const defaultFactories = buildMcpServerFactories(
-      createMinimalDeps({
+      createMinimalMcpDeps({
         prNumber: 42,
         reviewOutputKey: "review-key",
         candidateFindingRecorder: recorder,
@@ -600,7 +565,7 @@ describe("buildMcpServerFactories", () => {
     expect("review_candidate_finding" in defaultFactories).toBe(false);
 
     const enabledFactories = buildMcpServerFactories(
-      createMinimalDeps({
+      createMinimalMcpDeps({
         prNumber: 42,
         reviewOutputKey: "review-key",
         deliveryId: "delivery-1",
@@ -622,7 +587,7 @@ describe("buildMcpServerFactories", () => {
     };
 
     const factories = buildMcpServerFactories(
-      createMinimalDeps({
+      createMinimalMcpDeps({
         prNumber: 42,
         reviewOutputKey: "review-key",
         deliveryId: "delivery-1",

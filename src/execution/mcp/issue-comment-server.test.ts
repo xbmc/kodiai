@@ -1,21 +1,15 @@
 import { describe, it, expect, mock } from "bun:test";
+import { getToolHandler, hasRegisteredTool } from "./test-helpers.ts";
 
 // Mock Octokit factory
 function createMockOctokit(overrides: {
   createComment?: (...args: any[]) => Promise<any>;
-  updateComment?: (...args: any[]) => Promise<any>;
   getIssue?: (...args: any[]) => Promise<any>;
 } = {}) {
   return {
     rest: {
       issues: {
         createComment: overrides.createComment ?? (async () => ({
-          data: {
-            id: 12345,
-            html_url: "https://github.com/testowner/testrepo/issues/42#issuecomment-12345",
-          },
-        })),
-        updateComment: overrides.updateComment ?? (async () => ({
           data: {
             id: 12345,
             html_url: "https://github.com/testowner/testrepo/issues/42#issuecomment-12345",
@@ -34,6 +28,21 @@ function defaultTriageConfig() {
 }
 
 describe("createIssueCommentServer", () => {
+  it("does not expose arbitrary comment updates on the issue-bound server", async () => {
+    const { createIssueCommentServer } = await import("./issue-comment-server.ts");
+    const server = createIssueCommentServer({
+      getOctokit: async () => createMockOctokit(),
+      owner: "testowner",
+      repo: "testrepo",
+      getTriageConfig: defaultTriageConfig,
+      botHandles: [],
+      issueNumber: 42,
+    });
+
+    expect(hasRegisteredTool(server, "create_comment")).toBe(true);
+    expect(hasRegisteredTool(server, "update_comment")).toBe(false);
+  });
+
   describe("create_comment tool", () => {
     it("should create a comment with raw markdown", async () => {
       const createCommentMock = mock(async () => ({
@@ -52,7 +61,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: "## Missing Fields\nPlease fill in..." },
+        issueNumber: 42,
+        params: { body: "## Missing Fields\nPlease fill in..." },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -60,6 +70,36 @@ describe("createIssueCommentServer", () => {
       expect(parsed.comment_id).toBe(12345);
       expect(parsed.comment_url).toBe("https://github.com/testowner/testrepo/issues/42#issuecomment-12345");
       expect(createCommentMock).toHaveBeenCalled();
+    });
+
+    it("uses the bound triggering issue without model-supplied issue number", async () => {
+      const createCommentMock = mock(async () => ({
+        data: {
+          id: 12345,
+          html_url: "https://github.com/testowner/testrepo/issues/42#issuecomment-12345",
+        },
+      }));
+      const mockOctokit = createMockOctokit({ createComment: createCommentMock });
+
+      const { createIssueCommentServer } = await import("./issue-comment-server.ts");
+      const server = createIssueCommentServer({
+        getOctokit: async () => mockOctokit,
+        owner: "testowner",
+        repo: "testrepo",
+        getTriageConfig: defaultTriageConfig,
+        botHandles: [],
+        issueNumber: 42,
+      });
+      const createComment = getToolHandler(server, "create_comment");
+
+      const result = await createComment({ body: "Bound issue comment" });
+
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.success).toBe(true);
+      expect(createCommentMock).toHaveBeenCalledWith(expect.objectContaining({
+        issue_number: 42,
+        body: "Bound issue comment",
+      }));
     });
 
     it("should create a comment from structured input", async () => {
@@ -79,8 +119,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
+        issueNumber: 42,
         params: {
-          issue_number: 42,
           structured: {
             title: "Missing Fields",
             body: "Please fill in the required sections.",
@@ -116,7 +156,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: "Test comment" },
+        issueNumber: 42,
+        params: { body: "Test comment" },
       });
 
       const callArgs = createCommentMock.mock.calls[0]![0];
@@ -142,7 +183,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: longBody },
+        issueNumber: 42,
+        params: { body: longBody },
       });
 
       const callArgs = createCommentMock.mock.calls[0]![0];
@@ -165,7 +207,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: "Test" },
+        issueNumber: 42,
+        params: { body: "Test" },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -189,7 +232,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 999, body: "Test" },
+        issueNumber: 999,
+        params: { body: "Test" },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -213,7 +257,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: "Test" },
+        issueNumber: 42,
+        params: { body: "Test" },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -245,7 +290,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: "Test" },
+        issueNumber: 42,
+        params: { body: "Test" },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -286,7 +332,8 @@ describe("createIssueCommentServer", () => {
           repo: "testrepo",
           getTriageConfig: defaultTriageConfig,
           botHandles: [],
-          params: { issue_number: 42, body: "Test" },
+          issueNumber: 42,
+          params: { body: "Test" },
         });
 
         const parsed = JSON.parse(result.content[0]!.text);
@@ -308,7 +355,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: () => ({ enabled: true, comment: { enabled: false } }),
         botHandles: [],
-        params: { issue_number: 42, body: "Test" },
+        issueNumber: 42,
+        params: { body: "Test" },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -326,7 +374,8 @@ describe("createIssueCommentServer", () => {
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
         botHandles: [],
-        params: { issue_number: 42, body: "Test" },
+        issueNumber: 42,
+        params: { body: "Test" },
       });
 
       const parsed = JSON.parse(result.content[0]!.text);
@@ -335,83 +384,6 @@ describe("createIssueCommentServer", () => {
       expect(parsed.comment_id).toBeDefined();
       expect(parsed.comment_url).toBeDefined();
       expect(parsed.timestamp).toBeDefined();
-    });
-  });
-
-  describe("update_comment tool", () => {
-    it("should update an existing comment by ID", async () => {
-      const updateCommentMock = mock(async () => ({
-        data: {
-          id: 12345,
-          html_url: "https://github.com/testowner/testrepo/issues/42#issuecomment-12345",
-        },
-      }));
-
-      const mockOctokit = createMockOctokit({ updateComment: updateCommentMock });
-
-      const { updateCommentHandler } = await import("./issue-comment-server.ts");
-      const result = await updateCommentHandler({
-        getOctokit: async () => mockOctokit,
-        owner: "testowner",
-        repo: "testrepo",
-        getTriageConfig: defaultTriageConfig,
-        botHandles: [],
-        params: { comment_id: 12345, body: "Updated comment" },
-      });
-
-      const parsed = JSON.parse(result.content[0]!.text);
-      expect(parsed.success).toBe(true);
-      expect(parsed.comment_id).toBe(12345);
-      expect(updateCommentMock).toHaveBeenCalled();
-    });
-
-    it("should return COMMENT_NOT_FOUND for 404 errors", async () => {
-      const mockOctokit = createMockOctokit({
-        updateComment: async () => {
-          const err = new Error("Not Found") as any;
-          err.status = 404;
-          throw err;
-        },
-      });
-
-      const { updateCommentHandler } = await import("./issue-comment-server.ts");
-      const result = await updateCommentHandler({
-        getOctokit: async () => mockOctokit,
-        owner: "testowner",
-        repo: "testrepo",
-        getTriageConfig: defaultTriageConfig,
-        botHandles: [],
-        params: { comment_id: 99999, body: "Updated comment" },
-      });
-
-      const parsed = JSON.parse(result.content[0]!.text);
-      expect(parsed.success).toBe(false);
-      expect(parsed.error_code).toBe("COMMENT_NOT_FOUND");
-    });
-
-    it("should truncate body on update when exceeding max length", async () => {
-      const updateCommentMock = mock(async (_params: any) => ({
-        data: { id: 12345, html_url: "https://github.com/test/test/issues/1#issuecomment-12345" },
-      }));
-
-      const mockOctokit = createMockOctokit({ updateComment: updateCommentMock });
-
-      const longBody = "y".repeat(61000);
-
-      const { updateCommentHandler } = await import("./issue-comment-server.ts");
-      await updateCommentHandler({
-        getOctokit: async () => mockOctokit,
-        owner: "testowner",
-        repo: "testrepo",
-        getTriageConfig: defaultTriageConfig,
-        botHandles: [],
-        params: { comment_id: 12345, body: longBody },
-      });
-
-      const callArgs = updateCommentMock.mock.calls[0]![0];
-      const body: string = callArgs.body;
-      expect(body.length).toBeLessThanOrEqual(60100);
-      expect(body).toContain("Comment truncated due to length.");
     });
   });
 });
@@ -433,35 +405,13 @@ describe("outgoing secret scan", () => {
       repo: "testrepo",
       getTriageConfig: defaultTriageConfig,
       botHandles: [],
-      params: { issue_number: 42, body },
+      issueNumber: 42,
+      params: { body },
     });
 
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0]!.text);
     expect(parsed.error_code).toBe("SECRET_SCAN_BLOCKED");
     expect(createCommentMock).not.toHaveBeenCalled();
-  });
-
-  it("updateCommentHandler blocks body containing github PAT", async () => {
-    const updateCommentMock = mock(async () => ({
-      data: { id: 12345, html_url: "https://github.com/test/test/issues/1#issuecomment-12345" },
-    }));
-    const mockOctokit = createMockOctokit({ updateComment: updateCommentMock });
-
-    const { updateCommentHandler } = await import("./issue-comment-server.ts");
-    const body = "ghp_" + "A".repeat(36);
-    const result = await updateCommentHandler({
-      getOctokit: async () => mockOctokit,
-      owner: "testowner",
-      repo: "testrepo",
-      getTriageConfig: defaultTriageConfig,
-      botHandles: [],
-      params: { comment_id: 42, body },
-    });
-
-    expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0]!.text);
-    expect(parsed.error_code).toBe("SECRET_SCAN_BLOCKED");
-    expect(updateCommentMock).not.toHaveBeenCalled();
   });
 });

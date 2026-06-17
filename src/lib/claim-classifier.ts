@@ -46,9 +46,11 @@ export type DiffContext = {
 };
 
 const diffTextLowerCache = new WeakMap<DiffContext, string>();
+const diffTextCache = new WeakMap<DiffContext, string>();
+const addedRemovedDiffTextCache = new WeakMap<DiffContext, string>();
 
-function getDiffTextLower(diff: DiffContext): string {
-  const cached = diffTextLowerCache.get(diff);
+function getDiffText(diff: DiffContext): string {
+  const cached = diffTextCache.get(diff);
   if (cached !== undefined) {
     return cached;
   }
@@ -56,8 +58,28 @@ function getDiffTextLower(diff: DiffContext): string {
     ...diff.addedLines,
     ...diff.removedLines,
     ...diff.contextLines,
-  ].join("\n").toLowerCase();
+  ].join("\n");
+  diffTextCache.set(diff, text);
+  return text;
+}
+
+function getDiffTextLower(diff: DiffContext): string {
+  const cached = diffTextLowerCache.get(diff);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const text = getDiffText(diff).toLowerCase();
   diffTextLowerCache.set(diff, text);
+  return text;
+}
+
+function getAddedRemovedDiffText(diff: DiffContext): string {
+  const cached = addedRemovedDiffTextCache.get(diff);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const text = [...diff.addedLines, ...diff.removedLines].join("\n");
+  addedRemovedDiffTextCache.set(diff, text);
   return text;
 }
 
@@ -135,12 +157,7 @@ export function extractClaims(text: string): string[] {
  */
 function versionInDiff(version: string, diff: DiffContext | undefined): boolean {
   if (!diff) return false;
-  const allDiffText = [
-    ...diff.addedLines,
-    ...diff.removedLines,
-    ...diff.contextLines,
-  ].join("\n");
-  return allDiffText.includes(version);
+  return getDiffText(diff).includes(version);
 }
 
 /**
@@ -168,16 +185,15 @@ function claimReferencesVisibleChange(
   }
 
   // Check if claim substantially matches PR description
+  const claimWords = significantWords(claim);
   if (prDescription) {
     // Check for significant word overlap
-    const claimWords = significantWords(claim);
     const matchCount = countWordsInTextBySubstring(claimWords, prDescription);
     if (claimWords.length > 0 && matchCount / claimWords.length >= 0.5) return true;
   }
 
   // Check if claim matches commit messages
   for (const msg of commitMessages) {
-    const claimWords = significantWords(claim);
     const matchCount = countWordsInTextBySubstring(claimWords, msg);
     if (claimWords.length > 0 && matchCount / claimWords.length >= 0.5) return true;
   }
@@ -262,7 +278,7 @@ export function classifyClaimHeuristic(
   if (PERFORMANCE_PATTERN.test(claim)) {
     // Check if there's code evidence in the diff (e.g., nested loops)
     if (diffContext) {
-      const allDiffText = [...diffContext.addedLines, ...diffContext.removedLines].join("\n");
+      const allDiffText = getAddedRemovedDiffText(diffContext);
       const hasNestedLoops =
         /for\s*\(.*\{[\s\S]*for\s*\(/m.test(allDiffText) ||
         /\.forEach\([\s\S]*\.forEach\(/m.test(allDiffText);
@@ -297,11 +313,7 @@ export function classifyClaimHeuristic(
   if (INFERENTIAL_PATTERN.test(claim)) {
     // Inferential requires that the PREMISE is visible in diff
     if (diffContext) {
-      const allDiffText = [
-        ...diffContext.addedLines,
-        ...diffContext.removedLines,
-        ...diffContext.contextLines,
-      ].join("\n").toLowerCase();
+      const allDiffText = getDiffTextLower(diffContext);
 
       // Extract key content words
       const contentWords = claim

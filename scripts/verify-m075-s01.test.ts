@@ -71,6 +71,7 @@ describe("verify-m075-s01", () => {
     expect(report.failedCheckIds).toEqual([]);
     expect(Object.keys(report.observed.classCounts)).toEqual([
       "knowledge-store.undefined-write",
+      "jsonb-batch.recordset-non-array",
       "inline-publication.line-not-commentable",
       "candidate-publication.non-approved-missing-reason",
       "review-timeout-classification.expected-bounded-outcome",
@@ -115,7 +116,7 @@ describe("verify-m075-s01", () => {
     expect(report.success).toBe(false);
     expect(report.failedCheckIds).toEqual(expect.arrayContaining(["classes.required", "output.bounded"]));
     expect(report.issues.join("\n")).toContain("last12h missing review-timeout-classification.expected-bounded-outcome");
-    expect(report.issues.join("\n")).toContain("last7d class count expected 12 got 6");
+    expect(report.issues.join("\n")).toContain("last7d class count expected 13 got 6");
   });
 
   test("fails when last7d window is missing", async () => {
@@ -193,6 +194,34 @@ describe("verify-m075-s01", () => {
     expect(report.observed.malformedRows).toBe(2);
     expect(report.observed.queryMetadata.windows.last12h.query).toContain("take 200");
     expect(JSON.stringify(report.baseline)).not.toContain("Log_s");
+  });
+
+  test("live mode fails when JSONB batch persistence regressions appear in production logs", async () => {
+    const report = await evaluateM075S01Contract(parseM075S01Args(["--live"]), {
+      generatedAt: "2026-06-17T00:00:00.000Z",
+      readPackageJsonText: async () => packageJson(),
+      liveCollectors: {
+        discoverWorkspaces: async () => ["workspace-1"],
+        queryLogs: async ({ timespan, limit }) => ({
+          query: `ContainerAppConsoleLogs_CL | project TimeGenerated, Log_s | take ${limit}`,
+          rows: [
+            row({
+              msg: "Feedback sync reaction persistence failed; continuing",
+              parsedLog: {
+                msg: "Feedback sync reaction persistence failed; continuing",
+                err: { message: "cannot call jsonb_to_recordset on a non-array" },
+              },
+            }),
+            row({ msg: `healthy ${timespan}` }),
+          ],
+        }),
+      },
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.failedCheckIds).toContain("app-regression.absent");
+    expect(report.observed.classCounts["jsonb-batch.recordset-non-array"].last12h).toBe(1);
+    expect(report.issues.join("\n")).toContain("jsonb-batch.recordset-non-array");
   });
 
   test("package wiring check fails when script is missing or drifted", async () => {

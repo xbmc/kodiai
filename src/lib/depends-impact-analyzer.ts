@@ -11,6 +11,7 @@
  */
 
 import type { Octokit } from "@octokit/rest";
+import { runCommandWithCappedOutput } from "./capped-process.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
 import { withTimeBudget } from "./usage-analyzer.ts";
 
@@ -68,7 +69,21 @@ type GrepRunner = (params: {
   workspaceDir: string;
   pattern: string;
   pathspec?: string;
-}) => Promise<{ exitCode: number; stdout?: { toString(): string } | string | null }>;
+}) => Promise<{ exitCode: number; timedOut?: boolean; stdout?: { toString(): string } | string | null }>;
+
+type RepoContentEntry = {
+  name?: unknown;
+  path?: unknown;
+  content?: unknown;
+  encoding?: unknown;
+};
+
+function isFindModuleEntry(entry: RepoContentEntry): entry is { name: string; path: string } {
+  return typeof entry.name === "string" &&
+    typeof entry.path === "string" &&
+    entry.name.startsWith("Find") &&
+    entry.name.endsWith(".cmake");
+}
 
 /**
  * Find files in the workspace that consume a given library via #include
@@ -110,18 +125,23 @@ export async function findDependencyConsumers(params: {
     const runIncludeGrep: GrepRunner =
       __runGrepForTests ??
       (async (p) => {
-        const { $ } = await import("bun");
-        return await $`git -C ${p.workspaceDir} grep -rn --max-count=100 -E ${p.pattern}`
-          .quiet()
-          .nothrow();
+        return await runCommandWithCappedOutput({
+          command: "git",
+          args: ["grep", "-rn", "--max-count=100", "-E", p.pattern],
+          cwd: p.workspaceDir,
+          timeoutMs: timeBudgetMs,
+          maxStdoutBytes: 256 * 1024,
+          maxStderrBytes: 64 * 1024,
+          env: { GIT_TERMINAL_PROMPT: "0" },
+        });
       });
 
-    const includeResult = await withTimeBudget(
-      runIncludeGrep({ workspaceDir, pattern: includePattern }),
-      timeBudgetMs,
-    );
+    const includePromise = runIncludeGrep({ workspaceDir, pattern: includePattern });
+    const includeResult = __runGrepForTests
+      ? await withTimeBudget(includePromise, timeBudgetMs)
+      : await includePromise;
 
-    if (includeResult === null) {
+    if (includeResult === null || includeResult.timedOut) {
       timeLimitReached = true;
     } else if (includeResult.exitCode === 0 && includeResult.stdout) {
       const stdoutText =
@@ -151,18 +171,24 @@ export async function findDependencyConsumers(params: {
       const runCmakeGrep: GrepRunner =
         __runCmakeGrepForTests ??
         (async (p) => {
-          const { $ } = await import("bun");
-          return await $`git -C ${p.workspaceDir} grep -rn --max-count=100 -E ${p.pattern} -- '*/CMakeLists.txt'`
-            .quiet()
-            .nothrow();
+          return await runCommandWithCappedOutput({
+            command: "git",
+            args: ["grep", "-rn", "--max-count=100", "-E", p.pattern, "--", p.pathspec ?? "*/CMakeLists.txt"],
+            cwd: p.workspaceDir,
+            timeoutMs: Math.max(timeBudgetMs / 2, 1000),
+            maxStdoutBytes: 256 * 1024,
+            maxStderrBytes: 64 * 1024,
+            env: { GIT_TERMINAL_PROMPT: "0" },
+          });
         });
 
-      const cmakeResult = await withTimeBudget(
-        runCmakeGrep({ workspaceDir, pattern: cmakePattern, pathspec: "CMakeLists.txt" }),
-        Math.max(timeBudgetMs / 2, 1000),
-      );
+      const cmakeBudgetMs = Math.max(timeBudgetMs / 2, 1000);
+      const cmakePromise = runCmakeGrep({ workspaceDir, pattern: cmakePattern, pathspec: "*/CMakeLists.txt" });
+      const cmakeResult = __runCmakeGrepForTests
+        ? await withTimeBudget(cmakePromise, cmakeBudgetMs)
+        : await cmakePromise;
 
-      if (cmakeResult === null) {
+      if (cmakeResult === null || cmakeResult.timedOut) {
         timeLimitReached = true;
       } else if (cmakeResult.exitCode === 0 && cmakeResult.stdout) {
         const stdoutText =
@@ -281,8 +307,8 @@ export async function checkTransitiveDependencies(params: {
 
       if (Array.isArray(dirResponse.data)) {
         moduleFiles = dirResponse.data
-          .filter((f: any) => f.name.startsWith("Find") && f.name.endsWith(".cmake"))
-          .map((f: any) => ({ name: f.name, path: f.path }));
+          .filter(isFindModuleEntry)
+          .map((f) => ({ name: f.name, path: f.path }));
       }
     } catch {
       // cmake/modules directory may not exist -- fail open
@@ -303,10 +329,11 @@ export async function checkTransitiveDependencies(params: {
             path: file.path,
           });
 
-          const fileData = fileResponse.data as any;
-          if (!fileData.content) return null;
+          const fileData = fileResponse.data as RepoContentEntry;
+          if (typeof fileData.content !== "string") return null;
 
-          const content = Buffer.from(fileData.content, fileData.encoding ?? "base64").toString(
+          const encoding: BufferEncoding = fileData.encoding === "utf-8" ? "utf-8" : "base64";
+          const content = Buffer.from(fileData.content, encoding).toString(
             "utf-8",
           );
           const moduleName = file.name.replace(".cmake", "");
@@ -319,6 +346,11 @@ export async function checkTransitiveDependencies(params: {
       },
     );
     const modules = fetchedModules.filter((module): module is CmakeDependency => module !== null);
+    const moduleByName = new Map(
+      modules.map((module) => [module.moduleName.toLowerCase(), module] as const),
+    );
+    const ourModule = moduleByName.get(`find${libLower}`);
+    const ourModuleDependencies = new Set(ourModule?.dependsOn ?? []);
 
     // --- Find dependents: modules that list the bumped library in their deps ---
     for (const mod of modules) {
@@ -334,12 +366,7 @@ export async function checkTransitiveDependencies(params: {
       // Extract the library name from the Find module name (e.g., FindHarfBuzz -> harfbuzz)
       const depLibName = dependent.replace(/^Find/, "").toLowerCase();
 
-      // Find if our library's cmake module depends on this dependent
-      const ourModule = modules.find(
-        (m) => m.moduleName.toLowerCase() === `find${libLower}`,
-      );
-
-      if (ourModule && ourModule.dependsOn.includes(depLibName)) {
+      if (ourModuleDependencies.has(depLibName)) {
         result.circular.push(`${libLower} <-> ${depLibName}`);
       }
     }

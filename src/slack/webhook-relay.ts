@@ -39,10 +39,14 @@ export type WebhookRelayEvaluationResult =
     };
 
 function normalizePayloadIssues(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey> }>): string[] {
-  return issues
-    .map((issue) => issue.path.join("."))
-    .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
-    .sort((a, b) => a.localeCompare(b));
+  const paths = new Set<string>();
+  for (const issue of issues) {
+    const path = issue.path.join(".");
+    if (path.length > 0) {
+      paths.add(path);
+    }
+  }
+  return [...paths].sort((a, b) => a.localeCompare(b));
 }
 
 export function evaluateWebhookRelayPayload(input: {

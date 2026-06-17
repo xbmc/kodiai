@@ -8,8 +8,8 @@ const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m056-s03.ts";
 const EXPECTED_CHECKER_COMMAND = "check:migrations-have-downs" as const;
 const EXPECTED_CI_STEP = "bun run verify:m056:s03";
 const CI_TEST_STEP_MARKERS = [
-  "bun test --max-concurrency=2 scripts",
-  "bun test --max-concurrency=2 src/knowledge",
+  "bun run test:unit",
+  "bun run test:db",
   "bunx tsc --noEmit",
 ] as const;
 

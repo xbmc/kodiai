@@ -495,4 +495,64 @@ describe("wiki repair contract for src/knowledge/wiki-embedding-repair.ts", () =
       },
     });
   });
+
+  test("runWikiEmbeddingRepair streams repair candidates by page when the store provides a paged reader", async () => {
+    const module = await loadWikiRepairModule();
+    const pages = [
+      [
+        makeRow({ id: 51, page_id: 300, page_title: "Paged A", chunk_index: 0, token_count: 100 }),
+        makeRow({ id: 52, page_id: 300, page_title: "Paged A", chunk_index: 1, token_count: 100 }),
+      ],
+      [
+        makeRow({ id: 61, page_id: 400, page_title: "Paged B", chunk_index: 0, token_count: 100 }),
+      ],
+    ];
+    const pageCalls: Array<Record<string, unknown>> = [];
+    const legacyListRepairCandidates = mock(async () => {
+      throw new Error("legacy full-corpus repair listing should not be used");
+    });
+    const store = {
+      listRepairCandidates: legacyListRepairCandidates,
+      listRepairCandidatePage: mock(async (params?: { afterPageId?: number | null }) => {
+        pageCalls.push({ ...(params ?? {}) });
+        if (params?.afterPageId === null || params?.afterPageId === undefined) return pages[0]!;
+        if (params.afterPageId === 300) return pages[1]!;
+        return [];
+      }),
+      getRepairCheckpoint: mock(async () => null),
+      saveRepairCheckpoint: mock(async () => undefined),
+      writeRepairEmbeddingsBatch: mock(async () => undefined),
+    };
+
+    const result = await module.runWikiEmbeddingRepair({
+      store,
+      limits: {
+        maxChunksPerWindow: 2,
+        maxApproxTokensPerWindow: 500,
+        minChunksPerWindow: 1,
+        maxTransientRetries: 1,
+      },
+      embedWindow: async (window) => ({
+        status: "ok",
+        embeddings: window.chunk_ids.map((chunk_id) => ({ chunk_id, embedding: makeEmbedding(chunk_id) })),
+      }),
+    });
+
+    expect(legacyListRepairCandidates).not.toHaveBeenCalled();
+    expect(pageCalls).toEqual([
+      expect.objectContaining({ afterPageId: null, targetModel: "voyage-context-3" }),
+      expect.objectContaining({ afterPageId: 300, targetModel: "voyage-context-3" }),
+      expect.objectContaining({ afterPageId: 400, targetModel: "voyage-context-3" }),
+    ]);
+    expect(result).toMatchObject({
+      success: true,
+      repaired: 3,
+      cursor: {
+        page_id: 400,
+        page_title: "Paged B",
+        window_index: 0,
+        windows_total: 1,
+      },
+    });
+  });
 });

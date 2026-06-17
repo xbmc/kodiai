@@ -98,13 +98,13 @@ async function voyageFetch<T>(opts: {
       });
 
       if (!response.ok) {
-        const text = await response.text().catch(() => "");
         clearRequestTimer();
         if (attempt < maxRetries) {
           logger.debug({ status: response.status, attempt }, "Voyage API error, retrying");
           await sleepVoyageRetryDelay(attempt);
           continue;
         }
+        const text = await response.text().catch(() => "");
         logger.warn({ status: response.status, text: text.slice(0, 200) }, "Voyage API request failed");
         return null;
       }
@@ -115,11 +115,11 @@ async function voyageFetch<T>(opts: {
     } catch (err: unknown) {
       clearRequestTimer();
       if (attempt < maxRetries) {
-        logger.debug({ attempt, err: String(err) }, "Voyage API error, retrying");
+        logger.debug({ attempt, err }, "Voyage API error, retrying");
         await sleepVoyageRetryDelay(attempt);
         continue;
       }
-      logger.warn({ err: String(err) }, "Voyage API request failed after retries");
+      logger.warn({ err }, "Voyage API request failed after retries");
       return null;
     }
   }
@@ -390,7 +390,6 @@ export async function contextualizedEmbedChunksForRepair(opts: {
 
       if (!response.ok) {
         const responseBody = await response.text().catch(() => "");
-        clearRequestTimer();
         const classified = classifyContextualizedEmbeddingFailure({ status: response.status, responseBody });
         if (classified.retryable && attempt < maxRetries) {
           logger.debug({ attempt, status: response.status, failureClass: classified.failure_class }, "Repair embedding request failed, retrying");
@@ -409,7 +408,6 @@ export async function contextualizedEmbedChunksForRepair(opts: {
       }
 
       const payload = await response.json() as VoyageContextualizedResponse;
-      clearRequestTimer();
       const docData = payload.data?.[0]?.data;
       if (!docData) {
         return {
@@ -446,10 +444,9 @@ export async function contextualizedEmbedChunksForRepair(opts: {
         retry_count: attempt,
       };
     } catch (error: unknown) {
-      clearRequestTimer();
       const classified = classifyContextualizedEmbeddingFailure({ error });
       if (classified.retryable && attempt < maxRetries) {
-        logger.debug({ attempt, failureClass: classified.failure_class, err: String(error) }, "Repair embedding request threw, retrying");
+        logger.debug({ attempt, failureClass: classified.failure_class, err: error }, "Repair embedding request threw, retrying");
         await sleepVoyageRetryDelay(attempt);
         continue;
       }
@@ -461,6 +458,8 @@ export async function contextualizedEmbedChunksForRepair(opts: {
         should_split: classified.should_split,
         retry_count: attempt,
       };
+    } finally {
+      clearRequestTimer();
     }
   }
 

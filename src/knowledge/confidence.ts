@@ -36,6 +36,9 @@ const CATEGORY_BOOST: Record<FindingCategory, number> = {
   documentation: -10,
 };
 
+const MAX_REGEX_PATTERN_LENGTH = 512;
+const NESTED_QUANTIFIER_PATTERN = /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\s*(?:[+*?]|\{\d+(?:,\d*)?\})/;
+
 export function computeConfidence(input: ConfidenceInput): number {
   let score = 50;
   score += SEVERITY_BOOST[input.severity];
@@ -47,22 +50,7 @@ export function computeConfidence(input: ConfidenceInput): number {
 }
 
 export function matchPattern(pattern: string, text: string): boolean {
-  if (pattern.startsWith("glob:")) {
-    const glob = pattern.slice("glob:".length).toLowerCase();
-    const matcher = picomatch(glob, { dot: true });
-    return matcher(text.toLowerCase());
-  }
-
-  if (pattern.startsWith("regex:")) {
-    const source = pattern.slice("regex:".length);
-    try {
-      return new RegExp(source, "i").test(text);
-    } catch {
-      return false;
-    }
-  }
-
-  return text.toLowerCase().includes(pattern.toLowerCase());
+  return createPatternMatcher(pattern)(text);
 }
 
 export function matchesSuppression(
@@ -94,4 +82,60 @@ export function matchesSuppression(
   }
 
   return true;
+}
+
+export function createSuppressionMatcher(
+  suppression: string | SuppressionPattern,
+): (finding: SuppressionFinding) => boolean {
+  const config: SuppressionPattern =
+    typeof suppression === "string" ? { pattern: suppression } : suppression;
+  const titleMatcher = createPatternMatcher(config.pattern);
+  const pathMatchers = config.paths?.map((pattern) => picomatch(pattern, { dot: true })) ?? [];
+
+  return (finding) => {
+    if (!titleMatcher(finding.title)) {
+      return false;
+    }
+
+    if (config.severity && !config.severity.includes(finding.severity)) {
+      return false;
+    }
+
+    if (config.category && !config.category.includes(finding.category)) {
+      return false;
+    }
+
+    if (pathMatchers.length > 0 && !pathMatchers.some((matcher) => matcher(finding.filePath))) {
+      return false;
+    }
+
+    return true;
+  };
+}
+
+function createPatternMatcher(pattern: string): (text: string) => boolean {
+  if (pattern.startsWith("glob:")) {
+    const glob = pattern.slice("glob:".length).toLowerCase();
+    const matcher = picomatch(glob, { dot: true });
+    return (text) => matcher(text.toLowerCase());
+  }
+
+  if (pattern.startsWith("regex:")) {
+    const source = pattern.slice("regex:".length);
+    if (
+      source.length > MAX_REGEX_PATTERN_LENGTH ||
+      NESTED_QUANTIFIER_PATTERN.test(source)
+    ) {
+      return () => false;
+    }
+    try {
+      const matcher = new RegExp(source, "i");
+      return (text) => matcher.test(text);
+    } catch {
+      return () => false;
+    }
+  }
+
+  const needle = pattern.toLowerCase();
+  return (text) => text.toLowerCase().includes(needle);
 }

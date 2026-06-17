@@ -282,12 +282,18 @@ export function scanOutgoingForSecrets(text: string): SecretScanResult {
  * Defense-in-depth alongside the bot filter in webhook processing.
  */
 export function sanitizeOutgoingMentions(body: string, handles: string[]): string {
-  let result = body;
-  for (const handle of handles) {
-    const clean = handle.startsWith("@") ? handle.slice(1) : handle;
-    if (!clean) continue;
-    const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(new RegExp(`@${escaped}\\b`, "gi"), clean);
-  }
-  return result;
+  const cleanHandles = Array.from(new Set(
+    handles
+      .map((handle) => handle.startsWith("@") ? handle.slice(1) : handle)
+      .filter((handle) => handle.length > 0),
+  ));
+  if (cleanHandles.length === 0) return body;
+
+  const handleByLower = new Map(cleanHandles.map((handle) => [handle.toLowerCase(), handle]));
+  const pattern = cleanHandles
+    .map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  return body.replace(new RegExp(`@(${pattern})\\b`, "gi"), (_match, handle: string) =>
+    handleByLower.get(handle.toLowerCase()) ?? handle
+  );
 }

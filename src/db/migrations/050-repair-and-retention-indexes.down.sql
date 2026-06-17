@@ -1,0 +1,8 @@
+DROP INDEX IF EXISTS idx_prompt_section_events_created_at;
+DROP INDEX IF EXISTS idx_resilience_events_created_at;
+DROP INDEX IF EXISTS idx_rate_limit_events_created_at;
+DROP INDEX IF EXISTS idx_issue_comments_embedding_repair_voyage4;
+DROP INDEX IF EXISTS idx_issues_embedding_repair_voyage4;
+DROP INDEX IF EXISTS idx_code_snippets_embedding_repair_voyage4;
+DROP INDEX IF EXISTS idx_review_comments_embedding_repair_voyage4;
+DROP INDEX IF EXISTS idx_learning_memories_embedding_repair_voyage4;

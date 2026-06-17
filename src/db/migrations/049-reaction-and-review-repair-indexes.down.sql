@@ -1,0 +1,5 @@
+DROP INDEX IF EXISTS idx_review_cache_events_repo_created;
+DROP INDEX IF EXISTS idx_prompt_section_events_repo_created;
+DROP INDEX IF EXISTS idx_llm_cost_events_repo_created;
+DROP INDEX IF EXISTS idx_review_comments_null_embedding_repair;
+DROP INDEX IF EXISTS idx_issue_triage_recent_comment_reactions;

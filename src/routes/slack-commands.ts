@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
@@ -31,14 +32,15 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
 
   app.post("/", async (c) => {
     const sourceKey = requestSourceKey((name) => c.req.header(name));
+    const requestLogger = logger.child({ requestId: randomUUID(), sourceKey });
     if (rateLimiters.preBody.isLimited(`slack-command:${sourceKey}`)) {
-      logger.warn({ sourceKey }, "Slash command request rate-limited before body read");
+      requestLogger.warn("Slash command request rate-limited before body read");
       return c.text("Rate limited", 429);
     }
 
     const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_COMMAND_BODY_BYTES });
     if (!bodyResult.ok) {
-      logger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slash command body too large");
+      requestLogger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slash command body too large");
       return c.text("Payload too large", 413);
     }
     const rawBody = bodyResult.body;
@@ -51,7 +53,7 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
     });
 
     if (!verification.valid) {
-      logger.warn(
+      requestLogger.warn(
         { reason: verification.reason },
         "Slash command signature verification failed",
       );
@@ -65,7 +67,7 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
     const teamId = params.get("team_id") ?? "unknown-team";
 
     if (rateLimiters.verified.isLimited(`team:${teamId}:user:${userId || "unknown-user"}`)) {
-      logger.warn({ teamId, userId }, "Slash command verified user rate-limited");
+      requestLogger.warn({ teamId, userId }, "Slash command verified user rate-limited");
       return c.text("Rate limited", 429);
     }
 
@@ -74,14 +76,14 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
       slackUserId: userId,
       slackUserName: userName,
       profileStore,
-      logger,
+      logger: requestLogger,
     });
 
     if (result.asyncWork) {
       result
         .asyncWork()
         .catch((err) =>
-          logger.warn({ err }, "Slash command async work failed"),
+          requestLogger.warn({ err }, "Slash command async work failed"),
         );
     }
 

@@ -20,7 +20,6 @@ import type { ClusterStore, ClusterRunState, ReviewCluster } from "./cluster-typ
 import { hdbscan } from "./hdbscan.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
-import { UMAP } from "umap-js";
 import {
   cosineSimilarity,
   meanEmbedding,
@@ -41,6 +40,7 @@ const INCREMENTAL_MERGE_THRESHOLD = 0.5; // cosine similarity threshold
 const LABEL_REGEN_THRESHOLD = 0.2; // 20% membership change triggers relabel
 const REPRESENTATIVE_SAMPLE_COUNT = 5;
 const RETIREMENT_MEMBER_THRESHOLD = 3;
+const MAX_UMAP_RAW_VALUES = 1_000_000;
 
 // ── Seeded Random ────────────────────────────────────────────────────
 
@@ -264,7 +264,25 @@ export async function runClusterPipeline(opts: {
     }
 
     if (poolForClustering.length >= minClusterSize) {
+      const embeddingDim = poolForClustering[0]?.embedding.length ?? 0;
+      const valueCappedRows = embeddingDim > 0
+        ? Math.max(minClusterSize, Math.floor(MAX_UMAP_RAW_VALUES / embeddingDim))
+        : maxClusteringRows;
+      if (poolForClustering.length > valueCappedRows) {
+        logger.warn(
+          {
+            repo,
+            poolSize: poolForClustering.length,
+            embeddingDim,
+            valueCappedRows,
+          },
+          "Capped clustering pool before boxed UMAP input allocation",
+        );
+        poolForClustering = poolForClustering.slice(0, valueCappedRows);
+      }
+
       // UMAP reduction
+      const { UMAP } = await import("umap-js");
       const rawData = poolForClustering.map((e) => Array.from(e.embedding));
       const nComponents = Math.min(UMAP_N_COMPONENTS, poolForClustering.length - 1);
       const nNeighbors = Math.min(UMAP_N_NEIGHBORS, poolForClustering.length - 1);
@@ -302,7 +320,7 @@ export async function runClusterPipeline(opts: {
           clusterMembers.get(label)!.push({ idx: i, prob: result.probabilities[i]! });
         }
 
-        for (const [clusterLabel, members] of clusterMembers) {
+        for (const members of clusterMembers.values()) {
           const memberEmbeddings = members.map((m) => poolForClustering[m.idx]!.embedding);
           const centroid = meanEmbedding(memberEmbeddings);
           if (!centroid) {
@@ -511,7 +529,13 @@ Return ONLY valid JSON: { "slug": "...", "description": "..." }`,
     }
 
     // Fallback: create slug from first sample
-    logger.warn({ text }, "Failed to parse LLM label response, using fallback");
+    logger.warn(
+      {
+        responseChars: text.length,
+        responsePreview: text.slice(0, 200),
+      },
+      "Failed to parse LLM label response, using fallback",
+    );
     return {
       slug: `pattern-${Date.now()}`,
       description: samples[0]?.slice(0, 100) ?? "Unnamed pattern",

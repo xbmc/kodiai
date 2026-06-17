@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../lifecycle/types.ts";
@@ -15,6 +16,7 @@ import {
   requestSourceKey,
   type RateLimitOptions,
 } from "../lib/sliding-window-rate-limiter.ts";
+import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 
 type SlackEventRateLimitWindow = "preBody" | "verified" | "channel";
 const MAX_SLACK_EVENT_BODY_BYTES = 1 * 1024 * 1024;
@@ -33,8 +35,11 @@ interface SlackEventsRouteDeps {
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const { config, logger, onAllowedBootstrap, shutdownManager, webhookQueueStore, requestTracker } = deps;
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
-  const recentAddressed = new Map<string, number>();
   const DUPLICATE_WINDOW_MS = 5000;
+  const recentAddressed = createInMemoryCache<string, true>({
+    maxSize: 1_000,
+    ttlMs: DUPLICATE_WINDOW_MS,
+  });
   const rateLimiters = createNamedRateLimiters(deps.rateLimit, {
     preBody: { max: 120, windowMs: 60_000, maxKeys: 2_000 },
     verified: { max: 60, windowMs: 60_000, maxKeys: 5_000 },
@@ -44,25 +49,17 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const app = new Hono();
 
   function isDuplicateAddressedEvent(addressed: SlackV1BootstrapPayload): boolean {
-    const now = Date.now();
     const key = `${addressed.channel}:${addressed.threadTs}:${addressed.user}:${addressed.text.trim().toLowerCase()}`;
-    const previous = recentAddressed.get(key);
-
-    recentAddressed.set(key, now);
-
-    for (const [entryKey, ts] of recentAddressed) {
-      if (now - ts > DUPLICATE_WINDOW_MS) {
-        recentAddressed.delete(entryKey);
-      }
-    }
-
-    return typeof previous === "number" && now - previous <= DUPLICATE_WINDOW_MS;
+    const duplicate = recentAddressed.has(key);
+    recentAddressed.set(key, true);
+    return duplicate;
   }
 
   app.post("/events", async (c) => {
     const sourceKey = requestSourceKey((name) => c.req.header(name));
+    const requestLogger = logger.child({ requestId: randomUUID(), sourceKey });
     if (rateLimiters.preBody.isLimited(`slack-events:${sourceKey}`)) {
-      logger.warn({ sourceKey }, "Slack event request rate-limited before body read");
+      requestLogger.warn("Slack event request rate-limited before body read");
       return c.text("Rate limited", 429);
     }
 
@@ -71,7 +68,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
 
     const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_EVENT_BODY_BYTES });
     if (!bodyResult.ok) {
-      logger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slack event body too large");
+      requestLogger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slack event body too large");
       return c.text("Payload too large", 413);
     }
     const body = bodyResult.body;
@@ -83,7 +80,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
     });
 
     if (!verification.valid) {
-      logger.warn({ reason: verification.reason }, "Rejected Slack event: verification failed");
+      requestLogger.warn({ reason: verification.reason }, "Rejected Slack event: verification failed");
       return c.text("", 401);
     }
 
@@ -91,7 +88,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
     try {
       payload = JSON.parse(body) as unknown;
     } catch {
-      logger.warn("Rejected Slack event: invalid JSON payload");
+      requestLogger.warn("Rejected Slack event: invalid JSON payload");
       return c.json({ error: "invalid_payload" }, 400);
     }
 
@@ -120,7 +117,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
     if (eventCallback) {
       const teamId = eventCallback.team_id ?? "unknown-team";
       if (rateLimiters.verified.isLimited(`team:${teamId}`)) {
-        logger.warn({ teamId }, "Slack event verified team rate-limited");
+        requestLogger.warn({ teamId }, "Slack event verified team rate-limited");
         return c.json({ ok: true });
       }
 
@@ -132,7 +129,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       });
 
       if (decision.decision === "ignore") {
-        logger.info(
+        requestLogger.info(
           {
             reason: decision.reason,
             eventType: eventCallback.event.type,
@@ -145,7 +142,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       // Per-channel rate limiting
       const channel = decision.bootstrap.channel;
       if (rateLimiters.channel.isLimited(`channel:${channel}`)) {
-        logger.warn(
+        requestLogger.warn(
           { channel },
           "Slack event rate-limited for channel",
         );
@@ -162,7 +159,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
           });
 
           if (!started) {
-            logger.info(
+            requestLogger.info(
               { ...addressed, reason: "duplicate_bootstrap" },
               "Slack bootstrap ignored as duplicate thread starter",
             );
@@ -171,7 +168,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
         }
 
         if (isDuplicateAddressedEvent(addressed)) {
-          logger.info(
+          requestLogger.info(
             { ...addressed, reason: "duplicate_addressed_event" },
             "Slack addressed event ignored as duplicate",
           );
@@ -179,9 +176,20 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
         }
 
         await onAllowedBootstrap?.(addressed);
-        logger.info({ ...addressed, reason: decision.reason }, "Slack addressed event accepted for async processing");
+        requestLogger.info({ ...addressed, reason: decision.reason }, "Slack addressed event accepted for async processing");
       }).catch((error) => {
-        logger.error({ err: error }, "Slack addressed event async processing failed");
+        requestLogger.error({ err: error }, "Slack addressed event async processing failed");
+        const headersRecord: Record<string, string> = {};
+        if (timestampHeader) headersRecord["x-slack-request-timestamp"] = timestampHeader;
+        if (signatureHeader) headersRecord["x-slack-signature"] = signatureHeader;
+        webhookQueueStore?.enqueue({
+          source: "slack",
+          eventName: "event_callback",
+          headers: headersRecord,
+          body,
+        }).catch((enqueueError) => {
+          requestLogger.error({ err: enqueueError }, "Failed to queue Slack addressed event after async processing failure");
+        });
       }).finally(() => {
         untrackJob?.();
       });
@@ -193,7 +201,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       typeof payload === "object" && payload !== null && "type" in payload && typeof payload.type === "string"
         ? payload.type
         : "unknown";
-    logger.info({ payloadType }, "Slack event ignored: unsupported payload type");
+    requestLogger.info({ payloadType }, "Slack event ignored: unsupported payload type");
     return c.json({ ok: true });
   });
 

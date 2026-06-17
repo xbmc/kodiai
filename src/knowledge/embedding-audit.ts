@@ -466,14 +466,32 @@ async function auditCanonicalCode(sql: Sql): Promise<BaseCorpusCounts> {
 }
 
 export async function collectEmbeddingAuditData(sql: Sql): Promise<Record<AuditedCorpus, EmbeddingAuditInputRow>> {
+  const [
+    learningMemories,
+    reviewComments,
+    wikiPages,
+    codeSnippets,
+    issues,
+    issueComments,
+    canonicalCode,
+  ] = await Promise.all([
+    auditLearningMemories(sql),
+    auditReviewComments(sql),
+    auditWikiPages(sql),
+    auditCodeSnippets(sql),
+    auditIssues(sql),
+    auditIssueComments(sql),
+    auditCanonicalCode(sql),
+  ]);
+
   return {
-    learning_memories: await auditLearningMemories(sql),
-    review_comments: await auditReviewComments(sql),
-    wiki_pages: await auditWikiPages(sql),
-    code_snippets: await auditCodeSnippets(sql),
-    issues: await auditIssues(sql),
-    issue_comments: await auditIssueComments(sql),
-    canonical_code: await auditCanonicalCode(sql),
+    learning_memories: learningMemories,
+    review_comments: reviewComments,
+    wiki_pages: wikiPages,
+    code_snippets: codeSnippets,
+    issues,
+    issue_comments: issueComments,
+    canonical_code: canonicalCode,
   };
 }
 

@@ -131,6 +131,33 @@ describe("linkPRToIssues", () => {
       expect(generateMock).not.toHaveBeenCalled();
     });
 
+    test("fetches local references in one batch when the store supports it", async () => {
+      const records = [
+        mockRecord({ issueNumber: 42, title: "First issue" }),
+        mockRecord({ issueNumber: 43, title: "Second issue" }),
+      ];
+      const getReferenceRecordsByNumbers = mock(() => Promise.resolve(records));
+      const issueStore = mockIssueStore({
+        getReferenceRecordsByNumbers,
+      });
+      const embeddingProvider = mockEmbeddingProvider();
+      const logger = mockLogger();
+
+      const result = await linkPRToIssues({
+        ...defaultParams,
+        prBody: "fixes #42 and closes #43",
+        issueStore,
+        embeddingProvider,
+        logger,
+      });
+
+      expect(getReferenceRecordsByNumbers).toHaveBeenCalledTimes(1);
+      expect(getReferenceRecordsByNumbers).toHaveBeenCalledWith("owner/repo", [42, 43]);
+      expect(issueStore.getByNumber).not.toHaveBeenCalled();
+      expect(result.referencedIssues.map((issue) => issue.issueNumber)).toEqual([42, 43]);
+      expect(result.semanticMatches).toHaveLength(0);
+    });
+
     test("skips issue not found in corpus with info log", async () => {
       const issueStore = mockIssueStore({
         getByNumber: mock(() => Promise.resolve(null)),

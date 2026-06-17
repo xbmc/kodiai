@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import { $ } from "bun";
 import { buildAuthFetchUrl } from "../jobs/workspace.ts";
 import type { PullRequestFileMetadata } from "../lib/github-pr-files.ts";
+import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
 import { splitGitLines } from "../lib/review-git-utils.ts";
 import { toProductionLogRuntimeBudgetFields } from "../review-audit/production-log-projection.ts";
 
@@ -28,6 +29,8 @@ type DiffCommandResult = {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
 };
 
 type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffCommandResult>;
@@ -37,6 +40,9 @@ type DiffFallbackFile = PullRequestFileMetadata;
 export const REVIEW_WORKSPACE_FETCH_DEPTH = 50;
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
 const DIFF_COMMAND_TIMEOUT_MS = 30_000;
+const DIFF_COMMAND_STDOUT_MAX_BYTES = 2 * 1024 * 1024;
+const DIFF_COMMAND_STDERR_MAX_BYTES = 64 * 1024;
+const FALLBACK_PATCH_DIFF_MAX_CHARS = 2 * 1024 * 1024;
 
 async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
   const mergeBaseResult = await $`git -C ${workspaceDir} merge-base origin/${baseRef} HEAD`.quiet().nothrow();
@@ -49,63 +55,38 @@ async function runDiffCommandWithTimeout(params: {
   timeoutMs: number;
 }): Promise<DiffCommandResult> {
   const { workspaceDir, args, timeoutMs } = params;
-  const proc = Bun.spawn(["git", "-C", workspaceDir, ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
+  return await runCommandWithCappedOutput({
+    command: "git",
+    args,
+    cwd: workspaceDir,
+    timeoutMs,
+    maxStdoutBytes: DIFF_COMMAND_STDOUT_MAX_BYTES,
+    maxStderrBytes: DIFF_COMMAND_STDERR_MAX_BYTES,
   });
-
-  const stdoutPromise = new Response(proc.stdout).text();
-  const stderrPromise = new Response(proc.stderr).text();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let timedOut = false;
-
-  try {
-    const exitCode = timeoutMs > 0 && Number.isFinite(timeoutMs)
-      ? await Promise.race([
-          proc.exited,
-          new Promise<number>((resolve) => {
-            timer = setTimeout(() => {
-              timedOut = true;
-              try {
-                proc.kill();
-              } catch {
-                // Ignore kill races; the process may have already exited.
-              }
-              resolve(124);
-            }, timeoutMs);
-          }),
-        ])
-      : await proc.exited;
-
-    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-    return {
-      exitCode,
-      stdout,
-      stderr,
-      timedOut,
-    };
-  } finally {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-    }
-  }
 }
 
 function buildFallbackPatchDiff(files: DiffFallbackFile[]): string | undefined {
-  const chunks = files
-    .filter((file) => typeof file.patch === "string" && file.patch.trim().length > 0)
-    .map((file) => {
-      const oldPath = file.status === "added" ? "/dev/null" : `a/${file.previousFilename ?? file.filename}`;
-      const newPath = file.status === "removed" ? "/dev/null" : `b/${file.filename}`;
-      return [
-        `diff --git a/${file.previousFilename ?? file.filename} b/${file.filename}`,
-        `--- ${oldPath}`,
-        `+++ ${newPath}`,
-        file.patch!.trimEnd(),
-      ].join("\n");
-    });
+  let output = "";
+  for (const file of files) {
+    if (typeof file.patch !== "string" || file.patch.trim().length === 0) continue;
+    const oldPath = file.status === "added" ? "/dev/null" : `a/${file.previousFilename ?? file.filename}`;
+    const newPath = file.status === "removed" ? "/dev/null" : `b/${file.filename}`;
+    const chunk = [
+      `diff --git a/${file.previousFilename ?? file.filename} b/${file.filename}`,
+      `--- ${oldPath}`,
+      `+++ ${newPath}`,
+      file.patch.trimEnd(),
+    ].join("\n") + "\n";
+    if (output.length + chunk.length > FALLBACK_PATCH_DIFF_MAX_CHARS) {
+      const remaining = FALLBACK_PATCH_DIFF_MAX_CHARS - output.length;
+      if (remaining > 0) output += chunk.slice(0, remaining);
+      output += "\n[GitHub patch fallback truncated]\n";
+      break;
+    }
+    output += chunk;
+  }
 
-  return chunks.length > 0 ? chunks.join("\n") + "\n" : undefined;
+  return output.length > 0 ? output : undefined;
 }
 
 function buildFallbackNumstatLines(files: DiffFallbackFile[]): string[] {
@@ -463,6 +444,19 @@ export async function collectDiffContext(params: {
           ...toProductionLogRuntimeBudgetFields(commandTimeoutMs),
         },
         "Full diff collection timed out; continuing without full diff",
+      );
+    } else if (fullDiff.stdoutTruncated) {
+      diffContent = `${fullDiff.stdout}\n[Full diff truncated at ${DIFF_COMMAND_STDOUT_MAX_BYTES} bytes]\n`;
+      logger.warn(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "full-diff",
+          diffRange,
+          changedFilesCount: changedFiles.length,
+          maxStdoutBytes: DIFF_COMMAND_STDOUT_MAX_BYTES,
+        },
+        "Full diff collection reached output cap; using truncated diff",
       );
     } else if (fullDiff.exitCode !== 0) {
       logger.warn(

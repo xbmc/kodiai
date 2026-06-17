@@ -109,6 +109,9 @@ export type ClusterStore = {
   /** Get all active (non-retired) clusters for a repo. */
   getActiveClusters(repo: string): Promise<ReviewCluster[]>;
 
+  /** Get bounded recent active clusters nearest to an input embedding for pattern matching. */
+  getActiveMatchCandidates?(repo: string, embedding: Float32Array, limit: number): Promise<ReviewCluster[]>;
+
   /** Mark a cluster as retired. */
   retireCluster(clusterId: number): Promise<void>;
 

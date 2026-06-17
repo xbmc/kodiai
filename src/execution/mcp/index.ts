@@ -1,41 +1,57 @@
+import { createRequire } from "node:module";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { McpServerConfig, McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-import { createCommentServer, type CommentPublicationState } from "./comment-server.ts";
-import { createInlineReviewServer } from "./inline-review-server.ts";
-import { createCIStatusServer } from "./ci-status-server.ts";
-import { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
-import { createCheckpointServer } from "./checkpoint-server.ts";
-import { createIssueLabelServer } from "./issue-label-server.ts";
-import { createIssueCommentServer } from "./issue-comment-server.ts";
+import type { CommentPublicationState } from "./comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "./review-output-publication-gate.ts";
-import { createCandidateFindingServer } from "./candidate-finding-server.ts";
 import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
 import type { CandidateVerificationPublicationEvidenceSink } from "../../specialists/candidate-verification-publication-evidence.ts";
 
-export { createCommentServer } from "./comment-server.ts";
-export { createInlineReviewServer } from "./inline-review-server.ts";
-export {
-  createInlineReviewPublisher,
-  publishInlineReviewComment,
-  REVIEW_OUTPUT_MARKER_PREFIX,
-  type InlineCommentLocation,
-  type InlineReviewPublicationReason,
-  type InlineReviewPublicationResult,
-  type InlineReviewPublicationStatus,
-  type InlineReviewPublisherOptions,
-  type PublishInlineReviewCommentInput,
-  type PublishInlineReviewCommentOptions,
+export type {
+  InlineCommentLocation,
+  InlineReviewPublicationReason,
+  InlineReviewPublicationResult,
+  InlineReviewPublicationStatus,
+  InlineReviewPublisherOptions,
+  PublishInlineReviewCommentInput,
+  PublishInlineReviewCommentOptions,
 } from "./inline-review-publisher.ts";
-export { createCIStatusServer } from "./ci-status-server.ts";
-export { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
-export { createCheckpointServer } from "./checkpoint-server.ts";
-export { createIssueLabelServer } from "./issue-label-server.ts";
-export { createIssueCommentServer } from "./issue-comment-server.ts";
-export { createCandidateFindingServer } from "./candidate-finding-server.ts";
+
+type CommentServerModule = typeof import("./comment-server.ts");
+type InlineReviewServerModule = typeof import("./inline-review-server.ts");
+type CiStatusServerModule = typeof import("./ci-status-server.ts");
+type ReviewCommentThreadServerModule = typeof import("./review-comment-thread-server.ts");
+type CheckpointServerModule = typeof import("./checkpoint-server.ts");
+type IssueLabelServerModule = typeof import("./issue-label-server.ts");
+type IssueCommentServerModule = typeof import("./issue-comment-server.ts");
+type CandidateFindingServerModule = typeof import("./candidate-finding-server.ts");
+
+type McpServerModuleLoaders = {
+  comment: () => Pick<CommentServerModule, "createCommentServer">;
+  inlineReview: () => Pick<InlineReviewServerModule, "createInlineReviewServer">;
+  ciStatus: () => Pick<CiStatusServerModule, "createCIStatusServer">;
+  reviewCommentThread: () => Pick<ReviewCommentThreadServerModule, "createReviewCommentThreadServer">;
+  checkpoint: () => Pick<CheckpointServerModule, "createCheckpointServer">;
+  issueLabel: () => Pick<IssueLabelServerModule, "createIssueLabelServer">;
+  issueComment: () => Pick<IssueCommentServerModule, "createIssueCommentServer">;
+  candidateFinding: () => Pick<CandidateFindingServerModule, "createCandidateFindingServer">;
+};
+
+const requireModule = createRequire(import.meta.url);
+
+const defaultMcpServerModuleLoaders: McpServerModuleLoaders = {
+  comment: () => requireModule("./comment-server.ts") as CommentServerModule,
+  inlineReview: () => requireModule("./inline-review-server.ts") as InlineReviewServerModule,
+  ciStatus: () => requireModule("./ci-status-server.ts") as CiStatusServerModule,
+  reviewCommentThread: () => requireModule("./review-comment-thread-server.ts") as ReviewCommentThreadServerModule,
+  checkpoint: () => requireModule("./checkpoint-server.ts") as CheckpointServerModule,
+  issueLabel: () => requireModule("./issue-label-server.ts") as IssueLabelServerModule,
+  issueComment: () => requireModule("./issue-comment-server.ts") as IssueCommentServerModule,
+  candidateFinding: () => requireModule("./candidate-finding-server.ts") as CandidateFindingServerModule,
+};
 
 export interface TriageConfig {
   enabled: boolean;
@@ -43,11 +59,17 @@ export interface TriageConfig {
   comment: { enabled: boolean };
 }
 
-export function buildMcpServers(deps: {
+export type IssueToolsConfig = {
+  issueNumber: number;
+  triageConfig: TriageConfig;
+};
+
+type McpBuilderDeps = {
   getOctokit: () => Promise<Octokit>;
   owner: string;
   repo: string;
   prNumber?: number;
+  issueNumber?: number;
   commentId?: number;
   botHandles?: string[];
   reviewOutputKey?: string;
@@ -61,134 +83,79 @@ export function buildMcpServers(deps: {
   totalFiles?: number;
   enableCheckpointTool?: boolean;
   prDiffCommentabilityIndex?: PrDiffCommentabilityIndex;
+  issueTools?: IssueToolsConfig;
+  /**
+   * Compatibility guard for older call sites. New code should pass issueTools
+   * so the issue number and policy travel as a single invariant.
+   */
   enableIssueTools?: boolean;
   triageConfig?: TriageConfig;
   enableCandidateFindingTool?: boolean;
   candidateFindingRecorder?: ReviewCandidateFindingRecorder;
   candidateVerificationContext?: CandidateVerificationContext;
   candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
-}): Record<string, McpServerConfig> {
-  const servers: Record<string, McpServerConfig> = {};
-  const reviewOutputPublicationGate =
-    deps.reviewOutputKey && deps.prNumber !== undefined
-      ? createReviewOutputPublicationGate({
-          owner: deps.owner,
-          repo: deps.repo,
-          prNumber: deps.prNumber,
-          reviewOutputKey: deps.reviewOutputKey,
-          candidateVerificationContext: deps.candidateVerificationContext,
-          candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
-        })
-      : undefined;
+};
 
-  const enableCommentTools = deps.enableCommentTools ?? true;
-  const candidateVerificationRequired = deps.candidateVerificationContext !== undefined;
-  if (enableCommentTools) {
-    servers.github_comment = createCommentServer(
-      deps.getOctokit,
-      deps.owner,
-      deps.repo,
-      deps.botHandles ?? [],
-      deps.reviewOutputKey,
-      deps.onPublish,
-      deps.prNumber,
-      deps.onPublishEvent,
-      deps.logger,
-      reviewOutputPublicationGate,
-      { createCommentPublished: false },
-      candidateVerificationRequired,
-    );
+function resolveIssueTools(deps: McpBuilderDeps): IssueToolsConfig | undefined {
+  if (deps.issueTools) {
+    return deps.issueTools;
   }
-
-  if (deps.prNumber !== undefined && deps.commentId !== undefined) {
-    servers.reviewCommentThread = createReviewCommentThreadServer(
-      deps.getOctokit,
-      deps.owner,
-      deps.repo,
-      deps.botHandles ?? [],
-      deps.onPublish,
-    );
+  if (deps.enableIssueTools !== true) {
+    return undefined;
   }
-
-  const enableInlineTools = deps.enableInlineTools ?? true;
-
-  if (enableInlineTools && deps.prNumber !== undefined) {
-    servers.github_inline_comment = createInlineReviewServer({
-      getOctokit: deps.getOctokit,
-      owner: deps.owner,
-      repo: deps.repo,
-      prNumber: deps.prNumber,
-      botHandles: deps.botHandles ?? [],
-      reviewOutputKey: deps.reviewOutputKey,
-      deliveryId: deps.deliveryId,
-      logger: deps.logger,
-      onPublish: deps.onPublish,
-      publicationGate: reviewOutputPublicationGate,
-      prDiffCommentabilityIndex: deps.prDiffCommentabilityIndex,
-    });
-    servers.github_ci = createCIStatusServer(
-      deps.getOctokit,
-      deps.owner,
-      deps.repo,
-      deps.prNumber,
-    );
+  if (deps.issueNumber === undefined) {
+    throw new Error("Issue MCP tools require issueNumber");
   }
-
-  const enableCheckpointTool = deps.enableCheckpointTool ?? false;
-  if (
-    enableCheckpointTool &&
-    deps.knowledgeStore &&
-    deps.prNumber !== undefined &&
-    deps.reviewOutputKey
-  ) {
-    servers.review_checkpoint = createCheckpointServer(
-      deps.knowledgeStore,
-      deps.reviewOutputKey,
-      `${deps.owner}/${deps.repo}`,
-      deps.prNumber,
-      deps.totalFiles ?? 0,
-      deps.logger,
-    );
+  if (!deps.triageConfig) {
+    throw new Error("Issue MCP tools require triageConfig");
   }
+  return {
+    issueNumber: deps.issueNumber,
+    triageConfig: deps.triageConfig,
+  };
+}
 
-  // Issue triage tools -- opt-in via enableIssueTools + triageConfig
-  const enableIssueTools = deps.enableIssueTools ?? false;
-  if (enableIssueTools && deps.triageConfig) {
-    const getTriageConfig = () => deps.triageConfig!;
+function buildIssueToolServerCreators(deps: {
+  getOctokit: () => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  botHandles?: string[];
+  getTriageConfig: () => TriageConfig;
+  loaders: McpServerModuleLoaders;
+}) {
+  return {
+    github_issue_label: () =>
+      deps.loaders.issueLabel().createIssueLabelServer({
+        getOctokit: deps.getOctokit,
+        owner: deps.owner,
+        repo: deps.repo,
+        getTriageConfig: () => ({
+          enabled: deps.getTriageConfig().enabled,
+          label: deps.getTriageConfig().label,
+        }),
+        issueNumber: deps.issueNumber,
+      }),
+    github_issue_comment: () =>
+      deps.loaders.issueComment().createIssueCommentServer({
+        getOctokit: deps.getOctokit,
+        owner: deps.owner,
+        repo: deps.repo,
+        getTriageConfig: () => ({
+          enabled: deps.getTriageConfig().enabled,
+          comment: deps.getTriageConfig().comment,
+        }),
+        botHandles: deps.botHandles ?? [],
+        issueNumber: deps.issueNumber,
+      }),
+  };
+}
 
-    servers.github_issue_label = createIssueLabelServer(
-      deps.getOctokit,
-      deps.owner,
-      deps.repo,
-      () => ({ enabled: getTriageConfig().enabled, label: getTriageConfig().label }),
-    );
-
-    servers.github_issue_comment = createIssueCommentServer(
-      deps.getOctokit,
-      deps.owner,
-      deps.repo,
-      () => ({ enabled: getTriageConfig().enabled, comment: getTriageConfig().comment }),
-      deps.botHandles ?? [],
-    );
-  }
-
-  const enableCandidateFindingTool = deps.enableCandidateFindingTool ?? false;
-  if (
-    enableCandidateFindingTool &&
-    deps.prNumber !== undefined &&
-    deps.reviewOutputKey
-  ) {
-    servers.review_candidate_finding = createCandidateFindingServer({
-      recorder: deps.candidateFindingRecorder,
-      repo: `${deps.owner}/${deps.repo}`,
-      pullNumber: deps.prNumber,
-      reviewOutputKey: deps.reviewOutputKey,
-      deliveryId: deps.deliveryId,
-      logger: deps.logger,
-    });
-  }
-
-  return servers;
+export function buildMcpServers(deps: McpBuilderDeps): Record<string, McpServerConfig> {
+  return Object.fromEntries(
+    Object.entries(buildMcpServerFactoriesWithLoaders(deps, defaultMcpServerModuleLoaders))
+      .map(([name, createServer]) => [name, createServer()]),
+  );
 }
 
 export const MCP_TOOL_NAMES_BY_SERVER: Record<string, string[]> = {
@@ -214,7 +181,6 @@ export const MCP_TOOL_NAMES_BY_SERVER: Record<string, string[]> = {
   ],
   github_issue_comment: [
     "create_comment",
-    "update_comment",
   ],
   review_candidate_finding: [
     "record_candidate_finding",
@@ -246,11 +212,18 @@ export function buildAllowedMcpTools(serverNames: string[]): string[] {
  * By calling the creator inside the factory, each HTTP request gets a fresh
  * McpServer that has never been connected.
  */
-export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>[0]): Record<string, () => McpSdkServerConfigWithInstance> {
+export function buildMcpServerFactories(deps: McpBuilderDeps): Record<string, () => McpSdkServerConfigWithInstance> {
+  return buildMcpServerFactoriesWithLoaders(deps, defaultMcpServerModuleLoaders);
+}
+
+export function buildMcpServerFactoriesWithLoaders(
+  deps: McpBuilderDeps,
+  loaders: McpServerModuleLoaders,
+): Record<string, () => McpSdkServerConfigWithInstance> {
   const enableCommentTools = deps.enableCommentTools ?? true;
   const enableInlineTools = deps.enableInlineTools ?? true;
   const enableCheckpointTool = deps.enableCheckpointTool ?? false;
-  const enableIssueTools = deps.enableIssueTools ?? false;
+  const issueTools = resolveIssueTools(deps);
   const enableCandidateFindingTool = deps.enableCandidateFindingTool ?? false;
   const reviewOutputPublicationGate =
     deps.reviewOutputKey && deps.prNumber !== undefined
@@ -270,7 +243,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
 
   if (enableCommentTools) {
     factories.github_comment = () =>
-      createCommentServer(
+      loaders.comment().createCommentServer(
         deps.getOctokit,
         deps.owner,
         deps.repo,
@@ -288,7 +261,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
 
   if (deps.prNumber !== undefined && deps.commentId !== undefined) {
     factories.reviewCommentThread = () =>
-      createReviewCommentThreadServer(
+      loaders.reviewCommentThread().createReviewCommentThreadServer(
         deps.getOctokit,
         deps.owner,
         deps.repo,
@@ -299,7 +272,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
 
   if (enableInlineTools && deps.prNumber !== undefined) {
     factories.github_inline_comment = () =>
-      createInlineReviewServer({
+      loaders.inlineReview().createInlineReviewServer({
         getOctokit: deps.getOctokit,
         owner: deps.owner,
         repo: deps.repo,
@@ -314,7 +287,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
       }) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>
-      createCIStatusServer(
+      loaders.ciStatus().createCIStatusServer(
         deps.getOctokit,
         deps.owner,
         deps.repo,
@@ -329,7 +302,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
     deps.reviewOutputKey
   ) {
     factories.review_checkpoint = () =>
-      createCheckpointServer(
+      loaders.checkpoint().createCheckpointServer(
         deps.knowledgeStore!,
         deps.reviewOutputKey!,
         `${deps.owner}/${deps.repo}`,
@@ -339,25 +312,22 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
       ) as McpSdkServerConfigWithInstance;
   }
 
-  if (enableIssueTools && deps.triageConfig) {
-    const getTriageConfig = () => deps.triageConfig!;
+  if (issueTools) {
+    const issueToolCreators = buildIssueToolServerCreators({
+      getOctokit: deps.getOctokit,
+      owner: deps.owner,
+      repo: deps.repo,
+      issueNumber: issueTools.issueNumber,
+      botHandles: deps.botHandles,
+      getTriageConfig: () => issueTools.triageConfig,
+      loaders,
+    });
 
     factories.github_issue_label = () =>
-      createIssueLabelServer(
-        deps.getOctokit,
-        deps.owner,
-        deps.repo,
-        () => ({ enabled: getTriageConfig().enabled, label: getTriageConfig().label }),
-      ) as McpSdkServerConfigWithInstance;
+      issueToolCreators.github_issue_label() as McpSdkServerConfigWithInstance;
 
     factories.github_issue_comment = () =>
-      createIssueCommentServer(
-        deps.getOctokit,
-        deps.owner,
-        deps.repo,
-        () => ({ enabled: getTriageConfig().enabled, comment: getTriageConfig().comment }),
-        deps.botHandles ?? [],
-      ) as McpSdkServerConfigWithInstance;
+      issueToolCreators.github_issue_comment() as McpSdkServerConfigWithInstance;
   }
 
   if (
@@ -366,7 +336,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
     deps.reviewOutputKey
   ) {
     factories.review_candidate_finding = () =>
-      createCandidateFindingServer({
+      loaders.candidateFinding().createCandidateFindingServer({
         recorder: deps.candidateFindingRecorder,
         repo: `${deps.owner}/${deps.repo}`,
         pullNumber: deps.prNumber!,

@@ -29,7 +29,7 @@ describe("executeJsonbRecordBatches", () => {
       2,
       (row) => ({ value_id: row.id }),
       async (batch) => {
-        seen.push(JSON.parse(batch.json));
+        seen.push(batch.json);
         return batch.rows.length;
       },
     );

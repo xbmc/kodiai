@@ -345,7 +345,7 @@ describe("review idempotency helpers", () => {
     expect(result.scanStats.reviews.scanned).toBe(0);
   });
 
-  test("ensureReviewOutputNotPublished does not call fallback scans after a review-comment marker hit", async () => {
+  test("ensureReviewOutputNotPublished scans surfaces concurrently and preserves review-comment precedence", async () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -393,8 +393,8 @@ describe("review idempotency helpers", () => {
     expect(result.existingLocation).toBe("review-comment");
     expect(calls).toEqual({
       reviewComments: 1,
-      issueComments: 0,
-      reviews: 0,
+      issueComments: 1,
+      reviews: 1,
     });
   });
 

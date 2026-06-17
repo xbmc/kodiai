@@ -1,4 +1,6 @@
 import type { WikiPageInput, WikiPageChunk } from "./wiki-types.ts";
+import { countTokens } from "./token-count.ts";
+export { countTokens } from "./token-count.ts";
 
 /**
  * Map of fenced code block language identifiers to canonical names.
@@ -82,10 +84,15 @@ export function detectLanguageTags(rawText: string): string[] {
     /\bwritten\s+in\s+(\w[\w+.-]*)\b/gi,
     /\busing\s+(\w[\w+.-]*)\b/gi,
   ];
+  const contextualLanguageMentions: string[] = [];
+  for (const pattern of contextPatterns) {
+    for (const match of rawText.matchAll(pattern)) {
+      contextualLanguageMentions.push(match[0], match[1] ?? "");
+    }
+  }
 
   for (const [mentionPattern, canonical] of LANGUAGE_MENTION_PATTERNS) {
-    // Check if text has a direct mention of the language
-    if (mentionPattern.test(rawText)) {
+    if (contextualLanguageMentions.some((mention) => mentionPattern.test(mention))) {
       detected.add(canonical);
     }
   }
@@ -95,11 +102,6 @@ export function detectLanguageTags(rawText: string): string[] {
   }
 
   return [...detected].sort();
-}
-
-/** Simple whitespace-based token count approximation. */
-export function countTokens(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
 }
 
 /**

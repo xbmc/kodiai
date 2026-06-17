@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
-import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
+import { buildWikiApiUrl, fetchWikiJsonWithRetry, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -159,20 +159,12 @@ export async function backfillWikiPages(
 
     let pageListResponse: AllPagesResponse;
     try {
-      const response = await fetchFn(buildWikiApiUrl(baseUrl, params));
-      if (!response.ok) {
-        logger.warn({ status: response.status, url: response.url }, "Wiki API allpages request failed");
-        // Retry once with backoff
-        await sleep(2000);
-        const retryResponse = await fetchFn(buildWikiApiUrl(baseUrl, params));
-        if (!retryResponse.ok) {
-          logger.error({ status: retryResponse.status }, "Wiki API allpages request failed after retry, stopping");
-          break;
-        }
-        pageListResponse = await retryResponse.json() as AllPagesResponse;
-      } else {
-        pageListResponse = await response.json() as AllPagesResponse;
-      }
+      pageListResponse = await fetchWikiJsonWithRetry<AllPagesResponse>({
+        fetchFn,
+        url: buildWikiApiUrl(baseUrl, params),
+        logger,
+        context: { source, request: "allpages", continueToken: continueToken ?? null },
+      });
     } catch (err) {
       logger.error({ err }, "Wiki API allpages network error, stopping");
       break;
@@ -195,14 +187,12 @@ export async function backfillWikiPages(
 
         let parseData: ParseResponse;
         try {
-          const parseResponse = await fetchFn(buildWikiApiUrl(baseUrl, parseParams));
-          if (!parseResponse.ok) {
-            logger.warn({ pageId: pageInfo.pageid, status: parseResponse.status }, "Wiki parse request failed, skipping page");
-            skippedPages++;
-            await sleep(delayMs);
-            continue;
-          }
-          parseData = await parseResponse.json() as ParseResponse;
+          parseData = await fetchWikiJsonWithRetry<ParseResponse>({
+            fetchFn,
+            url: buildWikiApiUrl(baseUrl, parseParams),
+            logger,
+            context: { source, request: "parse", pageId: pageInfo.pageid },
+          });
         } catch (err) {
           logger.warn({ pageId: pageInfo.pageid, err }, "Wiki parse network error, skipping page");
           skippedPages++;

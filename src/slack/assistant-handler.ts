@@ -1,5 +1,5 @@
 import type { Workspace } from "../jobs/types.ts";
-import type { createRetriever, RetrieveResult } from "../knowledge/retrieval.ts";
+import type { createRetriever } from "../knowledge/retrieval.ts";
 import type { Logger } from "pino";
 import { buildEpistemicBoundarySection } from "../execution/review-prompt.ts";
 import { resolveSlackRepoContext } from "./repo-context.ts";
@@ -17,6 +17,7 @@ import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { slackAdapter } from "../lib/guardrail/adapters/slack-adapter.ts";
 import { scanOutgoingForSecrets } from "../lib/sanitizer.ts";
+import { summarizeSlackWriteRequest } from "../lib/write-request-formatting.ts";
 
 export interface SlackAssistantAddressedPayload {
   channel: string;
@@ -184,14 +185,6 @@ function buildInstantReply(messageText: string, repoContext: string): string | u
   return undefined;
 }
 
-function summarizeWriteRequest(request: string): string {
-  const normalized = request.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 72) {
-    return normalized.length > 0 ? normalized : "requested update";
-  }
-  return `${normalized.slice(0, 69).trimEnd()}...`;
-}
-
 function formatSlackWriteReply(input: {
   writeResult: SlackWriteRunnerResult;
   request: string;
@@ -221,7 +214,7 @@ function formatSlackWriteReply(input: {
     ].join("\n");
   }
 
-  const summary = summarizeWriteRequest(request);
+  const summary = summarizeSlackWriteRequest(request);
 
   if (writeResult.mirrors.length === 0) {
     return [

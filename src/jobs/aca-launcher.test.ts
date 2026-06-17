@@ -7,10 +7,16 @@ import {
   APPLICATION_SECRET_NAMES,
   buildAcaJobSpec,
   readJobResult,
+  readJobDiagnostics,
   cancelAcaJob,
   pollUntilComplete,
   launchAcaJob,
+  resetAzureAccessTokenCacheForTests,
 } from "./aca-launcher.ts";
+
+afterEach(() => {
+  resetAzureAccessTokenCacheForTests();
+});
 
 // ---------------------------------------------------------------------------
 // APPLICATION_SECRET_NAMES contract
@@ -184,6 +190,10 @@ describe("launchAcaJob", () => {
     } satisfies Pick<Logger, "debug" | "info" | "warn" | "error">;
   }
 
+  afterEach(() => {
+    resetAzureAccessTokenCacheForTests();
+  });
+
   test("retries a transient managed identity fetch failure before starting the job", async () => {
     const originalFetch = globalThis.fetch;
     const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
@@ -348,6 +358,71 @@ describe("launchAcaJob", () => {
       }
     }
   });
+
+  test("reuses a valid managed identity token across launch, poll, and cancel", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+    const originalSleep = Bun.sleep;
+    const calls: string[] = [];
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+    Bun.sleep = (async () => undefined) as typeof Bun.sleep;
+
+    globalThis.fetch = (async (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      calls.push(url);
+      if (url.startsWith("https://identity.example/token")) {
+        return jsonResponse({
+          access_token: "cached-access-token",
+          expires_in: 3600,
+        });
+      }
+      if (url.includes("/executions/exec-1/stop")) {
+        return new Response("", { status: 204 });
+      }
+      if (url.includes("/executions/exec-1?")) {
+        return jsonResponse({ properties: { status: "Succeeded" } });
+      }
+      return jsonResponse({ name: "exec-1" });
+    }) as typeof fetch;
+
+    try {
+      const spec = buildAcaJobSpec({
+        jobName: "caj-kodiai-agent",
+        image: "kodiairegistry.azurecr.io/kodiai-agent:latest",
+        workspaceDir: "/mnt/kodiai-workspaces/test-job",
+        mcpBearerToken: "test-token",
+        mcpBaseUrl: "http://ca-kodiai",
+      });
+
+      await launchAcaJob({ resourceGroup: "rg-kodiai", jobName: "caj-kodiai-agent", spec });
+      await pollUntilComplete({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        executionName: "exec-1",
+        timeoutMs: 1_000,
+        pollIntervalMs: 1,
+      });
+      await cancelAcaJob({ resourceGroup: "rg-kodiai", jobName: "caj-kodiai-agent", executionName: "exec-1" });
+
+      expect(calls.filter((call) => call.startsWith("https://identity.example/token"))).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.sleep = originalSleep;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -412,7 +487,7 @@ describe("pollUntilComplete", () => {
     globalThis.fetch = (async (input) => {
       const url = input instanceof Request ? input.url : String(input);
       if (url.startsWith("https://identity.example/token")) {
-        return jsonResponse({ access_token: "test-access-token" });
+        return jsonResponse({ access_token: "test-access-token", expires_on: 9999 });
       }
 
       const next = opts.statusResponses[statusFetchCount] ?? opts.statusResponses.at(-1);
@@ -600,6 +675,16 @@ describe("readJobResult", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "aca-launcher-test-"));
     await Bun.write(join(tmpDir, "result.json"), "not-json{{{");
     await expect(readJobResult(tmpDir)).rejects.toThrow();
+  });
+
+  test("readJobDiagnostics returns a bounded tail of large diagnostics logs", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "aca-launcher-test-"));
+    await Bun.write(join(tmpDir, "agent-diagnostics.log"), `${"a".repeat(300 * 1024)}tail-marker`);
+
+    const diagnostics = await readJobDiagnostics(tmpDir);
+
+    expect(diagnostics?.length).toBeLessThanOrEqual(256 * 1024 + "tail-marker".length);
+    expect(diagnostics?.endsWith("tail-marker")).toBe(true);
   });
 });
 

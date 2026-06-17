@@ -1,3 +1,5 @@
+import { deriveCommitPrefix } from "../lib/write-request-formatting.ts";
+
 export function parseWriteIntent(userQuestion: string): {
   writeIntent: boolean;
   keyword: "apply" | "change" | "plan" | undefined;
@@ -20,22 +22,6 @@ export function parseWriteIntent(userQuestion: string): {
   return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
 }
 
-export function summarizeWriteRequest(request: string): string {
-  const condensed = request
-    .replace(/\s+/g, " ")
-    .replace(/^[@`'"([{\s]+/, "")
-    .replace(/[@`'"\])}\s]+$/, "")
-    .replace(/^(?:can|could|would|will)\s+you\s+/i, "")
-    .replace(/^(?:please\s+)+/i, "")
-    .replace(/[?.!]+$/, "")
-    .trim();
-
-  const fallback = "requested update";
-  const normalized = condensed.length > 0 ? condensed : fallback;
-  const maxLen = 72;
-  return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
-}
-
 export function generatePrTitle(issueTitle: string | null, requestSummary: string, isFromPr: boolean): string {
   const maxLen = 72;
 
@@ -45,17 +31,7 @@ export function generatePrTitle(issueTitle: string | null, requestSummary: strin
       .replace(/\s*#\d+\s*$/, "")
       .trim();
 
-    const lower = cleaned.toLowerCase();
-    let prefix: string;
-    if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
-      prefix = "fix";
-    } else if (/\brefactor\b/.test(lower)) {
-      prefix = "refactor";
-    } else if (/\b(?:add|support|implement|feature|new)\b/.test(lower)) {
-      prefix = "feat";
-    } else {
-      prefix = isFromPr ? "fix" : "feat";
-    }
+    const prefix = deriveCommitPrefix(cleaned, isFromPr ? "fix" : "feat");
 
     const full = `${prefix}: ${cleaned}`;
     return full.length <= maxLen ? full : `${full.slice(0, maxLen - 3).trimEnd()}...`;
@@ -83,17 +59,7 @@ export function generateCommitSubject(params: {
       .replace(/\s*#\d+\s*$/, "")
       .trim();
 
-    const lower = cleaned.toLowerCase();
-    let prefix: string;
-    if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
-      prefix = "fix";
-    } else if (/\brefactor\b/.test(lower)) {
-      prefix = "refactor";
-    } else if (/\b(?:add|support|implement|feature|new)\b/.test(lower)) {
-      prefix = "feat";
-    } else {
-      prefix = isFromPr ? "fix" : "feat";
-    }
+    const prefix = deriveCommitPrefix(cleaned, isFromPr ? "fix" : "feat");
     subject = `${prefix}: ${cleaned}`;
   } else {
     const defaultPrefix = isFromPr ? "fix" : "feat";

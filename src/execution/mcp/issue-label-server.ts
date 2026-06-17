@@ -14,17 +14,29 @@ interface ToolResult {
   isError?: boolean;
 }
 
-function mapErrorCode(error: any): { error_code: string; message: string } {
-  const status = error?.status;
+function getErrorStatus(error: unknown): number | undefined {
+  return typeof error === "object" && error !== null && "status" in error && typeof error.status === "number"
+    ? error.status
+    : undefined;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+    ? error.message
+    : fallback;
+}
+
+function mapErrorCode(error: unknown): { error_code: string; message: string } {
+  const status = getErrorStatus(error);
   switch (status) {
     case 404:
-      return { error_code: "ISSUE_NOT_FOUND", message: error.message ?? "Issue not found" };
+      return { error_code: "ISSUE_NOT_FOUND", message: getErrorMessage(error, "Issue not found") };
     case 403:
-      return { error_code: "PERMISSION_DENIED", message: error.message ?? "Permission denied" };
+      return { error_code: "PERMISSION_DENIED", message: getErrorMessage(error, "Permission denied") };
     case 429:
-      return { error_code: "RATE_LIMITED", message: error.message ?? "Rate limited" };
+      return { error_code: "RATE_LIMITED", message: getErrorMessage(error, "Rate limited") };
     default:
-      return { error_code: "UNKNOWN_ERROR", message: error.message ?? String(error) };
+      return { error_code: "UNKNOWN_ERROR", message: getErrorMessage(error, String(error)) };
   }
 }
 
@@ -37,10 +49,11 @@ export async function addLabelsHandler(deps: {
   owner: string;
   repo: string;
   getTriageConfig: () => TriageLabelConfig;
-  params: { issue_number: number; labels: string[] };
+  issueNumber: number;
+  params: { labels: string[] };
 }): Promise<ToolResult> {
-  const { getOctokit, owner, repo, getTriageConfig, params } = deps;
-  const { issue_number, labels } = params;
+  const { getOctokit, owner, repo, getTriageConfig, issueNumber, params } = deps;
+  const { labels } = params;
 
   try {
     // Check config gating (hot-reload: called on every invocation)
@@ -62,27 +75,28 @@ export async function addLabelsHandler(deps: {
 
     const octokit = await getOctokit();
 
-    // Fetch all repo labels for pre-validation
-    const repoLabels = await octokit.paginate(
-      octokit.rest.issues.listLabelsForRepo,
-      { owner, repo, per_page: 100 },
-    );
-
-    // Build case-insensitive lookup map: lowercase -> canonical name
-    const labelMap = new Map<string, string>();
-    for (const label of repoLabels) {
-      labelMap.set(label.name.toLowerCase(), label.name);
-    }
-
-    // Resolve requested labels against repo labels
     const validLabels: string[] = [];
     const invalidLabels: string[] = [];
+    const seenRequestedLabels = new Set<string>();
     for (const requested of labels) {
-      const canonical = labelMap.get(requested.toLowerCase());
-      if (canonical) {
-        validLabels.push(canonical);
-      } else {
-        invalidLabels.push(requested);
+      const normalized = requested.toLowerCase();
+      if (seenRequestedLabels.has(normalized)) continue;
+      seenRequestedLabels.add(normalized);
+      try {
+        const { data: label } = await retryGitHubRateLimitOnly(() =>
+          octokit.rest.issues.getLabel({
+            owner,
+            repo,
+            name: requested,
+          }),
+        );
+        validLabels.push(label.name);
+      } catch (error: unknown) {
+        if (getErrorStatus(error) === 404) {
+          invalidLabels.push(requested);
+          continue;
+        }
+        throw error;
       }
     }
 
@@ -109,14 +123,14 @@ export async function addLabelsHandler(deps: {
       const { data: issue } = await octokit.rest.issues.get({
         owner,
         repo,
-        issue_number,
+        issue_number: issueNumber,
       });
       if (issue.state === "closed") {
         warning = "Issue is closed";
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If issue fetch fails with 404, propagate as ISSUE_NOT_FOUND
-      if (error?.status === 404) {
+      if (getErrorStatus(error) === 404) {
         return {
           content: [
             {
@@ -124,7 +138,7 @@ export async function addLabelsHandler(deps: {
               text: JSON.stringify({
                 success: false,
                 ...mapErrorCode(error),
-                issue_number,
+                issue_number: issueNumber,
                 repo: `${owner}/${repo}`,
               }),
             },
@@ -139,7 +153,7 @@ export async function addLabelsHandler(deps: {
       octokit.rest.issues.addLabels({
         owner,
         repo,
-        issue_number,
+        issue_number: issueNumber,
         labels: validLabels,
       }),
     );
@@ -150,7 +164,7 @@ export async function addLabelsHandler(deps: {
           type: "text" as const,
           text: JSON.stringify({
             success: true,
-            issue_number,
+            issue_number: issueNumber,
             repo: `${owner}/${repo}`,
             applied: validLabels,
             invalid: invalidLabels,
@@ -160,7 +174,7 @@ export async function addLabelsHandler(deps: {
         },
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const mapped = mapErrorCode(error);
     return {
       content: [
@@ -169,7 +183,7 @@ export async function addLabelsHandler(deps: {
           text: JSON.stringify({
             success: false,
             ...mapped,
-            issue_number,
+            issue_number: issueNumber,
             repo: `${owner}/${repo}`,
           }),
         },
@@ -178,33 +192,35 @@ export async function addLabelsHandler(deps: {
   }
 }
 
-export function createIssueLabelServer(
-  getOctokit: () => Promise<Octokit>,
-  owner: string,
-  repo: string,
-  getTriageConfig: () => TriageLabelConfig,
-) {
+export function createIssueLabelServer(params: {
+  getOctokit: () => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  getTriageConfig: () => TriageLabelConfig;
+  issueNumber: number;
+}) {
+  const { getOctokit, owner, repo, getTriageConfig, issueNumber } = params;
   return createSdkMcpServer({
     name: "github_issue_label",
     version: "0.1.0",
     tools: [
       tool(
         "add_labels",
-        "Apply labels to a GitHub issue. Labels are validated against the repository's existing labels with case-insensitive matching. Valid labels are applied even if some requested labels don't exist (partial application).",
+        "Apply labels to the triggering GitHub issue. Labels are validated against the repository's existing labels with case-insensitive matching. Valid labels are applied even if some requested labels don't exist (partial application).",
         {
-          issue_number: z.number().describe("The issue number"),
           labels: z
             .array(z.string().min(1))
             .min(1)
             .describe("Labels to apply (case-insensitive matching)"),
         },
-        async ({ issue_number, labels }, _extra) => {
+        async ({ labels }, _extra) => {
           return addLabelsHandler({
             getOctokit,
             owner,
             repo,
             getTriageConfig,
-            params: { issue_number, labels },
+            issueNumber,
+            params: { labels },
           });
         },
       ),
