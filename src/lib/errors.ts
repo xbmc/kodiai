@@ -12,6 +12,7 @@
 
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import { retryGitHubRateLimitOnly } from "./github-retry.ts";
 import { redactGitHubTokens } from "./sanitizer.ts";
 
 /** User-facing error categories. */
@@ -85,24 +86,24 @@ const HEADERS: Record<ErrorCategory, string> = {
   api_error: "Kodiai encountered an API error",
   config_error: "Kodiai found a configuration problem",
   clone_error: "Kodiai couldn't access the repository",
-  internal_error: "Kodiai encountered an error",
-  usage_limit: "Kodiai hit its Claude usage limit",
+  internal_error: "Kodiai could not complete the request",
+  usage_limit: "Kodiai hit its review provider usage limit",
 };
 
 /** Actionable suggestions for each error category */
 const SUGGESTIONS: Record<ErrorCategory, string> = {
   timeout:
-    "Try breaking the task into smaller pieces, or increase `timeoutSeconds` in `.kodiai.yml`.",
+    "Try a narrower request such as `@kodiai review path/to/file.cpp` if it repeats.",
   timeout_partial:
-    "Some inline comments were posted above. To get a full review, increase `timeoutSeconds` in `.kodiai.yml` or break the PR into smaller changes.",
+    "Some inline comments were posted above. Try a narrower follow-up request if you need the remaining files reviewed.",
   api_error: "This is usually temporary. Try again in a few minutes.",
   config_error:
     "Check your `.kodiai.yml` file for syntax or schema errors.",
   clone_error:
     "Verify the repository is accessible and the branch exists.",
-  internal_error: "If this persists, please report this issue.",
+  internal_error: "The failure was recorded in KodiAI logs. Try again later, or narrow the request if it repeats.",
   usage_limit:
-    "Kodiai cannot run another Claude review until the provider usage limit resets. Please try again after the reset time shown above.",
+    "Kodiai cannot run another review until the provider usage limit resets. Please try again after the reset time shown above.",
 };
 
 const USAGE_LIMIT_ERROR_MARKER = "<!-- kodiai:error:usage-limit -->";
@@ -124,12 +125,45 @@ export function formatErrorComment(
 ): string {
   const header = HEADERS[category];
   const suggestion = SUGGESTIONS[category];
-  const sanitizedDetail = redactGitHubTokens(detail);
+  const sanitizedDetail = formatPublicErrorDetail(category, detail);
 
   return [
     `> **${header}**\n\n_${sanitizedDetail}_\n\n${suggestion}`,
     category === "usage_limit" ? USAGE_LIMIT_ERROR_MARKER : undefined,
   ].filter((line): line is string => line !== undefined).join("\n\n");
+}
+
+function formatPublicErrorDetail(
+  category: ErrorCategory,
+  detail: string,
+): string {
+  const redacted = redactGitHubTokens(detail).trim();
+
+  switch (category) {
+    case "timeout":
+      return "The request exceeded its execution time before KodiAI could publish a complete response.";
+    case "timeout_partial":
+      return "The request exceeded its execution time after KodiAI published partial output.";
+    case "api_error":
+      return "A GitHub or runtime API request failed before KodiAI could publish a complete response.";
+    case "config_error":
+      return "KodiAI could not load or validate the repository configuration.";
+    case "clone_error":
+      return "KodiAI could not prepare the repository checkout for this request.";
+    case "usage_limit":
+      return formatUsageLimitPublicDetail(redacted);
+    case "internal_error":
+      return "The request failed before KodiAI could publish a complete response.";
+  }
+}
+
+function formatUsageLimitPublicDetail(detail: string): string {
+  const resetMatch = detail.match(/\bresets?\s+([^.\n\r]+)/i);
+  if (!resetMatch?.[1]) {
+    return "The review provider usage limit was reached.";
+  }
+
+  return `The review provider usage limit was reached; reset ${resetMatch[1].trim()}.`;
 }
 
 async function findRecentUsageLimitErrorComment(
@@ -145,12 +179,14 @@ async function findRecentUsageLimitErrorComment(
     return undefined;
   }
 
-  const { data } = await listComments({
-    owner: target.owner,
-    repo: target.repo,
-    issue_number: target.issueNumber,
-    per_page: 100,
-  });
+  const { data } = await retryGitHubRateLimitOnly(() =>
+    listComments({
+      owner: target.owner,
+      repo: target.repo,
+      issue_number: target.issueNumber,
+      per_page: 100,
+    }),
+  );
 
   const cutoffMs = Date.now() - USAGE_LIMIT_DEDUPE_WINDOW_MS;
   const recent = data
@@ -201,34 +237,41 @@ export async function postOrUpdateErrorComment(
 
   try {
     if (target.trackingCommentId) {
-      await octokit.rest.issues.updateComment({
-        owner: target.owner,
-        repo: target.repo,
-        comment_id: target.trackingCommentId,
-        body,
-      });
+      const trackingCommentId = target.trackingCommentId;
+      await retryGitHubRateLimitOnly(() =>
+        octokit.rest.issues.updateComment({
+          owner: target.owner,
+          repo: target.repo,
+          comment_id: trackingCommentId,
+          body,
+        }),
+      );
       return { ok: true, resolution: "updated", method };
     }
 
     if (body.includes(USAGE_LIMIT_ERROR_MARKER)) {
       const duplicateCommentId = await findRecentUsageLimitErrorComment(octokit, target);
       if (duplicateCommentId !== undefined) {
-        await octokit.rest.issues.updateComment({
-          owner: target.owner,
-          repo: target.repo,
-          comment_id: duplicateCommentId,
-          body,
-        });
+        await retryGitHubRateLimitOnly(() =>
+          octokit.rest.issues.updateComment({
+            owner: target.owner,
+            repo: target.repo,
+            comment_id: duplicateCommentId,
+            body,
+          }),
+        );
         return { ok: true, resolution: "updated", method: "update-comment" };
       }
     }
 
-    await octokit.rest.issues.createComment({
-      owner: target.owner,
-      repo: target.repo,
-      issue_number: target.issueNumber,
-      body,
-    });
+    await retryGitHubRateLimitOnly(() =>
+      octokit.rest.issues.createComment({
+        owner: target.owner,
+        repo: target.repo,
+        issue_number: target.issueNumber,
+        body,
+      }),
+    );
     return { ok: true, resolution: "created", method };
   } catch (err) {
     logger.error(

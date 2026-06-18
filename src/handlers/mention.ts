@@ -123,6 +123,7 @@ import {
   buildExplicitMentionReviewPublishFailureBody,
   buildExplicitReviewLifecycleEvidenceLine,
   logExplicitMentionReviewPublishSkipped,
+  type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
 import {
   attachReviewFindingLifecycle,
@@ -249,6 +250,34 @@ function cleanTurnLimitMentionPublishResolution(resolution: MentionPublishResolu
   return resolution === "turn-limit-fallback-failed"
     ? "turn-limit-fallback-undelivered"
     : resolution;
+}
+
+function describeExplicitReviewPublishSkipReason(reason: ExplicitMentionReviewPublishSkipReason | undefined): string {
+  switch (reason) {
+    case "missing-inspection-evidence":
+      return "the run did not provide the required repo-inspection evidence";
+    case "missing-review-output-key":
+      return "the run was missing its review publication key";
+    case "execution-not-success":
+      return "the review executor did not finish successfully";
+    case "output-already-published":
+      return "review output was already published for this request";
+    case "result-text-findings":
+      return "the run produced findings that were not safely publishable";
+    case "not-eligible":
+      return "the run did not satisfy the explicit-review publication gate";
+    default:
+      return "the run did not satisfy the explicit-review publication gate";
+  }
+}
+
+function buildExplicitReviewNoOutputFallbackLines(reason: ExplicitMentionReviewPublishSkipReason | undefined): string[] {
+  return [
+    "I completed the review run, but couldn't publish a trustworthy review result from it.",
+    "",
+    `Reason: ${describeExplicitReviewPublishSkipReason(reason)}.`,
+    "No code findings were published for this request.",
+  ];
 }
 
 function isKnownFormatterSubflowStatus(status: unknown): boolean {
@@ -3455,17 +3484,15 @@ export function createMentionHandler(deps: {
           !reviewPublishRightsLost
         ) {
           const fallbackLines = explicitReviewRequest
-            ? explicitReviewResultFindingLines.length > 0
+            ? explicitReviewPublishEvaluation.hasUnpublishedFindings
               ? [
                   "Decision: NOT APPROVED",
                   "Issues:",
-                  ...explicitReviewResultFindingLines,
+                  ...(explicitReviewResultFindingLines.length > 0
+                    ? explicitReviewResultFindingLines
+                    : ["- The review reported blocking issues, but the findings were not safely publishable in structured form."]),
                 ]
-              : [
-                  "Decision: NOT APPROVED",
-                  "Issues:",
-                  "- (1) [major] review execution (0): The review run completed without publishing any review findings or approval state, so this request did not produce a usable code review.",
-                ]
+              : buildExplicitReviewNoOutputFallbackLines(explicitReviewPublishEvaluation.skipReason)
             : [
                 "I can answer this, but I need one detail first.",
                 "",
@@ -3547,9 +3574,10 @@ export function createMentionHandler(deps: {
                       "This was a tiny-diff review, so this indicates an execution-budget or tool-loop problem rather than PR size. The run has been recorded with small-diff routing diagnostics.",
                     ]
                   : [
-                      "This can happen on PRs with large or complex diffs. To get a response:",
-                      "- Ask a more targeted question (e.g. `@kodiai review LangInfo.cpp only`)",
-                      "- Or mention me again — the next run may complete within the step budget",
+                      "No review findings were published for this request.",
+                      "",
+                      "This usually means the agent got stuck in tool use or exceeded its step budget for this run.",
+                      "Try a narrower request such as `@kodiai review path/to/file.cpp` if it repeats.",
                     ]),
               ].join("\n"),
               "kodiai response",
@@ -3576,19 +3604,21 @@ export function createMentionHandler(deps: {
               );
             }
           } else {
-            const detailLines = [
-              "I completed the review run but couldn't publish a GitHub review/comment from it.",
-            ];
-            if (result.stopReason) {
-              detailLines.push("", `Stop reason: ${result.stopReason}`);
-            }
-            if (result.errorMessage) {
-              detailLines.push("", result.errorMessage);
-            }
-            detailLines.push(
-              "",
-              "Try mentioning me again after this reply if you want another attempt.",
-            );
+            const detailLines = explicitReviewRequest
+              ? [
+                  "I couldn't publish a trustworthy review result for this request.",
+                  "",
+                  "No code findings were published.",
+                  "",
+                  "The run was recorded with failure diagnostics for operators.",
+                  "Try a narrower request such as `@kodiai review path/to/file.cpp` if it repeats.",
+                ]
+              : [
+                  "I couldn't publish a response for this request.",
+                  "",
+                  "The run was recorded with failure diagnostics for operators.",
+                  "Try a more targeted question with the main file/path I should inspect first.",
+                ];
             const failureBody = wrapInDetails(detailLines.join("\n"), "kodiai response");
             try {
               if (

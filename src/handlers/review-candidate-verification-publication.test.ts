@@ -328,8 +328,8 @@ describe("review handler M070 candidate verification publication wiring", () => 
       ...scenario.issueCreatePayloads.map((payload) => String(payload.body ?? "")),
       ...scenario.issueUpdatePayloads.map((payload) => String(payload.body ?? "")),
     ].join("\n---\n");
-    expect(publishedBodies).toContain("M072 candidate publication bridge: status=allowed");
-    expect(publishedBodies).toContain("rawPayloads:n");
+    expect(publishedBodies).not.toContain("M072 candidate publication bridge:");
+    expect(publishedBodies).not.toContain("rawPayloads:n");
     expect(publishedBodies).not.toContain("candidateBody");
     expect(publishedBodies).not.toContain("SAFE INLINE REVIEW BODY");
   });

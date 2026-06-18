@@ -109,6 +109,7 @@ export type ReviewDetailsSummaryParams = {
   linesAdded: number;
   linesRemoved: number;
   findingCounts: FindingCounts;
+  includeOperationalDiagnostics?: boolean;
   largePRTriage?: LargePrTriageDetails;
   reviewBoundedness?: ReviewBoundednessContract | null;
   reviewFirstPass?: ReviewFirstPassPayload | null;
@@ -285,6 +286,7 @@ function formatTimeoutReductionLines(reviewBoundedness: ReviewBoundednessContrac
 
 function formatCoreReviewDetailsSection(params: ReviewDetailsSummaryParams & {
   lineCountSource: ReviewDetailsLineCountSource;
+  includeOperationalDiagnostics: boolean;
 }): string[] {
   return [
     ...formatPrimaryReviewDetailLines(params),
@@ -292,7 +294,7 @@ function formatCoreReviewDetailsSection(params: ReviewDetailsSummaryParams & {
     formatLineCountLine(params),
     ...formatProfileSection(params),
     `- Contributor experience: ${params.contributorExperience.text}`,
-    ...(params.shadowSpecialistReviewDetails?.reviewDetailsLine
+    ...(params.includeOperationalDiagnostics && params.shadowSpecialistReviewDetails?.reviewDetailsLine
       ? [`- ${params.shadowSpecialistReviewDetails.reviewDetailsLine}`]
       : []),
     `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
@@ -418,12 +420,13 @@ function formatKeywordParsingSection(keywordParsing?: ParsedPRIntent): string[] 
 
 export function formatReviewDetailsSummary(params: ReviewDetailsSummaryParams): string {
   const lineCountSource = params.lineCountSource ?? "local-diff";
+  const includeOperationalDiagnostics = params.includeOperationalDiagnostics ?? true;
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
-    ...formatPublicationDiagnosticsSection(params),
-    ...formatCoreReviewDetailsSection({ ...params, lineCountSource }),
+    ...(includeOperationalDiagnostics ? formatPublicationDiagnosticsSection(params) : []),
+    ...formatCoreReviewDetailsSection({ ...params, lineCountSource, includeOperationalDiagnostics }),
     ...formatPhaseTimingSection(params.phaseTimingSummary),
     ...formatUsageLimitSection(params.usageLimit),
     ...formatTokenUsageSection(params.tokenUsage),

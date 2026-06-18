@@ -32,28 +32,25 @@ describe("review handler shadow specialist publication boundary", () => {
     expect(visibleBody).toContain("Review prompt covered 1 changed file.");
     expect(visibleBody).toContain("<summary>Review Details</summary>");
     const shadowLog = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
-    expect(visibleBody).toContain("- Shadow specialist: lane=docs-config-truth status=degraded");
-    expect(visibleBody).toContain("candidateCount=4");
-    expect(visibleBody).toContain("decisionCount=4");
-    expect(visibleBody).toContain("duplicateCount=1");
-    expect(visibleBody).toContain("disagreementCount=1");
-    expect(visibleBody).toContain("metricAvailability=token:y,cost:y,latency:y");
-    expect(visibleBody).toContain("visiblePublicationDenied=true");
-    expect(visibleBody).toContain("approvalPublicationDenied=true");
-    expect(visibleBody).toContain(`correlationKey=${shadowLog?.data?.correlationKey}`);
+    expect(visibleBody).not.toContain("- Shadow specialist:");
+    expect(visibleBody).not.toContain("candidateCount=4");
+    expect(visibleBody).not.toContain("metricAvailability=token:y,cost:y,latency:y");
     expect(visibleBody).not.toContain(specialistCanary);
     expect(visibleBody).not.toContain(specialistInlineCanary);
     expect(visibleBody).not.toContain("candidate-a");
     expect(visibleBody).not.toContain("operator-runbook-gap");
 
-    const log = result.entries.find((entry) => entry.data?.gate === "shadow-specialist");
-    expect(log?.data).toMatchObject({
+    expect(shadowLog?.data).toMatchObject({
       visiblePublicationDenied: true,
       approvalPublicationDenied: true,
       publishesFindings: false,
       approvalFieldsIncluded: false,
       candidateBodiesIncluded: false,
       rawModelOutputIncluded: false,
+      candidateCount: 4,
+      decisionCount: 4,
+      duplicateCount: 1,
+      disagreementCount: 1,
     });
   });
 });

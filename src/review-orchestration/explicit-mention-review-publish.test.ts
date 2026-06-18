@@ -117,7 +117,8 @@ describe("buildExplicitMentionReviewPublishFailureBody", () => {
     });
 
     expect(body).toContain("Kodiai couldn't publish the review result");
-    expect(body).toContain("validation failed");
+    expect(body).toContain("failed before KodiAI could publish");
+    expect(body).not.toContain("validation failed");
   });
 });
 

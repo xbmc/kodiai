@@ -66,4 +66,35 @@ describe("retryGitHubRateLimitOnly", () => {
     expect(rateLimitAttempts).toBe(2);
     expect(serverAttempts).toBe(1);
   });
+
+  test("retries GitHub secondary-rate-limit 403 responses but not permission 403s", async () => {
+    let secondaryAttempts = 0;
+    const secondaryResult = await retryGitHubRateLimitOnly(
+      async () => {
+        secondaryAttempts++;
+        if (secondaryAttempts === 1) {
+          throw {
+            status: 403,
+            response: { headers: { "retry-after": "0" } },
+            message: "secondary rate limit",
+          };
+        }
+        return "ok";
+      },
+      { sleep: async () => {} },
+    );
+
+    let permissionAttempts = 0;
+    await expect(retryGitHubRateLimitOnly(
+      async () => {
+        permissionAttempts++;
+        throw { status: 403, message: "Resource not accessible by integration" };
+      },
+      { sleep: async () => {} },
+    )).rejects.toEqual({ status: 403, message: "Resource not accessible by integration" });
+
+    expect(secondaryResult).toBe("ok");
+    expect(secondaryAttempts).toBe(2);
+    expect(permissionAttempts).toBe(1);
+  });
 });

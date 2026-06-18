@@ -2665,10 +2665,11 @@ describe("createMentionHandler conversational review wiring", () => {
       }),
     );
 
-    expect(replyBody).toContain("kodiai");
-    expect(replyBody).toContain("claude");
+    expect(replyBody).toContain("Kodiai could not complete the request");
+    expect(replyBody).toContain("failed before KodiAI could publish");
     expect(replyBody).not.toContain("@kodiai");
     expect(replyBody).not.toContain("@claude");
+    expect(replyBody).not.toContain("Please ask");
 
     await workspaceFixture.cleanup();
   });
@@ -7657,8 +7658,10 @@ describe("createMentionHandler review command", () => {
     );
 
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
-    expect(issueReplies[0]).toContain("Issues:");
+    expect(issueReplies[0]).toContain("couldn't publish a trustworthy review result");
+    expect(issueReplies[0]).toContain("No code findings were published");
+    expect(issueReplies[0]).not.toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).not.toContain("[major] review execution");
     expect(issueReplies[0]).not.toContain("I can answer this, but I need one detail first.");
 
     await workspaceFixture.cleanup();
@@ -7767,9 +7770,14 @@ describe("createMentionHandler review command", () => {
     );
 
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
-    expect(issueReplies[0]).toContain("Stop reason: error_max_structured_output_retries");
-    expect(issueReplies[0]).toContain("Review response could not satisfy the structured output contract.");
+    expect(issueReplies[0]).toContain("I couldn't publish a trustworthy review result for this request.");
+    expect(issueReplies[0]).toContain("No code findings were published.");
+    expect(issueReplies[0]).toContain("recorded with failure diagnostics");
+    expect(issueReplies[0]).toContain("kodiai review path/to/file.cpp");
+    expect(issueReplies[0]).not.toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
+    expect(issueReplies[0]).not.toContain("Stop reason:");
+    expect(issueReplies[0]).not.toContain("error_max_structured_output_retries");
+    expect(issueReplies[0]).not.toContain("Review response could not satisfy the structured output contract.");
 
     await workspaceFixture.cleanup();
   });
@@ -7884,7 +7892,7 @@ describe("createMentionHandler review command", () => {
     expect(issueReplies[0]).toContain("I ran out of steps analyzing this and wasn't able to post a complete response.");
     expect(issueReplies[0]).toContain("This was a tiny-diff review");
     expect(issueReplies[0]).toContain("small-diff routing diagnostics");
-    expect(issueReplies[0]).not.toContain("Ask a more targeted question");
+    expect(issueReplies[0]).not.toContain("path/to/file.cpp");
     expect(issueReplies[0]).not.toContain("This can happen on PRs with large or complex diffs");
     expect(issueReplies[0]).not.toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
 
@@ -8179,8 +8187,11 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(0);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
-    expect(issueReplies[0]).toContain("did not produce a usable code review");
+    expect(issueReplies[0]).toContain("couldn't publish a trustworthy review result");
+    expect(issueReplies[0]).toContain("required repo-inspection evidence");
+    expect(issueReplies[0]).toContain("No code findings were published");
+    expect(issueReplies[0]).not.toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).not.toContain("[major] review execution");
 
     const publishSkipLog = infoCalls.find((entry) =>
       entry.message === "Skipping explicit mention review publish path",
@@ -10298,7 +10309,8 @@ describe("createMentionHandler review command", () => {
     expect(issueReplies).toHaveLength(1);
     expect(issueReplies[0]).toContain("Kodiai couldn't publish the review result");
     expect(issueReplies[0]).toContain("Kodiai encountered an API error");
-    expect(issueReplies[0]).toContain("GitHub rejected the publish step. Validation Failed");
+    expect(issueReplies[0]).toContain("GitHub or runtime API request failed");
+    expect(issueReplies[0]).not.toContain("GitHub rejected the publish step. Validation Failed");
     expect(issueReplies[0]).not.toContain("Decision: NOT APPROVED");
 
     const attemptLog = infoCalls.find((entry) =>
@@ -13332,7 +13344,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
 
     expect(result.executorCalls).toHaveLength(1);
     expect(result.formatterSubflowCalls).toHaveLength(1);
-    expect(result.commentBodies.some((body) => body.includes("Claude execution failed"))).toBe(true);
+    expect(result.commentBodies.some((body) => body.includes("failed before KodiAI could publish"))).toBe(true);
+    expect(result.commentBodies.some((body) => body.includes("Claude execution failed"))).toBe(false);
 
     const completionLog = result.infoCalls.find(
       (entry) => entry.message === "Combined review-and-format mention request completed",
@@ -13389,7 +13402,8 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     expect(result.executorCalls).toHaveLength(1);
     expect(result.formatterSubflowCalls).toHaveLength(1);
     expect(result.errorCalls.some((entry) => entry.message === "Mention handler failed")).toBe(true);
-    expect(result.commentBodies.some((body) => body.includes("executor exploded"))).toBe(true);
+    expect(result.commentBodies.some((body) => body.includes("failed before KodiAI could publish"))).toBe(true);
+    expect(result.commentBodies.some((body) => body.includes("executor exploded"))).toBe(false);
 
     const combinedAttemptLog = result.infoCalls.find(
       (entry) => entry.message === "Combined review-and-format formatter subflow completed after review executor threw",
@@ -13794,7 +13808,10 @@ test("review-comment error fallback checks parent existence before choosing top-
   expect(getReviewCommentCalls).toBe(1);
   expect(createReplyCalls).toBe(0);
   expect(issueReplies).toHaveLength(1);
-  expect(issueReplies[0]).toContain("You've hit your limit");
+  expect(issueReplies[0]).toContain("review provider usage limit");
+  expect(issueReplies[0]).toContain("reset 10:50pm (UTC)");
+  expect(issueReplies[0]).not.toContain("You've hit your limit");
+  expect(issueReplies[0]).not.toContain("Claude Code returned an error result");
   expect(issueReplies[0]).toContain("kodiai:error:usage-limit");
 
   const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");

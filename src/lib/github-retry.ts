@@ -71,7 +71,6 @@ export function retryGitHubRateLimitOnly<T>(
     initialDelayMs: 1_000,
     maxDelayMs: 30_000,
     ...options,
-    shouldRetry: (error) =>
-      typeof error === "object" && error !== null && (error as { status?: unknown }).status === 429,
+    shouldRetry: isGitHubRateLimitRejection,
   });
 }

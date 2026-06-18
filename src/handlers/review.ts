@@ -3158,6 +3158,15 @@ export function createReviewHandler(deps: {
           prApiLinesRemoved: pr.deletions ?? 0,
         });
         const linesChanged = reviewDetailsLineCounts.linesAdded + reviewDetailsLineCounts.linesRemoved;
+        const hasReviewDetailsOperationalSignal =
+          processedFindings.length > 0
+          || filteredInlineFindings.length > 0
+          || suppressionsApplied > 0
+          || reviewPlanDetailsSummary.text.includes("doctrine=applied")
+          || reviewCandidatePublicationRuntime.mode !== "blocked"
+          || reviewCandidatePublicationRuntime.reasons.some((reason) =>
+            reason !== "approval-blocked" && reason !== "no-candidate-publication-path"
+          );
 
         let canonicalReviewDetailsBody: string | null = null;
         const buildReviewDetailsBody = (params?: {
@@ -3172,6 +3181,10 @@ export function createReviewHandler(deps: {
             linesAdded: reviewDetailsLineCounts.linesAdded,
             linesRemoved: reviewDetailsLineCounts.linesRemoved,
             findingCounts,
+            includeOperationalDiagnostics:
+              hasReviewDetailsOperationalSignal
+              || Boolean(params?.timeoutProgress)
+              || Boolean(params?.reviewFirstPass),
             largePRTriage: tieredFiles.isLargePR ? {
               fullCount: tieredFiles.full.length,
               abbreviatedCount: tieredFiles.abbreviated.length,
@@ -5158,13 +5171,11 @@ export function createReviewHandler(deps: {
                 "",
                 "_The review run ended before it could publish comments or an approval._",
                 "",
-                ...(result.stopReason ? [`Stop reason: ${result.stopReason}`] : []),
-                ...(result.failureSubtype ? [`Failure subtype: ${result.failureSubtype}`] : []),
-                ...(fallbackRetryState ? [`Retry state: ${fallbackRetryState}`] : []),
-                "",
                 fallbackRetryState?.startsWith("scheduled")
                   ? "A reduced-scope retry has been scheduled automatically."
                   : "Kodiai could not preserve enough structured evidence to publish a bounded first-pass review.",
+                "",
+                "The run was recorded with failure diagnostics for operators.",
               ].join("\n");
             } else if (category === "timeout_partial") {
               // TMO-03: Partial review -- inline comments were published before timeout
@@ -5218,13 +5229,12 @@ export function createReviewHandler(deps: {
 
         if (result.conclusion === "failure" && !(result.published ?? false) && !exhaustedTurnBudget) {
           const failureBody = [
-            "> **Kodiai completed the review run but could not publish review output**",
+            "> **Kodiai could not publish a trustworthy review result**",
             "",
-            ...(result.stopReason ? [`Stop reason: ${result.stopReason}`] : []),
-            ...(result.failureSubtype ? [`Failure subtype: ${result.failureSubtype}`] : []),
-            ...(result.errorMessage ? [result.errorMessage] : []),
+            "No code findings were published.",
             "",
-            "Try requesting another review if you want a fresh attempt.",
+            "The run was recorded with failure diagnostics for operators.",
+            "Try a narrower review request if it repeats.",
           ].join("\n");
 
           const octokit = await githubApp.getInstallationOctokit(event.installationId);

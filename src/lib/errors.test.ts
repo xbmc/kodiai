@@ -109,21 +109,22 @@ describe("formatErrorComment", () => {
       api_error: "Kodiai encountered an API error",
       config_error: "Kodiai found a configuration problem",
       clone_error: "Kodiai couldn't access the repository",
-      internal_error: "Kodiai encountered an error",
-      usage_limit: "Kodiai hit its Claude usage limit",
+      internal_error: "Kodiai could not complete the request",
+      usage_limit: "Kodiai hit its review provider usage limit",
     };
 
     for (const category of categories) {
       const result = formatErrorComment(category, "test detail");
       expect(result).toContain(`> **${expectedHeaders[category]}**`);
-      expect(result).toContain("_test detail_");
+      expect(result).not.toContain("_test detail_");
+      expect(result).toContain("_");
     }
   });
 
   test("includes suggestion for timeout", () => {
     const result = formatErrorComment("timeout", "detail");
-    expect(result).toContain("smaller pieces");
-    expect(result).toContain("`.kodiai.yml`");
+    expect(result).toContain("narrower request");
+    expect(result).toContain("@kodiai review path/to/file.cpp");
   });
 
   test("includes suggestion for timeout_partial", () => {
@@ -152,21 +153,71 @@ describe("formatErrorComment", () => {
 
   test("includes suggestion for internal_error", () => {
     const result = formatErrorComment("internal_error", "detail");
-    expect(result).toContain("persists");
-    expect(result).toContain("report");
+    expect(result).toContain("recorded in KodiAI logs");
+    expect(result).toContain("narrow");
   });
 
   test("includes suggestion for usage_limit", () => {
     const result = formatErrorComment("usage_limit", "Claude Code returned an error result: You've hit your limit · resets 10:50pm (UTC)");
     expect(result).toContain("try again after the reset time");
     expect(result).toContain("kodiai:error:usage-limit");
+    expect(result).toContain("reset 10:50pm (UTC)");
+    expect(result).not.toContain("Claude Code returned an error result");
+  });
+
+  test("does not expose raw executor or workspace details in public errors", () => {
+    const result = formatErrorComment(
+      "internal_error",
+      "Failed with exit code 143 while chmod '/mnt/kodiai-workspaces/run/repo/privacy-policy.txt'",
+    );
+
+    expect(result).toContain("failed before KodiAI could publish");
+    expect(result).not.toContain("exit code");
+    expect(result).not.toContain("/mnt/kodiai-workspaces");
+    expect(result).not.toContain("privacy-policy.txt");
+    expect(result).not.toContain("chmod");
+  });
+
+  test("does not expose remote diagnostics in timeout comments", () => {
+    const result = formatErrorComment(
+      "timeout",
+      [
+        "Job timed out after 717 seconds.",
+        "Last remote diagnostics:",
+        "2026-05-03T18:12:59.142Z turn=71 tool=Bash target=git show",
+      ].join("\n"),
+    );
+
+    expect(result).toContain("exceeded its execution time");
+    expect(result).not.toContain("Last remote diagnostics");
+    expect(result).not.toContain("git show");
+    expect(result).not.toContain("turn=71");
+  });
+
+  test("does not expose raw API or validation payloads", () => {
+    const apiResult = formatErrorComment(
+      "api_error",
+      `launchAcaJob: REST API returned 400: {"error":{"code":"ContainerAppImageRequired","message":"Container with name 'caj-kodiai-agent' must have an 'Image' property specified."}}`,
+    );
+    const configResult = formatErrorComment(
+      "config_error",
+      "Branch name contains invalid characters (allowed: alphanumeric, _, /, ., -): plugin.video.youtube@matrix",
+    );
+
+    expect(apiResult).toContain("API request failed");
+    expect(apiResult).not.toContain("ContainerAppImageRequired");
+    expect(apiResult).not.toContain("caj-kodiai-agent");
+    expect(configResult).toContain("repository configuration");
+    expect(configResult).not.toContain("plugin.video.youtube@matrix");
+    expect(configResult).not.toContain("allowed: alphanumeric");
   });
 
   test("redacts GitHub tokens in detail", () => {
     const token = "ghs_" + "a".repeat(36);
     const result = formatErrorComment("internal_error", `Error with token ${token}`);
     expect(result).not.toContain(token);
-    expect(result).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(result).not.toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(result).toContain("failed before KodiAI could publish");
   });
 
   test("redacts multiple token types in detail", () => {
@@ -178,13 +229,85 @@ describe("formatErrorComment", () => {
     );
     expect(result).not.toContain(ghpToken);
     expect(result).not.toContain(ghsToken);
-    expect(result).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(result).not.toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(result).toContain("API request failed");
   });
 });
 
 // --- postOrUpdateErrorComment duplicate handling ---
 
 describe("postOrUpdateErrorComment", () => {
+  test("retries a rate-limited create before reporting success", async () => {
+    let createCalls = 0;
+    const createComment = mock(async () => {
+      createCalls++;
+      if (createCalls === 1) {
+        const err = new Error("Rate limited") as Error & {
+          status?: number;
+          response?: { headers?: Record<string, string> };
+        };
+        err.status = 429;
+        err.response = { headers: { "retry-after": "0" } };
+        throw err;
+      }
+      return { data: { id: 2 } };
+    });
+    const updateComment = mock(async () => ({ data: { id: 1 } }));
+    const listComments = mock(async () => ({ data: [] }));
+    const logger = { error: mock(() => undefined) };
+
+    const result = await postOrUpdateErrorComment(
+      {
+        rest: {
+          issues: { createComment, updateComment, listComments },
+        },
+      } as never,
+      { owner: "acme", repo: "repo", issueNumber: 42 },
+      formatErrorComment("internal_error", "executor failed"),
+      logger as never,
+    );
+
+    expect(result).toEqual({ ok: true, resolution: "created", method: "create-comment" });
+    expect(createComment).toHaveBeenCalledTimes(2);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  test("retries a rate-limited tracked update before reporting success", async () => {
+    let updateCalls = 0;
+    const createComment = mock(async () => ({ data: { id: 2 } }));
+    const updateComment = mock(async () => {
+      updateCalls++;
+      if (updateCalls === 1) {
+        const err = new Error("Rate limited") as Error & {
+          status?: number;
+          response?: { headers?: Record<string, string> };
+        };
+        err.status = 429;
+        err.response = { headers: { "retry-after": "0" } };
+        throw err;
+      }
+      return { data: { id: 1 } };
+    });
+    const listComments = mock(async () => ({ data: [] }));
+    const logger = { error: mock(() => undefined) };
+
+    const result = await postOrUpdateErrorComment(
+      {
+        rest: {
+          issues: { createComment, updateComment, listComments },
+        },
+      } as never,
+      { owner: "acme", repo: "repo", issueNumber: 42, trackingCommentId: 99 },
+      formatErrorComment("internal_error", "executor failed"),
+      logger as never,
+    );
+
+    expect(result).toEqual({ ok: true, resolution: "updated", method: "update-comment" });
+    expect(updateComment).toHaveBeenCalledTimes(2);
+    expect(createComment).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
   test("updates a recent usage-limit error comment instead of creating a duplicate", async () => {
     const createdAt = new Date(Date.now() - 60_000).toISOString();
     const existingBody = wrapUsageLimitBody("first failure");
@@ -220,6 +343,55 @@ describe("postOrUpdateErrorComment", () => {
     const updateCall = updateComment.mock.calls[0] as unknown[] | undefined;
     expect(updateCall?.[0]).toMatchObject({ comment_id: 1, body: replacementBody });
     expect(createComment).not.toHaveBeenCalled();
+  });
+
+  test("retries a rate-limited usage-limit duplicate scan before updating", async () => {
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const existingBody = wrapUsageLimitBody("first failure");
+    const replacementBody = wrapUsageLimitBody("second failure");
+    const createComment = mock(async () => ({ data: { id: 2 } }));
+    const updateComment = mock(async () => ({ data: { id: 1 } }));
+    let listCalls = 0;
+    const listComments = mock(async () => {
+      listCalls++;
+      if (listCalls === 1) {
+        const err = new Error("Rate limited") as Error & {
+          status?: number;
+          response?: { headers?: Record<string, string> };
+        };
+        err.status = 429;
+        err.response = { headers: { "retry-after": "0" } };
+        throw err;
+      }
+      return {
+        data: [
+          {
+            id: 1,
+            body: existingBody,
+            created_at: createdAt,
+            user: { login: "kodiai[bot]" },
+          },
+        ],
+      };
+    });
+    const logger = { error: mock(() => undefined) };
+
+    const result = await postOrUpdateErrorComment(
+      {
+        rest: {
+          issues: { createComment, updateComment, listComments },
+        },
+      } as never,
+      { owner: "acme", repo: "repo", issueNumber: 42 },
+      replacementBody,
+      logger as never,
+    );
+
+    expect(result).toEqual({ ok: true, resolution: "updated", method: "update-comment" });
+    expect(listComments).toHaveBeenCalledTimes(2);
+    expect(updateComment).toHaveBeenCalledTimes(1);
+    expect(createComment).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });
 
