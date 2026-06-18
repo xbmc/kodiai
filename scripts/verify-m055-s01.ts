@@ -5,7 +5,7 @@ const COMMAND_NAME = "verify:m055:s01" as const;
 const README_PATH = path.resolve(import.meta.dir, "../README.md");
 const CHANGELOG_PATH = path.resolve(import.meta.dir, "../CHANGELOG.md");
 const PACKAGE_JSON_PATH = path.resolve(import.meta.dir, "../package.json");
-const EXPECTED_SHIPPED_COUNT_LINE = "38 milestones shipped (v0.1 through v0.38).";
+const EXPECTED_SHIPPED_COUNT_LINE = "44 milestones shipped (v0.1 through v0.44).";
 const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m055-s01.ts";
 const REQUIRED_RECENT_FEATURE_MARKERS = [
   "M074",
@@ -34,7 +34,20 @@ const REQUIRED_NIGHTLY_WORKFLOW_MARKERS = [
   "workflow_dispatch",
   "GitHub Actions workflow run status",
 ] as const;
-const REQUIRED_CHANGELOG_RELEASE_MARKERS = ["## v0.38", "## v0.37", "## v0.36", "## v0.31", "## v0.30", "## v0.29"] as const;
+const REQUIRED_CHANGELOG_RELEASE_MARKERS = [
+  "## v0.44",
+  "## v0.43",
+  "## v0.42",
+  "## v0.41",
+  "## v0.40",
+  "## v0.39",
+  "## v0.38",
+  "## v0.37",
+  "## v0.36",
+  "## v0.31",
+  "## v0.30",
+  "## v0.29",
+] as const;
 
 export const M055_S01_CHECK_IDS = [
   "M055-S01-README-SHIPPED-COUNT",
@@ -296,7 +309,7 @@ function buildChangelogRecentReleasesCheck(changelogContent: string): Check {
   return passCheck(
     "M055-S01-CHANGELOG-RECENT-RELEASES",
     "changelog_recent_releases_ok",
-    "CHANGELOG.md includes v0.29 through v0.31 and current v0.36 through v0.38 release entries.",
+    "CHANGELOG.md includes v0.29 through v0.31 and current v0.36 through v0.44 release entries.",
   );
 }
 

@@ -4,7 +4,7 @@ Kodiai  is an installable GitHub App that delivers AI-powered code review, conve
 
 Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
 
-43 milestones shipped (v0.1 through v0.43). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
+44 milestones shipped (v0.1 through v0.44). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
 
 ## Quick Start
 

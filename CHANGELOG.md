@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.44 (2026-06-18)
+
+Review-publication reliability, public fallback hardening, and live Kodi review validation.
+
+### Added
+
+- GitHub rate-limit retries around fallback/error comment publication, including usage-limit duplicate scans, tracked updates, duplicate updates, and create-comment fallback paths.
+- Regression coverage for retrying GitHub `429` and secondary-rate-limit `403` responses while keeping normal permission `403` failures non-retryable.
+- Regression coverage that public error comments stay bounded and do not expose executor, API, workspace, token, or remote diagnostic details.
+
+### Changed
+
+- Review Details now omits internal operational diagnostics from ordinary public output while retaining bounded diagnostics where they are explicitly relevant.
+- Mention and review fallback wording now stays user-facing and bounded for execution errors, turn-limit exits, and publish-failure paths.
+- Public error headers and usage-limit wording now refer to the review provider generically instead of leaking raw provider/runtime failure text.
+
+### Verification
+
+- `bunx tsc --noEmit` passed.
+- `bun run lint` passed.
+- `bun run test:unit` passed with `5643 pass`.
+- Deployed revision `ca-kodiai--deploy-0122db7db467-20260618-100027` passed `/healthz` and `/readiness`.
+- Live explicit `@kodiai review` proof on `xbmc/inputstream.adaptive#2060` completed ACA job `caj-kodiai-agent-ktzokve` and published bot output in comment `4744358392`.
+- Live explicit `@kodiai review` proof on `xbmc/xbmc#28172` completed ACA job `caj-kodiai-agent-kdcpc4t`, published summary comment `4744422253`, and published four inline review comments.
+
 ## v0.43 (2026-06-08)
 
 Token-usage optimization, embedding/batch resilience, and deployed live-review verification.

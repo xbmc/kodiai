@@ -21,7 +21,7 @@ const PASSING_README = `# Kodiai
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional .kodiai.yml file.
 
-38 milestones shipped (v0.1 through v0.38). See [CHANGELOG.md](CHANGELOG.md) for release history.
+44 milestones shipped (v0.1 through v0.44). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Recent Shipped Milestones
 
@@ -45,6 +45,30 @@ Both workflows also support manual workflow_dispatch runs for testing, and any f
 `;
 
 const PASSING_CHANGELOG = `# Changelog
+
+## v0.44 (2026-06-18)
+
+Review-publication reliability.
+
+## v0.43 (2026-06-08)
+
+Token-usage optimization.
+
+## v0.42 (2026-06-01)
+
+Review utility decomposition.
+
+## v0.41 (2026-05-31)
+
+Review handler slice extraction.
+
+## v0.40 (2026-05-31)
+
+Production observability hardening.
+
+## v0.39 (2026-05-30)
+
+Production log cleanup.
 
 ## v0.38 (2026-05-19)
 
@@ -164,7 +188,7 @@ describe("verify m055 s01 docs truth harness", () => {
       readTextFile: async (filePath: string) => {
         if (filePath.endsWith("README.md")) {
           return PASSING_README
-            .replace("38 milestones shipped (v0.1 through v0.38).", "37 milestones shipped (v0.1 through v0.37).")
+            .replace("44 milestones shipped (v0.1 through v0.44).", "43 milestones shipped (v0.1 through v0.43).")
             .replace("Slack webhook relay", "Slack integration")
             .replace("nightly-reaction-sync runs bun scripts/sync-triage-reactions.ts shortly after issue sync.", "Nightly workflows keep things current.");
         }
@@ -209,9 +233,15 @@ describe("verify m055 s01 docs truth harness", () => {
         status_code: "package_wiring_missing",
       }),
     ]);
-    expect(report.checks[0]?.detail).toContain("38 milestones shipped");
+    expect(report.checks[0]?.detail).toContain("44 milestones shipped");
     expect(report.checks[1]?.detail).toContain("Slack webhook relay");
     expect(report.checks[2]?.detail).toContain("nightly-reaction-sync");
+    expect(report.checks[3]?.detail).toContain("v0.44");
+    expect(report.checks[3]?.detail).toContain("v0.43");
+    expect(report.checks[3]?.detail).toContain("v0.42");
+    expect(report.checks[3]?.detail).toContain("v0.41");
+    expect(report.checks[3]?.detail).toContain("v0.40");
+    expect(report.checks[3]?.detail).toContain("v0.39");
     expect(report.checks[3]?.detail).toContain("v0.38");
     expect(report.checks[3]?.detail).toContain("v0.37");
     expect(report.checks[3]?.detail).toContain("v0.36");
