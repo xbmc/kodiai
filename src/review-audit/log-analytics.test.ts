@@ -16,9 +16,11 @@ describe("review audit log analytics adapter", () => {
     });
 
     expect(query).toContain("ContainerAppConsoleLogs_CL");
-    expect(query).toContain('Log_s has "rok-123"');
-    expect(query).toContain('Log_s has "delivery-123"');
-    expect(query).toContain('Log_s has "Review phase timing summary"');
+    expect(query).toContain("ContainerAppConsoleLogs");
+    expect(query).toContain("AzureDiagnostics");
+    expect(query).toContain('Log has "rok-123"');
+    expect(query).toContain('Log has "delivery-123"');
+    expect(query).toContain('Log has "Review phase timing summary"');
     expect(query).toContain("take 50");
   });
 
@@ -60,6 +62,51 @@ describe("review audit log analytics adapter", () => {
     expect(result[0]?.reviewOutputKey).toBe("rok-123");
     expect(result[1]?.malformed).toBe(true);
     expect(result[1]?.deliveryId).toBeNull();
+  });
+
+  test("normalizeLogAnalyticsRows handles Azure Monitor resource-specific console rows", () => {
+    const result = normalizeLogAnalyticsRows([
+      {
+        TimeGenerated: "2026-06-18T17:00:00.000Z",
+        Log: JSON.stringify({
+          deliveryId: "delivery-456",
+          reviewOutputKey: "rok-456",
+          msg: "Review completed",
+        }),
+        RevisionName: "ca-kodiai--deploy-0122db7db467",
+        ContainerAppName: "ca-kodiai",
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.rawLog).toContain("delivery-456");
+    expect(result[0]?.deliveryId).toBe("delivery-456");
+    expect(result[0]?.reviewOutputKey).toBe("rok-456");
+    expect(result[0]?.message).toBe("Review completed");
+    expect(result[0]?.revisionName).toBe("ca-kodiai--deploy-0122db7db467");
+    expect(result[0]?.containerAppName).toBe("ca-kodiai");
+  });
+
+  test("normalizeLogAnalyticsRows handles generic AzureDiagnostics console rows", () => {
+    const result = normalizeLogAnalyticsRows([
+      {
+        TimeGenerated: "2026-06-18T17:10:00.000Z",
+        Log_s: JSON.stringify({
+          deliveryId: "delivery-789",
+          msg: "Diagnostic row",
+        }),
+        RevisionName_s: "ca-kodiai--deploy-0122db7db467",
+        ContainerAppName_s: "ca-kodiai",
+        ResourceProvider: "MICROSOFT.APP",
+        Category: "ContainerAppConsoleLogs",
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.deliveryId).toBe("delivery-789");
+    expect(result[0]?.message).toBe("Diagnostic row");
+    expect(result[0]?.revisionName).toBe("ca-kodiai--deploy-0122db7db467");
+    expect(result[0]?.containerAppName).toBe("ca-kodiai");
   });
 
   test("queryReviewAuditLogs uses the first workspace as primary and normalizes returned rows", async () => {

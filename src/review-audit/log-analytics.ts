@@ -44,23 +44,30 @@ export function buildReviewAuditLogQuery(params: {
   limit?: number;
 }): string {
   const lines = [
-    "ContainerAppConsoleLogs_CL",
+    "union isfuzzy=true",
+    "  (ContainerAppConsoleLogs_CL",
+    "    | project TimeGenerated, Log = tostring(Log_s), RevisionName = tostring(RevisionName_s), ContainerAppName = tostring(ContainerAppName_s)),",
+    "  (ContainerAppConsoleLogs",
+    "    | project TimeGenerated, Log = tostring(Log), RevisionName = tostring(RevisionName), ContainerAppName = tostring(ContainerAppName)),",
+    "  (AzureDiagnostics",
+    "    | where ResourceProvider == \"MICROSOFT.APP\" and Category == \"ContainerAppConsoleLogs\"",
+    "    | project TimeGenerated, Log = tostring(Log_s), RevisionName = tostring(RevisionName_s), ContainerAppName = tostring(ContainerAppName_s))",
   ];
 
   if (params.reviewOutputKey) {
-    lines.push(`| where Log_s has "${escapeKqlString(params.reviewOutputKey)}"`);
+    lines.push(`| where Log has "${escapeKqlString(params.reviewOutputKey)}"`);
   }
 
   if (params.deliveryId) {
-    lines.push(`| where Log_s has "${escapeKqlString(params.deliveryId)}"`);
+    lines.push(`| where Log has "${escapeKqlString(params.deliveryId)}"`);
   }
 
   if (params.messageContains) {
-    lines.push(`| where Log_s has "${escapeKqlString(params.messageContains)}"`);
+    lines.push(`| where Log has "${escapeKqlString(params.messageContains)}"`);
   }
 
   lines.push(
-    "| project TimeGenerated, Log_s, RevisionName_s, ContainerAppName_s",
+    "| project TimeGenerated, Log, RevisionName, ContainerAppName",
     "| order by TimeGenerated asc",
     `| take ${Math.max(1, params.limit ?? 200)}`,
   );
@@ -95,7 +102,11 @@ export async function discoverLogAnalyticsWorkspaceIds(params: {
 
 export function normalizeLogAnalyticsRows(rows: LogAnalyticsRow[]): NormalizedLogAnalyticsRow[] {
   return rows.map((row) => {
-    const rawLog = typeof row.Log_s === "string" ? row.Log_s : null;
+    const rawLog = typeof row.Log === "string"
+      ? row.Log
+      : typeof row.Log_s === "string"
+        ? row.Log_s
+        : null;
     let parsedLog: Record<string, unknown> | null = null;
     let malformed = false;
 
@@ -119,8 +130,16 @@ export function normalizeLogAnalyticsRows(rows: LogAnalyticsRow[]): NormalizedLo
       deliveryId: typeof parsedLog?.deliveryId === "string" ? parsedLog.deliveryId : null,
       reviewOutputKey: typeof parsedLog?.reviewOutputKey === "string" ? parsedLog.reviewOutputKey : null,
       message: typeof parsedLog?.msg === "string" ? parsedLog.msg : rawLog,
-      revisionName: typeof row.RevisionName_s === "string" ? row.RevisionName_s : null,
-      containerAppName: typeof row.ContainerAppName_s === "string" ? row.ContainerAppName_s : null,
+      revisionName: typeof row.RevisionName === "string"
+        ? row.RevisionName
+        : typeof row.RevisionName_s === "string"
+          ? row.RevisionName_s
+          : null,
+      containerAppName: typeof row.ContainerAppName === "string"
+        ? row.ContainerAppName
+        : typeof row.ContainerAppName_s === "string"
+          ? row.ContainerAppName_s
+          : null,
       parsedLog,
     };
   });

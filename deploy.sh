@@ -78,6 +78,9 @@ RESOURCE_GROUP="rg-kodiai"
 LOCATION="eastus"
 ENVIRONMENT="cae-kodiai"
 APP_NAME="ca-kodiai"
+LOG_ANALYTICS_WORKSPACE_NAME=${LOG_ANALYTICS_WORKSPACE_NAME:-law-kodiai}
+LOG_ANALYTICS_WORKSPACE_RESOURCE_ID=${LOG_ANALYTICS_WORKSPACE_RESOURCE_ID:-}
+ACA_DIAGNOSTIC_SETTING_NAME=${ACA_DIAGNOSTIC_SETTING_NAME:-kodiai-containerapp-logs}
 ACR_NAME="kodiairegistry"          # Must be globally unique, alphanumeric only
 BUN_BASE_SOURCE_IMAGE=${BUN_BASE_SOURCE_IMAGE:-docker.io/oven/bun:1.3.8-debian}
 BUN_BASE_ACR_IMAGE=${BUN_BASE_ACR_IMAGE:-base/oven-bun:1.3.8-debian}
@@ -179,6 +182,11 @@ if [[ "$OPS_PROVIDER_STATE" != "Registered" ]]; then
   az provider register --namespace Microsoft.OperationalInsights --wait
 fi
 
+INSIGHTS_PROVIDER_STATE=$(az provider show --namespace Microsoft.Insights --query registrationState --output tsv 2>/dev/null || true)
+if [[ "$INSIGHTS_PROVIDER_STATE" != "Registered" ]]; then
+  az provider register --namespace Microsoft.Insights --wait
+fi
+
 KV_PROVIDER_STATE=$(az provider show --namespace Microsoft.KeyVault --query registrationState --output tsv 2>/dev/null || true)
 if [[ "$KV_PROVIDER_STATE" != "Registered" ]]; then
   az provider register --namespace Microsoft.KeyVault --wait || {
@@ -204,6 +212,88 @@ if [[ ! "$KEY_VAULT_NAME" =~ ^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$ ]]; then
   echo "       Use 3-24 characters: alphanumerics and hyphens, start with a letter, and do not end with a hyphen." >&2
   exit 1
 fi
+
+resolve_log_analytics_workspace_resource_id() {
+  if [[ -n "$LOG_ANALYTICS_WORKSPACE_RESOURCE_ID" ]]; then
+    echo "$LOG_ANALYTICS_WORKSPACE_RESOURCE_ID"
+    return 0
+  fi
+
+  local environment_workspace_customer_id=""
+  environment_workspace_customer_id=$(az containerapp env show \
+    --name "$ENVIRONMENT" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId \
+    --output tsv 2>/dev/null || true)
+
+  if [[ -n "$environment_workspace_customer_id" && "$environment_workspace_customer_id" != "null" ]]; then
+    local existing_workspace_resource_id=""
+    existing_workspace_resource_id=$(az monitor log-analytics workspace list \
+      --resource-group "$RESOURCE_GROUP" \
+      --query "[?customerId=='${environment_workspace_customer_id}'].id | [0]" \
+      --output tsv 2>/dev/null || true)
+    if [[ -n "$existing_workspace_resource_id" && "$existing_workspace_resource_id" != "null" ]]; then
+      echo "$existing_workspace_resource_id"
+      return 0
+    fi
+  fi
+
+  if ! az monitor log-analytics workspace show \
+    --resource-group "$RESOURCE_GROUP" \
+    --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
+    --output none 2>/dev/null; then
+    echo "==> Creating Log Analytics workspace: $LOG_ANALYTICS_WORKSPACE_NAME..." >&2
+    az monitor log-analytics workspace create \
+      --resource-group "$RESOURCE_GROUP" \
+      --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
+      --location "$LOCATION" \
+      --output none
+  fi
+
+  az monitor log-analytics workspace show \
+    --resource-group "$RESOURCE_GROUP" \
+    --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
+    --query id \
+    --output tsv
+}
+
+ensure_containerapp_environment_logging() {
+  local environment_id="$1"
+  local workspace_resource_id="$2"
+
+  echo "==> Configuring Container Apps environment logs through Azure Monitor diagnostics..."
+  az containerapp env update \
+    --name "$ENVIRONMENT" \
+    --resource-group "$RESOURCE_GROUP" \
+    --logs-destination azure-monitor \
+    --output none
+
+  local logs_json='[{"category":"ContainerAppConsoleLogs","enabled":true},{"category":"ContainerAppSystemLogs","enabled":true},{"category":"ContainerAppHTTPLogs","enabled":true}]'
+  local metrics_json='[{"category":"AllMetrics","enabled":true}]'
+
+  if az monitor diagnostic-settings show \
+    --name "$ACA_DIAGNOSTIC_SETTING_NAME" \
+    --resource "$environment_id" \
+    --output none 2>/dev/null; then
+    az monitor diagnostic-settings update \
+      --name "$ACA_DIAGNOSTIC_SETTING_NAME" \
+      --resource "$environment_id" \
+      --logs "$logs_json" \
+      --metrics "$metrics_json" \
+      --workspace-id "$workspace_resource_id" \
+      --log-analytics-destination-type Dedicated \
+      --output none
+  else
+    az monitor diagnostic-settings create \
+      --name "$ACA_DIAGNOSTIC_SETTING_NAME" \
+      --resource "$environment_id" \
+      --logs "$logs_json" \
+      --metrics "$metrics_json" \
+      --workspace "$workspace_resource_id" \
+      --export-to-resource-specific true \
+      --output none
+  fi
+}
 
 # -- Resource Group -----------------------------------------------------------
 echo "==> Creating resource group: $RESOURCE_GROUP in $LOCATION..."
@@ -333,6 +423,14 @@ if ! az containerapp env show --name "$ENVIRONMENT" --resource-group "$RESOURCE_
     --location "$LOCATION" \
     --output none
 fi
+
+ENVIRONMENT_ID=$(az containerapp env show \
+  --name "$ENVIRONMENT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query id \
+  --output tsv)
+LOG_ANALYTICS_WORKSPACE_RESOURCE_ID=$(resolve_log_analytics_workspace_resource_id)
+ensure_containerapp_environment_logging "$ENVIRONMENT_ID" "$LOG_ANALYTICS_WORKSPACE_RESOURCE_ID"
 
 # -- Storage mount on ACA environment -----------------------------------------
 echo "==> Mounting Azure Files share on Container Apps environment..."

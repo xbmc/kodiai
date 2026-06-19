@@ -1,4 +1,5 @@
 import { mkdtemp, rm, readdir, stat, mkdir } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
@@ -650,6 +651,58 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
 }
 
 const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+export const AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isNodeErrorWithCode(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+export async function cleanupStaleAzureFilesWorkspaceDirs(opts: {
+  mountBase: string;
+  staleThresholdMs?: number;
+  nowMs?: number;
+  logger?: Logger;
+}): Promise<number> {
+  const staleThresholdMs = opts.staleThresholdMs ?? AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS;
+  const nowMs = opts.nowMs ?? Date.now();
+  let entries: Dirent[];
+
+  try {
+    entries = await readdir(opts.mountBase, { withFileTypes: true });
+  } catch (error: unknown) {
+    if (isNodeErrorWithCode(error) && error.code === "ENOENT") {
+      return 0;
+    }
+    opts.logger?.warn(
+      { err: error instanceof Error ? error.message : String(error), mountBase: opts.mountBase },
+      "Failed to list Azure Files workspaces for stale cleanup",
+    );
+    return 0;
+  }
+
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const fullPath = join(opts.mountBase, entry.name);
+    try {
+      const stats = await stat(fullPath);
+      if (nowMs - stats.mtimeMs <= staleThresholdMs) continue;
+      await rm(fullPath, { recursive: true, force: true });
+      removed++;
+    } catch (error: unknown) {
+      opts.logger?.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          dir: fullPath,
+        },
+        "Failed to clean up stale Azure Files workspace",
+      );
+    }
+  }
+
+  return removed;
+}
 
 /**
  * Create a workspace manager that handles ephemeral git workspace lifecycle:

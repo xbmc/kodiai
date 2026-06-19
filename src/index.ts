@@ -12,7 +12,11 @@ import { createSlackRelayWebhookRoutes } from "./routes/slack-relay-webhooks.ts"
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
 import { createReviewWorkCoordinator } from "./jobs/review-work-coordinator.ts";
-import { createWorkspaceManager } from "./jobs/workspace.ts";
+import {
+  AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS,
+  cleanupStaleAzureFilesWorkspaceDirs,
+  createWorkspaceManager,
+} from "./jobs/workspace.ts";
 import { createBotUserClient } from "./auth/bot-user.ts";
 import { createForkManager } from "./jobs/fork-manager.ts";
 import { createGistPublisher } from "./jobs/gist-publisher.ts";
@@ -95,6 +99,20 @@ const workspaceManager = createWorkspaceManager(githubApp, logger);
 const staleCount = await workspaceManager.cleanupStale();
 if (staleCount > 0) {
   logger.info({ staleCount }, "Cleaned up stale workspaces from previous run");
+}
+const azureFilesStaleThresholdMs = Number.parseInt(
+  process.env.AZURE_FILES_WORKSPACE_STALE_MS ?? String(AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS),
+  10,
+);
+const azureFilesStaleCount = await cleanupStaleAzureFilesWorkspaceDirs({
+  mountBase: process.env.AZURE_FILES_WORKSPACE_MOUNT ?? "/mnt/kodiai-workspaces",
+  staleThresholdMs: Number.isFinite(azureFilesStaleThresholdMs) && azureFilesStaleThresholdMs > 0
+    ? azureFilesStaleThresholdMs
+    : AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS,
+  logger,
+});
+if (azureFilesStaleCount > 0) {
+  logger.info({ staleCount: azureFilesStaleCount }, "Cleaned up stale Azure Files workspaces");
 }
 
 // PostgreSQL connection (all stores share single connection pool)

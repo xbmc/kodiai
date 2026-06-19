@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
@@ -9,6 +9,7 @@ import {
   WritePolicyError,
   buildAuthFetchUrl,
   createWorkspaceManager,
+  cleanupStaleAzureFilesWorkspaceDirs,
   fetchRemoteTrackingBranch,
   fetchAndCheckoutPullRequestHeadRef,
 } from "./workspace.ts";
@@ -175,6 +176,43 @@ describe("buildWritePolicyRefusalMessage", () => {
     );
 
     expect(message).toContain("No file changes were produced");
+  });
+});
+
+describe("cleanupStaleAzureFilesWorkspaceDirs", () => {
+  test("removes stale top-level workspace directories and keeps fresh directories", async () => {
+    const mountBase = await createTempDir();
+    try {
+      const staleDir = join(mountBase, "stale-job");
+      const freshDir = join(mountBase, "fresh-job");
+      await mkdir(join(staleDir, "repo"), { recursive: true });
+      await mkdir(freshDir, { recursive: true });
+      await writeFile(join(staleDir, "repo", "README.md"), "old");
+      await writeFile(join(freshDir, "result.json"), "{}");
+
+      const nowMs = Date.UTC(2026, 5, 19);
+      const staleDate = new Date(nowMs - 8 * 24 * 60 * 60 * 1000);
+      await utimes(staleDir, staleDate, staleDate);
+
+      const removed = await cleanupStaleAzureFilesWorkspaceDirs({
+        mountBase,
+        staleThresholdMs: 7 * 24 * 60 * 60 * 1000,
+        nowMs,
+      });
+
+      expect(removed).toBe(1);
+      expect(await readdir(mountBase)).toEqual(["fresh-job"]);
+    } finally {
+      await rm(mountBase, { recursive: true, force: true });
+    }
+  });
+
+  test("returns zero when the Azure Files mount is absent", async () => {
+    const removed = await cleanupStaleAzureFilesWorkspaceDirs({
+      mountBase: join(tmpdir(), `missing-kodiai-workspaces-${crypto.randomUUID()}`),
+    });
+
+    expect(removed).toBe(0);
   });
 });
 
