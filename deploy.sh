@@ -238,6 +238,25 @@ resolve_log_analytics_workspace_resource_id() {
     fi
   fi
 
+  local environment_id=""
+  environment_id=$(az containerapp env show \
+    --name "$ENVIRONMENT" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query id \
+    --output tsv 2>/dev/null || true)
+
+  if [[ -n "$environment_id" && "$environment_id" != "null" ]]; then
+    local diagnostic_workspace_resource_id=""
+    diagnostic_workspace_resource_id=$(az monitor diagnostic-settings list \
+      --resource "$environment_id" \
+      --query "[?name=='${ACA_DIAGNOSTIC_SETTING_NAME}'].workspaceId | [0]" \
+      --output tsv 2>/dev/null || true)
+    if [[ -n "$diagnostic_workspace_resource_id" && "$diagnostic_workspace_resource_id" != "null" ]]; then
+      echo "$diagnostic_workspace_resource_id"
+      return 0
+    fi
+  fi
+
   if ! az monitor log-analytics workspace show \
     --resource-group "$RESOURCE_GROUP" \
     --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
