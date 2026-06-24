@@ -18,17 +18,8 @@ export type IssueKnowledgeMatch = {
   source: "issue";
 };
 
-/**
- * Default cosine distance threshold for issue search.
- *
- * Kept deliberately tight: an issue is a self-contained topic, so injecting a
- * weakly-matched one pollutes the whole answer (a vague mention like "provide
- * additional details" once pulled an unrelated PVR issue into a Direct3D PR
- * reply). A generic/low-signal query embeds far from any specific issue, so a
- * strict floor drops that noise while genuinely relevant issues — which sit
- * well below it — still surface. Override per-call via `distanceThreshold`.
- */
-const DEFAULT_DISTANCE_THRESHOLD = 0.5;
+/** Default cosine distance threshold for issue search. */
+const DEFAULT_DISTANCE_THRESHOLD = 0.7;
 
 /**
  * Search the issue vector store for content relevant to a query.

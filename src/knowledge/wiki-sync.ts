@@ -158,6 +158,12 @@ async function runSync(opts: {
     const changes = rcResponse.query.recentchanges;
 
     for (const change of changes) {
+      // recentchanges can include non-page entries (log events, certain change
+      // types) reported with pageid 0 or absent. These are not parseable pages:
+      // action=parse returns "nosuchpageid", which would set hadFailure and pin
+      // the checkpoint forever, re-fetching the same poison entry every sync.
+      // Skip them outright so they neither parse nor count as a failure.
+      if (!change.pageid || change.pageid <= 0) continue;
       // Skip already processed pages
       if (processedPageIds.has(change.pageid)) continue;
       processedPageIds.add(change.pageid);
