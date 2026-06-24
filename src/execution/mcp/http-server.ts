@@ -13,6 +13,59 @@ type McpHttpRateLimitOptions = {
   verified?: RateLimitWindowOptions;
 };
 
+/**
+ * Hard ceiling on how long a single MCP request may run before we fast-fail it.
+ *
+ * The orchestrator serves this MCP server on the same external ingress that
+ * agent jobs call back into. Azure Container Apps' ingress enforces a 240s
+ * stream_idle_timeout: a request that produces no response bytes for 240s is
+ * silently reset to a 504 with no application-level log. When the single-
+ * threaded event loop is briefly starved during review-time CPU bursts, in-
+ * flight MCP calls hit that limit and review findings/comments are lost.
+ *
+ * Failing fast (well under 240s) with a retryable 503 turns an invisible 4-minute
+ * hang into an observable, short-lived error the caller can react to, and frees
+ * the connection instead of holding it open against the ingress timeout.
+ */
+const MCP_REQUEST_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MCP_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+})();
+
+/** Requests slower than this are logged (warn) even when they ultimately succeed. */
+const MCP_SLOW_REQUEST_MS = (() => {
+  const raw = Number(process.env.MCP_SLOW_REQUEST_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 10_000;
+})();
+
+/**
+ * Race a request promise against a timeout.
+ *
+ * Returns `{ timedOut: true }` if `timeoutMs` elapses first, otherwise
+ * `{ timedOut: false, value }`. A handler that loses the race is left running
+ * (its rejection is swallowed) so it can never surface as an unhandledRejection
+ * after we have already responded.
+ */
+export async function raceRequestAgainstTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
+  work.catch(() => {});
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutSignal = Symbol("mcp-request-timeout");
+  const timeoutPromise = new Promise<typeof timeoutSignal>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve(timeoutSignal), timeoutMs);
+  });
+  try {
+    const outcome = await Promise.race([work, timeoutPromise]);
+    return outcome === timeoutSignal
+      ? { timedOut: true }
+      : { timedOut: false, value: outcome as T };
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Per-job registry
 // ---------------------------------------------------------------------------
@@ -224,7 +277,44 @@ export function createMcpHttpRoutes(
     });
 
     await serverConfig.instance.connect(transport);
-    return transport.handleRequest(c.req.raw);
+
+    // Bound the request so a starved event loop can never let it hang until the
+    // ingress 240s stream_idle_timeout (which surfaces as a silent 504). On
+    // timeout we fast-fail with a retryable 503 and emit a structured log so the
+    // stall is observable instead of invisible.
+    const startedAt = Date.now();
+    const outcome = await raceRequestAgainstTimeout(
+      transport.handleRequest(c.req.raw),
+      MCP_REQUEST_TIMEOUT_MS,
+    );
+
+    if (outcome.timedOut) {
+      logger?.warn(
+        {
+          event: "mcp-http-request-timeout",
+          serverName,
+          tokenLogId,
+          durationMs: Date.now() - startedAt,
+          timeoutMs: MCP_REQUEST_TIMEOUT_MS,
+        },
+        "MCP HTTP: request exceeded timeout; failing fast",
+      );
+      return c.json(
+        { error: "MCP request timed out", retryable: true },
+        503,
+        { "Retry-After": "1" },
+      );
+    }
+
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= MCP_SLOW_REQUEST_MS) {
+      logger?.warn(
+        { event: "mcp-http-request-slow", serverName, tokenLogId, durationMs },
+        "MCP HTTP: slow request",
+      );
+    }
+
+    return outcome.value;
   });
 
   return app;

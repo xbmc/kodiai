@@ -104,6 +104,24 @@ if (( ACA_MIN_REPLICAS < 1 || ACA_MAX_REPLICAS < ACA_MIN_REPLICAS )); then
   echo "ERROR: ACA_MIN_REPLICAS must be >= 1 and ACA_MAX_REPLICAS must be >= ACA_MIN_REPLICAS." >&2
   exit 1
 fi
+# Orchestrator container resources. The orchestrator runs a single-threaded Bun
+# event loop that also serves the internal MCP callback server hit by agent jobs.
+# Under-provisioning starves the loop during review-time CPU bursts, which makes
+# in-flight MCP calls sit idle until the ACA ingress 240s stream_idle_timeout
+# resets them (504). 2 vCPU / 4Gi gives ample headroom on a single replica.
+# NOTE: ACA requires valid cpu/memory pairings (e.g. 1.0/2Gi, 2.0/4Gi). Keep
+# ACA_MAX_REPLICAS=1 unless the in-memory MCP token registry is moved to a shared
+# store — agent MCP callbacks must reach the replica that registered their token.
+ACA_CPU=${ACA_CPU:-2.0}
+ACA_MEMORY=${ACA_MEMORY:-4.0Gi}
+if ! [[ "$ACA_CPU" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "ERROR: ACA_CPU must be a number (cores), e.g. 2.0." >&2
+  exit 1
+fi
+if ! [[ "$ACA_MEMORY" =~ ^[0-9]+(\.[0-9]+)?Gi$ ]]; then
+  echo "ERROR: ACA_MEMORY must look like '4.0Gi'." >&2
+  exit 1
+fi
 BUILD_CONTEXT_DIR=$(mktemp -d)
 KEYVAULT_TEMP_FILES=()
 
@@ -840,6 +858,9 @@ ${BOT_USER_SECRET_REF_YAML}
     containers:
       - name: ${APP_NAME}
         image: ${APP_IMAGE}
+        resources:
+          cpu: ${ACA_CPU}
+          memory: ${ACA_MEMORY}
         env:
           - name: GITHUB_APP_ID
             secretRef: github-app-id
@@ -930,6 +951,8 @@ else
     --registry-identity "$IDENTITY_RESOURCE_ID" \
     --target-port 3000 \
     --ingress external \
+    --cpu "$ACA_CPU" \
+    --memory "$ACA_MEMORY" \
     --min-replicas "$ACA_MIN_REPLICAS" \
     --max-replicas "$ACA_MAX_REPLICAS" \
     --termination-grace-period 600 \

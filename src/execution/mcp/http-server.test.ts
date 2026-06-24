@@ -1,6 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
-import { createMcpJobRegistry, createMcpHttpRoutes } from "./http-server.ts";
+import {
+  createMcpJobRegistry,
+  createMcpHttpRoutes,
+  raceRequestAgainstTimeout,
+} from "./http-server.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -240,6 +244,29 @@ describe("createMcpHttpRoutes", () => {
     }));
     expect(infos.find((entry) => entry.authFailureReason === "retired")?.tokenLogId).not.toBe("valid-to");
     expect(warnings).not.toContainEqual(expect.objectContaining({ authFailureReason: "retired" }));
+  });
+
+  test("raceRequestAgainstTimeout returns the value when work wins the race", async () => {
+    const result = await raceRequestAgainstTimeout(Promise.resolve("ok"), 1_000);
+    expect(result).toEqual({ timedOut: false, value: "ok" });
+  });
+
+  test("raceRequestAgainstTimeout reports a timeout when work is too slow", async () => {
+    const slow = new Promise<string>((resolve) => setTimeout(() => resolve("late"), 1_000));
+    const result = await raceRequestAgainstTimeout(slow, 5);
+    expect(result).toEqual({ timedOut: true });
+  });
+
+  test("raceRequestAgainstTimeout swallows a late rejection from the losing work", async () => {
+    // A handler that rejects after we have already timed out must not surface as
+    // an unhandledRejection. The test passes if no unhandled rejection is thrown.
+    const rejectsLate = new Promise<string>((_resolve, reject) =>
+      setTimeout(() => reject(new Error("too late")), 5),
+    );
+    const result = await raceRequestAgainstTimeout(rejectsLate, 1);
+    expect(result).toEqual({ timedOut: true });
+    // Give the losing promise time to reject so a missing catch would surface.
+    await new Promise((resolve) => setTimeout(resolve, 20));
   });
 
   test("token sharing a retired token prefix is still treated as missing", async () => {
