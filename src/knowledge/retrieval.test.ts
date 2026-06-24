@@ -6,7 +6,23 @@ import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-com
 import type { WikiPageStore, WikiPageSearchResult } from "./wiki-types.ts";
 import type { IssueStore } from "./issue-types.ts";
 
-function makeSpyIssueStore() {
+function makeIssueSearchResult(issueNumber: number, rank: number) {
+  return {
+    record: {
+      issueNumber,
+      title: `Issue ${issueNumber}`,
+      body: `body ${issueNumber}`,
+      repo: "owner/repo",
+      state: "open",
+      authorLogin: "octocat",
+      githubCreatedAt: "2026-01-01T00:00:00Z",
+    },
+    // searchByFullText stores distance = 1 - ts_rank.
+    distance: 1 - rank,
+  };
+}
+
+function makeSpyIssueStore(fullTextRows: Array<{ issueNumber: number; rank: number }> = []) {
   const calls = { embedding: 0, fullText: 0 };
   const store = {
     upsert: async () => {},
@@ -18,7 +34,7 @@ function makeSpyIssueStore() {
     },
     searchByFullText: async () => {
       calls.fullText++;
-      return [];
+      return fullTextRows.map((row) => makeIssueSearchResult(row.issueNumber, row.rank));
     },
   } as unknown as IssueStore;
   return { store, calls };
@@ -212,6 +228,25 @@ describe("createRetriever", () => {
     await retriever.retrieve(makeBaseOpts({ includeIssues: false }));
     expect(calls.embedding).toBe(0);
     expect(calls.fullText).toBe(0);
+  });
+
+  test("drops near-zero-rank issue BM25 matches before merge", async () => {
+    // 777 ranks well above the floor; 888 is near-zero (common-word noise).
+    const { store } = makeSpyIssueStore([
+      { issueNumber: 777, rank: 0.1 },
+      { issueNumber: 888, rank: 0.005 },
+    ]);
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(),
+      config: makeConfig(),
+      issueStore: store,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts());
+    const serialized = JSON.stringify(result!.unifiedResults);
+    expect(serialized).toContain("#777");
+    expect(serialized).not.toContain("#888");
   });
 
   test("fail-open: returns null when embedding provider throws", async () => {
