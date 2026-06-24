@@ -115,20 +115,6 @@ type RequestScopedEmbeddingStats = {
 
 const VARIANT_TYPE_SEQUENCE: MultiQueryVariantType[] = ["intent", "file-path", "code-shape"];
 const RRF_K = 60;
-
-/**
- * Minimum Postgres ts_rank for an issue BM25 match to enter the cross-corpus
- * merge. Unlike vector results, BM25 results have no relevance gate, so a
- * generic query can match an unrelated issue on common words and inject it into
- * the prompt. This noise floor drops near-zero-rank matches (genuine matches
- * rank well above it) for every caller — review and mention paths alike. Kept
- * low to avoid dropping real matches; tune from the issue-bm25-low-rank-dropped
- * telemetry via ISSUE_BM25_MIN_RANK.
- */
-const MIN_BM25_ISSUE_RANK = (() => {
-  const raw = Number(process.env.ISSUE_BM25_MIN_RANK);
-  return Number.isFinite(raw) && raw >= 0 ? raw : 0.03;
-})();
 const DEDUP_THRESHOLD = 0.9;
 
 /** Source weight multipliers for context-dependent re-ranking. */
@@ -859,25 +845,17 @@ export function createRetriever(deps: {
         k: RRF_K,
       });
 
-      // Issue: merge vector + BM25. BM25 results carry distance = 1 - ts_rank,
-      // so recover the rank and drop near-zero-relevance matches (which the
-      // vector path already gates but BM25 does not) before they reach RRF.
-      let issueBm25Dropped = 0;
+      // Issue: merge vector + BM25
       const issueBm25 =
         issueFullTextResult.status === "fulfilled"
           ? issueFullTextResult.value.map((r) => {
               const record = (r as { record?: unknown }).record;
               if (record && typeof record === "object" && "issueNumber" in record) {
-                const rank = 1 - Number((r as { distance?: number }).distance ?? 0);
-                if (rank < MIN_BM25_ISSUE_RANK) {
-                  issueBm25Dropped++;
-                  return null;
-                }
                 const rec = record as { issueNumber: number; title: string; body?: string | null; repo: string; state: string; authorLogin: string; githubCreatedAt: string };
                 return issueMatchToUnified(
                   {
                     chunkText: `#${rec.issueNumber} ${rec.title}\n\n${(rec.body ?? "").slice(0, 2000)}`,
-                    distance: rank,
+                    distance: 1 - Number((r as { distance?: number }).distance ?? 0),
                     repo: rec.repo,
                     issueNumber: rec.issueNumber,
                     title: rec.title,
@@ -892,12 +870,6 @@ export function createRetriever(deps: {
               return null;
             }).filter((x): x is UnifiedRetrievalChunk => x !== null)
           : [];
-      if (issueBm25Dropped > 0) {
-        logger.debug(
-          { event: "issue-bm25-low-rank-dropped", dropped: issueBm25Dropped, minRank: MIN_BM25_ISSUE_RANK },
-          "Dropped low-relevance issue BM25 matches before merge",
-        );
-      }
 
       const hybridIssue = hybridSearchMerge({
         vectorResults: issueChunks,
