@@ -21,6 +21,7 @@ import { resolveRepoTransport } from "./repo-transport.ts";
 import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
 import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
+import { installMcpFetchRetry } from "./mcp/mcp-fetch-retry.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -254,6 +255,13 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     exitFn(1);
     return; // unreachable in production
   }
+
+  // 2b. Install bounded retry for MCP callbacks. The Agent SDK's "http" MCP
+  // transport uses globalThis.fetch with no retry, so a transient orchestrator
+  // stall (fast-fail 503 / ingress 502-504 / dropped connection) would silently
+  // drop a finding or comment. Retries are gated to idempotent/deduped servers
+  // (see RETRY_SAFE_MCP_SERVERS) so they can never duplicate a PR comment.
+  installMcpFetchRetry({ mcpBaseUrl: mcpBaseUrl! });
 
   // 3. Write CLAUDE.md security policy
   await writeFileFn(join(workspaceDir!, "CLAUDE.md"), buildSecurityClaudeMd());
