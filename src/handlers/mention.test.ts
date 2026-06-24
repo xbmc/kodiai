@@ -806,7 +806,7 @@ describe("createMentionHandler conversational review wiring", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("conversational PR mentions omit pre-fetched diff unless the request is diff-seeking", async () => {
+  test("conversational PR mentions are grounded with the pre-fetched PR diff", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
     const prNumber = 101;
@@ -907,8 +907,11 @@ describe("createMentionHandler conversational review wiring", () => {
       }),
     );
 
-    expect(capturedPrompt).not.toContain("## PR Diff");
-    expect(capturedPrompt).not.toContain("```diff-stat");
+    // A mention on a PR is about that PR, so the reply must be grounded in the
+    // PR diff even for a non-diff-seeking question — otherwise the model has no
+    // code to anchor on and can fixate on unrelated retrieved context.
+    expect(capturedPrompt).toContain("## PR Diff");
+    expect(capturedPrompt).toContain("```diff-stat");
 
     await workspaceFixture.cleanup();
   });

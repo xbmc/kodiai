@@ -1481,9 +1481,14 @@ export function createMentionHandler(deps: {
           mentionAdmission: config.mention.admission,
         });
         const allowIssueCodePointers = isIssueThreadComment && isCodeSeekingMentionRequest(writeIntent.request);
-        const allowPrDiffContext =
-          mention.prNumber !== undefined
-          && (explicitReviewRequest || isDiffSeekingMentionRequest(writeIntent.request));
+        // Any mention on a PR is about that PR, so always ground the reply in the
+        // PR diff. Without it a vague follow-up ("provide additional details") ran
+        // with no code and fixated on whatever retrieval surfaced — once an
+        // unrelated issue. (Was previously gated to explicit-review/diff-seeking.)
+        const allowPrDiffContext = mention.prNumber !== undefined;
+        // Suppress the repo issue corpus for PR-surface mentions: issue BM25 has no
+        // relevance floor and can inject an unrelated issue on common-word matches.
+        const includeIssueCorpus = mention.prNumber === undefined;
         try {
           const fingerprintResult = await buildMentionContextFingerprint(octokit, mention, {
             admissionPolicy: mentionAdmissionPolicy,
@@ -1723,6 +1728,7 @@ export function createMentionHandler(deps: {
               topK: retrievalTopK,
               logger,
               triggerType: "question",
+              includeIssues: includeIssueCorpus,
             });
 
             if (config.telemetry.enabled) {

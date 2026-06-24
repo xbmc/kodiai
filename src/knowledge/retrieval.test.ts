@@ -4,6 +4,25 @@ import type { EmbeddingProvider, EmbeddingResult, RetrievalResult, RetrievalWith
 import type { IsolationLayer } from "./isolation.ts";
 import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";
 import type { WikiPageStore, WikiPageSearchResult } from "./wiki-types.ts";
+import type { IssueStore } from "./issue-types.ts";
+
+function makeSpyIssueStore() {
+  const calls = { embedding: 0, fullText: 0 };
+  const store = {
+    upsert: async () => {},
+    delete: async () => {},
+    getByNumber: async () => null,
+    searchByEmbedding: async () => {
+      calls.embedding++;
+      return [];
+    },
+    searchByFullText: async () => {
+      calls.fullText++;
+      return [];
+    },
+  } as unknown as IssueStore;
+  return { store, calls };
+}
 
 const mockLogger = {
   info: () => {},
@@ -166,6 +185,33 @@ describe("createRetriever", () => {
 
     const result = await retriever.retrieve(makeBaseOpts({ queries: [] }));
     expect(result).toBeNull();
+  });
+
+  test("searches the issue corpus by default", async () => {
+    const { store, calls } = makeSpyIssueStore();
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(),
+      config: makeConfig(),
+      issueStore: store,
+    });
+
+    await retriever.retrieve(makeBaseOpts());
+    expect(calls.embedding + calls.fullText).toBeGreaterThan(0);
+  });
+
+  test("includeIssues:false suppresses both issue corpus searches", async () => {
+    const { store, calls } = makeSpyIssueStore();
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(),
+      config: makeConfig(),
+      issueStore: store,
+    });
+
+    await retriever.retrieve(makeBaseOpts({ includeIssues: false }));
+    expect(calls.embedding).toBe(0);
+    expect(calls.fullText).toBe(0);
   });
 
   test("fail-open: returns null when embedding provider throws", async () => {
