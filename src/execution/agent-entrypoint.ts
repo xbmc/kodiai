@@ -22,6 +22,7 @@ import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
 import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
 import { installMcpFetchRetry, normalizeMcpUrlKey } from "./mcp/mcp-fetch-retry.ts";
+import { RETRY_SAFE_MCP_SERVER_NAMES } from "./mcp/index.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -56,26 +57,9 @@ export const MCP_SERVER_NAMES = [
   "github_issue_comment",
 ] as const;
 
-/**
- * Subset of MCP servers whose tool calls are safe to retry on a transient
- * failure because re-invoking the same call does not double-apply a side
- * effect:
- *  - github_comment / github_inline_comment: guarded by the review-output-key
- *    marker / publication gate (a retry that finds the prior comment skips).
- *  - github_ci: read-only (CI status lookups).
- *  - review_checkpoint: keyed by a stable reviewOutputKey; re-saving is a no-op.
- *  - github_issue_label: GitHub's add-labels API is idempotent.
- *
- * Intentionally EXCLUDED (no dedup — a retry could duplicate output):
- *  reviewCommentThread, github_issue_comment, review_candidate_finding.
- */
-export const RETRY_SAFE_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
-  "github_comment",
-  "github_inline_comment",
-  "github_ci",
-  "review_checkpoint",
-  "github_issue_label",
-]);
+// Retry-safety is a property of each MCP server's handler, so the allowlist
+// (RETRY_SAFE_MCP_SERVER_NAMES) lives with the factory definitions in
+// ./mcp/index.ts and is imported at the top of this file rather than duplicated.
 
 // ---------------------------------------------------------------------------
 // Injectable dependencies (for testing)

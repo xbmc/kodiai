@@ -7,6 +7,7 @@ import {
   requestSourceKey,
   type RateLimitWindowOptions,
 } from "../../lib/sliding-window-rate-limiter.ts";
+import { withTimeout } from "../../lib/with-timeout.ts";
 
 type McpHttpRateLimitOptions = {
   preAuth?: RateLimitWindowOptions;
@@ -37,34 +38,6 @@ const MCP_SLOW_REQUEST_MS = (() => {
   const raw = Number(process.env.MCP_SLOW_REQUEST_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 10_000;
 })();
-
-/**
- * Race a request promise against a timeout.
- *
- * Returns `{ timedOut: true }` if `timeoutMs` elapses first, otherwise
- * `{ timedOut: false, value }`. A handler that loses the race is left running
- * (its rejection is swallowed) so it can never surface as an unhandledRejection
- * after we have already responded.
- */
-export async function raceRequestAgainstTimeout<T>(
-  work: Promise<T>,
-  timeoutMs: number,
-): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
-  work.catch(() => {});
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutSignal = Symbol("mcp-request-timeout");
-  const timeoutPromise = new Promise<typeof timeoutSignal>((resolve) => {
-    timeoutHandle = setTimeout(() => resolve(timeoutSignal), timeoutMs);
-  });
-  try {
-    const outcome = await Promise.race([work, timeoutPromise]);
-    return outcome === timeoutSignal
-      ? { timedOut: true }
-      : { timedOut: false, value: outcome as T };
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Per-job registry
@@ -283,7 +256,7 @@ export function createMcpHttpRoutes(
     // timeout we fast-fail with a retryable 503 and emit a structured log so the
     // stall is observable instead of invisible.
     const startedAt = Date.now();
-    const outcome = await raceRequestAgainstTimeout(
+    const outcome = await withTimeout(
       transport.handleRequest(c.req.raw),
       MCP_REQUEST_TIMEOUT_MS,
     );

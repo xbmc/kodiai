@@ -212,6 +212,34 @@ export function buildAllowedMcpTools(serverNames: string[]): string[] {
  * By calling the creator inside the factory, each HTTP request gets a fresh
  * McpServer that has never been connected.
  */
+/**
+ * MCP servers whose tool calls are SAFE TO RETRY on a transient failure,
+ * because re-invoking the same call does not double-apply a side effect. This
+ * lives beside the factory definitions because retry-safety is a property of
+ * each server's handler — keep it in sync with the handlers when their dedup
+ * behavior changes:
+ *  - github_comment / github_inline_comment: guarded by the review-output-key
+ *    marker / publication gate in comment-server.ts / inline-review-server.ts
+ *    (a retry that finds the prior comment skips).
+ *  - github_ci: read-only (ci-status-server.ts).
+ *  - review_checkpoint: keyed by a stable reviewOutputKey; re-saving is a no-op
+ *    (checkpoint-server.ts).
+ *  - github_issue_label: GitHub's add-labels API is idempotent (issue-label-server.ts).
+ *
+ * Intentionally EXCLUDED (no dedup — a retry could duplicate output):
+ *  reviewCommentThread, github_issue_comment, review_candidate_finding.
+ *
+ * Every entry must be a server name produced by buildMcpServerFactories; the
+ * index test asserts that subset invariant to catch drift.
+ */
+export const RETRY_SAFE_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
+  "github_comment",
+  "github_inline_comment",
+  "github_ci",
+  "review_checkpoint",
+  "github_issue_label",
+]);
+
 export function buildMcpServerFactories(deps: McpBuilderDeps): Record<string, () => McpSdkServerConfigWithInstance> {
   return buildMcpServerFactoriesWithLoaders(deps, defaultMcpServerModuleLoaders);
 }
