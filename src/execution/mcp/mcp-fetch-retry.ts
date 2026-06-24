@@ -8,48 +8,30 @@
  * transport issues these via globalThis.fetch and has no built-in retry, so a
  * single transient blip silently loses a review finding or comment.
  *
- * This wraps fetch with bounded exponential backoff + jitter. Retries are
- * deliberately GATED by server name: only endpoints that are idempotent or
- * already dedup their writes (e.g. the marker-guarded comment publishers) are
- * retried, so a retry can never produce a duplicate PR comment. Non-idempotent
- * endpoints pass through unchanged.
+ * This wraps fetch with bounded exponential backoff + jitter. It is a pure
+ * MECHANISM: it retries POSTs to the exact URLs it is told are retry-safe and
+ * passes everything else straight through. The POLICY of which endpoints are
+ * safe to retry (idempotent / dedup their writes) lives with the server-name
+ * declarations in agent-entrypoint.ts, so it can never duplicate a PR comment.
  */
 
 import type { Logger } from "pino";
 
-/**
- * MCP server names whose tool calls are safe to retry because re-invoking the
- * same call does not double-apply a side effect:
- *  - github_comment / github_inline_comment: guarded by the review-output-key
- *    marker / publication gate (a retry that finds the prior comment skips).
- *  - github_ci: read-only (CI status lookups).
- *  - review_checkpoint: keyed by a stable reviewOutputKey; re-saving is a no-op.
- *  - github_issue_label: GitHub's add-labels API is idempotent.
- *
- * Intentionally EXCLUDED (no dedup — a retry could duplicate output):
- *  reviewCommentThread, github_issue_comment, review_candidate_finding.
- */
-export const RETRY_SAFE_MCP_SERVERS: ReadonlySet<string> = new Set([
-  "github_comment",
-  "github_inline_comment",
-  "github_ci",
-  "review_checkpoint",
-  "github_issue_label",
-]);
-
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 
 export interface McpFetchRetryOptions {
-  /** Base URL the agent uses for MCP servers (MCP_BASE_URL). */
-  mcpBaseUrl: string;
+  /**
+   * Normalized keys (origin + pathname, via normalizeMcpUrlKey) of the MCP
+   * callback URLs that are safe to retry. Requests whose key is absent pass
+   * through untouched.
+   */
+  retrySafeUrls: ReadonlySet<string>;
   /** Total attempts including the first (default 3 → up to 2 retries). */
   maxAttempts?: number;
   /** Base backoff in ms; attempt N waits ~baseDelayMs * 2^(N-1) with jitter. */
   baseDelayMs?: number;
   /** Upper bound on a single backoff wait. */
   maxDelayMs?: number;
-  /** Server names eligible for retry (defaults to RETRY_SAFE_MCP_SERVERS). */
-  retrySafeServers?: ReadonlySet<string>;
   logger?: Pick<Logger, "warn" | "info">;
   /** Injectable sleep (tests). Resolves false if the signal aborts first. */
   sleepFn?: (ms: number, signal?: AbortSignal) => Promise<boolean>;
@@ -72,37 +54,18 @@ function requestMethod(input: FetchInput, init: FetchInit): string {
 }
 
 /**
- * Extract the MCP server name from a callback URL, or undefined if the URL is
- * not an MCP endpoint under `mcpBaseUrl`.
+ * Canonical retry key for an MCP callback URL: origin + pathname, ignoring
+ * query/hash so it is stable across any session params the SDK may add. Both
+ * the retry-safe set and the per-request match are built through this, so they
+ * normalize identically. Returns undefined for an unparseable URL.
  */
-export function mcpServerNameForUrl(url: string, mcpBaseUrl: string): string | undefined {
-  let pathname: string;
+export function normalizeMcpUrlKey(url: string): string | undefined {
   try {
-    pathname = new URL(url).pathname;
+    const parsed = new URL(url);
+    return parsed.origin + parsed.pathname;
   } catch {
     return undefined;
   }
-  // Only treat requests aimed at the configured MCP host as MCP traffic.
-  const base = mcpBaseUrl.replace(/\/+$/, "");
-  let baseHost: string | undefined;
-  try {
-    baseHost = new URL(base).host;
-  } catch {
-    baseHost = undefined;
-  }
-  if (baseHost) {
-    try {
-      if (new URL(url).host !== baseHost) return undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  const marker = "/internal/mcp/";
-  const idx = pathname.indexOf(marker);
-  if (idx === -1) return undefined;
-  const rest = pathname.slice(idx + marker.length);
-  const name = rest.split("/")[0];
-  return name || undefined;
 }
 
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<boolean> {
@@ -111,22 +74,22 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<boolean> {
       resolve(false);
       return;
     }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener?.("abort", onAbort);
-      resolve(true);
-    }, ms);
     const onAbort = () => {
       clearTimeout(timer);
       resolve(false);
     };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.("abort", onAbort);
+      resolve(true);
+    }, ms);
     signal?.addEventListener?.("abort", onAbort, { once: true });
   });
 }
 
 /**
  * Wrap a fetch implementation with gated, bounded retry for MCP callbacks.
- * Non-MCP requests, non-POST requests, and requests to non-retry-safe servers
- * pass straight through to `baseFetch`.
+ * Non-POST requests and requests whose key is not in `retrySafeUrls` pass
+ * straight through to `baseFetch`.
  */
 export function createRetryingFetch(
   baseFetch: typeof fetch,
@@ -135,77 +98,52 @@ export function createRetryingFetch(
   const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
   const baseDelayMs = options.baseDelayMs ?? 250;
   const maxDelayMs = options.maxDelayMs ?? 2_000;
-  const retrySafe = options.retrySafeServers ?? RETRY_SAFE_MCP_SERVERS;
   const sleep = options.sleepFn ?? defaultSleep;
   const random = options.randomFn ?? Math.random;
   const logger = options.logger;
 
-  const backoffFor = (attempt: number): number => {
-    const exp = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
-    // Full jitter in [0, exp] avoids synchronized retry storms.
-    return Math.floor(exp * random());
-  };
-
   const retryingFetch = (async (input: FetchInput, init?: FetchInit): Promise<Response> => {
-    const url = requestUrl(input);
-    const serverName = mcpServerNameForUrl(url, options.mcpBaseUrl);
-    const method = requestMethod(input, init);
-    const eligible =
-      serverName !== undefined && method === "POST" && retrySafe.has(serverName);
-
-    if (!eligible) {
+    const key = requestMethod(input, init) === "POST"
+      ? normalizeMcpUrlKey(requestUrl(input))
+      : undefined;
+    if (key === undefined || !options.retrySafeUrls.has(key)) {
       return baseFetch(input, init);
     }
 
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
 
-    let lastError: unknown;
+    /** Log + back off before the next attempt; resolves false if aborted. */
+    const waitToRetry = (attempt: number, reason: Record<string, unknown>): Promise<boolean> => {
+      const exp = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
+      const backoffMs = Math.floor(exp * random()); // full jitter avoids retry storms
+      logger?.warn(
+        { event: "mcp-fetch-retry", target: key, attempt, maxAttempts, backoffMs, ...reason },
+        "MCP callback failed transiently; retrying",
+      );
+      return sleep(backoffMs, signal ?? undefined);
+    };
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const response = await baseFetch(input, init);
-        if (attempt < maxAttempts && RETRYABLE_STATUS.has(response.status)) {
-          const delay = backoffFor(attempt);
-          logger?.warn(
-            {
-              event: "mcp-fetch-retry",
-              serverName,
-              attempt,
-              maxAttempts,
-              status: response.status,
-              backoffMs: delay,
-            },
-            "MCP callback returned retryable status; retrying",
-          );
-          // Release the body so the connection can be reused.
-          await response.body?.cancel?.().catch(() => {});
-          const slept = await sleep(delay, signal ?? undefined);
-          if (!slept) return response; // aborted during backoff
-          continue;
+        if (attempt >= maxAttempts || !RETRYABLE_STATUS.has(response.status)) {
+          return response;
         }
-        return response;
+        // Release the body so the connection can be reused, then back off.
+        await response.body?.cancel?.().catch(() => {});
+        if (!(await waitToRetry(attempt, { status: response.status }))) {
+          return response; // aborted during backoff
+        }
       } catch (err) {
-        lastError = err;
-        // An explicit abort is not a transient failure — do not retry it.
-        if (signal?.aborted) throw err;
-        if (attempt >= maxAttempts) throw err;
-        const delay = backoffFor(attempt);
-        logger?.warn(
-          {
-            event: "mcp-fetch-retry",
-            serverName,
-            attempt,
-            maxAttempts,
-            error: err instanceof Error ? err.message : String(err),
-            backoffMs: delay,
-          },
-          "MCP callback threw; retrying",
-        );
-        const slept = await sleep(delay, signal ?? undefined);
-        if (!slept) throw err; // aborted during backoff
+        // An explicit abort or the final attempt is terminal — surface it.
+        if (signal?.aborted || attempt >= maxAttempts) throw err;
+        if (!(await waitToRetry(attempt, { error: err instanceof Error ? err.message : String(err) }))) {
+          throw err; // aborted during backoff
+        }
       }
     }
-    // Unreachable: the loop either returns or throws.
-    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    // Unreachable: the loop always returns or throws on the final attempt.
+    throw new Error("mcp-fetch-retry: exhausted attempts without resolution");
   }) as typeof fetch;
 
   return retryingFetch;

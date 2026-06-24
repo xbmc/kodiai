@@ -1,11 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import {
-  createRetryingFetch,
-  mcpServerNameForUrl,
-  RETRY_SAFE_MCP_SERVERS,
-} from "./mcp-fetch-retry.ts";
+import { createRetryingFetch, normalizeMcpUrlKey } from "./mcp-fetch-retry.ts";
 
 const BASE = "http://ca-kodiai";
+const SAFE_URL = `${BASE}/internal/mcp/github_comment`;
+const UNSAFE_URL = `${BASE}/internal/mcp/github_issue_comment`;
+const retrySafeUrls = new Set([normalizeMcpUrlKey(SAFE_URL)!]);
 
 // Deterministic helpers so tests never actually sleep or jitter.
 const noSleep = () => Promise.resolve(true);
@@ -18,123 +17,93 @@ function jsonResponse(status: number): Response {
 /** A baseFetch that returns a scripted sequence of statuses (or throws). */
 function scriptedFetch(steps: Array<number | Error>) {
   let i = 0;
-  const calls: Array<{ url: string; method: string }> = [];
-  const fn = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    calls.push({ url, method: (init?.method ?? "GET").toUpperCase() });
+  const fn = (async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) => {
     const step = steps[Math.min(i, steps.length - 1)]!;
     i++;
     if (step instanceof Error) throw step;
     return jsonResponse(step);
   }) as typeof fetch;
-  return { fn, calls, attempts: () => i };
+  return { fn, attempts: () => i };
 }
 
-const post = (url: string) =>
-  [url, { method: "POST", body: "{}" }] as const;
+const post = (url: string) => [url, { method: "POST", body: "{}" }] as const;
 
-describe("mcpServerNameForUrl", () => {
-  test("extracts server name from an MCP callback URL", () => {
-    expect(mcpServerNameForUrl(`${BASE}/internal/mcp/github_comment`, BASE)).toBe("github_comment");
+function makeFetch(base: { fn: typeof fetch }, overrides = {}) {
+  return createRetryingFetch(base.fn, {
+    retrySafeUrls,
+    sleepFn: noSleep,
+    randomFn: noJitter,
+    ...overrides,
+  });
+}
+
+describe("normalizeMcpUrlKey", () => {
+  test("returns origin + pathname, ignoring query and hash", () => {
+    expect(normalizeMcpUrlKey(`${SAFE_URL}?session=abc#x`)).toBe(SAFE_URL);
   });
 
-  test("ignores trailing path segments", () => {
-    expect(mcpServerNameForUrl(`${BASE}/internal/mcp/github_ci/extra`, BASE)).toBe("github_ci");
+  test("a trailing-slash-free and host-qualified URL normalize to the same key", () => {
+    expect(normalizeMcpUrlKey(SAFE_URL)).toBe(`${BASE}/internal/mcp/github_comment`);
   });
 
-  test("returns undefined for non-MCP paths", () => {
-    expect(mcpServerNameForUrl(`${BASE}/webhooks/github`, BASE)).toBeUndefined();
-  });
-
-  test("returns undefined when host differs from the configured base", () => {
-    expect(
-      mcpServerNameForUrl("http://evil.example/internal/mcp/github_comment", BASE),
-    ).toBeUndefined();
+  test("returns undefined for an unparseable URL", () => {
+    expect(normalizeMcpUrlKey("not a url")).toBeUndefined();
   });
 });
 
 describe("createRetryingFetch", () => {
-  test("retries a retry-safe server on 503 then succeeds", async () => {
+  test("retries a retry-safe URL on 503 then succeeds", async () => {
     const base = scriptedFetch([503, 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(...post(`${BASE}/internal/mcp/github_comment`));
+    const res = await makeFetch(base)(...post(SAFE_URL));
     expect(res.status).toBe(200);
     expect(base.attempts()).toBe(2);
   });
 
   test("gives up after maxAttempts and returns the last retryable response", async () => {
     const base = scriptedFetch([503, 503, 503]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      maxAttempts: 3,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(...post(`${BASE}/internal/mcp/github_comment`));
+    const res = await makeFetch(base, { maxAttempts: 3 })(...post(SAFE_URL));
     expect(res.status).toBe(503);
     expect(base.attempts()).toBe(3);
   });
 
   test("retries on a thrown network error then succeeds", async () => {
     const base = scriptedFetch([new Error("ECONNRESET"), 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(...post(`${BASE}/internal/mcp/review_checkpoint`));
+    const res = await makeFetch(base)(...post(SAFE_URL));
     expect(res.status).toBe(200);
     expect(base.attempts()).toBe(2);
   });
 
-  test("does NOT retry non-idempotent servers (would duplicate output)", async () => {
+  test("does NOT retry URLs absent from the retry-safe set (would duplicate output)", async () => {
     const base = scriptedFetch([503, 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(...post(`${BASE}/internal/mcp/github_issue_comment`));
+    const res = await makeFetch(base)(...post(UNSAFE_URL));
     expect(res.status).toBe(503);
     expect(base.attempts()).toBe(1);
   });
 
+  test("matches the retry-safe key even with session query params", async () => {
+    const base = scriptedFetch([503, 200]);
+    const res = await makeFetch(base)(...post(`${SAFE_URL}?session=xyz`));
+    expect(res.status).toBe(200);
+    expect(base.attempts()).toBe(2);
+  });
+
   test("does NOT retry GET (the SSE notification stream)", async () => {
     const base = scriptedFetch([503, 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(`${BASE}/internal/mcp/github_comment`, { method: "GET" });
+    const res = await makeFetch(base)(SAFE_URL, { method: "GET" });
     expect(res.status).toBe(503);
     expect(base.attempts()).toBe(1);
   });
 
   test("does NOT retry non-retryable statuses (e.g. 401/404)", async () => {
     const base = scriptedFetch([401, 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(...post(`${BASE}/internal/mcp/github_comment`));
+    const res = await makeFetch(base)(...post(SAFE_URL));
     expect(res.status).toBe(401);
     expect(base.attempts()).toBe(1);
   });
 
   test("passes non-MCP requests straight through", async () => {
     const base = scriptedFetch([503, 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
-    });
-    const res = await f(`${BASE}/webhooks/github`, { method: "POST", body: "{}" });
+    const res = await makeFetch(base)(`${BASE}/webhooks/github`, { method: "POST", body: "{}" });
     expect(res.status).toBe(503);
     expect(base.attempts()).toBe(1);
   });
@@ -143,7 +112,7 @@ describe("createRetryingFetch", () => {
     const base = scriptedFetch([503, 200]);
     const controller = new AbortController();
     const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
+      retrySafeUrls,
       // Simulate the signal aborting while we wait to retry.
       sleepFn: () => {
         controller.abort();
@@ -151,35 +120,20 @@ describe("createRetryingFetch", () => {
       },
       randomFn: noJitter,
     });
-    const res = await f(`${BASE}/internal/mcp/github_comment`, {
-      method: "POST",
-      body: "{}",
-      signal: controller.signal,
-    });
+    const res = await f(SAFE_URL, { method: "POST", body: "{}", signal: controller.signal });
     expect(res.status).toBe(503);
     expect(base.attempts()).toBe(1);
   });
 
-  test("logs a structured retry event", async () => {
+  test("logs a structured retry event keyed on the request target", async () => {
     const warns: Array<Record<string, unknown>> = [];
     const base = scriptedFetch([503, 200]);
-    const f = createRetryingFetch(base.fn, {
-      mcpBaseUrl: BASE,
-      sleepFn: noSleep,
-      randomFn: noJitter,
+    const f = makeFetch(base, {
       logger: { warn: (d: Record<string, unknown>) => warns.push(d), info: () => {} },
     });
-    await f(...post(`${BASE}/internal/mcp/github_comment`));
+    await f(...post(SAFE_URL));
     expect(warns).toContainEqual(
-      expect.objectContaining({ event: "mcp-fetch-retry", serverName: "github_comment", attempt: 1 }),
+      expect.objectContaining({ event: "mcp-fetch-retry", target: SAFE_URL, attempt: 1, status: 503 }),
     );
-  });
-
-  test("RETRY_SAFE_MCP_SERVERS excludes the non-idempotent servers", () => {
-    expect(RETRY_SAFE_MCP_SERVERS.has("github_comment")).toBe(true);
-    expect(RETRY_SAFE_MCP_SERVERS.has("github_inline_comment")).toBe(true);
-    expect(RETRY_SAFE_MCP_SERVERS.has("reviewCommentThread")).toBe(false);
-    expect(RETRY_SAFE_MCP_SERVERS.has("github_issue_comment")).toBe(false);
-    expect(RETRY_SAFE_MCP_SERVERS.has("review_candidate_finding")).toBe(false);
   });
 });

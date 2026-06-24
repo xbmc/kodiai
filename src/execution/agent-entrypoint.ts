@@ -21,7 +21,7 @@ import { resolveRepoTransport } from "./repo-transport.ts";
 import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
 import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
-import { installMcpFetchRetry } from "./mcp/mcp-fetch-retry.ts";
+import { installMcpFetchRetry, normalizeMcpUrlKey } from "./mcp/mcp-fetch-retry.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +55,27 @@ export const MCP_SERVER_NAMES = [
   "github_issue_label",
   "github_issue_comment",
 ] as const;
+
+/**
+ * Subset of MCP servers whose tool calls are safe to retry on a transient
+ * failure because re-invoking the same call does not double-apply a side
+ * effect:
+ *  - github_comment / github_inline_comment: guarded by the review-output-key
+ *    marker / publication gate (a retry that finds the prior comment skips).
+ *  - github_ci: read-only (CI status lookups).
+ *  - review_checkpoint: keyed by a stable reviewOutputKey; re-saving is a no-op.
+ *  - github_issue_label: GitHub's add-labels API is idempotent.
+ *
+ * Intentionally EXCLUDED (no dedup — a retry could duplicate output):
+ *  reviewCommentThread, github_issue_comment, review_candidate_finding.
+ */
+export const RETRY_SAFE_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
+  "github_comment",
+  "github_inline_comment",
+  "github_ci",
+  "review_checkpoint",
+  "github_issue_label",
+]);
 
 // ---------------------------------------------------------------------------
 // Injectable dependencies (for testing)
@@ -256,13 +277,6 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     return; // unreachable in production
   }
 
-  // 2b. Install bounded retry for MCP callbacks. The Agent SDK's "http" MCP
-  // transport uses globalThis.fetch with no retry, so a transient orchestrator
-  // stall (fast-fail 503 / ingress 502-504 / dropped connection) would silently
-  // drop a finding or comment. Retries are gated to idempotent/deduped servers
-  // (see RETRY_SAFE_MCP_SERVERS) so they can never duplicate a PR comment.
-  installMcpFetchRetry({ mcpBaseUrl: mcpBaseUrl! });
-
   // 3. Write CLAUDE.md security policy
   await writeFileFn(join(workspaceDir!, "CLAUDE.md"), buildSecurityClaudeMd());
 
@@ -270,15 +284,28 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   // Fall back to MCP_SERVER_NAMES if not specified (for backward compat)
   const serverNamesToUse = agentConfig.mcpServerNames ?? [...MCP_SERVER_NAMES];
   const mcpServers: Record<string, McpHttpServerConfig> = {};
+  const retrySafeUrls = new Set<string>();
   for (const serverName of serverNamesToUse) {
+    const url = buildMcpServerUrl(mcpBaseUrl!, serverName);
     mcpServers[serverName] = {
       type: "http",
-      url: buildMcpServerUrl(mcpBaseUrl!, serverName),
+      url,
       headers: {
         Authorization: `Bearer ${mcpBearerToken!}`,
       },
     };
+    if (RETRY_SAFE_MCP_SERVER_NAMES.has(serverName)) {
+      const key = normalizeMcpUrlKey(url);
+      if (key) retrySafeUrls.add(key);
+    }
   }
+
+  // 4b. Install bounded retry for MCP callbacks. The Agent SDK's "http" MCP
+  // transport uses globalThis.fetch with no retry, so a transient orchestrator
+  // stall (fast-fail 503 / ingress 502-504 / dropped connection) would silently
+  // drop a finding or comment. The retry-safe URL set restricts retries to
+  // idempotent/deduped servers so they can never duplicate a PR comment.
+  installMcpFetchRetry({ retrySafeUrls });
 
   // 5–6. Call SDK, collect messages
   const resultJson = join(workspaceDir!, "result.json");
