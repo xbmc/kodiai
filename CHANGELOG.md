@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.45 (2026-06-25)
+
+MCP callback reliability, mention grounding, wiki sync recovery, and review-publication hardening — found by reviewing production logs and validated live on Kodi PRs.
+
+### Added
+
+- Orchestrator MCP request timeout guard: each internal MCP callback fast-fails with a retryable `503` (plus structured `mcp-http-request-timeout` / `mcp-http-request-slow` logs) instead of hanging until the Azure Container Apps ingress 240s stream-idle timeout silently resets it.
+- Agent-side bounded retry (exponential backoff + full jitter) for MCP callbacks, gated to idempotent / dedup-guarded servers so a retry can never duplicate a PR comment.
+- Shared `withTimeout` timeout primitive, and a drift-guard test that the retry-safe MCP server allowlist only names servers the factory actually produces.
+
+### Changed
+
+- Orchestrator container resources are now explicit and configurable, defaulting to 2 vCPU / 4Gi (previously the implicit 0.5 vCPU / 1Gi), so review-time CPU bursts no longer starve the single-threaded event loop and strand in-flight MCP callbacks.
+- Restored review guidance that was over-compressed in v0.43: findings explain the mechanism (impact + the condition that triggers it + `file:line`) instead of bare labels, and summary `### Impact` lines are self-contained `[SEVERITY] file (line): mechanism`.
+- The retry-safe MCP server policy is co-located with the server factory definitions rather than duplicated in the agent entrypoint.
+
+### Fixed
+
+- Mention context bleed: a vague `@kodiai` follow-up on a PR no longer pulls an unrelated repository issue into the reply. The issue corpus is suppressed for PR-surface mentions, and PR mentions are grounded in the PR diff.
+- Wiki incremental sync stall: non-page `recentchanges` entries (pageid 0) are skipped before the parse call, so one unparseable entry no longer fails every sync cycle and pins the checkpoint — which had left the wiki index going stale.
+- Degraded explicit-review fallback no longer discards the review: when structured finding lines cannot be parsed from the result text, it surfaces the agent's actual review text instead of a generic "not safely publishable" message.
+
+### Verification
+
+- `bunx tsc --noEmit` passed.
+- `bun run lint` passed.
+- `bun run test:unit` passed with `5669 pass`.
+
 ## v0.44 (2026-06-18)
 
 Review-publication reliability, public fallback hardening, and live Kodi review validation.
