@@ -487,6 +487,7 @@ describe("happy path", () => {
       expect(srv.type).toBe("http");
       expect(srv.url).toBe(`https://api.example.com/internal/mcp/${name}`);
       expect(srv.headers["Authorization"]).toBe("Bearer bearer-tok");
+      expect(srv.headers["X-Kodiai-MCP-Authorization"]).toBe("Bearer bearer-tok");
     }
   });
 
@@ -513,6 +514,7 @@ describe("happy path", () => {
       expect(srv.type).toBe("http");
       expect(srv.url).toBe(`https://api.example.com/internal/mcp/${name}`);
       expect(srv.headers["Authorization"]).toBe("Bearer bearer-tok");
+      expect(srv.headers["X-Kodiai-MCP-Authorization"]).toBe("Bearer bearer-tok");
     }
   });
 

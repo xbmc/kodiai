@@ -276,6 +276,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       url,
       headers: {
         Authorization: `Bearer ${mcpBearerToken!}`,
+        "X-Kodiai-MCP-Authorization": `Bearer ${mcpBearerToken!}`,
       },
     };
     if (RETRY_SAFE_MCP_SERVER_NAMES.has(serverName)) {

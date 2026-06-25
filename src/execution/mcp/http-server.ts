@@ -193,7 +193,7 @@ export function createMcpHttpRoutes(
       return c.json({ error: "Rate limited" }, 429);
     }
 
-    const authHeader = c.req.header("Authorization");
+    const authHeader = c.req.header("Authorization") ?? c.req.header("X-Kodiai-MCP-Authorization");
     const token = authHeader?.replace(/^Bearer /, "");
 
     if (!token) {

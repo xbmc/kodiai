@@ -25,13 +25,18 @@ const MCP_INIT_BODY = JSON.stringify({
   },
 });
 
-function mcpPost(app: ReturnType<typeof createMcpHttpRoutes>, serverName: string, token?: string) {
+function mcpPost(
+  app: ReturnType<typeof createMcpHttpRoutes>,
+  serverName: string,
+  token?: string,
+  authHeaderName = "Authorization",
+) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     // MCP spec requires both content types in Accept for POST requests.
     "Accept": "application/json, text/event-stream",
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token) headers[authHeaderName] = `Bearer ${token}`;
   const req = new Request(`http://localhost/internal/mcp/${serverName}`, {
     method: "POST",
     headers,
@@ -197,6 +202,23 @@ describe("createMcpHttpRoutes", () => {
     const text = await res.text();
     expect(text).toContain("result");
     expect(text).toContain("capabilities");
+  });
+
+  test("accepts Kodiai MCP auth header when Authorization is unavailable", async () => {
+    const registry = createMcpJobRegistry();
+    registry.register("valid-token", { test_server: makeFactory() });
+    const app = createMcpHttpRoutes(registry);
+
+    const res = await mcpPost(
+      app,
+      "test_server",
+      "valid-token",
+      "X-Kodiai-MCP-Authorization",
+    );
+
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("result");
   });
 
   test("rate-limits verified MCP requests by token and server", async () => {
