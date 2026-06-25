@@ -21,6 +21,8 @@ import { resolveRepoTransport } from "./repo-transport.ts";
 import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
 import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
+import { installMcpFetchRetry, normalizeMcpUrlKey } from "./mcp/mcp-fetch-retry.ts";
+import { RETRY_SAFE_MCP_SERVER_NAMES } from "./mcp/index.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,10 @@ export const MCP_SERVER_NAMES = [
   "github_issue_label",
   "github_issue_comment",
 ] as const;
+
+// Retry-safety is a property of each MCP server's handler, so the allowlist
+// (RETRY_SAFE_MCP_SERVER_NAMES) lives with the factory definitions in
+// ./mcp/index.ts and is imported at the top of this file rather than duplicated.
 
 // ---------------------------------------------------------------------------
 // Injectable dependencies (for testing)
@@ -262,15 +268,28 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   // Fall back to MCP_SERVER_NAMES if not specified (for backward compat)
   const serverNamesToUse = agentConfig.mcpServerNames ?? [...MCP_SERVER_NAMES];
   const mcpServers: Record<string, McpHttpServerConfig> = {};
+  const retrySafeUrls = new Set<string>();
   for (const serverName of serverNamesToUse) {
+    const url = buildMcpServerUrl(mcpBaseUrl!, serverName);
     mcpServers[serverName] = {
       type: "http",
-      url: buildMcpServerUrl(mcpBaseUrl!, serverName),
+      url,
       headers: {
         Authorization: `Bearer ${mcpBearerToken!}`,
       },
     };
+    if (RETRY_SAFE_MCP_SERVER_NAMES.has(serverName)) {
+      const key = normalizeMcpUrlKey(url);
+      if (key) retrySafeUrls.add(key);
+    }
   }
+
+  // 4b. Install bounded retry for MCP callbacks. The Agent SDK's "http" MCP
+  // transport uses globalThis.fetch with no retry, so a transient orchestrator
+  // stall (fast-fail 503 / ingress 502-504 / dropped connection) would silently
+  // drop a finding or comment. The retry-safe URL set restricts retries to
+  // idempotent/deduped servers so they can never duplicate a PR comment.
+  installMcpFetchRetry({ retrySafeUrls });
 
   // 5–6. Call SDK, collect messages
   const resultJson = join(workspaceDir!, "result.json");

@@ -151,10 +151,16 @@ describe("createWikiSyncScheduler", () => {
     expect(store.updateSyncState).toHaveBeenCalled();
   });
 
-  test("skips malformed successful parse payloads without treating them as updated pages", async () => {
+  test("skips non-page recentchanges entries (pageid 0) and still advances the checkpoint", async () => {
+    // recentchanges reports log events / non-page changes as pageid 0. These are
+    // not parseable; previously they hit action=parse, got "nosuchpageid", set
+    // hadFailure, and pinned the checkpoint forever — so the sync re-fetched the
+    // same poison entry every cycle and the index went stale. They must be
+    // skipped outright: no parse, no failure, checkpoint advances.
     const store = createMockStore();
     const logger = createMockLogger();
 
+    let parseCalled = false;
     const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         return new Response(JSON.stringify(buildRCResponse([
@@ -162,7 +168,8 @@ describe("createWikiSyncScheduler", () => {
         ])));
       }
       if (url.includes("action=parse")) {
-        return new Response(JSON.stringify({ error: { code: "missingtitle", info: "Bad title" } }));
+        parseCalled = true;
+        return new Response(JSON.stringify({ error: { code: "nosuchpageid", info: "There is no page with ID 0." } }));
       }
       return new Response("", { status: 404 });
     }) as typeof globalThis.fetch;
@@ -178,13 +185,19 @@ describe("createWikiSyncScheduler", () => {
 
     const result = await scheduler.syncNow();
 
-    expect(result.pagesChecked).toBe(1);
+    expect(parseCalled).toBe(false); // never attempt to parse a pageid-0 entry
+    expect(result.pagesChecked).toBe(0);
     expect(result.pagesUpdated).toBe(0);
-    expect(result.pagesDeleted).toBe(0);
     expect(store.replacePageChunks).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ pageId: 0, reason: "malformed-parse-response" }),
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "malformed-parse-response" }),
       "Wiki sync parse response malformed, skipping page",
+    );
+    // The key regression guard: a pageid-0 entry must not block checkpoint advance.
+    expect(store.updateSyncState).toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ source: "kodi.wiki" }),
+      "Wiki incremental sync had failures; preserving previous sync checkpoint",
     );
   });
 

@@ -1,6 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
-import { createMcpJobRegistry, createMcpHttpRoutes } from "./http-server.ts";
+import {
+  createMcpJobRegistry,
+  createMcpHttpRoutes,
+} from "./http-server.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers

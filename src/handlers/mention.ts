@@ -122,6 +122,7 @@ import {
   evaluateExplicitMentionReviewPublish,
   buildExplicitMentionReviewPublishFailureBody,
   buildExplicitReviewLifecycleEvidenceLine,
+  buildExplicitReviewTextFallbackLines,
   logExplicitMentionReviewPublishSkipped,
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
@@ -1481,9 +1482,16 @@ export function createMentionHandler(deps: {
           mentionAdmission: config.mention.admission,
         });
         const allowIssueCodePointers = isIssueThreadComment && isCodeSeekingMentionRequest(writeIntent.request);
-        const allowPrDiffContext =
-          mention.prNumber !== undefined
-          && (explicitReviewRequest || isDiffSeekingMentionRequest(writeIntent.request));
+        // A mention on a PR is about that PR. Two consequences, both keyed off the
+        // single fact "is this on a PR?":
+        //  - always ground the reply in the PR diff — without it a vague follow-up
+        //    ("provide additional details") had no code to anchor on and fixated on
+        //    whatever retrieval surfaced (once an unrelated issue);
+        //  - suppress the repo issue corpus — issue BM25 has no relevance floor and
+        //    can inject an unrelated issue on common-word matches.
+        const isPrMention = mention.prNumber !== undefined;
+        const allowPrDiffContext = isPrMention;
+        const includeIssueCorpus = !isPrMention;
         try {
           const fingerprintResult = await buildMentionContextFingerprint(octokit, mention, {
             admissionPolicy: mentionAdmissionPolicy,
@@ -1723,6 +1731,7 @@ export function createMentionHandler(deps: {
               topK: retrievalTopK,
               logger,
               triggerType: "question",
+              includeIssues: includeIssueCorpus,
             });
 
             if (config.telemetry.enabled) {
@@ -3485,13 +3494,11 @@ export function createMentionHandler(deps: {
         ) {
           const fallbackLines = explicitReviewRequest
             ? explicitReviewPublishEvaluation.hasUnpublishedFindings
-              ? [
-                  "Decision: NOT APPROVED",
-                  "Issues:",
-                  ...(explicitReviewResultFindingLines.length > 0
-                    ? explicitReviewResultFindingLines
-                    : ["- The review reported blocking issues, but the findings were not safely publishable in structured form."]),
-                ]
+              ? explicitReviewResultFindingLines.length > 0
+                ? ["Decision: NOT APPROVED", "Issues:", ...explicitReviewResultFindingLines]
+                // No parseable finding lines, but the agent's review text holds the
+                // findings — surface it rather than hide it behind a generic apology.
+                : buildExplicitReviewTextFallbackLines(result.resultText)
               : buildExplicitReviewNoOutputFallbackLines(explicitReviewPublishEvaluation.skipReason)
             : [
                 "I can answer this, but I need one detail first.",

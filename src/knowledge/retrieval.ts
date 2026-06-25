@@ -52,6 +52,13 @@ export type RetrieveOptions = {
   logger: Logger;
   /** Context-dependent source weighting trigger type. */
   triggerType?: TriggerType;
+  /**
+   * Include the repo issue corpus (vector + BM25) in retrieval. Default true.
+   * Set false for PR-surface mentions: issue BM25 has no relevance floor, so a
+   * generic query ("provide additional details") can match an unrelated issue
+   * on common words and dominate the reply. Issues add little to PR review.
+   */
+  includeIssues?: boolean;
 };
 
 export type RetrieveResult = {
@@ -516,6 +523,7 @@ export function createRetriever(deps: {
     const prLanguages = opts.prLanguages ?? [];
     const triggerType = opts.triggerType ?? "pr_review";
     const canonicalRef = opts.canonicalRef ?? "main";
+    const includeIssues = opts.includeIssues !== false;
     const intentQuery = opts.queries[0]!;
 
     try {
@@ -626,7 +634,7 @@ export function createRetriever(deps: {
             })
           : Promise.resolve([] as CanonicalCodeMatch[]),
         // (h) Issue vector search
-        deps.issueStore
+        deps.issueStore && includeIssues
           ? searchIssues({
               store: deps.issueStore,
               embeddingProvider: requestScopedEmbeddingProvider,
@@ -637,7 +645,7 @@ export function createRetriever(deps: {
             })
           : Promise.resolve([] as IssueKnowledgeMatch[]),
         // (i) Issue BM25 full-text search
-        deps.issueStore?.searchByFullText
+        deps.issueStore?.searchByFullText && includeIssues
           ? deps.issueStore.searchByFullText({
               query: intentQuery,
               repo: opts.repo,

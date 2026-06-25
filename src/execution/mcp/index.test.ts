@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { buildMcpServers, buildMcpServerFactories, buildAllowedMcpTools, buildMcpServerFactoriesWithLoaders } from "./index.ts";
+import { buildMcpServers, buildMcpServerFactories, buildAllowedMcpTools, buildMcpServerFactoriesWithLoaders, RETRY_SAFE_MCP_SERVER_NAMES } from "./index.ts";
 import { createCandidateFindingServer } from "./candidate-finding-server.ts";
 import { createMinimalMcpDeps, getToolHandler } from "./test-helpers.ts";
 import type { ReviewCandidateFindingRecorder } from "../../review-orchestration/review-candidate-finding.ts";
@@ -576,6 +576,26 @@ describe("buildMcpServerFactories", () => {
 
     expect("review_candidate_finding" in enabledFactories).toBe(true);
     expect(getToolHandler(enabledFactories.review_candidate_finding!(), "record_candidate_finding")).toBeFunction();
+  });
+
+  it("every RETRY_SAFE_MCP_SERVER_NAMES entry is a real factory-produced server (drift guard)", () => {
+    // Build with every server enabled so the factory map contains all possible
+    // server names; the retry-safe allowlist must be a subset of those names.
+    const factories = buildMcpServerFactories(
+      createMinimalMcpDeps({
+        prNumber: 42,
+        commentId: 7,
+        reviewOutputKey: "review-key",
+        enableCheckpointTool: true,
+        knowledgeStore: {} as never,
+        enableIssueTools: true,
+        issueNumber: 99,
+        triageConfig: { enabled: true, label: { enabled: true }, comment: { enabled: true } },
+      }),
+    );
+    const factoryNames = new Set(Object.keys(factories));
+    const orphans = [...RETRY_SAFE_MCP_SERVER_NAMES].filter((name) => !factoryNames.has(name));
+    expect(orphans).toEqual([]);
   });
 
   it("factory-created candidate finding servers share the injected recorder", async () => {

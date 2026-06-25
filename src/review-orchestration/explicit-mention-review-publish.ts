@@ -241,6 +241,34 @@ export function evaluateExplicitMentionReviewPublish(params: {
   };
 }
 
+/** Max chars of agent result text to surface in a degraded fallback reply. */
+export const MAX_FALLBACK_RESULT_TEXT_CHARS = 12_000;
+
+/**
+ * Fallback body lines when an explicit review found blocking signals but no
+ * structured finding lines could be parsed from the result text.
+ *
+ * Rather than discard the agent's review behind a generic "not safely
+ * publishable" apology, surface the result text itself — it IS the review the
+ * model wrote, and showing it is strictly more useful than hiding it. The
+ * generic apology is reserved as a true last resort for when there is no
+ * usable text at all.
+ */
+export function buildExplicitReviewTextFallbackLines(resultText: string | undefined): string[] {
+  const trimmed = resultText?.trim();
+  if (!trimmed) {
+    return [
+      "Decision: NOT APPROVED",
+      "Issues:",
+      "- The review reported blocking issues but produced no readable output. Please re-run `@kodiai review`.",
+    ];
+  }
+  const body = trimmed.length > MAX_FALLBACK_RESULT_TEXT_CHARS
+    ? `${trimmed.slice(0, MAX_FALLBACK_RESULT_TEXT_CHARS)}\n\n…(truncated)`
+    : trimmed;
+  return ["Decision: NOT APPROVED", "", body];
+}
+
 export function logExplicitMentionReviewPublishSkipped(params: {
   logger: Logger;
   baseLog: Record<string, unknown>;
