@@ -122,6 +122,7 @@ import {
   evaluateExplicitMentionReviewPublish,
   buildExplicitMentionReviewPublishFailureBody,
   buildExplicitReviewLifecycleEvidenceLine,
+  buildExplicitReviewTextFallbackLines,
   logExplicitMentionReviewPublishSkipped,
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
@@ -3493,13 +3494,11 @@ export function createMentionHandler(deps: {
         ) {
           const fallbackLines = explicitReviewRequest
             ? explicitReviewPublishEvaluation.hasUnpublishedFindings
-              ? [
-                  "Decision: NOT APPROVED",
-                  "Issues:",
-                  ...(explicitReviewResultFindingLines.length > 0
-                    ? explicitReviewResultFindingLines
-                    : ["- The review reported blocking issues, but the findings were not safely publishable in structured form."]),
-                ]
+              ? explicitReviewResultFindingLines.length > 0
+                ? ["Decision: NOT APPROVED", "Issues:", ...explicitReviewResultFindingLines]
+                // No parseable finding lines, but the agent's review text holds the
+                // findings — surface it rather than hide it behind a generic apology.
+                : buildExplicitReviewTextFallbackLines(result.resultText)
               : buildExplicitReviewNoOutputFallbackLines(explicitReviewPublishEvaluation.skipReason)
             : [
                 "I can answer this, but I need one detail first.",

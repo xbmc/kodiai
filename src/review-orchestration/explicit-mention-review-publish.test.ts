@@ -7,7 +7,36 @@ import {
   logExplicitMentionReviewPublishSkipped,
   buildExplicitReviewLifecycleEvidenceLine,
   buildExplicitMentionReviewPublishFailureBody,
+  buildExplicitReviewTextFallbackLines,
+  MAX_FALLBACK_RESULT_TEXT_CHARS,
 } from "./explicit-mention-review-publish.ts";
+
+describe("buildExplicitReviewTextFallbackLines", () => {
+  test("surfaces the agent's review text under a NOT APPROVED decision", () => {
+    const lines = buildExplicitReviewTextFallbackLines(
+      "## Observations\n[MAJOR] Logic error at line 247: inverted idle flag",
+    );
+    expect(lines[0]).toBe("Decision: NOT APPROVED");
+    const body = lines.join("\n");
+    expect(body).toContain("[MAJOR] Logic error at line 247: inverted idle flag");
+    expect(body).not.toContain("not safely publishable");
+  });
+
+  test("falls back to a re-run prompt only when there is no usable text", () => {
+    expect(buildExplicitReviewTextFallbackLines(undefined)).toEqual([
+      "Decision: NOT APPROVED",
+      "Issues:",
+      "- The review reported blocking issues but produced no readable output. Please re-run `@kodiai review`.",
+    ]);
+    expect(buildExplicitReviewTextFallbackLines("   ")[1]).toBe("Issues:");
+  });
+
+  test("truncates very long result text", () => {
+    const lines = buildExplicitReviewTextFallbackLines("x".repeat(MAX_FALLBACK_RESULT_TEXT_CHARS + 500));
+    expect(lines.join("\n")).toContain("…(truncated)");
+    expect(lines.join("\n").length).toBeLessThan(MAX_FALLBACK_RESULT_TEXT_CHARS + 200);
+  });
+});
 
 describe("extractExplicitReviewResultFindingLines", () => {
   test("extracts inline severity findings", () => {
