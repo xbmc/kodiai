@@ -221,6 +221,50 @@ describe("createMcpHttpRoutes", () => {
     expect(text).toContain("result");
   });
 
+  test("accepts MCP token query param when headers are unavailable", async () => {
+    const registry = createMcpJobRegistry();
+    registry.register("valid-token", { test_server: makeFactory() });
+    const app = createMcpHttpRoutes(registry);
+
+    const req = new Request(
+      "http://localhost/internal/mcp/test_server?kodiai_mcp_token=valid-token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json, text/event-stream",
+        },
+        body: MCP_INIT_BODY,
+      },
+    );
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("result");
+  });
+
+  test("query token keeps missing auth behavior when absent", async () => {
+    const registry = createMcpJobRegistry();
+    registry.register("valid-token", { test_server: makeFactory() });
+    const app = createMcpHttpRoutes(registry);
+
+    const req = new Request(
+      "http://localhost/internal/mcp/test_server?kodiai_mcp_token=",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json, text/event-stream",
+        },
+        body: MCP_INIT_BODY,
+      },
+    );
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(401);
+  });
+
   test("rate-limits verified MCP requests by token and server", async () => {
     const registry = createMcpJobRegistry();
     registry.register("valid-token", { test_server: makeFactory() });

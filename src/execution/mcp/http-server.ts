@@ -194,7 +194,8 @@ export function createMcpHttpRoutes(
     }
 
     const authHeader = c.req.header("Authorization") ?? c.req.header("X-Kodiai-MCP-Authorization");
-    const token = authHeader?.replace(/^Bearer /, "");
+    const queryToken = c.req.query("kodiai_mcp_token");
+    const token = authHeader?.replace(/^Bearer /, "") ?? queryToken;
 
     if (!token) {
       logger?.info(

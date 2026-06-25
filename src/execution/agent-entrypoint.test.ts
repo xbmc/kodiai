@@ -485,7 +485,7 @@ describe("happy path", () => {
     for (const name of MCP_SERVER_NAMES) {
       const srv = mcpServers[name]!;
       expect(srv.type).toBe("http");
-      expect(srv.url).toBe(`https://api.example.com/internal/mcp/${name}`);
+      expect(srv.url).toBe(`https://api.example.com/internal/mcp/${name}?kodiai_mcp_token=bearer-tok`);
       expect(srv.headers["Authorization"]).toBe("Bearer bearer-tok");
       expect(srv.headers["X-Kodiai-MCP-Authorization"]).toBe("Bearer bearer-tok");
     }
@@ -512,7 +512,7 @@ describe("happy path", () => {
     for (const name of MCP_SERVER_NAMES) {
       const srv = mcpServers[name]!;
       expect(srv.type).toBe("http");
-      expect(srv.url).toBe(`https://api.example.com/internal/mcp/${name}`);
+      expect(srv.url).toBe(`https://api.example.com/internal/mcp/${name}?kodiai_mcp_token=bearer-tok`);
       expect(srv.headers["Authorization"]).toBe("Bearer bearer-tok");
       expect(srv.headers["X-Kodiai-MCP-Authorization"]).toBe("Bearer bearer-tok");
     }
@@ -543,7 +543,7 @@ describe("happy path", () => {
     expect(capturedOptions).toBeDefined();
     const mcpServers = capturedOptions!.mcpServers as Record<string, { type: string; url: string }>;
     for (const name of MCP_SERVER_NAMES) {
-      expect(mcpServers[name]?.url).toBe(`https://api.example.com/internal/mcp/${name}`);
+      expect(mcpServers[name]?.url).toBe(`https://api.example.com/internal/mcp/${name}?kodiai_mcp_token=bearer-tok`);
     }
   });
 

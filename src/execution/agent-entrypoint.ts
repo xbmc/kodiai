@@ -211,6 +211,11 @@ function buildMcpServerUrl(baseUrl: string, serverName: string): string {
   return `${trimmedBaseUrl}/internal/mcp/${serverName}`;
 }
 
+function appendMcpTokenQuery(url: string, token: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}kodiai_mcp_token=${encodeURIComponent(token)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -270,7 +275,10 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   const mcpServers: Record<string, McpHttpServerConfig> = {};
   const retrySafeUrls = new Set<string>();
   for (const serverName of serverNamesToUse) {
-    const url = buildMcpServerUrl(mcpBaseUrl!, serverName);
+    const url = appendMcpTokenQuery(
+      buildMcpServerUrl(mcpBaseUrl!, serverName),
+      mcpBearerToken!,
+    );
     mcpServers[serverName] = {
       type: "http",
       url,
