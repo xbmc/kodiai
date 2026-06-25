@@ -3,6 +3,7 @@ import { classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { calculateTierForProfile } from "./tier-calculator.ts";
 import type {
   ContributorExpertise,
+  ContributorExpertiseUpsert,
   ContributorProfileStore,
   ContributorTier,
   ExpertiseDimension,
@@ -192,6 +193,7 @@ export async function updateExpertiseIncremental(params: {
   }
   const newRaw = computeDecayedScore([signal]);
   const normalizedContribution = normalizeScore(newRaw);
+  const expertiseUpdates: ContributorExpertiseUpsert[] = [];
 
   for (const { dimension, topics } of dimensions) {
     for (const topic of topics) {
@@ -202,7 +204,7 @@ export async function updateExpertiseIncremental(params: {
       const blended = Math.min(1, existingScore * 0.9 + normalizedContribution * 0.1);
       const rawSignals = (rawSignalsByTopic.get(key) ?? 0) + 1;
 
-      await profileStore.upsertExpertise({
+      expertiseUpdates.push({
         profileId: profile.id,
         dimension,
         topic,
@@ -214,6 +216,10 @@ export async function updateExpertiseIncremental(params: {
       scoreByTopic.set(key, { dimension, topic, score: blended });
       rawSignalsByTopic.set(key, rawSignals);
     }
+  }
+
+  if (expertiseUpdates.length > 0) {
+    await profileStore.upsertExpertiseMany(expertiseUpdates);
   }
 
   const overallScore = deriveUpdatedOverallScore({

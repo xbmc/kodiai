@@ -41,6 +41,7 @@ function createMockStore(): MockStore {
     writeChunks: mock(async () => {}),
     deletePageChunks: mock(async () => {}),
     replacePageChunks: mock(async () => {}),
+    replacePagesChunks: mock(async () => {}),
     softDeletePage: mock(async () => {}),
     searchByEmbedding: mock(async () => []),
     getPageChunks: mock(async () => []),
@@ -50,6 +51,7 @@ function createMockStore(): MockStore {
     }),
     countBySource: mock(async () => 0),
     getPageRevision: mock(async () => null),
+    getPageRevisions: mock(async () => new Map()),
     searchByFullText: mock(async () => []),
     listRepairCandidates: mock(async () => []),
     getRepairCheckpoint: mock(async () => null),
@@ -147,7 +149,7 @@ describe("createWikiSyncScheduler", () => {
     expect(result.pagesChecked).toBe(1);
     expect(result.pagesUpdated).toBe(1);
     expect(result.pagesDeleted).toBe(0);
-    expect(store.replacePageChunks).toHaveBeenCalled();
+    expect(store.replacePagesChunks).toHaveBeenCalled();
     expect(store.updateSyncState).toHaveBeenCalled();
   });
 
@@ -286,6 +288,7 @@ describe("createWikiSyncScheduler", () => {
     const store = createMockStore();
     // Page existed before (has a revision)
     (store.getPageRevision as ReturnType<typeof mock>).mockImplementation(async () => 100);
+    (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map([[1, 100]]));
 
     const redirectHtml = '<div class="redirectMsg"><p>Redirect to <a href="/view/RealPage">RealPage</a></p></div>';
 
@@ -323,6 +326,7 @@ describe("createWikiSyncScheduler", () => {
     const store = createMockStore();
     // Page already has revision 100
     (store.getPageRevision as ReturnType<typeof mock>).mockImplementation(async () => 100);
+    (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map([[1, 100]]));
 
     const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
@@ -351,6 +355,44 @@ describe("createWikiSyncScheduler", () => {
       (call: unknown[]) => String(call[0]).includes("action=parse"),
     );
     expect(parseCalls.length).toBe(0);
+  });
+
+  test("uses batched revision lookup and replacement for changed pages", async () => {
+    const store = createMockStore();
+    (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map());
+
+    const fetchFn = mockFetch(async (url: string) => {
+      if (url.includes("list=recentchanges")) {
+        return new Response(JSON.stringify(buildRCResponse([
+          { pageid: 1, title: "FirstPage", revid: 201 },
+          { pageid: 2, title: "SecondPage", revid: 202 },
+        ])));
+      }
+      if (url.includes("pageid=1")) {
+        return new Response(JSON.stringify(buildParseResponse(1, "FirstPage", WIKI_HTML, 201)));
+      }
+      if (url.includes("pageid=2")) {
+        return new Response(JSON.stringify(buildParseResponse(2, "SecondPage", WIKI_HTML, 202)));
+      }
+      return new Response("", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const scheduler = createWikiSyncScheduler({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "kodi.wiki",
+      delayMs: 0,
+      logger: createMockLogger(),
+      fetchFn,
+    });
+
+    const result = await scheduler.syncNow();
+
+    expect(result.pagesUpdated).toBe(2);
+    expect(store.getPageRevisions).toHaveBeenCalledWith([1, 2]);
+    expect(store.getPageRevision).not.toHaveBeenCalled();
+    expect(store.replacePagesChunks).toHaveBeenCalledTimes(1);
+    expect(store.replacePageChunks).not.toHaveBeenCalled();
   });
 
   test("embeds changed page chunks through bounded batch helper fail-open", async () => {
@@ -410,8 +452,10 @@ describe("createWikiSyncScheduler", () => {
     expect(seenEmbeddingTexts).toHaveLength(3);
     expect(maxActiveEmbeddings).toBe(3);
 
-    const replaceCall = (store.replacePageChunks as ReturnType<typeof mock>).mock.calls.at(-1)!;
-    const chunks = replaceCall[1] as Array<{ embedding?: Float32Array | null; sectionHeading?: string | null }>;
+    const replaceCall = (store.replacePagesChunks as ReturnType<typeof mock>).mock.calls.at(-1)!;
+    const chunks = (replaceCall[0] as Array<{
+      chunks: Array<{ embedding?: Float32Array | null; sectionHeading?: string | null }>;
+    }>)[0]!.chunks;
     expect(chunks.map((chunk) => chunk.sectionHeading)).toEqual(["First", "Second", "Third"]);
     expect(Array.from(chunks[0]!.embedding!)).toEqual([7, 8, 9]);
     expect(chunks[1]!.embedding).toBeUndefined();

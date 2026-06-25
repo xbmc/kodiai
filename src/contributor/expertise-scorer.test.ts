@@ -193,7 +193,7 @@ describe("recalculateTierFailOpen", () => {
 });
 
 describe("updateExpertiseIncremental", () => {
-  test("calls upsertExpertise for each language and file area", async () => {
+  test("calls upsertExpertiseMany for each language and file area", async () => {
     const upsertCalls: Array<{
       dimension: string;
       topic: string;
@@ -212,6 +212,12 @@ describe("updateExpertiseIncremental", () => {
           dimension: params.dimension,
           topic: params.topic,
         });
+      },
+      upsertExpertiseMany: async (entries) => {
+        upsertCalls.push(...entries.map((entry) => ({
+          dimension: entry.dimension,
+          topic: entry.topic,
+        })));
       },
       updateTier: async () => {},
       getOrCreateByGithubUsername: async () => makeProfile(),
@@ -262,6 +268,9 @@ describe("updateExpertiseIncremental", () => {
       upsertExpertise: async (params) => {
         upsertCalls.push({ dimension: params.dimension, topic: params.topic });
       },
+      upsertExpertiseMany: async (entries) => {
+        upsertCalls.push(...entries.map((entry) => ({ dimension: entry.dimension, topic: entry.topic })));
+      },
       updateTier: async () => {},
       getOrCreateByGithubUsername: async () => makeProfile(),
       getAllScores: async () => [],
@@ -281,6 +290,49 @@ describe("updateExpertiseIncremental", () => {
 
     expect(upsertCalls.length).toBeGreaterThan(2);
     expect(getExpertiseCalls).toBe(1);
+  });
+
+  test("uses bulk expertise upsert when the store supports it", async () => {
+    const { logger } = createMockLogger();
+    const singleUpsertCalls: Array<{ dimension: string; topic: string }> = [];
+    const bulkUpsertCalls: Array<Array<{ dimension: string; topic: string }>> = [];
+    const mockStore: ContributorProfileStore = {
+      getByGithubUsername: async () => null,
+      getBySlackUserId: async () => null,
+      linkIdentity: async () => makeProfile(),
+      unlinkSlack: async () => {},
+      setOptedOut: async () => {},
+      getExpertise: async () => [],
+      upsertExpertise: async (params) => {
+        singleUpsertCalls.push({ dimension: params.dimension, topic: params.topic });
+      },
+      upsertExpertiseMany: async (entries) => {
+        bulkUpsertCalls.push(entries.map((entry) => ({ dimension: entry.dimension, topic: entry.topic })));
+      },
+      updateTier: async () => {},
+      getOrCreateByGithubUsername: async () => makeProfile(),
+      getAllScores: async () => [],
+    };
+
+    await updateExpertiseIncremental({
+      githubUsername: "test",
+      filesChanged: [
+        "src/handlers/review.ts",
+        "src/lib/utils.py",
+      ],
+      type: "pr_authored",
+      profileStore: mockStore,
+      logger,
+    });
+
+    expect(singleUpsertCalls).toEqual([]);
+    expect(bulkUpsertCalls).toHaveLength(1);
+    expect(bulkUpsertCalls[0]).toEqual(expect.arrayContaining([
+      { dimension: "language", topic: "typescript" },
+      { dimension: "language", topic: "python" },
+      { dimension: "file_area", topic: "src/handlers/" },
+      { dimension: "file_area", topic: "src/lib/" },
+    ]));
   });
 
   test("recalculates and persists an advanced tier when the updated score outranks the lowest cohort", async () => {
@@ -436,6 +488,7 @@ function createIncrementalMockStore(params: {
     setOptedOut: async () => {},
     getExpertise: async () => expertise,
     upsertExpertise: async () => {},
+    upsertExpertiseMany: async () => {},
     updateTier: async (profileId, tier, overallScore) => {
       params.onUpdateTier?.({ profileId, tier, overallScore });
     },

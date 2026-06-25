@@ -73,6 +73,7 @@ function createMockProfileStore(
     setOptedOut: async () => {},
     getExpertise: async () => [],
     upsertExpertise: async () => {},
+    upsertExpertiseMany: async () => {},
     updateTier: async () => {},
     getOrCreateByGithubUsername: async () =>
       makeProfile({

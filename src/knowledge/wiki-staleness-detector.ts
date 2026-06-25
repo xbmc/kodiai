@@ -240,7 +240,14 @@ async function heuristicPass(
     filePath,
     tokens: tokenizeFilePath(filePath),
   }));
-  const changedFileTokenSets = changedFileTokens.map(({ tokens }) => tokens);
+  const tokenToChangedFileIndexes = new Map<string, number[]>();
+  for (const [index, { tokens }] of changedFileTokens.entries()) {
+    for (const token of tokens) {
+      const indexes = tokenToChangedFileIndexes.get(token) ?? [];
+      indexes.push(index);
+      tokenToChangedFileIndexes.set(token, indexes);
+    }
+  }
 
   // Build PR mergedAt map for recency sorting
   const prDateMap = new Map<number, number>();
@@ -252,17 +259,26 @@ async function heuristicPass(
   const candidates: WikiPageCandidateWithEvidence[] = [];
 
   for (const [pageId, page] of pageMap) {
-    const score = scoreWikiTokens(page.tokens, changedFileTokenSets);
+    page.tokenUnion ??= wikiTokenUnion(page.tokens);
+    const candidateFileIndexes = new Set<number>();
+    for (const token of page.tokenUnion) {
+      const indexes = tokenToChangedFileIndexes.get(token);
+      if (!indexes) continue;
+      for (const index of indexes) {
+        candidateFileIndexes.add(index);
+      }
+    }
+    if (candidateFileIndexes.size === 0) continue;
+
+    const candidateChangedFiles = [...candidateFileIndexes].map((index) => changedFileTokens[index]!);
+    const score = scoreWikiTokens(page.tokens, candidateChangedFiles.map(({ tokens }) => tokens));
     if (score === 0) continue;
 
     // Determine which files and PRs affected this page
     const affectingFilePaths: string[] = [];
     const affectingPRSet = new Set<number>();
 
-    // Re-check which specific files had token overlap
-    page.tokenUnion ??= wikiTokenUnion(page.tokens);
-
-    for (const { filePath, tokens } of changedFileTokens) {
+    for (const { filePath, tokens } of candidateChangedFiles) {
       if (hasTokenOverlap(tokens, page.tokenUnion)) {
         affectingFilePaths.push(filePath);
         const prNums = fileToPRs.get(filePath.toLowerCase());

@@ -142,6 +142,21 @@ describe("ReviewCommentStore batch SQL", () => {
     expect(query.values).toEqual(expect.arrayContaining([[1001, 1002]]));
   });
 
+  test("comment lookup paths avoid selecting the embedding vector", async () => {
+    const sql = createMockSql();
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.getThreadComments("thread-1");
+    await store.getByGithubId("xbmc/xbmc", 1001);
+    await store.getByGithubIds?.("xbmc/xbmc", [1001, 1002]);
+
+    const lookupQueries = sql.calls.filter((call) => call.query.includes("FROM review_comments"));
+    expect(lookupQueries).toHaveLength(3);
+    for (const query of lookupQueries) {
+      expect(query.query).not.toContain("SELECT *");
+    }
+  });
+
   test("writeChunks batches multiple chunks into one unsafe insert", async () => {
     const sql = createMockSql();
     const store = createReviewCommentStore({ sql, logger: mockLogger });

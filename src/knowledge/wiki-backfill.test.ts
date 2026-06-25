@@ -43,6 +43,9 @@ function createMockStore(): WikiPageStore & {
     async replacePageChunks(pageId: number, chunks: WikiPageChunk[]) {
       replacedPages.push({ pageId, chunks });
     },
+    async replacePagesChunks(replacements: Array<{ pageId: number; chunks: WikiPageChunk[] }>) {
+      replacedPages.push(...replacements);
+    },
     async softDeletePage() {},
     async searchByEmbedding(): Promise<WikiPageSearchResult[]> { return []; },
     async getPageChunks(): Promise<WikiPageRecord[]> { return []; },
@@ -53,6 +56,12 @@ function createMockStore(): WikiPageStore & {
     },
     async countBySource() { return 0; },
     async getPageRevision(pageId: number) { return _revisions.get(pageId) ?? null; },
+    async getPageRevisions(pageIds: number[]) {
+      return new Map(pageIds.flatMap((pageId) => {
+        const revision = _revisions.get(pageId);
+        return revision === undefined ? [] : [[pageId, revision] as const];
+      }));
+    },
     async searchByFullText() { return []; },
     async listRepairCandidates() { return []; },
     async getRepairCheckpoint() { return null; },

@@ -28,6 +28,15 @@ export type ContributorExpertise = {
   updatedAt: Date;
 };
 
+export type ContributorExpertiseUpsert = {
+  profileId: number;
+  dimension: ExpertiseDimension;
+  topic: string;
+  score: number;
+  rawSignals: number;
+  lastActive: Date;
+};
+
 export interface ContributorProfileStore {
   getByGithubUsername(
     username: string,
@@ -42,14 +51,8 @@ export interface ContributorProfileStore {
   unlinkSlack(githubUsername: string): Promise<void>;
   setOptedOut(githubUsername: string, optedOut: boolean): Promise<void>;
   getExpertise(profileId: number): Promise<ContributorExpertise[]>;
-  upsertExpertise(params: {
-    profileId: number;
-    dimension: ExpertiseDimension;
-    topic: string;
-    score: number;
-    rawSignals: number;
-    lastActive: Date;
-  }): Promise<void>;
+  upsertExpertise(params: ContributorExpertiseUpsert): Promise<void>;
+  upsertExpertiseMany(entries: ContributorExpertiseUpsert[]): Promise<void>;
   updateTier(
     profileId: number,
     tier: ContributorTier,

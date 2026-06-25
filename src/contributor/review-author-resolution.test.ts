@@ -57,6 +57,7 @@ function createContributorProfileStore(params: {
       return [];
     },
     upsertExpertise: async () => undefined,
+    upsertExpertiseMany: async () => undefined,
     updateTier: async () => undefined,
     getOrCreateByGithubUsername: async () => {
       throw new Error("not implemented in test");

@@ -158,6 +158,34 @@ describe("linkPRToIssues", () => {
       expect(result.semanticMatches).toHaveLength(0);
     });
 
+    test("bounds fallback reference lookups when bulk lookup is unavailable", async () => {
+      let active = 0;
+      let maxActive = 0;
+      const issueStore = mockIssueStore({
+        getByNumber: mock(async (_repo: string, issueNumber: number) => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          active -= 1;
+          return mockRecord({ issueNumber, title: `Issue ${issueNumber}` });
+        }),
+      });
+      const embeddingProvider = mockEmbeddingProvider();
+      const logger = mockLogger();
+      const refs = Array.from({ length: 20 }, (_, index) => `fixes #${index + 1}`).join(" ");
+
+      const result = await linkPRToIssues({
+        ...defaultParams,
+        prBody: refs,
+        issueStore,
+        embeddingProvider,
+        logger,
+      });
+
+      expect(result.referencedIssues).toHaveLength(20);
+      expect(maxActive).toBeLessThanOrEqual(8);
+    });
+
     test("skips issue not found in corpus with info log", async () => {
       const issueStore = mockIssueStore({
         getByNumber: mock(() => Promise.resolve(null)),

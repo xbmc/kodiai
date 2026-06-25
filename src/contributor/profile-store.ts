@@ -4,6 +4,7 @@ import { withTransientDbRetry } from "../db/transient-retry.ts";
 import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "./profile-trust.ts";
 import type {
   ContributorExpertise,
+  ContributorExpertiseUpsert,
   ContributorProfile,
   ContributorProfileStore,
   ContributorTier,
@@ -188,6 +189,41 @@ export function createContributorProfileStore(opts: {
           dimension,
           topic,
           writePath: "contributor_upsert_expertise",
+        },
+      );
+    },
+
+    async upsertExpertiseMany(entries: ContributorExpertiseUpsert[]): Promise<void> {
+      if (entries.length === 0) return;
+
+      await writeWithRetry(
+        () => sql`
+          INSERT INTO contributor_expertise (profile_id, dimension, topic, score, raw_signals, last_active)
+          SELECT
+            batch.profile_id,
+            batch.dimension,
+            batch.topic,
+            batch.score,
+            batch.raw_signals,
+            batch.last_active
+          FROM unnest(
+            ${entries.map((entry) => entry.profileId)}::bigint[],
+            ${entries.map((entry) => entry.dimension)}::text[],
+            ${entries.map((entry) => entry.topic)}::text[],
+            ${entries.map((entry) => entry.score)}::double precision[],
+            ${entries.map((entry) => entry.rawSignals)}::integer[],
+            ${entries.map((entry) => entry.lastActive)}::timestamptz[]
+          ) AS batch(profile_id, dimension, topic, score, raw_signals, last_active)
+          ON CONFLICT (profile_id, dimension, topic) DO UPDATE SET
+            score = EXCLUDED.score,
+            raw_signals = EXCLUDED.raw_signals,
+            last_active = EXCLUDED.last_active,
+            updated_at = now()
+        `,
+        {
+          profileId: entries[0]!.profileId,
+          count: entries.length,
+          writePath: "contributor_upsert_expertise_many",
         },
       );
     },

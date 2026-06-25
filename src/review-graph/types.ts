@@ -163,6 +163,7 @@ export type ReviewGraphStore = {
     edgesWritten: number;
   }>;
   getFile(repo: string, workspaceKey: string, path: string): Promise<ReviewGraphFileRecord | null>;
+  listFilesForWorkspace(repo: string, workspaceKey: string): Promise<ReviewGraphFileRecord[]>;
   listNodesForFile(fileId: number): Promise<ReviewGraphNodeRecord[]>;
   listEdgesForFile(fileId: number): Promise<ReviewGraphEdgeRecord[]>;
   listWorkspaceGraph(repo: string, workspaceKey: string): Promise<ReviewGraphWorkspaceSnapshot>;

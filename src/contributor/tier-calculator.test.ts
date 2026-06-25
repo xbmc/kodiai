@@ -48,6 +48,7 @@ function createMockStore(
     setOptedOut: async () => {},
     getExpertise: async () => [],
     upsertExpertise: async () => {},
+    upsertExpertiseMany: async () => {},
     updateTier: async (profileId, tier, overallScore) => {
       tierUpdates.set(profileId, { tier, score: overallScore });
     },

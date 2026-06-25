@@ -187,6 +187,15 @@ export function createClusterStore(opts: {
       `;
     },
 
+    async retireClusters(clusterIds: number[]): Promise<void> {
+      if (clusterIds.length === 0) return;
+      await sql`
+        UPDATE review_clusters
+        SET retired = true, updated_at = now()
+        WHERE id = ANY(${clusterIds}::bigint[])
+      `;
+    },
+
     async updateClusterLabel(
       clusterId: number,
       slug: string,

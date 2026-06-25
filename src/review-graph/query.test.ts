@@ -136,6 +136,12 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
     return this.files.get(`${repo}::${workspaceKey}::${pathValue}`) ?? null;
   }
 
+  async listFilesForWorkspace(repo: string, workspaceKey: string): Promise<ReviewGraphFileRecord[]> {
+    return Array.from(this.files.values())
+      .filter((file) => file.repo === repo && file.workspaceKey === workspaceKey)
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }
+
   async listNodesForFile(fileId: number): Promise<ReviewGraphNodeRecord[]> {
     return this.nodesByFileId.get(fileId) ?? [];
   }

@@ -33,6 +33,11 @@ export type WikiPageChunk = {
   languageTags?: string[];
 };
 
+export type WikiPageReplacement = {
+  pageId: number;
+  chunks: WikiPageChunk[];
+};
+
 /** Full database row type with all columns. */
 export type WikiPageRecord = {
   id: number;
@@ -114,6 +119,9 @@ export type WikiPageStore = {
   /** Atomically replace all chunks for a page (delete + insert in transaction). */
   replacePageChunks(pageId: number, chunks: WikiPageChunk[]): Promise<void>;
 
+  /** Atomically replace chunks for multiple pages in one transaction. */
+  replacePagesChunks(replacements: WikiPageReplacement[]): Promise<void>;
+
   /** Soft-delete all chunks for a page. */
   softDeletePage(pageId: number): Promise<void>;
 
@@ -145,6 +153,9 @@ export type WikiPageStore = {
 
   /** Get the revision ID for a page (for change detection). */
   getPageRevision(pageId: number): Promise<number | null>;
+
+  /** Get revision IDs for multiple pages in one query. */
+  getPageRevisions(pageIds: number[]): Promise<Map<number, number>>;
 
   /** List degraded rows that need repair, ordered for deterministic bounded processing. */
   listRepairCandidates(params?: {

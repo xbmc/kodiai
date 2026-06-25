@@ -105,7 +105,7 @@ const REVIEW_COMMENT_CHUNK_BATCH_RECORDSET = buildJsonbRecordsetSource("batch_ro
   ["github_updated_at", "timestamptz"],
   ["backfill_batch", "text"],
 ]);
-function reviewCommentSearchColumns(sql: Sql) {
+function reviewCommentColumnsWithoutEmbedding(sql: Sql) {
   return sql`
     id, created_at, repo, owner, pr_number, pr_title,
     comment_github_id, thread_id, in_reply_to_id, file_path,
@@ -339,7 +339,7 @@ export function createReviewCommentStore(opts: {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
       const rows = await sql`
-        SELECT ${reviewCommentSearchColumns(sql)},
+        SELECT ${reviewCommentColumnsWithoutEmbedding(sql)},
           embedding <=> ${queryEmbeddingString}::vector AS distance
         FROM review_comments
         WHERE repo = ${params.repo}
@@ -364,7 +364,7 @@ export function createReviewCommentStore(opts: {
       if (!params.query.trim()) return [];
 
       const rows = await sql`
-        SELECT ${reviewCommentSearchColumns(sql)},
+        SELECT ${reviewCommentColumnsWithoutEmbedding(sql)},
           ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
         FROM review_comments
         WHERE repo = ${params.repo}
@@ -383,7 +383,8 @@ export function createReviewCommentStore(opts: {
 
     async getThreadComments(threadId: string): Promise<ReviewCommentRecord[]> {
       const rows = await sql`
-        SELECT * FROM review_comments
+        SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
+        FROM review_comments
         WHERE thread_id = ${threadId} AND deleted = false
         ORDER BY github_created_at, chunk_index
       `;
@@ -475,7 +476,8 @@ export function createReviewCommentStore(opts: {
 
     async getByGithubId(repo: string, commentGithubId: number): Promise<ReviewCommentRecord | null> {
       const rows = await sql`
-        SELECT * FROM review_comments
+        SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
+        FROM review_comments
         WHERE repo = ${repo} AND comment_github_id = ${commentGithubId} AND deleted = false
         ORDER BY chunk_index ASC
         LIMIT 1
@@ -489,7 +491,7 @@ export function createReviewCommentStore(opts: {
       if (uniqueIds.length === 0) return new Map();
 
       const rows = await sql`
-        SELECT DISTINCT ON (comment_github_id) *
+        SELECT DISTINCT ON (comment_github_id) ${reviewCommentColumnsWithoutEmbedding(sql)}
         FROM review_comments
         WHERE repo = ${repo} AND comment_github_id = ANY(${uniqueIds}) AND deleted = false
         ORDER BY comment_github_id ASC, chunk_index ASC

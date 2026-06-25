@@ -274,7 +274,9 @@ export async function backfillIssues(opts: IssueBackfillOptions): Promise<IssueB
       if (store.upsertMany) {
         await store.upsertMany(issueInputs);
       } else {
-        await Promise.all(issueInputs.map((issue) => store.upsert(issue)));
+        await mapWithConcurrency(issueInputs, 8, async (issue) => {
+          await store.upsert(issue);
+        });
       }
     }
 

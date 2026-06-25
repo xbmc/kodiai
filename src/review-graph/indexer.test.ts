@@ -48,6 +48,9 @@ afterEach(async () => {
 });
 
 class InMemoryReviewGraphStore implements ReviewGraphStore {
+  getFileCalls = 0;
+  listFilesForWorkspaceCalls = 0;
+
   private nextBuildId = 1;
   private nextFileId = 1;
   private nextNodeId = 1;
@@ -166,7 +169,15 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
   }
 
   async getFile(repo: string, workspaceKey: string, pathValue: string): Promise<ReviewGraphFileRecord | null> {
+    this.getFileCalls += 1;
     return this.files.get(`${repo}::${workspaceKey}::${pathValue}`) ?? null;
+  }
+
+  async listFilesForWorkspace(repo: string, workspaceKey: string): Promise<ReviewGraphFileRecord[]> {
+    this.listFilesForWorkspaceCalls += 1;
+    return Array.from(this.files.values())
+      .filter((file) => file.repo === repo && file.workspaceKey === workspaceKey)
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   async listNodesForFile(fileId: number): Promise<ReviewGraphNodeRecord[]> {
@@ -233,6 +244,36 @@ describe("createReviewGraphIndexer", () => {
     expect(pythonFile?.contentHash).toBeTruthy();
     const pythonNodes = await store.listNodesForFile(pythonFile!.id);
     expect(pythonNodes.some((node) => node.nodeKind === "symbol" && node.qualifiedName === "helper")).toBe(true);
+  });
+
+  test("preloads existing workspace files instead of querying each path", async () => {
+    const store = new InMemoryReviewGraphStore();
+    const workspaceDir = await createWorkspaceFixture({
+      "src/service.py": "def run():\n    return 1\n",
+      "src/worker.py": "def work():\n    return 2\n",
+    });
+
+    const indexer = createReviewGraphIndexer({ store, logger: mockLogger });
+    await indexer.indexWorkspace({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      workspaceDir,
+      commitSha: "abc123",
+    });
+
+    store.getFileCalls = 0;
+    store.listFilesForWorkspaceCalls = 0;
+
+    const result = await indexer.indexWorkspace({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      workspaceDir,
+      commitSha: "abc123",
+    });
+
+    expect(result.metrics.skipped).toBe(2);
+    expect(store.listFilesForWorkspaceCalls).toBe(1);
+    expect(store.getFileCalls).toBe(0);
   });
 
   test("skips unchanged files and reindexes only changed paths incrementally", async () => {

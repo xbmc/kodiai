@@ -180,6 +180,10 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
         failed: [],
       };
       const unchangedSkipSamples: Array<{ path: string; contentHash: string }> = [];
+      const existingFilesByPath = new Map(
+        (await opts.store.listFilesForWorkspace(input.repo, input.workspaceKey))
+          .map((file) => [file.path, file]),
+      );
 
       try {
         for (const repoPath of supportedPaths) {
@@ -191,7 +195,7 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
           try {
             const content = await readWorkspaceFile(absolutePath);
             const contentHash = computeContentHash(content);
-            const existing = await opts.store.getFile(input.repo, input.workspaceKey, repoPath);
+            const existing = existingFilesByPath.get(repoPath) ?? null;
 
             if (existing?.contentHash === contentHash) {
               metrics.skipped += 1;
@@ -222,6 +226,7 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
               nodes: extraction.nodes,
               edges: extraction.edges,
             });
+            existingFilesByPath.set(repoPath, writeResult.file);
 
             metrics.indexed += 1;
             metrics.nodesWritten += writeResult.nodesWritten;

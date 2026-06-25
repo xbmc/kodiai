@@ -131,9 +131,11 @@ export async function matchClusterPatterns(
   }
 
   try {
-    const clusters = store.getActiveMatchCandidates
-      ? await store.getActiveMatchCandidates(input.repo, input.prEmbedding, MAX_CLUSTER_CANDIDATES)
-      : await store.getActiveClusters(input.repo);
+    const clusters = await store.getActiveMatchCandidates(
+      input.repo,
+      input.prEmbedding,
+      MAX_CLUSTER_CANDIDATES,
+    );
     if (clusters.length === 0) return [];
 
     const clusterIds = clusters.map((cluster) => cluster.id);

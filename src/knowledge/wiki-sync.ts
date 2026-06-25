@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
+import type { WikiPageStore, WikiPageInput, WikiPageReplacement } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
@@ -157,6 +157,7 @@ async function runSync(opts: {
 
     const changes = rcResponse.query.recentchanges;
 
+    const changesToProcess: typeof changes = [];
     for (const change of changes) {
       // recentchanges can include non-page entries (log events, certain change
       // types) reported with pageid 0 or absent. These are not parseable pages:
@@ -169,10 +170,16 @@ async function runSync(opts: {
       processedPageIds.add(change.pageid);
 
       pagesChecked++;
+      changesToProcess.push(change);
+    }
 
+    const existingRevisions = await store.getPageRevisions(changesToProcess.map((change) => change.pageid));
+    const pendingReplacements: WikiPageReplacement[] = [];
+
+    for (const change of changesToProcess) {
       try {
         // Check if revision has changed
-        const existingRevision = await store.getPageRevision(change.pageid);
+        const existingRevision = existingRevisions.get(change.pageid) ?? null;
         if (existingRevision === change.revid) {
           continue; // Already up to date
         }
@@ -271,14 +278,37 @@ async function runSync(opts: {
           }
 
           // Replace all chunks for this page
-          await store.replacePageChunks(change.pageid, chunks);
-          pagesUpdated++;
+          pendingReplacements.push({ pageId: change.pageid, chunks });
         }
 
         await sleep(delayMs);
       } catch (err) {
         logger.warn({ pageId: change.pageid, err }, "Wiki sync page processing failed, continuing");
         hadFailure = true;
+      }
+    }
+
+    if (pendingReplacements.length > 0) {
+      try {
+        await store.replacePagesChunks(pendingReplacements);
+        pagesUpdated += pendingReplacements.length;
+      } catch (err) {
+        logger.warn(
+          { err, pageIds: pendingReplacements.map((replacement) => replacement.pageId) },
+          "Wiki sync batch replacement failed, retrying per page",
+        );
+        hadFailure = true;
+        for (const replacement of pendingReplacements) {
+          try {
+            await store.replacePageChunks(replacement.pageId, replacement.chunks);
+            pagesUpdated++;
+          } catch (pageErr) {
+            logger.warn(
+              { pageId: replacement.pageId, err: pageErr },
+              "Wiki sync page replacement failed after batch fallback",
+            );
+          }
+        }
       }
     }
 

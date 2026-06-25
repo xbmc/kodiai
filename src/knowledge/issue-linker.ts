@@ -15,6 +15,7 @@ import type { Logger } from "pino";
 import type { IssueStore } from "./issue-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { parseIssueReferences } from "../lib/issue-reference-parser.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 export type LinkedIssue = {
   issueNumber: number;
@@ -135,9 +136,9 @@ export async function linkPRToIssues(params: {
             recordsByNumber.set(record.issueNumber, record);
           }
         } else {
-          await Promise.all(issueNumbers.map(async (issueNumber) => {
+          await mapWithConcurrency(issueNumbers, 8, async (issueNumber) => {
             recordsByNumber.set(issueNumber, await issueStore.getByNumber(repo, issueNumber));
-          }));
+          });
         }
       } catch (err) {
         logger.warn(

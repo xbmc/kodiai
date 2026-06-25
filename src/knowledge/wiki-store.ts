@@ -4,6 +4,7 @@ import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/json
 import type {
   WikiEmbeddingRepairCheckpoint,
   WikiPageChunk,
+  WikiPageReplacement,
   WikiPageRecord,
   WikiPageSearchRecord,
   WikiPageSearchResult,
@@ -252,9 +253,16 @@ export function createWikiPageStore(opts: {
     },
 
     async replacePageChunks(pageId: number, chunks: WikiPageChunk[]): Promise<void> {
+      await store.replacePagesChunks([{ pageId, chunks }]);
+    },
+
+    async replacePagesChunks(replacements: WikiPageReplacement[]): Promise<void> {
+      if (replacements.length === 0) return;
+      const pageIds = replacements.map((replacement) => replacement.pageId);
+      const chunks = replacements.flatMap((replacement) => replacement.chunks);
       await sql.begin(async (tx) => {
         await (tx as unknown as Sql)`
-          DELETE FROM wiki_pages WHERE page_id = ${pageId}
+          DELETE FROM wiki_pages WHERE page_id = ANY(${pageIds}::bigint[])
         `;
 
         await insertWikiChunkBatches(tx as unknown as Sql, chunks, opts.embeddingModel);
@@ -382,6 +390,21 @@ export function createWikiPageStore(opts: {
       `;
       if (rows.length === 0) return null;
       return rows[0]!.revision_id as number | null;
+    },
+
+    async getPageRevisions(pageIds: number[]): Promise<Map<number, number>> {
+      const uniqueIds = [...new Set(pageIds)];
+      if (uniqueIds.length === 0) return new Map();
+      const rows = await sql`
+        SELECT page_id, MAX(revision_id)::int AS revision_id
+        FROM wiki_pages
+        WHERE page_id = ANY(${uniqueIds}::bigint[])
+          AND deleted = false
+        GROUP BY page_id
+      `;
+      return new Map(
+        rows.map((row) => [Number(row.page_id), Number(row.revision_id)] as const),
+      );
     },
 
     async listRepairCandidates(params?: {

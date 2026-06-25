@@ -2,7 +2,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-import { countWordsInTextBySubstring, significantWords } from "./text-overlap.ts";
+import { countWordsInSet, countWordsInTextBySubstring, significantWords } from "./text-overlap.ts";
 
 export type ClaimLabel = "diff-grounded" | "external-knowledge" | "inferential";
 export type SummaryLabel = "primarily-diff-grounded" | "primarily-external" | "mixed";
@@ -314,16 +314,14 @@ export function classifyClaimHeuristic(
     // Inferential requires that the PREMISE is visible in diff
     if (diffContext) {
       const allDiffText = getDiffTextLower(diffContext);
+      const diffWords = new Set(significantWords(allDiffText));
 
       // Extract key content words
-      const contentWords = claim
-        .toLowerCase()
-        .replace(/could cause|may lead to|might result in|this means that|could result in|may cause|might cause|will likely|potentially/gi, "")
-        .replace(/[^\w\s]/g, "")
-        .split(/\s+/)
-        .filter((w) => w.length > 3);
+      const contentWords = significantWords(
+        claim.replace(/could cause|may lead to|might result in|this means that|could result in|may cause|might cause|will likely|potentially/gi, ""),
+      );
 
-      const matchCount = contentWords.filter((w) => allDiffText.includes(w)).length;
+      const matchCount = countWordsInSet(contentWords, diffWords);
       if (contentWords.length > 0 && matchCount >= 1) {
         return {
           text: claim,

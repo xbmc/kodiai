@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_review_graph_files_repo_workspace_path;

@@ -251,6 +251,34 @@ describe("backfillIssues", () => {
     expect(result.failedEmbeddings).toBe(2);
     expect(result.totalEmbeddings).toBe(0);
   });
+
+  it("bounds fallback issue upserts when bulk upsert is unavailable", async () => {
+    const items = Array.from({ length: 20 }, (_, index) => makeIssueItem({ number: index + 1 }));
+    const octokit = createMockOctokit([items]);
+    const store = createMockStore();
+    const sql = createMockSql();
+    let active = 0;
+    let maxActive = 0;
+    store.upsert = mock(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+    });
+
+    const result = await backfillIssues({
+      octokit,
+      store: store as unknown as import("./issue-types.ts").IssueStore,
+      sql: sql as unknown as import("../db/client.ts").Sql,
+      embeddingProvider: createMockEmbeddingProvider(),
+      repo: "xbmc/xbmc",
+      logger: mockLogger,
+    });
+
+    expect(result.totalIssues).toBe(20);
+    expect(store.upsert).toHaveBeenCalledTimes(20);
+    expect(maxActive).toBeLessThanOrEqual(8);
+  });
 });
 
 describe("backfillIssueComments", () => {

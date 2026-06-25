@@ -111,12 +111,30 @@ function dedupGroup(
   threshold: number,
 ): UnifiedRetrievalChunk[] {
   const kept: TokenizedChunk[] = [];
+  const keptIndexesByToken = new Map<string, number[]>();
+  const emptyTokenKeptIndexes: number[] = [];
 
   for (const candidate of sorted) {
     const candidateTokens = tokenizeForJaccard(candidate.text);
     let isDuplicate = false;
+    const candidateKeptIndexes = new Set<number>();
 
-    for (const existing of kept) {
+    if (candidateTokens.size === 0) {
+      for (const keptIndex of emptyTokenKeptIndexes) {
+        candidateKeptIndexes.add(keptIndex);
+      }
+    } else {
+      for (const token of candidateTokens) {
+        const indexes = keptIndexesByToken.get(token);
+        if (!indexes) continue;
+        for (const keptIndex of indexes) {
+          candidateKeptIndexes.add(keptIndex);
+        }
+      }
+    }
+
+    for (const keptIndex of candidateKeptIndexes) {
+      const existing = kept[keptIndex]!;
       const similarity = jaccardTokenSetSimilarity(candidateTokens, existing.tokens);
       if (similarity >= threshold) {
         // Annotate the surviving chunk with the duplicate's source
@@ -133,7 +151,17 @@ function dedupGroup(
     }
 
     if (!isDuplicate) {
+      const keptIndex = kept.length;
       kept.push({ chunk: { ...candidate }, tokens: candidateTokens });
+      if (candidateTokens.size === 0) {
+        emptyTokenKeptIndexes.push(keptIndex);
+      } else {
+        for (const token of candidateTokens) {
+          const indexes = keptIndexesByToken.get(token) ?? [];
+          indexes.push(keptIndex);
+          keptIndexesByToken.set(token, indexes);
+        }
+      }
     }
   }
 

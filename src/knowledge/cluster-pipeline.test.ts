@@ -51,7 +51,9 @@ function createMockStore(overrides: Partial<ClusterStore> = {}): ClusterStore {
   return {
     upsertCluster: mock(async (c: any) => ({ ...c, id: 1, createdAt: new Date(), updatedAt: new Date() })),
     getActiveClusters: mock(async () => []),
+    getActiveMatchCandidates: mock(async () => []),
     retireCluster: mock(async () => {}),
+    retireClusters: mock(async () => {}),
     updateClusterLabel: mock(async () => {}),
     pinClusterLabel: mock(async () => {}),
     writeAssignments: mock(async () => {}),
@@ -278,6 +280,7 @@ describe("runClusterPipeline", () => {
 
     const store = createMockStore({
       getActiveClusters: mock(async () => [existingCluster]),
+      getActiveMatchCandidates: mock(async () => [existingCluster]),
     });
 
     const result = await runClusterPipeline({
@@ -292,6 +295,111 @@ describe("runClusterPipeline", () => {
     // The similar embedding should have been merged into existing cluster
     expect(store.writeAssignments).toHaveBeenCalled();
     expect(store.upsertCluster).toHaveBeenCalled();
+  });
+
+  it("uses nearest active cluster candidates for incremental merge when available", async () => {
+    const candidateCentroid = randomEmbedding(1024, 101);
+    const farCentroid = randomEmbedding(1024, 202);
+    const candidateCluster: ReviewCluster = {
+      id: 7,
+      repo: "test/repo",
+      slug: "candidate",
+      label: "Candidate",
+      centroid: candidateCentroid,
+      memberCount: 5,
+      memberCountAtLabel: 5,
+      filePaths: ["src/a.ts"],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      labelUpdatedAt: new Date(),
+      pinned: false,
+      retired: false,
+    };
+    const farCluster: ReviewCluster = {
+      ...candidateCluster,
+      id: 8,
+      slug: "far",
+      label: "Far",
+      centroid: farCentroid,
+    };
+    const embedding = new Float32Array(candidateCentroid);
+    let callCount = 0;
+    const mockSql = mock((() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve([
+          { id: 20, embedding: toVectorString(embedding), file_path: "src/a.ts", chunk_text: "add null check", github_created_at: "2026-02-01T00:00:00Z" },
+          { id: 21, embedding: toVectorString(embedding), file_path: "src/b.ts", chunk_text: "missing null", github_created_at: "2026-02-02T00:00:00Z" },
+          { id: 22, embedding: toVectorString(embedding), file_path: "src/c.ts", chunk_text: "null pointer", github_created_at: "2026-02-03T00:00:00Z" },
+        ]);
+      }
+      return Promise.resolve([{ cluster_id: 7, cnt: 5 }]);
+    }) as any);
+    const getActiveMatchCandidates = mock(async () => [candidateCluster]);
+    const store = createMockStore({
+      getActiveClusters: mock(async () => [farCluster]),
+      getActiveMatchCandidates,
+    });
+
+    await runClusterPipeline({
+      sql: mockSql as any,
+      store,
+      taskRouter: createMockTaskRouter(),
+      logger: createMockLogger(),
+      repo: "test/repo",
+    });
+
+    expect(getActiveMatchCandidates).toHaveBeenCalled();
+    expect(store.writeAssignments).toHaveBeenCalled();
+    expect(store.upsertCluster).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+  });
+
+  it("bulk retires stale clusters", async () => {
+    const centroid = randomEmbedding(1024, 60);
+    const existingClusters: ReviewCluster[] = [1, 2].map((id) => ({
+      id,
+      repo: "test/repo",
+      slug: `stale-${id}`,
+      label: `Stale ${id}`,
+      centroid,
+      memberCount: 10,
+      memberCountAtLabel: 10,
+      filePaths: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      labelUpdatedAt: new Date(),
+      pinned: false,
+      retired: false,
+    }));
+
+    let sqlCalls = 0;
+    const mockSql = mock((() => {
+      sqlCalls += 1;
+      if (sqlCalls === 1) {
+        return Promise.resolve([
+          { id: 10, embedding: toVectorString(centroid), file_path: "src/a.ts", chunk_text: "add null check", github_created_at: "2026-02-01T00:00:00Z" },
+          { id: 11, embedding: toVectorString(centroid), file_path: "src/b.ts", chunk_text: "missing null", github_created_at: "2026-02-02T00:00:00Z" },
+          { id: 12, embedding: toVectorString(centroid), file_path: "src/c.ts", chunk_text: "null pointer", github_created_at: "2026-02-03T00:00:00Z" },
+        ]);
+      }
+      return Promise.resolve([]);
+    }) as any);
+    const store = createMockStore({
+      getActiveClusters: mock(async () => existingClusters),
+      getActiveMatchCandidates: mock(async () => existingClusters),
+      retireClusters: mock(async () => {}),
+    });
+
+    await runClusterPipeline({
+      sql: mockSql as any,
+      store,
+      taskRouter: createMockTaskRouter(),
+      logger: createMockLogger(),
+      repo: "test/repo",
+    });
+
+    expect(store.retireClusters).toHaveBeenCalledWith([1, 2]);
+    expect(store.retireCluster).not.toHaveBeenCalled();
   });
 
   it("skips label regeneration for pinned clusters", async () => {

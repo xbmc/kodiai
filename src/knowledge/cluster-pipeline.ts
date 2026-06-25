@@ -32,7 +32,7 @@ export { cosineSimilarity } from "./embedding-vector.ts";
 
 const DEFAULT_MIN_CLUSTER_SIZE = 3;
 export const DEFAULT_MAX_EMBEDDING_ROWS = 5_000;
-export const DEFAULT_MAX_CLUSTERING_ROWS = 2_000;
+export const DEFAULT_MAX_CLUSTERING_ROWS = 500;
 const UMAP_N_COMPONENTS = 15;
 const UMAP_N_NEIGHBORS = 15;
 const UMAP_MIN_DIST = 0.0;
@@ -154,21 +154,23 @@ export async function runClusterPipeline(opts: {
       return runState;
     }
 
-    // Step 3: Load existing clusters for incremental merge
-    const existingClusters = await store.getActiveClusters(repo);
-
     // Step 4: Incremental merge
     let poolForClustering = embeddings;
     const mergedAssignments: Array<{ clusterId: number; embRow: EmbeddingRow; similarity: number }> = [];
 
-    if (existingClusters.length > 0) {
+    {
       const unassigned: EmbeddingRow[] = [];
+      const mergeCandidateClusterById = new Map<number, ReviewCluster>();
 
       for (const emb of embeddings) {
         let bestCluster: ReviewCluster | null = null;
         let bestSim = -1;
+        const candidateClusters = await store.getActiveMatchCandidates(repo, emb.embedding, 16);
+        for (const cluster of candidateClusters) {
+          mergeCandidateClusterById.set(cluster.id, cluster);
+        }
 
-        for (const cluster of existingClusters) {
+        for (const cluster of candidateClusters) {
           if (cluster.centroid.length === 0) continue;
           const sim = cosineSimilarity(emb.embedding, cluster.centroid);
           if (sim > bestSim) {
@@ -192,14 +194,13 @@ export async function runClusterPipeline(opts: {
       if (mergedAssignments.length > 0) {
         // Group by cluster to update centroids
         const byCluster = new Map<number, EmbeddingRow[]>();
-        const existingClusterById = new Map(existingClusters.map((cluster) => [cluster.id, cluster]));
         for (const m of mergedAssignments) {
           if (!byCluster.has(m.clusterId)) byCluster.set(m.clusterId, []);
           byCluster.get(m.clusterId)!.push(m.embRow);
         }
 
         for (const [clusterId, newMembers] of byCluster) {
-          const cluster = existingClusterById.get(clusterId);
+          const cluster = mergeCandidateClusterById.get(clusterId);
           if (!cluster) continue;
 
           // Update centroid with new members
@@ -375,8 +376,9 @@ export async function runClusterPipeline(opts: {
       }
     }
 
-    // Step 6: Check label regeneration for existing clusters
-    const clustersToRelabel = existingClusters.filter((cluster) => {
+    // Step 6: Check label regeneration for active clusters
+    const activeClustersForMaintenance = await store.getActiveClusters(repo);
+    const clustersToRelabel = activeClustersForMaintenance.filter((cluster) => {
       if (cluster.pinned || cluster.memberCountAtLabel === 0) return false;
       const changeRatio = Math.abs(cluster.memberCount - cluster.memberCountAtLabel) / cluster.memberCountAtLabel;
       return changeRatio > LABEL_REGEN_THRESHOLD;
@@ -425,7 +427,7 @@ export async function runClusterPipeline(opts: {
     }
 
     // Step 7: Retire stale clusters (< 3 members in 60-day window)
-    const clusterIds = existingClusters.map((cluster) => cluster.id);
+    const clusterIds = activeClustersForMaintenance.map((cluster) => cluster.id);
     const recentCountRows = clusterIds.length === 0
       ? []
       : await sql`
@@ -441,12 +443,23 @@ export async function runClusterPipeline(opts: {
       recentCountRows.map((row) => [Number(row.cluster_id), Number(row.cnt)]),
     );
 
-    for (const cluster of existingClusters) {
+    const clustersToRetire: ReviewCluster[] = [];
+    for (const cluster of activeClustersForMaintenance) {
       const recentCount = recentCountByClusterId.get(cluster.id) ?? 0;
       if (recentCount < RETIREMENT_MEMBER_THRESHOLD) {
-        await store.retireCluster(cluster.id);
+        clustersToRetire.push(cluster);
+      }
+    }
+    if (clustersToRetire.length > 0) {
+      const clusterIdsToRetire = clustersToRetire.map((cluster) => cluster.id);
+      await store.retireClusters(clusterIdsToRetire);
+      for (const cluster of clustersToRetire) {
         logger.info(
-          { clusterId: cluster.id, slug: cluster.slug, recentCount },
+          {
+            clusterId: cluster.id,
+            slug: cluster.slug,
+            recentCount: recentCountByClusterId.get(cluster.id) ?? 0,
+          },
           "Retired cluster with insufficient recent members",
         );
       }
