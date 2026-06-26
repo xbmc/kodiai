@@ -85,6 +85,44 @@ function namespaceIdToName(nsId: number): string {
   return map[nsId] ?? `NS${nsId}`;
 }
 
+async function replaceWikiPagesWithFallback(args: {
+  store: WikiPageStore;
+  replacements: WikiPageReplacement[];
+  logger: Logger;
+}): Promise<{ updatedCount: number; failedPageIds: number[] }> {
+  const { store, replacements, logger } = args;
+  if (replacements.length === 0) {
+    return { updatedCount: 0, failedPageIds: [] };
+  }
+
+  try {
+    await store.replacePagesChunks(replacements);
+    return { updatedCount: replacements.length, failedPageIds: [] };
+  } catch (err) {
+    logger.warn(
+      { err, pageIds: replacements.map((replacement) => replacement.pageId) },
+      "Wiki sync batch replacement failed, retrying per page",
+    );
+  }
+
+  let updatedCount = 0;
+  const failedPageIds: number[] = [];
+  for (const replacement of replacements) {
+    try {
+      await store.replacePageChunks(replacement.pageId, replacement.chunks);
+      updatedCount++;
+    } catch (pageErr) {
+      failedPageIds.push(replacement.pageId);
+      logger.warn(
+        { pageId: replacement.pageId, err: pageErr },
+        "Wiki sync page replacement failed after batch fallback",
+      );
+    }
+  }
+
+  return { updatedCount, failedPageIds };
+}
+
 // ── Sync engine ─────────────────────────────────────────────────────────────
 
 /**
@@ -289,26 +327,14 @@ async function runSync(opts: {
     }
 
     if (pendingReplacements.length > 0) {
-      try {
-        await store.replacePagesChunks(pendingReplacements);
-        pagesUpdated += pendingReplacements.length;
-      } catch (err) {
-        logger.warn(
-          { err, pageIds: pendingReplacements.map((replacement) => replacement.pageId) },
-          "Wiki sync batch replacement failed, retrying per page",
-        );
+      const replacementResult = await replaceWikiPagesWithFallback({
+        store,
+        replacements: pendingReplacements,
+        logger,
+      });
+      pagesUpdated += replacementResult.updatedCount;
+      if (replacementResult.failedPageIds.length > 0) {
         hadFailure = true;
-        for (const replacement of pendingReplacements) {
-          try {
-            await store.replacePageChunks(replacement.pageId, replacement.chunks);
-            pagesUpdated++;
-          } catch (pageErr) {
-            logger.warn(
-              { pageId: replacement.pageId, err: pageErr },
-              "Wiki sync page replacement failed after batch fallback",
-            );
-          }
-        }
       }
     }
 

@@ -130,6 +130,38 @@ describe("createClusterStore", () => {
 
       expect(clusters).toEqual([]);
     });
+
+    it("returns nearest active match candidates for an input embedding", async () => {
+      const clusterRow = {
+        id: 1,
+        created_at: "2026-02-25T00:00:00Z",
+        updated_at: "2026-02-25T00:00:00Z",
+        repo: "test/repo",
+        slug: "null-check-missing",
+        label: "Missing null checks",
+        centroid: "[0.1,0.2,0.3]",
+        member_count: 5,
+        member_count_at_label: 4,
+        file_paths: ["src/a.ts"],
+        label_updated_at: "2026-02-25T00:00:00Z",
+        pinned: false,
+        retired: false,
+      };
+      const { sql, calls } = createMockSql({
+        first: [clusterRow],
+      });
+      const store = createClusterStore({ sql, logger: createMockLogger() });
+
+      const candidates = await store.getActiveMatchCandidates(
+        "test/repo",
+        new Float32Array([0.1, 0.2, 0.3]),
+        16,
+      );
+
+      expect(candidates[0]!.slug).toBe("null-check-missing");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.query).toContain("ORDER BY rc.centroid <=>");
+    });
   });
 
   describe("writeAssignments", () => {

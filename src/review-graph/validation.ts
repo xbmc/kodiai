@@ -341,8 +341,12 @@ export async function validateGraphAmplifiedFindings<T extends GraphValidationFi
       }
     }
 
-    const confirmedCount = [...verdicts.values()].filter((v) => v === "confirmed").length;
-    const uncertainCount = [...verdicts.values()].filter((v) => v === "uncertain").length;
+    let confirmedCount = 0;
+    let uncertainCount = 0;
+    for (const verdict of verdicts.values()) {
+      if (verdict === "confirmed") confirmedCount++;
+      if (verdict === "uncertain") uncertainCount++;
+    }
 
     logger.info(
       {

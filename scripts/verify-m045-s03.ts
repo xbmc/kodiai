@@ -616,6 +616,11 @@ function createInMemoryContributorProfileStore(params: {
         record.expertise.push(next);
       }
     },
+    async upsertExpertiseMany(entries) {
+      for (const entry of entries) {
+        await this.upsertExpertise(entry);
+      }
+    },
     async updateTier(profileId, tier, overallScore) {
       const record = [...records.values()].find((entry) => entry.id === profileId);
       if (!record) {

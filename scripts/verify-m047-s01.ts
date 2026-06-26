@@ -434,6 +434,7 @@ function createContributorProfileStore(
     setOptedOut: async () => undefined,
     getExpertise: async () => [],
     upsertExpertise: async () => undefined,
+    upsertExpertiseMany: async () => undefined,
     updateTier: async () => undefined,
     getOrCreateByGithubUsername: async () => storedProfile,
     getAllScores: async () => [],

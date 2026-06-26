@@ -395,6 +395,89 @@ describe("createWikiSyncScheduler", () => {
     expect(store.replacePageChunks).not.toHaveBeenCalled();
   });
 
+  test("falls back to per-page replacement without preserving checkpoint when all pages recover", async () => {
+    const store = createMockStore();
+    (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map());
+    (store.replacePagesChunks as ReturnType<typeof mock>).mockImplementation(async () => {
+      throw new Error("batch write failed");
+    });
+
+    const fetchFn = mockFetch(async (url: string) => {
+      if (url.includes("list=recentchanges")) {
+        return new Response(JSON.stringify(buildRCResponse([
+          { pageid: 1, title: "FirstPage", revid: 201 },
+          { pageid: 2, title: "SecondPage", revid: 202 },
+        ])));
+      }
+      if (url.includes("pageid=1")) {
+        return new Response(JSON.stringify(buildParseResponse(1, "FirstPage", WIKI_HTML, 201)));
+      }
+      if (url.includes("pageid=2")) {
+        return new Response(JSON.stringify(buildParseResponse(2, "SecondPage", WIKI_HTML, 202)));
+      }
+      return new Response("", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const scheduler = createWikiSyncScheduler({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "kodi.wiki",
+      delayMs: 0,
+      logger: createMockLogger(),
+      fetchFn,
+    });
+
+    const result = await scheduler.syncNow();
+
+    expect(result.pagesUpdated).toBe(2);
+    expect(store.replacePagesChunks).toHaveBeenCalledTimes(1);
+    expect(store.replacePageChunks).toHaveBeenCalledTimes(2);
+    expect(store.updateSyncState).toHaveBeenCalled();
+  });
+
+  test("preserves checkpoint when batch replacement fallback leaves a page failed", async () => {
+    const store = createMockStore();
+    (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map());
+    (store.replacePagesChunks as ReturnType<typeof mock>).mockImplementation(async () => {
+      throw new Error("batch write failed");
+    });
+    (store.replacePageChunks as ReturnType<typeof mock>).mockImplementation(async (pageId: number) => {
+      if (pageId === 2) throw new Error("page write failed");
+    });
+
+    const fetchFn = mockFetch(async (url: string) => {
+      if (url.includes("list=recentchanges")) {
+        return new Response(JSON.stringify(buildRCResponse([
+          { pageid: 1, title: "FirstPage", revid: 201 },
+          { pageid: 2, title: "SecondPage", revid: 202 },
+        ])));
+      }
+      if (url.includes("pageid=1")) {
+        return new Response(JSON.stringify(buildParseResponse(1, "FirstPage", WIKI_HTML, 201)));
+      }
+      if (url.includes("pageid=2")) {
+        return new Response(JSON.stringify(buildParseResponse(2, "SecondPage", WIKI_HTML, 202)));
+      }
+      return new Response("", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const scheduler = createWikiSyncScheduler({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "kodi.wiki",
+      delayMs: 0,
+      logger: createMockLogger(),
+      fetchFn,
+    });
+
+    const result = await scheduler.syncNow();
+
+    expect(result.pagesUpdated).toBe(1);
+    expect(store.replacePagesChunks).toHaveBeenCalledTimes(1);
+    expect(store.replacePageChunks).toHaveBeenCalledTimes(2);
+    expect(store.updateSyncState).not.toHaveBeenCalled();
+  });
+
   test("embeds changed page chunks through bounded batch helper fail-open", async () => {
     const store = createMockStore();
     let activeEmbeddings = 0;

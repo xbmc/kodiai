@@ -23,6 +23,7 @@ import type { ExecutionResult } from "./types.ts";
 import { runCommandWithCappedOutput } from "../lib/capped-process.ts";
 import { installMcpFetchRetry, normalizeMcpUrlKey } from "./mcp/mcp-fetch-retry.ts";
 import { RETRY_SAFE_MCP_SERVER_NAMES } from "./mcp/index.ts";
+import { buildMcpServerAuthConfig } from "./mcp/auth.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -203,19 +204,6 @@ async function materializeRepoTransport(transport: RepoTransport): Promise<strin
   return repoDir;
 }
 
-function buildMcpServerUrl(baseUrl: string, serverName: string): string {
-  const trimmedBaseUrl = baseUrl.replace(/\/+$/, "");
-  if (trimmedBaseUrl.endsWith("/internal/mcp")) {
-    return `${trimmedBaseUrl}/${serverName}`;
-  }
-  return `${trimmedBaseUrl}/internal/mcp/${serverName}`;
-}
-
-function appendMcpTokenQuery(url: string, token: string): string {
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}kodiai_mcp_token=${encodeURIComponent(token)}`;
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -275,20 +263,17 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   const mcpServers: Record<string, McpHttpServerConfig> = {};
   const retrySafeUrls = new Set<string>();
   for (const serverName of serverNamesToUse) {
-    const url = appendMcpTokenQuery(
-      buildMcpServerUrl(mcpBaseUrl!, serverName),
-      mcpBearerToken!,
-    );
+    const authConfig = buildMcpServerAuthConfig({
+      baseUrl: mcpBaseUrl!,
+      serverName,
+      token: mcpBearerToken!,
+    });
     mcpServers[serverName] = {
       type: "http",
-      url,
-      headers: {
-        Authorization: `Bearer ${mcpBearerToken!}`,
-        "X-Kodiai-MCP-Authorization": `Bearer ${mcpBearerToken!}`,
-      },
+      ...authConfig,
     };
     if (RETRY_SAFE_MCP_SERVER_NAMES.has(serverName)) {
-      const key = normalizeMcpUrlKey(url);
+      const key = normalizeMcpUrlKey(authConfig.url);
       if (key) retrySafeUrls.add(key);
     }
   }

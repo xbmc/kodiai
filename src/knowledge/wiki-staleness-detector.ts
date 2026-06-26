@@ -22,6 +22,7 @@ import type {
 } from "./wiki-staleness-types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { retryGitHubTransient } from "../lib/github-retry.ts";
+import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import {
   hasTokenOverlap,
   scoreWikiTokens,
@@ -138,14 +139,12 @@ async function fetchMergedPRs(
       PR_FILE_FETCH_CONCURRENCY,
       async (pr) => {
         try {
-          const filesResponse = await retryGitHubTransient(() =>
-            octokit.rest.pulls.listFiles({
-              owner,
-              repo,
-              pull_number: pr.number,
-              per_page: 100,
-            })
-          );
+          const files = await fetchAllPullRequestFiles({
+            octokit,
+            owner,
+            repo,
+            pullNumber: pr.number,
+          });
 
           return {
             number: pr.number,
@@ -153,7 +152,7 @@ async function fetchMergedPRs(
             body: pr.body ?? null,
             author: pr.user?.login ?? "unknown",
             mergedAt: new Date(pr.merged_at!),
-            files: filesResponse.data.map((f) => ({
+            files: files.map((f) => ({
               filename: f.filename,
               patch: f.patch,
               additions: f.additions,

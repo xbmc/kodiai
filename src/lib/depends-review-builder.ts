@@ -457,13 +457,10 @@ export function buildDependsInlineComments(
   if (data.transitive && data.transitive.newDependencies.length > 0) {
     for (const prFile of prFiles) {
       if (!prFile.filename.endsWith(".cmake") || !prFile.patch) continue;
+      const lowerPatch = prFile.patch.toLowerCase();
 
       for (const newDep of data.transitive.newDependencies) {
-        if (
-          prFile.patch
-            .toLowerCase()
-            .includes(`find_dependency(${newDep.toLowerCase()}`)
-        ) {
+        if (lowerPatch.includes(`find_dependency(${newDep.toLowerCase()}`)) {
           const depLine = findPatchLineNumber(prFile.patch, `find_dependency(${newDep}`);
           if (depLine > 0) {
             comments.push({

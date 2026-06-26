@@ -349,9 +349,65 @@ describe("runClusterPipeline", () => {
       repo: "test/repo",
     });
 
-    expect(getActiveMatchCandidates).toHaveBeenCalled();
+    expect(getActiveMatchCandidates).toHaveBeenCalledTimes(3);
+    expect((getActiveMatchCandidates as any).mock.calls.map((call: unknown[]) => call.slice(0, 3))).toEqual([
+      ["test/repo", embedding, 16],
+      ["test/repo", embedding, 16],
+      ["test/repo", embedding, 16],
+    ]);
     expect(store.writeAssignments).toHaveBeenCalled();
     expect(store.upsertCluster).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+  });
+
+  it("bounds concurrent nearest-candidate lookups inside the pipeline", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      id: index + 1,
+      embedding: toVectorString(randomEmbedding(16, index + 1)),
+      file_path: `src/${index}.ts`,
+      chunk_text: `comment ${index}`,
+      github_created_at: "2026-02-01T00:00:00Z",
+    }));
+    const mockSql = mock((() => Promise.resolve(rows)) as any);
+    let activeLookups = 0;
+    let maxActiveLookups = 0;
+    const getActiveMatchCandidates = mock(async (_repo: string, embedding: Float32Array) => {
+      try {
+        activeLookups++;
+        maxActiveLookups = Math.max(maxActiveLookups, activeLookups);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return [{
+          id: 100 + maxActiveLookups,
+          repo: "test/repo",
+          slug: "merge-target",
+          label: "Merge target",
+          centroid: embedding,
+          memberCount: 5,
+          memberCountAtLabel: 5,
+          filePaths: ["src/a.ts"],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          labelUpdatedAt: new Date(),
+          pinned: false,
+          retired: false,
+        }];
+      } finally {
+        activeLookups--;
+      }
+    });
+    const store = createMockStore({
+      getActiveMatchCandidates,
+    });
+
+    await runClusterPipeline({
+      sql: mockSql as any,
+      store,
+      taskRouter: createMockTaskRouter(),
+      logger: createMockLogger(),
+      repo: "test/repo",
+    });
+
+    expect(maxActiveLookups).toBeLessThanOrEqual(4);
+    expect(getActiveMatchCandidates).toHaveBeenCalledTimes(12);
   });
 
   it("bulk retires stale clusters", async () => {

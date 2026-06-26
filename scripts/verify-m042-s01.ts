@@ -43,6 +43,7 @@ function makeProfileStoreStub(params: {
     setOptedOut: async () => undefined,
     getExpertise: async () => [],
     upsertExpertise: async () => undefined,
+    upsertExpertiseMany: async () => undefined,
     updateTier: params.updateTierImpl ?? (async () => undefined),
     getOrCreateByGithubUsername: async () => {
       throw new Error("not implemented in verifier");

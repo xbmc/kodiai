@@ -15,6 +15,7 @@ import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { createRetriever } from "../knowledge/retrieval.ts";
 import { loadRepoConfig } from "../execution/config.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
   getGitStatusPorcelain,
@@ -50,7 +51,6 @@ import {
   detectImplicitIssueIntent,
   detectImplicitPrPatchIntent,
   isCodeSeekingMentionRequest,
-  isDiffSeekingMentionRequest,
   isReviewRequest,
 } from "./mention-request-classification.ts";
 import {
@@ -1153,7 +1153,7 @@ export function createMentionHandler(deps: {
 
           try {
             const fallbackDiffProvider = async () => fetchAllPullRequestFiles({
-              octokit: octokit as never,
+              octokit,
               owner: mention.owner,
               repo: mention.repo,
               pullNumber: mention.prNumber!,
@@ -2697,9 +2697,11 @@ export function createMentionHandler(deps: {
           }
 
           try {
-            for (const promptSectionRecord of result.promptSections ?? promptSections) {
-              await telemetryStore.recordPromptSections(promptSectionRecord);
-            }
+            await mapWithConcurrency(
+              result.promptSections ?? promptSections,
+              4,
+              (promptSectionRecord) => telemetryStore.recordPromptSections(promptSectionRecord),
+            );
           } catch (err) {
             logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
           }

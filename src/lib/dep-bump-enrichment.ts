@@ -13,6 +13,9 @@
 
 import type { Octokit } from "@octokit/rest";
 import { parseSemver } from "./dep-bump-detector.ts";
+import { createInMemoryCache } from "./in-memory-cache.ts";
+import { dedupeInflight } from "./inflight-dedupe.ts";
+import { retryTransient } from "./transient-retry.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +78,29 @@ const BREAKING_MARKERS = [
 const MAX_RELEASE_BODY_CHARS = 500;
 const MAX_CHANGELOG_CHARS = 1500;
 const MAX_SNIPPET_CHARS = 200;
+const REPO_RESOLUTION_CACHE_TTL_MS = 60 * 60 * 1000;
+
+const repoResolutionCache = createInMemoryCache<string, RepoCoords>({
+  maxSize: 1_000,
+  ttlMs: REPO_RESOLUTION_CACHE_TTL_MS,
+});
+const repoResolutionInflight = new Map<string, Promise<RepoCoords | null>>();
+
+function repoResolutionCacheKey(packageName: string, ecosystem: string): string {
+  return `${ecosystem}:${packageName}`;
+}
+
+function isRetryableRegistryError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return true;
+  const status = Number((error as { status?: unknown }).status);
+  if (!Number.isFinite(status)) return true;
+  return status === 408 || status === 429 || (status >= 500 && status <= 599);
+}
+
+export function clearDepBumpEnrichmentCachesForTests(): void {
+  repoResolutionCache.clear();
+  repoResolutionInflight.clear();
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
@@ -252,21 +278,46 @@ export async function resolveGitHubRepo(params: {
   ecosystem: string;
 }): Promise<RepoCoords | null> {
   const { packageName, ecosystem } = params;
+  const cacheKey = repoResolutionCacheKey(packageName, ecosystem);
+  const cached = repoResolutionCache.get(cacheKey);
+  if (cached !== undefined) return cached;
 
   const urlFn = REGISTRY_URLS[ecosystem];
   if (!urlFn) return null;
 
-  try {
-    const resp = await fetch(urlFn(packageName), {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!resp.ok) return null;
+  return dedupeInflight(repoResolutionInflight, cacheKey, async () => {
+    try {
+      const resp = await retryTransient(
+        async () => {
+          const response = await fetch(urlFn(packageName), {
+            signal: AbortSignal.timeout(3000),
+          });
+          if (!response.ok && (response.status === 408 || response.status === 429 || response.status >= 500)) {
+            throw { status: response.status, message: `registry lookup failed: ${response.status}` };
+          }
+          return response;
+        },
+        {
+          maxAttempts: 2,
+          initialDelayMs: 100,
+          maxDelayMs: 1_000,
+          shouldRetry: isRetryableRegistryError,
+        },
+      );
+      if (!resp.ok) {
+        return null;
+      }
 
-    const data = (await resp.json()) as RegistryData;
-    return extractGitHubCoords(data, ecosystem);
-  } catch {
-    return null;
-  }
+      const data = (await resp.json()) as RegistryData;
+      const coords = extractGitHubCoords(data, ecosystem);
+      if (coords) {
+        repoResolutionCache.set(cacheKey, coords, REPO_RESOLUTION_CACHE_TTL_MS);
+      }
+      return coords;
+    } catch {
+      return null;
+    }
+  });
 }
 
 function extractGitHubCoords(data: RegistryData, ecosystem: string): RepoCoords | null {

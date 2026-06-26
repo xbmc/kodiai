@@ -418,6 +418,58 @@ describe("createAddonCheckHandler", () => {
     expect(branches.every((b: string) => b === "nexus")).toBe(true);
   });
 
+  it("uses paginated PR file listing so addons after the first 100 files are checked", async () => {
+    const firstPageFiles = Array.from(
+      { length: 100 },
+      (_, index) => ({ filename: `file-${index}.md` }),
+    );
+    const listFiles = mock(async ({ page }: { page?: number }) => {
+      if (page === 1) {
+        return {
+          data: firstPageFiles,
+          headers: {
+            link: '<https://api.github.test/repos/xbmc/repo-plugins/pulls/42/files?page=2>; rel="last"',
+          },
+        };
+      }
+      return {
+        data: [{ filename: "plugin.video.page-two/addon.xml" }],
+        headers: {},
+      };
+    });
+    const app = {
+      getInstallationOctokit: async () => ({ rest: { pulls: { listFiles } } }) as any,
+      getAppSlug: () => "kodiai",
+      initialize: async () => {},
+      checkConnectivity: async () => true,
+      getInstallationToken: async () => "token",
+      getRepoInstallationContext: async () => null,
+    } as unknown as GitHubApp;
+    const subprocess = mock(async () => ({ exitCode: 0, stdout: "" }));
+    const { logger } = createMockLogger();
+    const { workspace } = createMockWorkspace("/tmp/ws");
+    const { manager } = createMockWorkspaceManager(workspace);
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    expect(listFiles).toHaveBeenCalledTimes(2);
+    expect(subprocess).toHaveBeenCalledTimes(1);
+    expect((subprocess as any).mock.calls[0][0].addonDir).toBe("/tmp/ws/plugin.video.page-two");
+  });
+
   // ── Findings logged with structured bindings ──────────────────────────
 
   it("findings logged at debug with production-safe severity bindings", async () => {

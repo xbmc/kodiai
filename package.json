@@ -13,7 +13,7 @@
     "test": "bun run test:unit && bun run test:db",
     "test:unit": "bun scripts/test-lanes.ts unit",
     "test:db": "bun scripts/test-lanes.ts db",
-    "lint": "eslint src scripts",
+    "lint": "eslint --cache --cache-location .cache/eslint src scripts",
     "audit:embeddings": "bun scripts/embedding-audit.ts",
     "repair:embeddings": "bun scripts/embedding-repair.ts",
     "repair:wiki-embeddings": "bun scripts/wiki-embedding-repair.ts",

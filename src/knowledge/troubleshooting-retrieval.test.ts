@@ -116,6 +116,7 @@ function createMockWikiPageStore(): WikiPageStore {
     writeChunks: async () => {},
     deletePageChunks: async () => {},
     replacePageChunks: async () => {},
+    replacePagesChunks: async () => {},
     softDeletePage: async () => {},
     searchByEmbedding: async () => [
       {
@@ -140,6 +141,7 @@ function createMockWikiPageStore(): WikiPageStore {
     updateSyncState: async () => {},
     countBySource: async () => 0,
     getPageRevision: async () => null,
+    getPageRevisions: async () => new Map(),
     listRepairCandidates: async () => [],
     getRepairCheckpoint: async () => null,
     saveRepairCheckpoint: async () => {},

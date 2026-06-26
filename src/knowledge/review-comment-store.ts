@@ -448,7 +448,8 @@ export function createReviewCommentStore(opts: {
 
     async getNullEmbeddingChunks(repo: string, limit: number): Promise<ReviewCommentRecord[]> {
       const rows = await sql`
-        SELECT * FROM review_comments
+        SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
+        FROM review_comments
         WHERE repo = ${repo} AND embedding IS NULL AND deleted = false
         ORDER BY github_created_at ASC
         LIMIT ${limit}

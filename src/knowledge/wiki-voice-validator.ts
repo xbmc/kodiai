@@ -5,7 +5,6 @@
  * Flow: suggestion + original -> LLM validation -> pass/fail -> retry if needed -> result
  */
 
-import type { Logger } from "pino";
 import type {
   PageStyleDescription,
   VoiceAnalyzerOptions,

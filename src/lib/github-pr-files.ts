@@ -1,5 +1,5 @@
-import type { Octokit } from "@octokit/rest";
 import { mapWithConcurrency } from "./concurrency.ts";
+import { retryGitHubTransient } from "./github-retry.ts";
 
 export type PullRequestFileMetadata = {
   filename: string;
@@ -8,6 +8,36 @@ export type PullRequestFileMetadata = {
   additions?: number | null;
   deletions?: number | null;
   patch?: string | null;
+};
+
+type ListPullRequestFilesParams = {
+  owner: string;
+  repo: string;
+  pull_number: number;
+  per_page: number;
+  page: number;
+};
+
+type ListPullRequestFilesResponse = {
+  data: Array<{
+    filename: string;
+    status?: string;
+    previous_filename?: string | null;
+    additions?: number | null;
+    deletions?: number | null;
+    patch?: string | null;
+  }>;
+  headers?: {
+    link?: string;
+  };
+};
+
+export type PullRequestFilesClient = {
+  rest: {
+    pulls: {
+      listFiles(params: ListPullRequestFilesParams): Promise<ListPullRequestFilesResponse>;
+    };
+  };
 };
 
 function mapPullRequestFile(file: {
@@ -42,19 +72,25 @@ function parseLastPageFromLinkHeader(linkHeader: string | undefined): number | n
 }
 
 export async function fetchAllPullRequestFiles(params: {
-  octokit: Octokit;
+  octokit: PullRequestFilesClient;
   owner: string;
   repo: string;
   pullNumber: number;
 }): Promise<PullRequestFileMetadata[]> {
   const { octokit, owner, repo, pullNumber } = params;
-  const firstResponse = await octokit.rest.pulls.listFiles({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    per_page: 100,
-    page: 1,
-  });
+
+  const fetchPage = (page: number) =>
+    retryGitHubTransient(() =>
+      octokit.rest.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      })
+    );
+
+  const firstResponse = await fetchPage(1);
   const files = firstResponse.data.map(mapPullRequestFile);
   if (firstResponse.data.length < 100) {
     return files;
@@ -64,13 +100,7 @@ export async function fetchAllPullRequestFiles(params: {
   if (!lastPage || lastPage <= 1) {
     let page = 2;
     while (true) {
-      const response = await octokit.rest.pulls.listFiles({
-        owner,
-        repo,
-        pull_number: pullNumber,
-        per_page: 100,
-        page,
-      });
+      const response = await fetchPage(page);
 
       files.push(...response.data.map(mapPullRequestFile));
       if (response.data.length < 100) {
@@ -82,13 +112,7 @@ export async function fetchAllPullRequestFiles(params: {
 
   const remainingPages = Array.from({ length: lastPage - 1 }, (_, index) => index + 2);
   const remainingFiles = await mapWithConcurrency(remainingPages, 4, async (page) => {
-    const response = await octokit.rest.pulls.listFiles({
-      owner,
-      repo,
-      pull_number: pullNumber,
-      per_page: 100,
-      page,
-    });
+    const response = await fetchPage(page);
     return response.data.map(mapPullRequestFile);
   });
 

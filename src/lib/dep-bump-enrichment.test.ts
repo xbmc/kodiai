@@ -4,6 +4,7 @@ import {
   fetchChangelog,
   resolveGitHubRepo,
   extractBreakingChanges,
+  clearDepBumpEnrichmentCachesForTests,
 } from "./dep-bump-enrichment.ts";
 
 // ─── Mock Helpers ────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ const originalFetch = globalThis.fetch;
 let fetchMock: ReturnType<typeof mock>;
 
 beforeEach(() => {
+  clearDepBumpEnrichmentCachesForTests();
   fetchMock = mock(() => Promise.resolve(new Response("Not Found", { status: 404 })));
   globalThis.fetch = fetchMock as any;
 });
@@ -265,6 +267,53 @@ describe("resolveGitHubRepo", () => {
     expect(result).not.toBeNull();
     expect(result!.owner).toBe("expressjs");
     expect(result!.repo).toBe("express");
+  });
+
+  test("deduplicates concurrent package metadata lookups", async () => {
+    let fetchCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return new Response(
+        JSON.stringify({
+          repository: { url: "git+https://github.com/expressjs/express.git" },
+        }),
+        { status: 200 },
+      );
+    }) as any;
+
+    const [first, second] = await Promise.all([
+      resolveGitHubRepo({ packageName: "express", ecosystem: "npm" }),
+      resolveGitHubRepo({ packageName: "express", ecosystem: "npm" }),
+    ]);
+
+    expect(first).toEqual({ owner: "expressjs", repo: "express" });
+    expect(second).toEqual({ owner: "expressjs", repo: "express" });
+    expect(fetchCount).toBe(1);
+  });
+
+  test("does not cache failed package metadata lookups", async () => {
+    let fetchCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return new Response("Not Found", { status: 404 });
+      }
+
+      return new Response(
+        JSON.stringify({
+          repository: { url: "git+https://github.com/expressjs/express.git" },
+        }),
+        { status: 200 },
+      );
+    }) as any;
+
+    const first = await resolveGitHubRepo({ packageName: "express", ecosystem: "npm" });
+    const second = await resolveGitHubRepo({ packageName: "express", ecosystem: "npm" });
+
+    expect(first).toBeNull();
+    expect(second).toEqual({ owner: "expressjs", repo: "express" });
+    expect(fetchCount).toBe(2);
   });
 
   test("resolves scoped npm package", async () => {

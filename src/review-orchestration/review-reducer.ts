@@ -369,12 +369,12 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       }
     }
 
-    const externalClaimCount = [...claimClassificationMap.values()].filter(
-      (classification) => classification?.summaryLabel === "primarily-external",
-    ).length;
-    const mixedClaimCount = [...claimClassificationMap.values()].filter(
-      (classification) => classification?.summaryLabel === "mixed",
-    ).length;
+    let externalClaimCount = 0;
+    let mixedClaimCount = 0;
+    for (const classification of claimClassificationMap.values()) {
+      if (classification?.summaryLabel === "primarily-external") externalClaimCount++;
+      if (classification?.summaryLabel === "mixed") mixedClaimCount++;
+    }
     if (externalClaimCount > 0 || mixedClaimCount > 0) {
       audit.push({ action: "kept", source: "claim-classifier", count: externalClaimCount + mixedClaimCount });
       input.logger.info(

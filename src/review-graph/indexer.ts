@@ -239,7 +239,7 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
               files.indexed.push(repoPath);
             }
 
-            opts.logger.info(
+            opts.logger.debug(
               {
                 repo: input.repo,
                 workspaceKey: input.workspaceKey,

@@ -178,7 +178,7 @@ export async function backfillCanonicalCodeSnapshot(
         state.filesDone += 1;
         state.lastFilePath = filePath;
         await deps.store.saveBackfillState(state);
-        deps.logger.info({ repo: request.repo, canonicalRef, filePath }, "Canonical code backfill skipped pre-read excluded file");
+        deps.logger.debug({ repo: request.repo, canonicalRef, filePath }, "Canonical code backfill skipped pre-read excluded file");
         continue;
       }
 
@@ -204,7 +204,7 @@ export async function backfillCanonicalCodeSnapshot(
         state.filesDone += 1;
         state.lastFilePath = filePath;
         await deps.store.saveBackfillState(state);
-        deps.logger.info({ repo: request.repo, canonicalRef, filePath, reason: chunkResult.observability.exclusionReason }, "Canonical code backfill skipped excluded file");
+        deps.logger.debug({ repo: request.repo, canonicalRef, filePath, reason: chunkResult.observability.exclusionReason }, "Canonical code backfill skipped excluded file");
         continue;
       }
 
@@ -213,7 +213,7 @@ export async function backfillCanonicalCodeSnapshot(
         state.filesDone += 1;
         state.lastFilePath = filePath;
         await deps.store.saveBackfillState(state);
-        deps.logger.info({ repo: request.repo, canonicalRef, filePath }, "Canonical code backfill skipped empty parse result");
+        deps.logger.debug({ repo: request.repo, canonicalRef, filePath }, "Canonical code backfill skipped empty parse result");
         continue;
       }
 

@@ -30,6 +30,7 @@ import {
 } from "../src/knowledge/wiki-evidence-scoring.ts";
 import { storeWikiPrEvidence } from "../src/knowledge/wiki-pr-evidence-store.ts";
 import { mapWithConcurrency } from "../src/lib/concurrency.ts";
+import { fetchAllPullRequestFiles } from "../src/lib/github-pr-files.ts";
 import { retryGitHubTransient } from "../src/lib/github-retry.ts";
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
@@ -240,17 +241,15 @@ async function main() {
 
     const prFileResults = await mapWithConcurrency(mergedPRs, 6, async (pr) => {
       try {
-        const filesResponse = await retryGitHubTransient(() =>
-          octokit.rest.pulls.listFiles({
-            owner,
-            repo: repoName,
-            pull_number: pr.number,
-            per_page: 100,
-          })
-        );
+        const files = await fetchAllPullRequestFiles({
+          octokit,
+          owner,
+          repo: repoName,
+          pullNumber: pr.number,
+        });
         return {
           pr,
-          files: filesResponse.data.map((f) => ({
+          files: files.map((f) => ({
             filename: f.filename,
             patch: f.patch,
             additions: f.additions,

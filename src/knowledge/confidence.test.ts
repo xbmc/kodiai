@@ -64,6 +64,14 @@ describe("matchPattern", () => {
   test("rejects nested quantified regex patterns instead of executing them", () => {
     expect(matchPattern("regex:(a+)+$", "aaaa")).toBe(false);
   });
+
+  test("rejects overlapping alternation regex patterns instead of executing them", () => {
+    expect(matchPattern("regex:(a|aa)+$", "aaaaaaaaaaaa")).toBe(false);
+  });
+
+  test("allows quantified alternation regex patterns without prefix overlap", () => {
+    expect(matchPattern("regex:(foo|bar)+$", "foobar")).toBe(true);
+  });
 });
 
 describe("matchesSuppression", () => {

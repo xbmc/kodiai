@@ -25,6 +25,7 @@ import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, type PriorFindingContext } from "../lib/finding-dedup.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { formatSuppressedFindingsSection } from "../lib/output-filter.ts";
@@ -3567,9 +3568,11 @@ export function createReviewHandler(deps: {
           }
 
           try {
-            for (const promptSectionRecord of result.promptSections ?? reviewPromptSections) {
-              await telemetryStore.recordPromptSections(promptSectionRecord);
-            }
+            await mapWithConcurrency(
+              result.promptSections ?? reviewPromptSections,
+              4,
+              (promptSectionRecord) => telemetryStore.recordPromptSections(promptSectionRecord),
+            );
           } catch (err) {
             logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
           }
@@ -3713,15 +3716,17 @@ export function createReviewHandler(deps: {
                   });
                 }
 
-                for (const aggregate of aggregateCounts.values()) {
-                  await knowledgeStore.recordGlobalPattern({
+                await mapWithConcurrency(
+                  [...aggregateCounts.values()],
+                  4,
+                  (aggregate) => knowledgeStore.recordGlobalPattern({
                     severity: aggregate.severity,
                     category: aggregate.category,
                     confidenceBand: aggregate.confidenceBand,
                     patternFingerprint: aggregate.patternFingerprint,
                     count: aggregate.count,
-                  });
-                }
+                  }),
+                );
               } catch (err) {
                 logger.warn(
                   { err, repo: `${apiOwner}/${apiRepo}`, prNumber: pr.number },
@@ -3783,8 +3788,8 @@ export function createReviewHandler(deps: {
             let skipped = 0;
             const skipReasons: Record<string, number> = {};
 
-            for (const finding of processedFindings) {
-              const result = await writeReviewLearningMemory({
+            const results = await mapWithConcurrency(processedFindings, 4, (finding) =>
+              writeReviewLearningMemory({
                 input: {
                   finding,
                   owner,
@@ -3798,8 +3803,10 @@ export function createReviewHandler(deps: {
                 embeddingProvider,
                 logger,
                 logContext: baseLog,
-              });
+              })
+            );
 
+            for (const result of results) {
               if (result.status === "written") {
                 written++;
               } else if (result.status === "skipped") {

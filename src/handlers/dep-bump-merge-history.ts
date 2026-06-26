@@ -13,6 +13,7 @@ import {
 import { fetchChangelog, fetchSecurityAdvisories } from "../lib/dep-bump-enrichment.ts";
 import { maxAdvisorySeverity } from "../lib/advisory-severity.ts";
 import { computeMergeConfidence } from "../lib/merge-confidence.ts";
+import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 
 export function createDepBumpMergeHistoryHandler(deps: {
   eventRouter: EventRouter;
@@ -69,13 +70,13 @@ export function createDepBumpMergeHistoryHandler(deps: {
 
         let changedFiles: string[] = [];
         try {
-          const resp = await octokit.rest.pulls.listFiles({
+          const files = await fetchAllPullRequestFiles({
+            octokit,
             owner,
             repo,
-            pull_number: pr.number,
-            per_page: 100,
+            pullNumber: pr.number,
           });
-          changedFiles = resp.data
+          changedFiles = files
             .map((f) => f.filename)
             .filter((f): f is string => typeof f === "string");
         } catch (err) {

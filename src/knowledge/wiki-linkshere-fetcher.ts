@@ -111,8 +111,13 @@ export async function fetchAllLinkshereCounts(opts: {
     }
   });
 
+  let pagesWithLinks = 0;
+  for (const count of counts.values()) {
+    if (count > 0) pagesWithLinks++;
+  }
+
   logger.info(
-    { totalPages: pageIds.length, pagesWithLinks: [...counts.values()].filter((v) => v > 0).length },
+    { totalPages: pageIds.length, pagesWithLinks },
     "Linkshere counts fetch complete",
   );
 

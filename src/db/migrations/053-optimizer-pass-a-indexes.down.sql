@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idx_wiki_pages_repair_candidates_page_chunk;
+DROP INDEX IF EXISTS idx_review_cluster_assignments_cluster_probability;
+DROP INDEX IF EXISTS idx_review_clusters_active_repo_member_count;

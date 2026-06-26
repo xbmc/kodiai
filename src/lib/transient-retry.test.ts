@@ -51,4 +51,29 @@ describe("retryTransient", () => {
 
     expect(attempts).toBe(1);
   });
+
+  test("uses full jitter for fallback exponential delays", async () => {
+    let attempts = 0;
+    const delays: number[] = [];
+
+    await retryTransient(
+      async () => {
+        attempts++;
+        if (attempts === 1) throw new Error("temporary");
+        return "ok";
+      },
+      {
+        maxAttempts: 2,
+        initialDelayMs: 1_000,
+        maxDelayMs: 2_000,
+        random: () => 0.25,
+        shouldRetry: () => true,
+        sleep: async (delayMs) => {
+          delays.push(delayMs);
+        },
+      },
+    );
+
+    expect(delays).toEqual([250]);
+  });
 });

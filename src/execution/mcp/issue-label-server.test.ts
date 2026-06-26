@@ -286,7 +286,7 @@ describe("createIssueLabelServer", () => {
       expect(callCount).toBe(2);
     });
 
-    it("falls back to exponential delay for malformed Retry-After values", async () => {
+    it("falls back to jittered exponential delay for malformed Retry-After values", async () => {
       const originalSetTimeout = globalThis.setTimeout;
       const delays: number[] = [];
       globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: number) => {
@@ -323,7 +323,9 @@ describe("createIssueLabelServer", () => {
         const parsed = JSON.parse(result.content[0]!.text);
         expect(parsed.success).toBe(true);
         expect(callCount).toBe(2);
-        expect(delays).toEqual([1000]);
+        expect(delays).toHaveLength(1);
+        expect(delays[0]).toBeGreaterThanOrEqual(0);
+        expect(delays[0]).toBeLessThanOrEqual(1000);
       } finally {
         globalThis.setTimeout = originalSetTimeout;
       }

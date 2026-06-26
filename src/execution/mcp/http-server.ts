@@ -8,6 +8,7 @@ import {
   type RateLimitWindowOptions,
 } from "../../lib/sliding-window-rate-limiter.ts";
 import { withTimeout } from "../../lib/with-timeout.ts";
+import { extractMcpAuthToken } from "./auth.ts";
 
 type McpHttpRateLimitOptions = {
   preAuth?: RateLimitWindowOptions;
@@ -193,9 +194,10 @@ export function createMcpHttpRoutes(
       return c.json({ error: "Rate limited" }, 429);
     }
 
-    const authHeader = c.req.header("Authorization") ?? c.req.header("X-Kodiai-MCP-Authorization");
-    const queryToken = c.req.query("kodiai_mcp_token");
-    const token = authHeader?.replace(/^Bearer /, "") ?? queryToken;
+    const token = extractMcpAuthToken({
+      header: (name) => c.req.header(name),
+      query: (name) => c.req.query(name),
+    });
 
     if (!token) {
       logger?.info(

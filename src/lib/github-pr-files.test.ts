@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { Octokit } from "@octokit/rest";
 import { fetchAllPullRequestFiles } from "./github-pr-files.ts";
 
 describe("fetchAllPullRequestFiles", () => {
@@ -31,7 +30,7 @@ describe("fetchAllPullRequestFiles", () => {
           listFiles,
         },
       },
-    } as unknown as Octokit;
+    };
 
     const files = await fetchAllPullRequestFiles({
       octokit,
@@ -88,7 +87,7 @@ describe("fetchAllPullRequestFiles", () => {
           listFiles,
         },
       },
-    } as unknown as Octokit;
+    };
 
     const files = await fetchAllPullRequestFiles({
       octokit,
@@ -99,5 +98,48 @@ describe("fetchAllPullRequestFiles", () => {
 
     expect(files.map((file) => file.filename).slice(-2)).toEqual(["src/page-2.ts", "src/page-3.ts"]);
     expect(listFiles).toHaveBeenCalledTimes(3);
+  });
+
+  test("retries each paginated file request at the helper boundary", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0]) => {
+      if (typeof handler === "function") handler();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof globalThis.setTimeout;
+
+    try {
+      const firstPage = Array.from({ length: 100 }, (_, index) => ({
+        filename: `src/page-one-${index}.ts`,
+        status: "modified",
+      }));
+      let pageTwoAttempts = 0;
+      const listFiles = mock((params: { page: number }) => {
+        if (params.page === 1) {
+          return Promise.resolve({
+            headers: { link: '<https://api.github.test/repos/acme/repo/pulls/1/files?page=2>; rel="last"' },
+            data: firstPage,
+          });
+        }
+        pageTwoAttempts++;
+        if (pageTwoAttempts === 1) {
+          const error = new Error("temporary GitHub failure") as Error & { status: number };
+          error.status = 500;
+          throw error;
+        }
+        return Promise.resolve({ headers: {}, data: [{ filename: "src/retried.ts", status: "modified" }] });
+      });
+
+      const files = await fetchAllPullRequestFiles({
+        octokit: { rest: { pulls: { listFiles } } },
+        owner: "xbmc",
+        repo: "kodiai",
+        pullNumber: 130,
+      });
+
+      expect(files.at(-1)?.filename).toBe("src/retried.ts");
+      expect(pageTwoAttempts).toBe(2);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
   });
 });

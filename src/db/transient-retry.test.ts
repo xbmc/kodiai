@@ -58,4 +58,27 @@ describe("withTransientDbRetry", () => {
     expect(attempts).toBe(1);
     expect(debug).not.toHaveBeenCalled();
   });
+
+  test("waits with jitter before retrying transient database failures", async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+
+    const result = await withTransientDbRetry(
+      async () => {
+        attempts++;
+        if (attempts === 1) throw connectionEndedError();
+        return "ok";
+      },
+      {
+        sleep: async (delayMs) => {
+          delays.push(delayMs);
+        },
+        random: () => 0.5,
+        initialDelayMs: 100,
+      },
+    );
+
+    expect(result).toBe("ok");
+    expect(delays).toEqual([50]);
+  });
 });

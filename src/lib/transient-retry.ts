@@ -8,6 +8,7 @@ export type RetryableOperationOptions = {
   shouldRetry?: (error: unknown, attempt: number) => boolean;
   retryDelayMs?: (error: unknown) => number | null;
   onRetry?: (params: { error: unknown; attempt: number; delayMs: number }) => void;
+  random?: () => number;
 };
 
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -27,6 +28,7 @@ export async function retryTransient<T>(
   const maxDelayMs = Math.max(0, Math.floor(options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS));
   const sleep = options.sleep ?? defaultSleep;
   const shouldRetry = options.shouldRetry ?? (() => false);
+  const random = options.random ?? Math.random;
 
   let attempt = 0;
   while (true) {
@@ -38,7 +40,8 @@ export async function retryTransient<T>(
         throw error;
       }
 
-      const fallbackDelayMs = Math.min(maxDelayMs, initialDelayMs * 2 ** (attempt - 1));
+      const fallbackDelayCeilingMs = Math.min(maxDelayMs, initialDelayMs * 2 ** (attempt - 1));
+      const fallbackDelayMs = Math.floor(fallbackDelayCeilingMs * random());
       const delayMs = capRetryDelayMs(options.retryDelayMs?.(error) ?? null, maxDelayMs) ?? fallbackDelayMs;
       options.onRetry?.({ error, attempt, delayMs });
       if (delayMs > 0) {

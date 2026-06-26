@@ -1,5 +1,3 @@
-import type { Logger } from "pino";
-
 /** Options for creating a workspace (clone target) */
 export interface CloneOptions {
   owner: string;

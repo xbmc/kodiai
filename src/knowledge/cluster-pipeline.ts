@@ -16,6 +16,7 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { TaskRouter } from "../llm/task-router.ts";
 import { positiveIntegerBound } from "../lib/bounds.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import type { ClusterStore, ClusterRunState, ReviewCluster } from "./cluster-types.ts";
 import { hdbscan } from "./hdbscan.ts";
 import { generateWithFallback } from "../llm/generate.ts";
@@ -33,6 +34,7 @@ export { cosineSimilarity } from "./embedding-vector.ts";
 const DEFAULT_MIN_CLUSTER_SIZE = 3;
 export const DEFAULT_MAX_EMBEDDING_ROWS = 5_000;
 export const DEFAULT_MAX_CLUSTERING_ROWS = 500;
+const MATCH_CANDIDATE_LOOKUP_CONCURRENCY = 4;
 const UMAP_N_COMPONENTS = 15;
 const UMAP_N_NEIGHBORS = 15;
 const UMAP_MIN_DIST = 0.0;
@@ -161,11 +163,16 @@ export async function runClusterPipeline(opts: {
     {
       const unassigned: EmbeddingRow[] = [];
       const mergeCandidateClusterById = new Map<number, ReviewCluster>();
+      const candidateBatches = await mapWithConcurrency(
+        embeddings,
+        MATCH_CANDIDATE_LOOKUP_CONCURRENCY,
+        (emb) => store.getActiveMatchCandidates(repo, emb.embedding, 16),
+      );
 
-      for (const emb of embeddings) {
+      for (const [index, emb] of embeddings.entries()) {
         let bestCluster: ReviewCluster | null = null;
         let bestSim = -1;
-        const candidateClusters = await store.getActiveMatchCandidates(repo, emb.embedding, 16);
+        const candidateClusters = candidateBatches[index] ?? [];
         for (const cluster of candidateClusters) {
           mergeCandidateClusterById.set(cluster.id, cluster);
         }

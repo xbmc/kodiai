@@ -34,6 +34,7 @@ import {
   fetchAndCheckoutPullRequestHeadRef,
 } from "../jobs/workspace.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 
 // Re-exported so tests can reference the type without importing from runner directly.
 export type { AddonFinding };
@@ -191,11 +192,11 @@ export function createAddonCheckHandler(deps: {
     try {
       const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
-      const { data: files } = await octokit.rest.pulls.listFiles({
+      const files = await fetchAllPullRequestFiles({
+        octokit,
         owner,
         repo: repoName,
-        pull_number: prNumber,
-        per_page: 100,
+        pullNumber: prNumber,
       });
 
       // Extract unique, sorted addon IDs from file paths.
