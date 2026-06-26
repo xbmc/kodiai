@@ -4,7 +4,7 @@ Kodiai  is an installable GitHub App that delivers AI-powered code review, conve
 
 Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
 
-45 milestones shipped (v0.1 through v0.45). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
+46 milestones shipped (v0.1 through v0.46). See [CHANGELOG.md](CHANGELOG.md) for documented release history.
 
 ## Quick Start
 
@@ -56,6 +56,7 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 ## Features
 
 Recent shipped milestones include:
+- v0.46 review/deployment reliability hardening, including MCP auth fallback, review and knowledge-path optimization indexes, PR-file retry pagination, cluster candidate lookup cleanup, and deployed live `@kodiai review` trigger proof on `xbmc/xbmc#28172`
 - M075 production-log cleanup, candidate-publication expected-policy-block reclassification, structured review timeout/addon-check classification, bounded moved-to-details candidate evidence, and live `@kodiai review` proof on `xbmc/xbmc#28172`
 - M074 review validation truth and same-PR finding lifecycle evidence, with explicit `@kodiai review` live proof on `xbmc/xbmc#28172` publishing real findings through the `interactive-review` lane
 - M073 review-budget and continuation hardening, including prompt-section budgeting, cache telemetry, continuation compaction, visible budget diagnostics, and remediation proof

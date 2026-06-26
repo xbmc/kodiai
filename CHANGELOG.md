@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.46 (2026-06-26)
+
+Review/deployment reliability hardening after optimizer and thermo-nuclear quality passes, deployed to Azure Container Apps and validated against the live Kodi review trigger path.
+
+### Added
+
+- Optimizer indexes and paired rollback migration for review graph, review-comment retrieval, wiki linkshere, and dependency-bump history paths.
+- Internal MCP auth fallback module and coverage for query-token compatibility on callback surfaces.
+- Regression coverage for per-page PR file retry, cluster candidate lookup concurrency, safe regex suppression patterns, wiki replacement fallback, and dependency-bump enrichment.
+
+### Changed
+
+- PR file fetching now goes through one paginated helper with retry at the helper boundary, including addon checks, review/mention fallbacks, wiki staleness detection, dependency-bump merge history, and the PR-evidence backfill script.
+- Cluster matching no longer exposes a fake store-level batch method; bounded nearest-candidate lookup concurrency now lives in the pipeline.
+- Review, retrieval, wiki, and dependency-bump paths reduce repeated work and narrow transient-retry boundaries.
+
+### Fixed
+
+- Quantified regex alternations without prefix overlap are no longer rejected by the suppression matcher.
+- Wiki sync fallback replacement no longer carries unused state.
+- Review execution paths retain the MCP query-token fallback needed by deployed callback clients.
+
+### Verification
+
+- `bunx tsc --noEmit` passed.
+- `bun run lint` passed.
+- `bun run test:unit` passed with `5684 pass`.
+- Push CI for `e1c4e03159` passed.
+- Deployed revision `ca-kodiai--deploy-e1c4e03159e6-20260626-001905` passed `/healthz` and `/readiness`.
+- Live explicit `@kodiai review` trigger was posted on `xbmc/xbmc#28172` in comment `4807535661`.
+
 ## v0.45 (2026-06-25)
 
 MCP callback reliability, mention grounding, wiki sync recovery, and review-publication hardening — found by reviewing production logs and validated live on Kodi PRs.
