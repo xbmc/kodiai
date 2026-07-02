@@ -209,8 +209,8 @@ describe("createSuggestionClusterStore", () => {
       const { sql, calls } = makeSequentialSql([[]]);
       const store = createSuggestionClusterStore({ sql, logger: createMockLogger() });
       await store.getModelIncludingStale("xbmc/xbmc");
-      // The query should not contain an expires_at WHERE clause
-      expect(calls[0]!.query).not.toContain("expires_at");
+      // The query should not filter out stale rows.
+      expect(calls[0]!.query).not.toContain("expires_at > now()");
     });
 
     it("returns stale model data correctly", async () => {

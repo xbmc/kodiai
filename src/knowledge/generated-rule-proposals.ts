@@ -231,11 +231,21 @@ export async function generatePendingRuleProposals(
 
     for (const [clusterIndex, cluster] of clusters.entries()) {
       const clusterSize = cluster.members.length;
-      const positiveMembers = cluster.members.filter((member) => isPositiveOutcome(member.outcome));
-      const acceptedCount = positiveMembers.filter((member) => member.outcome === "accepted").length;
-      const thumbsUpCount = positiveMembers.filter((member) => member.outcome === "thumbs_up").length;
-      const positiveCount = positiveMembers.length;
-      const negativeCount = cluster.members.filter((member) => isNegativeOutcome(member.outcome)).length;
+      let acceptedCount = 0;
+      let thumbsUpCount = 0;
+      let positiveCount = 0;
+      let negativeCount = 0;
+      const positiveMembers: LearningMemoryClusterRow[] = [];
+      for (const member of cluster.members) {
+        if (isPositiveOutcome(member.outcome)) {
+          positiveMembers.push(member);
+          positiveCount += 1;
+          if (member.outcome === "accepted") acceptedCount += 1;
+          if (member.outcome === "thumbs_up") thumbsUpCount += 1;
+        } else if (isNegativeOutcome(member.outcome)) {
+          negativeCount += 1;
+        }
+      }
       const positiveRatio = clusterSize === 0 ? 0 : positiveCount / clusterSize;
 
       if (clusterSize < minClusterSize) {

@@ -72,6 +72,11 @@ describe("matchPattern", () => {
   test("allows quantified alternation regex patterns without prefix overlap", () => {
     expect(matchPattern("regex:(foo|bar)+$", "foobar")).toBe(true);
   });
+
+  test("rejects lookaround and backreference regex patterns", () => {
+    expect(matchPattern("regex:^(?=.*secret).*$", "secret")).toBe(false);
+    expect(matchPattern("regex:^(a)\\1$", "aa")).toBe(false);
+  });
 });
 
 describe("matchesSuppression", () => {

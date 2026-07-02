@@ -328,17 +328,35 @@ function countFindingsByLevel(summary: AddonSummaryLike, level: "ERROR" | "WARN"
 
 function buildCounts(input: AddonCheckClassificationInput, summaries: AddonSummaryLike[] | undefined): AddonCheckBoundedCounts {
   const addonCount = boundedInteger(input.addonCount, MAX_COUNT) ?? Math.min(summaries?.length ?? 0, MAX_COUNT);
-  const completedFromSummaries = summaries?.filter((summary) => summary.completed === true || (summary.timedOut !== true && summary.toolNotFound !== true)).length;
-  const timedOutFromSummaries = summaries?.filter((summary) => summary.timedOut === true).length;
-  const toolNotFoundFromSummaries = summaries?.filter((summary) => summary.toolNotFound === true).length;
+  let completedFromSummaries: number | undefined;
+  let timedOutFromSummaries: number | undefined;
+  let toolNotFoundFromSummaries: number | undefined;
+  let findingFromSummaries: number | undefined;
+  let errorFromSummaries: number | undefined;
+  let warningFromSummaries: number | undefined;
 
-  const findingFromSummaries = summaries?.reduce((sum, summary) => {
-    const explicit = boundedInteger(summary.findingCount, MAX_COUNT);
-    const fromFindings = Array.isArray(summary.findings) ? boundedInteger(summary.findings.length, MAX_COUNT) : undefined;
-    return Math.min(MAX_COUNT, sum + (explicit ?? fromFindings ?? 0));
-  }, 0);
-  const errorFromSummaries = summaries?.reduce((sum, summary) => Math.min(MAX_COUNT, sum + (boundedInteger(summary.errorCount, MAX_COUNT) ?? countFindingsByLevel(summary, "ERROR") ?? 0)), 0);
-  const warningFromSummaries = summaries?.reduce((sum, summary) => Math.min(MAX_COUNT, sum + (boundedInteger(summary.warningCount, MAX_COUNT) ?? countFindingsByLevel(summary, "WARN") ?? 0)), 0);
+  if (summaries) {
+    completedFromSummaries = 0;
+    timedOutFromSummaries = 0;
+    toolNotFoundFromSummaries = 0;
+    findingFromSummaries = 0;
+    errorFromSummaries = 0;
+    warningFromSummaries = 0;
+
+    for (const summary of summaries) {
+      if (summary.completed === true || (summary.timedOut !== true && summary.toolNotFound !== true)) {
+        completedFromSummaries += 1;
+      }
+      if (summary.timedOut === true) timedOutFromSummaries += 1;
+      if (summary.toolNotFound === true) toolNotFoundFromSummaries += 1;
+
+      const explicitFindings = boundedInteger(summary.findingCount, MAX_COUNT);
+      const fromFindings = Array.isArray(summary.findings) ? boundedInteger(summary.findings.length, MAX_COUNT) : undefined;
+      findingFromSummaries = Math.min(MAX_COUNT, findingFromSummaries + (explicitFindings ?? fromFindings ?? 0));
+      errorFromSummaries = Math.min(MAX_COUNT, errorFromSummaries + (boundedInteger(summary.errorCount, MAX_COUNT) ?? countFindingsByLevel(summary, "ERROR") ?? 0));
+      warningFromSummaries = Math.min(MAX_COUNT, warningFromSummaries + (boundedInteger(summary.warningCount, MAX_COUNT) ?? countFindingsByLevel(summary, "WARN") ?? 0));
+    }
+  }
 
   return {
     addonCount,

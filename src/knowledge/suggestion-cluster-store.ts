@@ -178,7 +178,18 @@ export function createSuggestionClusterStore(opts: {
   const store: SuggestionClusterStore = {
     async getModel(repo: string): Promise<SuggestionClusterModel | null> {
       const rows = await sql`
-        SELECT *
+        SELECT
+          id,
+          repo,
+          positive_centroids,
+          negative_centroids,
+          member_count,
+          positive_member_count,
+          negative_member_count,
+          built_at,
+          expires_at,
+          created_at,
+          updated_at
         FROM suggestion_cluster_models
         WHERE repo = ${repo}
           AND expires_at > now()
@@ -190,7 +201,18 @@ export function createSuggestionClusterStore(opts: {
 
     async getModelIncludingStale(repo: string): Promise<SuggestionClusterModel | null> {
       const rows = await sql`
-        SELECT *
+        SELECT
+          id,
+          repo,
+          positive_centroids,
+          negative_centroids,
+          member_count,
+          positive_member_count,
+          negative_member_count,
+          built_at,
+          expires_at,
+          created_at,
+          updated_at
         FROM suggestion_cluster_models
         WHERE repo = ${repo}
         LIMIT 1

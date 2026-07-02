@@ -39,6 +39,9 @@ const CATEGORY_BOOST: Record<FindingCategory, number> = {
 const MAX_REGEX_PATTERN_LENGTH = 512;
 const NESTED_QUANTIFIER_PATTERN = /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\s*(?:[+*?]|\{\d+(?:,\d*)?\})/;
 const QUANTIFIED_SIMPLE_ALTERNATION_PATTERN = /\(([^()\\]+(?:\|[^()\\]+)+)\)\s*(?:[+*?]|\{\d+(?:,\d*)?\})/g;
+const NUMERIC_BACKREFERENCE_PATTERN = /\\[1-9]/;
+const NAMED_BACKREFERENCE_PATTERN = /\\k<[^>]+>/;
+const LOOKAROUND_PATTERN = /\(\?(?:[=!]|<[=!])/;
 
 export function computeConfidence(input: ConfidenceInput): number {
   let score = 50;
@@ -129,6 +132,12 @@ function hasQuantifiedOverlappingAlternation(source: string): boolean {
   return false;
 }
 
+function hasUnsupportedRegexConstruct(source: string): boolean {
+  return NUMERIC_BACKREFERENCE_PATTERN.test(source)
+    || NAMED_BACKREFERENCE_PATTERN.test(source)
+    || LOOKAROUND_PATTERN.test(source);
+}
+
 function createPatternMatcher(pattern: string): (text: string) => boolean {
   if (pattern.startsWith("glob:")) {
     const glob = pattern.slice("glob:".length).toLowerCase();
@@ -140,6 +149,7 @@ function createPatternMatcher(pattern: string): (text: string) => boolean {
     const source = pattern.slice("regex:".length);
     if (
       source.length > MAX_REGEX_PATTERN_LENGTH ||
+      hasUnsupportedRegexConstruct(source) ||
       NESTED_QUANTIFIER_PATTERN.test(source) ||
       hasQuantifiedOverlappingAlternation(source)
     ) {

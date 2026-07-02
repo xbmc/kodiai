@@ -6,8 +6,50 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            .cache/eslint
+          key: ${{ runner.os }}-static-bun-1.3.8-${{ hashFiles('bun.lock') }}-${{ hashFiles('src/**/*.ts', 'scripts/**/*.ts', 'eslint.config.*') }}
+          restore-keys: |
+            ${{ runner.os }}-static-bun-1.3.8-${{ hashFiles('bun.lock') }}-
+            ${{ runner.os }}-bun-1.3.8-
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run verify:m056:s03
+      - run: bun run check:orphaned-tests
+      - run: bun run check:review-details-architecture
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.8-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-1.3.8-
+      - run: bun install --frozen-lockfile
+      - run: bun run test:unit
+
+  db:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -38,12 +80,4 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-1.3.8-
       - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run verify:m056:s03
-      - run: bun run check:orphaned-tests
-      - run: bun run check:review-details-architecture
-      # Bun has been unstable on GitHub runners with one monolithic test process.
-      # Keep DB-backed tests serialized and split the suite into explicit lanes
-      # so shared TEST_DATABASE_URL cleanup cannot race unit tests or other DB files.
-      - run: bun run test:unit
       - run: bun run test:db

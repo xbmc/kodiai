@@ -389,7 +389,15 @@ export function queryBlastRadiusFromSnapshot(
     const fileNodes = indexes.nodesByFilePath.get(changedPath) ?? [];
     if (fileNodes.length === 0) continue;
 
-    const symbolSeeds = fileNodes.filter((node) => node.nodeKind === "symbol" || node.nodeKind === "test");
+    const symbolSeeds: ReviewGraphNodeRecord[] = [];
+    let fileNode: ReviewGraphNodeRecord | undefined;
+    for (const node of fileNodes) {
+      if (node.nodeKind === "symbol" || node.nodeKind === "test") {
+        symbolSeeds.push(node);
+      } else if (node.nodeKind === "file" && !fileNode) {
+        fileNode = node;
+      }
+    }
     seedNodes.push(...symbolSeeds);
 
     for (const seed of symbolSeeds) {
@@ -470,7 +478,6 @@ export function queryBlastRadiusFromSnapshot(
       }
     }
 
-    const fileNode = fileNodes.find((node) => node.nodeKind === "file");
     if (fileNode) {
       const importers = indexes.incomingEdgesByNodeId.get(fileNode.id) ?? [];
       for (const edge of importers) {
@@ -490,8 +497,7 @@ export function queryBlastRadiusFromSnapshot(
       }
     }
 
-    const changedSymbols = fileNodes.filter((node) => node.nodeKind === "symbol" || node.nodeKind === "test");
-    const symbolAliases = new Set(changedSymbols.flatMap((node) => collectSymbolAliases(node).map((value) => value.toLowerCase())));
+    const symbolAliases = new Set(symbolSeeds.flatMap((node) => collectSymbolAliases(node).map((value) => value.toLowerCase())));
     const symbolAliasMatcher = buildAliasMatcher(symbolAliases);
 
     for (const importNode of collectImportCandidates(indexes, changedPath)) {

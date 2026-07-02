@@ -4,6 +4,9 @@ FROM ${BUN_BASE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --production --frozen-lockfile --omit optional
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN bun build src/index.ts --target=bun --packages=external --outfile=dist/index.js
 
 # Stage 2: Production image
 FROM ${BUN_BASE_IMAGE}
@@ -18,9 +21,9 @@ WORKDIR /app
 # Copy production dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy application source
+# Copy compiled application
 COPY package.json bun.lock tsconfig.json ./
-COPY src/ ./src/
+COPY --from=deps /app/dist ./dist
 
 # DATABASE_URL is provided via Azure Container Apps secrets at runtime
 ENV DATABASE_URL=""
@@ -32,4 +35,4 @@ EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD bun -e "const port = process.env.PORT || '3000'; const res = await fetch('http://127.0.0.1:' + port + '/healthz'); if (!res.ok) process.exit(1); const body = await res.json().catch(() => undefined); if (body?.status !== 'ok') process.exit(1);"
 
-CMD ["bun", "run", "src/index.ts"]
+CMD ["bun", "run", "dist/index.js"]

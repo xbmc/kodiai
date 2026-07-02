@@ -104,14 +104,20 @@ if (( ACA_MIN_REPLICAS < 1 || ACA_MAX_REPLICAS < ACA_MIN_REPLICAS )); then
   echo "ERROR: ACA_MIN_REPLICAS must be >= 1 and ACA_MAX_REPLICAS must be >= ACA_MIN_REPLICAS." >&2
   exit 1
 fi
+if (( ACA_MAX_REPLICAS > 1 )); then
+  echo "ERROR: ACA_MAX_REPLICAS > 1 is not supported while the MCP callback token registry is process-local." >&2
+  echo "The current MCP callback token registry is process-local; multi-replica ingress would route callbacks to replicas that cannot validate or serve the job token." >&2
+  exit 1
+fi
 # Orchestrator container resources. The orchestrator runs a single-threaded Bun
 # event loop that also serves the internal MCP callback server hit by agent jobs.
 # Under-provisioning starves the loop during review-time CPU bursts, which makes
 # in-flight MCP calls sit idle until the ACA ingress 240s stream_idle_timeout
 # resets them (504). 2 vCPU / 4Gi gives ample headroom on a single replica.
 # NOTE: ACA requires valid cpu/memory pairings (e.g. 1.0/2Gi, 2.0/4Gi). Keep
-# ACA_MAX_REPLICAS=1 unless the in-memory MCP token registry is moved to a shared
-# store — agent MCP callbacks must reach the replica that registered their token.
+# ACA_MAX_REPLICAS=1 unless the MCP token registry is moved to shared durable
+# storage — agent MCP callbacks must reach a replica that can validate and
+# reconstruct the job token's server factories.
 ACA_CPU=${ACA_CPU:-2.0}
 ACA_MEMORY=${ACA_MEMORY:-4.0Gi}
 if ! [[ "$ACA_CPU" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then

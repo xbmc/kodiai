@@ -26,11 +26,19 @@ function createMockStore(): WikiPageStore & {
   syncStates: WikiSyncState[];
   _revisions: Map<number, number>;
   _syncState: WikiSyncState | null;
+  readonly getPageRevisionCalls: number;
+  readonly getPageRevisionsCalls: number;
+  readonly replacePageChunksCalls: number;
+  readonly replacePagesChunksCalls: number;
 } {
   const writtenChunks: WikiPageChunk[][] = [];
   const replacedPages: Array<{ pageId: number; chunks: WikiPageChunk[] }> = [];
   const syncStates: WikiSyncState[] = [];
   const _revisions = new Map<number, number>();
+  let getPageRevisionCalls = 0;
+  let getPageRevisionsCalls = 0;
+  let replacePageChunksCalls = 0;
+  let replacePagesChunksCalls = 0;
 
   const obj = {
     writtenChunks,
@@ -38,12 +46,18 @@ function createMockStore(): WikiPageStore & {
     syncStates,
     _revisions,
     _syncState: null as WikiSyncState | null,
+    get getPageRevisionCalls() { return getPageRevisionCalls; },
+    get getPageRevisionsCalls() { return getPageRevisionsCalls; },
+    get replacePageChunksCalls() { return replacePageChunksCalls; },
+    get replacePagesChunksCalls() { return replacePagesChunksCalls; },
     async writeChunks(chunks: WikiPageChunk[]) { writtenChunks.push(chunks); },
     async deletePageChunks() {},
     async replacePageChunks(pageId: number, chunks: WikiPageChunk[]) {
+      replacePageChunksCalls++;
       replacedPages.push({ pageId, chunks });
     },
     async replacePagesChunks(replacements: Array<{ pageId: number; chunks: WikiPageChunk[] }>) {
+      replacePagesChunksCalls++;
       replacedPages.push(...replacements);
     },
     async softDeletePage() {},
@@ -55,8 +69,12 @@ function createMockStore(): WikiPageStore & {
       obj._syncState = { ...state };
     },
     async countBySource() { return 0; },
-    async getPageRevision(pageId: number) { return _revisions.get(pageId) ?? null; },
+    async getPageRevision(pageId: number) {
+      getPageRevisionCalls++;
+      return _revisions.get(pageId) ?? null;
+    },
     async getPageRevisions(pageIds: number[]) {
+      getPageRevisionsCalls++;
       return new Map(pageIds.flatMap((pageId) => {
         const revision = _revisions.get(pageId);
         return revision === undefined ? [] : [[pageId, revision] as const];
@@ -149,6 +167,10 @@ describe("backfillWikiPages", () => {
     expect(result.totalPages).toBe(2);
     expect(result.totalChunks).toBeGreaterThan(0);
     expect(store.replacedPages.length).toBe(2);
+    expect(store.getPageRevisionsCalls).toBe(1);
+    expect(store.getPageRevisionCalls).toBe(0);
+    expect(store.replacePagesChunksCalls).toBe(1);
+    expect(store.replacePageChunksCalls).toBe(0);
   });
 
   test("skips pages with matching revision", async () => {
@@ -383,5 +405,111 @@ describe("backfillWikiPages", () => {
 
     expect(allPagesCallCount).toBe(2);
     expect(result.totalPages).toBe(2);
+  });
+
+  test("processes page parses with bounded concurrency", async () => {
+    const store = createMockStore();
+    let activeParses = 0;
+    let maxActiveParses = 0;
+    const parseResolvers: Array<() => void> = [];
+
+    const mockFetch = async (url: string | URL | Request): Promise<Response> => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("list=allpages")) {
+        return new Response(JSON.stringify({
+          query: {
+            allpages: [
+              { pageid: 1, ns: 0, title: "Page 1" },
+              { pageid: 2, ns: 0, title: "Page 2" },
+              { pageid: 3, ns: 0, title: "Page 3" },
+            ],
+          },
+        }));
+      }
+      if (urlStr.includes("action=parse")) {
+        activeParses++;
+        maxActiveParses = Math.max(maxActiveParses, activeParses);
+        const pageId = Number(urlStr.match(/pageid=(\d+)/)?.[1] ?? 1);
+        await new Promise<void>((resolve) => parseResolvers.push(resolve));
+        activeParses--;
+        return new Response(JSON.stringify({
+          parse: { title: `Page ${pageId}`, pageid: pageId, revid: pageId * 10, text: { "*": LONG_CONTENT }, categories: [] },
+        }));
+      }
+      return new Response("Not found", { status: 404 });
+    };
+
+    const run = backfillWikiPages({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "test.wiki",
+      baseUrl: "https://test.wiki",
+      logger: mockLogger,
+      delayMs: 0,
+      fetchFn: mockFetch as typeof globalThis.fetch,
+    });
+
+    while (parseResolvers.length < 3) await Promise.resolve();
+    expect(maxActiveParses).toBeGreaterThan(1);
+    for (const resolve of parseResolvers.splice(0)) resolve();
+    const result = await run;
+
+    expect(result.totalPages).toBe(3);
+    expect(store.replacePagesChunksCalls).toBe(1);
+  });
+
+  test("falls back to per-page replacement when batched storage fails", async () => {
+    const store = createMockStore();
+    store.replacePagesChunks = async () => {
+      throw new Error("batch failed");
+    };
+    const mockFetch = createMockFetch([
+      { pageid: 1, ns: 0, title: "Settings" },
+      { pageid: 2, ns: 0, title: "Audio" },
+    ]);
+
+    const result = await backfillWikiPages({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "test.wiki",
+      baseUrl: "https://test.wiki",
+      logger: mockLogger,
+      delayMs: 0,
+      fetchFn: mockFetch as typeof globalThis.fetch,
+    });
+
+    expect(result.totalPages).toBe(2);
+    expect(store.replacedPages.length).toBe(2);
+    expect(store.replacePageChunksCalls).toBe(2);
+  });
+
+  test("counts failed per-page storage fallback as skipped", async () => {
+    const store = createMockStore();
+    store.replacePagesChunks = async () => {
+      throw new Error("batch failed");
+    };
+    const originalReplacePageChunks = store.replacePageChunks.bind(store);
+    store.replacePageChunks = async (pageId, chunks) => {
+      if (pageId === 2) throw new Error("page failed");
+      await originalReplacePageChunks(pageId, chunks);
+    };
+    const mockFetch = createMockFetch([
+      { pageid: 1, ns: 0, title: "Settings" },
+      { pageid: 2, ns: 0, title: "Audio" },
+    ]);
+
+    const result = await backfillWikiPages({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "test.wiki",
+      baseUrl: "https://test.wiki",
+      logger: mockLogger,
+      delayMs: 0,
+      fetchFn: mockFetch as typeof globalThis.fetch,
+    });
+
+    expect(result.totalPages).toBe(1);
+    expect(result.skippedPages).toBe(1);
+    expect(store.replacedPages.map((page) => page.pageId)).toEqual([1]);
   });
 });

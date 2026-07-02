@@ -124,6 +124,10 @@ export async function ingestCanonicalCodeSnapshot(params: {
       embeddingModel: string;
       embedding: Float32Array;
     }> = [];
+    const failedEmbeddingSamples: Array<{ startLine: number; endLine: number; err?: string }> = [];
+    const unavailableEmbeddingSamples: Array<{ startLine: number; endLine: number }> = [];
+    let failedEmbeddingCount = 0;
+    let unavailableEmbeddingCount = 0;
 
     for (const [index, embeddingResult] of embeddingResults.entries()) {
       const chunk = chunkResult.chunks[index]!;
@@ -132,41 +136,48 @@ export async function ingestCanonicalCodeSnapshot(params: {
         const message = embeddingResult.err instanceof Error ? embeddingResult.err.message : String(embeddingResult.err);
         failed += 1;
         fileResult.failed += 1;
-        logger.warn(
-          {
-            repo: request.repo,
-            owner: request.owner,
-            canonicalRef: request.canonicalRef,
-            commitSha: request.commitSha,
-            filePath: file.filePath,
+        failedEmbeddingCount += 1;
+        if (failedEmbeddingSamples.length < 10) {
+          failedEmbeddingSamples.push({
             startLine: chunk.startLine,
             endLine: chunk.endLine,
             err: message,
-          },
-          "Canonical code ingest embedding failed (fail-open)",
-        );
+          });
+        }
         continue;
       }
 
       if (embeddingResult.status === "unavailable") {
         failed += 1;
         fileResult.failed += 1;
-        logger.warn(
-          {
-            repo: request.repo,
-            owner: request.owner,
-            canonicalRef: request.canonicalRef,
-            commitSha: request.commitSha,
-            filePath: file.filePath,
+        unavailableEmbeddingCount += 1;
+        if (unavailableEmbeddingSamples.length < 10) {
+          unavailableEmbeddingSamples.push({
             startLine: chunk.startLine,
             endLine: chunk.endLine,
-          },
-          "Canonical code ingest embedding unavailable (fail-open)",
-        );
+          });
+        }
         continue;
       }
 
       writeRows.push({ chunk, embeddingModel: embeddingResult.model, embedding: embeddingResult.embedding });
+    }
+
+    if (failedEmbeddingCount > 0 || unavailableEmbeddingCount > 0) {
+      logger.warn(
+        {
+          repo: request.repo,
+          owner: request.owner,
+          canonicalRef: request.canonicalRef,
+          commitSha: request.commitSha,
+          filePath: file.filePath,
+          failedEmbeddingCount,
+          unavailableEmbeddingCount,
+          failedEmbeddingSamples,
+          unavailableEmbeddingSamples,
+        },
+        "Canonical code ingest embeddings failed or were unavailable (fail-open)",
+      );
     }
 
     const outcomes = await mapWithConcurrency(writeRows, 8, async ({ chunk, embeddingModel, embedding }) =>
@@ -204,7 +215,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
     }
 
     fileResults.push(fileResult);
-    logger.info(
+    logger.debug(
       {
         repo: request.repo,
         owner: request.owner,
@@ -218,7 +229,8 @@ export async function ingestCanonicalCodeSnapshot(params: {
         dedup: fileResult.dedup,
         failed: fileResult.failed,
         excluded: false,
-        boundaryDecisions: fileResult.boundaryDecisions,
+        boundaryDecisionCount: fileResult.boundaryDecisions.length,
+        boundaryDecisionSamples: fileResult.boundaryDecisions.slice(0, 5),
       },
       "Canonical code ingest completed file",
     );

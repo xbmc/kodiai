@@ -19,6 +19,7 @@ import { positiveIntegerBound } from "../lib/bounds.ts";
 import type { SuggestionClusterStore, SuggestionClusterModel } from "./suggestion-cluster-store.ts";
 import { hdbscan } from "./hdbscan.ts";
 import { meanEmbedding, parsePgVectorEmbedding } from "./embedding-vector.ts";
+import { projectEmbeddingByFeatureHash } from "./embedding-projection.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -35,7 +36,10 @@ export const HDBSCAN_MIN_CLUSTER_SIZE = 3;
 export const DEFAULT_MAX_INPUT_ROWS = 5_000;
 
 /** Maximum rows per outcome class passed into dense HDBSCAN clustering. */
-export const DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING = 2_000;
+export const DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING = 750;
+
+/** Maximum embedding dimensions used for pairwise HDBSCAN distance work. */
+export const DEFAULT_MAX_CLUSTERING_DIMENSIONS = 128;
 
 // ── Positive/negative outcome classification ──────────────────────────
 
@@ -61,6 +65,8 @@ export type BuildClusterModelOpts = {
   maxInputRows?: number;
   /** Maximum rows per outcome class to pass to HDBSCAN (default: DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING). */
   maxRowsPerClassForClustering?: number;
+  /** Maximum dimensions passed to HDBSCAN; centroids are still saved in original embedding space. */
+  maxClusteringDimensions?: number;
 };
 
 /** Result of a build attempt. */
@@ -108,6 +114,7 @@ function buildCentroidsFromRows(
   rows: MemoryRow[],
   minClusterSize: number,
   minClusterMembers: number,
+  maxClusteringDimensions: number,
   logger: Logger,
   context: string,
 ): {
@@ -119,7 +126,16 @@ function buildCentroidsFromRows(
     return { centroids: [], memberCount: 0, skippedClusters: 0 };
   }
 
-  const data = rows.map((r) => r.embedding);
+  const originalDimensions = rows[0]?.embedding.length ?? 0;
+  const clusteringDimensions = Math.min(originalDimensions, maxClusteringDimensions);
+  const data = rows.map((r) => projectEmbeddingByFeatureHash(r.embedding, maxClusteringDimensions));
+  if (originalDimensions > clusteringDimensions) {
+    logger.info(
+      { context, originalDimensions, clusteringDimensions },
+      "Reduced embedding dimensions before HDBSCAN clustering",
+    );
+  }
+
   const result = hdbscan(data, { minClusterSize });
 
   logger.info(
@@ -203,6 +219,10 @@ export async function buildClusterModel(
   const maxRowsPerClassForClustering = positiveIntegerBound(
     opts.maxRowsPerClassForClustering,
     DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING,
+  );
+  const maxClusteringDimensions = positiveIntegerBound(
+    opts.maxClusteringDimensions,
+    DEFAULT_MAX_CLUSTERING_DIMENSIONS,
   );
 
   const base: BuildClusterModelResult = {
@@ -331,6 +351,7 @@ export async function buildClusterModel(
           boundedPositiveRows,
           minClusterSize,
           MIN_CLUSTER_MEMBERS,
+          maxClusteringDimensions,
           logger,
           `${repo}/positive`,
         )
@@ -341,6 +362,7 @@ export async function buildClusterModel(
           boundedNegativeRows,
           minClusterSize,
           MIN_CLUSTER_MEMBERS,
+          maxClusteringDimensions,
           logger,
           `${repo}/negative`,
         )

@@ -214,7 +214,14 @@ export function createCodeSnippetStore(opts: {
           cso.created_at
         FROM code_snippets cs
         INNER JOIN LATERAL (
-          SELECT *
+          SELECT
+            repo,
+            pr_number,
+            pr_title,
+            file_path,
+            start_line,
+            end_line,
+            created_at
           FROM code_snippet_occurrences
           WHERE content_hash = cs.content_hash
             AND repo = ${params.repo}

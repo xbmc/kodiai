@@ -469,6 +469,9 @@ describe("createRetriever", () => {
     expect(result!.reviewPrecedents).toHaveLength(1);
     expect(result!.reviewPrecedents[0]!.source).toBe("review_comment");
     expect(result!.reviewPrecedents[0]!.authorLogin).toBe("reviewer1");
+    const reviewChunk = result!.unifiedResults.find((chunk) => chunk.source === "review_comment");
+    expect(reviewChunk?.sourceLabel).toBe("[review: prior review comment]");
+    expect(reviewChunk?.sourceUrl).toBeNull();
     expect(result!.provenance.reviewCommentCount).toBe(1);
   });
 

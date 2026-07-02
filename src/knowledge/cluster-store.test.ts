@@ -122,6 +122,40 @@ describe("createClusterStore", () => {
       expect(clusters[0]!.filePaths).toEqual(["src/a.ts", "src/b.ts"]);
     });
 
+    it("returns active maintenance records without projecting centroid vectors", async () => {
+      let queryText = "";
+      const mockSql = (strings: TemplateStringsArray, ..._values: unknown[]) => {
+        queryText = strings.join("?");
+        return Promise.resolve([{
+          id: 1,
+          repo: "test/repo",
+          slug: "null-check-missing",
+          label: "Missing null checks",
+          member_count: 5,
+          member_count_at_label: 4,
+          label_updated_at: "2026-02-25T00:00:00Z",
+          pinned: false,
+          retired: false,
+        }]);
+      };
+      const store = createClusterStore({ sql: mockSql as any, logger: createMockLogger() });
+
+      const clusters = await store.listActiveClusterMaintenanceRecords("test/repo");
+
+      expect(clusters).toEqual([{
+        id: 1,
+        repo: "test/repo",
+        slug: "null-check-missing",
+        label: "Missing null checks",
+        memberCount: 5,
+        memberCountAtLabel: 4,
+        labelUpdatedAt: new Date("2026-02-25T00:00:00Z"),
+        pinned: false,
+        retired: false,
+      }]);
+      expect(queryText).not.toContain("centroid");
+    });
+
     it("returns empty array when no active clusters", async () => {
       const { sql } = createMockSql({ select: [] });
       const store = createClusterStore({ sql, logger: createMockLogger() });

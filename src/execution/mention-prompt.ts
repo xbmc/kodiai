@@ -136,7 +136,7 @@ export function buildMentionPromptDetails(params: {
       lines.push(unified);
       lines.push("");
       lines.push(
-        "When referencing information from the knowledge base, cite sources using the labels provided (e.g., [wiki: Page Title], [review: PR #123], [code: file.ts]).",
+        "When referencing information from the knowledge base, cite non-review sources using the labels provided (e.g., [wiki: Page Title], [code: file.ts]); do not publicly cite prior review-comment sources.",
       );
       lines.push("");
     }

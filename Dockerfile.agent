@@ -4,6 +4,9 @@ FROM ${BUN_BASE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --production --frozen-lockfile --omit optional
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN bun build src/execution/agent-entrypoint.ts --target=bun --packages=external --outfile=dist/execution/agent-entrypoint.js
 
 # Stage 2: Agent job image
 FROM ${BUN_BASE_IMAGE}
@@ -23,12 +26,12 @@ WORKDIR /app
 # Copy production dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy application source
+# Copy compiled application
 COPY package.json bun.lock tsconfig.json ./
-COPY src/ ./src/
+COPY --from=deps /app/dist ./dist
 
 # Run as non-root user (oven/bun images include 'bun' user)
 USER bun
 
 # No EXPOSE — agent jobs have no incoming ports
-CMD ["bun", "run", "src/execution/agent-entrypoint.ts"]
+CMD ["bun", "run", "dist/execution/agent-entrypoint.js"]

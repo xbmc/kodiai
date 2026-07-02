@@ -282,14 +282,45 @@ function buildCounts(
   outcomes: ReadonlyArray<ReviewCandidateApprovalOutcome>,
   auditEvents: number,
 ): ReviewCandidateApprovalCounts {
+  const counts = {
+    approved: 0,
+    rewritten: 0,
+    suppressed: 0,
+    deduped: 0,
+    rejected: 0,
+    fallbackDisallowed: 0,
+  };
+  for (const outcome of outcomes) {
+    switch (outcome.lifecycle) {
+      case "approved":
+        counts.approved += 1;
+        break;
+      case "rewritten":
+        counts.rewritten += 1;
+        break;
+      case "suppressed":
+        counts.suppressed += 1;
+        break;
+      case "deduped":
+        counts.deduped += 1;
+        break;
+      case "rejected":
+        counts.rejected += 1;
+        break;
+      case "fallback-disallowed":
+        counts.fallbackDisallowed += 1;
+        break;
+    }
+  }
+
   return {
     input: input.candidates.counts.input,
-    approved: outcomes.filter((outcome) => outcome.lifecycle === "approved").length,
-    rewritten: outcomes.filter((outcome) => outcome.lifecycle === "rewritten").length,
-    suppressed: outcomes.filter((outcome) => outcome.lifecycle === "suppressed").length,
-    deduped: outcomes.filter((outcome) => outcome.lifecycle === "deduped").length,
-    rejected: outcomes.filter((outcome) => outcome.lifecycle === "rejected").length,
-    fallbackDisallowed: outcomes.filter((outcome) => outcome.lifecycle === "fallback-disallowed").length,
+    approved: counts.approved,
+    rewritten: counts.rewritten,
+    suppressed: counts.suppressed,
+    deduped: counts.deduped,
+    rejected: counts.rejected,
+    fallbackDisallowed: counts.fallbackDisallowed,
     auditEvents,
   };
 }

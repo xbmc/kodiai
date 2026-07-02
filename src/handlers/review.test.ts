@@ -9,6 +9,7 @@ import { buildReviewPromptFingerprint, collectDiffContext, createReviewHandler, 
 import { buildReviewPlan } from "../review-orchestration/review-plan.ts";
 import {
   createDegradedReviewReducerResult,
+  type ProcessedReviewFinding,
   type ReviewReducerInput,
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
@@ -17437,6 +17438,41 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(seenCandidateIds).toHaveLength(2);
     expect(new Set(seenCandidateIds).size).toBe(2);
     expect(seenCandidateIds.every((id) => Number.isInteger(id) && id < 0)).toBe(true);
+  });
+
+  test("decorative comment findings are injected before reducer processing", async () => {
+    let capturedFinding: ProcessedReviewFinding | undefined;
+
+    await runReviewPlanScenario({
+      executorPublished: false,
+      exposeSummaryComment: false,
+      featureFiles: {
+        "src/Cheevos.cpp": [
+          "// ===========================================================================",
+          "// Destructor -- stop rich presence thread cleanly",
+          "// ===========================================================================",
+          "CCheevos::~CCheevos()",
+          "{",
+          "  StopRichPresenceThread();",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      reviewReducer: async (input) => {
+        capturedFinding = input.findings.find(
+          (finding) => finding.deterministicFindingSource === "comment-slop-detector",
+        );
+        return createDegradedReviewReducerResult({ findings: input.findings, reason: "test-stop-after-input-capture" });
+      },
+    });
+
+    expect(capturedFinding).toMatchObject({
+      filePath: "src/Cheevos.cpp",
+      title: "Remove decorative comment banner",
+      severity: "major",
+      category: "maintainability",
+      confidence: 95,
+    });
   });
 
   test("approved candidate findings publish through the shared inline publisher and become stored findings", async () => {

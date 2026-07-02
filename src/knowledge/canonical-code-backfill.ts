@@ -8,8 +8,10 @@ import { chunkCanonicalCodeFile } from "./canonical-code-chunker.ts";
 import type { CanonicalCodeStore, CanonicalCorpusBackfillState } from "./canonical-code-types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import type { EmbeddingProvider } from "./types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 const MAX_CANONICAL_BACKFILL_FILE_BYTES = 512 * 1024;
+const CANONICAL_BACKFILL_STORE_WRITE_CONCURRENCY = 4;
 const PRE_READ_EXCLUDED_PATH_RE = /(^|\/)(dist|build|out|target|coverage|bin|obj|node_modules|vendor)\//;
 const PRE_READ_EXCLUDED_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|ico|pdf|zip|tar|gz|7z|mp3|mp4|mov|ttf|woff2?|so|dll|dylib|o|a|pyc)$/i;
 
@@ -63,6 +65,11 @@ export type CanonicalCodeBackfillResult = {
   chunksFailed: number;
   warnings: CanonicalCodeBackfillWarning[];
 };
+
+type BackfillChunkWriteResult =
+  | { status: "done" }
+  | { status: "skipped" }
+  | { status: "failed"; message: string };
 
 async function listFilesRecursive(rootDir: string, currentDir = rootDir): Promise<string[]> {
   const entries = await readdir(currentDir, { withFileTypes: true });
@@ -217,11 +224,15 @@ export async function backfillCanonicalCodeSnapshot(
         continue;
       }
 
-      let deletedForFile = false;
       const embeddingResults = await generateDocumentEmbeddingResultsBatch({
         texts: chunkResult.chunks.map((chunk) => chunk.chunkText),
         embeddingProvider: deps.embeddingProvider,
       });
+
+      const writableChunks: Array<{
+        input: Parameters<CanonicalCodeStore["upsertChunk"]>[0];
+        embedding: Float32Array;
+      }> = [];
 
       for (const [index, embeddingResult] of embeddingResults.entries()) {
         const chunk = chunkResult.chunks[index]!;
@@ -246,48 +257,73 @@ export async function backfillCanonicalCodeSnapshot(
           continue;
         }
 
+        writableChunks.push({
+          input: {
+            repo: request.repo,
+            owner: request.owner,
+            canonicalRef,
+            commitSha,
+            filePath: chunk.filePath,
+            language: chunk.language,
+            startLine: chunk.startLine,
+            endLine: chunk.endLine,
+            chunkType: chunk.chunkType,
+            symbolName: chunk.symbolName,
+            chunkText: chunk.chunkText,
+            contentHash: chunk.contentHash,
+            embeddingModel: embeddingResult.model,
+          },
+          embedding: embeddingResult.embedding,
+        });
+      }
+
+      if (writableChunks.length > 0) {
         try {
-          if (!deletedForFile) {
-            await deps.store.deleteChunksForFile({
-              repo: request.repo,
-              owner: request.owner,
-              canonicalRef,
-              filePath,
-            });
-            deletedForFile = true;
-          }
-
-          const outcome = await deps.store.upsertChunk(
-            {
-              repo: request.repo,
-              owner: request.owner,
-              canonicalRef,
-              commitSha,
-              filePath: chunk.filePath,
-              language: chunk.language,
-              startLine: chunk.startLine,
-              endLine: chunk.endLine,
-              chunkType: chunk.chunkType,
-              symbolName: chunk.symbolName,
-              chunkText: chunk.chunkText,
-              contentHash: chunk.contentHash,
-              embeddingModel: embeddingResult.model,
-            },
-            embeddingResult.embedding,
-          );
-
-          if (outcome === "dedup") {
-            state.chunksSkipped += 1;
-          } else {
-            state.chunksDone += 1;
-          }
+          await deps.store.deleteChunksForFile({
+            repo: request.repo,
+            owner: request.owner,
+            canonicalRef,
+            filePath,
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           warnings.push({ class: "store", filePath, message });
-          state.chunksFailed += 1;
+          state.chunksFailed += writableChunks.length;
           state.status = "partial";
           state.errorMessage = message;
-          deps.logger.warn({ repo: request.repo, canonicalRef, filePath, err: message }, "Canonical code backfill store write failed (fail-open)");
+          deps.logger.warn({ repo: request.repo, canonicalRef, filePath, err: message }, "Canonical code backfill file delete failed (fail-open)");
+          state.filesDone += 1;
+          state.lastFilePath = filePath;
+          await deps.store.saveBackfillState(state);
+          continue;
+        }
+
+        const writeResults = await mapWithConcurrency(
+          writableChunks,
+          CANONICAL_BACKFILL_STORE_WRITE_CONCURRENCY,
+          async ({ input, embedding }): Promise<BackfillChunkWriteResult> => {
+            try {
+              const outcome = await deps.store.upsertChunk(input, embedding);
+              return outcome === "dedup" ? { status: "skipped" } : { status: "done" };
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              return { status: "failed", message };
+            }
+          },
+        );
+
+        for (const writeResult of writeResults) {
+          if (writeResult.status === "done") {
+            state.chunksDone += 1;
+          } else if (writeResult.status === "skipped") {
+            state.chunksSkipped += 1;
+          } else {
+            warnings.push({ class: "store", filePath, message: writeResult.message });
+            state.chunksFailed += 1;
+            state.status = "partial";
+            state.errorMessage = writeResult.message;
+            deps.logger.warn({ repo: request.repo, canonicalRef, filePath, err: writeResult.message }, "Canonical code backfill store write failed (fail-open)");
+          }
         }
       }
 

@@ -395,6 +395,51 @@ describe("createWikiSyncScheduler", () => {
     expect(store.replacePageChunks).not.toHaveBeenCalled();
   });
 
+  test("processes changed page parses with bounded concurrency", async () => {
+    const store = createMockStore();
+    (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map());
+    let activeParses = 0;
+    let maxActiveParses = 0;
+    const parseResolvers: Array<() => void> = [];
+
+    const fetchFn = mockFetch(async (url: string) => {
+      if (url.includes("list=recentchanges")) {
+        return new Response(JSON.stringify(buildRCResponse([
+          { pageid: 1, title: "FirstPage", revid: 201 },
+          { pageid: 2, title: "SecondPage", revid: 202 },
+          { pageid: 3, title: "ThirdPage", revid: 203 },
+        ])));
+      }
+      if (url.includes("action=parse")) {
+        activeParses++;
+        maxActiveParses = Math.max(maxActiveParses, activeParses);
+        const pageId = Number(url.match(/pageid=(\d+)/)?.[1] ?? 1);
+        await new Promise<void>((resolve) => parseResolvers.push(resolve));
+        activeParses--;
+        return new Response(JSON.stringify(buildParseResponse(pageId, `Page${pageId}`, WIKI_HTML, 200 + pageId)));
+      }
+      return new Response("", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const scheduler = createWikiSyncScheduler({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      source: "kodi.wiki",
+      delayMs: 0,
+      logger: createMockLogger(),
+      fetchFn,
+    });
+
+    const run = scheduler.syncNow();
+    while (parseResolvers.length < 3) await Promise.resolve();
+    expect(maxActiveParses).toBeGreaterThan(1);
+    for (const resolve of parseResolvers.splice(0)) resolve();
+    const result = await run;
+
+    expect(result.pagesUpdated).toBe(3);
+    expect(store.replacePagesChunks).toHaveBeenCalledTimes(1);
+  });
+
   test("falls back to per-page replacement without preserving checkpoint when all pages recover", async () => {
     const store = createMockStore();
     (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map());

@@ -6,6 +6,8 @@
  * RRF scoring: sum of 1/(k + rank) across all source lists an item appears in.
  */
 
+import { takeTopByScore } from "./top-k.ts";
+
 export type SourceType = "code" | "canonical_code" | "review_comment" | "wiki" | "snippet" | "issue";
 
 export type UnifiedRetrievalChunk = {
@@ -101,10 +103,5 @@ export function crossCorpusRRF(params: {
     }
   }
 
-  // Step 3: Sort by rrfScore descending
-  const results = Array.from(merged.values()).sort(
-    (a, b) => b.rrfScore - a.rrfScore,
-  );
-
-  return topK !== undefined ? results.slice(0, topK) : results;
+  return takeTopByScore(merged.values(), topK, (chunk) => chunk.rrfScore);
 }

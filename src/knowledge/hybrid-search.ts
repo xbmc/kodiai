@@ -7,6 +7,8 @@
  * Items appearing in both lists get summed scores.
  */
 
+import { takeTopByScore } from "./top-k.ts";
+
 export type HybridSearchResult<T> = {
   item: T;
   vectorRank: number | null;
@@ -80,10 +82,5 @@ export function hybridSearchMerge<T>(params: {
     }
   }
 
-  // Sort by hybridScore descending and apply topK
-  const results = Array.from(merged.values()).sort(
-    (a, b) => b.hybridScore - a.hybridScore,
-  );
-
-  return topK !== undefined ? results.slice(0, topK) : results;
+  return takeTopByScore(merged.values(), topK, (item) => item.hybridScore);
 }

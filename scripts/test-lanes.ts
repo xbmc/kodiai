@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { mapWithConcurrency } from "../src/lib/concurrency.ts";
 
 export type TestLane = "unit" | "db";
 
@@ -10,6 +11,7 @@ export type TestLanePlan = {
 
 const DEFAULT_ROOTS = ["scripts", "src"] as const;
 const DB_TEST_MARKER = /\b(?:process|Bun)\.env\.TEST_DATABASE_URL\b/;
+const FILE_CLASSIFICATION_CONCURRENCY = 16;
 
 export function classifyTestFile(content: string): TestLane {
   return DB_TEST_MARKER.test(content) ? "db" : "unit";
@@ -53,8 +55,17 @@ export async function buildTestLanePlan(options: {
   const readTextFile = options.readTextFile ?? ((filePath: string) => readFile(path.resolve(cwd, filePath), "utf8"));
   const plan: TestLanePlan = { unit: [], db: [] };
 
-  for (const filePath of await discoverTestFiles(options.roots, cwd)) {
-    plan[classifyTestFile(await readTextFile(filePath))].push(filePath);
+  const classifiedFiles = await mapWithConcurrency(
+    await discoverTestFiles(options.roots, cwd),
+    FILE_CLASSIFICATION_CONCURRENCY,
+    async (filePath) => ({
+      filePath,
+      lane: classifyTestFile(await readTextFile(filePath)),
+    }),
+  );
+
+  for (const { filePath, lane } of classifiedFiles) {
+    plan[lane].push(filePath);
   }
 
   return plan;

@@ -51,6 +51,7 @@ function createMockStore(overrides: Partial<ClusterStore> = {}): ClusterStore {
   return {
     upsertCluster: mock(async (c: any) => ({ ...c, id: 1, createdAt: new Date(), updatedAt: new Date() })),
     getActiveClusters: mock(async () => []),
+    listActiveClusterMaintenanceRecords: mock(async () => []),
     getActiveMatchCandidates: mock(async () => []),
     retireCluster: mock(async () => {}),
     retireClusters: mock(async () => {}),
@@ -442,6 +443,7 @@ describe("runClusterPipeline", () => {
     }) as any);
     const store = createMockStore({
       getActiveClusters: mock(async () => existingClusters),
+      listActiveClusterMaintenanceRecords: mock(async () => existingClusters),
       getActiveMatchCandidates: mock(async () => existingClusters),
       retireClusters: mock(async () => {}),
     });

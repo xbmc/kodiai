@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_learning_memories_cluster_training_sample;

@@ -60,7 +60,9 @@ describe("createIssueLabelServer", () => {
       const addLabelsMock = mock(async () => ({
         data: [{ name: "bug" }, { name: "priority:high" }],
       }));
-      const listLabelsMock = mock(async () => ({ data: [] }));
+      const listLabelsMock = mock(async () => ({
+        data: [{ name: "bug" }, { name: "priority:high" }],
+      }));
 
       const mockOctokit = createMockOctokit({
         addLabels: addLabelsMock,
@@ -85,7 +87,11 @@ describe("createIssueLabelServer", () => {
       expect(parsed.repo).toBe("testowner/testrepo");
       expect(parsed.timestamp).toBeDefined();
       expect(addLabelsMock).toHaveBeenCalled();
-      expect(listLabelsMock).not.toHaveBeenCalled();
+      expect(listLabelsMock).toHaveBeenCalledWith(expect.objectContaining({
+        owner: "testowner",
+        repo: "testrepo",
+        per_page: 100,
+      }));
     });
 
     it("uses the bound triggering issue without model-supplied issue number", async () => {

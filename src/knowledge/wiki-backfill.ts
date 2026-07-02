@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
-import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
+import type { WikiPageStore, WikiPageInput, WikiPageReplacement } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
 import { buildWikiApiUrl, fetchWikiJsonWithRetry, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
@@ -25,6 +26,7 @@ export type WikiBackfillOptions = {
   logger: Logger;
   dryRun?: boolean;
   delayMs?: number;
+  pageConcurrency?: number;
   /** Override fetch for testing */
   fetchFn?: FetchFn;
 };
@@ -90,6 +92,41 @@ function namespaceIdToName(nsId: number): string {
   return map[nsId] ?? `NS${nsId}`;
 }
 
+const DEFAULT_PAGE_CONCURRENCY = 4;
+
+async function replaceWikiPagesWithFallback(args: {
+  store: WikiPageStore;
+  replacements: WikiPageReplacement[];
+  logger: Logger;
+}): Promise<Set<number>> {
+  const { store, replacements, logger } = args;
+  if (replacements.length === 0) return new Set();
+
+  try {
+    await store.replacePagesChunks(replacements);
+    return new Set();
+  } catch (err) {
+    logger.warn(
+      { err, pageIds: replacements.map((replacement) => replacement.pageId) },
+      "Wiki backfill batch replacement failed, retrying per page",
+    );
+  }
+
+  const failedPageIds = new Set<number>();
+  for (const replacement of replacements) {
+    try {
+      await store.replacePageChunks(replacement.pageId, replacement.chunks);
+    } catch (pageErr) {
+      failedPageIds.add(replacement.pageId);
+      logger.warn(
+        { pageId: replacement.pageId, err: pageErr },
+        "Wiki backfill page replacement failed after batch fallback",
+      );
+    }
+  }
+  return failedPageIds;
+}
+
 // ── Backfill engine ──────────────────────────────────────────────────────────
 
 /**
@@ -111,6 +148,7 @@ export async function backfillWikiPages(
     logger,
     dryRun = false,
     delayMs = 500,
+    pageConcurrency = DEFAULT_PAGE_CONCURRENCY,
   } = opts;
   const baseUrl = opts.baseUrl ?? "https://kodi.wiki";
   const fetchFn = withWikiRequestPolicy(opts.fetchFn ?? globalThis.fetch);
@@ -171,12 +209,10 @@ export async function backfillWikiPages(
     }
 
     const pages = pageListResponse.query.allpages;
+    const existingRevisions = await store.getPageRevisions(pages.map((page) => page.pageid));
 
-    for (const pageInfo of pages) {
+    const pageResults = await mapWithConcurrency(pages, pageConcurrency, async (pageInfo) => {
       try {
-        // Check if page already exists with same revision
-        const existingRevision = await store.getPageRevision(pageInfo.pageid);
-
         // Fetch page content via parse API
         const parseParams = new URLSearchParams({
           action: "parse",
@@ -195,17 +231,17 @@ export async function backfillWikiPages(
           });
         } catch (err) {
           logger.warn({ pageId: pageInfo.pageid, err }, "Wiki parse network error, skipping page");
-          skippedPages++;
           await sleep(delayMs);
-          continue;
+          return { skippedPages: 1 };
         }
 
         const revisionId = parseData.parse.revid;
+        const existingRevision = existingRevisions.get(pageInfo.pageid) ?? null;
 
         // Skip if revision matches (already ingested)
         if (existingRevision === revisionId) {
           await sleep(delayMs);
-          continue;
+          return {};
         }
 
         const namespace = namespaceIdToName(pageInfo.ns);
@@ -225,10 +261,8 @@ export async function backfillWikiPages(
         const chunks = chunkWikiPage(pageInput);
 
         if (chunks.length === 0) {
-          skippedPages++;
-          totalPages++;
           await sleep(delayMs);
-          continue;
+          return { totalPages: 1, skippedPages: 1 };
         }
 
         let embeddingsGenerated = 0;
@@ -248,39 +282,56 @@ export async function backfillWikiPages(
           }
         }
 
-        // Store chunks
-        if (!dryRun) {
-          await store.replacePageChunks(pageInfo.pageid, chunks);
-        }
-
-        totalPages++;
-        totalChunks += chunks.length;
-        totalEmbeddings += embeddingsGenerated;
-
-        // Log progress every 50 pages
-        if (totalPages % 50 === 0) {
-          logger.info(
-            { totalPages, totalChunks, skippedPages, totalEmbeddings },
-            "Wiki backfill progress",
-          );
-        }
-
-        // Update sync state every 10 pages
-        if (!dryRun && totalPages % 10 === 0) {
-          await store.updateSyncState({
-            source,
-            lastSyncedAt: new Date(),
-            lastContinueToken: continueToken ?? null,
-            totalPagesSynced: (syncState?.totalPagesSynced ?? 0) + totalPages,
-            backfillComplete: false,
-          });
-        }
+        await sleep(delayMs);
+        return {
+          totalPages: 1,
+          totalChunks: chunks.length,
+          totalEmbeddings: embeddingsGenerated,
+          replacement: { pageId: pageInfo.pageid, chunks },
+        };
       } catch (err) {
         logger.warn({ pageId: pageInfo.pageid, err }, "Wiki page processing failed, continuing");
-        skippedPages++;
+        return { skippedPages: 1 };
       }
+    });
 
-      await sleep(delayMs);
+    const replacements: WikiPageReplacement[] = [];
+    for (const result of pageResults) {
+      totalPages += result.totalPages ?? 0;
+      totalChunks += result.totalChunks ?? 0;
+      totalEmbeddings += result.totalEmbeddings ?? 0;
+      skippedPages += result.skippedPages ?? 0;
+      if (result.replacement) replacements.push(result.replacement);
+    }
+
+    if (!dryRun && replacements.length > 0) {
+      const failedPageIds = await replaceWikiPagesWithFallback({ store, replacements, logger });
+      if (failedPageIds.size > 0) {
+        for (const result of pageResults) {
+          if (!result.replacement || !failedPageIds.has(result.replacement.pageId)) continue;
+          totalPages -= result.totalPages ?? 0;
+          totalChunks -= result.totalChunks ?? 0;
+          totalEmbeddings -= result.totalEmbeddings ?? 0;
+          skippedPages++;
+        }
+      }
+    }
+
+    if (totalPages > 0 && totalPages % 50 === 0) {
+      logger.info(
+        { totalPages, totalChunks, skippedPages, totalEmbeddings },
+        "Wiki backfill progress",
+      );
+    }
+
+    if (!dryRun && totalPages > 0) {
+      await store.updateSyncState({
+        source,
+        lastSyncedAt: new Date(),
+        lastContinueToken: continueToken ?? null,
+        totalPagesSynced: (syncState?.totalPagesSynced ?? 0) + totalPages,
+        backfillComplete: false,
+      });
     }
 
     // Check for continuation

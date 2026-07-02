@@ -211,6 +211,10 @@ import {
   removeFilteredInlineComments,
 } from "../review-orchestration/review-comment-finding-extraction.ts";
 import {
+  detectCommentSlopInDiff,
+  toCommentSlopReducerFindings,
+} from "../review-orchestration/comment-slop-detector.ts";
+import {
   resolveAuthorTier,
 } from "../review-orchestration/review-author-tier.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
@@ -2831,10 +2835,14 @@ export function createReviewHandler(deps: {
             }
           : null;
 
+        const commentSlopFindings = toCommentSlopReducerFindings(
+          detectCommentSlopInDiff(diffContext.diffContent ?? ""),
+        );
         const candidateReducerFindings = toReviewCandidateReducerDrafts(reviewCandidateFindingResult);
         const reviewReducerInput: ReviewReducerInput = {
           findings: [
             ...(extractedFindings as unknown as ProcessedReviewFinding[]),
+            ...commentSlopFindings,
             ...candidateReducerFindings,
           ],
           workspaceDir: workspace.dir,
@@ -3145,13 +3153,12 @@ export function createReviewHandler(deps: {
           });
         }
 
-        const findingCounts = {
-          critical: processedFindings.filter((finding) => finding.severity === "critical").length,
-          major: processedFindings.filter((finding) => finding.severity === "major").length,
-          medium: processedFindings.filter((finding) => finding.severity === "medium").length,
-          minor: processedFindings.filter((finding) => finding.severity === "minor").length,
-        };
-        const suppressionsApplied = processedFindings.filter((finding) => finding.suppressed).length;
+        const findingCounts = { critical: 0, major: 0, medium: 0, minor: 0 };
+        let suppressionsApplied = 0;
+        for (const finding of processedFindings) {
+          findingCounts[finding.severity] += 1;
+          if (finding.suppressed) suppressionsApplied += 1;
+        }
         const reviewDetailsLineCounts = resolveReviewDetailsLineCounts({
           diffLinesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
           diffLinesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,

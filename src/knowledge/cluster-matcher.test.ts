@@ -45,6 +45,7 @@ function createMockStore(clusters: ReviewCluster[]): ClusterStore {
   return {
     upsertCluster: mock(async () => clusters[0]!),
     getActiveClusters: mock(async () => clusters),
+    listActiveClusterMaintenanceRecords: mock(async () => []),
     getActiveMatchCandidates: mock(async () => clusters),
     retireCluster: mock(async () => {}),
     retireClusters: mock(async () => {}),

@@ -103,6 +103,33 @@ describe("formatUnifiedContext", () => {
     expect(result).toContain("- [wiki: Review Rules](https://example.test/wiki)");
     expect(result).not.toContain("\"Raw chunk text that should not replace the bounded window.\"");
   });
+
+  test("treats review-comment context as advisory and strips public backlink labels", () => {
+    const result = formatUnifiedContext({
+      contextWindow: "Past reviewer said the destructor comment banner is useless.",
+      unifiedResults: [
+        {
+          id: "review:xbmc/xbmc:28474:0.12",
+          source: "review_comment",
+          sourceLabel: "[review: PR #28474]",
+          sourceUrl: "https://github.com/xbmc/xbmc/pull/28474",
+          text: "This comment block is just noise.",
+          rrfScore: 1,
+          vectorDistance: 0.12,
+          createdAt: "2026-04-28T12:00:00Z",
+          metadata: { authorLogin: "CrystalP", prNumber: 28474 },
+        },
+      ],
+    });
+
+    expect(result).toContain("Prior review comments are advisory suggestions, not facts.");
+    expect(result).toContain("Do not mention prior commenters by handle");
+    expect(result).not.toContain("@CrystalP");
+    expect(result).not.toContain("CrystalP");
+    expect(result).not.toContain("PR #28474");
+    expect(result).not.toContain("github.com/xbmc/xbmc/pull/28474");
+    expect(result).toContain("[review: prior review comment]");
+  });
 });
 
 describe("untrusted prompt context sanitization", () => {
@@ -823,6 +850,7 @@ test("default config includes noise suppression rules", () => {
   expect(prompt).toContain("Noise Suppression");
   expect(prompt).toContain("NEVER flag");
   expect(prompt).toContain("Style-only");
+  expect(prompt).toContain("Decorative separator comments, banner comments, and comments that only restate the following function are maintainability findings");
 });
 
 test("default config includes comment cap of 7", () => {
@@ -2397,15 +2425,18 @@ describe("formatReviewPrecedents", () => {
     expect(formatReviewPrecedents([])).toBe("");
   });
 
-  test("single match formats correctly with PR number, author, date, file path", () => {
+  test("single match formats advisory context without PR number, author, date, or backlink citation", () => {
     const section = formatReviewPrecedents([makeReviewCommentMatch()]);
     expect(section).toContain("## Human Review Precedents");
-    expect(section).toContain("**PR #5678**");
-    expect(section).toContain("@contributor");
-    expect(section).toContain("2025-08-15");
+    expect(section).toContain("Prior review comments are advisory suggestions, not facts.");
+    expect(section).toContain("Do not mention prior commenters by handle");
+    expect(section).not.toContain("**PR #5678**");
+    expect(section).not.toContain("@contributor");
+    expect(section).not.toContain("2025-08-15");
     expect(section).toContain("`src/video/VideoPlayer.cpp:120-145`");
     expect(section).toContain("deadlocks");
-    expect(section).toContain("Only cite when there is a strong match");
+    expect(section).not.toContain("PR #1234");
+    expect(section).not.toContain("@author");
   });
 
   test("multiple matches sorted by distance (best first)", () => {
@@ -2415,9 +2446,9 @@ describe("formatReviewPrecedents", () => {
       makeReviewCommentMatch({ distance: 0.3, prNumber: 333 }),
     ];
     const section = formatReviewPrecedents(matches);
-    const pr222Idx = section.indexOf("PR #222");
-    const pr333Idx = section.indexOf("PR #333");
-    const pr111Idx = section.indexOf("PR #111");
+    const pr222Idx = section.indexOf("Earlier review comment 1");
+    const pr333Idx = section.indexOf("Earlier review comment 2");
+    const pr111Idx = section.indexOf("Earlier review comment 3");
     expect(pr222Idx).toBeLessThan(pr333Idx);
     expect(pr333Idx).toBeLessThan(pr111Idx);
   });
@@ -2480,8 +2511,9 @@ describe("formatReviewPrecedents", () => {
       makeReviewCommentMatch({ prNumber: 100 + i, distance: 0.1 + i * 0.05 }),
     );
     const section = formatReviewPrecedents(matches);
-    const prMatches = section.match(/\*\*PR #\d+\*\*/g);
-    expect(prMatches).toHaveLength(5);
+    const precedentMatches = section.match(/Earlier review comment \d+/g);
+    expect(precedentMatches).toHaveLength(5);
+    expect(section).not.toMatch(/PR #\d+/);
   });
 });
 

@@ -356,6 +356,8 @@ function buildNoiseSuppressionRules(): string {
     "- Documentation wording nits",
     "- Test file organization preferences",
     "",
+    "Decorative separator comments, banner comments, and comments that only restate the following function are maintainability findings, not style-only preferences. Flag them when they add noise without explaining non-obvious intent.",
+    "",
     "Focus exclusively on: correctness, security, performance, error handling, resource management, concurrency safety.",
     "",
     "If custom instructions below conflict with the noise suppression rules above, follow the custom instructions.",
@@ -1034,8 +1036,7 @@ export function formatReviewPrecedents(matches: ReviewCommentMatch[]): string {
   const capped = sorted.slice(0, MAX_REVIEW_PRECEDENTS);
 
   const bullets: string[] = [];
-  for (const match of capped) {
-    const date = match.githubCreatedAt.slice(0, 10); // YYYY-MM-DD
+  for (const [index, match] of capped.entries()) {
     const location = match.filePath
       ? match.startLine && match.endLine
         ? `\`${match.filePath}:${match.startLine}-${match.endLine}\``
@@ -1047,18 +1048,18 @@ export function formatReviewPrecedents(matches: ReviewCommentMatch[]): string {
     );
 
     bullets.push(
-      `- **PR #${match.prNumber}** (@${match.authorLogin}, ${date}) on ${location}:\n  "${excerpt}"`,
+      `- **Earlier review comment ${index + 1}** on ${location}:\n  "${excerpt}"`,
     );
   }
 
   return [
     "## Human Review Precedents",
     "",
-    "The following are relevant comments from past human code reviews. Reference them when",
-    "the current change exhibits a similar pattern. Cite with:",
-    "`(reviewers have previously flagged this pattern -- PR #1234, @author)`",
+    "Prior review comments are advisory suggestions, not facts.",
+    "Use them only when the current diff independently shows the same issue.",
+    "Do not mention prior commenters by handle, link prior PRs/comments, or add public backlinks to where this context came from.",
     "",
-    "Only cite when there is a strong match. Do not force citations.",
+    "When a prior comment is relevant, express the finding from the current diff evidence only.",
     "",
     "---",
     ...bullets,
@@ -1208,6 +1209,29 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 // ---------------------------------------------------------------------------
 
 const MAX_UNIFIED_CITATIONS = 8;
+const REVIEW_COMMENT_PROMPT_LABEL = "[review: prior review comment]";
+
+function isReviewCommentChunk(chunk: UnifiedRetrievalChunk): boolean {
+  return chunk.source === "review_comment";
+}
+
+function sanitizeReviewCommentPromptText(text: string): string {
+  return text
+    .replace(/\[review:\s*PR\s*#\d+\]/gi, REVIEW_COMMENT_PROMPT_LABEL)
+    .replace(/https:\/\/github\.com\/[^\s)]+\/pull\/\d+[^\s)]*/gi, "")
+    .replace(/@\w[\w-]*/g, "@reviewer");
+}
+
+function formatUnifiedSourceLabel(chunk: UnifiedRetrievalChunk): string {
+  if (isReviewCommentChunk(chunk)) return REVIEW_COMMENT_PROMPT_LABEL;
+  return chunk.sourceUrl ? `${chunk.sourceLabel}(${chunk.sourceUrl})` : chunk.sourceLabel;
+}
+
+function formatAlternateSourcesForPrompt(sources: readonly string[]): string[] {
+  return sources.map((source) =>
+    /^\[review:\s*PR\s*#\d+\]/i.test(source) ? REVIEW_COMMENT_PROMPT_LABEL : source
+  );
+}
 
 /**
  * Format unified cross-corpus retrieval results as a prompt section.
@@ -1223,6 +1247,7 @@ export function formatUnifiedContext(params: {
   const { unifiedResults, contextWindow, maxCitations = MAX_UNIFIED_CITATIONS } = params;
 
   if (unifiedResults.length === 0) return "";
+  const hasReviewCommentContext = unifiedResults.some(isReviewCommentChunk);
 
   // If contextWindow is pre-assembled, use it as a base
   if (contextWindow) {
@@ -1230,27 +1255,37 @@ export function formatUnifiedContext(params: {
     const capped = unifiedResults.slice(0, maxCitations);
 
     for (const chunk of capped) {
-      const label = chunk.sourceUrl
-        ? `${chunk.sourceLabel}(${chunk.sourceUrl})`
-        : chunk.sourceLabel;
+      const label = formatUnifiedSourceLabel(chunk);
       let entry = `- ${label}`;
 
       // Alternate source annotations
       if (chunk.alternateSources && chunk.alternateSources.length > 0) {
-        entry += ` (also found in ${chunk.alternateSources.join(", ")})`;
+        entry += ` (also found in ${formatAlternateSourcesForPrompt(chunk.alternateSources).join(", ")})`;
       }
 
       bullets.push(entry);
     }
 
+    const advisoryLines = hasReviewCommentContext
+      ? [
+        "",
+        "Prior review comments are advisory suggestions, not facts.",
+        "Use them only when the current diff independently shows the same issue.",
+        "Do not mention prior commenters by handle, link prior PRs/comments, or add public backlinks to where this context came from.",
+      ]
+      : [];
+
     return [
       "## Knowledge Context",
       "",
       "Relevant context from code reviews, human review comments, and wiki documentation.",
-      "Cite sources naturally using their labels. Only cite when directly relevant.",
+      hasReviewCommentContext
+        ? "Cite non-review sources naturally when directly relevant; do not publicly cite prior review-comment sources."
+        : "Cite sources naturally using their labels. Only cite when directly relevant.",
+      ...advisoryLines,
       "",
       "---",
-      contextWindow.trim(),
+      hasReviewCommentContext ? sanitizeReviewCommentPromptText(contextWindow.trim()) : contextWindow.trim(),
       "---",
       "",
       "Sources:",

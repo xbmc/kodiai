@@ -54,6 +54,19 @@ export type ReviewCluster = {
   retired: boolean;
 };
 
+/** Active cluster metadata needed by maintenance flows that do not use centroid vectors. */
+export type ReviewClusterMaintenanceRecord = {
+  id: number;
+  repo: string;
+  slug: string;
+  label: string;
+  memberCount: number;
+  memberCountAtLabel: number;
+  labelUpdatedAt: Date;
+  pinned: boolean;
+  retired: boolean;
+};
+
 /** Assignment of a review comment to a cluster. */
 export type ClusterAssignment = {
   id: number;
@@ -106,8 +119,11 @@ export type ClusterStore = {
     cluster: Omit<ReviewCluster, "id" | "createdAt" | "updatedAt">,
   ): Promise<ReviewCluster>;
 
-  /** Get all active (non-retired) clusters for a repo. */
+  /** Get all active (non-retired) clusters for a repo, including centroid vectors. */
   getActiveClusters(repo: string): Promise<ReviewCluster[]>;
+
+  /** Get active cluster metadata for relabel/retire maintenance without loading centroid vectors. */
+  listActiveClusterMaintenanceRecords(repo: string): Promise<ReviewClusterMaintenanceRecord[]>;
 
   /** Get bounded recent active clusters nearest to an input embedding for pattern matching. */
   getActiveMatchCandidates(repo: string, embedding: Float32Array, limit: number): Promise<ReviewCluster[]>;

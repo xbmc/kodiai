@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Sql } from "./client.ts";
 import { toProductionLogMigrationLabel } from "../review-audit/production-log-projection.ts";
@@ -53,7 +53,7 @@ export async function runMigrations(
   options: MigrationLogOptions = {},
 ): Promise<void> {
   const migrationsDir = options.migrationsDir ?? MIGRATIONS_DIR;
-  const files = readdirSync(migrationsDir)
+  const files = (await readdir(migrationsDir))
     .filter((f) => f.endsWith(".sql") && !f.endsWith(".down.sql"))
     .sort();
 
@@ -89,7 +89,7 @@ export async function runMigrations(
     }
 
     const filePath = join(migrationsDir, file);
-    const sqlContent = readFileSync(filePath, "utf-8");
+    const sqlContent = await readFile(filePath, "utf-8");
 
     logMigration(
       options,
@@ -154,7 +154,7 @@ export async function runRollback(
 
     let downSql: string;
     try {
-      downSql = readFileSync(downPath, "utf-8");
+      downSql = await readFile(downPath, "utf-8");
     } catch {
       throw new Error(
         `Missing rollback file: ${downFile} (required to roll back ${name})`,

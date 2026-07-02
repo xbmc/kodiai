@@ -76,4 +76,9 @@ describe("deploy.sh", () => {
     expect(missingIndex).toBeGreaterThan(-1);
     expect(validationIndex).toBeLessThan(missingIndex);
   });
+
+  test("does not expose a fake shared-registry bypass for multi-replica deploys", () => {
+    expect(deployScript).not.toContain("MCP_TOKEN_REGISTRY_BACKEND");
+    expect(deployScript).toContain("ACA_MAX_REPLICAS > 1 is not supported");
+  });
 });

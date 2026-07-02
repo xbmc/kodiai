@@ -397,6 +397,24 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
     });
   }
 
+  const resultCounts = {
+    skipped: 0,
+    blocked: 0,
+    failed: 0,
+    malformed: 0,
+  };
+  for (const result of results) {
+    if (result.status === "skipped" || result.status === "missing") {
+      resultCounts.skipped += 1;
+    } else if (result.status === "blocked") {
+      resultCounts.blocked += 1;
+    } else if (result.status === "failed") {
+      resultCounts.failed += 1;
+    } else if (result.status === "malformed") {
+      resultCounts.malformed += 1;
+    }
+  }
+
   return {
     findings,
     detailsOnlyFindings: detailsProjection.findings,
@@ -404,10 +422,10 @@ export function convertPublishedCandidateResultsToProcessedFindings(input: {
       counts: {
         input: input.payloads.length,
         processed: findings.length,
-        skipped: results.filter((result) => result.status === "skipped" || result.status === "missing").length,
-        blocked: results.filter((result) => result.status === "blocked").length,
-        failed: results.filter((result) => result.status === "failed").length,
-        malformed: results.filter((result) => result.status === "malformed").length,
+        skipped: resultCounts.skipped,
+        blocked: resultCounts.blocked,
+        failed: resultCounts.failed,
+        malformed: resultCounts.malformed,
         detailsOnlyFindings: detailsProjection.findings.length,
         movedToDetails: detailsProjection.summary.counts.total,
         detailsOnlyOmitted: detailsProjection.summary.counts.omitted,

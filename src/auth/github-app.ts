@@ -2,11 +2,17 @@ import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import { createInMemoryCache } from "../lib/in-memory-cache.ts";
+import { dedupeInflight } from "../lib/inflight-dedupe.ts";
 import { installOctokitRetry } from "./octokit-retry.ts";
 
 export const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 30_000;
 const INSTALLATION_OCTOKIT_CACHE_TTL_MS = 55 * 60 * 1000;
 const MAX_INSTALLATION_OCTOKIT_CACHE_ENTRIES = 100;
+const REPO_INSTALLATION_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_REPO_INSTALLATION_CONTEXT_CACHE_ENTRIES = 500;
+
+type RepoInstallationContext = { installationId: number; defaultBranch: string };
 
 export interface GitHubApp {
   /** Create an Octokit client authenticated as a specific installation. */
@@ -44,7 +50,15 @@ function githubRequestOptions(options?: { requestTimeoutMs?: number }): { reques
 
 export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
   let appSlug = "";
-  const installationOctokitCache = new Map<string, { octokit: Octokit; cachedAt: number }>();
+  const installationOctokitCache = createInMemoryCache<string, Octokit>({
+    maxSize: MAX_INSTALLATION_OCTOKIT_CACHE_ENTRIES,
+    ttlMs: INSTALLATION_OCTOKIT_CACHE_TTL_MS,
+  });
+  const repoInstallationContextCache = createInMemoryCache<string, RepoInstallationContext | null>({
+    maxSize: MAX_REPO_INSTALLATION_CONTEXT_CACHE_ENTRIES,
+    ttlMs: REPO_INSTALLATION_CONTEXT_CACHE_TTL_MS,
+  });
+  const repoInstallationContextInflight = new Map<string, Promise<RepoInstallationContext | null>>();
 
   // Connectivity check cache (30-second TTL)
   let lastCheckTime = 0;
@@ -67,14 +81,12 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
     return `${installationId}:${options?.requestTimeoutMs ?? DEFAULT_GITHUB_REQUEST_TIMEOUT_MS}`;
   }
 
-  function rememberInstallationOctokit(key: string, octokit: Octokit): void {
-    if (installationOctokitCache.size >= MAX_INSTALLATION_OCTOKIT_CACHE_ENTRIES) {
-      const oldestKey = installationOctokitCache.keys().next().value as string | undefined;
-      if (oldestKey) {
-        installationOctokitCache.delete(oldestKey);
-      }
-    }
-    installationOctokitCache.set(key, { octokit, cachedAt: Date.now() });
+  function repoInstallationContextCacheKey(
+    owner: string,
+    repo: string,
+    options?: { requestTimeoutMs?: number },
+  ): string {
+    return `${owner.toLowerCase()}/${repo.toLowerCase()}:${options?.requestTimeoutMs ?? DEFAULT_GITHUB_REQUEST_TIMEOUT_MS}`;
   }
 
   return {
@@ -84,12 +96,9 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
     ): Promise<Octokit> {
       const cacheKey = installationOctokitCacheKey(installationId, options);
       const cached = installationOctokitCache.get(cacheKey);
-      if (cached && Date.now() - cached.cachedAt < INSTALLATION_OCTOKIT_CACHE_TTL_MS) {
-        logger.debug({ installationId }, "Reusing cached installation Octokit client");
-        return cached.octokit;
-      }
       if (cached) {
-        installationOctokitCache.delete(cacheKey);
+        logger.debug({ installationId }, "Reusing cached installation Octokit client");
+        return cached;
       }
 
       logger.debug({ installationId }, "Creating installation Octokit client");
@@ -104,7 +113,7 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
         ...githubRequestOptions(options),
       }), logger);
 
-      rememberInstallationOctokit(cacheKey, octokit);
+      installationOctokitCache.set(cacheKey, octokit);
       return octokit;
     },
 
@@ -169,42 +178,54 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
       repo: string,
       options?: { requestTimeoutMs?: number },
     ): Promise<{ installationId: number; defaultBranch: string } | null> {
-      try {
-        const installationResponse = await appOctokit.request("GET /repos/{owner}/{repo}/installation", {
-          owner,
-          repo,
-          ...(options?.requestTimeoutMs
-            ? { request: { timeout: options.requestTimeoutMs } }
-            : {}),
-        });
-
-        const installationId = installationResponse.data.id;
-        const installationOctokit = await this.getInstallationOctokit(
-          installationId,
-          options,
-        );
-        const repositoryResponse = await installationOctokit.rest.repos.get({
-          owner,
-          repo,
-          ...(options?.requestTimeoutMs
-            ? { request: { timeout: options.requestTimeoutMs } }
-            : {}),
-        });
-
-        const defaultBranch = repositoryResponse.data.default_branch;
-        logger.debug({ owner, repo, installationId, defaultBranch }, "Resolved repository installation context");
-        return {
-          installationId,
-          defaultBranch,
-        };
-      } catch (error) {
-        if (hasStatusCode(error, 404)) {
-          logger.warn({ owner, repo }, "Repository not installed for this GitHub App");
-          return null;
-        }
-
-        throw error;
+      const cacheKey = repoInstallationContextCacheKey(owner, repo, options);
+      const cached = repoInstallationContextCache.get(cacheKey);
+      if (cached !== undefined) {
+        logger.debug({ owner, repo, hit: cached !== null }, "Reusing cached repository installation context");
+        return cached;
       }
+
+      return dedupeInflight(repoInstallationContextInflight, cacheKey, async () => {
+        try {
+          const installationResponse = await appOctokit.request("GET /repos/{owner}/{repo}/installation", {
+            owner,
+            repo,
+            ...(options?.requestTimeoutMs
+              ? { request: { timeout: options.requestTimeoutMs } }
+              : {}),
+          });
+
+          const installationId = installationResponse.data.id;
+          const installationOctokit = await this.getInstallationOctokit(
+            installationId,
+            options,
+          );
+          const repositoryResponse = await installationOctokit.rest.repos.get({
+            owner,
+            repo,
+            ...(options?.requestTimeoutMs
+              ? { request: { timeout: options.requestTimeoutMs } }
+              : {}),
+          });
+
+          const defaultBranch = repositoryResponse.data.default_branch;
+          const context = {
+            installationId,
+            defaultBranch,
+          };
+          repoInstallationContextCache.set(cacheKey, context);
+          logger.debug({ owner, repo, installationId, defaultBranch }, "Resolved repository installation context");
+          return context;
+        } catch (error) {
+          if (hasStatusCode(error, 404)) {
+            logger.warn({ owner, repo }, "Repository not installed for this GitHub App");
+            repoInstallationContextCache.set(cacheKey, null);
+            return null;
+          }
+
+          throw error;
+        }
+      });
     },
   };
 }

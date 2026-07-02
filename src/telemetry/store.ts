@@ -212,7 +212,21 @@ export function createTelemetryStore(opts: {
           )
         `;
       } catch (err) {
-        logger.warn({ err, entry }, "Failed to record LLM cost event");
+        logger.warn(
+          {
+            err,
+            deliveryId: entry.deliveryId,
+            repo: entry.repo,
+            taskType: entry.taskType,
+            model: entry.model,
+            provider: entry.provider,
+            sdk: entry.sdk,
+            usedFallback: entry.usedFallback,
+            hasFallbackReason: Boolean(entry.fallbackReason),
+            hasError: Boolean(entry.error),
+          },
+          "Failed to record LLM cost event",
+        );
       }
     },
 

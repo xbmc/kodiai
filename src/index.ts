@@ -45,7 +45,7 @@ import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createKnowledgeRuntime, startEmbeddingSmokeTest } from "./knowledge/runtime.ts";
 import { createDbClient } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
-import { createContributorProfileStore } from "./contributor/index.ts";
+import { createContributorProfileStore } from "./contributor/profile-store.ts";
 import { createSlackCommandRoutes } from "./routes/slack-commands.ts";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";

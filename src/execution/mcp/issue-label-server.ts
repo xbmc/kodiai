@@ -78,25 +78,31 @@ export async function addLabelsHandler(deps: {
     const validLabels: string[] = [];
     const invalidLabels: string[] = [];
     const seenRequestedLabels = new Set<string>();
+    const requestedLabels: string[] = [];
     for (const requested of labels) {
       const normalized = requested.toLowerCase();
       if (seenRequestedLabels.has(normalized)) continue;
       seenRequestedLabels.add(normalized);
-      try {
-        const { data: label } = await retryGitHubRateLimitOnly(() =>
-          octokit.rest.issues.getLabel({
-            owner,
-            repo,
-            name: requested,
-          }),
-        );
-        validLabels.push(label.name);
-      } catch (error: unknown) {
-        if (getErrorStatus(error) === 404) {
-          invalidLabels.push(requested);
-          continue;
-        }
-        throw error;
+      requestedLabels.push(requested);
+    }
+
+    const repoLabels = await retryGitHubRateLimitOnly(() =>
+      octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
+        owner,
+        repo,
+        per_page: 100,
+      }),
+    );
+    const repoLabelsByName = new Map(
+      repoLabels.map((label) => [label.name.toLowerCase(), label.name]),
+    );
+
+    for (const requested of requestedLabels) {
+      const label = repoLabelsByName.get(requested.toLowerCase());
+      if (label) {
+        validLabels.push(label);
+      } else {
+        invalidLabels.push(requested);
       }
     }
 

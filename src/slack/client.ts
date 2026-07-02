@@ -51,13 +51,13 @@ async function parseSlackPayload(response: Response, method: string): Promise<Sl
   }
 }
 
-async function postSlackJsonWithRetry<T extends SlackApiResponse>(params: {
+async function postSlackMethodWithRetry<T extends SlackApiResponse>(params: {
   fetchImpl: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
   botToken: string;
   timeoutMs: number;
   method: string;
-  body: Record<string, unknown>;
-}): Promise<T> {
+  body?: Record<string, unknown>;
+}): Promise<{ payload: T; response: Response }> {
   return await retryTransient(
     async () => {
       const response = await params.fetchImpl(`https://slack.com/api/${params.method}`, {
@@ -66,7 +66,7 @@ async function postSlackJsonWithRetry<T extends SlackApiResponse>(params: {
           authorization: `Bearer ${params.botToken}`,
           "content-type": "application/json; charset=utf-8",
         },
-        body: JSON.stringify(params.body),
+        body: params.body ? JSON.stringify(params.body) : undefined,
         signal: AbortSignal.timeout(params.timeoutMs),
       });
 
@@ -82,7 +82,7 @@ async function postSlackJsonWithRetry<T extends SlackApiResponse>(params: {
       if (!payload.ok && payload.error === "ratelimited") {
         throw new SlackApiRequestError(`Slack API ${params.method} failed: ratelimited`, 429, response.headers, payload.error);
       }
-      return payload;
+      return { payload, response };
     },
     {
       maxAttempts: 3,
@@ -90,6 +90,17 @@ async function postSlackJsonWithRetry<T extends SlackApiResponse>(params: {
       retryDelayMs: slackRetryAfterDelayMs,
     },
   );
+}
+
+async function postSlackJsonWithRetry<T extends SlackApiResponse>(params: {
+  fetchImpl: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  botToken: string;
+  timeoutMs: number;
+  method: string;
+  body: Record<string, unknown>;
+}): Promise<T> {
+  const { payload } = await postSlackMethodWithRetry<T>(params);
+  return payload;
 }
 
 export interface SlackThreadPublishInput {
@@ -117,20 +128,12 @@ export function createSlackClient(input: CreateSlackClientInput): SlackClient {
 
   return {
     async getTokenScopes(): Promise<string[]> {
-      const response = await fetchImpl("https://slack.com/api/auth.test", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${input.botToken}`,
-          "content-type": "application/json; charset=utf-8",
-        },
-        signal: AbortSignal.timeout(timeoutMs),
+      const { payload, response } = await postSlackMethodWithRetry({
+        fetchImpl,
+        botToken: input.botToken,
+        timeoutMs,
+        method: "auth.test",
       });
-
-      if (!response.ok) {
-        throw new Error(`Slack API auth.test request failed: ${response.status}`);
-      }
-
-      const payload = await parseSlackPayload(response, "auth.test");
       if (!payload.ok) {
         throw new Error(`Slack API auth.test failed: ${payload.error ?? "unknown_error"}`);
       }

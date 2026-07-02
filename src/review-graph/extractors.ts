@@ -106,18 +106,55 @@ function uniqueEdges(edges: ReviewGraphEdgeInput[]): ReviewGraphEdgeInput[] {
   const seen = new Set<string>();
   const result: ReviewGraphEdgeInput[] = [];
   for (const edge of edges) {
-    const key = JSON.stringify([
+    const attributes = edge.attributes && Object.keys(edge.attributes).length > 0
+      ? JSON.stringify(edge.attributes)
+      : "";
+    const key = [
       edge.edgeKind,
       edge.sourceStableKey,
       edge.targetStableKey,
-      edge.confidence ?? null,
-      edge.attributes ?? {},
-    ]);
+      edge.confidence ?? "",
+      attributes,
+    ].join("\u001f");
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(edge);
   }
   return result;
+}
+
+function countReviewGraphMetrics(
+  language: SupportedLanguage,
+  nodes: ReviewGraphNodeInput[],
+  edges: ReviewGraphEdgeInput[],
+): ReviewGraphExtraction["metrics"] {
+  let fileNodeCount = 0;
+  let symbolNodeCount = 0;
+  let importNodeCount = 0;
+  let callsiteNodeCount = 0;
+  let testNodeCount = 0;
+  for (const node of nodes) {
+    if (node.nodeKind === "file") fileNodeCount++;
+    else if (node.nodeKind === "symbol") symbolNodeCount++;
+    else if (node.nodeKind === "import") importNodeCount++;
+    else if (node.nodeKind === "callsite") callsiteNodeCount++;
+    else if (node.nodeKind === "test") testNodeCount++;
+  }
+
+  let probableEdgeCount = 0;
+  for (const edge of edges) {
+    if ((edge.confidence ?? 1) < 1) probableEdgeCount++;
+  }
+
+  return {
+    language,
+    fileNodeCount,
+    symbolNodeCount,
+    importNodeCount,
+    callsiteNodeCount,
+    testNodeCount,
+    probableEdgeCount,
+  };
 }
 
 function classifyProbableTest(path: string, symbolName: string): number | null {
@@ -385,15 +422,7 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
     },
     nodes: finalNodes,
     edges: finalEdges,
-    metrics: {
-      language: "python",
-      fileNodeCount: finalNodes.filter((node) => node.nodeKind === "file").length,
-      symbolNodeCount: finalNodes.filter((node) => node.nodeKind === "symbol").length,
-      importNodeCount: finalNodes.filter((node) => node.nodeKind === "import").length,
-      callsiteNodeCount: finalNodes.filter((node) => node.nodeKind === "callsite").length,
-      testNodeCount: finalNodes.filter((node) => node.nodeKind === "test").length,
-      probableEdgeCount: finalEdges.filter((edge) => (edge.confidence ?? 1) < 1).length,
-    },
+    metrics: countReviewGraphMetrics("python", finalNodes, finalEdges),
   };
 }
 
@@ -615,15 +644,7 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
     },
     nodes: finalNodes,
     edges: finalEdges,
-    metrics: {
-      language: "cpp",
-      fileNodeCount: finalNodes.filter((node) => node.nodeKind === "file").length,
-      symbolNodeCount: finalNodes.filter((node) => node.nodeKind === "symbol").length,
-      importNodeCount: finalNodes.filter((node) => node.nodeKind === "import").length,
-      callsiteNodeCount: finalNodes.filter((node) => node.nodeKind === "callsite").length,
-      testNodeCount: finalNodes.filter((node) => node.nodeKind === "test").length,
-      probableEdgeCount: finalEdges.filter((edge) => (edge.confidence ?? 1) < 1).length,
-    },
+    metrics: countReviewGraphMetrics("cpp", finalNodes, finalEdges),
   };
 }
 

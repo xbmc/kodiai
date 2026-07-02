@@ -161,6 +161,34 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("visibletext");
   });
 
+  test("does not ask mention responses to cite prior review comments with PR backlinks", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Please review this pattern.",
+      contextWindow: "A prior reviewer flagged decorative comment banners.",
+      unifiedResults: [
+        {
+          id: "review:xbmc/xbmc:28474:0.1",
+          text: "Comment banners are noisy.",
+          source: "review_comment",
+          sourceLabel: "[review: PR #28474]",
+          sourceUrl: "https://github.com/xbmc/xbmc/pull/28474",
+          vectorDistance: 0.1,
+          rrfScore: 1,
+          createdAt: "2026-04-28T00:00:00Z",
+          metadata: { authorLogin: "CrystalP" },
+        },
+      ],
+    });
+
+    expect(prompt).toContain("Prior review comments are advisory suggestions, not facts.");
+    expect(prompt).not.toContain("[review: PR #123]");
+    expect(prompt).not.toContain("PR #28474");
+    expect(prompt).not.toContain("CrystalP");
+    expect(prompt).not.toContain("github.com/xbmc/xbmc/pull/28474");
+  });
+
   test("keeps non-approval mention responses on the existing details wrapper contract", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),

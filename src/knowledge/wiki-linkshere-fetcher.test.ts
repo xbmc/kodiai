@@ -26,6 +26,18 @@ function makeJsonResponse(body: unknown): Response {
   });
 }
 
+async function flushPromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function advanceLinkshereIntervals(count: number): Promise<void> {
+  for (let i = 0; i < count; i++) {
+    vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS);
+    await flushPromises();
+  }
+}
+
 describe("fetchAllLinkshereCounts", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -134,11 +146,8 @@ describe("fetchAllLinkshereCounts", () => {
       logger: createMockLogger(),
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-    vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS);
-    await Promise.resolve();
-    vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS);
+    await flushPromises();
+    await advanceLinkshereIntervals(4);
     const counts = await promise;
 
     expect(fetchFn).toHaveBeenCalledTimes(3);
@@ -193,9 +202,8 @@ describe("fetchAllLinkshereCounts", () => {
       logger,
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-    vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS);
+    await flushPromises();
+    await advanceLinkshereIntervals(2);
     const counts = await promise;
 
     expect(fetchFn).toHaveBeenCalledTimes(2);
@@ -235,10 +243,8 @@ describe("fetchAllLinkshereCounts", () => {
       logger,
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-    vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS);
-    await Promise.resolve();
+    await flushPromises();
+    await advanceLinkshereIntervals(2);
     const counts = await promise;
 
     expect(logger.warn).toHaveBeenCalledWith(
@@ -251,5 +257,41 @@ describe("fetchAllLinkshereCounts", () => {
     );
     expect(counts.get(1)).toBe(0);
     expect(counts.get(LINKSHERE_BATCH_SIZE + 1)).toBe(1);
+  });
+
+  it("paces batch starts by one interval without compounding delay across reused workers", async () => {
+    const pageIds = Array.from({ length: LINKSHERE_BATCH_SIZE * 6 }, (_, i) => i + 1);
+    const startedAt: number[] = [];
+    const fetchFn = mock(async (input: string | URL | Request) => {
+      void input;
+      startedAt.push(Date.now());
+      return makeJsonResponse({ query: { pages: {} } });
+    }) as unknown as typeof globalThis.fetch;
+
+    const promise = fetchAllLinkshereCounts({
+      baseUrl: "https://kodi.wiki",
+      pageIds,
+      fetchFn,
+      logger: createMockLogger(),
+    });
+    let settled = false;
+    void promise.finally(() => {
+      settled = true;
+    });
+
+    await flushPromises();
+    try {
+      await advanceLinkshereIntervals(5);
+      expect(settled).toBe(true);
+    } finally {
+      await advanceLinkshereIntervals(1);
+      vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS * 5);
+      await promise;
+    }
+
+    expect(startedAt).toHaveLength(6);
+    expect(startedAt.at(-1)! - startedAt[0]!).toBeLessThanOrEqual(
+      LINKSHERE_RATE_LIMIT_MS * 5,
+    );
   });
 });

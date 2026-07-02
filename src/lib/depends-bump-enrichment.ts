@@ -15,8 +15,27 @@ import type { Octokit } from "@octokit/rest";
 import { createHash } from "node:crypto";
 import { extractBreakingChanges } from "./dep-bump-enrichment.ts";
 import { parseSemver } from "./dep-bump-detector.ts";
+import { retryTransient } from "./transient-retry.ts";
 
 const HASH_VERIFICATION_MAX_BYTES = 50 * 1024 * 1024;
+
+class HashVerificationFetchError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "HashVerificationFetchError";
+  }
+}
+
+function isRetryableHashVerificationError(error: unknown): boolean {
+  if (error instanceof HashVerificationFetchError) {
+    return error.status === undefined || error.status === 429 || error.status >= 500;
+  }
+  if (error instanceof DOMException && error.name === "TimeoutError") return true;
+  return error instanceof TypeError;
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -521,39 +540,40 @@ export async function verifyHash(params: {
   }
 
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    const actualHash = await retryTransient(
+      async () => {
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(timeoutMs),
+        });
 
-    if (!response.ok) {
-      return {
-        status: "unavailable",
-        detail: `Could not fetch upstream tarball (HTTP ${response.status})`,
-      };
-    }
+        if (!response.ok) {
+          throw new HashVerificationFetchError(
+            `Could not fetch upstream tarball (HTTP ${response.status})`,
+            response.status,
+          );
+        }
 
-    const contentLength = Number(response.headers.get("content-length") ?? NaN);
-    if (Number.isFinite(contentLength) && contentLength > HASH_VERIFICATION_MAX_BYTES) {
-      return {
-        status: "unavailable",
-        detail: `Upstream tarball exceeds hash verification limit (${HASH_VERIFICATION_MAX_BYTES} bytes)`,
-      };
-    }
+        const contentLength = Number(response.headers.get("content-length") ?? NaN);
+        if (Number.isFinite(contentLength) && contentLength > HASH_VERIFICATION_MAX_BYTES) {
+          throw new Error(`Upstream tarball exceeds hash verification limit (${HASH_VERIFICATION_MAX_BYTES} bytes)`);
+        }
 
-    const hashResult = await hashResponseSha512(response, HASH_VERIFICATION_MAX_BYTES);
-    if (hashResult.unavailable) {
-      return {
-        status: "unavailable",
-        detail: "Could not stream upstream tarball for hash verification",
-      };
-    }
-    if (hashResult.tooLarge) {
-      return {
-        status: "unavailable",
-        detail: `Upstream tarball exceeds hash verification limit (${HASH_VERIFICATION_MAX_BYTES} bytes)`,
-      };
-    }
-    const actualHash = hashResult.hash;
+        const hashResult = await hashResponseSha512(response, HASH_VERIFICATION_MAX_BYTES);
+        if (hashResult.unavailable) {
+          throw new HashVerificationFetchError("Could not stream upstream tarball for hash verification");
+        }
+        if (hashResult.tooLarge) {
+          throw new Error(`Upstream tarball exceeds hash verification limit (${HASH_VERIFICATION_MAX_BYTES} bytes)`);
+        }
+        return hashResult.hash;
+      },
+      {
+        maxAttempts: 3,
+        initialDelayMs: 25,
+        maxDelayMs: 100,
+        shouldRetry: isRetryableHashVerificationError,
+      },
+    );
 
     if (actualHash === expectedSha512) {
       return {
@@ -570,10 +590,13 @@ export async function verifyHash(params: {
       expectedHash: expectedSha512,
       actualHash,
     };
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       status: "unavailable",
-      detail: "Could not fetch upstream tarball for hash verification",
+      detail: message.includes("tarball") || message.includes("stream")
+        ? message
+        : "Could not fetch upstream tarball for hash verification",
     };
   }
 }

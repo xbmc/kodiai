@@ -50,6 +50,19 @@ function sleep(ms: number): Promise<void> {
 
 const LINKSHERE_BATCH_CONCURRENCY = 3;
 
+function createIntervalPacer(intervalMs: number): () => Promise<void> {
+  let nextStartAt = 0;
+
+  return async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, nextStartAt - now);
+    nextStartAt = Math.max(now, nextStartAt) + intervalMs;
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+  };
+}
+
 // ── Linkshere fetcher ────────────────────────────────────────────────────
 
 /**
@@ -90,11 +103,11 @@ export async function fetchAllLinkshereCounts(opts: {
     "Fetching linkshere counts",
   );
 
+  const paceBatchStart = createIntervalPacer(LINKSHERE_RATE_LIMIT_MS);
+
   await mapWithConcurrency(batches, LINKSHERE_BATCH_CONCURRENCY, async (batch, batchIdx) => {
     try {
-      if (batchIdx > 0) {
-        await sleep(LINKSHERE_RATE_LIMIT_MS * batchIdx);
-      }
+      await paceBatchStart();
       await fetchBatchLinkshere({
         baseUrl,
         pageIds: batch,

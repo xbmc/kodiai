@@ -26,8 +26,13 @@ function filePathOverlap(prPaths: string[], clusterPaths: string[]): number {
   if (prPaths.length === 0 && clusterPaths.length === 0) return 0;
   const prSet = new Set(prPaths);
   const clusterSet = new Set(clusterPaths);
-  const intersection = [...prSet].filter((p) => clusterSet.has(p)).length;
-  const union = new Set([...prSet, ...clusterSet]).size;
+  let intersection = 0;
+  for (const path of prSet) {
+    if (clusterSet.has(path)) {
+      intersection++;
+    }
+  }
+  const union = prSet.size + clusterSet.size - intersection;
   return union === 0 ? 0 : intersection / union;
 }
 

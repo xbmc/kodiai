@@ -74,7 +74,12 @@ function createEmbeddingProvider(config?: {
   };
 }
 
-function createStoreHarness(initialState: CanonicalCorpusBackfillState | null = null) {
+function createStoreHarness(
+  initialState: CanonicalCorpusBackfillState | null = null,
+  options?: {
+    upsertChunk?: (input: CanonicalChunkWriteInput) => Promise<"inserted" | "replaced" | "dedup">;
+  },
+) {
   const deleteCalls: Array<{ repo: string; owner: string; canonicalRef: string; filePath: string }> = [];
   const upsertCalls: CanonicalChunkWriteInput[] = [];
   const savedStates: CanonicalCorpusBackfillState[] = [];
@@ -103,6 +108,9 @@ function createStoreHarness(initialState: CanonicalCorpusBackfillState | null = 
       },
       async upsertChunk(input: CanonicalChunkWriteInput) {
         upsertCalls.push(input);
+        if (options?.upsertChunk) {
+          return options.upsertChunk(input);
+        }
         return "inserted" as const;
       },
     },
@@ -256,6 +264,55 @@ describe("backfillCanonicalCodeSnapshot", () => {
       expect(harness.deleteCalls.map((call) => call.filePath)).toEqual(expectedResumedPaths);
       expect(harness.savedStates[0]?.filesDone).toBe(processedBeforeResume);
       expect(harness.savedStates.at(-1)?.filesDone).toBe(filePaths.length);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("uses bounded concurrent store writes for chunks within a file", async () => {
+    const fixture = await createWorkspaceFixture({
+      "src/many-functions.ts": Array.from(
+        { length: 12 },
+        (_, i) => [
+          `export function function${i}() {`,
+          `  return ${i};`,
+          "}",
+        ].join("\n"),
+      ).join("\n\n"),
+    });
+
+    try {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const harness = createStoreHarness(null, {
+        async upsertChunk() {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          inFlight -= 1;
+          return "inserted";
+        },
+      });
+
+      const result = await backfillCanonicalCodeSnapshot(
+        {
+          githubApp: {
+            async getRepoInstallationContext() {
+              return { installationId: 99, defaultBranch: "main" };
+            },
+          },
+          workspaceManager: createWorkspaceManagerForDir(fixture.dir),
+          store: harness.store,
+          embeddingProvider: createEmbeddingProvider(),
+          logger: createMockLogger() as never,
+        },
+        { owner: "xbmc", repo: "kodi" },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(harness.upsertCalls.length).toBeGreaterThan(1);
+      expect(maxInFlight).toBeGreaterThan(1);
+      expect(harness.deleteCalls).toHaveLength(1);
     } finally {
       await fixture.cleanup();
     }

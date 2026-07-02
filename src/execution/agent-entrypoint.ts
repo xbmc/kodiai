@@ -288,10 +288,25 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   // 5–6. Call SDK, collect messages
   const resultJson = join(workspaceDir!, "result.json");
   const diagnosticsLog = join(workspaceDir!, "agent-diagnostics.log");
+  let diagnosticsBuffer = "";
+  let diagnosticsFlush = Promise.resolve();
+
+  const flushDiagnostics = async (): Promise<void> => {
+    if (diagnosticsBuffer.length === 0) return;
+    const content = diagnosticsBuffer;
+    diagnosticsBuffer = "";
+    diagnosticsFlush = diagnosticsFlush
+      .then(() => appendFileFn(diagnosticsLog, content))
+      .catch(() => undefined);
+    await diagnosticsFlush;
+  };
 
   const appendDiagnostic = async (line: string): Promise<void> => {
     try {
-      await appendFileFn(diagnosticsLog, `${new Date().toISOString()} ${line}\n`);
+      diagnosticsBuffer += `${new Date().toISOString()} ${line}\n`;
+      if (diagnosticsBuffer.length >= 8192) {
+        await flushDiagnostics();
+      }
     } catch {
       // Diagnostics are best-effort; a failed append (disk full, workspace
       // removed) must not surface as an unhandledRejection from the
@@ -414,6 +429,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
         stopReason: undefined,
       };
       await writeFileFn(resultJson, JSON.stringify(errorResult, null, 2));
+      await flushDiagnostics();
       return;
     }
 
@@ -469,6 +485,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     };
 
     await writeFileFn(resultJson, JSON.stringify(result, null, 2));
+    await flushDiagnostics();
   } catch (err) {
     const durationMs = Date.now() - startTime;
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -489,6 +506,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       stopReason: undefined,
     };
     await writeFileFn(resultJson, JSON.stringify(errorResult, null, 2));
+    await flushDiagnostics();
   }
 }
 

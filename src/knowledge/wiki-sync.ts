@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import type { WikiPageStore, WikiPageInput, WikiPageReplacement } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
@@ -14,6 +15,7 @@ export type WikiSyncSchedulerOptions = {
   baseUrl?: string;
   intervalMs?: number;
   delayMs?: number;
+  pageConcurrency?: number;
   logger: Logger;
   /** Override fetch for testing */
   fetchFn?: FetchFn;
@@ -140,10 +142,11 @@ async function runSync(opts: {
   source: string;
   baseUrl: string;
   delayMs: number;
+  pageConcurrency: number;
   logger: Logger;
   fetchFn: FetchFn;
 }): Promise<WikiSyncResult> {
-  const { store, embeddingProvider, source, baseUrl, delayMs, logger, fetchFn } = opts;
+  const { store, embeddingProvider, source, baseUrl, delayMs, pageConcurrency, logger, fetchFn } = opts;
   const startTime = Date.now();
   let pagesChecked = 0;
   let pagesUpdated = 0;
@@ -212,14 +215,13 @@ async function runSync(opts: {
     }
 
     const existingRevisions = await store.getPageRevisions(changesToProcess.map((change) => change.pageid));
-    const pendingReplacements: WikiPageReplacement[] = [];
 
-    for (const change of changesToProcess) {
+    const pageResults = await mapWithConcurrency(changesToProcess, pageConcurrency, async (change) => {
       try {
         // Check if revision has changed
         const existingRevision = existingRevisions.get(change.pageid) ?? null;
         if (existingRevision === change.revid) {
-          continue; // Already up to date
+          return {};
         }
 
         // Fetch current page content
@@ -240,9 +242,8 @@ async function runSync(opts: {
           });
         } catch (err) {
           logger.warn({ pageId: change.pageid, err }, "Wiki sync parse network error, skipping page");
-          hadFailure = true;
           await sleep(delayMs);
-          continue;
+          return { hadFailure: true };
         }
 
         const parseRecord = parseData && typeof parseData === "object" ? parseData : undefined;
@@ -260,9 +261,8 @@ async function runSync(opts: {
             },
             "Wiki sync parse response malformed, skipping page",
           );
-          hadFailure = true;
           await sleep(delayMs);
-          continue;
+          return { hadFailure: true };
         }
 
         const namespace = namespaceIdToName(change.ns);
@@ -285,7 +285,8 @@ async function runSync(opts: {
           // Page became redirect, stub, or disambiguation -- soft-delete
           if (existingRevision !== null) {
             await store.softDeletePage(change.pageid);
-            pagesDeleted++;
+            await sleep(delayMs);
+            return { pagesDeleted: 1 };
           }
         } else {
           const embeddings = await generateDocumentEmbeddingResultsBatch({
@@ -316,14 +317,23 @@ async function runSync(opts: {
           }
 
           // Replace all chunks for this page
-          pendingReplacements.push({ pageId: change.pageid, chunks });
+          await sleep(delayMs);
+          return { replacement: { pageId: change.pageid, chunks } };
         }
 
         await sleep(delayMs);
+        return {};
       } catch (err) {
         logger.warn({ pageId: change.pageid, err }, "Wiki sync page processing failed, continuing");
-        hadFailure = true;
+        return { hadFailure: true };
       }
+    });
+
+    const pendingReplacements: WikiPageReplacement[] = [];
+    for (const result of pageResults) {
+      pagesDeleted += result.pagesDeleted ?? 0;
+      if (result.hadFailure) hadFailure = true;
+      if (result.replacement) pendingReplacements.push(result.replacement);
     }
 
     if (pendingReplacements.length > 0) {
@@ -373,6 +383,7 @@ async function runSync(opts: {
 
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STARTUP_DELAY_MS = 60_000; // 60 seconds
+const DEFAULT_PAGE_CONCURRENCY = 4;
 
 /**
  * Create a scheduled wiki sync that runs on an interval.
@@ -392,6 +403,7 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
     source,
     logger,
     delayMs = 500,
+    pageConcurrency = DEFAULT_PAGE_CONCURRENCY,
   } = opts;
   const baseUrl = opts.baseUrl ?? "https://kodi.wiki";
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -415,6 +427,7 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
         source,
         baseUrl,
         delayMs,
+        pageConcurrency,
         logger,
         fetchFn,
       });

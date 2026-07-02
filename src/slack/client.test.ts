@@ -20,6 +20,34 @@ describe("createSlackClient", () => {
     expect(scopes).toEqual(["chat:write", "reactions:write", "app_mentions:read"]);
   });
 
+  test("retries transient auth.test failures before reading scopes", async () => {
+    let calls = 0;
+    const client = createSlackClient({
+      botToken: "xoxb-test-token",
+      fetchImpl: async () => {
+        calls++;
+        if (calls === 1) {
+          return new Response(JSON.stringify({ ok: false, error: "ratelimited" }), {
+            status: 429,
+            headers: { "content-type": "application/json", "retry-after": "0" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "x-oauth-scopes": "chat:write, reactions:write",
+          },
+        });
+      },
+    });
+
+    const scopes = await client.getTokenScopes();
+
+    expect(calls).toBe(2);
+    expect(scopes).toEqual(["chat:write", "reactions:write"]);
+  });
+
   test("adds working reaction payload via Slack reactions.add", async () => {
     const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
 

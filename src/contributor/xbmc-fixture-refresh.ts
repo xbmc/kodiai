@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 import pino from "pino";
@@ -22,6 +21,15 @@ import {
 } from "./fixture-set.ts";
 
 const execFileAsync = promisify(execFile);
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const DEFAULT_MANIFEST_PATH = "fixtures/contributor-calibration/xbmc-manifest.json";
 const DEFAULT_SNAPSHOT_PATH = "fixtures/contributor-calibration/xbmc-snapshot.json";
@@ -800,7 +808,7 @@ async function withTimeout<T>(
 }
 
 async function createLiveGitHubEvidenceCollector(repository: string, githubTimeoutMs: number) {
-  const environment = loadGitHubEnvironment();
+  const environment = await loadGitHubEnvironment();
   if (!environment.available) {
     return async ({ contributor }: { repository: string; contributor: FixtureRecord }) => ({
       sourceStatus: "unavailable" as const,
@@ -943,9 +951,10 @@ async function createLiveGitHubEvidenceCollector(repository: string, githubTimeo
   }
 }
 
-function loadGitHubEnvironment():
+async function loadGitHubEnvironment(): Promise<
   | { available: false; note: string }
-  | { available: true; privateKey: string } {
+  | { available: true; privateKey: string }
+> {
   if (!process.env.GITHUB_APP_ID?.trim()) {
     return {
       available: false,
@@ -966,7 +975,7 @@ function loadGitHubEnvironment():
   }
 
   if (keyEnv.startsWith("/") || keyEnv.startsWith("./")) {
-    if (!existsSync(keyEnv)) {
+    if (!(await pathExists(keyEnv))) {
       return {
         available: false,
         note: `GitHub private key path is unavailable: ${keyEnv}`,
@@ -974,7 +983,7 @@ function loadGitHubEnvironment():
     }
     return {
       available: true,
-      privateKey: readFileSync(keyEnv, "utf8"),
+      privateKey: await readFile(keyEnv, "utf8"),
     };
   }
 
@@ -1307,7 +1316,7 @@ async function collectLiveLocalGitEvidence(params: {
 }): Promise<LocalGitEvidenceCollectionResult> {
   const { workspacePath, aliasMap } = params;
 
-  if (!workspacePath || !existsSync(workspacePath)) {
+  if (!workspacePath || !(await pathExists(workspacePath))) {
     return {
       sourceStatus: "unavailable",
       note: `${workspacePath ?? "tmp/xbmc"} is absent.`,

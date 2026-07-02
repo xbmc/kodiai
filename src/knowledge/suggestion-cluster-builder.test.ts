@@ -112,6 +112,7 @@ describe("constants", () => {
     expect(DEFAULT_MAX_INPUT_ROWS).toBeGreaterThan(0);
     expect(DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING).toBeGreaterThan(0);
     expect(DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING).toBeLessThanOrEqual(DEFAULT_MAX_INPUT_ROWS);
+    expect(DEFAULT_MAX_ROWS_PER_CLASS_FOR_CLUSTERING).toBeLessThanOrEqual(750);
   });
 });
 
@@ -535,6 +536,36 @@ describe("buildClusterModel — centroid generation", () => {
     expect(result.positiveMemberCount).toBeLessThanOrEqual(5);
     expect(savedModels[0]!.positiveMemberCount).toBeLessThanOrEqual(5);
     expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("clusters high-dimensional embeddings through a bounded projection while saving original-dimension centroids", async () => {
+    const dim = 96;
+    const rows = makeSeparableRows(dim, "accepted");
+    const sql = makeSqlStub(rows);
+    const savedModels: SuggestionClusterModel[] = [];
+    const store = makeStoreStub(savedModels);
+    const logger = createMockLogger();
+
+    const result = await buildClusterModel({
+      repo: "owner/repo",
+      sql,
+      store,
+      logger,
+      minRowsForClustering: 5,
+      minClusterSize: 3,
+      maxClusteringDimensions: 16,
+    });
+
+    expect(result.built).toBe(true);
+    expect(savedModels[0]?.positiveCentroids[0]?.length).toBe(dim);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: "owner/repo/positive",
+        originalDimensions: dim,
+        clusteringDimensions: 16,
+      }),
+      "Reduced embedding dimensions before HDBSCAN clustering",
+    );
   });
 });
 

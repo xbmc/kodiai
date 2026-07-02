@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type {
   ReviewCluster,
+  ReviewClusterMaintenanceRecord,
   ClusterAssignment,
   ClusterRunState,
   ClusterStore,
@@ -75,6 +76,32 @@ function rowToCluster(row: ClusterRow): ReviewCluster {
         : [],
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+    labelUpdatedAt: new Date(row.label_updated_at),
+    pinned: row.pinned,
+    retired: row.retired,
+  };
+}
+
+type ClusterMaintenanceRow = {
+  id: number;
+  repo: string;
+  slug: string;
+  label: string;
+  member_count: number;
+  member_count_at_label: number;
+  label_updated_at: string;
+  pinned: boolean;
+  retired: boolean;
+};
+
+function rowToClusterMaintenanceRecord(row: ClusterMaintenanceRow): ReviewClusterMaintenanceRecord {
+  return {
+    id: row.id,
+    repo: row.repo,
+    slug: row.slug,
+    label: row.label,
+    memberCount: row.member_count,
+    memberCountAtLabel: row.member_count_at_label,
     labelUpdatedAt: new Date(row.label_updated_at),
     pinned: row.pinned,
     retired: row.retired,
@@ -150,11 +177,31 @@ export function createClusterStore(opts: {
 
     async getActiveClusters(repo: string): Promise<ReviewCluster[]> {
       const rows = await sql`
-        SELECT * FROM review_clusters
+        SELECT *
+        FROM review_clusters
         WHERE repo = ${repo} AND retired = false
         ORDER BY member_count DESC
       `;
       return rows.map((r) => rowToCluster(r as unknown as ClusterRow));
+    },
+
+    async listActiveClusterMaintenanceRecords(repo: string): Promise<ReviewClusterMaintenanceRecord[]> {
+      const rows = await sql`
+        SELECT
+          id,
+          repo,
+          slug,
+          label,
+          member_count,
+          member_count_at_label,
+          label_updated_at,
+          pinned,
+          retired
+        FROM review_clusters
+        WHERE repo = ${repo} AND retired = false
+        ORDER BY member_count DESC
+      `;
+      return rows.map((r) => rowToClusterMaintenanceRecord(r as unknown as ClusterMaintenanceRow));
     },
 
     async getActiveMatchCandidates(repo: string, embedding: Float32Array, limit: number): Promise<ReviewCluster[]> {

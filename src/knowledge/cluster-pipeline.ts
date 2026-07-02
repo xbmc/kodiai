@@ -17,7 +17,12 @@ import type { Sql } from "../db/client.ts";
 import type { TaskRouter } from "../llm/task-router.ts";
 import { positiveIntegerBound } from "../lib/bounds.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
-import type { ClusterStore, ClusterRunState, ReviewCluster } from "./cluster-types.ts";
+import type {
+  ClusterStore,
+  ClusterRunState,
+  ReviewCluster,
+  ReviewClusterMaintenanceRecord,
+} from "./cluster-types.ts";
 import { hdbscan } from "./hdbscan.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
@@ -384,7 +389,7 @@ export async function runClusterPipeline(opts: {
     }
 
     // Step 6: Check label regeneration for active clusters
-    const activeClustersForMaintenance = await store.getActiveClusters(repo);
+    const activeClustersForMaintenance = await store.listActiveClusterMaintenanceRecords(repo);
     const clustersToRelabel = activeClustersForMaintenance.filter((cluster) => {
       if (cluster.pinned || cluster.memberCountAtLabel === 0) return false;
       const changeRatio = Math.abs(cluster.memberCount - cluster.memberCountAtLabel) / cluster.memberCountAtLabel;
@@ -450,7 +455,7 @@ export async function runClusterPipeline(opts: {
       recentCountRows.map((row) => [Number(row.cluster_id), Number(row.cnt)]),
     );
 
-    const clustersToRetire: ReviewCluster[] = [];
+    const clustersToRetire: ReviewClusterMaintenanceRecord[] = [];
     for (const cluster of activeClustersForMaintenance) {
       const recentCount = recentCountByClusterId.get(cluster.id) ?? 0;
       if (recentCount < RETIREMENT_MEMBER_THRESHOLD) {
@@ -460,16 +465,17 @@ export async function runClusterPipeline(opts: {
     if (clustersToRetire.length > 0) {
       const clusterIdsToRetire = clustersToRetire.map((cluster) => cluster.id);
       await store.retireClusters(clusterIdsToRetire);
-      for (const cluster of clustersToRetire) {
-        logger.info(
-          {
+      logger.info(
+        {
+          retiredCount: clustersToRetire.length,
+          retiredSamples: clustersToRetire.slice(0, 10).map((cluster) => ({
             clusterId: cluster.id,
             slug: cluster.slug,
             recentCount: recentCountByClusterId.get(cluster.id) ?? 0,
-          },
-          "Retired cluster with insufficient recent members",
-        );
-      }
+          })),
+        },
+        "Retired clusters with insufficient recent members",
+      );
     }
 
     // Finalize

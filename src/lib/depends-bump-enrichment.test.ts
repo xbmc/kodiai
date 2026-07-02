@@ -440,6 +440,25 @@ describe("verifyHash", () => {
     expect(result.detail).toContain("fetch");
   });
 
+  test("retries transient upstream failures before verifying the hash", async () => {
+    const content = "retry tarball content";
+    const crypto = await import("node:crypto");
+    const expectedHash = crypto.createHash("sha512").update(content).digest("hex");
+    const fetch = mock()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response(content, { status: 200 }));
+    globalThis.fetch = fetch as any;
+
+    const result = await verifyHash({
+      url: "https://example.com/tarball.tar.gz",
+      expectedSha512: expectedHash,
+      timeoutMs: 5000,
+    });
+
+    expect(result.status).toBe("verified");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   test("returns skipped when no hash provided", async () => {
     const result = await verifyHash({
       url: "https://example.com/tarball.tar.gz",
