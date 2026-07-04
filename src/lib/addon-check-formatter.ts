@@ -14,6 +14,19 @@ import type {
 
 export const ADDON_CHECK_MARKER_PREFIX = "kodiai:addon-check";
 
+export type AddonRuleFinding = {
+  addonId: string;
+  level: "ERROR" | "WARN";
+  source: "deterministic" | "llm";
+  message: string;
+};
+
+export type AddonRuleReviewComment = {
+  rulesSource: { kind: "wiki" | "fallback"; url: string };
+  findings: AddonRuleFinding[];
+  incompleteReason?: string;
+};
+
 /**
  * Build the HTML comment marker used for idempotent comment upsert.
  * Format: <!-- kodiai:addon-check:{owner}/{repo}:{prNumber} -->
@@ -117,6 +130,39 @@ function renderIncompleteDiagnostic(classification: unknown): string[] {
   ];
 }
 
+function renderAddonRuleReviewSection(review: AddonRuleReviewComment): string[] {
+  const lines: string[] = [
+    "",
+    "## Kodi Add-on Rule Review",
+    "",
+    review.rulesSource.kind === "fallback"
+      ? `Rules source: embedded fallback based on <${review.rulesSource.url}>`
+      : `Rules source: <${review.rulesSource.url}>`,
+    "",
+  ];
+
+  if (review.incompleteReason) {
+    lines.push(`⚠️ ${review.incompleteReason}`, "");
+  }
+
+  if (review.findings.length === 0) {
+    lines.push("✅ No addon-rule issues found by Kodiai's addon-rule review.");
+    return lines;
+  }
+
+  lines.push("| Addon | Level | Source | Message |");
+  lines.push("|-------|-------|--------|---------|");
+  for (const finding of review.findings) {
+    lines.push(`| ${finding.addonId} | ${finding.level} | ${finding.source} | ${finding.message} |`);
+  }
+
+  const errorCount = review.findings.filter((finding) => finding.level === "ERROR").length;
+  const warningCount = review.findings.filter((finding) => finding.level === "WARN").length;
+  lines.push("");
+  lines.push(`_${errorCount} error(s), ${warningCount} warning(s) found by addon-rule review._`);
+  return lines;
+}
+
 /**
  * Render the full PR comment body for an addon-check run.
  *
@@ -134,6 +180,7 @@ export function formatAddonCheckComment(
   findings: AddonFinding[],
   marker: string,
   classification?: AddonCheckClassificationResult,
+  addonRuleReview?: AddonRuleReviewComment,
 ): string {
   const relevant = findings.filter(
     (f) => f.level === "ERROR" || f.level === "WARN",
@@ -154,6 +201,9 @@ export function formatAddonCheckComment(
     if (!renderDiagnostic) {
       lines.push("✅ No issues found by kodi-addon-checker.");
     }
+    if (addonRuleReview) {
+      lines.push(...renderAddonRuleReviewSection(addonRuleReview));
+    }
     return lines.join("\n");
   }
 
@@ -169,6 +219,10 @@ export function formatAddonCheckComment(
 
   lines.push("");
   lines.push(`_${errorCount} error(s), ${warnCount} warning(s) found._`);
+
+  if (addonRuleReview) {
+    lines.push(...renderAddonRuleReviewSection(addonRuleReview));
+  }
 
   return lines.join("\n");
 }

@@ -414,6 +414,7 @@ createMentionHandler({
   gistPublisher,
   sql,
   reviewWorkCoordinator,
+  addonRepos: config.addonRepos,
   logger,
 });
 createFeedbackSyncHandler({

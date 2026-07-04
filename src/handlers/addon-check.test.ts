@@ -230,7 +230,7 @@ function findClassificationLog(infoCalls: InfoCall[]) {
 function makePrEvent(
   repoFullName: string,
   prNumber: number = 42,
-  opts: { baseBranch?: string; headBranch?: string } = {},
+  opts: { baseBranch?: string; headBranch?: string; action?: string } = {},
 ): WebhookEvent {
   const [owner = "xbmc", repoName = "repo-plugins"] = repoFullName.split("/");
   const baseBranch = opts.baseBranch ?? "omega";
@@ -240,7 +240,7 @@ function makePrEvent(
     name: "pull_request",
     installationId: 99,
     payload: {
-      action: "opened",
+      action: opts.action ?? "opened",
       pull_request: {
         number: prNumber,
         base: { ref: baseBranch },
@@ -269,7 +269,7 @@ describe("createAddonCheckHandler", () => {
 
   // ── Registration ──────────────────────────────────────────────────────
 
-  it("registers on pull_request.opened and pull_request.synchronize", () => {
+  it("registers on pull_request.opened, pull_request.synchronize, and addon_rule_review.requested", () => {
     const { app } = createMockGithubApp([]);
     const { logger } = createMockLogger();
     const { manager } = createMockWorkspaceManager();
@@ -287,7 +287,8 @@ describe("createAddonCheckHandler", () => {
     const keys = router.captured.map((c) => c.key);
     expect(keys).toContain("pull_request.opened");
     expect(keys).toContain("pull_request.synchronize");
-    expect(router.captured).toHaveLength(2);
+    expect(keys).toContain("addon_rule_review.requested");
+    expect(router.captured).toHaveLength(3);
   });
 
   // ── Repo gate ─────────────────────────────────────────────────────────
@@ -611,7 +612,8 @@ describe("createAddonCheckHandler", () => {
     expect(commentBody).toContain("Mode: `all-timeout`");
     expect(commentBody).toContain("`all-timeout`");
     expect(commentBody).not.toContain("✅ No issues found");
-    expect(commentBody).not.toContain("plugin.video.foo");
+    const checkerDiagnostic = commentBody.split("## Kodi Add-on Rule Review")[0] ?? commentBody;
+    expect(checkerDiagnostic).not.toContain("plugin.video.foo");
   });
 
   it("distinguishes partial timeout with findings from clean completion", async () => {
@@ -671,7 +673,7 @@ describe("createAddonCheckHandler", () => {
     expect(commentBody).not.toContain("Mode: `completed-clean`");
   });
 
-  it("emits tool-unavailable classification without posting a comment", async () => {
+  it("emits tool-unavailable classification and still posts addon-rule review", async () => {
     const files = ["plugin.video.foo/addon.xml", "plugin.audio.bar/addon.xml"];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger, infoCalls } = createMockLogger();
@@ -709,8 +711,10 @@ describe("createAddonCheckHandler", () => {
       findingCount: 0,
     });
     expect(gateLog!.bindings.reasonCodes).toContain("tool-unavailable");
-    expect(octokit._createCommentMock).not.toHaveBeenCalled();
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("## Kodi Add-on Rule Review");
   });
 
   it("emits completed-clean classification for clean runs without raw workspace leakage in the gate", async () => {
@@ -922,7 +926,7 @@ describe("createAddonCheckHandler", () => {
     expect(callArgs.body).toContain("missing changelog");
   });
 
-  it("no comment posted when no findings and tool not found", async () => {
+  it("posts addon-rule review when no checker findings and tool not found", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
@@ -949,8 +953,10 @@ describe("createAddonCheckHandler", () => {
       makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
     );
 
-    expect(octokit._createCommentMock).not.toHaveBeenCalled();
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("## Kodi Add-on Rule Review");
   });
 
   it("updates existing comment on second push (upsert path)", async () => {
@@ -1056,5 +1062,127 @@ describe("createAddonCheckHandler", () => {
     expect(fetchAndCheckoutCalls).toHaveLength(1);
     expect(fetchAndCheckoutCalls[0]!.prNumber).toBe(42);
     expect(fetchAndCheckoutCalls[0]!.localBranch).toBe("pr-check");
+  });
+
+  it("addon-rule review is merged into the addon-check comment on opened PRs", async () => {
+    const files = ["plugin.video.foo/addon.xml", "plugin.video.foo/default.py"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("");
+    const { workspace } = createMockWorkspace("/tmp/ws-addon-rule-opened");
+    const { manager } = createMockWorkspaceManager(workspace);
+    const { queue } = createMockJobQueue();
+    const llmReview = mock(async () => [
+      {
+        addonId: "plugin.video.foo",
+        level: "WARN" as const,
+        source: "llm" as const,
+        message: "Download appears to happen without user confirmation.",
+      },
+    ]);
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __loadAddonRuleSourceForTests: async () => ({
+        kind: "wiki",
+        url: "https://kodi.wiki/view/Add-on_rules",
+        text: "No analytics.",
+      }),
+      __runAddonRuleLlmForTests: llmReview,
+    });
+
+    await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
+
+    expect(llmReview).toHaveBeenCalledTimes(1);
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("## Kodiai Addon Check");
+    expect(commentBody).toContain("## Kodi Add-on Rule Review");
+    expect(commentBody).toContain("Rules source: <https://kodi.wiki/view/Add-on_rules>");
+    expect(commentBody).toContain("Download appears to happen without user confirmation.");
+  });
+
+  it("synchronize events do not run addon-rule LLM review automatically", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("ERROR: checker finding\n");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+    const llmReview = mock(async () => [
+      {
+        addonId: "plugin.video.foo",
+        level: "WARN" as const,
+        source: "llm" as const,
+        message: "Should not appear.",
+      },
+    ]);
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __runAddonRuleLlmForTests: llmReview,
+    });
+
+    await router.captured.find((entry) => entry.key === "pull_request.synchronize")!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { action: "synchronize" }),
+    );
+
+    expect(llmReview).not.toHaveBeenCalled();
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("checker finding");
+    expect(commentBody).not.toContain("Kodi Add-on Rule Review");
+    expect(commentBody).not.toContain("Should not appear.");
+  });
+
+  it("posts addon-rule review even when kodi-addon-checker is unavailable", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocessByAddon({ "plugin.video.foo": "__TOOL_NOT_FOUND__" });
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __loadAddonRuleSourceForTests: async () => ({
+        kind: "fallback",
+        url: "https://kodi.wiki/view/Add-on_rules",
+        text: "Fallback rules.",
+      }),
+      __runAddonRuleLlmForTests: async () => [
+        {
+          addonId: "plugin.video.foo",
+          level: "ERROR",
+          source: "llm",
+          message: "Uses analytics.",
+        },
+      ],
+    });
+
+    await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("Addon check incomplete");
+    expect(commentBody).toContain("Rules source: embedded fallback based on <https://kodi.wiki/view/Add-on_rules>");
+    expect(commentBody).toContain("Uses analytics.");
   });
 });

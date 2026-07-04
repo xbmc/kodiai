@@ -635,6 +635,7 @@ describe("createMentionHandler conversational review wiring", () => {
   test("issue mentions enrich prompt with issue code-pointer context", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+    const { logger, infoCalls, errorCalls } = createMockLogger();
 
     let capturedPrompt = "";
 
@@ -7565,6 +7566,117 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
 });
 
 describe("createMentionHandler review command", () => {
+  test("@kodiai review in addon repos routes to addon-rule review instead of generic executor", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+    const { logger, infoCalls, errorCalls } = createMockLogger();
+    const prNumber = 100;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const dispatchedAddonEvents: WebhookEvent[] = [];
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Addon PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature", repo: { full_name: "acme/repo", owner: { login: "acme" }, name: "repo" } },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          throw new Error("generic executor should not run for addon repo review");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      addonRepos: ["acme/repo"],
+      addonReviewDispatcher: async (event) => {
+        dispatchedAddonEvents.push(event);
+      },
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(errorCalls).toEqual([]);
+    expect(infoCalls.map((entry) => entry.message)).toContain("Explicit review mention routed to addon-rule review");
+    expect(dispatchedAddonEvents).toHaveLength(1);
+    expect(dispatchedAddonEvents[0]).toMatchObject({
+      name: "addon_rule_review",
+      installationId: 42,
+      payload: {
+        action: "requested",
+        pull_request: {
+          number: prNumber,
+          base: { ref: "main" },
+          head: { ref: "feature", repo: { full_name: "acme/repo" } },
+        },
+        repository: {
+          full_name: "acme/repo",
+          name: "repo",
+          owner: { login: "acme" },
+        },
+      },
+    });
+
+    await workspaceFixture.cleanup();
+  });
+
   test("pr top-level review request posts review-structured fallback when execution is non-published", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: false\n");

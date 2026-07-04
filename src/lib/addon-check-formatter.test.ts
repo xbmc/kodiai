@@ -174,4 +174,55 @@ describe("formatAddonCheckComment", () => {
     expect(comment).not.toContain("secret");
     expect(comment).not.toContain("/home/user/raw");
   });
+
+  test("addon-rule review findings render in the same idempotent comment", () => {
+    const comment = formatAddonCheckComment([], marker, undefined, {
+      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      findings: [
+        {
+          addonId: "plugin.video.example",
+          level: "ERROR",
+          source: "deterministic",
+          message: "Missing English description in addon.xml.",
+        },
+        {
+          addonId: "plugin.video.example",
+          level: "WARN",
+          source: "llm",
+          message: "Download appears to happen without user confirmation.",
+        },
+      ],
+    });
+
+    expect(comment.split("\n")[0]).toBe(marker);
+    expect(comment).toContain("## Kodiai Addon Check");
+    expect(comment).toContain("## Kodi Add-on Rule Review");
+    expect(comment).toContain("Rules source: <https://kodi.wiki/view/Add-on_rules>");
+    expect(comment).toContain("| Addon | Level | Source | Message |");
+    expect(comment).toContain("| plugin.video.example | ERROR | deterministic | Missing English description in addon.xml. |");
+    expect(comment).toContain("| plugin.video.example | WARN | llm | Download appears to happen without user confirmation. |");
+    expect(comment).toContain("_1 error(s), 1 warning(s) found by addon-rule review._");
+  });
+
+  test("addon-rule review renders clean state when no rule findings exist", () => {
+    const comment = formatAddonCheckComment([], marker, undefined, {
+      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      findings: [],
+    });
+
+    expect(comment).toContain("## Kodi Add-on Rule Review");
+    expect(comment).toContain("✅ No addon-rule issues found by Kodiai's addon-rule review.");
+    expect(comment).not.toContain("| Addon | Level | Source | Message |");
+  });
+
+  test("addon-rule review shows embedded fallback source and bounded incomplete note", () => {
+    const comment = formatAddonCheckComment([], marker, undefined, {
+      rulesSource: { kind: "fallback", url: "https://kodi.wiki/view/Add-on_rules" },
+      findings: [],
+      incompleteReason: "LLM addon-rule review timed out; deterministic checks still ran.",
+    });
+
+    expect(comment).toContain("Rules source: embedded fallback based on <https://kodi.wiki/view/Add-on_rules>");
+    expect(comment).toContain("⚠️ LLM addon-rule review timed out; deterministic checks still ran.");
+  });
 });

@@ -29,18 +29,40 @@ import {
 import {
   buildAddonCheckMarker,
   formatAddonCheckComment,
+  type AddonRuleFinding,
+  type AddonRuleReviewComment,
 } from "../lib/addon-check-formatter.ts";
+import {
+  loadAddonRuleSource,
+  type AddonRuleSource,
+} from "../lib/addon-rule-source.ts";
+import {
+  collectAddonRuleContext,
+} from "../lib/addon-rule-context.ts";
+import {
+  runDeterministicAddonRuleChecks,
+} from "../lib/addon-rule-deterministic.ts";
+import {
+  buildAddonRuleReviewPrompt,
+  parseAddonRuleReviewOutput,
+  type AddonRuleLlmInput,
+} from "../lib/addon-rule-llm.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
 } from "../jobs/workspace.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
+import { createTaskRouter } from "../llm/task-router.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
+import { generateWithFallback } from "../llm/generate.ts";
 
 // Re-exported so tests can reference the type without importing from runner directly.
 export type { AddonFinding };
 
 type RunSubprocess = Parameters<typeof runAddonChecker>[0]["__runSubprocessForTests"];
 type FetchAndCheckout = typeof fetchAndCheckoutPullRequestHeadRef;
+type LoadAddonRuleSource = typeof loadAddonRuleSource;
+type RunAddonRuleLlm = (params: AddonRuleLlmInput) => Promise<AddonRuleFinding[]>;
 
 /** Posts or updates the addon-check PR comment (idempotent). */
 async function upsertAddonCheckComment(params: {
@@ -126,6 +148,10 @@ function countFindings(findings: AddonFinding[]): {
   };
 }
 
+function projectRuleSource(source: AddonRuleSource): AddonRuleReviewComment["rulesSource"] {
+  return { kind: source.kind, url: source.url };
+}
+
 export function createAddonCheckHandler(deps: {
   eventRouter: EventRouter;
   githubApp: GitHubApp;
@@ -139,6 +165,10 @@ export function createAddonCheckHandler(deps: {
   __addonCheckTimeBudgetMsForTests?: number;
   /** Test-only: injected fetch-and-checkout stub for fork PR path. */
   __fetchAndCheckoutForTests?: FetchAndCheckout;
+  /** Test-only: injected rule source loader. */
+  __loadAddonRuleSourceForTests?: LoadAddonRuleSource;
+  /** Test-only: injected addon-rule LLM runner. */
+  __runAddonRuleLlmForTests?: RunAddonRuleLlm;
 }): void {
   const {
     eventRouter,
@@ -150,7 +180,24 @@ export function createAddonCheckHandler(deps: {
     __runSubprocessForTests,
     __fetchAndCheckoutForTests,
     __addonCheckTimeBudgetMsForTests,
+    __loadAddonRuleSourceForTests,
+    __runAddonRuleLlmForTests,
   } = deps;
+
+  const loadRules = __loadAddonRuleSourceForTests ?? loadAddonRuleSource;
+  const runAddonRuleLlm = __runAddonRuleLlmForTests ?? (async (input: AddonRuleLlmInput) => {
+    const taskRouter = createTaskRouter({ models: {} });
+    const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
+    const result = await generateWithFallback({
+      taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
+      resolved,
+      prompt: buildAddonRuleReviewPrompt(input),
+      system: "You review Kodi addon submissions for add-on rule compliance. Return only the requested JSON.",
+      logger,
+      repo: input.repo,
+    });
+    return parseAddonRuleReviewOutput(result.text);
+  });
 
   async function handlePullRequest(event: WebhookEvent): Promise<void> {
     const payload = event.payload as {
@@ -254,8 +301,11 @@ export function createAddonCheckHandler(deps: {
               });
             }
 
+            const shouldRunAddonRuleReview =
+              event.name === "addon_rule_review" || (payload as { action?: string }).action === "opened";
             const allFindings: AddonFinding[] = [];
             const addonSummaries: AddonCheckRuntimeSummary[] = [];
+            let addonRuleReview: AddonRuleReviewComment | undefined;
             const timeBudgetMs = __addonCheckTimeBudgetMsForTests ?? ADDON_CHECK_RUNNER_TIME_BUDGET_MS;
             const workspaceDir = workspace.dir;
 
@@ -299,6 +349,34 @@ export function createAddonCheckHandler(deps: {
               allFindings.push(...result.findings);
             }
 
+            if (shouldRunAddonRuleReview) {
+              const ruleSource = await loadRules();
+              const contexts = await collectAddonRuleContext({
+                workspaceDir,
+                files,
+              });
+              const deterministicFindings = runDeterministicAddonRuleChecks(contexts);
+              let llmFindings: AddonRuleFinding[] = [];
+              let incompleteReason: string | undefined;
+              if (contexts.some((context) => context.files.length > 0)) {
+                try {
+                  llmFindings = await runAddonRuleLlm({
+                    repo,
+                    prNumber,
+                    rules: ruleSource,
+                    contexts,
+                  });
+                } catch {
+                  incompleteReason = "LLM addon-rule review was incomplete; deterministic checks still ran.";
+                }
+              }
+              addonRuleReview = {
+                rulesSource: projectRuleSource(ruleSource),
+                findings: [...deterministicFindings, ...llmFindings],
+                ...(incompleteReason ? { incompleteReason } : {}),
+              };
+            }
+
             const classification = classifyAddonCheckOutcome({
               deliveryId: event.id,
               repo,
@@ -338,11 +416,11 @@ export function createAddonCheckHandler(deps: {
 
             // Skip comment entirely when every addon returned toolNotFound
             // (kodi-addon-checker not installed on this runner).
-            if (allFindings.length === 0 && classification.mode === "tool-unavailable") {
+            if (allFindings.length === 0 && classification.mode === "tool-unavailable" && !addonRuleReview) {
               handlerLogger.warn("addon-check: all addons returned toolNotFound, skipping comment");
             } else {
               const marker = buildAddonCheckMarker(owner, repoName, prNumber);
-              const body = formatAddonCheckComment(allFindings, marker, classification);
+              const body = formatAddonCheckComment(allFindings, marker, classification, addonRuleReview);
               await upsertAddonCheckComment({
                 octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
                 owner,
@@ -374,4 +452,5 @@ export function createAddonCheckHandler(deps: {
 
   eventRouter.register("pull_request.opened", handlePullRequest);
   eventRouter.register("pull_request.synchronize", handlePullRequest);
+  eventRouter.register("addon_rule_review.requested", handlePullRequest);
 }
