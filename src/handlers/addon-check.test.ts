@@ -150,6 +150,20 @@ function makePartialConfig(addonRepos: string[]): AppConfig {
   return { addonRepos } as unknown as AppConfig;
 }
 
+function createAddonCheckHandlerForTest(
+  deps: Parameters<typeof createAddonCheckHandler>[0],
+): void {
+  createAddonCheckHandler({
+    __loadAddonRuleSourceForTests: async () => ({
+      kind: "fallback",
+      url: "https://kodi.wiki/view/Add-on_rules",
+      text: "test addon rules",
+    }),
+    __runAddonRuleLlmForTests: async () => [],
+    ...deps,
+  });
+}
+
 /** Returns a no-op workspace stub with a capturable cleanup spy. */
 function createMockWorkspace(dir = "/tmp/test-workspace"): {
   workspace: Workspace;
@@ -275,7 +289,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -299,7 +313,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -326,7 +340,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue, enqueueArgs } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -357,7 +371,7 @@ describe("createAddonCheckHandler", () => {
     const { manager, createSpy } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -397,7 +411,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager(workspace);
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -452,7 +466,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager(workspace);
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -481,7 +495,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -517,7 +531,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -553,7 +567,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -627,7 +641,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -684,7 +698,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -727,7 +741,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -783,7 +797,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager(crashWorkspace);
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -815,7 +829,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -844,7 +858,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -871,7 +885,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -902,7 +916,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -939,7 +953,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -971,7 +985,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -1013,7 +1027,7 @@ describe("createAddonCheckHandler", () => {
       },
     );
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -1081,7 +1095,7 @@ describe("createAddonCheckHandler", () => {
       },
     ]);
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -1124,7 +1138,7 @@ describe("createAddonCheckHandler", () => {
       },
     ]);
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
@@ -1154,7 +1168,7 @@ describe("createAddonCheckHandler", () => {
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
-    createAddonCheckHandler({
+    createAddonCheckHandlerForTest({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
