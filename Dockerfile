@@ -7,6 +7,7 @@ RUN bun install --production --frozen-lockfile --omit optional
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN bun build src/index.ts --target=bun --packages=external --outfile=dist/index.js
+RUN mkdir -p dist/migrations && cp src/db/migrations/*.sql dist/migrations/
 
 # Stage 2: Production image
 FROM ${BUN_BASE_IMAGE}
