@@ -76,6 +76,7 @@ import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPromptDetails } from "../execution/mention-prompt.ts";
 import { buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
 import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
+import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import {
   resolveReviewRoutingLineCount,
@@ -279,11 +280,6 @@ function buildExplicitReviewNoOutputFallbackLines(reason: ExplicitMentionReviewP
     `Reason: ${describeExplicitReviewPublishSkipReason(reason)}.`,
     "No code findings were published for this request.",
   ];
-}
-
-function isConfiguredAddonRepo(repo: string, addonRepos: readonly string[]): boolean {
-  const normalized = repo.trim().toLowerCase();
-  return addonRepos.some((candidate) => candidate.trim().toLowerCase() === normalized);
 }
 
 function isKnownFormatterSubflowStatus(status: unknown): boolean {
@@ -1055,49 +1051,16 @@ export function createMentionHandler(deps: {
         explicitReviewRequest = isPrSurface && (
           isReviewRequest(userQuestion) || formatterSuggestionRequest?.mode === "review-and-format"
         );
-        if (
-          explicitReviewRequest &&
-          mention.prNumber !== undefined &&
-          isConfiguredAddonRepo(`${mention.owner}/${mention.repo}`, addonRepos)
-        ) {
-          const pull = await octokit.rest.pulls.get({
-            owner: mention.owner,
-            repo: mention.repo,
-            pull_number: mention.prNumber,
-          });
-          await addonReviewDispatcher({
-            id: `${event.id}:addon-rule-review`,
-            name: "addon_rule_review",
-            installationId: event.installationId,
-            payload: {
-              action: "requested",
-              pull_request: {
-                number: mention.prNumber,
-                base: { ref: pull.data.base.ref },
-                head: {
-                  ref: pull.data.head.ref,
-                  repo: pull.data.head.repo
-                    ? { full_name: pull.data.head.repo.full_name }
-                    : null,
-                },
-              },
-              repository: {
-                full_name: `${mention.owner}/${mention.repo}`,
-                name: mention.repo,
-                owner: { login: mention.owner },
-              },
-            },
-          });
-          logger.info(
-            {
-              owner: mention.owner,
-              repo: mention.repo,
-              prNumber: mention.prNumber,
-              gate: "addon-rule-review-routing",
-              gateResult: "dispatched",
-            },
-            "Explicit review mention routed to addon-rule review",
-          );
+        if (explicitReviewRequest && mention.prNumber !== undefined && await routeAddonRuleReviewMention({
+          event,
+          owner: mention.owner,
+          repo: mention.repo,
+          prNumber: mention.prNumber,
+          addonRepos,
+          getPullRequest: (args) => octokit.rest.pulls.get(args),
+          dispatch: addonReviewDispatcher,
+          logger,
+        })) {
           return;
         }
         const parsedWriteIntent = parseWriteIntent(userQuestion);

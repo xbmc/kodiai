@@ -1,4 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createAddonCheckHandler, ADDON_CHECK_RUNNER_TIME_BUDGET_MS } from "./addon-check.ts";
 import { buildAddonCheckMarker } from "../lib/addon-check-formatter.ts";
 import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.ts";
@@ -191,6 +194,21 @@ function createMockWorkspaceManager(workspaceOverride?: Workspace): {
     cleanupStale: async () => 0,
   };
   return { manager, createSpy, workspace: effectiveWorkspace, cleanupCalled };
+}
+
+async function createAddonRuleWorkspace(files: Record<string, string>): Promise<Workspace> {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-addon-check-test-"));
+  for (const [relativePath, content] of Object.entries(files)) {
+    const absolutePath = join(dir, relativePath);
+    await mkdir(join(absolutePath, ".."), { recursive: true });
+    await writeFile(absolutePath, content);
+  }
+  return {
+    dir,
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
 }
 
 function createMockJobQueue(): {
@@ -1083,7 +1101,10 @@ describe("createAddonCheckHandler", () => {
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     const subprocess = makeCheckerSubprocess("");
-    const { workspace } = createMockWorkspace("/tmp/ws-addon-rule-opened");
+    const workspace = await createAddonRuleWorkspace({
+      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
+      "plugin.video.foo/default.py": "print('hello')",
+    });
     const { manager } = createMockWorkspaceManager(workspace);
     const { queue } = createMockJobQueue();
     const llmReview = mock(async () => [
@@ -1127,7 +1148,10 @@ describe("createAddonCheckHandler", () => {
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     const subprocess = makeCheckerSubprocess("ERROR: checker finding\n");
-    const { manager } = createMockWorkspaceManager();
+    const workspace = await createAddonRuleWorkspace({
+      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
+    });
+    const { manager } = createMockWorkspaceManager(workspace);
     const { queue } = createMockJobQueue();
     const llmReview = mock(async () => [
       {
@@ -1160,12 +1184,50 @@ describe("createAddonCheckHandler", () => {
     expect(commentBody).not.toContain("Should not appear.");
   });
 
+  it("opened PRs with only path-level addon-rule context skip LLM review", async () => {
+    const files = ["plugin.video.foo/resources/settings.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+    const llmReview = mock(async () => [
+      {
+        addonId: "plugin.video.foo",
+        level: "WARN" as const,
+        source: "llm" as const,
+        message: "Should not be generated.",
+      },
+    ]);
+
+    createAddonCheckHandlerForTest({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __runAddonRuleLlmForTests: llmReview,
+    });
+
+    await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
+
+    expect(llmReview).not.toHaveBeenCalled();
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("## Kodi Add-on Rule Review");
+    expect(commentBody).not.toContain("Should not be generated.");
+  });
+
   it("posts addon-rule review even when kodi-addon-checker is unavailable", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     const subprocess = makeCheckerSubprocessByAddon({ "plugin.video.foo": "__TOOL_NOT_FOUND__" });
-    const { manager } = createMockWorkspaceManager();
+    const workspace = await createAddonRuleWorkspace({
+      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
+    });
+    const { manager } = createMockWorkspaceManager(workspace);
     const { queue } = createMockJobQueue();
 
     createAddonCheckHandlerForTest({

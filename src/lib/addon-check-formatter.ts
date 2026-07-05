@@ -11,21 +11,9 @@ import type {
   AddonCheckClassificationResult,
   AddonCheckReasonCode,
 } from "./addon-check-classification.ts";
+import type { AddonRuleReviewComment } from "./addon-rule-types.ts";
 
 export const ADDON_CHECK_MARKER_PREFIX = "kodiai:addon-check";
-
-export type AddonRuleFinding = {
-  addonId: string;
-  level: "ERROR" | "WARN";
-  source: "deterministic" | "llm";
-  message: string;
-};
-
-export type AddonRuleReviewComment = {
-  rulesSource: { kind: "wiki" | "fallback"; url: string };
-  findings: AddonRuleFinding[];
-  incompleteReason?: string;
-};
 
 /**
  * Build the HTML comment marker used for idempotent comment upsert.
@@ -152,15 +140,30 @@ function renderAddonRuleReviewSection(review: AddonRuleReviewComment): string[] 
 
   lines.push("| Addon | Level | Source | Message |");
   lines.push("|-------|-------|--------|---------|");
+  let errorCount = 0;
+  let warningCount = 0;
   for (const finding of review.findings) {
-    lines.push(`| ${finding.addonId} | ${finding.level} | ${finding.source} | ${finding.message} |`);
+    if (finding.level === "ERROR") errorCount += 1;
+    if (finding.level === "WARN") warningCount += 1;
+    lines.push([
+      "",
+      markdownTableCell(finding.addonId),
+      markdownTableCell(finding.level),
+      markdownTableCell(finding.source),
+      markdownTableCell(finding.message),
+      "",
+    ].join(" | "));
   }
 
-  const errorCount = review.findings.filter((finding) => finding.level === "ERROR").length;
-  const warningCount = review.findings.filter((finding) => finding.level === "WARN").length;
   lines.push("");
   lines.push(`_${errorCount} error(s), ${warningCount} warning(s) found by addon-rule review._`);
   return lines;
+}
+
+function markdownTableCell(value: string): string {
+  return value
+    .replace(/\r?\n/g, "<br>")
+    .replace(/\|/g, "\\|");
 }
 
 /**
@@ -182,9 +185,18 @@ export function formatAddonCheckComment(
   classification?: AddonCheckClassificationResult,
   addonRuleReview?: AddonRuleReviewComment,
 ): string {
-  const relevant = findings.filter(
-    (f) => f.level === "ERROR" || f.level === "WARN",
-  );
+  const relevant: AddonFinding[] = [];
+  let errorCount = 0;
+  let warnCount = 0;
+  for (const finding of findings) {
+    if (finding.level === "ERROR") {
+      errorCount += 1;
+      relevant.push(finding);
+    } else if (finding.level === "WARN") {
+      warnCount += 1;
+      relevant.push(finding);
+    }
+  }
   const renderDiagnostic = shouldRenderIncompleteDiagnostic(classification);
 
   const lines: string[] = [];
@@ -211,11 +223,14 @@ export function formatAddonCheckComment(
   lines.push("| Addon | Level | Message |");
   lines.push("|-------|-------|---------|");
   for (const f of relevant) {
-    lines.push(`| ${f.addonId} | ${f.level} | ${f.message} |`);
+    lines.push([
+      "",
+      markdownTableCell(f.addonId),
+      markdownTableCell(f.level),
+      markdownTableCell(f.message),
+      "",
+    ].join(" | "));
   }
-
-  const errorCount = relevant.filter((f) => f.level === "ERROR").length;
-  const warnCount = relevant.filter((f) => f.level === "WARN").length;
 
   lines.push("");
   lines.push(`_${errorCount} error(s), ${warnCount} warning(s) found._`);

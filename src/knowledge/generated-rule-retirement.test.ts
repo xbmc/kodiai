@@ -388,6 +388,54 @@ describe("applyRetirementPolicy", () => {
 // ---------------------------------------------------------------------------
 
 describe("active → retired transition contract", () => {
+  test("uses batch retirement when the store supports it", async () => {
+    const active = [
+      makeActiveRecord({ id: 10, signalScore: 0.1, memberCount: 5 }),
+      makeActiveRecord({ id: 11, title: "Second", signalScore: 0.05, memberCount: 5 }),
+    ];
+    const retireRule = mock(async (id: number) => makeRetiredRecord(id));
+    const retireRules = mock(async (ids: number[]) => ids.map((id) => makeRetiredRecord(id)));
+    const store = makeMockStore({
+      listRulesForRepo: mock(async () => active),
+      retireRule,
+      retireRules,
+    });
+
+    const result = await applyRetirementPolicy({ store, logger: silentLogger, repo: "xbmc/xbmc", floor: 0.3, minMemberCount: 3 });
+
+    expect(retireRules).toHaveBeenCalledTimes(1);
+    expect(retireRules).toHaveBeenCalledWith([10, 11]);
+    expect(retireRule).not.toHaveBeenCalled();
+    expect(result.retired).toBe(2);
+    expect(result.retiredRules.map((rule) => rule.id)).toEqual([10, 11]);
+  });
+
+  test("falls back to per-rule retirement when batch retirement fails", async () => {
+    const active = [
+      makeActiveRecord({ id: 10, signalScore: 0.1, memberCount: 5 }),
+      makeActiveRecord({ id: 11, title: "Second", signalScore: 0.05, memberCount: 5 }),
+    ];
+    const retireRule = mock(async (id: number) => makeRetiredRecord(id));
+    const retireRules = mock(async () => {
+      throw new Error("batch failed");
+    });
+    const store = makeMockStore({
+      listRulesForRepo: mock(async () => active),
+      retireRule,
+      retireRules,
+    });
+
+    const result = await applyRetirementPolicy({ store, logger: silentLogger, repo: "xbmc/xbmc", floor: 0.3, minMemberCount: 3 });
+
+    expect(retireRules).toHaveBeenCalledTimes(1);
+    expect(retireRule).toHaveBeenCalledTimes(2);
+    expect(retireRule).toHaveBeenNthCalledWith(1, 10);
+    expect(retireRule).toHaveBeenNthCalledWith(2, 11);
+    expect(result.retired).toBe(2);
+    expect(result.retirementFailures).toBe(0);
+    expect(result.retiredRules.map((rule) => rule.id)).toEqual([10, 11]);
+  });
+
   test("retireRule is called with the correct rule ids", async () => {
     const retireCalls: number[] = [];
     const active = [

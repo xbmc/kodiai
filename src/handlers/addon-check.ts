@@ -29,40 +29,24 @@ import {
 import {
   buildAddonCheckMarker,
   formatAddonCheckComment,
-  type AddonRuleFinding,
-  type AddonRuleReviewComment,
 } from "../lib/addon-check-formatter.ts";
 import {
-  loadAddonRuleSource,
-  type AddonRuleSource,
-} from "../lib/addon-rule-source.ts";
-import {
-  collectAddonRuleContext,
-} from "../lib/addon-rule-context.ts";
-import {
-  runDeterministicAddonRuleChecks,
-} from "../lib/addon-rule-deterministic.ts";
-import {
-  buildAddonRuleReviewPrompt,
-  parseAddonRuleReviewOutput,
-  type AddonRuleLlmInput,
-} from "../lib/addon-rule-llm.ts";
+  runAddonRuleReview,
+  type LoadAddonRuleSource,
+  type RunAddonRuleLlm,
+} from "../lib/addon-rule-review.ts";
+import type { AddonRuleReviewComment } from "../lib/addon-rule-types.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
 } from "../jobs/workspace.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
-import { createTaskRouter } from "../llm/task-router.ts";
-import { TASK_TYPES } from "../llm/task-types.ts";
-import { generateWithFallback } from "../llm/generate.ts";
 
 // Re-exported so tests can reference the type without importing from runner directly.
 export type { AddonFinding };
 
 type RunSubprocess = Parameters<typeof runAddonChecker>[0]["__runSubprocessForTests"];
 type FetchAndCheckout = typeof fetchAndCheckoutPullRequestHeadRef;
-type LoadAddonRuleSource = typeof loadAddonRuleSource;
-type RunAddonRuleLlm = (params: AddonRuleLlmInput) => Promise<AddonRuleFinding[]>;
 
 /** Posts or updates the addon-check PR comment (idempotent). */
 async function upsertAddonCheckComment(params: {
@@ -141,15 +125,13 @@ function countFindings(findings: AddonFinding[]): {
   errorCount: number;
   warningCount: number;
 } {
-  return {
-    findingCount: findings.length,
-    errorCount: findings.filter((finding) => finding.level === "ERROR").length,
-    warningCount: findings.filter((finding) => finding.level === "WARN").length,
-  };
-}
-
-function projectRuleSource(source: AddonRuleSource): AddonRuleReviewComment["rulesSource"] {
-  return { kind: source.kind, url: source.url };
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const finding of findings) {
+    if (finding.level === "ERROR") errorCount += 1;
+    if (finding.level === "WARN") warningCount += 1;
+  }
+  return { findingCount: findings.length, errorCount, warningCount };
 }
 
 export function createAddonCheckHandler(deps: {
@@ -184,20 +166,8 @@ export function createAddonCheckHandler(deps: {
     __runAddonRuleLlmForTests,
   } = deps;
 
-  const loadRules = __loadAddonRuleSourceForTests ?? loadAddonRuleSource;
-  const runAddonRuleLlm = __runAddonRuleLlmForTests ?? (async (input: AddonRuleLlmInput) => {
-    const taskRouter = createTaskRouter({ models: {} });
-    const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
-    const result = await generateWithFallback({
-      taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
-      resolved,
-      prompt: buildAddonRuleReviewPrompt(input),
-      system: "You review Kodi addon submissions for add-on rule compliance. Return only the requested JSON.",
-      logger,
-      repo: input.repo,
-    });
-    return parseAddonRuleReviewOutput(result.text);
-  });
+  const loadRules = __loadAddonRuleSourceForTests;
+  const runAddonRuleLlm = __runAddonRuleLlmForTests;
 
   async function handlePullRequest(event: WebhookEvent): Promise<void> {
     const payload = event.payload as {
@@ -349,33 +319,17 @@ export function createAddonCheckHandler(deps: {
               allFindings.push(...result.findings);
             }
 
-            if (shouldRunAddonRuleReview) {
-              const ruleSource = await loadRules();
-              const contexts = await collectAddonRuleContext({
+            addonRuleReview = shouldRunAddonRuleReview
+              ? await runAddonRuleReview({
+                repo,
+                prNumber,
                 workspaceDir,
                 files,
-              });
-              const deterministicFindings = runDeterministicAddonRuleChecks(contexts);
-              let llmFindings: AddonRuleFinding[] = [];
-              let incompleteReason: string | undefined;
-              if (contexts.some((context) => context.files.length > 0)) {
-                try {
-                  llmFindings = await runAddonRuleLlm({
-                    repo,
-                    prNumber,
-                    rules: ruleSource,
-                    contexts,
-                  });
-                } catch {
-                  incompleteReason = "LLM addon-rule review was incomplete; deterministic checks still ran.";
-                }
-              }
-              addonRuleReview = {
-                rulesSource: projectRuleSource(ruleSource),
-                findings: [...deterministicFindings, ...llmFindings],
-                ...(incompleteReason ? { incompleteReason } : {}),
-              };
-            }
+                logger: handlerLogger,
+                ...(loadRules ? { loadRules } : {}),
+                ...(runAddonRuleLlm ? { runLlm: runAddonRuleLlm } : {}),
+              })
+              : undefined;
 
             const classification = classifyAddonCheckOutcome({
               deliveryId: event.id,

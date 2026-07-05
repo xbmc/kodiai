@@ -42,7 +42,9 @@ export type GeneratedRuleStore = {
   listRulesForRepo(repo: string, opts?: { status?: GeneratedRuleStatus; limit?: number }): Promise<GeneratedRuleRecord[]>;
   getActiveRulesForRepo(repo: string, limit?: number): Promise<GeneratedRuleRecord[]>;
   activateRule(ruleId: number): Promise<GeneratedRuleRecord | null>;
+  activateRules?(ruleIds: readonly number[]): Promise<GeneratedRuleRecord[]>;
   retireRule(ruleId: number): Promise<GeneratedRuleRecord | null>;
+  retireRules?(ruleIds: readonly number[]): Promise<GeneratedRuleRecord[]>;
   getLifecycleCounts(repo: string): Promise<GeneratedRuleLifecycleCounts>;
 };
 
@@ -91,6 +93,13 @@ function generatedRuleListColumns(sql: Sql) {
   return sql`
     id, repo, title, rule_text, status, origin, signal_score, member_count,
     NULL AS cluster_centroid, created_at, updated_at, activated_at, retired_at
+  `;
+}
+
+function generatedRuleFullColumns(sql: Sql) {
+  return sql`
+    id, repo, title, rule_text, status, origin, signal_score, member_count,
+    cluster_centroid, created_at, updated_at, activated_at, retired_at
   `;
 }
 
@@ -143,7 +152,7 @@ export function createGeneratedRuleStore(opts: {
               WHEN generated_rules.status = 'pending' THEN EXCLUDED.status
               ELSE generated_rules.status
             END
-          RETURNING *
+          RETURNING ${generatedRuleFullColumns(sql)}
         `;
 
         return rowToRecord(rows[0] as unknown as GeneratedRuleRow);
@@ -156,7 +165,9 @@ export function createGeneratedRuleStore(opts: {
 
     async getRule(ruleId: number): Promise<GeneratedRuleRecord | null> {
       const rows = await sql`
-        SELECT * FROM generated_rules WHERE id = ${ruleId}
+        SELECT ${generatedRuleFullColumns(sql)}
+        FROM generated_rules
+        WHERE id = ${ruleId}
       `;
       if (rows.length === 0) return null;
       return rowToRecord(rows[0] as unknown as GeneratedRuleRow);
@@ -210,10 +221,21 @@ export function createGeneratedRuleStore(opts: {
         UPDATE generated_rules
         SET status = 'active', activated_at = now(), retired_at = NULL, updated_at = now()
         WHERE id = ${ruleId}
-        RETURNING *
+        RETURNING ${generatedRuleFullColumns(sql)}
       `;
       if (rows.length === 0) return null;
       return rowToRecord(rows[0] as unknown as GeneratedRuleRow);
+    },
+
+    async activateRules(ruleIds: readonly number[]): Promise<GeneratedRuleRecord[]> {
+      if (ruleIds.length === 0) return [];
+      const rows = await sql`
+        UPDATE generated_rules
+        SET status = 'active', activated_at = now(), retired_at = NULL, updated_at = now()
+        WHERE id = ANY(${[...ruleIds]}::bigint[])
+        RETURNING ${generatedRuleFullColumns(sql)}
+      `;
+      return rows.map((row) => rowToRecord(row as unknown as GeneratedRuleRow));
     },
 
     async retireRule(ruleId: number): Promise<GeneratedRuleRecord | null> {
@@ -221,10 +243,21 @@ export function createGeneratedRuleStore(opts: {
         UPDATE generated_rules
         SET status = 'retired', retired_at = now(), updated_at = now()
         WHERE id = ${ruleId}
-        RETURNING *
+        RETURNING ${generatedRuleFullColumns(sql)}
       `;
       if (rows.length === 0) return null;
       return rowToRecord(rows[0] as unknown as GeneratedRuleRow);
+    },
+
+    async retireRules(ruleIds: readonly number[]): Promise<GeneratedRuleRecord[]> {
+      if (ruleIds.length === 0) return [];
+      const rows = await sql`
+        UPDATE generated_rules
+        SET status = 'retired', retired_at = now(), updated_at = now()
+        WHERE id = ANY(${[...ruleIds]}::bigint[])
+        RETURNING ${generatedRuleFullColumns(sql)}
+      `;
+      return rows.map((row) => rowToRecord(row as unknown as GeneratedRuleRow));
     },
 
     async getLifecycleCounts(repo: string): Promise<GeneratedRuleLifecycleCounts> {

@@ -41,4 +41,21 @@ describe("loadAddonRuleSource", () => {
     expect(result.kind).toBe("wiki");
     expect(result.text.length).toBeLessThanOrEqual(25);
   });
+
+  test("stops reading wiki response after the bounded byte budget", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode(`<p>${"Rule text ".repeat(100)}</p>`));
+      },
+      cancel() {},
+    });
+
+    const result = await loadAddonRuleSource({
+      maxChars: 20,
+      fetchImpl: async () => new Response(body),
+    });
+
+    expect(result.kind).toBe("wiki");
+    expect(result.text.length).toBeLessThanOrEqual(20);
+  });
 });

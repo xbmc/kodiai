@@ -10,12 +10,14 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { TaskRouter } from "../llm/task-router.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import type { ClusterScheduler } from "./cluster-types.ts";
 import { createClusterStore } from "./cluster-store.ts";
 import type { runClusterPipeline } from "./cluster-pipeline.ts";
 
 const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 120_000; // 2 minutes
+const CLUSTER_REPO_CONCURRENCY = 2;
 
 export type ClusterSchedulerOptions = {
   sql: Sql;
@@ -42,7 +44,7 @@ export function createClusterScheduler(
     const runPipeline = opts.runClusterPipelineFn
       ?? (await import("./cluster-pipeline.ts")).runClusterPipeline;
 
-    for (const repo of repos) {
+    await mapWithConcurrency(repos, CLUSTER_REPO_CONCURRENCY, async (repo) => {
       try {
         logger.info({ repo }, "Starting cluster pipeline for repo");
         await runPipeline({ sql, store, taskRouter, logger, repo });
@@ -51,7 +53,7 @@ export function createClusterScheduler(
         // Fail-open: log and continue to next repo
         logger.error({ err, repo }, "Cluster pipeline failed for repo (fail-open)");
       }
-    }
+    });
   }
 
   return {

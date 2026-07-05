@@ -471,16 +471,7 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
   }
 
   for (const symbol of symbolRecords) {
-    const bodyName = symbol.qualifiedName.split("::").at(-1) ?? symbol.qualifiedName;
-    let bodyStart = -1;
-    for (let idx = Math.max(0, symbol.line - 1); idx < lines.length; idx++) {
-      if (lines[idx]!.includes(bodyName)) {
-        bodyStart = idx;
-        break;
-      }
-    }
-    if (bodyStart === -1) continue;
-
+    const bodyStart = Math.max(0, symbol.line - 1);
     let braceDepth = 0;
     let started = false;
     const bodyLines: string[] = [];

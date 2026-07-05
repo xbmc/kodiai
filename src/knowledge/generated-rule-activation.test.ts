@@ -321,6 +321,54 @@ describe("applyActivationPolicy", () => {
 // ---------------------------------------------------------------------------
 
 describe("pending → active transition contract", () => {
+  test("uses batch activation when the store supports it", async () => {
+    const pending = [
+      makeRecord({ id: 42, signalScore: 0.95 }),
+      makeRecord({ id: 43, title: "Second", signalScore: 0.8 }),
+    ];
+    const activateRule = mock(async (id: number) => makeActiveRecord({ id }));
+    const activateRules = mock(async (ids: number[]) => ids.map((id) => makeActiveRecord({ id })));
+    const store = makeMockStore({
+      listRulesForRepo: mock(async () => pending),
+      activateRule,
+      activateRules,
+    });
+
+    const result = await applyActivationPolicy({ store, logger: silentLogger, repo: "xbmc/xbmc", threshold: 0.7 });
+
+    expect(activateRules).toHaveBeenCalledTimes(1);
+    expect(activateRules).toHaveBeenCalledWith([42, 43]);
+    expect(activateRule).not.toHaveBeenCalled();
+    expect(result.activated).toBe(2);
+    expect(result.activatedRules.map((rule) => rule.id)).toEqual([42, 43]);
+  });
+
+  test("falls back to per-rule activation when batch activation fails", async () => {
+    const pending = [
+      makeRecord({ id: 42, signalScore: 0.95 }),
+      makeRecord({ id: 43, title: "Second", signalScore: 0.8 }),
+    ];
+    const activateRule = mock(async (id: number) => makeActiveRecord({ id }));
+    const activateRules = mock(async () => {
+      throw new Error("batch failed");
+    });
+    const store = makeMockStore({
+      listRulesForRepo: mock(async () => pending),
+      activateRule,
+      activateRules,
+    });
+
+    const result = await applyActivationPolicy({ store, logger: silentLogger, repo: "xbmc/xbmc", threshold: 0.7 });
+
+    expect(activateRules).toHaveBeenCalledTimes(1);
+    expect(activateRule).toHaveBeenCalledTimes(2);
+    expect(activateRule).toHaveBeenNthCalledWith(1, 42);
+    expect(activateRule).toHaveBeenNthCalledWith(2, 43);
+    expect(result.activated).toBe(2);
+    expect(result.activationFailures).toBe(0);
+    expect(result.activatedRules.map((rule) => rule.id)).toEqual([42, 43]);
+  });
+
   test("activateRule is called with the correct rule id", async () => {
     const activateCalls: number[] = [];
     const pending = [

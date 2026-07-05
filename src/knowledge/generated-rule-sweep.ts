@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 import {
   createGeneratedRuleStore,
   type GeneratedRuleRecord,
@@ -12,6 +13,8 @@ import {
 
 const DEFAULT_MAX_REPOS = 25;
 const DEFAULT_MIN_REPO_MEMORIES = 5;
+const SWEEP_REPO_CONCURRENCY = 2;
+const SWEEP_PERSIST_CONCURRENCY = 4;
 
 type RepoDiscoveryRow = {
   repo: string;
@@ -180,7 +183,7 @@ export function createGeneratedRuleSweep(opts: GeneratedRuleSweepOptions): {
       let proposalsPersisted = 0;
       let persistFailures = 0;
 
-      for (const repo of repos) {
+      const processedRepoResults = await mapWithConcurrency(repos, SWEEP_REPO_CONCURRENCY, async (repo) => {
         try {
           const proposals = await generateFn(repo);
           const repoResult: GeneratedRuleSweepRepoResult = {
@@ -199,23 +202,23 @@ export function createGeneratedRuleSweep(opts: GeneratedRuleSweepOptions): {
           }
 
           if (!dryRun) {
-            for (const proposal of proposals) {
+            const persistResults = await mapWithConcurrency(proposals, SWEEP_PERSIST_CONCURRENCY, async (proposal) => {
               try {
                 await savePendingRuleFn(proposal);
-                repoResult.persistedCount++;
-                proposalsPersisted++;
+                return true;
               } catch (err) {
-                repoResult.persistFailureCount++;
-                persistFailures++;
                 sweepLogger.warn(
                   { err, repo, title: proposal.title },
                   "Generated-rule proposal persistence failed (fail-open)",
                 );
+                return false;
               }
-            }
+            });
+            repoResult.persistedCount = persistResults.filter(Boolean).length;
+            repoResult.persistFailureCount = persistResults.length - repoResult.persistedCount;
+            proposalsPersisted += repoResult.persistedCount;
+            persistFailures += repoResult.persistFailureCount;
           }
-
-          repoResults.push(repoResult);
 
           sweepLogger.info(
             {
@@ -228,11 +231,14 @@ export function createGeneratedRuleSweep(opts: GeneratedRuleSweepOptions): {
             },
             "Generated-rule sweep repo complete",
           );
+          return repoResult;
         } catch (err) {
           reposFailed++;
           sweepLogger.warn({ err, repo }, "Generated-rule sweep failed for repo (fail-open)");
+          return null;
         }
-      }
+      });
+      repoResults.push(...processedRepoResults.filter((result): result is GeneratedRuleSweepRepoResult => result !== null));
 
       const result: GeneratedRuleSweepResult = {
         repoCount: repos.length,

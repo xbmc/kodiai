@@ -37,7 +37,7 @@ export async function loadAddonRuleSource(opts: {
     try {
       const response = await fetchImpl(ADDON_RULES_URL, { signal: controller.signal });
       if (!response.ok) return fallbackSource();
-      const text = stripHtml(await response.text()).slice(0, maxChars).trim();
+      const text = stripHtml(await readBoundedResponseText(response, maxChars * 4)).slice(0, maxChars).trim();
       return text.length > 0 ? { kind: "wiki", url: ADDON_RULES_URL, text } : fallbackSource();
     } finally {
       clearTimeout(timeout);
@@ -49,6 +49,42 @@ export async function loadAddonRuleSource(opts: {
 
 function fallbackSource(): AddonRuleSource {
   return { kind: "fallback", url: ADDON_RULES_URL, text: EMBEDDED_ADDON_RULES };
+}
+
+async function readBoundedResponseText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return await response.text();
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (totalBytes < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remainingBytes = maxBytes - totalBytes;
+      const chunk = value.length > remainingBytes ? value.slice(0, remainingBytes) : value;
+      chunks.push(chunk);
+      totalBytes += chunk.length;
+      if (value.length > remainingBytes) break;
+    }
+  } finally {
+    reader.releaseLock();
+    if (totalBytes >= maxBytes) {
+      await response.body.cancel().catch(() => undefined);
+    }
+  }
+
+  return new TextDecoder().decode(concatChunks(chunks, totalBytes));
+}
+
+function concatChunks(chunks: readonly Uint8Array[], totalBytes: number): Uint8Array {
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return combined;
 }
 
 function stripHtml(value: string): string {

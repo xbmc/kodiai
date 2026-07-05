@@ -172,6 +172,10 @@ export async function applyRetirementPolicy(
   let kept = 0;
   let retirementFailures = 0;
   const retiredRules: GeneratedRuleRecord[] = [];
+  const retiringRules: Array<{
+    rule: GeneratedRuleRecord;
+    reason: string;
+  }> = [];
 
   for (const rule of active) {
     const decision = shouldRetireRule(rule, { floor, minMemberCount });
@@ -206,7 +210,10 @@ export async function applyRetirementPolicy(
       },
       "Retirement policy: retirement criterion met — retiring rule",
     );
+    retiringRules.push({ rule, reason: decision.reason ?? "unknown" });
+  }
 
+  const retireOne = async (rule: GeneratedRuleRecord, reason: string): Promise<void> => {
     try {
       const retiredRule = await store.retireRule(rule.id);
       if (retiredRule) {
@@ -219,13 +226,12 @@ export async function applyRetirementPolicy(
             signalScore: retiredRule.signalScore,
             memberCount: retiredRule.memberCount,
             retiredAt: retiredRule.retiredAt,
-            reason: decision.reason,
+            reason,
             repo,
           },
           "Retirement policy: rule retired",
         );
       } else {
-        // Rule disappeared between list and retire (race or concurrent deletion)
         retirementLogger.warn(
           { ruleId: rule.id, title: rule.title, repo },
           "Retirement policy: retireRule returned null — rule may have been removed concurrently",
@@ -238,6 +244,52 @@ export async function applyRetirementPolicy(
         { err, ruleId: rule.id, title: rule.title, repo },
         "Retirement policy: rule retirement failed (fail-open)",
       );
+    }
+  };
+
+  if (store.retireRules && retiringRules.length > 0) {
+    try {
+      const retiredById = new Map(
+        (await store.retireRules(retiringRules.map(({ rule }) => rule.id)))
+          .map((rule) => [rule.id, rule]),
+      );
+      for (const { rule, reason } of retiringRules) {
+        const retiredRule = retiredById.get(rule.id);
+        if (!retiredRule) {
+          retirementFailures++;
+          retirementLogger.warn(
+            { ruleId: rule.id, title: rule.title, repo },
+            "Retirement policy: retireRules did not return rule — rule may have been removed concurrently",
+          );
+          continue;
+        }
+        retired++;
+        retiredRules.push(retiredRule);
+        retirementLogger.info(
+          {
+            ruleId: retiredRule.id,
+            title: retiredRule.title,
+            signalScore: retiredRule.signalScore,
+            memberCount: retiredRule.memberCount,
+            retiredAt: retiredRule.retiredAt,
+            reason,
+            repo,
+          },
+          "Retirement policy: rule retired",
+        );
+      }
+    } catch (err) {
+      retirementLogger.warn(
+        { err, repo, ruleCount: retiringRules.length },
+        "Retirement policy: batch rule retirement failed; falling back to per-rule retirement",
+      );
+      for (const { rule, reason } of retiringRules) {
+        await retireOne(rule, reason);
+      }
+    }
+  } else {
+    for (const { rule, reason } of retiringRules) {
+      await retireOne(rule, reason);
     }
   }
 

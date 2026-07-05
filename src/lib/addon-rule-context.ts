@@ -1,5 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join, normalize } from "node:path";
+import { mapWithConcurrency } from "./concurrency.ts";
 
 export type AddonRuleFileContext = {
   path: string;
@@ -32,21 +33,24 @@ export async function collectAddonRuleContext(params: {
     byAddon.set(addonId, paths);
   }
 
-  const contexts: AddonRuleAddonContext[] = [];
-  for (const [addonId, allChangedPaths] of [...byAddon.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    const files: AddonRuleFileContext[] = [];
-    for (const path of [...new Set(allChangedPaths)].sort()) {
-      files.push(await collectFileContext(params.workspaceDir, path, maxFileChars));
-    }
-    contexts.push({
+  const sortedAddonEntries = [...byAddon.entries()].sort(([left], [right]) => left.localeCompare(right));
+  return await mapWithConcurrency(sortedAddonEntries, 8, async ([addonId, allChangedPaths]) => {
+    const uniqueChangedPaths = [...new Set(allChangedPaths)].sort();
+    const [files, hasLicenseFile] = await Promise.all([
+      mapWithConcurrency(
+        uniqueChangedPaths,
+        16,
+        (path) => collectFileContext(params.workspaceDir, path, maxFileChars),
+      ),
+      addonHasLicenseFile(params.workspaceDir, addonId),
+    ]);
+    return {
       addonId,
       files,
-      allChangedPaths: [...new Set(allChangedPaths)].sort(),
-      hasLicenseFile: await addonHasLicenseFile(params.workspaceDir, addonId),
-    });
-  }
-
-  return contexts;
+      allChangedPaths: uniqueChangedPaths,
+      hasLicenseFile,
+    };
+  });
 }
 
 async function addonHasLicenseFile(workspaceDir: string, addonId: string): Promise<boolean> {
@@ -78,9 +82,10 @@ async function collectFileContext(
 
   try {
     const absolutePath = safeWorkspacePath(workspaceDir, gitPath);
-    const content = await Bun.file(absolutePath).text();
-    if (content.length > maxFileChars) {
-      return { path: gitPath, content: content.slice(0, maxFileChars), omittedReason: "truncated" };
+    const file = Bun.file(absolutePath);
+    const content = await file.slice(0, maxFileChars).text();
+    if (file.size > maxFileChars) {
+      return { path: gitPath, content, omittedReason: "truncated" };
     }
     return { path: gitPath, content };
   } catch {

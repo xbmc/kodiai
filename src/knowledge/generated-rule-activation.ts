@@ -83,6 +83,7 @@ export async function applyActivationPolicy(
   let skipped = 0;
   let activationFailures = 0;
   const activatedRules: GeneratedRuleRecord[] = [];
+  const qualifyingRules: GeneratedRuleRecord[] = [];
 
   for (const rule of pending) {
     const qualifies = shouldAutoActivate(rule.signalScore, threshold);
@@ -114,7 +115,10 @@ export async function applyActivationPolicy(
       },
       "Activation policy: threshold hit — activating rule",
     );
+    qualifyingRules.push(rule);
+  }
 
+  const activateOne = async (rule: GeneratedRuleRecord): Promise<void> => {
     try {
       const activatedRule = await store.activateRule(rule.id);
       if (activatedRule) {
@@ -132,7 +136,6 @@ export async function applyActivationPolicy(
           "Activation policy: rule auto-activated",
         );
       } else {
-        // Rule disappeared between list and activate (race condition or already gone)
         activationLogger.warn(
           { ruleId: rule.id, title: rule.title, repo },
           "Activation policy: activateRule returned null — rule may have been removed concurrently",
@@ -145,6 +148,51 @@ export async function applyActivationPolicy(
         { err, ruleId: rule.id, title: rule.title, repo },
         "Activation policy: rule activation failed (fail-open)",
       );
+    }
+  };
+
+  if (store.activateRules && qualifyingRules.length > 0) {
+    try {
+      const activatedById = new Map(
+        (await store.activateRules(qualifyingRules.map((rule) => rule.id)))
+          .map((rule) => [rule.id, rule]),
+      );
+      for (const rule of qualifyingRules) {
+        const activatedRule = activatedById.get(rule.id);
+        if (!activatedRule) {
+          activationFailures++;
+          activationLogger.warn(
+            { ruleId: rule.id, title: rule.title, repo },
+            "Activation policy: activateRules did not return rule — rule may have been removed concurrently",
+          );
+          continue;
+        }
+        activated++;
+        activatedRules.push(activatedRule);
+        activationLogger.info(
+          {
+            ruleId: activatedRule.id,
+            title: activatedRule.title,
+            signalScore: activatedRule.signalScore,
+            memberCount: activatedRule.memberCount,
+            activatedAt: activatedRule.activatedAt,
+            repo,
+          },
+          "Activation policy: rule auto-activated",
+        );
+      }
+    } catch (err) {
+      activationLogger.warn(
+        { err, repo, ruleCount: qualifyingRules.length },
+        "Activation policy: batch rule activation failed; falling back to per-rule activation",
+      );
+      for (const rule of qualifyingRules) {
+        await activateOne(rule);
+      }
+    }
+  } else {
+    for (const rule of qualifyingRules) {
+      await activateOne(rule);
     }
   }
 

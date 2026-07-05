@@ -59,6 +59,15 @@ describe("formatAddonCheckComment", () => {
     expect(comment).not.toContain("info line");
   });
 
+  test("escapes markdown table cells from checker findings", () => {
+    const findings: AddonFinding[] = [
+      { level: "ERROR", addonId: "plugin.video.foo|bar", message: "line one\nline | two" },
+    ];
+    const comment = formatAddonCheckComment(findings, marker);
+
+    expect(comment).toContain("| plugin.video.foo\\|bar | ERROR | line one<br>line \\| two |");
+  });
+
   test("summary line counts only ERROR and WARN", () => {
     const findings: AddonFinding[] = [
       { level: "ERROR", addonId: "plugin.video.foo", message: "err1" },
@@ -202,6 +211,22 @@ describe("formatAddonCheckComment", () => {
     expect(comment).toContain("| plugin.video.example | ERROR | deterministic | Missing English description in addon.xml. |");
     expect(comment).toContain("| plugin.video.example | WARN | llm | Download appears to happen without user confirmation. |");
     expect(comment).toContain("_1 error(s), 1 warning(s) found by addon-rule review._");
+  });
+
+  test("escapes markdown table cells from addon-rule findings", () => {
+    const comment = formatAddonCheckComment([], marker, undefined, {
+      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      findings: [
+        {
+          addonId: "plugin.video.foo|bar",
+          level: "WARN",
+          source: "llm",
+          message: "first line\nsecond | line",
+        },
+      ],
+    });
+
+    expect(comment).toContain("| plugin.video.foo\\|bar | WARN | llm | first line<br>second \\| line |");
   });
 
   test("addon-rule review renders clean state when no rule findings exist", () => {

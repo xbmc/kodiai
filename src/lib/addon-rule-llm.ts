@@ -1,6 +1,6 @@
-import type { AddonRuleFinding } from "./addon-check-formatter.ts";
 import type { AddonRuleAddonContext } from "./addon-rule-context.ts";
 import type { AddonRuleSource } from "./addon-rule-source.ts";
+import type { AddonRuleFinding } from "./addon-rule-types.ts";
 
 export type AddonRuleLlmInput = {
   repo: string;
@@ -28,23 +28,9 @@ export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
     "Return only JSON with this shape:",
     '{ "findings": [{ "addonId": "plugin.video.example", "level": "ERROR", "message": "Specific rule issue." }] }',
     "",
-    "Changed addon context:",
+    "Changed addon context JSON:",
+    JSON.stringify(params.contexts, null, 2),
   ];
-
-  for (const context of params.contexts) {
-    lines.push("", `## Addon ${context.addonId}`, "Changed paths:");
-    for (const path of context.allChangedPaths) {
-      lines.push(`- ${path}`);
-    }
-    for (const file of context.files) {
-      lines.push("", `### ${file.path}`);
-      if (file.content !== undefined) {
-        lines.push("```", file.content, "```");
-      } else {
-        lines.push(`Content omitted: ${file.omittedReason ?? "unavailable"}`);
-      }
-    }
-  }
 
   return lines.join("\n");
 }

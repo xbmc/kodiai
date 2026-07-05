@@ -1,5 +1,5 @@
-import type { AddonRuleFinding } from "./addon-check-formatter.ts";
 import type { AddonRuleAddonContext } from "./addon-rule-context.ts";
+import type { AddonRuleFinding } from "./addon-rule-types.ts";
 
 const DEV_ARTIFACT_PATTERNS = [
   /(^|\/)\.github\//,
