@@ -1,8 +1,15 @@
-import { createRequire } from "node:module";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { McpServerConfig, McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 import type { CommentPublicationState } from "./comment-server.ts";
+import * as commentServer from "./comment-server.ts";
+import * as inlineReviewServer from "./inline-review-server.ts";
+import * as ciStatusServer from "./ci-status-server.ts";
+import * as reviewCommentThreadServer from "./review-comment-thread-server.ts";
+import * as checkpointServer from "./checkpoint-server.ts";
+import * as issueLabelServer from "./issue-label-server.ts";
+import * as issueCommentServer from "./issue-comment-server.ts";
+import * as candidateFindingServer from "./candidate-finding-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
@@ -40,17 +47,15 @@ type McpServerModuleLoaders = {
   candidateFinding: () => Pick<CandidateFindingServerModule, "createCandidateFindingServer">;
 };
 
-const requireModule = createRequire(import.meta.url);
-
 const defaultMcpServerModuleLoaders: McpServerModuleLoaders = {
-  comment: () => requireModule("./comment-server.ts") as CommentServerModule,
-  inlineReview: () => requireModule("./inline-review-server.ts") as InlineReviewServerModule,
-  ciStatus: () => requireModule("./ci-status-server.ts") as CiStatusServerModule,
-  reviewCommentThread: () => requireModule("./review-comment-thread-server.ts") as ReviewCommentThreadServerModule,
-  checkpoint: () => requireModule("./checkpoint-server.ts") as CheckpointServerModule,
-  issueLabel: () => requireModule("./issue-label-server.ts") as IssueLabelServerModule,
-  issueComment: () => requireModule("./issue-comment-server.ts") as IssueCommentServerModule,
-  candidateFinding: () => requireModule("./candidate-finding-server.ts") as CandidateFindingServerModule,
+  comment: () => commentServer,
+  inlineReview: () => inlineReviewServer,
+  ciStatus: () => ciStatusServer,
+  reviewCommentThread: () => reviewCommentThreadServer,
+  checkpoint: () => checkpointServer,
+  issueLabel: () => issueLabelServer,
+  issueComment: () => issueCommentServer,
+  candidateFinding: () => candidateFindingServer,
 };
 
 export interface TriageConfig {
