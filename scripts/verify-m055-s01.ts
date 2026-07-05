@@ -5,9 +5,13 @@ const COMMAND_NAME = "verify:m055:s01" as const;
 const README_PATH = path.resolve(import.meta.dir, "../README.md");
 const CHANGELOG_PATH = path.resolve(import.meta.dir, "../CHANGELOG.md");
 const PACKAGE_JSON_PATH = path.resolve(import.meta.dir, "../package.json");
-const EXPECTED_SHIPPED_COUNT_LINE = "46 milestones shipped (v0.1 through v0.46).";
+const EXPECTED_SHIPPED_COUNT_LINE = "47 milestones shipped (v0.1 through v0.47).";
 const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m055-s01.ts";
 const REQUIRED_RECENT_FEATURE_MARKERS = [
+  "v0.47",
+  "addon-rule review routing",
+  "generated-rule store",
+  "MCP server module",
   "v0.46",
   "review/deployment reliability",
   "MCP auth fallback",
@@ -40,6 +44,7 @@ const REQUIRED_NIGHTLY_WORKFLOW_MARKERS = [
   "GitHub Actions workflow run status",
 ] as const;
 const REQUIRED_CHANGELOG_RELEASE_MARKERS = [
+  "## v0.47",
   "## v0.46",
   "## v0.45",
   "## v0.44",
@@ -276,7 +281,7 @@ function buildReadmeRecentFeaturesCheck(readmeContent: string): Check {
   return passCheck(
     "M055-S01-README-RECENT-FEATURES",
     "readme_recent_features_ok",
-    `README.md covers v0.46 and recent milestones M073-M074 while retaining M051-M054/M066 shipped feature markers.`,
+    `README.md covers v0.47, v0.46, and recent milestones M073-M074 while retaining M051-M054/M066 shipped feature markers.`,
   );
 }
 
@@ -316,7 +321,7 @@ function buildChangelogRecentReleasesCheck(changelogContent: string): Check {
   return passCheck(
     "M055-S01-CHANGELOG-RECENT-RELEASES",
     "changelog_recent_releases_ok",
-    "CHANGELOG.md includes v0.29 through v0.31 and current v0.36 through v0.46 release entries.",
+    "CHANGELOG.md includes v0.29 through v0.31 and current v0.36 through v0.47 release entries.",
   );
 }
 

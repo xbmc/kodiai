@@ -2,6 +2,38 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.47 (2026-07-04)
+
+Addon repository review routing, generated-rule persistence fixes, and deployment artifact hardening for the live GitHub integration path.
+
+### Added
+
+- Specialized addon-rule review routing for explicit `@kodiai review` mentions in addon repositories, using addon-specific rule context while still allowing general code-review findings when relevant.
+- Shared addon-rule review orchestration used by both addon checks and mention handling.
+- Regression coverage for addon review routing, addon-check formatting, generated-rule centroid preservation, and generated-rule batch failure fallback.
+
+### Changed
+
+- Addon-rule prompt context is now structured JSON, with bounded file/wiki reads and bounded concurrency in rule context collection.
+- Generated-rule activation and retirement now batch policy decisions while preserving per-rule fail-open behavior on batch failures.
+- Review graph, generated-rule sweep, and cluster scheduling paths reduce repeated work with bounded concurrency and narrower helper APIs.
+
+### Fixed
+
+- Generated-rule store point APIs now preserve persisted `clusterCentroid` values instead of returning empty centroid arrays.
+- Docker app images include SQL migrations in `dist/migrations`, preventing startup crashes in bundled deployments.
+- MCP server modules are statically imported into the bundled app runtime, so deployed review jobs can reach GitHub comment, inline review, CI, thread, checkpoint, issue, and candidate-finding tools.
+
+### Verification
+
+- `bunx tsc --noEmit` passed.
+- Targeted unit suites passed with `275 pass`, `9 skip`, `0 fail`.
+- `bun test src/execution/mcp/index.test.ts src/execution/mcp/http-server.test.ts src/execution/agent-entrypoint.test.ts` passed with `68 pass`.
+- `bunx eslint src/execution/mcp/index.ts Dockerfile` exited 0; Dockerfile was ignored by ESLint.
+- `git diff --check` passed.
+- Deployed revision `ca-kodiai--deploy-b2b9e10bbfe5-20260704-175036` passed `/healthz` and `/readiness`.
+- Live explicit `@kodiai review` proof on `xbmc/xbmc#28172` completed ACA job `caj-kodiai-agent-10iskt9`, published immediate bot output in comment `4884326857`, and published the full review summary in comment `4884338620`.
+
 ## v0.46 (2026-06-26)
 
 Review/deployment reliability hardening after optimizer and thermo-nuclear quality passes, deployed to Azure Container Apps and validated against the live Kodi review trigger path.
