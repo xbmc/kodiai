@@ -1,5 +1,6 @@
 import type { ExecutionResult } from "../execution/types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
 
 type MentionTelemetryLogger = {
@@ -7,6 +8,30 @@ type MentionTelemetryLogger = {
 };
 
 export type MentionDerivedContextCacheStatus = "hit" | "miss" | "degraded" | "bypass";
+export type MentionExecutionTelemetryStage = "reuseTelemetry" | "executionTelemetry" | "promptSections";
+export type MentionExecutionTelemetryWriteStatus = "recorded" | "skipped";
+export type MentionExecutionTelemetrySummary = Record<
+  MentionExecutionTelemetryStage,
+  MentionExecutionTelemetryWriteStatus
+>;
+export type MentionExecutionTelemetryFailure = {
+  stage: MentionExecutionTelemetryStage;
+  error: Error;
+};
+export type MentionExecutionTelemetryResult = Result<
+  MentionExecutionTelemetrySummary,
+  MentionExecutionTelemetryError
+>;
+
+export class MentionExecutionTelemetryError extends Error {
+  readonly failures: MentionExecutionTelemetryFailure[];
+
+  constructor(failures: MentionExecutionTelemetryFailure[]) {
+    super(`${failures.length} mention telemetry ${failures.length === 1 ? "write" : "writes"} failed`);
+    this.name = "MentionExecutionTelemetryError";
+    this.failures = failures;
+  }
+}
 
 export async function recordMentionExecutionTelemetry(params: {
   telemetryStore: Pick<TelemetryStore, "record" | "recordRateLimitEvent" | "recordPromptSections">;
@@ -19,7 +44,14 @@ export async function recordMentionExecutionTelemetry(params: {
   promptSections?: PromptSectionRecord[];
   derivedContextCacheStatus: MentionDerivedContextCacheStatus;
   derivedContextCacheReason?: string;
-}): Promise<void> {
+}): Promise<MentionExecutionTelemetryResult> {
+  const summary: MentionExecutionTelemetrySummary = {
+    reuseTelemetry: "recorded",
+    executionTelemetry: "recorded",
+    promptSections: params.promptSections ? "recorded" : "skipped",
+  };
+  const failures: MentionExecutionTelemetryFailure[] = [];
+
   try {
     await params.telemetryStore.recordRateLimitEvent({
       deliveryId: params.deliveryId,
@@ -35,7 +67,9 @@ export async function recordMentionExecutionTelemetry(params: {
         : params.derivedContextCacheStatus,
     });
   } catch (err) {
-    params.logger.warn({ err }, "Mention reuse telemetry write failed (non-blocking)");
+    const error = toError(err);
+    failures.push({ stage: "reuseTelemetry", error });
+    params.logger.warn({ err: error }, "Mention reuse telemetry write failed (non-blocking)");
   }
 
   try {
@@ -57,11 +91,13 @@ export async function recordMentionExecutionTelemetry(params: {
       stopReason: params.result.stopReason,
     });
   } catch (err) {
-    params.logger.warn({ err }, "Telemetry write failed (non-blocking)");
+    const error = toError(err);
+    failures.push({ stage: "executionTelemetry", error });
+    params.logger.warn({ err: error }, "Telemetry write failed (non-blocking)");
   }
 
   if (!params.promptSections) {
-    return;
+    return failures.length > 0 ? resultErr(new MentionExecutionTelemetryError(failures)) : resultOk(summary);
   }
 
   try {
@@ -71,6 +107,10 @@ export async function recordMentionExecutionTelemetry(params: {
       (promptSectionRecord) => params.telemetryStore.recordPromptSections(promptSectionRecord),
     );
   } catch (err) {
-    params.logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
+    const error = toError(err);
+    failures.push({ stage: "promptSections", error });
+    params.logger.warn({ err: error }, "Prompt-section telemetry write failed (non-blocking)");
   }
+
+  return failures.length > 0 ? resultErr(new MentionExecutionTelemetryError(failures)) : resultOk(summary);
 }

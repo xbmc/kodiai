@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ExecutionResult } from "../execution/types.ts";
 import type { PromptSectionRecord, RateLimitEventRecord, TelemetryRecord, TelemetryStore } from "../telemetry/types.ts";
-import { recordMentionExecutionTelemetry } from "./mention-telemetry.ts";
+import { MentionExecutionTelemetryError, recordMentionExecutionTelemetry } from "./mention-telemetry.ts";
 
 function makeResult(overrides: Partial<ExecutionResult> = {}): ExecutionResult {
   return {
@@ -64,7 +64,7 @@ describe("recordMentionExecutionTelemetry", () => {
     const { store, rateLimitEvents, records, promptSections } = makeTelemetryStore();
     const logger = { warn: mock(() => {}) };
 
-    await recordMentionExecutionTelemetry({
+    const result = await recordMentionExecutionTelemetry({
       telemetryStore: store,
       logger,
       deliveryId: "delivery-1",
@@ -107,6 +107,14 @@ describe("recordMentionExecutionTelemetry", () => {
     }]);
     expect(promptSections).toEqual([promptSection]);
     expect(logger.warn).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        reuseTelemetry: "recorded",
+        executionTelemetry: "recorded",
+        promptSections: "recorded",
+      },
+    });
   });
 
   test("normalizes trailing event dots and keeps telemetry failures non-blocking", async () => {
@@ -123,7 +131,7 @@ describe("recordMentionExecutionTelemetry", () => {
       }),
     } as unknown as TelemetryStore;
 
-    await recordMentionExecutionTelemetry({
+    const result = await recordMentionExecutionTelemetry({
       telemetryStore: store,
       logger,
       deliveryId: "delivery-2",
@@ -155,5 +163,41 @@ describe("recordMentionExecutionTelemetry", () => {
       expect.objectContaining({ err: expect.any(Error) }),
       "Prompt-section telemetry write failed (non-blocking)",
     );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBeInstanceOf(MentionExecutionTelemetryError);
+      expect(result.err.failures.map((failure) => failure.stage)).toEqual([
+        "reuseTelemetry",
+        "executionTelemetry",
+        "promptSections",
+      ]);
+      expect(result.err.message).toContain("3 mention telemetry writes failed");
+    }
+  });
+
+  test("reports prompt-section telemetry as skipped when no prompt sections are provided", async () => {
+    const { store } = makeTelemetryStore();
+    const logger = { warn: mock(() => {}) };
+
+    const result = await recordMentionExecutionTelemetry({
+      telemetryStore: store,
+      logger,
+      deliveryId: "delivery-3",
+      repo: "xbmc/xbmc",
+      eventType: "issue_comment.created",
+      result: makeResult(),
+      derivedContextCacheStatus: "bypass",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        reuseTelemetry: "recorded",
+        executionTelemetry: "recorded",
+        promptSections: "skipped",
+      },
+    });
+    expect(store.recordPromptSections).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
