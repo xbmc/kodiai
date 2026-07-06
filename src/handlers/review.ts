@@ -245,6 +245,7 @@ import { publishReviewCandidateInlineComments } from "./review-candidate-inline-
 import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
 import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
 import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
+import { logReviewCandidatePublicationAdapterContext } from "./review-candidate-publication-adapter-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1578,33 +1579,14 @@ export function createReviewHandler(deps: {
         });
         const reviewFindingLifecycleResult = reviewFindingLifecycleContext.lifecycleResult;
         const reviewValidationTruthProjection = reviewFindingLifecycleContext.validationTruthProjection;
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review-fix-eligibility",
-            gateResult: reviewCandidatePublicationAdapter.summary.fixEligibility.status,
-            reviewOutputKey,
-            deliveryId: event.id,
-            counts: reviewCandidatePublicationAdapter.summary.fixEligibility.counts,
-            reasonCounts: reviewCandidatePublicationAdapter.summary.fixEligibility.reasonCounts,
-            omittedReasonCounts: reviewCandidatePublicationAdapter.summary.fixEligibility.omittedReasonCounts,
-            redaction: reviewCandidatePublicationAdapter.summary.fixEligibility.redaction,
-          },
-          "Review fix eligibility summarized",
-        );
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review-candidate-publication-adapter",
-            gateResult: reviewCandidatePublicationAdapter.summary.counts.publishable > 0 ? "publishable" : "skipped",
-            counts: reviewCandidatePublicationAdapter.summary.counts,
-            skipped: reviewCandidatePublicationAdapter.summary.skipped,
-            payloadFingerprints: reviewCandidatePublicationAdapter.summary.fingerprints,
-            fixEligibility: reviewCandidatePublicationAdapter.summary.fixEligibility,
-            details: reviewCandidatePublicationAdapterDetailsSummary.text,
-          },
-          "Review candidate publication adapter summarized",
-        );
+        logReviewCandidatePublicationAdapterContext({
+          logger,
+          baseLog,
+          reviewOutputKey,
+          deliveryId: event.id,
+          adapter: reviewCandidatePublicationAdapter,
+          detailsSummary: reviewCandidatePublicationAdapterDetailsSummary,
+        });
 
         // Delta classification (REV-03)
         // Only classify deltas in incremental mode when prior findings exist.

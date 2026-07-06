@@ -279,6 +279,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-finding-lifecycle-context.ts");
   });
 
+  test("keeps candidate publication adapter summary logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("gate: \"review-fix-eligibility\"");
+    expect(source).not.toContain("gate: \"review-candidate-publication-adapter\"");
+    expect(source).not.toContain("Review candidate publication adapter summarized");
+    expect(source).toContain("logReviewCandidatePublicationAdapterContext");
+    expect(source).toContain("./review-candidate-publication-adapter-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
