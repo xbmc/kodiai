@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { findReviewCommentsByMarkerPaged } from "../lib/github-issue-comments.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import {
   parseInlineCommentMetadata,
   type FindingCategory,
@@ -18,6 +19,32 @@ export type ExtractedFinding = {
   startLine?: number;
   endLine?: number;
 };
+
+export type InlineCommentRemovalSummary = {
+  deletedCommentIds: number[];
+};
+
+export type InlineCommentRemovalFailure = {
+  commentId: number;
+  error: Error;
+};
+
+export type InlineCommentRemovalResult = Result<InlineCommentRemovalSummary, InlineCommentRemovalError>;
+
+export class InlineCommentRemovalError extends Error {
+  readonly deletedCommentIds: number[];
+  readonly failures: InlineCommentRemovalFailure[];
+
+  constructor(params: {
+    deletedCommentIds: number[];
+    failures: InlineCommentRemovalFailure[];
+  }) {
+    super(`${params.failures.length} inline review comment ${params.failures.length === 1 ? "deletion" : "deletions"} failed`);
+    this.name = "InlineCommentRemovalError";
+    this.deletedCommentIds = params.deletedCommentIds;
+    this.failures = params.failures;
+  }
+}
 
 export async function extractFindingsFromReviewComments(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
@@ -93,9 +120,11 @@ export async function removeFilteredInlineComments(params: {
   findings: Array<{ commentId: number }>;
   logger: Logger;
   baseLog: Record<string, unknown>;
-}): Promise<void> {
+}): Promise<InlineCommentRemovalResult> {
   const { octokit, owner, repo, findings, logger, baseLog } = params;
   const commentIds = new Set<number>(findings.map((finding) => finding.commentId));
+  const deletedCommentIds: number[] = [];
+  const failures: InlineCommentRemovalFailure[] = [];
 
   await mapWithConcurrency([...commentIds], 4, async (commentId) => {
     try {
@@ -104,16 +133,26 @@ export async function removeFilteredInlineComments(params: {
         repo,
         comment_id: commentId,
       });
+      deletedCommentIds.push(commentId);
     } catch (err) {
+      const error = toError(err);
+      failures.push({ commentId, error });
       logger.warn(
         {
           ...baseLog,
           gate: "inline-policy-filter",
           commentId,
-          err,
+          err: error,
         },
         "Failed to delete filtered inline review comment; continuing",
       );
     }
   });
+
+  deletedCommentIds.sort((left, right) => left - right);
+  failures.sort((left, right) => left.commentId - right.commentId);
+
+  return failures.length > 0
+    ? resultErr(new InlineCommentRemovalError({ deletedCommentIds, failures }))
+    : resultOk({ deletedCommentIds });
 }

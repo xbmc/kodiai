@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   extractFindingsFromReviewComments,
+  InlineCommentRemovalError,
+  removeFilteredInlineComments,
   type ExtractedFinding,
 } from "./review-comment-finding-extraction.ts";
 import { buildReviewOutputMarker } from "./review-idempotency.ts";
@@ -86,5 +88,85 @@ describe("extractFindingsFromReviewComments", () => {
       startLine: 10,
       endLine: 12,
     }]);
+  });
+});
+
+describe("removeFilteredInlineComments", () => {
+  test("returns deletion evidence for removed inline comments", async () => {
+    const deletedIds: number[] = [];
+    const logger = {
+      warn: () => undefined,
+    };
+
+    const result = await removeFilteredInlineComments({
+      octokit: {
+        rest: {
+          pulls: {
+            deleteReviewComment: async (params: { comment_id: number }) => {
+              deletedIds.push(params.comment_id);
+            },
+          },
+        },
+      } as never,
+      owner: "acme",
+      repo: "repo",
+      findings: [{ commentId: 10 }, { commentId: 10 }, { commentId: 11 }],
+      logger: logger as never,
+      baseLog: {},
+    });
+
+    expect(deletedIds.sort((left, right) => left - right)).toEqual([10, 11]);
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        deletedCommentIds: [10, 11],
+      },
+    });
+  });
+
+  test("returns failed deletion evidence while keeping removals fail-open", async () => {
+    const warnCalls: Array<[Record<string, unknown>, string]> = [];
+    const deletionError = new Error("delete failed");
+    const logger = {
+      warn: (payload: Record<string, unknown>, message: string) => {
+        warnCalls.push([payload, message]);
+      },
+    };
+
+    const result = await removeFilteredInlineComments({
+      octokit: {
+        rest: {
+          pulls: {
+            deleteReviewComment: async (params: { comment_id: number }) => {
+              if (params.comment_id === 12) {
+                throw deletionError;
+              }
+            },
+          },
+        },
+      } as never,
+      owner: "acme",
+      repo: "repo",
+      findings: [{ commentId: 11 }, { commentId: 12 }],
+      logger: logger as never,
+      baseLog: { deliveryId: "delivery-1" },
+    });
+
+    expect(warnCalls).toEqual([[
+      expect.objectContaining({
+        deliveryId: "delivery-1",
+        gate: "inline-policy-filter",
+        commentId: 12,
+        err: deletionError,
+      }),
+      "Failed to delete filtered inline review comment; continuing",
+    ]]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBeInstanceOf(InlineCommentRemovalError);
+      expect(result.err.deletedCommentIds).toEqual([11]);
+      expect(result.err.failures.map((failure) => failure.commentId)).toEqual([12]);
+      expect(result.err.message).toContain("1 inline review comment deletion failed");
+    }
   });
 });
