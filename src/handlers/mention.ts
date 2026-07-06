@@ -95,7 +95,6 @@ import {
 } from "./formatter-suggestion-orchestration.ts";
 import {
   buildCombinedReviewAndFormatMentionLogFields,
-  buildCombinedReviewAndFormatThrownMentionLogFields,
   buildFormatOnlyMentionLogFields,
   classifyMentionExecutionFailureSubtype,
   createMentionExecutionCompletedLogger,
@@ -146,6 +145,7 @@ import {
   type MentionPrDiffContext,
 } from "./mention-pr-diff-context.ts";
 import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
+import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -965,9 +965,9 @@ export function createMentionHandler(deps: {
         }
         const isCombinedFormatterSuggestionRequest =
           isPrSurface && formatterSuggestionRequest?.mode === "review-and-format";
-        let result: Awaited<ReturnType<typeof executor.execute>>;
-        try {
-          result = await executor.execute({
+        const result = await executeMentionWithFormatterRecovery({
+          execute: (context) => executor.execute(context),
+          context: {
             workspace,
             installationId: event.installationId,
             owner: mention.owner,
@@ -994,47 +994,16 @@ export function createMentionHandler(deps: {
             enableInlineTools: explicitReviewRequest ? true : undefined,
             enableCandidateFindingTool: explicitReviewRequest ? true : undefined,
             prDiffCommentabilityIndex: explicitReviewRequest ? explicitReviewPrDiffCommentabilityIndex : undefined,
-          });
-        } catch (err) {
-          if (isCombinedFormatterSuggestionRequest) {
-            logger.warn(
-              {
-                surface: mention.surface,
-                owner: mention.owner,
-                repo: mention.repo,
-                prNumber: mention.prNumber,
-                formatterSuggestionRequest: true,
-                formatterMode: "review-and-format",
-                reviewConclusion: "threw",
-                failureCategory: classifyError(err, false),
-              },
-              "Combined review-and-format review executor threw before formatter subflow",
-            );
-            const formatterResult = await runFormatterSuggestionForMention("review-and-format");
-            const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic({
-              formatterResult,
-              formatterMode: "review-and-format",
-            });
-            logger.info(
-              buildCombinedReviewAndFormatThrownMentionLogFields({
-                mention: {
-                  surface: mention.surface,
-                  owner: mention.owner,
-                  repo: mention.repo,
-                  issueNumber: mention.issueNumber,
-                  prNumber: mention.prNumber,
-                },
-                deliveryId: event.id,
-                reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
-                formatterResult,
-                visibleReplyPosted,
-                visibleReplyFailed,
-              }),
-              "Combined review-and-format formatter subflow completed after review executor threw",
-            );
-          }
-          throw err;
-        }
+          },
+          isCombinedFormatterSuggestionRequest,
+          mention,
+          deliveryId: event.id,
+          reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
+          runFormatterSuggestionForMention,
+          postFormatterVisibleDiagnostic,
+          classifyFailure: (err) => classifyError(err, false),
+          logger,
+        });
 
         // Explicit PR review mentions bypass the pull_request review handler's
         // deterministic clean-review publish path. Bridge that gap here so a

@@ -95,6 +95,7 @@ describe("mention handler structure", () => {
 
   test("keeps combined review-and-format log shaping out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const dispatchSource = readFileSync(new URL("./mention-execution-dispatch.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewPartialFailure =");
     expect(source).not.toContain("const formatterPartialFailure =");
@@ -102,7 +103,7 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("combinedPartialFailure: reviewPartialFailure");
     expect(source).not.toContain("formatterPartialFailure: formatterResult.partialFailure ?? false");
     expect(source).toContain("buildCombinedReviewAndFormatMentionLogFields");
-    expect(source).toContain("buildCombinedReviewAndFormatThrownMentionLogFields");
+    expect(dispatchSource).toContain("buildCombinedReviewAndFormatThrownMentionLogFields");
   });
 
   test("keeps format-only formatter log shaping out of the monster handler", () => {
@@ -110,6 +111,16 @@ describe("mention handler structure", () => {
 
     expect(source).not.toContain("partialFailure: formatterResult.partialFailure ?? false");
     expect(source).toContain("buildFormatOnlyMentionLogFields");
+  });
+
+  test("keeps mention executor dispatch and combined formatter throw recovery out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("result = await executor.execute({");
+    expect(source).not.toContain("Combined review-and-format review executor threw before formatter subflow");
+    expect(source).not.toContain("Combined review-and-format formatter subflow completed after review executor threw");
+    expect(source).toContain("executeMentionWithFormatterRecovery");
+    expect(source).toContain("./mention-execution-dispatch.ts");
   });
 
   test("keeps accepted mention handle normalization out of the monster handler", () => {
