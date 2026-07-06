@@ -207,6 +207,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-executor-state.ts");
   });
 
+  test("keeps candidate publication bridge projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let handlerCandidatePublicationBridge: ReviewHandlerPublicationBridgeProjection;");
+    expect(source).not.toContain("Review handler candidate-publication bridge projection failed; using bounded degraded evidence");
+    expect(source).not.toContain("Projected review handler candidate-publication bridge evidence");
+    expect(source).toContain("resolveReviewHandlerCandidatePublicationBridge");
+    expect(source).toContain("./review-candidate-publication-bridge.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

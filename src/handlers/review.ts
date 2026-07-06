@@ -149,7 +149,6 @@ import {
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
   buildShadowSpecialistCorrelationKey,
-  buildCandidateVerificationPublicationEvidenceLogFields,
 } from "../review-orchestration/review-specialist-publication-log.ts";
 import {
   buildReviewPromptFingerprint,
@@ -205,10 +204,6 @@ import {
 import {
   createCandidateVerificationPublicationEvidenceCollector,
 } from "../specialists/candidate-verification-publication-evidence.ts";
-import {
-  projectReviewHandlerCandidatePublicationBridgeEvidence,
-  type ReviewHandlerPublicationBridgeProjection,
-} from "../issue-131/review-handler-publication-bridge.ts";
 import {
   attachReviewFindingLifecycle,
   type AttachReviewFindingLifecycleResult,
@@ -278,6 +273,7 @@ import {
 } from "./review-large-pr-triage.ts";
 import { buildReviewPlanPublication } from "./review-plan-publication-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
+import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1401,52 +1397,16 @@ export function createReviewHandler(deps: {
         }
         publicationPhaseStartedAt = Date.now();
 
-        if (result.candidateVerificationPublicationEvidence) {
-          logger.info(
-            {
-              ...baseLog,
-              ...buildCandidateVerificationPublicationEvidenceLogFields(result.candidateVerificationPublicationEvidence),
-            },
-            "Captured aggregate M070 candidate-verification publication evidence",
-          );
-        }
         let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
 
-        let handlerCandidatePublicationBridge: ReviewHandlerPublicationBridgeProjection;
-        try {
-          handlerCandidatePublicationBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
-            evidenceSummary: result.candidateVerificationPublicationEvidence,
-            deliveryId: event.id,
-            reviewOutputKey,
-            upstreamCorrelationKey: candidateVerificationContext.correlationKey,
-          });
-        } catch (err) {
-          handlerCandidatePublicationBridge = projectReviewHandlerCandidatePublicationBridgeEvidence({
-            evidenceSummary: null,
-            deliveryId: event.id,
-            reviewOutputKey,
-            upstreamCorrelationKey: candidateVerificationContext.correlationKey,
-          });
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "m072-review-handler-publication-bridge",
-              gateResult: "degraded",
-              reason: "projection-exception",
-              err,
-              ...handlerCandidatePublicationBridge.logFields,
-            },
-            "Review handler candidate-publication bridge projection failed; using bounded degraded evidence",
-          );
-        }
-        logger.info(
-          {
-            ...baseLog,
-            gate: "m072-review-handler-publication-bridge",
-            ...handlerCandidatePublicationBridge.logFields,
-          },
-          "Projected review handler candidate-publication bridge evidence",
-        );
+        const handlerCandidatePublicationBridge = resolveReviewHandlerCandidatePublicationBridge({
+          logger,
+          baseLog,
+          evidenceSummary: result.candidateVerificationPublicationEvidence,
+          deliveryId: String(event.id),
+          reviewOutputKey,
+          upstreamCorrelationKey: String(candidateVerificationContext.correlationKey),
+        });
 
         const reviewCandidateFindingResult = resolveReviewCandidateFindingResult({
           candidateFinding: result.candidateFinding,
