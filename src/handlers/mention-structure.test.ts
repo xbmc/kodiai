@@ -254,6 +254,16 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-explicit-review-lifecycle.ts");
   });
 
+  test("keeps explicit review publish eligibility and skip logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("evaluateExplicitMentionReviewPublish({");
+    expect(source).not.toContain("logExplicitMentionReviewPublishSkipped({");
+    expect(source).not.toContain("const explicitReviewResultFindingLines = explicitReviewPublishEvaluation.findingLines");
+    expect(source).toContain("resolveExplicitMentionReviewPublishDecision");
+    expect(source).toContain("./mention-explicit-review-publish-decision.ts");
+  });
+
   test("keeps clone planning out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

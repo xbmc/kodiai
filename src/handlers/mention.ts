@@ -72,8 +72,6 @@ import {
   buildReviewOutputKey,
 } from "../review-orchestration/review-idempotency.ts";
 import {
-  evaluateExplicitMentionReviewPublish,
-  logExplicitMentionReviewPublishSkipped,
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
@@ -146,6 +144,7 @@ import {
 } from "./mention-pr-diff-context.ts";
 import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
 import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
+import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-review-publish-decision.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -1023,7 +1022,7 @@ export function createMentionHandler(deps: {
           candidateFinding: result.candidateFinding,
           logger,
         });
-        const explicitReviewPublishEvaluation = evaluateExplicitMentionReviewPublish({
+        const explicitReviewPublishDecision = resolveExplicitMentionReviewPublishDecision({
           explicitReviewRequest,
           prNumber: mention.prNumber,
           reviewOutputKey,
@@ -1034,30 +1033,15 @@ export function createMentionHandler(deps: {
             resultText: result.resultText,
             toolUseNames: result.toolUseNames,
           },
+          surface: mention.surface,
+          owner: mention.owner,
+          repo: mention.repo,
+          autoApprove: config.review.autoApprove,
+          logger,
         });
-        const explicitReviewResultFindingLines = explicitReviewPublishEvaluation.findingLines;
-        const explicitReviewPublishEligible = explicitReviewPublishEvaluation.eligible;
-
-        if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
-          logExplicitMentionReviewPublishSkipped({
-            logger,
-            baseLog: {
-              surface: mention.surface,
-              owner: mention.owner,
-              repo: mention.repo,
-              prNumber: mention.prNumber,
-            },
-            evaluation: explicitReviewPublishEvaluation,
-            reviewOutputKey,
-            result: {
-              conclusion: result.conclusion,
-              published: result.published,
-              usedRepoInspectionTools: result.usedRepoInspectionTools,
-              toolUseNames: result.toolUseNames,
-            },
-            autoApprove: config.review.autoApprove,
-          });
-        }
+        const explicitReviewPublishEvaluation = explicitReviewPublishDecision.evaluation;
+        const explicitReviewResultFindingLines = explicitReviewPublishDecision.findingLines;
+        const explicitReviewPublishEligible = explicitReviewPublishDecision.eligible;
 
         if (explicitReviewPublishEligible && reviewOutputKey && mention.prNumber !== undefined) {
           const publishOctokit = await githubApp.getInstallationOctokit(event.installationId);
