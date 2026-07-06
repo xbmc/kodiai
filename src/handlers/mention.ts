@@ -118,7 +118,6 @@ import { publishMentionFailureFallback } from "./mention-failure-publication.ts"
 import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
   buildMentionQueueKey,
-  collectCappedPrDiff,
   findLatestReviewPredecessor,
   prepareMentionCheckoutAndLoadConfig,
 } from "./mention-workspace.ts";
@@ -145,6 +144,10 @@ import {
 import { recordMentionExecutionTelemetry } from "./mention-telemetry.ts";
 import { projectExplicitMentionReviewValidationTruth } from "./mention-validation-truth.ts";
 import { buildMentionExplicitReviewPrompt } from "./mention-explicit-review-prompt.ts";
+import {
+  resolveMentionPrDiffContext,
+  type MentionPrDiffContext,
+} from "./mention-pr-diff-context.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -845,38 +848,13 @@ export function createMentionHandler(deps: {
           writeEnabled,
         });
 
-        // Pre-fetch PR diff for PR mentions — prevents turn exhaustion by giving the model
-        // the diff upfront so it does not need to tool-call git to read it.
-        // Cap at 8000 chars; truncate at the last newline to avoid splitting mid-line.
-        let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined;
-        // mention.baseRef is the PR base branch (e.g. "main"), set by the event parser.
-        if (allowPrDiffContext && mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
-          try {
-            prDiffContext = await collectCappedPrDiff({
-              workspaceDir: workspace.dir,
-              baseRef: mention.baseRef,
-              logger,
-              logContext: {
-                surface: mention.surface,
-                prNumber: mention.prNumber,
-                baseRef: mention.baseRef,
-              },
-            });
-            if (prDiffContext) {
-              logger.debug(
-                {
-                  surface: mention.surface,
-                  prNumber: mention.prNumber,
-                  fileCount: prDiffContext.fileCount,
-                  truncated: prDiffContext.truncated,
-                },
-                "Pre-fetched PR diff for mention context",
-              );
-            }
-          } catch {
-            // fail-open — model falls back to tool calls if this fails
-          }
-        }
+        const prDiffContext: MentionPrDiffContext | undefined = await resolveMentionPrDiffContext({
+          allowPrDiffContext,
+          writeEnabled,
+          mention,
+          workspaceDir: workspace.dir,
+          logger,
+        });
 
         setReviewWorkPhase("prompt-build");
         let prompt: string;

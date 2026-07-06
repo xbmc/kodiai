@@ -307,6 +307,16 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-explicit-review-prompt.ts");
   });
 
+  test("keeps PR diff prefetch fail-open orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined");
+    expect(source).not.toContain("Pre-fetched PR diff for mention context");
+    expect(source).not.toContain("collectCappedPrDiff({");
+    expect(source).toContain("resolveMentionPrDiffContext");
+    expect(source).toContain("./mention-pr-diff-context.ts");
+  });
+
   test("keeps write-mode PR draft assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
