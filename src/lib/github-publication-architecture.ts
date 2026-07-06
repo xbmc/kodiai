@@ -90,15 +90,20 @@ export function findDirectGitHubPublicationWrites(
       }
     }
 
-    const requestCallPattern = /octokit\s*\.\s*request\s*\(\s*([`"'])(POST|PATCH|PUT)\s+([^`"']*\/repos\/[^`"']*)\1\s*,\s*\{[^)]*\bbody\b/gs;
+    const requestCallPattern = /octokit\s*\.\s*request\s*\(\s*([`"'])(POST|PATCH|PUT)\s+([^`"']*\/repos\/[^`"']*)\1\s*,\s*(\{[^)]*\bbody\b|[A-Za-z_$][\w$]*)/gs;
     for (const match of source.matchAll(requestCallPattern)) {
       const httpMethod = match[2];
       const route = match[3];
+      const requestPayload = match[4];
       if (
         BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS.includes(
           httpMethod as (typeof BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS)[number],
         )
         && route
+        && (
+          requestPayload?.trimStart().startsWith("{")
+          || bodyBearingPayloadAliases.includes(requestPayload ?? "")
+        )
       ) {
         findings.push({ file, method: `request:${httpMethod} ${route}` });
       }

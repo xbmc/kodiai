@@ -53,6 +53,10 @@ describe("GitHub publication architecture", () => {
           { owner, repo, pull_number, review_id, body },
         );`,
         "src/handlers/unsafe-request-template.ts": "await octokit.request(`PATCH /repos/{owner}/{repo}/issues/{issue_number}`, { owner, repo, issue_number, body });",
+        "src/handlers/unsafe-request-payload-alias.ts": `
+          const payload = { owner, repo, issue_number, body };
+          await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", payload);
+        `,
         "src/lib/github-publication.ts": "await octokit.rest.issues.createComment({ owner, repo, issue_number, body });",
         "src/handlers/safe.ts": "await createIssueCommentWithPublicationPipeline(octokit, { owner, repo, issue_number, body });",
       },
@@ -90,6 +94,10 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-pr.ts",
         method: "pulls.create",
+      },
+      {
+        file: "src/handlers/unsafe-request-payload-alias.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
       },
       {
         file: "src/handlers/unsafe-request-template.ts",
