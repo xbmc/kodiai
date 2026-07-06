@@ -74,10 +74,6 @@ import {
   type FindingCategory,
   fingerprintFindingTitle,
 } from "../lib/review-finding-metadata.ts";
-import {
-  normalizeSkipPattern,
-} from "../lib/review-git-utils.ts";
-import picomatch from "picomatch";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import {
   normalizeRepoDoctrineProjection,
@@ -285,6 +281,7 @@ import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
 import { resolveReviewIncrementalDiff } from "./review-incremental-diff.ts";
+import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -901,22 +898,14 @@ export function createReviewHandler(deps: {
           detectScopeCoordination: scopeCoordinator?.detectScopeCoordination,
         });
 
-        const skipMatchers = config.review.skipPaths
-          .map(normalizeSkipPattern)
-          .filter((p) => p.length > 0)
-          .map((p) => picomatch(p, { dot: true }));
-
-        const changedFiles = allChangedFiles.filter((file) => {
-          return !skipMatchers.some((m) => m(file));
+        const skipPathsGate = evaluateReviewSkipPathsGate({
+          prNumber: pr.number,
+          allChangedFiles,
+          skipPaths: config.review.skipPaths,
+          logger,
         });
-
-        if (changedFiles.length === 0) {
-          logger.info(
-            { prNumber: pr.number, totalFiles: allChangedFiles.length },
-            "All changed files matched skipPaths, skipping review",
-          );
-          return;
-        }
+        if (skipPathsGate.action === "skip") return;
+        const changedFiles = skipPathsGate.changedFiles;
 
         let shadowSpecialistResult: ShadowSpecialistSubflowResult | undefined;
         let shadowSpecialistReviewDetailsProjection: ShadowSpecialistReviewDetailsProjection | null = null;

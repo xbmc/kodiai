@@ -407,4 +407,15 @@ describe("review handler structure", () => {
     expect(source).toContain("resolveReviewIncrementalDiff");
     expect(source).toContain("./review-incremental-diff.ts");
   });
+
+  test("keeps skipPaths matching and skip logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const skipMatchers = config.review.skipPaths");
+    expect(source).not.toContain(".map(normalizeSkipPattern)");
+    expect(source).not.toContain("picomatch(p, { dot: true })");
+    expect(source).not.toContain("All changed files matched skipPaths, skipping review");
+    expect(source).toContain("evaluateReviewSkipPathsGate");
+    expect(source).toContain("./review-skip-paths-gate.ts");
+  });
 });
