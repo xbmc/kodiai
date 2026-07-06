@@ -388,4 +388,13 @@ describe("review handler structure", () => {
     expect(source).toContain("evaluateReviewTriggerConfigGate");
     expect(source).toContain("./review-trigger-config-gate.ts");
   });
+
+  test("keeps review skip-author gating out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("config.review.skipAuthors.includes(pr.user.login)");
+    expect(source).not.toContain("PR author in skipAuthors, skipping review");
+    expect(source).toContain("evaluateReviewSkipAuthorGate");
+    expect(source).toContain("./review-skip-author-gate.ts");
+  });
 });

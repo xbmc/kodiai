@@ -283,6 +283,7 @@ import { resolveReviewStructuralImpactSelection } from "./review-structural-impa
 import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
 import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
+import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -803,14 +804,13 @@ export function createReviewHandler(deps: {
           });
         }
 
-        // Check skipAuthors
-        if (config.review.skipAuthors.includes(pr.user.login)) {
-          logger.info(
-            { prNumber: pr.number, author: pr.user.login },
-            "PR author in skipAuthors, skipping review",
-          );
-          return;
-        }
+        const skipAuthorGate = evaluateReviewSkipAuthorGate({
+          prNumber: pr.number,
+          authorLogin: pr.user.login,
+          skipAuthors: config.review.skipAuthors,
+          logger,
+        });
+        if (skipAuthorGate.action === "skip") return;
 
         const authorClassification = await resolveReviewAuthorContext({
           authorLogin: pr.user.login,
