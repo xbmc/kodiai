@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import {
   attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
@@ -6,7 +7,8 @@ import {
   type AttachReviewValidationTruthResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
 
-export type ExplicitMentionReviewValidationTruthProjectionResult = "recorded" | "failed";
+export type ExplicitMentionReviewValidationTruthProjectionResult =
+  Result<AttachReviewValidationTruthResult["projection"]>;
 
 type ExplicitMentionReviewValidationTruthLogger = Pick<Logger, "info" | "warn">;
 
@@ -58,12 +60,13 @@ export function projectExplicitMentionReviewValidationTruth(
       },
       "Projected explicit mention review validation truth evidence",
     );
-    return "recorded";
+    return resultOk(explicitReviewValidationTruth.projection);
   } catch (err) {
+    const error = toError(err);
     try {
       params.logger.warn(
         {
-          err,
+          err: error,
           surface: params.surface,
           owner: params.owner,
           repo: params.repo,
@@ -78,6 +81,6 @@ export function projectExplicitMentionReviewValidationTruth(
     } catch {
       // Diagnostics are fail-open for review execution and must not block publication.
     }
-    return "failed";
+    return resultErr(error);
   }
 }

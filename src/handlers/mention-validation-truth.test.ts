@@ -61,7 +61,8 @@ describe("projectExplicitMentionReviewValidationTruth", () => {
       lifecycleResult,
     });
 
-    expect(result).toBe("recorded");
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.value.status : null).toBe("normalized");
     expect(info).toHaveBeenCalledTimes(1);
     expect(warn).not.toHaveBeenCalled();
     expect(info.mock.calls[0]?.[0]).toMatchObject({
@@ -111,7 +112,7 @@ describe("projectExplicitMentionReviewValidationTruth", () => {
       },
     });
 
-    expect(result).toBe("failed");
+    expect(result).toEqual({ ok: false, err });
     expect(info).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toMatchObject({
@@ -156,6 +157,7 @@ describe("projectExplicitMentionReviewValidationTruth", () => {
       },
     });
 
-    expect(result).toBe("failed");
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.err.message).toBe("projection failed");
   });
 });
