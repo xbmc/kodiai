@@ -77,9 +77,6 @@ import {
 import {
   normalizeSkipPattern,
 } from "../lib/review-git-utils.ts";
-import {
-  isReviewTriggerEnabled,
-} from "../lib/review-trigger-utils.ts";
 import picomatch from "picomatch";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import {
@@ -285,6 +282,7 @@ import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
 import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
 import { resolveReviewClonePlan } from "./review-clone-plan.ts";
+import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -755,46 +753,15 @@ export function createReviewHandler(deps: {
           }),
         );
 
-        logger.info(
-          {
-            ...baseLog,
-            gate: "trigger-config",
-            reviewEnabled: config.review.enabled,
-            triggers: config.review.triggers,
-          },
-          "Evaluating review trigger configuration",
-        );
-
-        // Check review.enabled
-        if (!config.review.enabled) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-enabled",
-              gateResult: "skipped",
-              skipReason: "review-disabled",
-              apiOwner,
-              apiRepo,
-            },
-            "Review disabled in config, skipping",
-          );
-          return;
-        }
-
-        // Check whether this event action is enabled in review.triggers
-        if (!isReviewTriggerEnabled(action, config.review.triggers)) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-trigger",
-              gateResult: "skipped",
-              skipReason: "trigger-disabled",
-              triggers: config.review.triggers,
-            },
-            "Review trigger disabled in config, skipping",
-          );
-          return;
-        }
+        const triggerConfigGate = evaluateReviewTriggerConfigGate({
+          action,
+          reviewConfig: config.review,
+          apiOwner,
+          apiRepo,
+          baseLog,
+          logger,
+        });
+        if (triggerConfigGate.action === "skip") return;
 
         const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);
         const idempotencyGate = await evaluateReviewOutputIdempotencyGate({

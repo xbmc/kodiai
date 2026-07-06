@@ -377,4 +377,15 @@ describe("review handler structure", () => {
     expect(source).toContain("resolveReviewClonePlan");
     expect(source).toContain("./review-clone-plan.ts");
   });
+
+  test("keeps review trigger config gating out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("gate: \"trigger-config\"");
+    expect(source).not.toContain("if (!config.review.enabled)");
+    expect(source).not.toContain("isReviewTriggerEnabled(action, config.review.triggers)");
+    expect(source).not.toContain("Review trigger disabled in config, skipping");
+    expect(source).toContain("evaluateReviewTriggerConfigGate");
+    expect(source).toContain("./review-trigger-config-gate.ts");
+  });
 });
