@@ -87,11 +87,9 @@ import {
   type ReviewPlanBuilder,
 } from "../review-orchestration/review-plan.ts";
 import {
-  coordinateReviewCandidateApproval,
   type ReviewCandidateApprovalResult,
 } from "../review-orchestration/review-candidate-approval.ts";
 import {
-  adaptApprovedCandidatesForInlinePublication,
   buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
   toReviewCandidatePublicationAdapterSummary,
@@ -268,6 +266,7 @@ import { buildReviewPlanPublication } from "./review-plan-publication-context.ts
 import { projectReviewExecutorState } from "./review-executor-state.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
+import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1516,26 +1515,21 @@ export function createReviewHandler(deps: {
           graphValidationEnabled: config.review.graphValidation.enabled,
         });
 
-        const directFallbackAllowed = reviewCandidateFindingResult.status !== "shadow"
-          || reviewCandidateFindingResult.counts.recorded === 0;
-        const directPublicationAttempted = result.published === true || extractedFindings.length > 0;
-        const reviewCandidateApprovalResult: ReviewCandidateApprovalResult = coordinateReviewCandidateApproval({
+        const reviewCandidateApprovalContext = resolveReviewCandidateApprovalContext({
           candidates: reviewCandidateFindingResult,
           reducer: reducerResult,
-          fallbackPolicy: {
-            allowDirectFallback: directFallbackAllowed,
-            attemptedDirectFallback: directPublicationAttempted,
-          },
+          resultPublished: result.published === true,
+          extractedFindingCount: extractedFindings.length,
           minConfidence: config.review.minConfidence,
+          prDiffText: diffContext.diffContent,
+          maxFixSuggestions: resolvedMaxComments,
+          logger,
         });
+        const directFallbackAllowed = reviewCandidateApprovalContext.directFallbackAllowed;
+        const directPublicationAttempted = reviewCandidateApprovalContext.directPublicationAttempted;
+        const reviewCandidateApprovalResult: ReviewCandidateApprovalResult = reviewCandidateApprovalContext.approval;
         const reviewCandidatePublicationAdapter: ReviewCandidatePublicationAdapterResult =
-          adaptApprovedCandidatesForInlinePublication({
-            approval: reviewCandidateApprovalResult,
-            reducer: reducerResult,
-            prDiffText: diffContext.diffContent,
-            maxFixSuggestions: resolvedMaxComments,
-            logger,
-          });
+          reviewCandidateApprovalContext.publicationAdapter;
 
         const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();
         const handlerCandidateVerificationPublicationEvidenceCollector = createCandidateVerificationPublicationEvidenceCollector(

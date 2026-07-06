@@ -226,6 +226,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-finding-context.ts");
   });
 
+  test("keeps candidate approval adapter context out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const directFallbackAllowed = reviewCandidateFindingResult.status !== \"shadow\"");
+    expect(source).not.toContain("const reviewCandidateApprovalResult: ReviewCandidateApprovalResult = coordinateReviewCandidateApproval({");
+    expect(source).not.toContain("adaptApprovedCandidatesForInlinePublication({");
+    expect(source).toContain("resolveReviewCandidateApprovalContext");
+    expect(source).toContain("./review-candidate-approval-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
