@@ -83,10 +83,6 @@ import {
 import { recordSuccessfulMentionConversationTurn } from "./mention-conversation-recording.ts";
 import { maybePostMentionCostWarning } from "./mention-cost-warning.ts";
 import {
-  buildAcceptedMentionHandles,
-  mentionBodyMatchesAcceptedHandles,
-} from "./mention-handle-match.ts";
-import {
   createFormatterSuggestionMentionRunner,
   createFormatterSuggestionVisibleDiagnosticPoster,
   runFormatterSuggestionSubflow,
@@ -148,6 +144,7 @@ import {
 import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
 import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
 import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-review-publish-decision.ts";
+import { resolveMentionRequestContext } from "./mention-request-context.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -516,11 +513,13 @@ export function createMentionHandler(deps: {
         // (Repo-level opt-out remains possible via mention.acceptClaudeAlias=false,
         // but the alias is enabled by default to support immediate cutover.)
         const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;
-        const acceptedHandles = buildAcceptedMentionHandles({ appSlug, acceptClaudeAlias });
-
-        // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
-        // Use substring match to align with the fast filter.
-        if (!mentionBodyMatchesAcceptedHandles(mention.commentBody, acceptedHandles)) {
+        const mentionRequestContext = resolveMentionRequestContext({
+          appSlug,
+          acceptClaudeAlias,
+          commentBody: mention.commentBody,
+        });
+        const acceptedHandles = mentionRequestContext.acceptedHandles;
+        if (mentionRequestContext.action === "skip" && mentionRequestContext.reason === "handle-mismatch") {
           logger.info(
             {
               surface: mention.surface,
@@ -535,9 +534,7 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        const userQuestion = stripMention(mention.commentBody, acceptedHandles);
-        const formatterSuggestionRequest = detectFormatterSuggestionRequest(userQuestion);
-        if (userQuestion.trim().length === 0) {
+        if (mentionRequestContext.action === "skip") {
           logger.info(
             {
               surface: mention.surface,
@@ -551,6 +548,7 @@ export function createMentionHandler(deps: {
           );
           return;
         }
+        const { userQuestion, formatterSuggestionRequest } = mentionRequestContext;
 
         const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
         const isPrSurface = mention.prNumber !== undefined;

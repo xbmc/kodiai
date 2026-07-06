@@ -125,12 +125,25 @@ describe("mention handler structure", () => {
 
   test("keeps accepted mention handle normalization out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const requestContextSource = readFileSync(new URL("./mention-request-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("acceptedBodyLower");
     expect(source).not.toContain(".map((h) => (h.startsWith(\"@\") ? h : `@${h}`))");
-    expect(source).toContain("./mention-handle-match.ts");
-    expect(source).toContain("buildAcceptedMentionHandles");
-    expect(source).toContain("mentionBodyMatchesAcceptedHandles");
+    expect(source).toContain("./mention-request-context.ts");
+    expect(requestContextSource).toContain("./mention-handle-match.ts");
+    expect(requestContextSource).toContain("buildAcceptedMentionHandles");
+    expect(requestContextSource).toContain("mentionBodyMatchesAcceptedHandles");
+  });
+
+  test("keeps post-config mention request context parsing out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const acceptedHandles = buildAcceptedMentionHandles({ appSlug, acceptClaudeAlias });");
+    expect(source).not.toContain("const userQuestion = stripMention(mention.commentBody, acceptedHandles);");
+    expect(source).not.toContain("const formatterSuggestionRequest = detectFormatterSuggestionRequest(userQuestion);");
+    expect(source).not.toContain("userQuestion.trim().length === 0");
+    expect(source).toContain("resolveMentionRequestContext");
+    expect(source).toContain("./mention-request-context.ts");
   });
 
   test("keeps allowed-users matching out of the monster handler", () => {
