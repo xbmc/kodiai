@@ -355,4 +355,15 @@ describe("review handler structure", () => {
     expect(source).toContain("postReviewRequestedEyesReaction");
     expect(source).toContain("./review-reactions.ts");
   });
+
+  test("keeps review-requested target gating out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("\"requested_reviewer\" in reviewRequestedPayload");
+    expect(source).not.toContain("normalizeReviewerLogin(requestedReviewerLogin)");
+    expect(source).not.toContain("Skipping review_requested event for non-kodiai reviewer");
+    expect(source).not.toContain("Skipping review_requested event because only a team was requested");
+    expect(source).toContain("evaluateReviewRequestedGate");
+    expect(source).toContain("./review-requested-gate.ts");
+  });
 });

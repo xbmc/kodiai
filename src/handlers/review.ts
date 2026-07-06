@@ -79,7 +79,6 @@ import {
 } from "../lib/review-git-utils.ts";
 import {
   isReviewTriggerEnabled,
-  normalizeReviewerLogin,
 } from "../lib/review-trigger-utils.ts";
 import picomatch from "picomatch";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
@@ -284,6 +283,7 @@ import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
+import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -525,88 +525,13 @@ export function createReviewHandler(deps: {
     }
 
     if (action === "review_requested") {
-      const reviewRequestedPayload = payload as PullRequestReviewRequestedEvent;
-      const requestedReviewer =
-        "requested_reviewer" in reviewRequestedPayload
-          ? reviewRequestedPayload.requested_reviewer
-          : undefined;
-      const requestedTeam =
-        "requested_team" in reviewRequestedPayload
-          ? reviewRequestedPayload.requested_team
-          : undefined;
-      const requestedReviewerLogin =
-        typeof requestedReviewer?.login === "string"
-          ? requestedReviewer.login
-          : undefined;
-      const requestedTeamName =
-        typeof requestedTeam?.name === "string"
-          ? requestedTeam.name
-          : undefined;
-      const requestedTeamSlug =
-        typeof (requestedTeam as { slug?: unknown } | undefined)?.slug === "string"
-          ? (requestedTeam as { slug: string }).slug
-          : undefined;
-      const appSlug = githubApp.getAppSlug();
-      const normalizedAppSlug = normalizeReviewerLogin(appSlug);
-
-      if (requestedReviewerLogin) {
-        const normalizedRequestedReviewer = normalizeReviewerLogin(requestedReviewerLogin);
-        if (normalizedRequestedReviewer !== normalizedAppSlug) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review_requested_reviewer",
-              gateResult: "skipped",
-              skipReason: "non-kodiai-reviewer",
-              requestedReviewer: requestedReviewerLogin,
-              normalizedRequestedReviewer,
-              normalizedAppSlug,
-              requestedTeam: requestedTeamName ?? null,
-            },
-            "Skipping review_requested event for non-kodiai reviewer",
-          );
-          return;
-        }
-
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review_requested_reviewer",
-            gateResult: "accepted",
-            requestedReviewer: requestedReviewerLogin,
-            normalizedRequestedReviewer,
-            normalizedAppSlug,
-          },
-          "Accepted review_requested event for kodiai reviewer",
-        );
-      } else if (requestedTeamName || requestedTeamSlug) {
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review_requested_reviewer",
-            gateResult: "skipped",
-            skipReason: "team-only-request",
-            requestedReviewer: null,
-            requestedTeam: requestedTeamName ?? null,
-            requestedTeamSlug: requestedTeamSlug ?? null,
-          },
-          "Skipping review_requested event because only a team was requested",
-        );
-        return;
-      } else {
-        logger.warn(
-          {
-            ...baseLog,
-            gate: "review_requested_reviewer",
-            gateResult: "skipped",
-            skipReason: "missing-or-malformed-reviewer-payload",
-            hasRequestedReviewerField: "requested_reviewer" in reviewRequestedPayload,
-            hasRequestedTeamField: "requested_team" in reviewRequestedPayload,
-          },
-          "Skipping review_requested event due to missing reviewer payload",
-        );
-        return;
-      }
+      const reviewRequestedGate = evaluateReviewRequestedGate({
+        payload: payload as unknown as Record<string, unknown>,
+        appSlug: githubApp.getAppSlug(),
+        baseLog,
+        logger,
+      });
+      if (reviewRequestedGate.action === "skip") return;
     }
 
     // API target is always the base (upstream) repo
