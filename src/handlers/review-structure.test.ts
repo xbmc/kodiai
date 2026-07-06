@@ -397,4 +397,14 @@ describe("review handler structure", () => {
     expect(source).toContain("evaluateReviewSkipAuthorGate");
     expect(source).toContain("./review-skip-author-gate.ts");
   });
+
+  test("keeps incremental diff fail-open orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let incrementalResult: IncrementalDiffResult | null = null;");
+    expect(source).not.toContain("computeIncrementalDiff({");
+    expect(source).not.toContain("Incremental diff computation failed (fail-open, full review)");
+    expect(source).toContain("resolveReviewIncrementalDiff");
+    expect(source).toContain("./review-incremental-diff.ts");
+  });
 });

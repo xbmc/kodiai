@@ -23,7 +23,7 @@ import type {
 } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
-import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
+import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
@@ -284,6 +284,7 @@ import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
 import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
+import { resolveReviewIncrementalDiff } from "./review-incremental-diff.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -834,27 +835,14 @@ export function createReviewHandler(deps: {
         });
 
         setReviewWorkPhase("incremental-diff");
-        // Incremental diff computation (REV-01)
-        // Determine if this is an incremental re-review based on prior completed reviews.
-        // Works for both synchronize and review_requested events (state-driven, not event-driven).
-        let incrementalResult: IncrementalDiffResult | null = null;
-        if (knowledgeStore) {
-          try {
-            incrementalResult = await computeIncrementalDiff({
-              workspaceDir: workspace.dir,
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              getLastReviewedHeadSha: (p) => knowledgeStore.getLastReviewedHeadSha(p),
-              logger,
-            });
-            logger.info(
-              { ...baseLog, gate: "incremental-diff", mode: incrementalResult.mode, reason: incrementalResult.reason },
-              "Incremental diff computation complete",
-            );
-          } catch (err) {
-            logger.warn({ ...baseLog, err }, "Incremental diff computation failed (fail-open, full review)");
-          }
-        }
+        const incrementalResult: IncrementalDiffResult | null = await resolveReviewIncrementalDiff({
+          knowledgeStore,
+          workspaceDir: workspace.dir,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          baseLog,
+          logger,
+        });
 
         // Build changed files and diff context, handling shallow-history merge-base gaps.
         retrievalPhaseStartedAt = Date.now();
