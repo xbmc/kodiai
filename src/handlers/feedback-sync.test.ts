@@ -122,7 +122,7 @@ function createCaptureLogger(): {
 
 function createHarness(opts: {
   candidates?: FindingCommentCandidate[];
-  listReactions?: (commentId: number) => Promise<Array<Record<string, unknown>>>;
+  listReactions?: (commentId: number, page?: number) => Promise<Array<Record<string, unknown>>>;
   recordFeedbackReactions?: (reactions: FeedbackReaction[]) => void;
   logger?: Logger;
 }): {
@@ -151,8 +151,10 @@ function createHarness(opts: {
     getInstallationOctokit: async () => ({
       rest: {
         reactions: {
-          listForPullRequestReviewComment: async ({ comment_id }: { comment_id: number }) => ({
-            data: await (opts.listReactions?.(comment_id) ?? Promise.resolve([])),
+          listForPullRequestReviewComment: async (
+            { comment_id, page }: { comment_id: number; page?: number },
+          ) => ({
+            data: await (opts.listReactions?.(comment_id, page) ?? Promise.resolve([])),
           }),
         },
       },
@@ -271,6 +273,41 @@ describe("createFeedbackSyncHandler", () => {
 
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.reactionId).toBe(10001);
+  });
+
+  test("scans later reaction pages for human feedback", async () => {
+    const pagesSeen: Array<number | undefined> = [];
+    const { handlers, recorded } = createHarness({
+      listReactions: async (_commentId, page) => {
+        pagesSeen.push(page);
+        if (page === 2) {
+          return [
+            {
+              id: 11001,
+              content: "-1",
+              user: { login: "reviewer", type: "User" },
+              created_at: "2026-02-12T02:00:00Z",
+            },
+          ];
+        }
+        return Array.from({ length: 100 }, (_, index) => ({
+          id: index + 1,
+          content: "heart",
+          user: { login: `user-${index}`, type: "User" },
+          created_at: "2026-02-12T01:00:00Z",
+        }));
+      },
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!(buildPullRequestOpenedEvent());
+
+    expect(pagesSeen).toEqual([1, 2]);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.reactionId).toBe(11001);
+    expect(recorded[0]?.reactionContent).toBe("-1");
   });
 
   test("logs API/store failures and never throws through webhook dispatch path", async () => {

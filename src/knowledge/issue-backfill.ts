@@ -10,12 +10,14 @@ import {
 } from "./issue-comment-chunker.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type IssueSyncState = {
   repo: string;
   lastSyncedAt: Date | null;
+  commentLastSyncedAt: Date | null;
   lastPageCursor: string | null;
   totalIssuesSynced: number;
   totalCommentsSynced: number;
@@ -55,7 +57,7 @@ export async function getIssueSyncState(
   repo: string,
 ): Promise<IssueSyncState | null> {
   const rows = await sql`
-    SELECT repo, last_synced_at, last_page_cursor,
+    SELECT repo, last_synced_at, comment_last_synced_at, last_page_cursor,
            total_issues_synced, total_comments_synced, backfill_complete
     FROM issue_sync_state
     WHERE repo = ${repo}
@@ -65,6 +67,7 @@ export async function getIssueSyncState(
   return {
     repo: row.repo as string,
     lastSyncedAt: row.last_synced_at ? new Date(row.last_synced_at as string) : null,
+    commentLastSyncedAt: row.comment_last_synced_at ? new Date(row.comment_last_synced_at as string) : null,
     lastPageCursor: (row.last_page_cursor as string) ?? null,
     totalIssuesSynced: row.total_issues_synced as number,
     totalCommentsSynced: row.total_comments_synced as number,
@@ -78,15 +81,16 @@ export async function updateIssueSyncState(
 ): Promise<void> {
   await sql`
     INSERT INTO issue_sync_state (
-      repo, last_synced_at, last_page_cursor,
+      repo, last_synced_at, comment_last_synced_at, last_page_cursor,
       total_issues_synced, total_comments_synced, backfill_complete, updated_at
     ) VALUES (
-      ${state.repo}, ${state.lastSyncedAt}, ${state.lastPageCursor},
+      ${state.repo}, ${state.lastSyncedAt}, ${state.commentLastSyncedAt}, ${state.lastPageCursor},
       ${state.totalIssuesSynced}, ${state.totalCommentsSynced},
       ${state.backfillComplete}, now()
     )
     ON CONFLICT (repo) DO UPDATE SET
       last_synced_at = EXCLUDED.last_synced_at,
+      comment_last_synced_at = EXCLUDED.comment_last_synced_at,
       last_page_cursor = EXCLUDED.last_page_cursor,
       total_issues_synced = EXCLUDED.total_issues_synced,
       total_comments_synced = EXCLUDED.total_comments_synced,
@@ -96,10 +100,6 @@ export async function updateIssueSyncState(
 }
 
 // ── Rate limiting ───────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function adaptiveRateDelay(
   headers: Record<string, string | undefined> | undefined,
@@ -300,6 +300,7 @@ export async function backfillIssues(opts: IssueBackfillOptions): Promise<IssueB
       await updateIssueSyncState(sql, {
         repo,
         lastSyncedAt: lastUpdatedAt,
+        commentLastSyncedAt: syncState?.commentLastSyncedAt ?? null,
         lastPageCursor: String(page),
         totalIssuesSynced: totalIssues,
         totalCommentsSynced: syncState?.totalCommentsSynced ?? 0,
@@ -316,6 +317,7 @@ export async function backfillIssues(opts: IssueBackfillOptions): Promise<IssueB
     await updateIssueSyncState(sql, {
       repo,
       lastSyncedAt: lastUpdatedAt,
+      commentLastSyncedAt: syncState?.commentLastSyncedAt ?? null,
       lastPageCursor: String(page),
       totalIssuesSynced: totalIssues,
       totalCommentsSynced: syncState?.totalCommentsSynced ?? 0,
@@ -344,7 +346,7 @@ export async function backfillIssueComments(opts: IssueBackfillOptions): Promise
   }
 
   const syncState = await getIssueSyncState(sql, repo);
-  const sinceParam = syncState?.lastSyncedAt?.toISOString();
+  const sinceParam = syncState?.commentLastSyncedAt?.toISOString();
 
   logger.info({ repo, since: sinceParam ?? "all" }, "Starting issue comment backfill");
 
@@ -355,6 +357,7 @@ export async function backfillIssueComments(opts: IssueBackfillOptions): Promise
   let totalComments = 0;
   let totalChunks = 0;
   let failedEmbeddings = 0;
+  let lastCommentUpdatedAt: Date | null = syncState?.commentLastSyncedAt ?? null;
 
   while (true) {
     // Repo-wide comment fetch (efficient: ~100 per page vs per-issue)
@@ -440,6 +443,13 @@ export async function backfillIssueComments(opts: IssueBackfillOptions): Promise
         });
       }
 
+      if (comment.updated_at) {
+        const commentDate = new Date(comment.updated_at);
+        if (!lastCommentUpdatedAt || commentDate > lastCommentUpdatedAt) {
+          lastCommentUpdatedAt = commentDate;
+        }
+      }
+
       totalComments++;
     }
 
@@ -488,10 +498,15 @@ export async function backfillIssueComments(opts: IssueBackfillOptions): Promise
   }
 
   // Update sync state with comment totals
-  if (!dryRun && syncState) {
+  if (!dryRun) {
     await updateIssueSyncState(sql, {
-      ...syncState,
-      totalCommentsSynced: (syncState.totalCommentsSynced ?? 0) + totalComments,
+      repo,
+      lastSyncedAt: syncState?.lastSyncedAt ?? null,
+      commentLastSyncedAt: lastCommentUpdatedAt,
+      lastPageCursor: syncState?.lastPageCursor ?? null,
+      totalIssuesSynced: syncState?.totalIssuesSynced ?? 0,
+      totalCommentsSynced: (syncState?.totalCommentsSynced ?? 0) + totalComments,
+      backfillComplete: syncState?.backfillComplete ?? false,
     });
   }
 

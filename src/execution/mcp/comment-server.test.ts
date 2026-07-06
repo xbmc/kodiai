@@ -196,6 +196,56 @@ describe("createCommentServer", () => {
     expect(publishCalled).toBe(true);
   });
 
+  test("replayed create_comment call is blocked when the first call may have been accepted before erroring", async () => {
+    const reviewOutputKey = "mcp-comment-accepted-before-timeout";
+    const marker = `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;
+    const persistedBodies: string[] = [];
+    let createCommentCalls = 0;
+
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({
+            data: persistedBodies.map((body, index) => ({
+              id: index + 1,
+              body,
+            })),
+          }),
+          createComment: async (params: { body: string }) => {
+            createCommentCalls++;
+            persistedBodies.push(params.body);
+            throw new Error("network timeout after GitHub accepted comment");
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      [],
+      reviewOutputKey,
+      undefined,
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const firstResult = await create({ issueNumber: 42, body: "Summary body" });
+    const secondResult = await create({ issueNumber: 42, body: "Summary body" });
+
+    expect(firstResult.isError).toBe(true);
+    expect(persistedBodies[0]).toContain(marker);
+    expect(secondResult.isError).toBe(true);
+    expect(secondResult.content[0]?.text).toContain("Comment already posted");
+    expect(createCommentCalls).toBe(1);
+  });
+
   test("visible shared clean approval is normalized into a collapsed APPROVE review", async () => {
     let createReviewBody: string | undefined;
     let createCommentCalled = false;
@@ -1075,6 +1125,34 @@ describe("outgoing secret scan", () => {
     const result = await update({ commentId: 99, body });
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("SECURITY");
+  });
+
+  test("create_comment redacts zero-width-obfuscated github tokens after content normalization", async () => {
+    let calledBody: string | undefined;
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async (params: { body: string }) => {
+            calledBody = params.body;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const { create } = getToolHandlers(server);
+
+    const token = "ghs_" + "a".repeat(18) + "\u200B" + "a".repeat(18);
+    const result = await create({ issueNumber: 1, body: token });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(calledBody!).not.toContain("ghs_");
+    expect(calledBody!).not.toContain("\u200B");
   });
 });
 

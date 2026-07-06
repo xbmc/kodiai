@@ -60,12 +60,30 @@ describe("resolveSlackRepoContext", () => {
   });
 
   test("does not treat file paths as owner/repo overrides", () => {
-    const result = resolveSlackRepoContext("Can you update src/slack/assistant-handler.ts and summarize the change?", DEFAULT_REPO);
+    const nestedPath = resolveSlackRepoContext("Can you update src/slack/assistant-handler.ts and summarize the change?", DEFAULT_REPO);
+    const twoSegmentPath = resolveSlackRepoContext("Can you check src/index.ts before applying this?", DEFAULT_REPO);
 
-    expect(result).toEqual({
+    expect(nestedPath).toEqual({
       outcome: "default",
       repo: "xbmc/xbmc",
       acknowledgementText: undefined,
+      clarifyingQuestion: undefined,
+    });
+    expect(twoSegmentPath).toEqual({
+      outcome: "default",
+      repo: "xbmc/xbmc",
+      acknowledgementText: undefined,
+      clarifyingQuestion: undefined,
+    });
+  });
+
+  test("keeps dotted repo names valid when they are not path-like tokens", () => {
+    const result = resolveSlackRepoContext("Please use vercel/next.js for this answer.", DEFAULT_REPO);
+
+    expect(result).toEqual({
+      outcome: "override",
+      repo: "vercel/next.js",
+      acknowledgementText: "Using repo context vercel/next.js.",
       clarifyingQuestion: undefined,
     });
   });

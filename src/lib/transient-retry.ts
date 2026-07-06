@@ -1,4 +1,5 @@
 import { capRetryDelayMs } from "./retry-after.ts";
+import { sleep as defaultSleep } from "./with-timeout.ts";
 
 export type RetryableOperationOptions = {
   maxAttempts?: number;
@@ -14,10 +15,6 @@ export type RetryableOperationOptions = {
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_INITIAL_DELAY_MS = 250;
 const DEFAULT_MAX_DELAY_MS = 2_000;
-
-function defaultSleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
 
 export async function retryTransient<T>(
   operation: () => Promise<T>,

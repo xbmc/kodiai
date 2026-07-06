@@ -371,6 +371,92 @@ describe("fetchDependsChangelog", () => {
     expect(result!.highlights.some(h => h.includes("Ancient"))).toBe(false);
   });
 
+  test("scans later GitHub release pages before degrading", async () => {
+    const releaseCalls: Array<Record<string, unknown>> = [];
+    const octokit = createMockOctokit({
+      listReleases: async (params) => {
+        releaseCalls.push(params as Record<string, unknown>);
+        return {
+          data:
+            (params as { page?: number }).page === 2
+              ? [
+                  {
+                    draft: false,
+                    tag_name: "v1.3.2",
+                    body: "Target release from page two",
+                  },
+                ]
+              : Array.from({ length: 20 }, (_, index) => ({
+                  draft: false,
+                  tag_name: `v9.${index}.0`,
+                  body: `Unrelated recent release ${index}`,
+                })),
+        };
+      },
+    });
+
+    const result = await fetchDependsChangelog({
+      libraryName: "zlib",
+      oldVersion: "1.3.1",
+      newVersion: "1.3.2",
+      octokit,
+      timeoutMs: 5000,
+      versionFileDiff: null,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("github-releases");
+    expect(result!.highlights.some((h) => h.includes("Target release from page two"))).toBe(true);
+    expect(releaseCalls.map((call) => call.page)).toEqual([1, 2]);
+  });
+
+  test("continues scanning release pages beyond the legacy five-page cap", async () => {
+    const releaseCalls: Array<Record<string, unknown>> = [];
+    const octokit = createMockOctokit({
+      listReleases: async (params) => {
+        releaseCalls.push(params as Record<string, unknown>);
+        const page = (params as { page?: number }).page ?? 1;
+        if (page < 6) {
+          return {
+            data: Array.from({ length: 20 }, (_, index) => ({
+              draft: false,
+              tag_name: `v9.${page}.${index}`,
+              body: `Unrelated recent release ${page}-${index}`,
+            })),
+          };
+        }
+        return {
+          data: [
+            {
+              draft: false,
+              tag_name: "v1.3.2",
+              body: "Target depends release from page six",
+            },
+            {
+              draft: false,
+              tag_name: "v1.3.1",
+              body: "Old baseline",
+            },
+          ],
+        };
+      },
+    });
+
+    const result = await fetchDependsChangelog({
+      libraryName: "zlib",
+      oldVersion: "1.3.1",
+      newVersion: "1.3.2",
+      octokit,
+      timeoutMs: 5000,
+      versionFileDiff: null,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("github-releases");
+    expect(result!.highlights.some((h) => h.includes("Target depends release from page six"))).toBe(true);
+    expect(releaseCalls.map((call) => call.page)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
   test("returns unavailable when library is unknown", async () => {
     const octokit = createMockOctokit();
 

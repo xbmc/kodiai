@@ -237,6 +237,38 @@ describe("formatErrorComment", () => {
 // --- postOrUpdateErrorComment duplicate handling ---
 
 describe("postOrUpdateErrorComment", () => {
+  test("uses the shared Result adapter shape for publication status", async () => {
+    const source = await Bun.file(new URL("./errors.ts", import.meta.url)).text();
+
+    expect(source).toContain("Result<ErrorCommentPublicationDelivery");
+    expect(source).not.toContain("ok: boolean;");
+    expect(source).not.toContain("error?: unknown;");
+  });
+
+  test("strips bot mentions from raw error bodies before publishing", async () => {
+    const createComment = mock(async () => ({ data: { id: 2 } }));
+    const updateComment = mock(async () => ({ data: { id: 1 } }));
+    const listComments = mock(async () => ({ data: [] }));
+    const logger = { error: mock(() => undefined) };
+
+    const result = await postOrUpdateErrorComment(
+      {
+        rest: {
+          issues: { createComment, updateComment, listComments },
+        },
+      } as never,
+      { owner: "acme", repo: "repo", issueNumber: 42 },
+      "> **Kodiai could not complete the request**\n\n_Ask @claude to retry._",
+      logger as never,
+    );
+
+    expect(result).toEqual({ ok: true, value: { resolution: "created", method: "create-comment" } });
+    const createCall = createComment.mock.calls[0] as unknown[] | undefined;
+    const payload = createCall?.[0] as { body?: string } | undefined;
+    expect(payload?.body).not.toContain("@claude");
+    expect(payload?.body).toContain("Ask claude to retry.");
+  });
+
   test("retries a rate-limited create before reporting success", async () => {
     let createCalls = 0;
     const createComment = mock(async () => {
@@ -267,7 +299,7 @@ describe("postOrUpdateErrorComment", () => {
       logger as never,
     );
 
-    expect(result).toEqual({ ok: true, resolution: "created", method: "create-comment" });
+    expect(result).toEqual({ ok: true, value: { resolution: "created", method: "create-comment" } });
     expect(createComment).toHaveBeenCalledTimes(2);
     expect(logger.error).not.toHaveBeenCalled();
   });
@@ -302,7 +334,7 @@ describe("postOrUpdateErrorComment", () => {
       logger as never,
     );
 
-    expect(result).toEqual({ ok: true, resolution: "updated", method: "update-comment" });
+    expect(result).toEqual({ ok: true, value: { resolution: "updated", method: "update-comment" } });
     expect(updateComment).toHaveBeenCalledTimes(2);
     expect(createComment).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();
@@ -337,11 +369,14 @@ describe("postOrUpdateErrorComment", () => {
       logger as never,
     );
 
-    expect(result).toEqual({ ok: true, resolution: "updated", method: "update-comment" });
+    expect(result).toEqual({ ok: true, value: { resolution: "updated", method: "update-comment" } });
     expect(listComments).toHaveBeenCalledTimes(1);
     expect(updateComment).toHaveBeenCalledTimes(1);
     const updateCall = updateComment.mock.calls[0] as unknown[] | undefined;
-    expect(updateCall?.[0]).toMatchObject({ comment_id: 1, body: replacementBody });
+    const updatePayload = updateCall?.[0] as { comment_id?: number; body?: string } | undefined;
+    expect(updatePayload?.comment_id).toBe(1);
+    expect(updatePayload?.body).toContain("review provider usage limit");
+    expect(updatePayload?.body).toContain("kodiai:error:usage-limit");
     expect(createComment).not.toHaveBeenCalled();
   });
 
@@ -387,8 +422,58 @@ describe("postOrUpdateErrorComment", () => {
       logger as never,
     );
 
-    expect(result).toEqual({ ok: true, resolution: "updated", method: "update-comment" });
+    expect(result).toEqual({ ok: true, value: { resolution: "updated", method: "update-comment" } });
     expect(listComments).toHaveBeenCalledTimes(2);
+    expect(updateComment).toHaveBeenCalledTimes(1);
+    expect(createComment).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  test("updates a recent usage-limit error comment found after the first page", async () => {
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const existingBody = wrapUsageLimitBody("first failure");
+    const replacementBody = wrapUsageLimitBody("second failure");
+    const createComment = mock(async () => ({ data: { id: 2 } }));
+    const updateComment = mock(async () => ({ data: { id: 101 } }));
+    const listCalls: Array<{ page?: number; per_page?: number }> = [];
+    const listComments = mock(async (params: { page?: number; per_page?: number }) => {
+      listCalls.push(params);
+      if ((params.page ?? 1) === 1) {
+        return {
+          data: Array.from({ length: params.per_page ?? 100 }, (_, index) => ({
+            id: index + 1,
+            body: "ordinary comment",
+            created_at: createdAt,
+            user: { login: "kodiai[bot]" },
+          })),
+        };
+      }
+      return {
+        data: [
+          {
+            id: 101,
+            body: existingBody,
+            created_at: createdAt,
+            user: { login: "kodiai[bot]" },
+          },
+        ],
+      };
+    });
+    const logger = { error: mock(() => undefined) };
+
+    const result = await postOrUpdateErrorComment(
+      {
+        rest: {
+          issues: { createComment, updateComment, listComments },
+        },
+      } as never,
+      { owner: "acme", repo: "repo", issueNumber: 42 },
+      replacementBody,
+      logger as never,
+    );
+
+    expect(result).toEqual({ ok: true, value: { resolution: "updated", method: "update-comment" } });
+    expect(listCalls.map((call) => call.page)).toEqual([1, 2]);
     expect(updateComment).toHaveBeenCalledTimes(1);
     expect(createComment).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();

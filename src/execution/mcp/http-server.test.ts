@@ -3,6 +3,7 @@ import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import {
   createMcpJobRegistry,
   createMcpHttpRoutes,
+  McpTokenInspectionError,
 } from "./http-server.ts";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,16 @@ function mcpPost(
 // ---------------------------------------------------------------------------
 
 describe("createMcpJobRegistry", () => {
+  function expectTokenInspectionError(
+    result: ReturnType<ReturnType<typeof createMcpJobRegistry>["inspectToken"]>,
+  ): McpTokenInspectionError {
+    if (result.ok) {
+      throw new Error("Expected token inspection to fail");
+    }
+    expect(result.err).toBeInstanceOf(McpTokenInspectionError);
+    return result.err;
+  }
+
   test("hasToken returns false for unknown token", () => {
     const reg = createMcpJobRegistry();
     expect(reg.hasToken("unknown")).toBe(false);
@@ -72,10 +83,7 @@ describe("createMcpJobRegistry", () => {
     const reg = createMcpJobRegistry();
     reg.unregister("never-registered");
 
-    expect(reg.inspectToken("never-registered")).toEqual({
-      ok: false,
-      reason: "missing",
-    });
+    expect(expectTokenInspectionError(reg.inspectToken("never-registered")).reason).toBe("missing");
   });
 
   test("getFactory returns undefined for unknown server", () => {
@@ -94,14 +102,10 @@ describe("createMcpJobRegistry", () => {
     const reg = createMcpJobRegistry();
     reg.register("tok-exp", { test_server: makeFactory() }, -1);
 
-    expect(reg.inspectToken("missing-token")).toEqual({
-      ok: false,
-      reason: "missing",
-    });
-    expect(reg.inspectToken("tok-exp")).toMatchObject({
-      ok: false,
-      reason: "expired",
-    });
+    expect(expectTokenInspectionError(reg.inspectToken("missing-token")).reason).toBe("missing");
+    const expired = expectTokenInspectionError(reg.inspectToken("tok-exp"));
+    expect(expired.reason).toBe("expired");
+    expect(expired.ttlRemainingMs).toEqual(expect.any(Number));
   });
 
   test("registry evicts oldest active tokens under high churn", () => {
@@ -110,12 +114,20 @@ describe("createMcpJobRegistry", () => {
       reg.register(`tok-${i}`, { test_server: makeFactory() });
     }
 
-    expect(reg.inspectToken("tok-0")).toEqual({
-      ok: false,
-      reason: "missing",
-    });
+    expect(expectTokenInspectionError(reg.inspectToken("tok-0")).reason).toBe("missing");
     expect(reg.hasToken("tok-10")).toBe(true);
     expect(reg.hasToken("tok-5009")).toBe(true);
+  });
+
+  test("inspectToken uses shared Result success payload for active tokens", () => {
+    const reg = createMcpJobRegistry();
+    reg.register("tok-ok", { test_server: makeFactory() }, 1_000);
+
+    const result = reg.inspectToken("tok-ok");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected active token");
+    expect(result.value.ttlRemainingMs).toBeGreaterThan(0);
   });
 });
 

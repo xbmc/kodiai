@@ -146,7 +146,7 @@ export async function updateCanonicalCodeSnapshot(params: {
       );
     }
 
-    const changedChunks: CanonicalChunk[] = [];
+    const chunksToWrite: Array<{ chunk: CanonicalChunk; countsAsUpdate: boolean }> = [];
     for (const chunk of chunkResult.chunks) {
       const identity = chunkIdentityKey(chunk);
       const existing = existingByIdentity.get(identity);
@@ -154,14 +154,17 @@ export async function updateCanonicalCodeSnapshot(params: {
       if (existing && existing.contentHash === chunk.contentHash) {
         unchanged += 1;
         fileResult.unchanged += 1;
+        if (removedIdentities.length > 0) {
+          chunksToWrite.push({ chunk, countsAsUpdate: false });
+        }
         continue;
       }
 
-      changedChunks.push(chunk);
+      chunksToWrite.push({ chunk, countsAsUpdate: true });
     }
 
     const embeddingResults = await generateDocumentEmbeddingResultsBatch({
-      texts: changedChunks.map((chunk) => chunk.chunkText),
+      texts: chunksToWrite.map(({ chunk }) => chunk.chunkText),
       embeddingProvider,
     });
 
@@ -169,10 +172,11 @@ export async function updateCanonicalCodeSnapshot(params: {
       chunk: CanonicalChunk;
       embeddingModel: string;
       embedding: Float32Array;
+      countsAsUpdate: boolean;
     }> = [];
 
     for (const [index, embeddingResult] of embeddingResults.entries()) {
-      const chunk = changedChunks[index]!;
+      const { chunk, countsAsUpdate } = chunksToWrite[index]!;
 
       if (embeddingResult.status === "failed") {
         const message = embeddingResult.err instanceof Error ? embeddingResult.err.message : String(embeddingResult.err);
@@ -212,11 +216,12 @@ export async function updateCanonicalCodeSnapshot(params: {
         continue;
       }
 
-      writeRows.push({ chunk, embeddingModel: embeddingResult.model, embedding: embeddingResult.embedding });
+      writeRows.push({ chunk, embeddingModel: embeddingResult.model, embedding: embeddingResult.embedding, countsAsUpdate });
     }
 
-    const outcomes = await mapWithConcurrency(writeRows, 8, async ({ chunk, embeddingModel, embedding }) =>
-      store.upsertChunk(
+    const outcomes = await mapWithConcurrency(writeRows, 8, async ({ chunk, embeddingModel, embedding, countsAsUpdate }) => ({
+      countsAsUpdate,
+      outcome: await store.upsertChunk(
         {
           repo: request.repo,
           owner: request.owner,
@@ -233,9 +238,13 @@ export async function updateCanonicalCodeSnapshot(params: {
           embeddingModel,
         },
         embedding,
-      ));
+      ),
+    }));
 
-    for (const outcome of outcomes) {
+    for (const { outcome, countsAsUpdate } of outcomes) {
+      if (!countsAsUpdate) {
+        continue;
+      }
       if (outcome === "dedup") {
         unchanged += 1;
         fileResult.unchanged += 1;

@@ -293,48 +293,41 @@ describe("createIssueLabelServer", () => {
     });
 
     it("falls back to jittered exponential delay for malformed Retry-After values", async () => {
-      const originalSetTimeout = globalThis.setTimeout;
       const delays: number[] = [];
-      globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: number) => {
-        delays.push(timeout ?? 0);
-        if (typeof handler === "function") handler();
-        return 0 as unknown as ReturnType<typeof setTimeout>;
-      }) as typeof globalThis.setTimeout;
+      let callCount = 0;
+      const mockOctokit = createMockOctokit({
+        addLabels: async () => {
+          callCount++;
+          if (callCount === 1) {
+            const err = new Error("Rate limited") as any;
+            err.status = 429;
+            err.response = { headers: { "retry-after": "bad-header" } };
+            throw err;
+          }
+          return { data: [{ name: "bug" }] };
+        },
+      });
 
-      try {
-        let callCount = 0;
-        const mockOctokit = createMockOctokit({
-          addLabels: async () => {
-            callCount++;
-            if (callCount === 1) {
-              const err = new Error("Rate limited") as any;
-              err.status = 429;
-              err.response = { headers: { "retry-after": "bad-header" } };
-              throw err;
-            }
-            return { data: [{ name: "bug" }] };
+      const { addLabelsHandler } = await import("./issue-label-server.ts");
+      const result = await addLabelsHandler({
+        getOctokit: async () => mockOctokit,
+        owner: "testowner",
+        repo: "testrepo",
+        getTriageConfig: defaultTriageConfig,
+        issueNumber: 42,
+        params: { labels: ["bug"] },
+        retryOptions: {
+          random: () => 0.5,
+          sleep: async (delayMs) => {
+            delays.push(delayMs);
           },
-        });
+        },
+      });
 
-        const { addLabelsHandler } = await import("./issue-label-server.ts");
-        const result = await addLabelsHandler({
-          getOctokit: async () => mockOctokit,
-          owner: "testowner",
-          repo: "testrepo",
-          getTriageConfig: defaultTriageConfig,
-          issueNumber: 42,
-          params: { labels: ["bug"] },
-        });
-
-        const parsed = JSON.parse(result.content[0]!.text);
-        expect(parsed.success).toBe(true);
-        expect(callCount).toBe(2);
-        expect(delays).toHaveLength(1);
-        expect(delays[0]).toBeGreaterThanOrEqual(0);
-        expect(delays[0]).toBeLessThanOrEqual(1000);
-      } finally {
-        globalThis.setTimeout = originalSetTimeout;
-      }
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.success).toBe(true);
+      expect(callCount).toBe(2);
+      expect(delays).toEqual([500]);
     });
 
     it("should return TOOL_DISABLED when config disables label tool", async () => {

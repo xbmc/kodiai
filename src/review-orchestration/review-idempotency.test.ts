@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
   buildApprovedReviewBody,
@@ -54,6 +55,15 @@ function extractEvidenceBullets(body: string): string[] {
 }
 
 describe("review idempotency helpers", () => {
+  test("uses the shared marker comment pagination helpers", () => {
+    const source = readFileSync(new URL("./review-idempotency.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("function scanForMarkerInPagedBodies");
+    expect(source).toContain("scanReviewCommentMarkerPaged");
+    expect(source).toContain("scanIssueCommentMarkerPaged");
+    expect(source).toContain("scanPullReviewMarkerPaged");
+  });
+
   test("buildReviewOutputKey returns same key for identical inputs", () => {
     const input = {
       installationId: 42,

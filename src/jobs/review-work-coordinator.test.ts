@@ -180,6 +180,45 @@ describe("createReviewWorkCoordinator", () => {
     expect(storedAutomaticAttempt?.supersededByAttemptId).toBe(retryAttempt.attemptId);
   });
 
+  test("releasing a newer active attempt restores publish rights to the previous active attempt", () => {
+    let nowMs = 7_000;
+    const coordinator = createReviewWorkCoordinator({
+      nowFn: () => ++nowMs,
+    });
+    const familyKey = buildReviewFamilyKey("acme", "repo", 9);
+
+    const automaticAttempt = coordinator.claim({
+      familyKey,
+      source: "automatic-review",
+      lane: "review",
+      deliveryId: "delivery-auto-1",
+      phase: "claimed",
+    });
+    coordinator.setPhase(automaticAttempt.attemptId, ACTIVE_PHASE);
+
+    const explicitAttempt = coordinator.claim({
+      familyKey,
+      source: "explicit-review",
+      lane: "interactive-review",
+      deliveryId: "delivery-explicit-2",
+      phase: "claimed",
+    });
+    coordinator.setPhase(explicitAttempt.attemptId, ACTIVE_PHASE);
+
+    expect(coordinator.canPublish(automaticAttempt.attemptId)).toBeFalse();
+    expect(coordinator.canPublish(explicitAttempt.attemptId)).toBeTrue();
+
+    coordinator.release(explicitAttempt.attemptId);
+
+    expect(coordinator.canPublish(automaticAttempt.attemptId)).toBeTrue();
+    expect(coordinator.getSnapshot(familyKey)?.attempts).toEqual([
+      expect.objectContaining({
+        attemptId: automaticAttempt.attemptId,
+        phase: ACTIVE_PHASE,
+      }),
+    ]);
+  });
+
   test("a queued retry only becomes publishable after it actually starts running", () => {
     let nowMs = 7_500;
     const coordinator = createReviewWorkCoordinator({

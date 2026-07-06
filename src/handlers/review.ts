@@ -15,7 +15,7 @@ import type {
 } from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { PromptSectionRecord, ReviewCacheEventRecord, TelemetryStore } from "../telemetry/types.ts";
+import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
   PriorFinding,
@@ -25,10 +25,8 @@ import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, type PriorFindingContext } from "../lib/finding-dedup.ts";
-import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
-import { formatSuppressedFindingsSection } from "../lib/output-filter.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
@@ -36,37 +34,17 @@ import { buildPrDiffCommentabilityIndex } from "../execution/formatter-suggestio
 import {
   computeFileRiskScores,
   triageFilesByRisk,
-  capTieredFilesForPromptBudget,
-  applyGraphAwareSelection,
 } from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-import { isTrivialChange } from "../review-graph/validation.ts";
-import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
-import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
+import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import { buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
-import {
-  DEFAULT_EMPTY_INTENT,
-  parsePRIntent,
-  type ParsedPRIntent,
-} from "../lib/pr-intent-parser.ts";
-import {
-  resolveReviewProfile,
-} from "../lib/auto-profile.ts";
-import {
-  resolveReviewRoutingLineCount,
-  resolveReviewTaskRouting,
-  resolveReviewMaxTurnsOverride,
-} from "../lib/review-routing.ts";
 import { evaluateFeedbackSuppressions } from "../feedback/index.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
-import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import { classifyError, formatErrorComment } from "../lib/errors.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
-import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
-import {
-  resolveReviewBoundedness,
-} from "../lib/review-boundedness.ts";
+import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment, formatCompletedContinuationReviewComment } from "../lib/partial-review-formatter.ts";
 import {
   normalizeReviewFirstPass,
@@ -78,40 +56,31 @@ import {
 } from "../lib/review-continuation-lifecycle.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
-import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import {
-  buildApprovedReviewBody,
   buildReviewOutputKey,
-  ensureReviewOutputNotPublished,
 } from "../review-orchestration/review-idempotency.ts";
 import {
-  writeReviewLearningMemory,
+  writeReviewLearningMemoryBatch,
 } from "./review-learning-memory.ts";
 import {
-  formatReviewDetailsSummary,
   classifyRetryFailure,
   resolveReviewDetailsLineCounts,
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
 } from "../lib/review-details-formatting.ts";
-import { PROFILE_PRESETS } from "../lib/review-profile-presets.ts";
 import {
   type ReviewArea,
   type FindingSeverity,
   type FindingCategory,
-  type ConfidenceBand,
   fingerprintFindingTitle,
-  toConfidenceBand,
 } from "../lib/review-finding-metadata.ts";
 import {
   normalizeSkipPattern,
-  splitDiffByFile,
 } from "../lib/review-git-utils.ts";
 import {
   isReviewTriggerEnabled,
   normalizeReviewerLogin,
 } from "../lib/review-trigger-utils.ts";
-import { renderApprovalConfidence } from "../lib/merge-confidence-format.ts";
 import picomatch from "picomatch";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import {
@@ -121,19 +90,8 @@ import { fetchAndCheckoutPullRequestHeadRef, fetchRemoteTrackingBranch } from ".
 import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
-  type ReviewWorkPhase,
 } from "../jobs/review-work-coordinator.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
-import {
-  projectContributorExperienceContract,
-  resolveContributorExperienceRetrievalHint,
-} from "../contributor/experience-contract.ts";
-import {
-  type ReviewAuthorClassification,
-} from "../contributor/review-author-resolution.ts";
-import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
-import { suggestIdentityLink } from "./identity-suggest.ts";
-import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
   createDegradedReviewReducerResult,
   reduceReviewFindings,
@@ -159,7 +117,6 @@ import {
   adaptApprovedCandidatesForInlinePublication,
   buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
-  convertPublishedCandidateResultsToValidationTruthFixes,
   toReviewCandidatePublicationAdapterSummary,
   type ReviewCandidatePublishedFindingResult,
   type ReviewCandidatePublicationAdapterResult,
@@ -188,20 +145,14 @@ import {
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
 import {
   buildPromptReviewCacheEvent,
-  buildRetrievalReviewCacheEvent,
-  REVIEW_PROMPT_FINGERPRINT_VERSION,
   type ReviewPromptCacheState,
 } from "../review-orchestration/review-prompt-cache-events.ts";
 import {
-  appendReviewDetailsBudgetLines,
   buildPromptBudgetOutcomes,
-  buildVisibleBudgetDisclosureEvidence,
-  buildVisibleBudgetProjectionFromEvidence,
 } from "../review-orchestration/review-visible-budget-evidence.ts";
 import {
   type CanonicalReviewSurface,
   type CanonicalSurfaceKind,
-  findCanonicalReviewSurface,
   upsertCanonicalReviewSurface,
   upsertDegradedReviewDetailsFallbackComment,
 } from "../review-orchestration/review-canonical-surface.ts";
@@ -214,9 +165,6 @@ import {
   detectCommentSlopInDiff,
   toCommentSlopReducerFindings,
 } from "../review-orchestration/comment-slop-detector.ts";
-import {
-  resolveAuthorTier,
-} from "../review-orchestration/review-author-tier.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
   buildShadowSpecialistCorrelationKey,
@@ -233,8 +181,6 @@ import {
   REVIEW_WORKSPACE_FETCH_DEPTH,
 } from "../review-orchestration/review-diff-collection.ts";
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
-import { fetchReviewCommitMessages } from "../review-orchestration/review-commit-messages.ts";
-import { embedReviewDiffHunks } from "../review-orchestration/review-diff-hunk-embedding.ts";
 import {
   buildRepoDoctrineLogFields,
   serializeReviewPlanBuilderError,
@@ -260,33 +206,15 @@ import {
   type InlineReviewPublicationResult,
 } from "../execution/mcp/inline-review-publisher.ts";
 import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
-import {
-  detectDepBump,
-  extractDepBumpDetails,
-  classifyDepBump,
-  type DepBumpContext,
-} from "../lib/dep-bump-detector.ts";
+import { type DepBumpContext } from "../lib/dep-bump-detector.ts";
 import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
-import { fetchSecurityAdvisories, fetchChangelog } from "../lib/dep-bump-enrichment.ts";
-import { computeMergeConfidence } from "../lib/merge-confidence.ts";
 import {
-  buildSearchCacheKey,
   createSearchCache,
   type SearchCache,
   type SearchCacheOptions,
 } from "../lib/search-cache.ts";
-import { detectDependsBump, type DependsBumpInfo } from "../lib/depends-bump-detector.ts";
-import {
-  buildDependsReviewComment,
-  buildDependsInlineComments,
-  computeDependsVerdict,
-} from "../lib/depends-review-builder.ts";
-import { buildDependsReviewContext } from "../lib/depends-review-context.ts";
-import { generateWithFallback } from "../llm/generate.ts";
-import { createTaskRouter } from "../llm/task-router.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
-import { linkPRToIssues, type LinkResult } from "../knowledge/issue-linker.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
 import {
   runShadowSpecialistSubflow,
@@ -306,44 +234,56 @@ import {
   type ReviewHandlerPublicationBridgeProjection,
 } from "../issue-131/review-handler-publication-bridge.ts";
 import {
-  type VisibleBudgetProjection,
-} from "../review-visible-budget/visible-budget-behavior.ts";
-import type { ReviewCacheTelemetryObservation } from "../review-cache-telemetry/cache-telemetry.ts";
-import type { ContinuationCompactionObservation } from "../review-continuation/continuation-compaction.ts";
-import {
   attachReviewFindingLifecycle,
-  attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
-  type AttachReviewValidationTruthResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
-
-const SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS = 12_000;
-
-/**
- * Best-effort checkpoint cleanup. deleteCheckpoint is raw SQL and can reject;
- * a floating rejection here would trip the fatal unhandledRejection handler,
- * so failures are logged and swallowed.
- */
-function discardCheckpointsFailOpen(
-  knowledgeStore: KnowledgeStore | undefined,
-  logger: Logger,
-  reviewOutputKeys: string[],
-): void {
-  for (const reviewOutputKey of reviewOutputKeys) {
-    void knowledgeStore?.deleteCheckpoint?.(reviewOutputKey)?.catch((err) => {
-      logger.warn({ err, reviewOutputKey }, "Checkpoint cleanup failed (non-blocking)");
-    });
-  }
-}
-
-function buildShadowSpecialistDiffSnippet(diffText: string): string {
-  if (diffText.length <= SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS) return diffText;
-
-  const prefix = diffText.slice(0, SHADOW_SPECIALIST_DIFF_SNIPPET_MAX_CHARS);
-  const lastNewline = prefix.lastIndexOf("\n");
-  const bounded = lastNewline > 0 ? prefix.slice(0, lastNewline) : prefix;
-  return `${bounded}\n...(shadow specialist diff snippet truncated)`;
-}
+import {
+  buildShadowSpecialistDiffSnippet,
+  discardCheckpointsFailOpen,
+  recordReviewCacheEventFailOpen,
+} from "./review-handler-utils.ts";
+import {
+  buildReviewPhaseTimingSummaryLogFields,
+  createReviewExecutionCompletedLogger,
+} from "./review-publication-state.ts";
+import {
+  type ReviewDetailsBodyBaseParams,
+} from "./review-details-body.ts";
+import {
+  createReviewDetailsPublicationRuntime,
+  updateFinalizedReviewDetailsComment,
+} from "./review-details-publication-runtime.ts";
+import { buildReviewPromptResultWithCache } from "./review-prompt-cache-runtime.ts";
+import { publishReviewFailureFallback } from "./review-failure-publication.ts";
+import {
+  publishReviewExecutionErrorFallback,
+  publishReviewHandlerFailureError,
+} from "./review-error-publication.ts";
+import { createReviewWorkRuntime } from "./review-work-runtime.ts";
+import { postNoReviewSkipAcknowledgment } from "./review-no-review-skip.ts";
+import { maybePostReviewCostWarning } from "./review-cost-warning.ts";
+import { publishBoundedFirstPassReview } from "./review-partial-publication.ts";
+import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
+import { publishCleanReviewApproval } from "./review-clean-approval-publication.ts";
+import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
+import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
+import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
+import { buildReviewRuntimePlan } from "./review-runtime-plan.ts";
+import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
+import { persistReviewKnowledge } from "./review-knowledge-persistence.ts";
+import {
+  completeReviewRunFailOpen,
+  scheduleContributorExpertiseUpdate,
+  scheduleReviewHunkEmbedding,
+} from "./review-post-execution-side-effects.ts";
+import { recordReviewResilienceEventFailOpen } from "./review-resilience-telemetry.ts";
+import { recordReviewExecutionTelemetry } from "./review-telemetry.ts";
+import { projectAutomaticReviewValidationTruth } from "./review-validation-truth.ts";
+import { postReviewRequestedEyesReaction } from "./review-reactions.ts";
+import { resolveReviewPrIntent } from "./review-pr-intent.ts";
+import { resolveReviewAuthorContext } from "./review-author-context.ts";
+import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
+import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -358,30 +298,6 @@ type ProcessedFinding = ExtractedFinding & {
   filterAction?: "rewritten" | "suppressed" | "guardrail-suppressed" | "guardrail-rewritten";
   originalTitle?: string;
 };
-
-type RetrievalContextForPrompt = {
-  findings: Array<{
-    findingText: string;
-    severity: string;
-    category: string;
-    path: string;
-    line?: number;
-    snippet?: string;
-    outcome: string;
-    distance: number;
-    sourceRepo: string;
-  }>;
-  maxChars: number;
-};
-
-
-
-
-
-
-
-
-
 
 
 
@@ -550,99 +466,6 @@ export function createReviewHandler(deps: {
     }
   }
 
-  async function buildReviewPromptResultWithCache(params: {
-    cacheQuery: string;
-    context: ReviewPromptBuildContext;
-    statusTarget: ReviewPromptCacheState;
-  }): Promise<PromptBuildResult> {
-    const fingerprintResult = buildReviewPromptFingerprint(params.context);
-    if (!fingerprintResult.fingerprint) {
-      params.statusTarget.status = "bypass";
-      params.statusTarget.reason = "incomplete-fingerprint";
-      params.statusTarget.missingSignalNames = fingerprintResult.missingSignals;
-      return reviewPromptBuilder(params.context);
-    }
-
-    const cacheKey = buildSearchCacheKey({
-      repo: `${params.context.owner}/${params.context.repo}`,
-      searchType: "review-derived-prompt",
-      query: params.cacheQuery,
-      extra: {
-        fingerprint: fingerprintResult.fingerprint,
-      },
-    });
-
-    const cacheErrorsBeforeLookup = reviewPromptDerivedCacheErrorCount;
-    let loaderExecuted = false;
-    try {
-      const result = await reviewPromptDerivedCache.getOrLoad(cacheKey, async () => {
-        loaderExecuted = true;
-        return reviewPromptBuilder(params.context);
-      });
-      const cacheDegraded = reviewPromptDerivedCacheErrorCount > cacheErrorsBeforeLookup;
-      params.statusTarget.status = cacheDegraded ? "degraded" : loaderExecuted ? "miss" : "hit";
-      params.statusTarget.reason = cacheDegraded ? "cache-bookkeeping-error" : null;
-      params.statusTarget.fingerprintVersion = REVIEW_PROMPT_FINGERPRINT_VERSION;
-      params.statusTarget.safetySignalNames = ["prompt-fingerprint-v1", "prompt-cache-query-head-sha"];
-      if (cacheDegraded) {
-        params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
-      }
-      return result;
-    } catch (error) {
-      params.statusTarget.status = "degraded";
-      params.statusTarget.reason = "cache-bookkeeping-error";
-      params.statusTarget.bookkeepingErrorCount = Math.max(1, reviewPromptDerivedCacheErrorCount - cacheErrorsBeforeLookup);
-      logger.warn(
-        {
-          err: error,
-          gate: "review-derived-prompt-cache",
-          gateResult: "degraded",
-          cacheQuery: params.cacheQuery,
-        },
-        "Review prompt cache lookup failed; rebuilding directly",
-      );
-      return reviewPromptBuilder(params.context);
-    }
-  }
-
-  async function recordReviewCacheEventFailOpen(entry: ReviewCacheEventRecord): Promise<void> {
-    try {
-      if (!telemetryStore.recordReviewCacheEvent) {
-        logger.warn(
-          {
-            deliveryId: entry.deliveryId,
-            repo: entry.repo,
-            prNumber: entry.prNumber,
-            cacheSurface: entry.cacheSurface,
-            status: entry.status,
-            reason: entry.reason,
-          },
-          "Review cache telemetry store method unavailable (non-blocking)",
-        );
-        return;
-      }
-      await telemetryStore.recordReviewCacheEvent(entry);
-    } catch (err) {
-      logger.warn(
-        {
-          err,
-          deliveryId: entry.deliveryId,
-          repo: entry.repo,
-          prNumber: entry.prNumber,
-          cacheSurface: entry.cacheSurface,
-          status: entry.status,
-          reason: entry.reason,
-          fingerprintVersion: entry.fingerprintVersion,
-          safetySignalNames: entry.safetySignalNames,
-          missingSignalNames: entry.missingSignalNames,
-          invalidationSignalNames: entry.invalidationSignalNames,
-          bookkeepingErrorCount: entry.bookkeepingErrorCount ?? 0,
-        },
-        "Review cache telemetry write failed (non-blocking)",
-      );
-    }
-  }
-
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
       | PullRequestOpenedEvent
@@ -685,17 +508,17 @@ export function createReviewHandler(deps: {
       );
       try {
         const skipOctokit = await githubApp.getInstallationOctokit(event.installationId);
-        await skipOctokit.rest.issues.createComment({
+        await postNoReviewSkipAcknowledgment({
+          octokit: skipOctokit,
           owner: payload.repository.owner.login,
           repo: payload.repository.name,
-          issue_number: pr.number,
-          // Defense-in-depth: sanitize outgoing mentions on all publish paths (Phase 50, CONV-05)
-          body: sanitizeOutgoingMentions("Review skipped per `[no-review]` in PR title.", [githubApp.getAppSlug(), "claude"]),
+          prNumber: pr.number,
+          botHandles: [githubApp.getAppSlug(), "claude"],
         });
       } catch (commentErr) {
         logger.warn(
           { ...baseLog, err: commentErr },
-          "Failed to post [no-review] acknowledgment (non-fatal)",
+          "Failed to publish no-review skip acknowledgment (non-fatal)",
         );
       }
       return;
@@ -847,22 +670,14 @@ export function createReviewHandler(deps: {
       deliveryId: event.id,
       phase: "claimed",
     });
-    let reviewWorkAttemptCommitted = false;
-    let reviewWorkAttemptFinalized = false;
-
-    function finalizeReviewWorkAttempt(): void {
-      if (reviewWorkAttemptFinalized) {
-        return;
-      }
-
-      reviewWorkAttemptFinalized = true;
-      if (reviewWorkAttemptCommitted) {
-        reviewWorkCoordinator.complete(reviewWorkAttempt.attemptId);
-        return;
-      }
-
-      reviewWorkCoordinator.release(reviewWorkAttempt.attemptId);
-    }
+    const reviewWorkRuntime = createReviewWorkRuntime({
+      attempt: reviewWorkAttempt,
+      coordinator: reviewWorkCoordinator,
+    });
+    const {
+      setPhase: setReviewWorkPhase,
+      setPhaseForAttempt: setReviewWorkPhaseForAttempt,
+    } = reviewWorkRuntime;
 
     try {
       await jobQueue.enqueue(event.installationId, async (queueMetadata) => {
@@ -879,69 +694,22 @@ export function createReviewHandler(deps: {
         "executor phase timings unavailable",
       );
       let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
-      let reviewExecutionLogged = false;
       let reviewOutputPublished = false;
       let reviewExecutorPublished = false;
       let reviewPublishResolution = "none";
       let reviewPublishFallbackDelivery: string | undefined;
 
-      function describeErrorCommentDelivery(status: Awaited<ReturnType<typeof postOrUpdateErrorComment>>): string {
-        if (!status.ok) return "error-comment-failed";
-        return status.resolution === "updated" ? "error-comment-updated" : "error-comment-created";
-      }
-      function describeTurnLimitNoticeDelivery(status: Awaited<ReturnType<typeof postOrUpdateErrorComment>>): string {
-        if (!status.ok) return "turn-limit-comment-undelivered";
-        return status.resolution === "updated" ? "turn-limit-comment-updated" : "turn-limit-comment-created";
-      }
-      function isExpectedTurnLimitOutcome(result: typeof executorResult): boolean {
-        return result?.stopReason === "max_turns" || result?.failureSubtype === "error_max_turns";
-      }
-      function cleanTurnLimitPublishResolution(resolution: string): string {
-        return resolution === "turn-limit-fallback-failed"
-          ? "turn-limit-fallback-undelivered"
-          : resolution;
-      }
-
-      function logReviewExecutionCompleted(): void {
-        if (!executorResult || reviewExecutionLogged) return;
-        reviewExecutionLogged = true;
-        const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);
-        logger.info(
-          {
-            prNumber: pr.number,
-            conclusion: expectedTurnLimitOutcome ? "expected_bounded" : executorResult.conclusion,
-            ...(expectedTurnLimitOutcome
-              ? { boundedOutcomeReason: "max_turns" }
-              : { failureSubtype: executorResult.failureSubtype }),
-            published: reviewOutputPublished,
-            executorPublished: reviewExecutorPublished,
-            publishResolution: expectedTurnLimitOutcome
-              ? cleanTurnLimitPublishResolution(reviewPublishResolution)
-              : reviewPublishResolution,
-            publishFallbackDelivery: reviewPublishFallbackDelivery,
-            stopReason: executorResult.stopReason,
-            costUsd: executorResult.costUsd,
-            numTurns: executorResult.numTurns,
-            durationMs: executorResult.durationMs,
-            sessionId: executorResult.sessionId,
-          },
-          "Review execution completed",
-        );
-      }
-
-      function setReviewWorkPhaseForAttempt(
-        attemptId: string,
-        phase: ReviewWorkPhase,
-      ): void {
-        if (attemptId === reviewWorkAttempt.attemptId) {
-          reviewWorkAttemptCommitted = true;
-        }
-        reviewWorkCoordinator.setPhase(attemptId, phase);
-      }
-
-      function setReviewWorkPhase(phase: ReviewWorkPhase): void {
-        setReviewWorkPhaseForAttempt(reviewWorkAttempt.attemptId, phase);
-      }
+      const logReviewExecutionCompleted = createReviewExecutionCompletedLogger({
+        logger,
+        getState: () => ({
+          prNumber: pr.number,
+          executorResult,
+          reviewOutputPublished,
+          reviewExecutorPublished,
+          reviewPublishResolution,
+          reviewPublishFallbackDelivery,
+        }),
+      });
 
       const continuationFamilyState = createReviewContinuationFamilyStateManager({
         logger,
@@ -958,9 +726,10 @@ export function createReviewHandler(deps: {
         canPublishReviewWorkOutput,
       } = continuationFamilyState;
 
-      function canPublishVisibleOutput(outputLabel: string): boolean {
-        return canPublishReviewWorkOutput(reviewWorkAttempt.attemptId, outputLabel, event.id);
-      }
+      const canPublishVisibleOutput = reviewWorkRuntime.createVisibleOutputGate({
+        deliveryId: event.id,
+        canPublishReviewWorkOutput,
+      });
 
       // Durable run state idempotency check (REL-01)
       // Check before expensive workspace creation. Uses SHA pair as identity key.
@@ -1109,121 +878,43 @@ export function createReviewHandler(deps: {
         }
 
         const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);
-        let acceptedCanonicalSurface: CanonicalReviewSurface | null = null;
-        const idempotencyCheck = await ensureReviewOutputNotPublished({
+        const idempotencyGate = await evaluateReviewOutputIdempotencyGate({
           octokit: idempotencyOctokit,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
           reviewOutputKey,
+          baseLog,
+          logger,
         });
+        if (idempotencyGate.action === "skip") return;
+        const acceptedCanonicalSurface: CanonicalReviewSurface | null =
+          idempotencyGate.acceptedCanonicalSurface;
 
-        if (!idempotencyCheck.shouldPublish) {
-          const canonicalSurfaceKind = idempotencyCheck.existingLocation === "review"
-            ? "pull_review"
-            : idempotencyCheck.existingLocation === "issue-comment"
-              ? "issue_comment"
-              : null;
-          const canonicalSurface = canonicalSurfaceKind
-            ? await findCanonicalReviewSurface({
-              octokit: idempotencyOctokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              reviewOutputKey,
-              surfaceKind: canonicalSurfaceKind,
-            })
-            : null;
-          const canonicalSurfaceHasReviewDetails = canonicalSurface?.body.includes("<summary>Review Details</summary>") ?? false;
-
-          if (canonicalSurface && !canonicalSurfaceHasReviewDetails) {
-            acceptedCanonicalSurface = canonicalSurface;
-            logger.info(
-              {
-                ...baseLog,
-                gate: "review-output-idempotency",
-                gateResult: "accepted",
-                reason: "canonical-surface-missing-review-details",
-                reviewOutputKey,
-                existingLocation: idempotencyCheck.existingLocation,
-                canonicalSurfaceKind: canonicalSurface.kind,
-              },
-              "Review output idempotency check accepted incomplete canonical surface for Review Details finalization",
-            );
-          } else {
-            logger.info(
-              {
-                ...baseLog,
-                gate: "review-output-idempotency",
-                gateResult: "skipped",
-                skipReason: "already-published",
-                reviewOutputKey,
-                existingLocation: idempotencyCheck.existingLocation,
-              },
-              "Skipping review execution because output already published for key",
-            );
-            return;
-          }
-        }
-
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review-output-idempotency",
-            gateResult: "accepted",
-            reviewOutputKey,
-          },
-          "Review output idempotency check passed",
-        );
-
-        let parsedIntent: ParsedPRIntent = DEFAULT_EMPTY_INTENT;
-        let commitMessagesForLinking: string[] = [];
-        try {
-          const commitMessages = await fetchReviewCommitMessages(
-            idempotencyOctokit,
-            apiOwner,
-            apiRepo,
-            pr.number,
-            pr.commits,
-          );
-          commitMessagesForLinking = commitMessages.map(c => c.message);
-          parsedIntent = parsePRIntent(pr.title, pr.body ?? null, commitMessages);
-          logger.info(
-            {
-              ...baseLog,
-              gate: "keyword-parse",
-              recognized: parsedIntent.recognized,
-              unrecognized: parsedIntent.unrecognized,
-              noReview: parsedIntent.noReview,
-              isWIP: parsedIntent.isWIP,
-              profileOverride: parsedIntent.profileOverride,
-              breakingChange: parsedIntent.breakingChangeDetected,
-              conventionalType: parsedIntent.conventionalType?.type ?? null,
-            },
-            "PR intent keywords parsed",
-          );
-        } catch (err) {
-          logger.warn(
-            { ...baseLog, err },
-            "PR intent parsing failed (fail-open, proceeding without keywords)",
-          );
-        }
+        const prIntent = await resolveReviewPrIntent({
+          octokit: idempotencyOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          commitCount: pr.commits,
+          prTitle: pr.title,
+          prBody: pr.body ?? null,
+          baseLog,
+          logger,
+        });
+        const parsedIntent = prIntent.parsedIntent;
+        const commitMessagesForLinking = prIntent.commitMessagesForLinking;
 
         // Add eyes reaction only for explicit re-review requests.
         // Do not react on opened/ready_for_review to avoid noise on the PR description.
         if (action === "review_requested") {
-          try {
-            const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
-            await reactionOctokit.rest.reactions.createForIssue({
-              owner: apiOwner,
-              repo: apiRepo,
-              issue_number: pr.number,
-              content: "eyes",
-            });
-          } catch (err) {
-            // Non-fatal: don't block processing if reaction fails
-            logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
-          }
+          await postReviewRequestedEyesReaction({
+            octokit: await githubApp.getInstallationOctokit(event.installationId),
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            logger,
+          });
         }
 
         // Check skipAuthors
@@ -1235,120 +926,26 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        let authorClassification: ReviewAuthorClassification = {
-          tier: "regular",
-          prCount: null,
-          fromCache: false,
-          searchCacheHit: false,
-          searchEnrichment: {
-            degraded: false,
-            retryAttempts: 0,
-            skippedQueries: 0,
-            degradationPath: "none",
-          },
-          contract: projectContributorExperienceContract({
-            source: "none",
-            tier: null,
-          }),
-          storedProfileTrust: null,
-          fallbackPath: "no-stored-profile->generic-unknown",
-        };
-
-        try {
-          authorClassification = await resolveAuthorTier({
-            authorLogin: pr.user.login,
-            authorAssociation: (pr as { author_association?: string }).author_association ?? "NONE",
-            repo: apiRepo,
-            owner: apiOwner,
-            repoSlug: `${apiOwner}/${apiRepo}`,
-            octokit: idempotencyOctokit,
-            knowledgeStore,
-            searchCache: authorPrCountSearchCache,
-            contributorProfileStore,
-            logger,
-          });
-          logger.info(
-            {
-              ...baseLog,
-              authorTier: authorClassification.tier,
-              authorPrCount: authorClassification.prCount,
-              fromCache: authorClassification.fromCache,
-              searchCacheHit: authorClassification.searchCacheHit,
-              storedProfileTrustState:
-                authorClassification.storedProfileTrust?.state ?? null,
-              storedProfileTrustReason:
-                authorClassification.storedProfileTrust?.reason ?? null,
-              storedProfileCalibrationMarker:
-                authorClassification.storedProfileTrust?.calibrationMarker ?? null,
-              storedProfileCalibrationVersion:
-                authorClassification.storedProfileTrust?.calibrationVersion ?? null,
-              storedProfileFallbackPath: authorClassification.fallbackPath,
-              contributorExperienceState: authorClassification.contract.state,
-              contributorExperienceSource: authorClassification.contract.source,
-              contributorExperienceReviewBehavior: authorClassification.contract.reviewBehavior,
-              contributorExperienceDegraded: authorClassification.contract.degraded,
-              contributorExperienceDegradationPath: authorClassification.contract.degradationPath,
-              searchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-              searchEnrichmentRetryAttempts: authorClassification.searchEnrichment.retryAttempts,
-              searchEnrichmentSkippedQueries: authorClassification.searchEnrichment.skippedQueries,
-              searchEnrichmentPath: authorClassification.searchEnrichment.degradationPath,
-            },
-            "Author experience classification resolved",
-          );
-        } catch (err) {
-          logger.warn(
-            { ...baseLog, err },
-            "Author classification failed (fail-open, using generic unknown contract)",
-          );
-        }
-
-        // Fire-and-forget: suggest identity linking via DM for unlinked contributors
-        if (
-          authorClassification.contract.state !== "generic-opt-out" &&
-          !authorClassification.expertise &&
-          slackBotToken &&
-          contributorProfileStore
-        ) {
-          suggestIdentityLink({
-            githubUsername: pr.user.login,
-            githubDisplayName: pr.user.name ?? null,
-            slackBotToken,
-            profileStore: contributorProfileStore,
-            logger,
-          }).catch((err) =>
-            logger.warn({ ...baseLog, err }, "Identity suggestion check failed (non-blocking)"),
-          );
-        }
-
-        // Emit rate-limit telemetry from a single deterministic point after
-        // author-tier Search enrichment outcomes are finalized for this run.
-        const rateLimitTelemetryEvent = {
-          deliveryId: event.id,
-          executionIdentity: event.id,
-          repo: `${apiOwner}/${apiRepo}`,
+        const authorClassification = await resolveReviewAuthorContext({
+          authorLogin: pr.user.login,
+          authorDisplayName: pr.user.name ?? null,
+          authorAssociation: (pr as { author_association?: string }).author_association ?? "NONE",
+          owner: apiOwner,
+          repo: apiRepo,
+          repoSlug: `${apiOwner}/${apiRepo}`,
           prNumber: pr.number,
+          deliveryId: event.id,
           eventType: `pull_request.${payload.action}`,
-          cacheHitRate: authorClassification.searchCacheHit ? 1 : 0,
-          skippedQueries: authorClassification.searchEnrichment.skippedQueries,
-          retryAttempts: authorClassification.searchEnrichment.retryAttempts,
-          degradationPath: authorClassification.searchEnrichment.degradationPath,
-        };
-
-        if (config.telemetry.enabled) {
-          try {
-            await telemetryStore.recordRateLimitEvent(rateLimitTelemetryEvent);
-          } catch (err) {
-            logger.warn(
-              {
-                ...baseLog,
-                err,
-                executionIdentity: rateLimitTelemetryEvent.executionIdentity,
-                telemetryEventType: rateLimitTelemetryEvent.eventType,
-              },
-              "Rate-limit telemetry write failed (non-blocking)",
-            );
-          }
-        }
+          octokit: idempotencyOctokit,
+          knowledgeStore,
+          searchCache: authorPrCountSearchCache,
+          contributorProfileStore,
+          slackBotToken,
+          telemetryEnabled: config.telemetry.enabled,
+          telemetryStore,
+          baseLog,
+          logger,
+        });
 
         setReviewWorkPhase("incremental-diff");
         // Incremental diff computation (REV-01)
@@ -1395,305 +992,40 @@ export function createReviewHandler(deps: {
           : undefined;
         const allChangedFiles = diffContext.changedFiles;
 
-        // ── [depends] deep-review detection (DEPS-01/02) ──
-        // Runs BEFORE Dependabot detection. If matched, Dependabot path is skipped.
-        let dependsBumpInfo: DependsBumpInfo | null = null;
-        try {
-          dependsBumpInfo = detectDependsBump(pr.title);
-          if (dependsBumpInfo) {
-            logger.info({
-              ...baseLog,
-              gate: "depends-bump-detect",
-              packages: dependsBumpInfo.packages.map(p => p.name),
-              platform: dependsBumpInfo.platform,
-              isGroup: dependsBumpInfo.isGroup,
-            }, "[depends] bump detected — entering deep-review pipeline");
-          }
-        } catch (err) {
-          logger.warn({ ...baseLog, err, gate: "depends-bump-detect" }, "[depends] detection failed (fail-open)");
-        }
-
-        // ── [depends] deep-review pipeline ──
-        // When a [depends] bump is detected, run enrichment, build structured comment, and post.
-        if (dependsBumpInfo) {
-          try {
-            const prFilesForDepends = (await fetchAllPullRequestFiles({
-              octokit: idempotencyOctokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              pullNumber: pr.number,
-            })).map((file) => ({
-              filename: file.filename,
-              ...(file.status ? { status: file.status } : {}),
-              ...(file.patch ? { patch: file.patch } : {}),
-            }));
-            const dependsContext = await buildDependsReviewContext({
-              info: dependsBumpInfo,
-              prFiles: prFilesForDepends,
-              octokit: idempotencyOctokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              workspaceDir: workspace?.dir ?? null,
-              logger,
-              baseLog,
-              deliveryId: String(pr.number),
-              retriever,
-              summarize: async ({ packageName, snippets, repo, deliveryId }) => {
-                const taskRouter = createTaskRouter({ models: {} });
-                const resolved = taskRouter.resolve(TASK_TYPES.DEPENDS_CONTEXT_SUMMARY);
-                const summaryResult = await generateWithFallback({
-                  taskType: TASK_TYPES.DEPENDS_CONTEXT_SUMMARY,
-                  resolved,
-                  system: "You summarize past PR discussion snippets into 1–2 plain sentences explaining why they are relevant context for a dependency bump review. No bullet points. No headers. Output only the summary sentences.",
-                  prompt: `Dependency being bumped: ${packageName}\n\nPast discussion snippets:\n${snippets}\n\nSummarize in 1–2 sentences why these past comments are relevant to this bump.`,
-                  logger,
-                  repo,
-                  deliveryId,
-                });
-                return summaryResult.text;
-              },
-            });
-            const hasSourceChanges = dependsContext.hasSourceChanges;
-            const reviewData = dependsContext.reviewData;
-
-            const verdict = computeDependsVerdict(reviewData);
-            const commentBody = buildDependsReviewComment(reviewData);
-            const inlineComments = buildDependsInlineComments(reviewData, prFilesForDepends);
-
-            // The [depends] fast path can publish before the standard review executor runs.
-            // Promote this review-family attempt before the first publish gate so an
-            // uncontested dependency review can still emit its summary/inline output.
-            setReviewWorkPhase("publish");
-
-            let publishedDependsSummary = false;
-            let publishedDependsInlineComments = false;
-
-            // Post top-level summary comment
-            if (canPublishVisibleOutput("[depends] deep review summary comment")) {
-              setReviewWorkPhase("publish");
-              await idempotencyOctokit.rest.issues.createComment({
-                owner: apiOwner,
-                repo: apiRepo,
-                issue_number: pr.number,
-                body: commentBody,
-              });
-              publishedDependsSummary = true;
-            }
-
-            // Post inline review comments (if any)
-            if (
-              inlineComments.length > 0
-              && canPublishVisibleOutput("[depends] deep review inline comments")
-            ) {
-              setReviewWorkPhase("publish");
-              await idempotencyOctokit.rest.pulls.createReview({
-                owner: apiOwner,
-                repo: apiRepo,
-                pull_number: pr.number,
-                event: "COMMENT",
-                comments: inlineComments.map(c => ({
-                  path: c.path,
-                  line: c.line,
-                  body: c.body,
-                })),
-              });
-              publishedDependsInlineComments = true;
-            }
-
-            if (publishedDependsSummary || publishedDependsInlineComments) {
-              logger.info({
-                ...baseLog,
-                gate: "depends-review-complete",
-                verdict: verdict.level,
-                packagesCount: dependsBumpInfo.packages.length,
-                inlineCommentCount: inlineComments.length,
-                hasRetrievalContext: !!reviewData.retrievalContext,
-              }, "[depends] deep review posted");
-            }
-
-            // 9. Determine if standard Claude review should also run
-            if (!hasSourceChanges) {
-              // Pure dependency bump -- skip standard Claude review
-              logger.info({ ...baseLog, gate: "depends-review-skip-standard", verdict: verdict.level }, "[depends] pure dep bump — skipping standard review");
-              return;
-            }
-
-            logger.info({ ...baseLog, gate: "depends-review-continue", verdict: verdict.level, hasSourceChanges }, "[depends] source changes detected — continuing to standard review");
-          } catch (err) {
-            logger.warn({ ...baseLog, err, gate: "depends-pipeline" }, "[depends] pipeline failed (fail-open, falling through to standard review)");
-            // Reset dependsBumpInfo so Dependabot detection can still run
-            dependsBumpInfo = null;
-          }
-        }
+        const dependsFlow = await resolveReviewDependsFlow({
+          prTitle: pr.title,
+          octokit: idempotencyOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          workspaceDir: workspace?.dir ?? null,
+          logger,
+          baseLog,
+          botHandles: [githubApp.getAppSlug(), "claude"],
+          canPublishVisibleOutput,
+          setReviewWorkPhase,
+          retriever,
+        });
+        if (dependsFlow.action === "skip-standard-review") return;
+        const dependsBumpInfo = dependsFlow.dependsBumpInfo;
 
         // ── Dependency bump detection (DEP-01/02/03) ──
         // Skipped when [depends] detection matched (mutual exclusivity)
-        let depBumpContext: DepBumpContext | null = null;
-        if (!dependsBumpInfo) {
-        try {
-          const detection = detectDepBump({
-            prTitle: pr.title,
-            prLabels: (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [],
-            headBranch: pr.head.ref,
-            senderLogin: pr.user.login,
-          });
-          if (detection) {
-            const details = extractDepBumpDetails({
-              detection,
-              prTitle: pr.title,
-              prBody: pr.body ?? null,
-              changedFiles: allChangedFiles,
-              headBranch: pr.head.ref,
-            });
-            const classification = classifyDepBump({
-              oldVersion: details.oldVersion,
-              newVersion: details.newVersion,
-            });
-            depBumpContext = { detection, details, classification };
-            logger.info(
-              {
-                ...baseLog,
-                gate: "dep-bump-detect",
-                source: detection.source,
-                signals: detection.signals,
-                packageName: details.packageName,
-                ecosystem: details.ecosystem,
-                bumpType: classification.bumpType,
-                isGroup: details.isGroup,
-              },
-              "Dependency bump detected",
-            );
-          }
-        } catch (err) {
-          logger.warn({ ...baseLog, err }, "Dep bump detection failed (fail-open)");
-        }
-
-        // ── Dependency bump enrichment (SEC-01/02/03, CLOG-01/02/03) ──
-        if (depBumpContext && depBumpContext.details.packageName && !depBumpContext.details.isGroup) {
-          try {
-            const [secResult, clogResult] = await Promise.allSettled([
-              fetchSecurityAdvisories({
-                packageName: depBumpContext.details.packageName,
-                ecosystem: depBumpContext.details.ecosystem ?? "npm",
-                oldVersion: depBumpContext.details.oldVersion,
-                newVersion: depBumpContext.details.newVersion,
-                octokit: idempotencyOctokit,
-                timeoutMs: 4000,
-              }),
-              fetchChangelog({
-                packageName: depBumpContext.details.packageName,
-                ecosystem: depBumpContext.details.ecosystem ?? "npm",
-                oldVersion: depBumpContext.details.oldVersion,
-                newVersion: depBumpContext.details.newVersion,
-                octokit: idempotencyOctokit,
-                timeoutMs: 4000,
-              }),
-            ]);
-            depBumpContext.security = secResult.status === "fulfilled" ? secResult.value : null;
-            depBumpContext.changelog = clogResult.status === "fulfilled" ? clogResult.value : null;
-
-            logger.info({
-              ...baseLog,
-              gate: "dep-bump-enrich",
-              hasAdvisories: (depBumpContext.security?.advisories?.length ?? 0) > 0,
-              isSecurityBump: depBumpContext.security?.isSecurityBump ?? false,
-              changelogSource: depBumpContext.changelog?.source ?? null,
-              breakingChanges: depBumpContext.changelog?.breakingChanges?.length ?? 0,
-            }, "Dep bump enrichment complete");
-          } catch (err) {
-            logger.warn({ ...baseLog, err, gate: "dep-bump-enrich" }, "Dep bump enrichment failed (fail-open)");
-            // fail-open: depBumpContext.security and .changelog remain undefined
-          }
-        }
-
-        // ── Merge confidence scoring (CONF-01/02) ──
-        if (depBumpContext) {
-          depBumpContext.mergeConfidence = computeMergeConfidence(depBumpContext);
-          logger.info({
-            ...baseLog,
-            gate: "merge-confidence",
-            level: depBumpContext.mergeConfidence.level,
-            rationale: depBumpContext.mergeConfidence.rationale,
-          }, "Merge confidence computed");
-        }
-
-        // ── Workspace usage analysis for breaking changes (DEP-04) ──
-        // Fail-open: errors/timeouts never block the review.
-        if (
-          depBumpContext &&
-          depBumpContext.details.packageName &&
-          !depBumpContext.details.isGroup &&
-          (depBumpContext.changelog?.breakingChanges?.length ?? 0) > 0
-        ) {
-          depBumpContext.usageEvidence = null;
-          const packageName = depBumpContext.details.packageName;
-          const breakingChangeSnippets = depBumpContext.changelog?.breakingChanges ?? [];
-
-          try {
-            const analyzer = usageAnalyzer?.analyzePackageUsage ?? analyzePackageUsage;
-            const result = await analyzer({
-              workspaceDir: workspace.dir,
-              packageName,
-              breakingChangeSnippets,
-              ecosystem: depBumpContext.details.ecosystem ?? "npm",
-              timeBudgetMs: 3000,
-            });
-
-            depBumpContext.usageEvidence = result;
-
-            logger.info(
-              {
-                ...baseLog,
-                gate: "usage-analysis",
-                evidenceCount: result.evidence.length,
-                timedOut: result.timedOut,
-                searchTerms: result.searchTerms,
-              },
-              "Workspace usage analysis complete",
-            );
-          } catch (err) {
-            depBumpContext.usageEvidence = null;
-            logger.warn(
-              { ...baseLog, gate: "usage-analysis", err },
-              "Workspace usage analysis failed (fail-open)",
-            );
-          }
-        }
-
-        // ── Multi-package scope coordination (DEP-06) ──
-        // Only relevant for group bumps, where Dependabot/Renovate list packages in the PR body.
-        if (depBumpContext && depBumpContext.details.isGroup) {
-          depBumpContext.scopeGroups = null;
-
-          try {
-            const prBody = pr.body ?? "";
-            const matches = prBody.match(/@[\w-]+\/[\w.-]+/g) ?? [];
-            const packageNames = Array.from(new Set(matches));
-
-            if (packageNames.length > 0) {
-              const coordinator = scopeCoordinator?.detectScopeCoordination ?? detectScopeCoordination;
-              const groups = coordinator(packageNames);
-              if (groups.length > 0) {
-                depBumpContext.scopeGroups = groups;
-                logger.info(
-                  {
-                    ...baseLog,
-                    gate: "scope-coordination",
-                    groupCount: groups.length,
-                  },
-                  "Scope coordination groups detected",
-                );
-              }
-            }
-          } catch (err) {
-            depBumpContext.scopeGroups = null;
-            logger.warn(
-              { ...baseLog, gate: "scope-coordination", err },
-              "Scope coordination detection failed (fail-open)",
-            );
-          }
-        }
-        } // end if (!dependsBumpInfo) -- mutual exclusivity guard
+        const depBumpContext: DepBumpContext | null = await buildReviewDepBumpContext({
+          dependsBumpInfo,
+          prTitle: pr.title,
+          prBody: pr.body ?? null,
+          prLabels: (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [],
+          headBranch: pr.head.ref,
+          senderLogin: pr.user.login,
+          changedFiles: allChangedFiles,
+          workspaceDir: workspace.dir,
+          octokit: idempotencyOctokit,
+          logger,
+          baseLog,
+          usageAnalyzer: usageAnalyzer?.analyzePackageUsage,
+          detectScopeCoordination: scopeCoordinator?.detectScopeCoordination,
+        });
 
         const skipMatchers = config.review.skipPaths
           .map(normalizeSkipPattern)
@@ -1807,82 +1139,32 @@ export function createReviewHandler(deps: {
           weights: config.largePR.riskWeights,
         });
 
-        let graphSelection = applyGraphAwareSelection({ riskScores });
-        let graphBlastRadius: ReviewGraphBlastRadiusResult | null = null;
-        let graphQueryBypassedForTrivialChange = false;
-        let structuralImpactForReview: import("../structural-impact/types.ts").StructuralImpactPayload | null = null;
-        if (reviewGraphQuery) {
-          // Trivial-change bypass: skip graph query overhead for small PRs.
-          const trivialCheck = isTrivialChange({
-            changedFileCount: reviewFiles.length,
-            totalLinesChanged: (diffAnalysis?.metrics.totalLinesAdded ?? 0) + (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
-          });
-
-          if (trivialCheck.bypass) {
-            graphQueryBypassedForTrivialChange = true;
-            logger.info(
-              { ...baseLog, gate: "graph-query-bypass", reason: trivialCheck.reason, fileCount: reviewFiles.length },
-              "Trivial change detected — bypassing graph query",
-            );
-          } else {
-            try {
-              const structuralImpact = await fetchReviewStructuralImpact(
-                {
-                  reviewGraphQuery,
-                  cache: structuralImpactCache,
-                  logger,
-                },
-                {
-                  repo: `${apiOwner}/${apiRepo}`,
-                  owner: apiOwner,
-                  workspaceKey: pr.head.sha,
-                  baseSha: pr.base.sha,
-                  headSha: pr.head.sha,
-                  changedPaths: reviewFiles,
-                  canonicalRef: pr.base.ref,
-                  query: reviewFiles.join(" "),
-                  graphLimit: Math.max(
-                    config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
-                    20,
-                  ),
-                },
-              );
-              const structuralImpactDegradation = summarizeStructuralImpactDegradation(structuralImpact.payload);
-              structuralImpactForReview = {
-                ...structuralImpact.payload,
-                status: structuralImpactDegradation.status,
-                degradations: structuralImpactDegradation.degradations,
-              };
-              graphBlastRadius = structuralImpact.graphBlastRadius;
-              logger.info(
-                {
-                  ...baseLog,
-                  gate: "structural-impact",
-                  status: structuralImpactForReview.status,
-                  graphPresent: Boolean(structuralImpact.graphBlastRadius),
-                  probableCallers: structuralImpactForReview.probableCallers.length,
-                  impactedFiles: structuralImpactForReview.impactedFiles.length,
-                  likelyTests: structuralImpactForReview.likelyTests.length,
-                  canonicalEvidence: structuralImpactForReview.canonicalEvidence.length,
-                  breakingChangeEvidenceUsed: structuralImpactForReview.probableCallers.length > 0 || structuralImpactForReview.impactedFiles.length > 0,
-                  fallbackUsed: structuralImpactDegradation.fallbackUsed,
-                  degradationSignals: structuralImpactDegradation.truthfulnessSignals,
-                  graphAvailable: structuralImpactDegradation.availability.graphAvailable,
-                  corpusAvailable: structuralImpactDegradation.availability.corpusAvailable,
-                },
-                "Review structural-impact payload collected",
-              );
-              if (graphBlastRadius) {
-                graphSelection = applyGraphAwareSelection({ riskScores, graph: graphBlastRadius });
-              }
-            } catch (err) {
-              logger.warn(
-                { ...baseLog, gate: "graph-aware-selection", err },
-                "Review structural-impact integration failed (fail-open, continuing with file-risk selection)",
-              );
-            }
-          }
-        }
+        const structuralImpactSelection = await resolveReviewStructuralImpactSelection({
+          reviewGraphQuery,
+          structuralImpactCache,
+          logger,
+          baseLog,
+          owner: apiOwner,
+          repo: apiRepo,
+          workspaceKey: pr.head.sha,
+          baseSha: pr.base.sha,
+          headSha: pr.head.sha,
+          changedPaths: reviewFiles,
+          canonicalRef: pr.base.ref,
+          fullReviewCount: config.largePR.fullReviewCount,
+          abbreviatedCount: config.largePR.abbreviatedCount,
+          totalLinesChanged:
+            (diffAnalysis?.metrics.totalLinesAdded ?? 0)
+            + (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
+          riskScores,
+        });
+        const graphSelection = structuralImpactSelection.graphSelection;
+        const graphBlastRadius: ReviewGraphBlastRadiusResult | null =
+          structuralImpactSelection.graphBlastRadius;
+        const graphQueryBypassedForTrivialChange =
+          structuralImpactSelection.graphQueryBypassedForTrivialChange;
+        const structuralImpactForReview: StructuralImpactPayload | null =
+          structuralImpactSelection.structuralImpactForReview;
 
         // Triage uses changedFiles.length (full PR size) for threshold check,
         // not reviewFiles.length (which may be filtered for incremental mode).
@@ -1953,382 +1235,87 @@ export function createReviewHandler(deps: {
         }
 
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
-        let retrievalCtx: RetrievalContextForPrompt | null = null;
-        const visibleReviewCacheObservations: ReviewCacheTelemetryObservation[] = [];
-        const visibleContinuationCompactionObservations: ContinuationCompactionObservation[] = [];
-        let visiblePromptSectionRecords: PromptSectionRecord[] = [];
-        let reviewVisibleBudgetProjection: VisibleBudgetProjection | null = null;
-        const refreshReviewVisibleBudgetProjection = (): VisibleBudgetProjection | null => {
-          reviewVisibleBudgetProjection = buildVisibleBudgetProjectionFromEvidence({
-            promptSectionRecords: visiblePromptSectionRecords,
-            cacheTelemetryObservations: visibleReviewCacheObservations,
-            continuationCompactionObservations: visibleContinuationCompactionObservations,
-          });
-          return reviewVisibleBudgetProjection;
-        };
-        let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
-        let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
-        let unifiedResultsForPrompt: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] = [];
-        let contextWindowForPrompt: string | undefined;
-        if (retriever) {
-          try {
-            const authorHint = resolveContributorExperienceRetrievalHint(
-              authorClassification.contract,
-            );
-            const variants = buildRetrievalVariants({
-              title: pr.title,
-              body: pr.body ?? undefined,
-              conventionalType: parsedIntent.conventionalType?.type ?? null,
-              prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
-              riskSignals: diffAnalysis.riskSignals ?? [],
-              filePaths: reviewFiles,
-              authorHint: authorHint ?? undefined,
-            });
-
-            const result = await retriever.retrieve({
-              repo: `${apiOwner}/${apiRepo}`,
-              owner: apiOwner,
-              queries: variants.map((v) => v.query),
-              workspaceDir: workspace.dir,
-              prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
-              logger,
-              triggerType: "pr_review",
-            });
-
-            const retrievalCacheEvent = buildRetrievalReviewCacheEvent({
-              deliveryId: event.id,
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              result,
-            });
-            visibleReviewCacheObservations.push(retrievalCacheEvent);
-
-            if (config.telemetry.enabled) {
-              try {
-                const totalEmbeddingLookups = (result?.provenance?.embeddingRequests ?? 0) + (result?.provenance?.embeddingCacheHits ?? 0);
-                await telemetryStore.recordRateLimitEvent({
-                  deliveryId: event.id,
-                  executionIdentity: `${event.id}:reuse.retrieval-query-embedding.main`,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  prNumber: pr.number,
-                  eventType: "reuse.retrieval-query-embedding.main",
-                  cacheHitRate: totalEmbeddingLookups > 0
-                    ? (result?.provenance?.embeddingCacheHits ?? 0) / totalEmbeddingLookups
-                    : 0,
-                  skippedQueries: result?.provenance?.embeddingCacheHits ?? 0,
-                  retryAttempts: result?.provenance?.embeddingRequests ?? 0,
-                  degradationPath: retrievalCacheEvent.reason
-                    ? `${retrievalCacheEvent.status}:${retrievalCacheEvent.reason}`
-                    : retrievalCacheEvent.status,
-                });
-              } catch (err) {
-                logger.warn(
-                  { ...baseLog, err },
-                  "Review retrieval reuse telemetry write failed (non-blocking)",
-                );
-              }
-
-              await recordReviewCacheEventFailOpen(retrievalCacheEvent);
-            }
-
-            // Capture unified cross-corpus results (KI-13/KI-17)
-            if (result && result.unifiedResults && result.unifiedResults.length > 0) {
-              unifiedResultsForPrompt = result.unifiedResults;
-              contextWindowForPrompt = result.contextWindow;
-            }
-
-            // Capture review precedents regardless of learning memory findings
-            if (result && result.reviewPrecedents.length > 0) {
-              reviewPrecedentsForPrompt = result.reviewPrecedents;
-            }
-
-            // Capture wiki knowledge regardless of learning memory findings
-            if (result && result.wikiKnowledge.length > 0) {
-              wikiKnowledgeForPrompt = result.wikiKnowledge;
-            }
-
-            if (result && result.findings.length > 0) {
-              // Retrieval quality telemetry (RET-05)
-              if (config.telemetry.enabled) {
-                try {
-                  const resultCount = result.findings.length;
-                  const avgDistance = resultCount > 0
-                    ? result.findings.reduce((sum, r) => sum + (r as any).adjustedDistance, 0) / resultCount
-                    : null;
-                  const languageMatchRatio = resultCount > 0
-                    ? result.findings.filter((r) => (r as any).languageMatch).length / resultCount
-                    : null;
-
-                  await telemetryStore.recordRetrievalQuality({
-                    deliveryId: event.id,
-                    repo: `${apiOwner}/${apiRepo}`,
-                    prNumber: pr.number,
-                    eventType: event.name,
-                    topK: config.knowledge.retrieval.topK,
-                    distanceThreshold: result.provenance.thresholdValue,
-                    thresholdMethod: result.provenance.thresholdMethod,
-                    resultCount,
-                    avgDistance,
-                    languageMatchRatio,
-                  });
-                } catch (err) {
-                  logger.warn(
-                    { ...baseLog, err },
-                    "Retrieval quality telemetry write failed (non-blocking)",
-                  );
-                }
-              }
-
-              retrievalCtx = {
-                maxChars: config.knowledge.retrieval.maxContextChars,
-                findings: result.findings.map((finding, index) => {
-                  const anchor = result.snippetAnchors[index];
-                  return {
-                    findingText: finding.record.findingText,
-                    severity: finding.record.severity,
-                    category: finding.record.category,
-                    path: anchor?.path ?? finding.record.filePath,
-                    line: anchor?.line,
-                    snippet: anchor?.snippet,
-                    outcome: finding.record.outcome,
-                    distance: (finding as any).adjustedDistance ?? finding.distance,
-                    sourceRepo: finding.sourceRepo,
-                  };
-                }),
-              };
-            }
-          } catch (err) {
-            logger.warn({ ...baseLog, err }, "Retrieval context generation failed (fail-open, proceeding without retrieval)");
-          }
-        }
-
-        let resolvedSeverityMinLevel = config.review.severity.minLevel;
-        let resolvedMaxComments = config.review.maxComments;
-        let resolvedFocusAreas = [...config.review.focusAreas];
-        let resolvedIgnoredAreas = [...config.review.ignoredAreas];
-
-        const profileSelectionLinesChanged = Math.max(0, (pr.additions ?? 0) + (pr.deletions ?? 0));
-        let profileSelection = resolveReviewProfile({
-          keywordProfileOverride: parsedIntent.profileOverride,
-          manualProfile: config.review.profile ?? null,
-          linesChanged: profileSelectionLinesChanged,
-        });
-
-        const selectedPreset = PROFILE_PRESETS[profileSelection.selectedProfile];
-        if (selectedPreset) {
-          if (profileSelection.source === "keyword") {
-            resolvedSeverityMinLevel = selectedPreset.severityMinLevel;
-            resolvedMaxComments = selectedPreset.maxComments;
-            if (selectedPreset.focusAreas.length > 0) {
-              resolvedFocusAreas = [...selectedPreset.focusAreas];
-            }
-            if (selectedPreset.ignoredAreas.length > 0) {
-              resolvedIgnoredAreas = [...selectedPreset.ignoredAreas];
-            }
-
-            logger.info(
-              {
-                ...baseLog,
-                gate: "keyword-profile-override",
-                profile: profileSelection.selectedProfile,
-              },
-              "Keyword profile override applied",
-            );
-          } else {
-            if (resolvedSeverityMinLevel === "minor") {
-              resolvedSeverityMinLevel = selectedPreset.severityMinLevel;
-            }
-            if (resolvedMaxComments === 7) {
-              resolvedMaxComments = selectedPreset.maxComments;
-            }
-            if (resolvedFocusAreas.length === 0) {
-              resolvedFocusAreas = [...selectedPreset.focusAreas];
-            }
-            if (resolvedIgnoredAreas.length === 0) {
-              resolvedIgnoredAreas = [...selectedPreset.ignoredAreas];
-            }
-          }
-        }
-
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review-profile-selection",
-            selectedProfile: profileSelection.selectedProfile,
-            source: profileSelection.source,
-            linesChanged: profileSelection.linesChanged,
-            autoBand: profileSelection.autoBand,
+        const reviewRetrievalContext = await buildReviewRetrievalContext({
+          retriever,
+          repo: `${apiOwner}/${apiRepo}`,
+          owner: apiOwner,
+          prNumber: pr.number,
+          deliveryId: event.id,
+          eventName: event.name,
+          workspaceDir: workspace.dir,
+          prTitle: pr.title,
+          prBody: pr.body ?? undefined,
+          conventionalType: parsedIntent.conventionalType?.type ?? null,
+          prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
+          riskSignals: diffAnalysis.riskSignals ?? [],
+          filePaths: reviewFiles,
+          authorContract: authorClassification.contract,
+          retrievalConfig: {
+            topK: config.knowledge.retrieval.topK,
+            maxContextChars: config.knowledge.retrieval.maxContextChars,
           },
-          "Review profile resolved",
-        );
+          telemetryEnabled: config.telemetry.enabled,
+          telemetryStore,
+          logger,
+          baseLog,
+        });
+        const retrievalCtx = reviewRetrievalContext.retrievalContext;
+        const visibleBudgetState = reviewRetrievalContext.visibleBudgetState;
+        const reviewPrecedentsForPrompt = reviewRetrievalContext.reviewPrecedents;
+        const wikiKnowledgeForPrompt = reviewRetrievalContext.wikiKnowledge;
+        const unifiedResultsForPrompt = reviewRetrievalContext.unifiedResults;
+        const contextWindowForPrompt = reviewRetrievalContext.contextWindow;
 
-        // TMO-01: Estimate timeout risk
-        const languageComplexity = computeLanguageComplexity(
-          diffAnalysis?.filesByLanguage ?? {},
-        );
-        const timeoutEstimate = estimateTimeoutRisk({
-          fileCount: changedFiles.length,
-          linesChanged: (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
-            (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
-          languageComplexity,
-          isLargePR: diffAnalysis?.isLargePR ?? false,
-          baseTimeoutSeconds: config.timeoutSeconds,
-        });
-        const appliedTimeoutBudget = config.timeout.dynamicScaling !== false
-          ? timeoutEstimate
-          : null;
-
-        const diffAnalysisLinesChanged = (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
-          (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
-        const prApiLinesChanged = Math.max(0, (pr.additions ?? 0) + (pr.deletions ?? 0));
-        const reviewRoutingLinesChanged = resolveReviewRoutingLineCount({
-          diffLinesChanged: diffAnalysisLinesChanged,
-          prApiLinesChanged,
-        });
-        const reviewRouting = resolveReviewTaskRouting({
-          changedFileCount: changedFiles.length,
-          linesChanged: reviewRoutingLinesChanged,
-        });
-        const reviewMaxTurnsOverride = resolveReviewMaxTurnsOverride({
-          taskType: reviewRouting.taskType,
-          routingMaxTurnsOverride: reviewRouting.maxTurnsOverride,
-          timeoutRiskLevel: timeoutEstimate.riskLevel,
+        const runtimePlan = buildReviewRuntimePlan({
+          parsedIntent: {
+            profileOverride: parsedIntent.profileOverride,
+          },
+          reviewConfig: {
+            profile: config.review.profile ?? null,
+            severityMinLevel: config.review.severity.minLevel,
+            maxComments: config.review.maxComments,
+            focusAreas: config.review.focusAreas,
+            ignoredAreas: config.review.ignoredAreas,
+          },
+          timeoutConfig: {
+            timeoutSeconds: config.timeoutSeconds,
+            dynamicScaling: config.timeout.dynamicScaling !== false,
+            autoReduceScope: config.timeout.autoReduceScope !== false,
+          },
           baseMaxTurns: config.maxTurns,
+          prLinesChanged: (pr.additions ?? 0) + (pr.deletions ?? 0),
           changedFiles,
+          diffMetrics: {
+            totalLinesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
+            totalLinesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
+            filesByLanguage: diffAnalysis?.filesByLanguage ?? {},
+            isLargePR: diffAnalysis?.isLargePR ?? false,
+          },
+          tieredFiles,
+          promptFiles,
+          logger,
+          baseLog,
         });
-
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review-routing",
-            taskType: reviewRouting.taskType,
-            routingReason: reviewRouting.routingReason,
-            changedFiles: changedFiles.length,
-            linesChanged: reviewRoutingLinesChanged,
-            diffAnalysisLinesChanged,
-            prApiLinesChanged,
-            ...toProductionLogTurnBudgetFields(
-              reviewMaxTurnsOverride,
-              reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
-            ),
-          },
-          "Review routing decision",
-        );
-
-        logger.info(
-          {
-            ...baseLog,
-            gate: "budget-estimation",
-            riskLevel: timeoutEstimate.riskLevel,
-            dynamicBudgetSeconds: timeoutEstimate.dynamicTimeoutSeconds,
-            remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
-            infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
-            totalBudgetSeconds: timeoutEstimate.totalTimeoutSeconds,
-            shouldReduceScope: timeoutEstimate.shouldReduceScope,
-            complexity: toProductionLogBudgetReasoning(timeoutEstimate.reasoning),
-          },
-          "Review budget risk estimated",
-        );
-
-        const checkpointEnabled =
-          reviewRouting.taskType === TASK_TYPES.REVIEW_FULL ||
-          timeoutEstimate.riskLevel === "medium" ||
-          timeoutEstimate.riskLevel === "high";
-
-        // TMO-02: Scope reduction for high-risk PRs. Explicit strict profiles are
-        // still bounded here because otherwise the executor can exhaust max turns
-        // before publishing any result.
-        const requestedProfileSelection = { ...profileSelection };
-        let timeoutReductionApplied = false;
-        let timeoutReductionSkippedReason: "explicit-profile" | "config-disabled" | null = null;
-        if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
-          timeoutReductionSkippedReason = "config-disabled";
-          logger.info(
-            {
-              ...baseLog,
-              gate: "budget-scope-reduction",
-              gateResult: "skipped",
-              skipReason: timeoutReductionSkippedReason,
-              profile: profileSelection.selectedProfile,
-              source: profileSelection.source,
-            },
-            "Skipping scope reduction because budget auto-reduction is disabled",
-          );
-        } else if (timeoutEstimate.shouldReduceScope) {
-          const originalPromptFileCount = tieredFiles.isLargePR
-            ? tieredFiles.full.length + tieredFiles.abbreviated.length
-            : promptFiles.length;
-
-          // Override to minimal profile.
-          profileSelection.selectedProfile = "minimal";
-          const minimalPreset = PROFILE_PRESETS["minimal"];
-          if (minimalPreset) {
-            resolvedSeverityMinLevel = minimalPreset.severityMinLevel;
-            resolvedMaxComments = minimalPreset.maxComments;
-            resolvedFocusAreas = [...minimalPreset.focusAreas];
-            resolvedIgnoredAreas = [...minimalPreset.ignoredAreas];
-          }
-
-          if (timeoutEstimate.reducedFileCount !== null) {
-            tieredFiles = capTieredFilesForPromptBudget(
-              tieredFiles,
-              timeoutEstimate.reducedFileCount,
-            );
-            promptFiles = tieredFiles.isLargePR
-              ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
-              : tieredFiles.full.map(f => f.filePath);
-          }
-
-          timeoutReductionApplied = true;
-          logger.info(
-            {
-              ...baseLog,
-              gate: "budget-scope-reduction",
-              originalProfile: requestedProfileSelection.selectedProfile,
-              requestedProfileSource: requestedProfileSelection.source,
-              reducedProfile: "minimal",
-              originalFileCount: originalPromptFileCount,
-              reducedFileCount: promptFiles.length,
-              reductionReason: requestedProfileSelection.source === "auto"
-                ? "auto-profile-high-budget-risk"
-                : "explicit-profile-high-budget-risk",
-            },
-            "Auto-reduced review scope for high budget risk",
-          );
-        }
-
-        const reviewBoundedness = resolveReviewBoundedness({
-          requestedProfile: requestedProfileSelection,
-          effectiveProfile: profileSelection,
-          largePRTriage: tieredFiles.isLargePR
-            ? {
-                fullCount: tieredFiles.full.length,
-                abbreviatedCount: tieredFiles.abbreviated.length,
-                totalFiles: tieredFiles.totalFiles,
-              }
-            : null,
-          timeout: {
-            riskLevel: timeoutEstimate.riskLevel,
-            dynamicTimeoutSeconds: timeoutEstimate.dynamicTimeoutSeconds,
-            shouldReduceScope: timeoutEstimate.shouldReduceScope,
-            reductionApplied: timeoutReductionApplied,
-            reductionSkippedReason: timeoutReductionSkippedReason,
-          },
-        });
-
-        if (reviewBoundedness) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-boundedness",
-              disclosureRequired: reviewBoundedness.disclosureRequired,
-              reasonCodes: reviewBoundedness.reasonCodes,
-              requestedProfile: reviewBoundedness.requestedProfile.selectedProfile,
-              effectiveProfile: reviewBoundedness.effectiveProfile.selectedProfile,
-            },
-            "Resolved bounded-review contract",
-          );
-        }
+        const {
+          resolvedSeverityMinLevel,
+          resolvedMaxComments,
+          resolvedFocusAreas,
+          resolvedIgnoredAreas,
+          profileSelection,
+          requestedProfileSelection,
+          languageComplexity,
+          timeoutEstimate,
+          appliedTimeoutBudget,
+          diffAnalysisLinesChanged,
+          prApiLinesChanged,
+          reviewRoutingLinesChanged,
+          reviewRouting,
+          reviewMaxTurnsOverride,
+          checkpointEnabled,
+          reviewBoundedness,
+        } = runtimePlan;
+        tieredFiles = runtimePlan.tieredFiles;
+        promptFiles = runtimePlan.promptFiles;
 
         const reviewPlanLinesChangedSource = diffAnalysisLinesChanged === 0 && prApiLinesChanged > 0
           ? "github-pr-api-fallback"
@@ -2468,69 +1455,21 @@ export function createReviewHandler(deps: {
         // Extract PR labels for intent scoping (FORMAT-07)
         const prLabels = (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [];
 
-        // Cluster pattern matching (CLST-03: surface recurring review patterns)
-        let clusterPatternsForPrompt: ClusterPatternMatch[] = [];
-        if (clusterMatcher && embeddingProvider) {
-          try {
-            const prText = [pr.title, pr.body ?? "", ...promptFiles.slice(0, 20)].join("\n");
-            const embedResult = await embeddingProvider.generate(prText, "query");
-            const prEmbedding = embedResult?.embedding ?? null;
-            clusterPatternsForPrompt = await clusterMatcher({
-              prEmbedding,
-              prFilePaths: promptFiles,
-              repo: `${apiOwner}/${apiRepo}`,
-            });
-            if (clusterPatternsForPrompt.length > 0) {
-              logger.info(
-                { ...baseLog, clusterMatches: clusterPatternsForPrompt.length },
-                "Cluster patterns matched for PR review",
-              );
-            }
-          } catch (err) {
-            logger.warn({ ...baseLog, err }, "Cluster pattern matching failed (fail-open)");
-          }
-        }
-
-        // PR-issue linking (PRLINK-01, PRLINK-02, PRLINK-03)
-        let linkedIssueResult: LinkResult | undefined;
-        if (issueStore && embeddingProvider) {
-          try {
-            const diffSummaryParts: string[] = [];
-            if (diffAnalysis?.filesByCategory) {
-              const allFiles = Object.values(diffAnalysis.filesByCategory).flat();
-              if (allFiles.length > 0) {
-                diffSummaryParts.push(allFiles.join(", "));
-              }
-            }
-
-            linkedIssueResult = await linkPRToIssues({
-              prBody: pr.body ?? "",
-              prTitle: pr.title,
-              commitMessages: commitMessagesForLinking,
-              diffSummary: diffSummaryParts.join("\n"),
-              repo: `${apiOwner}/${apiRepo}`,
-              issueStore,
-              embeddingProvider,
-              logger,
-            });
-
-            if (
-              linkedIssueResult.referencedIssues.length > 0 ||
-              linkedIssueResult.semanticMatches.length > 0
-            ) {
-              logger.info(
-                {
-                  ...baseLog,
-                  referencedCount: linkedIssueResult.referencedIssues.length,
-                  semanticCount: linkedIssueResult.semanticMatches.length,
-                },
-                "PR-issue linking completed",
-              );
-            }
-          } catch (err) {
-            logger.warn({ ...baseLog, err }, "PR-issue linking failed (fail-open)");
-          }
-        }
+        const promptEnrichment = await buildReviewPromptEnrichment({
+          repo: `${apiOwner}/${apiRepo}`,
+          prTitle: pr.title,
+          prBody: pr.body ?? null,
+          commitMessages: commitMessagesForLinking,
+          promptFiles,
+          filesByCategory: diffAnalysis?.filesByCategory,
+          clusterMatcher,
+          issueStore,
+          embeddingProvider,
+          logger,
+          baseLog,
+        });
+        const clusterPatternsForPrompt = promptEnrichment.clusterPatterns;
+        const linkedIssueResult = promptEnrichment.linkedIssues;
 
         setReviewWorkPhase("prompt-build");
         // Build review prompt
@@ -2638,6 +1577,11 @@ export function createReviewHandler(deps: {
           cacheQuery: `initial:${pr.number}:${pr.head.sha ?? "unknown-head-sha"}`,
           context: reviewPromptBuildContext,
           statusTarget: reviewPromptCacheState,
+          promptBuilder: reviewPromptBuilder,
+          cache: reviewPromptDerivedCache,
+          getCacheErrorCount: () => reviewPromptDerivedCacheErrorCount,
+          buildFingerprint: buildReviewPromptFingerprint,
+          logger,
         });
         reviewPromptDerivedCacheStatus = reviewPromptCacheState.status;
         reviewPromptDerivedCacheReason = reviewPromptCacheState.reason;
@@ -2651,7 +1595,7 @@ export function createReviewHandler(deps: {
             sections: reviewPromptResult.sections,
           }),
         ];
-        visiblePromptSectionRecords = reviewPromptSections;
+        visibleBudgetState.promptSectionRecords = reviewPromptSections;
         logger.info(
           {
             ...baseLog,
@@ -2667,10 +1611,14 @@ export function createReviewHandler(deps: {
           prNumber: pr.number,
           state: reviewPromptCacheState,
         });
-        visibleReviewCacheObservations.push(reviewPromptCacheEvent);
-        refreshReviewVisibleBudgetProjection();
+        visibleBudgetState.reviewCacheObservations.push(reviewPromptCacheEvent);
+        visibleBudgetState.refresh();
         if (config.telemetry.enabled) {
-          await recordReviewCacheEventFailOpen(reviewPromptCacheEvent);
+          await recordReviewCacheEventFailOpen({
+            telemetryStore,
+            logger,
+            entry: reviewPromptCacheEvent,
+          });
         }
         reviewPhaseTimings.set(
           "retrieval/context assembly",
@@ -2714,8 +1662,8 @@ export function createReviewHandler(deps: {
         reviewExecutorPublished = result.published ?? false;
         reviewOutputPublished = result.published ?? false;
         reviewPublishResolution = reviewOutputPublished ? "executor" : "none";
-        visiblePromptSectionRecords = result.promptSections ?? visiblePromptSectionRecords;
-        refreshReviewVisibleBudgetProjection();
+        visibleBudgetState.promptSectionRecords = result.promptSections ?? visibleBudgetState.promptSectionRecords;
+        visibleBudgetState.refresh();
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
           "executor phase timings unavailable",
         );
@@ -3040,56 +1988,22 @@ export function createReviewHandler(deps: {
           },
           "Projected review finding lifecycle evidence",
         );
-        let reviewValidationTruthProjection: AttachReviewValidationTruthResult["projection"] | null = null;
-        try {
-          const reviewValidationTruth = attachReviewValidationTruth({
-            lifecycle: reviewFindingLifecycleResult.lifecycle,
-            correlation: {
-              repo: `${apiOwner}/${apiRepo}`,
-              pullNumber: pr.number,
-              reviewOutputKey,
-              deliveryId: event.id,
-              commitSha: pr.head.sha,
-              headSha: pr.head.sha,
-              baseSha: pr.base.sha,
-              headRef: pr.head.ref,
-              baseRef: pr.base.ref,
-            },
-            publicationFixes: convertPublishedCandidateResultsToValidationTruthFixes({
-              payloads: reviewCandidatePublicationAdapter.payloads,
-              results: candidatePublisherResults,
-              reviewOutputKey,
-              deliveryId: event.id,
-            }),
-            requireRevalidation: true,
-          });
-          reviewValidationTruthProjection = reviewValidationTruth.projection;
-          logger.info(
-            {
-              ...baseLog,
-              ...reviewValidationTruth.logEvidence,
-              gateResult: reviewValidationTruth.status,
-              source: "automatic-review",
-            },
-            "Projected review validation truth evidence",
-          );
-        } catch (err) {
-          try {
-            logger.warn(
-              {
-                ...baseLog,
-                err,
-                gate: "review-validation-truth",
-                gateResult: "degraded",
-                reviewOutputKey,
-                deliveryId: event.id,
-              },
-              "Review validation truth diagnostics failed; continuing review publication",
-            );
-          } catch {
-            // Diagnostics are fail-open for review execution and must not block publication.
-          }
-        }
+        const reviewValidationTruthProjection = projectAutomaticReviewValidationTruth({
+          logger,
+          baseLog,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          reviewOutputKey,
+          deliveryId: event.id,
+          headSha: pr.head.sha,
+          baseSha: pr.base.sha,
+          headRef: pr.head.ref,
+          baseRef: pr.base.ref,
+          lifecycleResult: reviewFindingLifecycleResult,
+          candidatePublicationPayloads: reviewCandidatePublicationAdapter.payloads,
+          candidatePublisherResults,
+        }).projection;
         logger.info(
           {
             ...baseLog,
@@ -3177,115 +2091,61 @@ export function createReviewHandler(deps: {
           );
 
         let canonicalReviewDetailsBody: string | null = null;
-        const buildReviewDetailsBody = (params?: {
-          timeoutProgress?: TimeoutReviewDetailsProgress;
-          reviewFirstPass?: ReviewFirstPassPayload | null;
-          timeoutBudget?: TimeoutBudgetDetails | null;
-        }): string => {
-          const visibleBudgetProjection = refreshReviewVisibleBudgetProjection();
-          const reviewDetailsBody = appendReviewDetailsBudgetLines(formatReviewDetailsSummary({
-            reviewOutputKey,
-            filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
-            linesAdded: reviewDetailsLineCounts.linesAdded,
-            linesRemoved: reviewDetailsLineCounts.linesRemoved,
-            findingCounts,
-            includeOperationalDiagnostics:
-              hasReviewDetailsOperationalSignal
-              || Boolean(params?.timeoutProgress)
-              || Boolean(params?.reviewFirstPass),
-            largePRTriage: tieredFiles.isLargePR ? {
-              fullCount: tieredFiles.full.length,
-              abbreviatedCount: tieredFiles.abbreviated.length,
-              mentionOnlyFiles: tieredFiles.mentionOnly.map((f) => ({ filePath: f.filePath, score: f.score })),
-              totalFiles: tieredFiles.totalFiles,
-            } : undefined,
-            reviewBoundedness,
-            reviewFirstPass: params?.reviewFirstPass,
-            feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
-            keywordParsing: parsedIntent,
-            profileSelection,
-            contributorExperience: authorClassification.contract.reviewDetails,
-            shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
-            candidatePublicationBridge: handlerCandidatePublicationBridge.reviewDetails,
-            candidateVerificationPublicationEvidence: reviewCandidateVerificationPublicationEvidence,
-            prioritization: prioritizationStats,
-            usageLimit: result.usageLimit,
-            tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
-            structuralImpact: structuralImpactForReview,
-            reviewPlan: reviewPlanDetailsSummary,
-            reviewReducer: reviewReducerDetailsSummary,
-            reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
-            reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
-            reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
-            reviewValidationTruth: reviewValidationTruthProjection,
-            phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
-              phases: reviewPhaseTimings,
-              publicationPhaseStartedAt,
-              totalPhaseStartAt,
-            }),
-            timeoutProgress: params?.timeoutProgress,
-            timeoutBudget: params?.timeoutBudget,
-            lineCountSource: reviewDetailsLineCounts.source,
-          }), visibleBudgetProjection);
-
-          const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
-          return suppressedSection
-            ? `${reviewDetailsBody}\n\n${suppressedSection}`
-            : reviewDetailsBody;
-        };
-
-        const finalizePublicationPhaseTiming = (): void => {
-          if (publicationPhaseStartedAt === undefined) {
-            return;
-          }
-
-          reviewPhaseTimings.set(
-            "publication",
-            createReviewPhaseTiming({
-              name: "publication",
-              status: "completed",
-              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-            }),
-          );
-        };
-
-        const logReviewDetailsPublicationCompleted = (params: {
-          surfaceKind: CanonicalSurfaceKind;
-          commentId?: number;
-          reviewId?: number;
-          publicationMode: "canonical" | "degraded-fallback";
-        }): void => {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-details-output",
-              gateResult: "completed",
-              reviewOutputKey,
-              deliveryId: event.id,
-              reviewDetailsPublished: true,
-              publicationMode: params.publicationMode,
-              surfaceKind: params.surfaceKind,
-              hasCommentId: typeof params.commentId === "number",
-              hasReviewId: typeof params.reviewId === "number",
-              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
-            },
-            "Review Details publication completed",
-          );
-        };
-
-        const logCanonicalReviewDetailsPublicationCompleted = (
-          surface: CanonicalReviewSurface | undefined,
-          publicationMode: "canonical" | "degraded-fallback" = "canonical",
-        ): void => {
-          if (!surface) {
-            return;
-          }
-          logReviewDetailsPublicationCompleted({
-            surfaceKind: surface.kind,
-            ...(surface.kind === "issue_comment" ? { commentId: surface.commentId } : { reviewId: surface.reviewId }),
-            publicationMode,
-          });
-        };
+        const reviewDetailsBodyBase = {
+          reviewOutputKey,
+          filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
+          linesAdded: reviewDetailsLineCounts.linesAdded,
+          linesRemoved: reviewDetailsLineCounts.linesRemoved,
+          findingCounts,
+          largePRTriage: tieredFiles.isLargePR ? {
+            fullCount: tieredFiles.full.length,
+            abbreviatedCount: tieredFiles.abbreviated.length,
+            mentionOnlyFiles: tieredFiles.mentionOnly.map((f) => ({ filePath: f.filePath, score: f.score })),
+            totalFiles: tieredFiles.totalFiles,
+          } : undefined,
+          reviewBoundedness,
+          feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
+          keywordParsing: parsedIntent,
+          profileSelection,
+          contributorExperience: authorClassification.contract.reviewDetails,
+          shadowSpecialistReviewDetails: shadowSpecialistReviewDetailsProjection,
+          candidatePublicationBridge: handlerCandidatePublicationBridge.reviewDetails,
+          candidateVerificationPublicationEvidence: reviewCandidateVerificationPublicationEvidence,
+          prioritization: prioritizationStats,
+          usageLimit: result.usageLimit,
+          tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
+          structuralImpact: structuralImpactForReview,
+          reviewPlan: reviewPlanDetailsSummary,
+          reviewReducer: reviewReducerDetailsSummary,
+          reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
+          reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
+          reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
+          reviewValidationTruth: reviewValidationTruthProjection,
+          phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
+            phases: reviewPhaseTimings,
+            publicationPhaseStartedAt,
+            totalPhaseStartAt,
+          }),
+          lineCountSource: reviewDetailsLineCounts.source,
+        } satisfies ReviewDetailsBodyBaseParams;
+        const {
+          renderReviewDetailsBody,
+          finalizePublicationPhaseTiming,
+          logReviewDetailsPublicationCompleted,
+          logCanonicalReviewDetailsPublicationCompleted,
+        } = createReviewDetailsPublicationRuntime({
+          logger,
+          baseLog,
+          reviewOutputKey,
+          deliveryId: event.id,
+          doctrineFields: buildRepoDoctrineLogFields(repoDoctrineProjection),
+          reviewDetailsBodyBase,
+          hasOperationalSignal: hasReviewDetailsOperationalSignal,
+          getVisibleBudgetProjection: () => visibleBudgetState.refresh(),
+          filteredFindings: filterResult.filtered,
+          reviewPhaseTimings,
+          getPublicationPhaseStartedAt: () => publicationPhaseStartedAt,
+        });
 
         if (shouldProcessReviewOutput) {
           logger.info(
@@ -3303,7 +2163,7 @@ export function createReviewHandler(deps: {
           );
 
           try {
-            const fullDetailsBody = buildReviewDetailsBody();
+            const fullDetailsBody = renderReviewDetailsBody();
             canonicalReviewDetailsBody = fullDetailsBody;
 
             if (result.published) {
@@ -3368,7 +2228,7 @@ export function createReviewHandler(deps: {
                       reviewOutputKey,
                       preferredKind: "issue_comment",
                       canonicalSurface: canonicalIssueComment,
-                      reviewDetailsBlock: buildReviewDetailsBody(),
+                      reviewDetailsBlock: renderReviewDetailsBody(),
                       botHandles: [githubApp.getAppSlug(), "claude"],
                       summaryBody: canonicalIssueComment.body,
                       requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
@@ -3454,7 +2314,7 @@ export function createReviewHandler(deps: {
                       reviewOutputKey,
                       preferredKind: "issue_comment",
                       canonicalSurface: movedDetailsSurface,
-                      body: buildReviewDetailsBody(),
+                      body: renderReviewDetailsBody(),
                       botHandles: [githubApp.getAppSlug(), "claude"],
                       requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                       reviewBoundedness,
@@ -3500,14 +2360,13 @@ export function createReviewHandler(deps: {
                   reviewDetailsCommentId !== undefined &&
                   canPublishVisibleOutput("finalized Review Details timing update")
                 ) {
-                  await extractionOctokit.rest.issues.updateComment({
+                  await updateFinalizedReviewDetailsComment({
+                    octokit: extractionOctokit,
                     owner: apiOwner,
                     repo: apiRepo,
-                    comment_id: reviewDetailsCommentId,
-                    body: sanitizeOutgoingMentions(
-                      buildReviewDetailsBody(),
-                      [githubApp.getAppSlug(), "claude"],
-                    ),
+                    commentId: reviewDetailsCommentId,
+                    body: renderReviewDetailsBody(),
+                    botHandles: [githubApp.getAppSlug(), "claude"],
                   });
                 }
               }
@@ -3528,99 +2387,45 @@ export function createReviewHandler(deps: {
 
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
-          try {
-            await telemetryStore.recordRateLimitEvent({
-              deliveryId: event.id,
-              executionIdentity: `${event.id}:reuse.review-derived-prompt`,
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              eventType: "reuse.review-derived-prompt",
-              cacheHitRate: reviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
-              skippedQueries: reviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
-              retryAttempts: reviewPromptDerivedCacheStatus === "hit" ? 0 : 1,
-              degradationPath: reviewPromptDerivedCacheReason
-                ? `${reviewPromptDerivedCacheStatus}:${reviewPromptDerivedCacheReason}`
-                : reviewPromptDerivedCacheStatus,
-            });
-          } catch (err) {
-            logger.warn({ err }, "Review derived-prompt reuse telemetry write failed (non-blocking)");
-          }
+          await recordReviewExecutionTelemetry({
+            telemetryStore,
+            logger,
+            deliveryId: event.id,
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+            prAuthor: pr.user.login,
+            eventType: `pull_request.${payload.action}`,
+            result,
+            promptSections: result.promptSections ?? reviewPromptSections,
+            derivedPromptCacheStatus: reviewPromptDerivedCacheStatus,
+            derivedPromptCacheReason: reviewPromptDerivedCacheReason ?? undefined,
+            warningPrefix: "Review",
+          });
 
-          try {
-            await telemetryStore.record({
-              deliveryId: event.id,
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              prAuthor: pr.user.login,
-              eventType: `pull_request.${payload.action}`,
-              model: result.model ?? "unknown",
-              inputTokens: result.inputTokens,
-              outputTokens: result.outputTokens,
-              cacheReadTokens: result.cacheReadTokens,
-              cacheCreationTokens: result.cacheCreationTokens,
-              durationMs: result.durationMs,
-              costUsd: result.costUsd,
-              // TMO-03: Distinguish timeout_partial from timeout in telemetry
-              conclusion: result.isTimeout && result.published
-                ? "timeout_partial"
-                : result.isTimeout
-                  ? "timeout"
-                  : result.conclusion,
-              sessionId: result.sessionId,
-              numTurns: result.numTurns,
-              stopReason: result.stopReason,
-            });
-          } catch (err) {
-            logger.warn({ err }, "Telemetry write failed (non-blocking)");
-          }
-
-          try {
-            await mapWithConcurrency(
-              result.promptSections ?? reviewPromptSections,
-              4,
-              (promptSectionRecord) => telemetryStore.recordPromptSections(promptSectionRecord),
-            );
-          } catch (err) {
-            logger.warn({ err }, "Prompt-section telemetry write failed (non-blocking)");
-          }
-
-          // Cost warning (CONFIG-11)
-          if (
-            config.telemetry.costWarningUsd > 0 &&
-            result.costUsd !== undefined &&
-            result.costUsd > config.telemetry.costWarningUsd
-          ) {
-            logger.warn(
-              {
-                costUsd: result.costUsd,
-                threshold: config.telemetry.costWarningUsd,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-              },
-              "Execution cost exceeded warning threshold",
-            );
-            try {
-              if (canPublishVisibleOutput("cost warning comment")) {
-                setReviewWorkPhase("publish");
-                const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
-                await warnOctokit.rest.issues.createComment({
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  issue_number: pr.number,
-                  body: sanitizeOutgoingMentions(`> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``, [githubApp.getAppSlug(), "claude"]),
-                });
-              }
-            } catch (err) {
-              logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
-            }
-          }
+          await maybePostReviewCostWarning({
+            costUsd: result.costUsd,
+            thresholdUsd: config.telemetry.costWarningUsd,
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            canPublishVisibleOutput,
+            setReviewWorkPhase,
+            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+            botHandles: [githubApp.getAppSlug(), "claude"],
+            logger,
+          });
         }
 
         let reviewId: number | undefined;
 
         if (knowledgeStore) {
-          try {
-            reviewId = await knowledgeStore.recordReview({
+          const knowledgePersistence = await persistReviewKnowledge({
+            knowledgeStore,
+            logger,
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+            reviewOutputKey,
+            reviewRecord: {
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
               headSha: pr.head.sha,
@@ -3656,130 +2461,40 @@ export function createReviewHandler(deps: {
               durationMs: result.durationMs,
               model: config.model,
               conclusion: result.conclusion,
-            });
-            const recordedReviewId = reviewId;
-
-            logger.debug(
-              {
-                reviewId: recordedReviewId,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                findingsCaptured: processedFindings.length,
-              },
-              "Knowledge store: review recorded",
-            );
-
-            await knowledgeStore.recordFindings(
-              processedFindings.map((finding) => ({
-                reviewId: recordedReviewId,
-                commentId: finding.commentId,
-                commentSurface: "pull_request_review_comment",
-                reviewOutputKey,
-                filePath: finding.filePath,
-                startLine: finding.startLine,
-                endLine: finding.endLine,
-                severity: finding.severity,
-                category: finding.category,
-                confidence: finding.confidence,
-                title: finding.title,
-                suppressed: finding.suppressed,
-                suppressionPattern: finding.suppressionPattern,
-              })),
-            );
-
-            await knowledgeStore.recordSuppressionLog(
-              Array.from(suppressionMatchCounts.entries()).map(([pattern, matchedCount]) => ({
-                reviewId: recordedReviewId,
-                pattern,
-                matchedCount,
-              })),
-            );
-
-            if (config.knowledge.shareGlobal) {
-              try {
-                const aggregateCounts = new Map<string, {
-                  severity: FindingSeverity;
-                  category: FindingCategory;
-                  confidenceBand: ConfidenceBand;
-                  patternFingerprint: string;
-                  count: number;
-                }>();
-
-                for (const finding of processedFindings) {
-                  const confidenceBand = toConfidenceBand(finding.confidence);
-                  const patternFingerprint = fingerprintFindingTitle(finding.title);
-                  const key = `${finding.severity}|${finding.category}|${confidenceBand}|${patternFingerprint}`;
-                  const existing = aggregateCounts.get(key);
-                  if (existing) {
-                    existing.count += 1;
-                    continue;
-                  }
-                  aggregateCounts.set(key, {
-                    severity: finding.severity,
-                    category: finding.category,
-                    confidenceBand,
-                    patternFingerprint,
-                    count: 1,
-                  });
-                }
-
-                await mapWithConcurrency(
-                  [...aggregateCounts.values()],
-                  4,
-                  (aggregate) => knowledgeStore.recordGlobalPattern({
-                    severity: aggregate.severity,
-                    category: aggregate.category,
-                    confidenceBand: aggregate.confidenceBand,
-                    patternFingerprint: aggregate.patternFingerprint,
-                    count: aggregate.count,
-                  }),
-                );
-              } catch (err) {
-                logger.warn(
-                  { err, repo: `${apiOwner}/${apiRepo}`, prNumber: pr.number },
-                  "Knowledge store global aggregate write failed (non-fatal)",
-                );
-              }
-            }
-
-            logger.debug(
-              {
-                reviewId,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                visibleFindings: visibleFindings.length,
-                lowConfidenceFindings: lowConfidenceFindings.length,
-                suppressionsApplied,
-              },
-              "Knowledge store: findings and suppression logs recorded",
-            );
-          } catch (err) {
-            logger.warn(
-              { err, repo: `${apiOwner}/${apiRepo}`, prNumber: pr.number },
-              "Knowledge store write failed (non-fatal)",
-            );
+            },
+            processedFindings,
+            suppressionMatchCounts,
+            visibleFindingCount: visibleFindings.length,
+            lowConfidenceFindingCount: lowConfidenceFindings.length,
+            suppressionsApplied,
+            shareGlobal: config.knowledge.shareGlobal,
+          });
+          if (knowledgePersistence.status === "recorded") {
+            reviewId = knowledgePersistence.reviewId;
           }
         }
 
         // Mark run as completed for idempotency tracking
         if (knowledgeStore) {
-          try {
-            const runKey = `${apiOwner}/${apiRepo}:pr-${pr.number}:base-${pr.base.sha}:head-${pr.head.sha}`;
-            await knowledgeStore.completeRun(runKey);
-          } catch (err) {
-            logger.warn({ ...baseLog, err }, 'Failed to mark run as completed (non-fatal)');
-          }
+          await completeReviewRunFailOpen({
+            knowledgeStore,
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+            baseSha: pr.base.sha,
+            headSha: pr.head.sha,
+            logger,
+            logContext: baseLog,
+          });
         }
 
         // Fire-and-forget incremental expertise update (PROF-04)
         if (contributorProfileStore) {
-          updateExpertiseIncremental({
+          scheduleContributorExpertiseUpdate({
+            contributorProfileStore,
             githubUsername: pr.user.login,
             filesChanged: reviewFiles,
-            type: "pr_authored",
-            profileStore: contributorProfileStore,
             logger,
-          }).catch((err) => logger.warn({ err }, "Contributor expertise update failed (non-blocking)"));
+          });
         }
 
         // Async learning memory write (LEARN-06)
@@ -3788,57 +2503,19 @@ export function createReviewHandler(deps: {
         if (learningMemoryStore && embeddingProvider && processedFindings.length > 0) {
           // Fire and forget: don't await, don't block review completion
           Promise.resolve().then(async () => {
-            const owner = apiOwner;
-            const repo = `${apiOwner}/${apiRepo}`;
-            let written = 0;
-            let failed = 0;
-            let skipped = 0;
-            const skipReasons: Record<string, number> = {};
-
-            const results = await mapWithConcurrency(processedFindings, 4, (finding) =>
-              writeReviewLearningMemory({
-                input: {
-                  finding,
-                  owner,
-                  repo,
-                  reviewId,
-                  prNumber: pr.number,
-                  // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
-                  language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
-                },
-                store: learningMemoryStore,
-                embeddingProvider,
-                logger,
-                logContext: baseLog,
-              })
-            );
-
-            for (const result of results) {
-              if (result.status === "written") {
-                written++;
-              } else if (result.status === "skipped") {
-                skipped++;
-                skipReasons[result.reason] = (skipReasons[result.reason] ?? 0) + 1;
-              } else {
-                failed++;
-              }
-            }
-
-            if (written > 0 || failed > 0 || skipped > 0) {
-              logger.info(
-                {
-                  ...baseLog,
-                  gate: 'learning-memory-write',
-                  gateResult: failed > 0 ? 'failed' : 'completed',
-                  written,
-                  failed,
-                  skipped,
-                  skipReasons,
-                  total: processedFindings.length,
-                },
-                'Learning memory write batch complete',
-              );
-            }
+            await writeReviewLearningMemoryBatch({
+              findings: processedFindings,
+              owner: apiOwner,
+              repo: `${apiOwner}/${apiRepo}`,
+              reviewId,
+              prNumber: pr.number,
+              store: learningMemoryStore,
+              embeddingProvider,
+              logger,
+              logContext: baseLog,
+              // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
+              classifyLanguage: (filePath) => classifyFileLanguageWithContext(filePath, changedFiles),
+            });
           }).catch((err) => {
             logger.warn(
               { ...baseLog, err },
@@ -3849,23 +2526,18 @@ export function createReviewHandler(deps: {
 
         // Async hunk embedding (SNIP-01): embed PR diff hunks for future retrieval.
         // Fire-and-forget: does not block review completion.
-        const hunkEmbeddingConfig = config.knowledge.retrieval.hunkEmbedding;
-        if (codeSnippetStore && embeddingProvider && hunkEmbeddingConfig.enabled && diffContext.diffContent) {
-          const diffFiles = splitDiffByFile(diffContext.diffContent);
-          embedReviewDiffHunks({
-            diffFiles,
-            repo: `${apiOwner}/${apiRepo}`,
-            owner: apiOwner,
-            prNumber: pr.number,
-            prTitle: pr.title,
-            codeSnippetStore,
-            embeddingProvider,
-            config: hunkEmbeddingConfig,
-            logger,
-          }).catch((err) => {
-            logger.warn({ ...baseLog, err }, "Hunk embedding failed (fire-and-forget)");
-          });
-        }
+        scheduleReviewHunkEmbedding({
+          diffContent: diffContext.diffContent,
+          repo: `${apiOwner}/${apiRepo}`,
+          owner: apiOwner,
+          prNumber: pr.number,
+          prTitle: pr.title,
+          codeSnippetStore,
+          embeddingProvider,
+          config: config.knowledge.retrieval.hunkEmbedding,
+          logger,
+          logContext: baseLog,
+        });
 
         if (result.conclusion === "success" && result.published) {
           logger.info(
@@ -3981,8 +2653,8 @@ export function createReviewHandler(deps: {
                 continuationCompaction: {
                   attemptId: reviewWorkAttempt.attemptId,
                   attemptOrdinal: 0,
-                  promptBudgetOutcomes: buildPromptBudgetOutcomes(visiblePromptSectionRecords),
-                  cacheTelemetryObservations: visibleReviewCacheObservations,
+                  promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords),
+                  cacheTelemetryObservations: visibleBudgetState.reviewCacheObservations,
                 },
                 hasPublishedInlineFindings: hasPublishedInlines,
                 isChronicTimeout,
@@ -4005,8 +2677,8 @@ export function createReviewHandler(deps: {
               switch (retryPlan.decision) {
                 case "schedule-continuation":
                   if (retryPlan.continuationCompaction) {
-                    visibleContinuationCompactionObservations.push(retryPlan.continuationCompaction);
-                    refreshReviewVisibleBudgetProjection();
+                    visibleBudgetState.continuationCompactionObservations.push(retryPlan.continuationCompaction);
+                    visibleBudgetState.refresh();
                   }
                   retryState = "scheduled reduced-scope retry";
                   retrySummaryNote = "Scheduling a reduced-scope retry.";
@@ -4167,9 +2839,7 @@ export function createReviewHandler(deps: {
             if (
               timeoutFirstPass?.state === "bounded-first-pass"
               && !deferredPublicOutputForContinuation
-              && canPublishVisibleOutput("bounded first-pass review")
             ) {
-              setReviewWorkPhase("publish");
               const partialBody = formatPartialReviewComment({
                 summaryDraft,
                 firstPass: timeoutFirstPass,
@@ -4187,13 +2857,17 @@ export function createReviewHandler(deps: {
                   ? "Retry skipped -- this repo has timed out frequently for this author."
                   : undefined,
               });
-              const partialComment = await octokit.rest.issues.createComment({
+              partialCommentId = await publishBoundedFirstPassReview({
+                octokit,
                 owner: apiOwner,
                 repo: apiRepo,
-                issue_number: pr.number,
-                body: sanitizeOutgoingMentions(partialBody, [githubApp.getAppSlug(), "claude"]),
+                prNumber: pr.number,
+                body: partialBody,
+                botHandles: [githubApp.getAppSlug(), "claude"],
+                canPublishVisibleOutput,
+                setReviewWorkPhase,
               });
-              partialCommentId = partialComment.data.id;
+              if (partialCommentId !== undefined) {
 
               // Store partial comment ID in checkpoint for retry to find (best-effort).
               // Use saveCheckpoint() to ensure a record exists even when the run
@@ -4251,7 +2925,7 @@ export function createReviewHandler(deps: {
                       ? { kind: "issue_comment", commentId: partialCommentId, body: partialBody }
                       : undefined,
                     summaryBody: partialBody,
-                    reviewDetailsBlock: buildReviewDetailsBody({
+                    reviewDetailsBlock: renderReviewDetailsBody({
                       timeoutProgress: timeoutReviewDetails,
                       reviewFirstPass: timeoutFirstPass,
                       timeoutBudget: appliedTimeoutBudget
@@ -4288,7 +2962,7 @@ export function createReviewHandler(deps: {
                       repo: apiRepo,
                       prNumber: pr.number,
                       reviewOutputKey,
-                      body: buildReviewDetailsBody({
+                      body: renderReviewDetailsBody({
                         timeoutProgress: timeoutReviewDetails,
                         reviewFirstPass: timeoutFirstPass,
                         timeoutBudget: appliedTimeoutBudget
@@ -4320,8 +2994,10 @@ export function createReviewHandler(deps: {
 
               // Structured resilience telemetry (best-effort)
               if (config.telemetry.enabled) {
-                try {
-                  await telemetryStore.recordResilienceEvent?.({
+                const resilienceTelemetryResult = await recordReviewResilienceEventFailOpen({
+                  telemetryStore,
+                  logger,
+                  entry: {
                     deliveryId: event.id,
                     repo: `${apiOwner}/${apiRepo}`,
                     prNumber: pr.number,
@@ -4340,11 +3016,12 @@ export function createReviewHandler(deps: {
                     chronicTimeout: isChronicTimeout,
                     retryEnqueued: false,
                     ...timeoutClassificationTelemetry,
-                  });
-                } catch (err) {
-                  logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  },
+                });
+                if (resilienceTelemetryResult === "failed") {
                   continuationProjectionDegraded = true;
                 }
+              }
               }
             }
 
@@ -4393,8 +3070,10 @@ export function createReviewHandler(deps: {
 
               // Update resilience telemetry with retry plan
               if (config.telemetry.enabled) {
-                try {
-                  await telemetryStore.recordResilienceEvent?.({
+                const resilienceTelemetryResult = await recordReviewResilienceEventFailOpen({
+                  telemetryStore,
+                  logger,
+                  entry: {
                     deliveryId: event.id,
                     repo: `${apiOwner}/${apiRepo}`,
                     prNumber: pr.number,
@@ -4418,9 +3097,9 @@ export function createReviewHandler(deps: {
                     retryRiskLevel: retryTimeoutEstimate.riskLevel,
                     retryCheckpointEnabled,
                     ...timeoutClassificationTelemetry,
-                  });
-                } catch (err) {
-                  logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  },
+                });
+                if (resilienceTelemetryResult === "failed") {
                   continuationProjectionDegraded = true;
                 }
               }
@@ -4493,22 +3172,11 @@ export function createReviewHandler(deps: {
                       depth: REVIEW_WORKSPACE_FETCH_DEPTH,
                     });
 
-                    const retryInstruction = [
-                      result.isTimeout
-                        ? "This is a retry of a timed-out review with reduced scope."
-                        : "This is a retry of a review that exhausted max turns with reduced scope.",
-                      "Focus ONLY on the changed files listed above.",
-                      "Do NOT post a top-level summary comment; only publish inline comments.",
-                      retryCheckpointEnabled
-                        ? "At the end, call save_review_checkpoint with a summaryDraft that summarizes findings so far and a findingCount total."
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join("\n");
-                    const retryCustomInstructions =
-                      config.review.prompt && config.review.prompt.trim().length > 0
-                        ? `${config.review.prompt.trim()}\n\n${retryInstruction}`
-                        : retryInstruction;
+                    const retryCustomInstructions = buildReviewRetryCustomInstructions({
+                      basePrompt: config.review.prompt,
+                      isTimeout: result.isTimeout === true,
+                      checkpointEnabled: retryCheckpointEnabled,
+                    });
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
                     let retryReviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
@@ -4598,14 +3266,14 @@ export function createReviewHandler(deps: {
                                   summaryDraft: checkpoint.summaryDraft,
                                 }]
                               : [],
-                            promptBudgetOutcomes: buildPromptBudgetOutcomes(visiblePromptSectionRecords).map((outcome) => ({
+                            promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords).map((outcome) => ({
                               sectionName: outcome.sectionName,
                               status: outcome.status,
                               reason: outcome.reason,
                               includedChars: outcome.includedChars,
                               trimmedChars: outcome.trimmedChars,
                             })),
-                            cacheSafetySignalNames: Array.from(new Set(visibleReviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []))).sort((a, b) => a.localeCompare(b)),
+                            cacheSafetySignalNames: Array.from(new Set(visibleBudgetState.reviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []))).sort((a, b) => a.localeCompare(b)),
                           }
                         : null,
                     } satisfies ReviewPromptBuildContext;
@@ -4617,6 +3285,11 @@ export function createReviewHandler(deps: {
                       cacheQuery: `retry:${pr.number}:${retryReviewOutputKey}`,
                       context: retryPromptBuildContext,
                       statusTarget: retryPromptCacheState,
+                      promptBuilder: reviewPromptBuilder,
+                      cache: reviewPromptDerivedCache,
+                      getCacheErrorCount: () => reviewPromptDerivedCacheErrorCount,
+                      buildFingerprint: buildReviewPromptFingerprint,
+                      logger,
                     });
                     retryReviewPromptDerivedCacheStatus = retryPromptCacheState.status;
                     retryReviewPromptDerivedCacheReason = retryPromptCacheState.reason;
@@ -4646,10 +3319,14 @@ export function createReviewHandler(deps: {
                       prNumber: pr.number,
                       state: retryPromptCacheState,
                     });
-                    visibleReviewCacheObservations.push(retryPromptCacheEvent);
-                    refreshReviewVisibleBudgetProjection();
+                    visibleBudgetState.reviewCacheObservations.push(retryPromptCacheEvent);
+                    visibleBudgetState.refresh();
                     if (config.telemetry.enabled) {
-                      await recordReviewCacheEventFailOpen(retryPromptCacheEvent);
+                      await recordReviewCacheEventFailOpen({
+                        telemetryStore,
+                        logger,
+                        entry: retryPromptCacheEvent,
+                      });
                     }
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
@@ -4720,18 +3397,27 @@ export function createReviewHandler(deps: {
                       });
 
                       if (config.telemetry.enabled) {
-                        try {
-                          for (const promptSectionRecord of retryResult.promptSections ?? retryPromptSections) {
-                            await telemetryStore.recordPromptSections(promptSectionRecord);
-                          }
-                        } catch (err) {
-                          logger.warn({ err }, "Retry prompt-section telemetry write failed (non-blocking)");
-                        }
+                        await recordReviewExecutionTelemetry({
+                          telemetryStore,
+                          logger,
+                          deliveryId: retryDeliveryId,
+                          repo: `${apiOwner}/${apiRepo}`,
+                          prNumber: pr.number,
+                          prAuthor: pr.user.login,
+                          eventType: "pull_request.review-retry",
+                          result: retryResult,
+                          promptSections: retryResult.promptSections ?? retryPromptSections,
+                          derivedPromptCacheStatus: retryReviewPromptDerivedCacheStatus,
+                          derivedPromptCacheReason: retryReviewPromptDerivedCacheReason ?? undefined,
+                          warningPrefix: "Retry",
+                        });
                       }
 
                       if (config.telemetry.enabled) {
-                        try {
-                          await telemetryStore.recordResilienceEvent?.({
+                        await recordReviewResilienceEventFailOpen({
+                          telemetryStore,
+                          logger,
+                          entry: {
                             deliveryId: retryDeliveryId,
                             parentDeliveryId: event.id,
                             repo: `${apiOwner}/${apiRepo}`,
@@ -4759,10 +3445,8 @@ export function createReviewHandler(deps: {
                             timeoutClassification: retryTimeoutClassification.classification,
                             timeoutClassificationMode: retryTimeoutClassification.mode,
                             timeoutClassificationReasons: retryTimeoutClassification.reasonCodes,
-                          });
-                        } catch (err) {
-                          logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
-                        }
+                          },
+                        });
                       }
 
                     if (
@@ -4943,7 +3627,7 @@ export function createReviewHandler(deps: {
                                   }
                                 : undefined,
                               summaryBody: mergedBody,
-                              reviewDetailsBlock: buildReviewDetailsBody({
+                              reviewDetailsBlock: renderReviewDetailsBody({
                                 reviewFirstPass: maxTurnsContinuationCompleted ? null : mergedFirstPass,
                               }),
                               botHandles: [githubApp.getAppSlug(), "claude"],
@@ -4998,7 +3682,7 @@ export function createReviewHandler(deps: {
                                   repo: apiRepo,
                                   prNumber: pr.number,
                                   reviewOutputKey,
-                                  body: buildReviewDetailsBody({
+                                  body: renderReviewDetailsBody({
                                     reviewFirstPass: maxTurnsContinuationCompleted ? null : mergedFirstPass,
                                   }),
                                   botHandles: [githubApp.getAppSlug(), "claude"],
@@ -5077,52 +3761,6 @@ export function createReviewHandler(deps: {
                       );
                     }
 
-                    if (config.telemetry.enabled) {
-                      try {
-                        await telemetryStore.recordRateLimitEvent({
-                          deliveryId: retryDeliveryId,
-                          executionIdentity: `${retryDeliveryId}:reuse.review-derived-prompt`,
-                          repo: `${apiOwner}/${apiRepo}`,
-                          prNumber: pr.number,
-                          eventType: "reuse.review-derived-prompt",
-                          cacheHitRate: retryReviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
-                          skippedQueries: retryReviewPromptDerivedCacheStatus === "hit" ? 1 : 0,
-                          retryAttempts: retryReviewPromptDerivedCacheStatus === "hit" ? 0 : 1,
-                          degradationPath: retryReviewPromptDerivedCacheReason
-                            ? `${retryReviewPromptDerivedCacheStatus}:${retryReviewPromptDerivedCacheReason}`
-                            : retryReviewPromptDerivedCacheStatus,
-                        });
-                      } catch (err) {
-                        logger.warn({ err }, "Retry derived-prompt reuse telemetry write failed (non-blocking)");
-                      }
-
-                      try {
-                        await telemetryStore.record({
-                          deliveryId: retryDeliveryId,
-                          repo: `${apiOwner}/${apiRepo}`,
-                          prNumber: pr.number,
-                          prAuthor: pr.user.login,
-                          eventType: "pull_request.review-retry",
-                          model: retryResult.model ?? "unknown",
-                          inputTokens: retryResult.inputTokens,
-                          outputTokens: retryResult.outputTokens,
-                          cacheReadTokens: retryResult.cacheReadTokens,
-                          cacheCreationTokens: retryResult.cacheCreationTokens,
-                          durationMs: retryResult.durationMs,
-                          costUsd: retryResult.costUsd,
-                          conclusion: retryResult.isTimeout && retryResult.published
-                            ? "timeout_partial"
-                            : retryResult.isTimeout
-                              ? "timeout"
-                              : retryResult.conclusion,
-                          sessionId: retryResult.sessionId,
-                          numTurns: retryResult.numTurns,
-                          stopReason: retryResult.stopReason,
-                        });
-                      } catch (err) {
-                        logger.warn({ err }, "Retry telemetry write failed (non-blocking)");
-                      }
-                    }
                   } catch (retryErr) {
                     logger.error(
                       {
@@ -5177,100 +3815,48 @@ export function createReviewHandler(deps: {
             }
           }
 
-          let errorBody: string;
           if (!publishedPartialReview && !deferredPublicOutputForContinuation) {
-            if (exhaustedTurnBudget) {
-              errorBody = [
-                "> **Kodiai ran out of steps while reviewing this PR**",
-                "",
-                "_The review run ended before it could publish comments or an approval._",
-                "",
-                fallbackRetryState?.startsWith("scheduled")
-                  ? "A reduced-scope retry has been scheduled automatically."
-                  : "Kodiai could not preserve enough structured evidence to publish a bounded first-pass review.",
-                "",
-                "The run was recorded with failure diagnostics for operators.",
-              ].join("\n");
-            } else if (category === "timeout_partial") {
-              // TMO-03: Partial review -- inline comments were published before timeout
-              errorBody = formatErrorComment(
-                category,
-                formatTimeoutErrorDetail({
-                  totalTimeoutSeconds: timeoutDuration,
-                  complexityInfo,
-                  hasReviewOutput: true,
-                  timeoutEstimate: appliedTimeoutBudget,
-                }),
-              );
-            } else if (category === "timeout") {
-              // TMO-03: Full timeout -- nothing was published
-              errorBody = formatErrorComment(
-                category,
-                formatTimeoutErrorDetail({
-                  totalTimeoutSeconds: timeoutDuration,
-                  complexityInfo,
-                  hasReviewOutput: false,
-                  timeoutEstimate: appliedTimeoutBudget,
-                }),
-              );
-            } else {
-              errorBody = formatErrorComment(
-                category,
-                result.errorMessage ?? "An unexpected error occurred during review.",
-              );
-            }
-
-            const octokit = await githubApp.getInstallationOctokit(event.installationId);
-            if (canPublishVisibleOutput("error comment")) {
-              setReviewWorkPhase("publish");
-              const publicationStatus = await postOrUpdateErrorComment(octokit, {
-                owner: apiOwner,
-                repo: apiRepo,
-                issueNumber: pr.number,
-              }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
-              reviewPublishFallbackDelivery = exhaustedTurnBudget
-                ? describeTurnLimitNoticeDelivery(publicationStatus)
-                : describeErrorCommentDelivery(publicationStatus);
-              if (publicationStatus.ok) {
-                reviewOutputPublished = true;
-                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback" : "error-fallback";
-              } else {
-                reviewPublishResolution = exhaustedTurnBudget ? "turn-limit-fallback-undelivered" : "error-comment-failed";
-              }
+            const errorPublication = await publishReviewExecutionErrorFallback({
+              octokit: await githubApp.getInstallationOctokit(event.installationId),
+              owner: apiOwner,
+              repo: apiRepo,
+              prNumber: pr.number,
+              exhaustedTurnBudget,
+              retryScheduled: fallbackRetryState?.startsWith("scheduled") === true,
+              category,
+              errorMessage: result.errorMessage,
+              totalTimeoutSeconds: timeoutDuration,
+              complexityInfo,
+              timeoutEstimate: appliedTimeoutBudget,
+              logger,
+              canPublishVisibleOutput,
+              setReviewWorkPhase,
+            });
+            const errorPublicationState = errorPublication.ok ? errorPublication.value : errorPublication.err;
+            if (errorPublicationState.resolution !== "skipped") {
+              reviewOutputPublished = errorPublicationState.published;
+              reviewPublishResolution = errorPublicationState.resolution;
+              reviewPublishFallbackDelivery = errorPublicationState.fallbackDelivery;
             }
           }
         }
 
         if (result.conclusion === "failure" && !(result.published ?? false) && !exhaustedTurnBudget) {
-          const failureBody = [
-            "> **Kodiai could not publish a trustworthy review result**",
-            "",
-            "No code findings were published.",
-            "",
-            "The run was recorded with failure diagnostics for operators.",
-            "Try a narrower review request if it repeats.",
-          ].join("\n");
-
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
-          if (canPublishVisibleOutput("failure fallback comment")) {
-            setReviewWorkPhase("publish");
-            const publicationStatus = await postOrUpdateErrorComment(
-              octokit,
-              {
-                owner: apiOwner,
-                repo: apiRepo,
-                issueNumber: pr.number,
-              },
-              sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
-              logger,
-            );
-            reviewPublishFallbackDelivery = describeErrorCommentDelivery(publicationStatus);
-            if (publicationStatus.ok) {
-              reviewOutputPublished = true;
-              reviewPublishResolution = "failure-fallback";
-            } else {
-              reviewPublishResolution = "failure-fallback-failed";
-            }
+          const failurePublication = await publishReviewFailureFallback({
+            octokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            logger,
+            canPublishVisibleOutput,
+            setReviewWorkPhase,
+          });
+          const failurePublicationState = failurePublication.ok ? failurePublication.value : failurePublication.err;
+          reviewPublishFallbackDelivery = failurePublicationState.fallbackDelivery;
+          if (failurePublicationState.resolution !== "skipped") {
+            reviewOutputPublished = failurePublicationState.published;
+            reviewPublishResolution = failurePublicationState.resolution;
           }
         }
 
@@ -5278,209 +3864,34 @@ export function createReviewHandler(deps: {
         // result either as an approving pull review (explicit opt-in) or as a
         // normal issue comment (default behavior).
         if (result.conclusion === "success") {
-          try {
-            // If the review execution published any output (summary comment, inline comments, etc.),
-            // do NOT auto-approve. Auto-approval is only valid when the bot produced zero output.
-            if (result.published) {
-              logger.info(
-                {
-                  prNumber: pr.number,
-                  gate: "auto-approve",
-                  gateResult: "skipped",
-                  skipReason: "output-published",
-                },
-                "Skipping auto-approval because review output was published",
-              );
-              return;
-            }
-
-            const octokit = await githubApp.getInstallationOctokit(event.installationId);
-            const appSlug = githubApp.getAppSlug();
-
-            // Double-check via a scan for the review output marker. This provides
-            // defense-in-depth if the executor didn't report published=true.
-            const idempotencyCheck = await ensureReviewOutputNotPublished({
-              octokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              reviewOutputKey,
-            });
-
-            if (!idempotencyCheck.shouldPublish) {
-              logger.info(
-                {
-                  prNumber: pr.number,
-                  gate: "auto-approve",
-                  gateResult: "skipped",
-                  skipReason: "output-marker-present",
-                  existingLocation: idempotencyCheck.existingLocation,
-                },
-                "Skipping auto-approval because review output marker was published",
-              );
-              if (canonicalReviewDetailsBody) {
-                if (
-                  idempotencyCheck.existingLocation !== "review-comment" &&
-                  canPublishVisibleOutput("clean review canonical Review Details merge")
-                ) {
-                  setReviewWorkPhase("publish");
-                  const canonicalSurfaceKind: CanonicalSurfaceKind = idempotencyCheck.existingLocation === "review"
-                    ? "pull_review"
-                    : "issue_comment";
-                  const finalizedExistingReviewDetails = await upsertCanonicalReviewSurface({
-                    octokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    preferredKind: canonicalSurfaceKind,
-                    reviewDetailsBlock: canonicalReviewDetailsBody,
-                    botHandles: [appSlug, "claude"],
-                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                    reviewBoundedness,
-                    ...(canonicalSurfaceKind === "pull_review" ? { pullReviewEvent: "APPROVE" as const } : {}),
-                    recheckCanPublish: () =>
-                      canPublishVisibleOutput("clean review canonical Review Details merge"),
-                  });
-                  logCanonicalReviewDetailsPublicationCompleted(finalizedExistingReviewDetails);
-                  finalizePublicationPhaseTiming();
-                } else if (canPublishVisibleOutput("degraded Review Details fallback comment")) {
-                  setReviewWorkPhase("publish");
-                  const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
-                    octokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    body: canonicalReviewDetailsBody,
-                    botHandles: [appSlug, "claude"],
-                    recheckCanPublish: () =>
-                      canPublishVisibleOutput("degraded Review Details fallback comment"),
-                  });
-
-                  if (typeof reviewDetailsCommentId === "number") {
-                    logReviewDetailsPublicationCompleted({
-                      surfaceKind: "issue_comment",
-                      commentId: reviewDetailsCommentId,
-                      publicationMode: "degraded-fallback",
-                    });
-                  }
-
-                  finalizePublicationPhaseTiming();
-                  if (
-                    reviewDetailsCommentId !== undefined &&
-                    canPublishVisibleOutput("finalized Review Details timing update")
-                  ) {
-                    await octokit.rest.issues.updateComment({
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      comment_id: reviewDetailsCommentId,
-                      body: sanitizeOutgoingMentions(canonicalReviewDetailsBody, [appSlug, "claude"]),
-                    });
-                  }
-                }
-              }
-              return;
-            }
-
-            const cleanReviewPublicationReason = config.review.autoApprove
-              ? "auto-approval"
-              : "clean review publication";
-            if (!canPublishVisibleOutput(cleanReviewPublicationReason)) {
-              return;
-            }
-
-            setReviewWorkPhase("publish");
-            const visibleBudgetDisclosureEvidence = buildVisibleBudgetDisclosureEvidence(refreshReviewVisibleBudgetProjection());
-            const approvalEvidence = [
-              `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
-              ...(visibleBudgetDisclosureEvidence ? [visibleBudgetDisclosureEvidence] : []),
-            ];
-            const approvalConfidence = depBumpContext?.mergeConfidence
-              ? renderApprovalConfidence(depBumpContext.mergeConfidence)
-              : null;
-
-            const approvalBody = buildApprovedReviewBody({
-              reviewOutputKey,
-              evidence: approvalEvidence,
-              approvalConfidence,
-              reviewDetailsBlock: canonicalReviewDetailsBody,
-            });
-
-            const cleanReviewSurfaceKind: CanonicalSurfaceKind = config.review.autoApprove
-              ? "pull_review"
-              : "issue_comment";
-
-            const canonicalApprovalReview = await upsertCanonicalReviewSurface({
-              octokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              reviewOutputKey,
-              preferredKind: cleanReviewSurfaceKind,
-              body: approvalBody,
-              botHandles: [appSlug, "claude"],
-              ...(config.review.autoApprove ? { pullReviewEvent: "APPROVE" as const } : {}),
-              recheckCanPublish: () => canPublishVisibleOutput(cleanReviewPublicationReason),
-            });
-
-            finalizePublicationPhaseTiming();
-
-            if (
-              canonicalApprovalReview?.kind === cleanReviewSurfaceKind
-              && canonicalReviewDetailsBody
-              && canPublishVisibleOutput("finalized clean review canonical Review Details merge")
-            ) {
-              const finalizedCleanReviewDetails = await upsertCanonicalReviewSurface({
-                octokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                reviewOutputKey,
-                preferredKind: cleanReviewSurfaceKind,
-                reviewDetailsBlock: buildReviewDetailsBody(),
-                botHandles: [appSlug, "claude"],
-                summaryBody: canonicalApprovalReview.body,
-                canonicalSurface: canonicalApprovalReview,
-                requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                reviewBoundedness,
-                ...(config.review.autoApprove ? { pullReviewEvent: "APPROVE" as const } : {}),
-                recheckCanPublish: () =>
-                  canPublishVisibleOutput("finalized clean review canonical Review Details merge"),
-              });
-              logCanonicalReviewDetailsPublicationCompleted(finalizedCleanReviewDetails);
-            }
-
+          const cleanReviewPublication = await publishCleanReviewApproval({
+            resultPublished: result.published ?? false,
+            autoApprove: config.review.autoApprove,
+            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+            getAppSlug: () => githubApp.getAppSlug(),
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            reviewOutputKey,
+            deliveryId: event.id,
+            installationId: event.installationId,
+            promptFileCount: promptFiles.length,
+            canonicalReviewDetailsBody,
+            authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+            reviewBoundedness,
+            mergeConfidence: depBumpContext?.mergeConfidence ?? null,
+            logger,
+            canPublishVisibleOutput,
+            setReviewWorkPhase,
+            refreshVisibleBudgetProjection: () => visibleBudgetState.refresh(),
+            renderReviewDetailsBody,
+            finalizePublicationPhaseTiming,
+            logReviewDetailsPublicationCompleted,
+            logCanonicalReviewDetailsPublicationCompleted,
+          });
+          if (cleanReviewPublication.published) {
             reviewOutputPublished = true;
-            reviewPublishResolution = config.review.autoApprove ? "auto-approval" : "clean-review-comment";
-
-            logger.info(
-              {
-                evidenceType: "review",
-                outcome: config.review.autoApprove ? "submitted-approval" : "published-comment-approval",
-                deliveryId: event.id,
-                installationId: event.installationId,
-                owner: apiOwner,
-                repoName: apiRepo,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                reviewOutputKey,
-              },
-              "Evidence bundle",
-            );
-            logger.info(
-              { prNumber: pr.number, reviewOutputKey },
-              config.review.autoApprove
-                ? "Submitted silent approval (no issues found)"
-                : "Published clean review comment (no issues found)",
-            );
-          } catch (err) {
-            logger.error(
-              { err, prNumber: pr.number },
-              config.review.autoApprove
-                ? "Failed to submit approval"
-                : "Failed to publish clean review comment",
-            );
+            reviewPublishResolution = cleanReviewPublication.resolution;
           }
         }
       } catch (err) {
@@ -5517,39 +3928,26 @@ export function createReviewHandler(deps: {
           "Review handler failed",
         );
 
-        // Post error comment to PR so the user knows something went wrong
-        const category = classifyError(err, false);
-        const detail = err instanceof Error ? err.message : "An unexpected error occurred";
-        const errorBody = formatErrorComment(category, detail);
         try {
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          if (canPublishVisibleOutput("handler failure error comment")) {
-            setReviewWorkPhase("publish");
-            await postOrUpdateErrorComment(errOctokit, {
-              owner: apiOwner,
-              repo: apiRepo,
-              issueNumber: pr.number,
-            }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
-            reviewPhaseTimings.set(
-              "publication",
-              createReviewPhaseTiming({
-                name: "publication",
-                status: "degraded",
-                durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-                detail: "posted error comment after handler failure",
-              }),
-            );
-          } else {
-            reviewPhaseTimings.set(
-              "publication",
-              createReviewPhaseTiming({
-                name: "publication",
-                status: "degraded",
-                durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-                detail: "suppressed error comment after handler failure because publish rights were lost",
-              }),
-            );
-          }
+          const handlerFailurePublication = await publishReviewHandlerFailureError({
+            octokit: await githubApp.getInstallationOctokit(event.installationId),
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            error: err,
+            logger,
+            canPublishVisibleOutput,
+            setReviewWorkPhase,
+          });
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+              detail: handlerFailurePublication.phaseDetail,
+            }),
+          );
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment to PR");
           reviewPhaseTimings.set(
@@ -5597,28 +3995,20 @@ export function createReviewHandler(deps: {
           const phases = buildOrderedReviewPhaseSummary(reviewPhaseTimings);
           const totalDurationMs = Math.max(0, Date.now() - totalPhaseStartAt);
           try {
-            const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);
             logger.info(
-              {
+              buildReviewPhaseTimingSummaryLogFields({
                 deliveryId: event.id,
                 reviewOutputKey,
                 installationId: event.installationId,
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
-                conclusion: expectedTurnLimitOutcome ? "expected_bounded" : executorResult?.conclusion,
-                ...(expectedTurnLimitOutcome
-                  ? { boundedOutcomeReason: "max_turns" }
-                  : {}),
-                published: executorResult ? reviewOutputPublished : undefined,
-                publishResolution: executorResult
-                  ? expectedTurnLimitOutcome
-                    ? cleanTurnLimitPublishResolution(reviewPublishResolution)
-                    : reviewPublishResolution
-                  : undefined,
-                publishFallbackDelivery: reviewPublishFallbackDelivery,
+                executorResult,
+                reviewOutputPublished,
+                reviewPublishResolution,
+                reviewPublishFallbackDelivery,
                 totalDurationMs,
                 phases,
-              },
+              }),
               "Review phase timing summary",
             );
           } catch {
@@ -5640,7 +4030,7 @@ export function createReviewHandler(deps: {
       prNumber: pr.number,
     });
   } finally {
-    finalizeReviewWorkAttempt();
+    reviewWorkRuntime.finalize();
   }
 
   logger.info(

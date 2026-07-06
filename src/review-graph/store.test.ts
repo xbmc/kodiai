@@ -568,6 +568,75 @@ describe.skipIf(!TEST_DB_URL)("createReviewGraphStore", () => {
     expect(otherNodes[0]?.stableKey).toBe("file:src/beta.py");
   });
 
+  test("replaceFileGraph can write edges to nodes already indexed in another file", async () => {
+    const build = await store.upsertBuild({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      status: "running",
+    });
+
+    const target = await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/target.py",
+        language: "python",
+        buildId: build.id,
+      },
+      nodes: [
+        { nodeKind: "file", stableKey: "file:src/target.py", language: "python" },
+        {
+          nodeKind: "symbol",
+          stableKey: "symbol:src/target.py:target_fn",
+          symbolName: "target_fn",
+          qualifiedName: "target_fn",
+          language: "python",
+        },
+      ],
+      edges: [
+        { edgeKind: "declares", sourceStableKey: "file:src/target.py", targetStableKey: "symbol:src/target.py:target_fn" },
+      ],
+    });
+
+    const source = await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/source.py",
+        language: "python",
+        buildId: build.id,
+      },
+      nodes: [
+        { nodeKind: "file", stableKey: "file:src/source.py", language: "python" },
+        {
+          nodeKind: "callsite",
+          stableKey: "call:src/source.py:10:source_fn->target_fn",
+          symbolName: "target_fn",
+          qualifiedName: "target_fn",
+          language: "python",
+          spanStartLine: 10,
+          spanStartCol: 5,
+          confidence: 0.8,
+        },
+      ],
+      edges: [
+        {
+          edgeKind: "calls",
+          sourceStableKey: "call:src/source.py:10:source_fn->target_fn",
+          targetStableKey: "symbol:src/target.py:target_fn",
+          confidence: 0.8,
+        },
+      ],
+    });
+
+    expect(target.nodesWritten).toBe(2);
+    expect(source.edgesWritten).toBe(1);
+
+    const sourceEdges = await store.listEdgesForFile(source.file.id);
+    expect(sourceEdges).toHaveLength(1);
+    expect(sourceEdges[0]?.edgeKind).toBe("calls");
+  });
+
   test("replaceFileGraph fails when an edge references a missing node stable key", async () => {
     await expect(
       store.replaceFileGraph({
@@ -588,7 +657,7 @@ describe.skipIf(!TEST_DB_URL)("createReviewGraphStore", () => {
           },
         ],
       }),
-    ).rejects.toThrow("endpoint stable keys were not inserted");
+    ).rejects.toThrow("endpoint stable keys were not inserted or indexed");
 
     const file = await store.getFile("owner/repo", "workspace-a", "src/broken.py");
     expect(file).toBeNull();

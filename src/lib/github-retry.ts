@@ -2,6 +2,7 @@ import { parseRetryAfterDelayMs } from "./retry-after.ts";
 import { retryTransient, type RetryableOperationOptions } from "./transient-retry.ts";
 
 type GitHubRetryOptions = Omit<RetryableOperationOptions, "retryDelayMs">;
+export type GitHubRateLimitRetryOptions = Omit<GitHubRetryOptions, "shouldRetry">;
 
 function headerValue(headers: unknown, name: string): unknown {
   if (!headers || typeof headers !== "object") return null;
@@ -64,7 +65,7 @@ export function retryGitHubTransient<T>(
 
 export function retryGitHubRateLimitOnly<T>(
   operation: () => Promise<T>,
-  options: Omit<GitHubRetryOptions, "shouldRetry"> = {},
+  options: GitHubRateLimitRetryOptions = {},
 ): Promise<T> {
   return retryGitHubTransient(operation, {
     maxAttempts: 4,

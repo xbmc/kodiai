@@ -820,7 +820,7 @@ export function buildM047S02ScenarioFixtures(): ScenarioFixture[] {
       },
       linkContinuity: {
         requiredPhrases: [
-          "Linked your Slack account to GitHub user `octocat`. Kodiai will keep your reviews generic until your linked profile has current contributor signals. Use `/kodiai profile` to review your status.",
+          "GitHub user `octocat` already has contributor profile data. Ask an admin to verify ownership before linking it to Slack.",
         ],
         bannedPhrases: ["Linked contributor guidance is active for your profile."],
       },
@@ -876,7 +876,7 @@ export function buildM047S02ScenarioFixtures(): ScenarioFixture[] {
       },
       linkContinuity: {
         requiredPhrases: [
-          "Linked your Slack account to GitHub user `octocat`. Kodiai will keep your reviews generic until your linked profile has current contributor signals. Use `/kodiai profile` to review your status.",
+          "GitHub user `octocat` already has contributor profile data. Ask an admin to verify ownership before linking it to Slack.",
         ],
         bannedPhrases: ["Linked contributor guidance is active for your profile."],
       },
@@ -932,7 +932,7 @@ export function buildM047S02ScenarioFixtures(): ScenarioFixture[] {
       },
       linkContinuity: {
         requiredPhrases: [
-          "Linked your Slack account to GitHub user `octocat`. Linked contributor guidance is active for your profile. Use `/kodiai profile` to review your status.",
+          "GitHub user `octocat` already has contributor profile data. Ask an admin to verify ownership before linking it to Slack.",
         ],
         bannedPhrases: ["Kodiai will keep your reviews generic until your linked profile has current contributor signals."],
       },
@@ -986,7 +986,7 @@ export function buildM047S02ScenarioFixtures(): ScenarioFixture[] {
       },
       linkContinuity: {
         requiredPhrases: [
-          "Linked your Slack account to GitHub user `octocat`. Kodiai will keep your reviews generic until your linked profile has current contributor signals. Use `/kodiai profile` to review your status.",
+          "GitHub user `octocat` already has contributor profile data. Ask an admin to verify ownership before linking it to Slack.",
         ],
         bannedPhrases: ["Linked contributor guidance is active for your profile."],
       },

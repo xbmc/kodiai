@@ -5,6 +5,14 @@ import {
   type ParsedReviewOutputKey,
 } from "../review-orchestration/review-idempotency.ts";
 import {
+  listIssueCommentsPaged,
+  listPullReviewsPaged,
+  listReviewCommentsPaged,
+  type IssueCommentPaged,
+  type PullReviewPaged,
+  type ReviewCommentPaged,
+} from "../lib/github-issue-comments.ts";
+import {
   classifyReviewOutputLane,
   type ReviewArtifactSource,
   type ReviewAuditLane,
@@ -70,26 +78,6 @@ export type ExactReviewOutputProof = {
   issues: string[];
 };
 
-type ReviewCommentLike = {
-  body?: string | null;
-  html_url?: string;
-  updated_at?: string;
-};
-
-type IssueCommentLike = {
-  body?: string | null;
-  html_url?: string;
-  updated_at?: string;
-};
-
-type ReviewLike = {
-  body?: string | null;
-  html_url?: string;
-  submitted_at?: string;
-  updated_at?: string;
-  state?: string;
-};
-
 export type ReviewOutputArtifactsOctokit = {
   rest: {
     pulls: {
@@ -101,14 +89,14 @@ export type ReviewOutputArtifactsOctokit = {
         page?: number;
         sort?: "updated" | "created";
         direction?: "asc" | "desc";
-      }): Promise<{ data: ReviewCommentLike[] }>;
+      }): Promise<{ data: ReviewCommentPaged[] }>;
       listReviews(args: {
         owner: string;
         repo: string;
         pull_number: number;
         per_page?: number;
         page?: number;
-      }): Promise<{ data: ReviewLike[] }>;
+      }): Promise<{ data: PullReviewPaged[] }>;
     };
     issues: {
       listComments(args: {
@@ -119,7 +107,7 @@ export type ReviewOutputArtifactsOctokit = {
         page?: number;
         sort?: "updated" | "created";
         direction?: "asc" | "desc";
-      }): Promise<{ data: IssueCommentLike[] }>;
+      }): Promise<{ data: IssueCommentPaged[] }>;
     };
   };
 };
@@ -148,7 +136,7 @@ function buildPrUrl(parsed: ParsedReviewOutputKey): string {
   return `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.prNumber}`;
 }
 
-function getReviewTimestamp(review: ReviewLike): string | null {
+function getReviewTimestamp(review: PullReviewPaged): string | null {
   return review.submitted_at ?? review.updated_at ?? null;
 }
 
@@ -183,7 +171,7 @@ function matchesRequestedReviewOutputKey(params: {
 function buildArtifact(params: {
   parsedRequestedKey: ParsedReviewOutputKey;
   source: ReviewArtifactSource;
-  sourceUrl: string | undefined;
+  sourceUrl: string | null | undefined;
   updatedAt: string | null | undefined;
   body: string | null | undefined;
   reviewState?: string | null;
@@ -210,39 +198,25 @@ function buildArtifact(params: {
   };
 }
 
-async function collectPagedArtifacts<T>(params: {
-  endpoint: "reviewComments" | "issueComments" | "reviews";
-  fetchPage: (args: { page: number; per_page: number }) => Promise<T[]>;
-  buildArtifact: (item: T) => ReviewOutputArtifact | null;
-}): Promise<ReviewOutputArtifact[]> {
-  const artifacts: ReviewOutputArtifact[] = [];
+function compactArtifacts<T>(
+  items: T[],
+  buildItemArtifact: (item: T) => ReviewOutputArtifact | null,
+): ReviewOutputArtifact[] {
+  return items
+    .map(buildItemArtifact)
+    .filter((artifact): artifact is ReviewOutputArtifact => artifact !== null);
+}
 
-  for (let page = 1; ; page += 1) {
-    let data: T[];
-    try {
-      data = await params.fetchPage({ page, per_page: DEFAULT_PER_PAGE });
-    } catch (error) {
-      throw new ReviewOutputArtifactCollectionError({
-        code: "review_output_artifact_collection_failed",
-        endpoint: params.endpoint,
-        message: `Failed to collect review output artifacts from ${params.endpoint}.`,
-        cause: error,
-      });
-    }
-
-    for (const item of data) {
-      const artifact = params.buildArtifact(item);
-      if (artifact) {
-        artifacts.push(artifact);
-      }
-    }
-
-    if (data.length < DEFAULT_PER_PAGE) {
-      break;
-    }
-  }
-
-  return artifacts;
+function wrapArtifactCollectionError(
+  endpoint: "reviewComments" | "issueComments" | "reviews",
+  error: unknown,
+): ReviewOutputArtifactCollectionError {
+  return new ReviewOutputArtifactCollectionError({
+    code: "review_output_artifact_collection_failed",
+    endpoint,
+    message: `Failed to collect review output artifacts from ${endpoint}.`,
+    cause: error,
+  });
 }
 
 export async function collectReviewOutputArtifacts(params: {
@@ -258,71 +232,74 @@ export async function collectReviewOutputArtifacts(params: {
   }
 
   const [reviewComments, issueComments, reviews] = await Promise.all([
-    collectPagedArtifacts({
-      endpoint: "reviewComments",
-      fetchPage: async ({ page, per_page }) => {
-        const { data } = await params.octokit.rest.pulls.listReviewComments({
+    (async () => {
+      try {
+        const { comments } = await listReviewCommentsPaged(params.octokit, {
           owner: parsedRequestedKey.owner,
           repo: parsedRequestedKey.repo,
-          pull_number: parsedRequestedKey.prNumber,
-          per_page,
-          page,
+          prNumber: parsedRequestedKey.prNumber,
+          perPage: DEFAULT_PER_PAGE,
+          maxPages: Number.POSITIVE_INFINITY,
           sort: "created",
           direction: "desc",
         });
-        return data;
-      },
-      buildArtifact: (item: ReviewCommentLike) => buildArtifact({
-        parsedRequestedKey,
-        source: "review-comment",
-        sourceUrl: item.html_url,
-        updatedAt: item.updated_at,
-        body: item.body,
-      }),
-    }),
-    collectPagedArtifacts({
-      endpoint: "issueComments",
-      fetchPage: async ({ page, per_page }) => {
-        const { data } = await params.octokit.rest.issues.listComments({
+
+        return compactArtifacts(comments, (item) => buildArtifact({
+          parsedRequestedKey,
+          source: "review-comment",
+          sourceUrl: item.html_url,
+          updatedAt: item.updated_at,
+          body: item.body,
+        }));
+      } catch (error) {
+        throw wrapArtifactCollectionError("reviewComments", error);
+      }
+    })(),
+    (async () => {
+      try {
+        const { comments } = await listIssueCommentsPaged(params.octokit, {
           owner: parsedRequestedKey.owner,
           repo: parsedRequestedKey.repo,
-          issue_number: parsedRequestedKey.prNumber,
-          per_page,
-          page,
+          issueNumber: parsedRequestedKey.prNumber,
+          perPage: DEFAULT_PER_PAGE,
+          maxPages: Number.POSITIVE_INFINITY,
           sort: "created",
           direction: "desc",
         });
-        return data;
-      },
-      buildArtifact: (item: IssueCommentLike) => buildArtifact({
-        parsedRequestedKey,
-        source: "issue-comment",
-        sourceUrl: item.html_url,
-        updatedAt: item.updated_at,
-        body: item.body,
-      }),
-    }),
-    collectPagedArtifacts({
-      endpoint: "reviews",
-      fetchPage: async ({ page, per_page }) => {
-        const { data } = await params.octokit.rest.pulls.listReviews({
+
+        return compactArtifacts(comments, (item) => buildArtifact({
+          parsedRequestedKey,
+          source: "issue-comment",
+          sourceUrl: item.html_url,
+          updatedAt: item.updated_at,
+          body: item.body,
+        }));
+      } catch (error) {
+        throw wrapArtifactCollectionError("issueComments", error);
+      }
+    })(),
+    (async () => {
+      try {
+        const { reviews: pullReviews } = await listPullReviewsPaged(params.octokit, {
           owner: parsedRequestedKey.owner,
           repo: parsedRequestedKey.repo,
-          pull_number: parsedRequestedKey.prNumber,
-          per_page,
-          page,
+          prNumber: parsedRequestedKey.prNumber,
+          perPage: DEFAULT_PER_PAGE,
+          maxPages: Number.POSITIVE_INFINITY,
         });
-        return data;
-      },
-      buildArtifact: (item: ReviewLike) => buildArtifact({
-        parsedRequestedKey,
-        source: "review",
-        sourceUrl: item.html_url,
-        updatedAt: getReviewTimestamp(item),
-        body: item.body,
-        reviewState: item.state,
-      }),
-    }),
+
+        return compactArtifacts(pullReviews, (item) => buildArtifact({
+          parsedRequestedKey,
+          source: "review",
+          sourceUrl: item.html_url,
+          updatedAt: getReviewTimestamp(item),
+          body: item.body,
+          reviewState: item.state,
+        }));
+      } catch (error) {
+        throw wrapArtifactCollectionError("reviews", error);
+      }
+    })(),
   ]);
 
   const artifacts = [...reviewComments, ...issueComments, ...reviews];

@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { err, ok, type Result } from "../lib/result.ts";
 
 const SLACK_SIGNATURE_VERSION = "v0";
 const MAX_TIMESTAMP_SKEW_SECONDS = 60 * 5;
@@ -11,9 +12,14 @@ export type SlackVerifyFailureReason =
   | "timestamp_out_of_window"
   | "signature_mismatch";
 
-export type SlackVerifyResult =
-  | { valid: true; reason: null }
-  | { valid: false; reason: SlackVerifyFailureReason };
+export class SlackVerifyError extends Error {
+  constructor(readonly reason: SlackVerifyFailureReason) {
+    super(reason);
+    this.name = "SlackVerifyError";
+  }
+}
+
+export type SlackVerifyResult = Result<void, SlackVerifyError>;
 
 interface VerifySlackRequestInput {
   signingSecret: string;
@@ -41,32 +47,32 @@ export function verifySlackRequest(input: VerifySlackRequestInput): SlackVerifyR
   const { signingSecret, rawBody, timestampHeader, signatureHeader, nowMs = Date.now() } = input;
 
   if (!signatureHeader) {
-    return { valid: false, reason: "missing_signature" };
+    return err(new SlackVerifyError("missing_signature"));
   }
 
   if (!timestampHeader) {
-    return { valid: false, reason: "missing_timestamp" };
+    return err(new SlackVerifyError("missing_timestamp"));
   }
 
   if (!signatureHeader.startsWith(`${SLACK_SIGNATURE_VERSION}=`)) {
-    return { valid: false, reason: "malformed_signature" };
+    return err(new SlackVerifyError("malformed_signature"));
   }
 
   const timestampSeconds = Number(timestampHeader);
   if (!Number.isInteger(timestampSeconds)) {
-    return { valid: false, reason: "malformed_timestamp" };
+    return err(new SlackVerifyError("malformed_timestamp"));
   }
 
   if (isOutOfWindow(timestampSeconds, nowMs)) {
-    return { valid: false, reason: "timestamp_out_of_window" };
+    return err(new SlackVerifyError("timestamp_out_of_window"));
   }
 
   const baseString = `${SLACK_SIGNATURE_VERSION}:${timestampHeader}:${rawBody}`;
   const expectedSignature = `${SLACK_SIGNATURE_VERSION}=${createHmac("sha256", signingSecret).update(baseString).digest("hex")}`;
 
   if (!timingSafeCompare(signatureHeader, expectedSignature)) {
-    return { valid: false, reason: "signature_mismatch" };
+    return err(new SlackVerifyError("signature_mismatch"));
   }
 
-  return { valid: true, reason: null };
+  return ok(undefined);
 }

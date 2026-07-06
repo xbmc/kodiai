@@ -25,13 +25,14 @@ import { getEffectiveThreshold } from "../triage/threshold-learner.ts";
 import {
   formatTriageComment,
   buildTriageMarker,
-  TRIAGE_MARKER_PREFIX,
 } from "../triage/triage-comment.ts";
 import {
   createIssueTriageStateStore,
   type IssueTriageStateStore,
 } from "../triage/issue-triage-state-store.ts";
 import type { WorkspaceManager } from "../jobs/types.ts";
+import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
+import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
 
 export function createIssueOpenedHandler(deps: {
   eventRouter: EventRouter;
@@ -132,16 +133,14 @@ export function createIssueOpenedHandler(deps: {
 
       // Layer 3 idempotency: Comment marker scan fallback
       try {
-        const { data: comments } = await octokit.rest.issues.listComments({
+        const marker = buildTriageMarker(repo, issueNumber);
+        const existingComment = await findIssueCommentByMarkerPaged(octokit, {
           owner,
           repo: repoName,
-          issue_number: issueNumber,
-          per_page: 10,
+          issueNumber,
+          marker,
         });
-        const alreadyTriaged = comments.some(
-          (c) => c.body && c.body.includes(TRIAGE_MARKER_PREFIX),
-        );
-        if (alreadyTriaged) {
+        if (existingComment) {
           handlerLogger.info("Triage comment already exists (marker found), skipping");
           return;
         }
@@ -237,13 +236,16 @@ export function createIssueOpenedHandler(deps: {
       // 8. Format comment
       const marker = buildTriageMarker(repo, issueNumber);
       const commentBody = formatTriageComment(candidates, marker);
+      const appSlug = typeof githubApp.getAppSlug === "function" ? githubApp.getAppSlug() : "kodiai";
 
       // 9. Post comment
-      const commentResponse = await octokit.rest.issues.createComment({
+      const commentResponse = await createIssueCommentWithPublicationPipeline(octokit, {
         owner,
         repo: repoName,
         issue_number: issueNumber,
         body: commentBody,
+        botHandles: [appSlug, "claude"],
+        preserveKodiaiMarkers: true,
       });
 
       // 9b. Store the comment GitHub ID for future reaction tracking (REACT-01)

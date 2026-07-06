@@ -177,6 +177,19 @@ describe("computeBudgetDistribution", () => {
     expect(result[1]).toBe(even);
     expect(result[2]).toBe(even);
   });
+
+  test("clamps out-of-range distances before allocating budgets", () => {
+    const result = computeBudgetDistribution(
+      [{ distance: -0.5 }, { distance: 0.4 }, { distance: 1.2 }],
+      1200,
+    );
+
+    expect(result).toHaveLength(3);
+    expect(result.every((budget) => budget >= 0)).toBe(true);
+    expect(result.reduce((sum, budget) => sum + budget, 0)).toBeLessThanOrEqual(1200);
+    expect(result[0]).toBeGreaterThan(result[1]!);
+    expect(result[2]).toBe(0);
+  });
 });
 
 describe("assembleIssueThread", () => {

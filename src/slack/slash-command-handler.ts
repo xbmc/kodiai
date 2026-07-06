@@ -65,6 +65,42 @@ export async function handleKodiaiCommand(params: {
       };
     }
 
+    const existingSlackProfile = await profileStore.getBySlackUserId(slackUserId);
+    if (
+      existingSlackProfile &&
+      existingSlackProfile.githubUsername.toLowerCase() !== githubUsername.toLowerCase()
+    ) {
+      return {
+        responseType: "ephemeral",
+        text: `Your Slack account is already linked to GitHub user \`${existingSlackProfile.githubUsername}\`. Run \`/kodiai unlink\` before linking a different GitHub account.`,
+      };
+    }
+
+    const existingGithubProfile = await profileStore.getByGithubUsername(githubUsername);
+    if (
+      existingGithubProfile?.slackUserId &&
+      existingGithubProfile.slackUserId !== slackUserId
+    ) {
+      return {
+        responseType: "ephemeral",
+        text: `GitHub user \`${githubUsername}\` is already linked to a different Slack account. Ask an admin to unlink it if this is wrong.`,
+      };
+    }
+    if (
+      existingGithubProfile &&
+      !existingGithubProfile.slackUserId &&
+      (
+        existingGithubProfile.lastScoredAt !== null ||
+        existingGithubProfile.overallScore > 0 ||
+        Boolean(existingGithubProfile.trustMarker)
+      )
+    ) {
+      return {
+        responseType: "ephemeral",
+        text: `GitHub user \`${githubUsername}\` already has contributor profile data. Ask an admin to verify ownership before linking it to Slack.`,
+      };
+    }
+
     const profile = await profileStore.linkIdentity({
       slackUserId,
       githubUsername,

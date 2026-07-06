@@ -14,6 +14,7 @@ import {
 } from "./wiki-popularity-config.ts";
 import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 // ── MediaWiki API response types ─────────────────────────────────────────
 
@@ -43,10 +44,6 @@ type LinksHereResponse = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 const LINKSHERE_BATCH_CONCURRENCY = 3;
 

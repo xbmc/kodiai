@@ -146,6 +146,47 @@ function createEmptyMetrics(discovered: number): ReviewGraphIndexerMetrics {
   };
 }
 
+type PreparedGraphFile = {
+  repoPath: string;
+  language: "cpp" | "python";
+  contentHash: string;
+  existing: Awaited<ReturnType<ReviewGraphIndexerOptions["store"]["getFile"]>>;
+  extraction: ReturnType<typeof extractReviewGraph>;
+};
+
+function orderPreparedFilesByCrossFileDependencies(files: PreparedGraphFile[]): PreparedGraphFile[] {
+  const byPath = new Map(files.map((file) => [file.repoPath, file]));
+  const ordered: PreparedGraphFile[] = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  function visit(file: PreparedGraphFile): void {
+    if (visited.has(file.repoPath)) return;
+    if (visiting.has(file.repoPath)) return;
+
+    visiting.add(file.repoPath);
+    for (const dependency of files) {
+      if (dependency.repoPath === file.repoPath) continue;
+      const dependsOnFile = file.extraction.edges.some((edge) =>
+        edge.attributes?.crossFile === true
+        && edge.targetStableKey.startsWith(`symbol:${dependency.repoPath}:`)
+      );
+      if (dependsOnFile) {
+        visit(dependency);
+      }
+    }
+    visiting.delete(file.repoPath);
+    visited.add(file.repoPath);
+    ordered.push(file);
+  }
+
+  for (const file of byPath.values()) {
+    visit(file);
+  }
+
+  return ordered;
+}
+
 export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): ReviewGraphIndexer {
   const walkWorkspace = opts.walkWorkspace ?? defaultWalkWorkspace;
   const readWorkspaceFile = opts.readWorkspaceFile ?? defaultReadWorkspaceFile;
@@ -186,6 +227,8 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
       );
 
       try {
+        const preparedFiles: PreparedGraphFile[] = [];
+
         for (const repoPath of supportedPaths) {
           const language = getLanguageForPath(repoPath);
           if (!language) continue;
@@ -214,41 +257,72 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
               language,
             });
 
+            preparedFiles.push({
+              repoPath,
+              language,
+              contentHash,
+              existing,
+              extraction,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            metrics.failed += 1;
+            files.failed.push({ path: repoPath, error: message });
+            opts.logger.warn(
+              {
+                repo: input.repo,
+                workspaceKey: input.workspaceKey,
+                path: repoPath,
+                error: message,
+                graphIndexMetrics: {
+                  indexed: metrics.indexed,
+                  updated: metrics.updated,
+                  skipped: metrics.skipped,
+                  failed: metrics.failed,
+                },
+              },
+              "Failed to prepare review graph for file",
+            );
+          }
+        }
+
+        for (const prepared of orderPreparedFilesByCrossFileDependencies(preparedFiles)) {
+          try {
             const writeResult = await opts.store.replaceFileGraph({
               file: {
                 repo: input.repo,
                 workspaceKey: input.workspaceKey,
-                path: repoPath,
-                language,
-                contentHash,
+                path: prepared.repoPath,
+                language: prepared.language,
+                contentHash: prepared.contentHash,
                 buildId: build.id,
               },
-              nodes: extraction.nodes,
-              edges: extraction.edges,
+              nodes: prepared.extraction.nodes,
+              edges: prepared.extraction.edges,
             });
-            existingFilesByPath.set(repoPath, writeResult.file);
+            existingFilesByPath.set(prepared.repoPath, writeResult.file);
 
             metrics.indexed += 1;
             metrics.nodesWritten += writeResult.nodesWritten;
             metrics.edgesWritten += writeResult.edgesWritten;
 
-            if (existing) {
+            if (prepared.existing) {
               metrics.updated += 1;
-              files.updated.push(repoPath);
+              files.updated.push(prepared.repoPath);
             } else {
-              files.indexed.push(repoPath);
+              files.indexed.push(prepared.repoPath);
             }
 
             opts.logger.debug(
               {
                 repo: input.repo,
                 workspaceKey: input.workspaceKey,
-                path: repoPath,
-                language,
-                updated: Boolean(existing),
+                path: prepared.repoPath,
+                language: prepared.language,
+                updated: Boolean(prepared.existing),
                 nodesWritten: writeResult.nodesWritten,
                 edgesWritten: writeResult.edgesWritten,
-                extractedMetrics: extraction.metrics,
+                extractedMetrics: prepared.extraction.metrics,
                 graphIndexMetrics: {
                   indexed: metrics.indexed,
                   updated: metrics.updated,
@@ -262,12 +336,12 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
             const message = error instanceof Error ? error.message : String(error);
             if (message.startsWith(REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX)) {
               metrics.skipped += 1;
-              files.skipped.push(repoPath);
+              files.skipped.push(prepared.repoPath);
               opts.logger.debug(
                 {
                   repo: input.repo,
                   workspaceKey: input.workspaceKey,
-                  path: repoPath,
+                  path: prepared.repoPath,
                   sizeBytes: Number(message.slice(REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX.length)),
                 },
                 "Skipped review graph index for oversized file",
@@ -275,12 +349,12 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
               continue;
             }
             metrics.failed += 1;
-            files.failed.push({ path: repoPath, error: message });
+            files.failed.push({ path: prepared.repoPath, error: message });
             opts.logger.warn(
               {
                 repo: input.repo,
                 workspaceKey: input.workspaceKey,
-                path: repoPath,
+                path: prepared.repoPath,
                 error: message,
                 graphIndexMetrics: {
                   indexed: metrics.indexed,

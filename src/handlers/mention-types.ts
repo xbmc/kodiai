@@ -71,7 +71,9 @@ export function normalizeIssueComment(
     diffHunk: undefined,
     filePath: undefined,
     fileLine: undefined,
-    inReplyToId: undefined,
+    inReplyToId:
+      (payload.comment as { in_reply_to_id?: number | null }).in_reply_to_id ??
+      undefined,
     issueBody: payload.issue.body ?? null,
     issueTitle: payload.issue.title ?? null,
   };

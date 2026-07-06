@@ -1,3 +1,4 @@
+import { rejectWithTimeout, scheduleInterval, type ScheduledInterval } from "../lib/with-timeout.ts";
 import type { RequestTracker } from "./types.ts";
 
 /**
@@ -40,13 +41,12 @@ export function createRequestTracker(): RequestTracker {
       };
     },
 
-    waitForDrain(timeoutMs: number): Promise<void> {
-      return new Promise<void>((resolve, reject) => {
+    async waitForDrain(timeoutMs: number): Promise<void> {
+      let interval: ScheduledInterval | undefined;
+      const drain = new Promise<void>((resolve) => {
         const check = () => {
           const total = activeRequests + activeJobs;
           if (total === 0) {
-            clearInterval(interval);
-            clearTimeout(timeout);
             resolve();
           }
         };
@@ -57,12 +57,19 @@ export function createRequestTracker(): RequestTracker {
           return;
         }
 
-        const interval = setInterval(check, 500);
-        const timeout = setTimeout(() => {
-          clearInterval(interval);
-          reject(new Error(`Drain timeout after ${timeoutMs}ms`));
-        }, timeoutMs);
+        interval = scheduleInterval(check, 500);
       });
+
+      try {
+        await rejectWithTimeout(drain, {
+          timeoutMs,
+          createTimeoutError: () => new Error(`Drain timeout after ${timeoutMs}ms`),
+        });
+      } finally {
+        if (interval !== undefined) {
+          interval.clear();
+        }
+      }
     },
   };
 }

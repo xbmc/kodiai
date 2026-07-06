@@ -1,4 +1,5 @@
 import { runCommandWithCappedOutput } from "./capped-process.ts";
+import { raceWithTimeout } from "./with-timeout.ts";
 
 export type UsageEvidence = {
   filePath: string;
@@ -65,17 +66,10 @@ export function parseGitGrepOutput(stdout: string): UsageEvidence[] {
 }
 
 export async function withTimeBudget<T>(promise: Promise<T>, timeBudgetMs: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  const timeoutPromise = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeBudgetMs);
+  return raceWithTimeout(promise, {
+    timeoutMs: timeBudgetMs,
+    timeoutValue: null,
   });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 /**

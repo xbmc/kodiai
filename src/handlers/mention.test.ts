@@ -420,6 +420,7 @@ function buildIssueCommentMentionEvent(params: {
   commentBody: string;
   commentAuthor?: string;
   commentId?: number;
+  inReplyToId?: number;
   defaultBranch?: string;
 }): WebhookEvent {
   return {
@@ -442,6 +443,7 @@ function buildIssueCommentMentionEvent(params: {
         body: params.commentBody,
         user: { login: params.commentAuthor ?? "alice" },
         created_at: "2025-01-15T12:00:00Z",
+        in_reply_to_id: params.inReplyToId,
       },
     },
   };
@@ -1007,6 +1009,115 @@ describe("createMentionHandler conversational review wiring", () => {
     expect(issueReplies[0]).not.toContain("(1)");
     expect(issueReplies[0]).not.toContain("(2)");
     expect(issueReplies[0]).not.toContain("(3)");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue-thread replies count toward maxTurnsPerPr and stop before execution at the limit", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      [
+        "mention:",
+        "  enabled: true",
+        "  conversation:",
+        "    maxTurnsPerPr: 1",
+        "",
+      ].join("\n"),
+    );
+
+    const issueReplies: string[] = [];
+    let executeCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCalls++;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: `session-issue-reply-${executeCalls}`,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentId: 901,
+        inReplyToId: 900,
+        commentBody: "@kodiai what does this mean?",
+      }),
+    );
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentId: 902,
+        inReplyToId: 900,
+        commentBody: "@kodiai and what next?",
+      }),
+    );
+
+    expect(executeCalls).toBe(1);
+    expect(issueReplies.some((body) => body.includes("Conversation limit reached (1 turns per PR)."))).toBe(true);
 
     await workspaceFixture.cleanup();
   });
@@ -6946,6 +7057,129 @@ describe("createMentionHandler write intent gating", () => {
     expect(prCreates).toBe(1);
     expect(replies).toHaveLength(2);
     expect(replies[1]!).toContain("rate-limited");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("gist write successes are rate-limited when configured", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n  minIntervalSeconds: 60\n",
+    );
+
+    const replies: string[] = [];
+    let gistCreates = 0;
+    let executeCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            replies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          executeCalls++;
+          await Bun.write(
+            join(ctx.workspace.dir, "README.md"),
+            `base\nfeature\ngist-change-${executeCalls}\n`,
+          );
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: `session-gist-${executeCalls}`,
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+      forkManager: {
+        enabled: true,
+        ensureFork: async () => ({ forkOwner: "kodiai-bot", forkRepo: "repo" }),
+        syncFork: async () => undefined,
+        deleteForkBranch: async () => undefined,
+        getBotPat: () => "bot-pat",
+      },
+      gistPublisher: {
+        enabled: true,
+        createPatchGist: async () => {
+          gistCreates++;
+          return { id: `gist-${gistCreates}`, htmlUrl: `https://gist.github.com/gist-${gistCreates}` };
+        },
+      },
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentId: 2001,
+        inReplyToId: 2000,
+        commentBody: "@kodiai apply: update README as a patch",
+      }),
+    );
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentId: 2002,
+        inReplyToId: 2000,
+        commentBody: "@kodiai apply: update README as a patch",
+      }),
+    );
+
+    expect(executeCalls).toBe(1);
+    expect(gistCreates).toBe(1);
+    expect(replies.some((body) => body.includes("Write request rate-limited."))).toBe(true);
 
     await workspaceFixture.cleanup();
   });

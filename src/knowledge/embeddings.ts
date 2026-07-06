@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { EmbeddingProvider, EmbeddingResult, RerankProvider } from "./types.ts";
+import { runWithAbortSignalTimeout, sleep } from "../lib/with-timeout.ts";
 
 // ── Voyage AI REST API types ────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ function voyageRetryDelayMs(attempt: number): number {
 }
 
 async function sleepVoyageRetryDelay(attempt: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, voyageRetryDelayMs(attempt)));
+  await sleep(voyageRetryDelayMs(attempt));
 }
 
 export type RepairEmbeddingFailureClass =
@@ -76,44 +77,45 @@ async function voyageFetch<T>(opts: {
   const { url, apiKey, body, timeoutMs, maxRetries, logger } = opts;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let timerActive = true;
-    const clearRequestTimer = (): void => {
-      if (timerActive) {
-        clearTimeout(timer);
-        timerActive = false;
-      }
-    };
-
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      const payload = await runWithAbortSignalTimeout(
+        "Voyage API request",
+        timeoutMs,
+        async (signal) => {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+            signal,
+          });
 
-      if (!response.ok) {
-        clearRequestTimer();
+          if (!response.ok) {
+            if (attempt < maxRetries) {
+              logger.debug({ status: response.status, attempt }, "Voyage API error, retrying");
+              return null;
+            }
+            const text = await response.text().catch(() => "");
+            logger.warn({ status: response.status, text: text.slice(0, 200) }, "Voyage API request failed");
+            return null;
+          }
+
+          return (await response.json()) as T;
+        },
+      );
+
+      if (payload === null) {
         if (attempt < maxRetries) {
-          logger.debug({ status: response.status, attempt }, "Voyage API error, retrying");
           await sleepVoyageRetryDelay(attempt);
           continue;
         }
-        const text = await response.text().catch(() => "");
-        logger.warn({ status: response.status, text: text.slice(0, 200) }, "Voyage API request failed");
         return null;
       }
 
-      const payload = (await response.json()) as T;
-      clearRequestTimer();
       return payload;
     } catch (err: unknown) {
-      clearRequestTimer();
       if (attempt < maxRetries) {
         logger.debug({ attempt, err }, "Voyage API error, retrying");
         await sleepVoyageRetryDelay(attempt);
@@ -362,37 +364,49 @@ export async function contextualizedEmbedChunksForRepair(opts: {
   }
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let timerActive = true;
-    const clearRequestTimer = (): void => {
-      if (timerActive) {
-        clearTimeout(timer);
-        timerActive = false;
-      }
-    };
-
     try {
-      const response = await fetch(VOYAGE_CONTEXTUALIZED_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+      const response = await runWithAbortSignalTimeout(
+        "repair embedding request",
+        timeoutMs,
+        async (signal) => {
+          const fetchResponse = await fetch(VOYAGE_CONTEXTUALIZED_URL, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              inputs: [chunks],
+              model,
+              input_type: "document",
+              output_dimension: dimensions,
+            }),
+            signal,
+          });
+
+          if (!fetchResponse.ok) {
+            const responseBody = await fetchResponse.text().catch(() => "");
+            const classified = classifyContextualizedEmbeddingFailure({ status: fetchResponse.status, responseBody });
+            return {
+              ok: false as const,
+              response: {
+                status: fetchResponse.status,
+                classified,
+              },
+            };
+          }
+
+          return {
+            ok: true as const,
+            payload: await fetchResponse.json() as VoyageContextualizedResponse,
+          };
         },
-        body: JSON.stringify({
-          inputs: [chunks],
-          model,
-          input_type: "document",
-          output_dimension: dimensions,
-        }),
-        signal: controller.signal,
-      });
+      );
 
       if (!response.ok) {
-        const responseBody = await response.text().catch(() => "");
-        const classified = classifyContextualizedEmbeddingFailure({ status: response.status, responseBody });
+        const { classified } = response.response;
         if (classified.retryable && attempt < maxRetries) {
-          logger.debug({ attempt, status: response.status, failureClass: classified.failure_class }, "Repair embedding request failed, retrying");
+          logger.debug({ attempt, status: response.response.status, failureClass: classified.failure_class }, "Repair embedding request failed, retrying");
           await sleepVoyageRetryDelay(attempt);
           continue;
         }
@@ -403,11 +417,11 @@ export async function contextualizedEmbedChunksForRepair(opts: {
           retryable: classified.retryable,
           should_split: classified.should_split,
           retry_count: attempt,
-          http_status: response.status,
+          http_status: response.response.status,
         };
       }
 
-      const payload = await response.json() as VoyageContextualizedResponse;
+      const payload = response.payload;
       const docData = payload.data?.[0]?.data;
       if (!docData) {
         return {
@@ -458,8 +472,6 @@ export async function contextualizedEmbedChunksForRepair(opts: {
         should_split: classified.should_split,
         retry_count: attempt,
       };
-    } finally {
-      clearRequestTimer();
     }
   }
 

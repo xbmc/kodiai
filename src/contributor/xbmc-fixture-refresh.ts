@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import pino from "pino";
 import { createGitHubApp } from "../auth/github-app.ts";
 import type { AppConfig } from "../config.ts";
+import { rejectWithTimeout } from "../lib/with-timeout.ts";
 import {
   loadFixtureManifest,
   normalizeFixtureIdentity,
@@ -409,13 +410,15 @@ async function buildGitHubBundle(params: {
 
   let collected: GitHubEvidenceCollectionResult;
   try {
-    collected = await withTimeout(
+    collected = await rejectWithTimeout(
       collectGitHubEvidence({
         repository,
         contributor,
       }),
-      githubTimeoutMs,
-      `GitHub evidence collection timed out after ${githubTimeoutMs}ms.`,
+      {
+        timeoutMs: githubTimeoutMs,
+        createTimeoutError: () => new TimedOutError(`GitHub evidence collection timed out after ${githubTimeoutMs}ms.`),
+      },
     );
   } catch (error) {
     const timedOut = isTimeoutError(error);
@@ -783,30 +786,6 @@ function isTimeoutError(error: unknown): boolean {
     || (error instanceof Error && /timed out/i.test(error.message));
 }
 
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  message: string,
-): Promise<T> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return promise;
-  }
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new TimedOutError(message)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-}
-
 async function createLiveGitHubEvidenceCollector(repository: string, githubTimeoutMs: number) {
   const environment = await loadGitHubEnvironment();
   if (!environment.available) {
@@ -835,17 +814,21 @@ async function createLiveGitHubEvidenceCollector(repository: string, githubTimeo
       buildGitHubAppConfig(repository, environment.privateKey) as AppConfig,
       logger,
     );
-    await withTimeout(
+    await rejectWithTimeout(
       githubApp.initialize({ requestTimeoutMs: githubTimeoutMs }),
-      githubTimeoutMs,
-      `GitHub app initialization timed out after ${githubTimeoutMs}ms.`,
+      {
+        timeoutMs: githubTimeoutMs,
+        createTimeoutError: () => new TimedOutError(`GitHub app initialization timed out after ${githubTimeoutMs}ms.`),
+      },
     );
-    const installationContext = await withTimeout(
+    const installationContext = await rejectWithTimeout(
       githubApp.getRepoInstallationContext(owner, repoName, {
         requestTimeoutMs: githubTimeoutMs,
       }),
-      githubTimeoutMs,
-      `GitHub installation lookup timed out after ${githubTimeoutMs}ms.`,
+      {
+        timeoutMs: githubTimeoutMs,
+        createTimeoutError: () => new TimedOutError(`GitHub installation lookup timed out after ${githubTimeoutMs}ms.`),
+      },
     );
     if (!installationContext) {
       const note = `GitHub App is not installed on ${repository}.`;
@@ -866,12 +849,14 @@ async function createLiveGitHubEvidenceCollector(repository: string, githubTimeo
       });
     }
 
-    const octokit = await withTimeout(
+    const octokit = await rejectWithTimeout(
       githubApp.getInstallationOctokit(installationContext.installationId, {
         requestTimeoutMs: githubTimeoutMs,
       }),
-      githubTimeoutMs,
-      `GitHub installation client creation timed out after ${githubTimeoutMs}ms.`,
+      {
+        timeoutMs: githubTimeoutMs,
+        createTimeoutError: () => new TimedOutError(`GitHub installation client creation timed out after ${githubTimeoutMs}ms.`),
+      },
     );
 
     return async ({ contributor }: { repository: string; contributor: FixtureRecord }) => {

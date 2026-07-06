@@ -256,7 +256,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'superseded';
 export type RunStateCheck = {
   shouldProcess: boolean;
   runKey: string;
-  reason: 'new' | 'duplicate' | 'superseded-prior';
+  reason: 'new' | 'duplicate' | 'superseded-prior' | 'stale-pending';
   supersededRunKeys: string[];
 };
 

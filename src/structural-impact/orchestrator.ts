@@ -35,6 +35,8 @@ import type {
   StructuralImpactDegradation,
 } from "./types.ts";
 import type { StructuralImpactCache } from "./cache.ts";
+import { raceWithAbortSignalTimeout } from "../lib/with-timeout.ts";
+import { err, toError } from "../lib/result.ts";
 
 // ── Observability signals ─────────────────────────────────────────────────────
 
@@ -98,31 +100,12 @@ export type FetchStructuralImpactInput = {
    */
   onSignal?: (signal: StructuralImpactSignal) => void;
 };
+type GraphAdapterOutcome = Awaited<ReturnType<GraphAdapter["queryBlastRadius"]>>;
+type CorpusAdapterOutcome = Awaited<ReturnType<CorpusAdapter["searchCanonicalCode"]>>;
 
 // ── Timeout helper ────────────────────────────────────────────────────────────
 
 const TIMEOUT_SENTINEL = Symbol("structural-impact-timeout");
-
-/**
- * Race `promise` against a `timeoutMs` deadline.
- * Returns `TIMEOUT_SENTINEL` if the deadline fires first.
- */
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-): Promise<T | typeof TIMEOUT_SENTINEL> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
-    timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
 
 // ── Orchestration ─────────────────────────────────────────────────────────────
 
@@ -182,19 +165,39 @@ export async function fetchStructuralImpact(
   const graphStart = Date.now();
   const corpusStart = Date.now();
 
-  // Wrap each adapter call so a rejection becomes a resolved Error value.
-  // This ensures withTimeout sees a resolved promise (either a real result, a
-  // timeout sentinel, or an Error) and never receives an unhandled rejection.
-  const graphPromise = graphAdapter.queryBlastRadius(graphInput).catch((e: unknown) => {
-    return e instanceof Error ? e : new Error(String(e));
-  });
-  const corpusPromise = corpusAdapter.searchCanonicalCode(corpusInput).catch((e: unknown) => {
-    return e instanceof Error ? e : new Error(String(e));
-  });
-
+  // Adapter contracts return explicit Result values. The catch blocks keep the
+  // pipeline fail-open if a custom adapter violates that contract by throwing.
   const [graphOutcome, corpusOutcome] = await Promise.all([
-    withTimeout(graphPromise, timeoutMs).then((r) => ({ result: r, elapsedMs: Date.now() - graphStart })),
-    withTimeout(corpusPromise, timeoutMs).then((r) => ({ result: r, elapsedMs: Date.now() - corpusStart })),
+    raceWithAbortSignalTimeout(
+      "graph structural-impact query",
+      timeoutMs,
+      TIMEOUT_SENTINEL,
+      async (signal) => {
+        try {
+          return await graphAdapter.queryBlastRadius({
+            ...graphInput,
+            signal,
+          });
+        } catch (e) {
+          return err(toError(e));
+        }
+      },
+    ).then((r) => ({ result: r, elapsedMs: Date.now() - graphStart })),
+    raceWithAbortSignalTimeout(
+      "corpus structural-impact query",
+      timeoutMs,
+      TIMEOUT_SENTINEL,
+      async (signal) => {
+        try {
+          return await corpusAdapter.searchCanonicalCode({
+            ...corpusInput,
+            signal,
+          });
+        } catch (e) {
+          return err(toError(e));
+        }
+      },
+    ).then((r) => ({ result: r, elapsedMs: Date.now() - corpusStart })),
   ]);
 
   // ── Interpret graph outcome ─────────────────────────────────────────────────
@@ -203,37 +206,44 @@ export async function fetchStructuralImpact(
   let graphResult: GraphBlastRadiusResult | null = null;
   let corpusMatches: CorpusCodeMatch[] = [];
 
-  if (graphOutcome.result === TIMEOUT_SENTINEL) {
+  const graphOutcomeResult = graphOutcome.result;
+  if (graphOutcomeResult === TIMEOUT_SENTINEL) {
     emit(onSignal, { kind: "graph-timeout", elapsedMs: graphOutcome.elapsedMs });
     degradations.push({ source: "graph", reason: `timed out after ${graphOutcome.elapsedMs}ms` });
-  } else if (graphOutcome.result instanceof Error) {
-    // Safety: should not happen since adapter contract is fail-open, but guard anyway.
-    emit(onSignal, {
-      kind: "graph-error",
-      elapsedMs: graphOutcome.elapsedMs,
-      detail: String(graphOutcome.result),
-    });
-    degradations.push({ source: "graph", reason: String(graphOutcome.result) });
   } else {
-    emit(onSignal, { kind: "graph-ok", elapsedMs: graphOutcome.elapsedMs });
-    graphResult = graphOutcome.result as GraphBlastRadiusResult;
+    const graphAdapterResult = graphOutcomeResult as GraphAdapterOutcome;
+    if (!graphAdapterResult.ok) {
+      emit(onSignal, {
+        kind: "graph-error",
+        elapsedMs: graphOutcome.elapsedMs,
+        detail: String(graphAdapterResult.err),
+      });
+      degradations.push({ source: "graph", reason: String(graphAdapterResult.err) });
+    } else {
+      emit(onSignal, { kind: "graph-ok", elapsedMs: graphOutcome.elapsedMs });
+      graphResult = graphAdapterResult.value;
+    }
   }
 
   // ── Interpret corpus outcome ────────────────────────────────────────────────
 
-  if (corpusOutcome.result === TIMEOUT_SENTINEL) {
+  const corpusOutcomeResult = corpusOutcome.result;
+  if (corpusOutcomeResult === TIMEOUT_SENTINEL) {
     emit(onSignal, { kind: "corpus-timeout", elapsedMs: corpusOutcome.elapsedMs });
     degradations.push({ source: "corpus", reason: `timed out after ${corpusOutcome.elapsedMs}ms` });
-  } else if (corpusOutcome.result instanceof Error) {
-    emit(onSignal, {
-      kind: "corpus-error",
-      elapsedMs: corpusOutcome.elapsedMs,
-      detail: String(corpusOutcome.result),
-    });
-    degradations.push({ source: "corpus", reason: String(corpusOutcome.result) });
   } else {
-    emit(onSignal, { kind: "corpus-ok", elapsedMs: corpusOutcome.elapsedMs });
-    corpusMatches = corpusOutcome.result as CorpusCodeMatch[];
+    const corpusAdapterResult = corpusOutcomeResult as CorpusAdapterOutcome;
+    if (!corpusAdapterResult.ok) {
+      emit(onSignal, {
+        kind: "corpus-error",
+        elapsedMs: corpusOutcome.elapsedMs,
+        detail: String(corpusAdapterResult.err),
+      });
+      degradations.push({ source: "corpus", reason: String(corpusAdapterResult.err) });
+    } else {
+      emit(onSignal, { kind: "corpus-ok", elapsedMs: corpusOutcome.elapsedMs });
+      corpusMatches = corpusAdapterResult.value;
+    }
   }
 
   // ── Assemble bounded payload ────────────────────────────────────────────────
@@ -258,7 +268,7 @@ export async function fetchStructuralImpact(
 
   // ── Cache write ─────────────────────────────────────────────────────────────
 
-  if (cache && cacheKey) {
+  if (cache && cacheKey && payload.status !== "unavailable") {
     cache.set(cacheKey, payload);
     emit(onSignal, { kind: "cache-write", detail: cacheKey });
   }

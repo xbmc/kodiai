@@ -17,6 +17,8 @@
 
 import type { Logger } from "pino";
 
+import { sleepWithAbortSignal } from "../../lib/with-timeout.ts";
+
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 
 export interface McpFetchRetryOptions {
@@ -68,24 +70,6 @@ export function normalizeMcpUrlKey(url: string): string | undefined {
   }
 }
 
-function defaultSleep(ms: number, signal?: AbortSignal): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    if (signal?.aborted) {
-      resolve(false);
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve(false);
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener?.("abort", onAbort);
-      resolve(true);
-    }, ms);
-    signal?.addEventListener?.("abort", onAbort, { once: true });
-  });
-}
-
 /**
  * Wrap a fetch implementation with gated, bounded retry for MCP callbacks.
  * Non-POST requests and requests whose key is not in `retrySafeUrls` pass
@@ -98,7 +82,7 @@ export function createRetryingFetch(
   const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
   const baseDelayMs = options.baseDelayMs ?? 250;
   const maxDelayMs = options.maxDelayMs ?? 2_000;
-  const sleep = options.sleepFn ?? defaultSleep;
+  const sleep = options.sleepFn ?? sleepWithAbortSignal;
   const random = options.randomFn ?? Math.random;
   const logger = options.logger;
 

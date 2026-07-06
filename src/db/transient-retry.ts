@@ -1,3 +1,5 @@
+import { sleep as defaultSleep } from "../lib/with-timeout.ts";
+
 type RetryLogger = {
   debug: (obj: Record<string, unknown>, msg: string) => void;
 };
@@ -5,10 +7,6 @@ type RetryLogger = {
 const DEFAULT_TRANSIENT_DB_ATTEMPTS = 2;
 const DEFAULT_INITIAL_DELAY_MS = 100;
 const DEFAULT_MAX_DELAY_MS = 1_000;
-
-function defaultSleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
 
 export function isTransientDbConnectionError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;

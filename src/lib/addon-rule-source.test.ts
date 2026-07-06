@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
   ADDON_RULES_URL,
@@ -6,6 +7,14 @@ import {
 } from "./addon-rule-source.ts";
 
 describe("loadAddonRuleSource", () => {
+  test("uses the shared abort-signal timeout primitive", () => {
+    const source = readFileSync(new URL("./addon-rule-source.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("runWithAbortSignalTimeout");
+    expect(source).not.toContain("new AbortController");
+    expect(source).not.toContain("setTimeout(");
+  });
+
   test("uses bounded wiki text when fetch succeeds", async () => {
     const result = await loadAddonRuleSource({
       fetchImpl: async () => new Response("<html><body><h1>Add-on rules</h1><p>No analytics.</p></body></html>"),

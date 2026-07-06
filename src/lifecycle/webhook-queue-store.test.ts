@@ -44,7 +44,7 @@ describe("webhook queue store crash recovery", () => {
     const { sql, queries } = createFakeSql([
       { match: "SET status = 'pending'", rows: [{ id: 7 }, { id: 9 }] },
       {
-        match: "WHERE status = 'pending' ORDER BY",
+        match: "ORDER BY queued_at ASC",
         rows: [
           {
             id: 7,
@@ -70,7 +70,10 @@ describe("webhook queue store crash recovery", () => {
     expect(recoveryQuery!.text).toContain("INTERVAL '60 seconds'");
 
     const recoveryIndex = queries.findIndex((q) => q.text.includes("SET status = 'pending'"));
-    const selectIndex = queries.findIndex((q) => q.text.includes("WHERE status = 'pending' ORDER BY"));
+    const selectIndex = queries.findIndex((q) =>
+      q.text.includes("WHERE status = 'pending'")
+      && q.text.includes("ORDER BY queued_at ASC")
+    );
     expect(recoveryIndex).toBeGreaterThanOrEqual(0);
     expect(selectIndex).toBeGreaterThan(recoveryIndex);
 

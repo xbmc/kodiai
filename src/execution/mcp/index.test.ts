@@ -67,6 +67,31 @@ describe("buildMcpServers", () => {
       expect("github_comment" in servers).toBe(true);
     });
 
+    it("uses default bot handles for comment tools when callers omit botHandles", async () => {
+      let publishedBody = "";
+      const octokit = {
+        rest: {
+          issues: {
+            createComment: async ({ body }: { body: string }) => {
+              publishedBody = body;
+              return { data: { id: 1, html_url: "https://example.test/comment" } };
+            },
+          },
+        },
+      };
+      const servers = buildMcpServers(createMinimalMcpDeps({
+        getOctokit: async () => octokit,
+        enableCommentTools: true,
+      }));
+
+      const createComment = getToolHandler(servers.github_comment, "create_comment");
+      const result = await createComment({ issueNumber: 1, body: "@claude reviewed this" });
+
+      expect(result.isError).toBeUndefined();
+      expect(publishedBody).not.toContain("@claude");
+      expect(publishedBody).toContain("claude reviewed this");
+    });
+
     it("should not register candidate finding by default", () => {
       const servers = buildMcpServers(
         createMinimalMcpDeps({

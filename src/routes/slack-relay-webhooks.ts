@@ -76,10 +76,10 @@ export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps):
 
     const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_RELAY_BODY_BYTES });
     if (!bodyResult.ok) {
-      requestLogger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slack relay webhook body too large");
+      requestLogger.warn({ maxBytes: bodyResult.err.maxBytes }, "Slack relay webhook body too large");
       return c.json({ ok: false, reason: "payload_too_large" }, 413);
     }
-    const rawBody = bodyResult.body;
+    const rawBody = bodyResult.value;
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody) as unknown;

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
   buildApprovedReviewBody,
@@ -77,6 +78,16 @@ function createOctokitStub(options?: {
 }
 
 describe("review output artifact helpers", () => {
+  test("uses shared paginated GitHub comment helpers for artifact collection", () => {
+    const source = readFileSync(new URL("./review-output-artifacts.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("listReviewCommentsPaged");
+    expect(source).toContain("listIssueCommentsPaged");
+    expect(source).toContain("listPullReviewsPaged");
+    expect(source).not.toContain("async function collectPagedArtifacts");
+    expect(source).not.toContain("for (let page = 1; ; page += 1)");
+  });
+
   test("collectReviewOutputArtifacts returns exact per-surface counts and preserves matching metadata", async () => {
     const reviewOutputKey = makeReviewOutputKey();
     const wrongRepoKey = makeReviewOutputKey({ repo: "other-repo" });

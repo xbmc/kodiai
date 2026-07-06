@@ -386,6 +386,26 @@ describe("publishFormatterSuggestionReview", () => {
     expect(createReviewCalls[0]?.comments[0]?.body).toBe("```suggestion\n// kodiai should not be pinged\nconst value = 1;\n```");
   });
 
+  test("strips default bot mentions when formatter publisher callers omit bot handles", async () => {
+    const { octokit, createReviewCalls } = createFakeScanningOctokit({});
+
+    const result = await publishFormatterSuggestionReview({
+      octokit,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      commitId: "abc123def456",
+      suggestions: [makeSuggestion({
+        suggestionBody: "```suggestion\n// @claude should not be pinged\nconst value = 1;\n```",
+      })],
+    });
+
+    expect(result.status).toBe("posted");
+    expect(createReviewCalls).toHaveLength(1);
+    expect(createReviewCalls[0]?.comments[0]?.body).not.toContain("@claude");
+    expect(createReviewCalls[0]?.comments[0]?.body).toContain("claude should not be pinged");
+  });
+
   test("blocks publication when a suggestion body contains a credential-like literal", async () => {
     const { octokit, createReviewCalls } = createFakeOctokit();
 

@@ -1,7 +1,7 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
-import { retryGitHubRateLimitOnly } from "../../lib/github-retry.ts";
+import { retryGitHubRateLimitOnly, type GitHubRateLimitRetryOptions } from "../../lib/github-retry.ts";
 
 interface TriageLabelConfig {
   enabled: boolean;
@@ -51,8 +51,9 @@ export async function addLabelsHandler(deps: {
   getTriageConfig: () => TriageLabelConfig;
   issueNumber: number;
   params: { labels: string[] };
+  retryOptions?: GitHubRateLimitRetryOptions;
 }): Promise<ToolResult> {
-  const { getOctokit, owner, repo, getTriageConfig, issueNumber, params } = deps;
+  const { getOctokit, owner, repo, getTriageConfig, issueNumber, params, retryOptions } = deps;
   const { labels } = params;
 
   try {
@@ -86,12 +87,14 @@ export async function addLabelsHandler(deps: {
       requestedLabels.push(requested);
     }
 
-    const repoLabels = await retryGitHubRateLimitOnly(() =>
-      octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
-        owner,
-        repo,
-        per_page: 100,
-      }),
+    const repoLabels = await retryGitHubRateLimitOnly(
+      () =>
+        octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
+          owner,
+          repo,
+          per_page: 100,
+        }),
+      retryOptions,
     );
     const repoLabelsByName = new Map(
       repoLabels.map((label) => [label.name.toLowerCase(), label.name]),
@@ -155,13 +158,15 @@ export async function addLabelsHandler(deps: {
     }
 
     // Apply valid labels with retry
-    await retryGitHubRateLimitOnly(() =>
-      octokit.rest.issues.addLabels({
-        owner,
-        repo,
-        issue_number: issueNumber,
-        labels: validLabels,
-      }),
+    await retryGitHubRateLimitOnly(
+      () =>
+        octokit.rest.issues.addLabels({
+          owner,
+          repo,
+          issue_number: issueNumber,
+          labels: validLabels,
+        }),
+      retryOptions,
     );
 
     return {

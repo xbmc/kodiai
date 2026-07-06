@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { Sql } from "../db/client.ts";
+import { raceWithTimeout } from "../lib/with-timeout.ts";
 
 interface HealthRouteDeps {
   githubApp: GitHubApp;
@@ -48,19 +49,15 @@ async function checkGitHubConnectivityWithTimeout(
   githubApp: GitHubApp,
   timeoutMs: number,
 ): Promise<GitHubConnectivityResult> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      githubApp.checkConnectivity()
-        .then((connected) => connected ? { kind: "connected" as const } : { kind: "unreachable" as const })
-        .catch((err) => ({ kind: "error" as const, err })),
-      new Promise<GitHubConnectivityResult>((resolve) => {
-        timeout = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
+  return await raceWithTimeout(
+    githubApp.checkConnectivity()
+      .then((connected) => connected ? { kind: "connected" as const } : { kind: "unreachable" as const })
+      .catch((err) => ({ kind: "error" as const, err })),
+    {
+      timeoutMs,
+      timeoutValue: { kind: "timeout" as const },
+    },
+  );
 }
 
 export function createHealthRoutes(deps: HealthRouteDeps): Hono {

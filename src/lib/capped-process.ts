@@ -1,3 +1,5 @@
+import { raceWithTimeout } from "./with-timeout.ts";
+
 export type CappedProcessResult = {
   exitCode: number;
   stdout: string;
@@ -66,7 +68,6 @@ export async function runCommandWithCappedOutput(params: {
   });
   let killed = false;
   let timedOut = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   const kill = (): void => {
     if (killed) return;
     killed = true;
@@ -88,29 +89,23 @@ export async function runCommandWithCappedOutput(params: {
     kill,
   );
 
-  try {
-    const exitCode = params.timeoutMs && params.timeoutMs > 0 && Number.isFinite(params.timeoutMs)
-      ? await Promise.race([
-          proc.exited,
-          new Promise<number>((resolve) => {
-            timer = setTimeout(() => {
-              timedOut = true;
-              kill();
-              resolve(124);
-            }, params.timeoutMs);
-          }),
-        ])
-      : await proc.exited;
-    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-    return {
-      exitCode,
-      stdout: stdout.text,
-      stderr: stderr.text,
-      timedOut,
-      stdoutTruncated: stdout.truncated,
-      stderrTruncated: stderr.truncated,
-    };
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  const exitCode = params.timeoutMs && params.timeoutMs > 0 && Number.isFinite(params.timeoutMs)
+    ? await raceWithTimeout(proc.exited, {
+        timeoutMs: params.timeoutMs,
+        timeoutValue: 124,
+        onTimeout: () => {
+          timedOut = true;
+          kill();
+        },
+      })
+    : await proc.exited;
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  return {
+    exitCode,
+    stdout: stdout.text,
+    stderr: stderr.text,
+    timedOut,
+    stdoutTruncated: stdout.truncated,
+    stderrTruncated: stderr.truncated,
+  };
 }

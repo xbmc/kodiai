@@ -351,6 +351,59 @@ describe("catchUpReviewComments", () => {
     expect(store.writtenChunks.length).toBe(0);
   });
 
+  it("updates an existing thread when a new reply is added to it", async () => {
+    const store = createMockStore({
+      getSyncState: mock(async () => ({
+        id: 1,
+        repo: "xbmc/xbmc",
+        lastSyncedAt: new Date("2025-06-15T10:00:00Z"),
+        lastPageCursor: "10",
+        totalCommentsSynced: 500,
+        backfillComplete: true,
+        updatedAt: "2025-06-15",
+      })),
+      getByGithubId: mock(async (_repo: string, commentGithubId: number) => {
+        if (commentGithubId === 4001) {
+          return makeExistingRecord({
+            commentGithubId: 4001,
+            githubUpdatedAt: "2025-06-16T10:00:00Z",
+          });
+        }
+        return null;
+      }),
+    });
+
+    const octokit = createMockOctokit({
+      1: [
+        makeGitHubComment({
+          id: 4001,
+          body: "Existing root comment",
+          createdAt: "2025-06-16T10:00:00Z",
+          updatedAt: "2025-06-16T10:00:00Z",
+        }),
+        makeGitHubComment({
+          id: 4002,
+          body: "New reply in existing thread",
+          inReplyToId: 4001,
+          createdAt: "2025-06-16T11:00:00Z",
+          updatedAt: "2025-06-16T11:00:00Z",
+        }),
+      ],
+    });
+
+    const result = await catchUpReviewComments({
+      octokit: octokit as any,
+      store,
+      embeddingProvider,
+      repo: "xbmc/xbmc",
+      logger,
+    });
+
+    expect(result.chunksWritten).toBeGreaterThan(0);
+    expect(store.updatedChunks.length).toBeGreaterThan(0);
+    expect(store.writtenChunks.length).toBe(0);
+  });
+
   it("skips comments already stored with same github_updated_at", async () => {
     const store = createMockStore({
       getSyncState: mock(async () => ({
@@ -489,6 +542,14 @@ describe("catchUpReviewComments", () => {
     expect(apiCallCount).toBeGreaterThanOrEqual(2);
     // Logger should have warned about retry
     expect(logger.warn).toHaveBeenCalled();
+    expect((logger.warn as ReturnType<typeof mock>).mock.calls[0]?.[0]).toMatchObject({
+      attempt: 1,
+      delayMs: 1,
+      maxRetries: 3,
+      operation: "catchUpSync",
+      page: 1,
+      repo: "xbmc/xbmc",
+    });
   });
 
   it("isolates per-thread errors and continues processing", async () => {

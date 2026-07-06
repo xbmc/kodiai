@@ -14,12 +14,14 @@ import {
 } from "./cache.ts";
 import { summarizeStructuralImpactDegradation } from "./degradation.ts";
 import type { StructuralImpactPayload } from "./types.ts";
+import { err, ok, toError } from "../lib/result.ts";
 
 export type ReviewGraphQueryFn = (input: {
   repo: string;
   workspaceKey: string;
   changedPaths: string[];
   limit?: number;
+  signal?: AbortSignal;
 }) => Promise<ReviewGraphBlastRadiusResult>;
 
 export type ReviewStructuralImpactDeps = {
@@ -51,6 +53,11 @@ export type ReviewStructuralImpactResult = {
   graphBlastRadius: ReviewGraphBlastRadiusResult | null;
 };
 
+const cachedReviewGraphBlastRadius = new WeakMap<
+  StructuralImpactCache,
+  Map<string, ReviewGraphBlastRadiusResult>
+>();
+
 function emit(
   onSignal: ((signal: StructuralImpactSignal) => void) | undefined,
   signal: StructuralImpactSignal,
@@ -66,12 +73,18 @@ function emit(
 export function createReviewGraphAdapter(reviewGraphQuery: ReviewGraphQueryFn): GraphAdapter {
   return {
     async queryBlastRadius(input: GraphQueryInput) {
-      return await reviewGraphQuery({
-        repo: input.repo,
-        workspaceKey: input.workspaceKey,
-        changedPaths: input.changedPaths,
-        limit: input.limit,
-      });
+      try {
+        const result = await reviewGraphQuery({
+          repo: input.repo,
+          workspaceKey: input.workspaceKey,
+          changedPaths: input.changedPaths,
+          limit: input.limit,
+          ...(input.signal ? { signal: input.signal } : {}),
+        });
+        return ok(result);
+      } catch (error) {
+        return err(toError(error));
+      }
     },
   };
 }
@@ -85,29 +98,34 @@ export function createCanonicalCorpusAdapter(params: {
 
   return {
     async searchCanonicalCode(input: CorpusQueryInput) {
-      const result = await searchCanonicalCode({
-        store: canonicalCodeStore,
-        embeddingProvider,
-        query: input.query,
-        repo: input.repo,
-        canonicalRef: input.canonicalRef,
-        topK: input.topK ?? 10,
-        language: input.language,
-        logger,
-      });
+      try {
+        const result = await searchCanonicalCode({
+          store: canonicalCodeStore,
+          embeddingProvider,
+          query: input.query,
+          repo: input.repo,
+          canonicalRef: input.canonicalRef,
+          topK: input.topK ?? 10,
+          language: input.language,
+          signal: input.signal,
+          logger,
+        });
 
-      return result.map((match) => ({
-        filePath: match.filePath,
-        language: match.language,
-        startLine: match.startLine,
-        endLine: match.endLine,
-        chunkType: match.chunkType,
-        symbolName: match.symbolName,
-        chunkText: match.chunkText,
-        distance: match.distance,
-        commitSha: match.commitSha,
-        canonicalRef: match.canonicalRef,
-      }));
+        return ok(result.map((match) => ({
+          filePath: match.filePath,
+          language: match.language,
+          startLine: match.startLine,
+          endLine: match.endLine,
+          chunkType: match.chunkType,
+          symbolName: match.symbolName,
+          chunkText: match.chunkText,
+          distance: match.distance,
+          commitSha: match.commitSha,
+          canonicalRef: match.canonicalRef,
+        })));
+      } catch (error) {
+        return err(toError(error));
+      }
     },
   };
 }
@@ -117,11 +135,26 @@ export async function fetchReviewStructuralImpact(
   request: ReviewStructuralImpactRequest,
 ): Promise<ReviewStructuralImpactResult> {
   const { reviewGraphQuery, canonicalCodeStore, embeddingProvider, cache, logger } = deps;
+  const cacheKey = cache
+    ? buildStructuralImpactCacheKey({
+        repo: request.repo,
+        baseSha: request.baseSha,
+        headSha: request.headSha,
+      })
+    : undefined;
+  const cachedPayload = cache && cacheKey ? cache.get(cacheKey) : undefined;
+  let cachedGraphBlastRadius: ReviewGraphBlastRadiusResult | null = null;
+  if (cache && cacheKey && cachedPayload !== undefined) {
+    cachedGraphBlastRadius = cachedReviewGraphBlastRadius.get(cache)?.get(cacheKey) ?? null;
+  } else if (cache && cacheKey) {
+    cachedReviewGraphBlastRadius.get(cache)?.delete(cacheKey);
+  }
+
   const graphAdapter: GraphAdapter = reviewGraphQuery
     ? createReviewGraphAdapter(reviewGraphQuery)
     : {
         queryBlastRadius: async () => {
-          throw new Error("graph adapter unavailable");
+          return err(new Error("graph adapter unavailable"));
         },
       };
 
@@ -129,7 +162,7 @@ export async function fetchReviewStructuralImpact(
     ? createCanonicalCorpusAdapter({ canonicalCodeStore, embeddingProvider, logger })
     : {
         searchCanonicalCode: async () => {
-          throw new Error("corpus adapter unavailable");
+          return err(new Error("corpus adapter unavailable"));
         },
       };
 
@@ -137,7 +170,9 @@ export async function fetchReviewStructuralImpact(
   const graphAdapterWithCapture: GraphAdapter = {
     async queryBlastRadius(input) {
       const graph = await graphAdapter.queryBlastRadius(input);
-      graphBlastRadius = graph as ReviewGraphBlastRadiusResult;
+      if (graph.ok) {
+        graphBlastRadius = graph.value as ReviewGraphBlastRadiusResult;
+      }
       return graph;
     },
   };
@@ -170,13 +205,7 @@ export async function fetchReviewStructuralImpact(
     },
     timeoutMs: request.timeoutMs,
     cache,
-    cacheKey: cache
-      ? buildStructuralImpactCacheKey({
-          repo: request.repo,
-          baseSha: request.baseSha,
-          headSha: request.headSha,
-        })
-      : undefined,
+    cacheKey,
     onSignal: request.onSignal,
   });
 
@@ -187,8 +216,17 @@ export async function fetchReviewStructuralImpact(
     degradations: degradationSummary.degradations,
   };
 
+  if (cache && cacheKey && graphBlastRadius && normalizedPayload.status !== "unavailable") {
+    let graphByKey = cachedReviewGraphBlastRadius.get(cache);
+    if (!graphByKey) {
+      graphByKey = new Map<string, ReviewGraphBlastRadiusResult>();
+      cachedReviewGraphBlastRadius.set(cache, graphByKey);
+    }
+    graphByKey.set(cacheKey, graphBlastRadius);
+  }
+
   return {
     payload: normalizedPayload,
-    graphBlastRadius,
+    graphBlastRadius: graphBlastRadius ?? cachedGraphBlastRadius,
   };
 }

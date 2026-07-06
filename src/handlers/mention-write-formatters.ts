@@ -1,4 +1,4 @@
-import { deriveCommitPrefix } from "../lib/write-request-formatting.ts";
+import { deriveCommitPrefix, summarizeWriteRequest } from "../lib/write-request-formatting.ts";
 
 export function parseWriteIntent(userQuestion: string): {
   writeIntent: boolean;
@@ -20,6 +20,44 @@ export function parseWriteIntent(userQuestion: string): {
   }
 
   return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
+}
+
+export type MentionWriteIntent = ReturnType<typeof parseWriteIntent>;
+
+export function resolveMentionWriteIntent(params: {
+  userQuestion: string;
+  isIssueThreadComment: boolean;
+  isPrSurface: boolean;
+  formatterSuggestionRequestMode?: string;
+  detectImplicitIssueIntent: (request: string) => "apply" | "change" | "plan" | undefined;
+  detectImplicitPrPatchIntent: (request: string) => "apply" | "change" | "plan" | undefined;
+  isReviewRequest: (request: string) => boolean;
+}): MentionWriteIntent {
+  const parsedWriteIntent = parseWriteIntent(params.userQuestion);
+
+  const implicitIntent =
+    params.isIssueThreadComment && !parsedWriteIntent.writeIntent
+      ? params.detectImplicitIssueIntent(parsedWriteIntent.request)
+      : undefined;
+
+  const prWriteIntent =
+    params.isPrSurface
+    && !params.isIssueThreadComment
+    && !parsedWriteIntent.writeIntent
+    && params.formatterSuggestionRequestMode === undefined
+    && !params.isReviewRequest(parsedWriteIntent.request)
+      ? params.detectImplicitPrPatchIntent(parsedWriteIntent.request)
+      : undefined;
+
+  const effectiveImplicit = implicitIntent ?? prWriteIntent;
+
+  return effectiveImplicit !== undefined && !parsedWriteIntent.writeIntent
+    ? {
+        writeIntent: true,
+        keyword: effectiveImplicit,
+        request: parsedWriteIntent.request,
+      }
+    : parsedWriteIntent;
 }
 
 export function generatePrTitle(issueTitle: string | null, requestSummary: string, isFromPr: boolean): string {
@@ -80,6 +118,30 @@ export function generateCommitSubject(params: {
   }
 
   return subject.length <= maxLen ? subject : `${subject.slice(0, maxLen - 3).trimEnd()}...`;
+}
+
+export function buildMentionWriteCommitMessage(params: {
+  issueTitle: string | null | undefined;
+  request: string;
+  isFromPr: boolean;
+  sourceRef: string;
+  marker: string;
+  deliveryId: string;
+}): string {
+  const requestSummary = summarizeWriteRequest(params.request);
+  const commitSubject = generateCommitSubject({
+    issueTitle: params.issueTitle,
+    requestSummary,
+    isFromPr: params.isFromPr,
+    ref: params.sourceRef,
+  });
+
+  return [
+    commitSubject,
+    "",
+    params.marker,
+    `deliveryId: ${params.deliveryId}`,
+  ].join("\n");
 }
 
 export function generatePrBody(params: {

@@ -111,6 +111,7 @@ export function normalizeHtmlEntities(content: string): string {
  * - ghp_: Personal Access Tokens (classic) - 36 alphanum chars
  * - gho_: OAuth tokens - 36 alphanum chars
  * - ghs_: Installation tokens - 36 alphanum chars
+ * - ghu_: User-to-server tokens - 36 alphanum chars
  * - ghr_: Refresh tokens - 36 alphanum chars
  * - github_pat_: Fine-grained PATs - 11-221 alphanum/underscore chars
  */
@@ -125,6 +126,10 @@ export function redactGitHubTokens(content: string): string {
   );
   content = content.replace(
     /\bghs_[A-Za-z0-9]{36}\b/g,
+    "[REDACTED_GITHUB_TOKEN]",
+  );
+  content = content.replace(
+    /\bghu_[A-Za-z0-9]{36}\b/g,
     "[REDACTED_GITHUB_TOKEN]",
   );
   content = content.replace(
@@ -274,6 +279,76 @@ export function scanOutgoingForSecrets(text: string): SecretScanResult {
   }
 
   return { blocked: false, matchedPattern: undefined };
+}
+
+export interface OutgoingPublicationResult {
+  body: string;
+  blocked: boolean;
+  matchedPattern: string | undefined;
+}
+
+export type OutgoingPublicationOptions = {
+  preserveKodiaiMarkers?: boolean;
+};
+
+const SECRET_BLOCKED_PUBLICATION_BODY = [
+  "I can't safely publish this response because it appears to contain a credential or secret.",
+  "",
+  "Please rotate any exposed credential and retry after the sensitive value has been removed.",
+].join("\n");
+
+const KODIAI_MARKER_RE =
+  /<!--\s*kodiai:(?:(?:review-output-key|review-details|inline-output-key|wiki-modification|triage|addon-check|ci-analysis|troubleshoot):[^>]+?|error:usage-limit)\s*-->/gi;
+
+function preserveKodiaiMarkers(originalBody: string, sanitizedBody: string): string {
+  const markers = originalBody.match(KODIAI_MARKER_RE) ?? [];
+  let output = sanitizedBody;
+  for (const marker of markers) {
+    if (!output.includes(marker)) {
+      output = `${output.trimEnd()}\n\n${marker}`;
+    }
+  }
+  return output;
+}
+
+/**
+ * Final outbound publication gate for GitHub/Slack-visible bot text.
+ *
+ * This intentionally runs after content/mention sanitization and before the
+ * caller posts the body, so template, fallback, and error paths all share the
+ * same defense-in-depth secret check.
+ */
+export function prepareOutgoingBodyForPublication(
+  body: string,
+  handles: string[],
+  options: OutgoingPublicationOptions = {},
+): OutgoingPublicationResult {
+  const mentionSanitizedBody = sanitizeOutgoingMentions(body, handles);
+  const preSanitizationScan = scanOutgoingForSecrets(mentionSanitizedBody);
+  let sanitizedBody = sanitizeContent(mentionSanitizedBody);
+  if (options.preserveKodiaiMarkers) {
+    sanitizedBody = preserveKodiaiMarkers(mentionSanitizedBody, sanitizedBody);
+  }
+  const postSanitizationScan = scanOutgoingForSecrets(sanitizedBody);
+  const blockedScan = preSanitizationScan.blocked
+    ? preSanitizationScan
+    : postSanitizationScan.blocked
+      ? postSanitizationScan
+      : undefined;
+
+  if (blockedScan) {
+    return {
+      body: SECRET_BLOCKED_PUBLICATION_BODY,
+      blocked: true,
+      matchedPattern: blockedScan.matchedPattern,
+    };
+  }
+
+  return {
+    body: sanitizedBody,
+    blocked: false,
+    matchedPattern: undefined,
+  };
 }
 
 /**

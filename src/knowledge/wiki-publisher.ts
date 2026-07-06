@@ -19,7 +19,18 @@ import type {
   RetrofitPageAction,
   RetrofitPreviewResult,
 } from "./wiki-publisher-types.ts";
+import {
+  findIssueCommentByMarkerPaged,
+  scanIssueCommentsPaged,
+} from "../lib/github-issue-comments.ts";
+import {
+  createIssueCommentWithPublicationPipeline,
+  createIssueWithPublicationPipeline,
+  updateIssueCommentWithPublicationPipeline,
+  updateIssueWithPublicationPipeline,
+} from "../lib/github-publication.ts";
 import { capRetryDelayMs, parseRetryAfterDelayMs } from "../lib/retry-after.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 const MAX_COMMENT_SCAN_PAGES = 10;
 const MAX_GITHUB_RETRY_DELAY_MS = 120_000;
@@ -29,7 +40,7 @@ const WIKI_COMMENT_MARKER_RE = /<!--\s*kodiai:wiki-modification:(\d+)\s*-->/;
 
 /** Simple promise-based delay. */
 export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return sleep(ms);
 }
 
 /** Format a single page's suggestions as a GitHub issue comment body. */
@@ -122,14 +133,17 @@ export async function postCommentWithRetry(
   issueNumber: number,
   body: string,
   maxRetries = 3,
+  botHandles: string[] = [],
 ): Promise<{ commentId: number } | null> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await octokit.rest.issues.createComment({
+      const response = await createIssueCommentWithPublicationPipeline(octokit, {
         owner,
         repo,
         issue_number: issueNumber,
         body,
+        botHandles,
+        preserveKodiaiMarkers: true,
       });
       return { commentId: response.data.id };
     } catch (error: unknown) {
@@ -176,30 +190,26 @@ export async function scanWikiPageCommentMarkers(
   const markerComments = new Map<number, number>();
 
   try {
-    for (let page = 1; page <= MAX_COMMENT_SCAN_PAGES; page++) {
-      const { data: comments } = await octokit.rest.issues.listComments({
-        owner,
-        repo,
-        issue_number: issueNumber,
-        per_page: 100,
-        page,
-        sort: "created",
-        direction: "desc",
-      });
-
-      if (comments.length === 0) break;
-
-      for (const comment of comments) {
+    await scanIssueCommentsPaged(octokit, {
+      owner,
+      repo,
+      issueNumber,
+      perPage: 100,
+      maxItems: MAX_COMMENT_SCAN_PAGES * 100,
+      sort: "created",
+      direction: "desc",
+      onComment: (comment) => {
         const match = comment.body?.match(WIKI_COMMENT_MARKER_RE);
-        if (!match) continue;
+        if (!match || typeof comment.id !== "number") {
+          return false;
+        }
         const pageId = Number.parseInt(match[1]!, 10);
         if (Number.isFinite(pageId) && !markerComments.has(pageId)) {
           markerComments.set(pageId, comment.id);
         }
-      }
-
-      if (comments.length < 100) break;
-    }
+        return false;
+      },
+    });
   } catch {
     logger.debug(
       { issueNumber },
@@ -225,16 +235,39 @@ export async function upsertWikiPageComment(
   body: string,
   logger: Logger,
   knownCommentIds: Map<number, number>,
+  botHandles: string[] = [],
 ): Promise<{ commentId: number; action: 'updated' | 'created' } | null> {
-  const existingCommentId = knownCommentIds.get(pageId) ?? null;
+  const marker = `<!-- kodiai:wiki-modification:${pageId} -->`;
+  let existingCommentId = knownCommentIds.get(pageId) ?? null;
+
+  if (existingCommentId === null) {
+    try {
+      existingCommentId = (await findIssueCommentByMarkerPaged(octokit, {
+        owner,
+        repo,
+        issueNumber,
+        marker,
+      }))?.id ?? null;
+      if (existingCommentId !== null) {
+        knownCommentIds.set(pageId, existingCommentId);
+      }
+    } catch {
+      logger.debug(
+        { pageId, issueNumber },
+        "Failed to scan for existing wiki comment, will create new",
+      );
+    }
+  }
 
   try {
     if (existingCommentId !== null) {
-      await octokit.rest.issues.updateComment({
+      await updateIssueCommentWithPublicationPipeline(octokit, {
         owner,
         repo,
         comment_id: existingCommentId,
         body,
+        botHandles,
+        preserveKodiaiMarkers: true,
       });
       logger.debug(
         { pageId, commentId: existingCommentId, action: 'updated' },
@@ -243,11 +276,13 @@ export async function upsertWikiPageComment(
       knownCommentIds.set(pageId, existingCommentId);
       return { commentId: existingCommentId, action: 'updated' };
     } else {
-      const response = await octokit.rest.issues.createComment({
+      const response = await createIssueCommentWithPublicationPipeline(octokit, {
         owner,
         repo,
         issue_number: issueNumber,
         body,
+        botHandles,
+        preserveKodiaiMarkers: true,
       });
       logger.debug(
         { pageId, commentId: response.data.id, action: 'created' },
@@ -278,6 +313,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
     prRepo = "xbmc",
     commentDelayMs = 3000,
   } = options;
+  const publicationBotHandles = [githubApp.getAppSlug(), "claude"];
 
   return {
     async publish(runOptions: PublishRunOptions = {}): Promise<PublishResult> {
@@ -474,12 +510,13 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
         );
       } else {
         // Create new tracking issue (PUB-01)
-        const issue = await octokit!.rest.issues.create({
+        const issue = await createIssueWithPublicationPipeline(octokit!, {
           owner,
           repo,
           title: `Wiki Modification Artifacts — ${today}`,
           body: "Posting modification artifacts... (will be updated with summary table)",
           labels: ["wiki-update", "bot-generated"],
+          botHandles: [],
         });
         issueNumber = issue.data.number;
         issueUrl = issue.data.html_url;
@@ -520,6 +557,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
           commentBody,
           logger,
           knownCommentIds,
+          publicationBotHandles,
         );
 
         if (result) {
@@ -584,11 +622,13 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
         pageResults,
         totalPublished,
       );
-      await octokit!.rest.issues.update({
+      await updateIssueWithPublicationPipeline(octokit!, {
         owner,
         repo,
         issue_number: issueNumber,
         body: summaryBody,
+        botHandles: publicationBotHandles,
+        preserveKodiaiMarkers: true,
       });
 
       logger.info(

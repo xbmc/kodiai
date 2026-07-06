@@ -89,10 +89,11 @@ function createMockSql() {
       syncStates.set(repo, {
         repo,
         last_synced_at: values[1],
-        last_page_cursor: values[2],
-        total_issues_synced: values[3],
-        total_comments_synced: values[4],
-        backfill_complete: values[5],
+        comment_last_synced_at: values[2],
+        last_page_cursor: values[3],
+        total_issues_synced: values[4],
+        total_comments_synced: values[5],
+        backfill_complete: values[6],
       });
       return [];
     }
@@ -210,6 +211,7 @@ describe("backfillIssues", () => {
     syncStates.set("xbmc/xbmc", {
       repo: "xbmc/xbmc",
       last_synced_at: new Date("2024-06-01T00:00:00Z"),
+      comment_last_synced_at: null,
       last_page_cursor: "5",
       total_issues_synced: 100,
       total_comments_synced: 50,
@@ -300,6 +302,7 @@ describe("backfillIssueComments", () => {
     syncStates.set("xbmc/xbmc", {
       repo: "xbmc/xbmc",
       last_synced_at: null,
+      comment_last_synced_at: null,
       last_page_cursor: null,
       total_issues_synced: 0,
       total_comments_synced: 0,
@@ -363,6 +366,45 @@ describe("backfillIssueComments", () => {
 
     // Should have called getByNumber to look up the title
     expect(store.getByNumber).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not use the issue watermark as the initial comment watermark", async () => {
+    const comments = [makeCommentItem({
+      id: 1,
+      updated_at: "2024-01-03T00:00:00Z",
+    })];
+    const octokit = createMockOctokit([], [comments]);
+    const store = createMockStore();
+    const sql = createMockSql();
+
+    const syncStates = (sql as unknown as Record<string, unknown>)._syncStates as Map<string, Record<string, unknown>>;
+    syncStates.set("xbmc/xbmc", {
+      repo: "xbmc/xbmc",
+      last_synced_at: new Date("2024-06-01T00:00:00Z"),
+      comment_last_synced_at: null,
+      last_page_cursor: "5",
+      total_issues_synced: 100,
+      total_comments_synced: 0,
+      backfill_complete: true,
+    });
+
+    await backfillIssueComments({
+      octokit,
+      store: store as unknown as import("./issue-types.ts").IssueStore,
+      sql: sql as unknown as import("../db/client.ts").Sql,
+      embeddingProvider: createMockEmbeddingProvider(),
+      repo: "xbmc/xbmc",
+      logger: mockLogger,
+    });
+
+    const listCall = (octokit.rest.issues.listCommentsForRepo as unknown as { mock: { calls: any[][] } }).mock.calls[0]![0]! as Record<string, unknown>;
+    expect(listCall.since).toBeUndefined();
+    expect(store.upsertComment).toHaveBeenCalledTimes(1);
+
+    const updatedState = syncStates.get("xbmc/xbmc")!;
+    expect(updatedState.last_synced_at).toEqual(new Date("2024-06-01T00:00:00Z"));
+    expect(updatedState.comment_last_synced_at).toEqual(new Date("2024-01-03T00:00:00Z"));
+    expect(updatedState.total_comments_synced).toBe(1);
   });
 });
 

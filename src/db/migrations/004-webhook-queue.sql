@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS webhook_queue (
   headers JSONB NOT NULL,
   body TEXT NOT NULL,
   queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  claimed_at TIMESTAMPTZ,
   processed_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'pending'
 );
@@ -17,3 +18,7 @@ CREATE TABLE IF NOT EXISTS webhook_queue (
 CREATE INDEX idx_webhook_queue_pending
   ON webhook_queue (status, queued_at)
   WHERE status = 'pending';
+
+CREATE INDEX idx_webhook_queue_processing_claimed
+  ON webhook_queue (status, claimed_at)
+  WHERE status = 'processing';

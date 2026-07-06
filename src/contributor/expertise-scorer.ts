@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import { classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
+import { sleep } from "../lib/with-timeout.ts";
 import { calculateTierForProfile } from "./tier-calculator.ts";
 import type {
   ContributorExpertise,
@@ -83,6 +84,41 @@ type ExpertiseDimensionScore = Pick<
   "dimension" | "topic" | "score"
 >;
 
+type ExpertiseBucket = {
+  dimension: ExpertiseDimension;
+  topic: string;
+  signals: ActivitySignal[];
+};
+
+function bucketSignals(
+  signals: ActivitySignal[],
+): Map<string, ExpertiseBucket> {
+  const buckets = new Map<string, ExpertiseBucket>();
+
+  for (const signal of signals) {
+    for (const lang of signal.languages) {
+      const key = `language:${lang}`;
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { dimension: "language", topic: lang, signals: [] };
+        buckets.set(key, bucket);
+      }
+      bucket.signals.push(signal);
+    }
+    for (const area of signal.fileAreas) {
+      const key = `file_area:${area}`;
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { dimension: "file_area", topic: area, signals: [] };
+        buckets.set(key, bucket);
+      }
+      bucket.signals.push(signal);
+    }
+  }
+
+  return buckets;
+}
+
 export function deriveUpdatedOverallScore(params: {
   existingExpertise: ExpertiseDimensionScore[];
   touchedTopics: ExpertiseTopic[];
@@ -144,6 +180,224 @@ export async function recalculateTierFailOpen(params: {
     );
     return fallbackTier;
   }
+}
+
+type ExpertiseScorerOctokit = {
+  rest: {
+    pulls: {
+      listFiles: (args: Record<string, unknown>) => Promise<{
+        data: Array<{ filename: string }>;
+      }>;
+    };
+  };
+};
+
+async function listPullRequestFilesPaged(
+  octokit: ExpertiseScorerOctokit,
+  params: { owner: string; repo: string; pullNumber: number },
+): Promise<string[]> {
+  const files: string[] = [];
+  const perPage = 100;
+
+  for (let page = 1; ; page++) {
+    const response = await octokit.rest.pulls.listFiles({
+      owner: params.owner,
+      repo: params.repo,
+      pull_number: params.pullNumber,
+      per_page: perPage,
+      page,
+    });
+    files.push(...response.data.map((file) => file.filename));
+
+    if (response.data.length < perPage) {
+      return files;
+    }
+  }
+}
+
+/**
+ * Full expertise scoring from GitHub activity. Fetches commits, PRs, reviews
+ * and computes per-dimension expertise scores.
+ *
+ * NOTE: This function is designed for batch/background use. For real-time
+ * per-PR updates, use updateExpertiseIncremental instead.
+ */
+export async function computeExpertiseScores(params: {
+  githubUsername: string;
+  octokit: {
+    rest: {
+      repos: {
+        listCommits: (args: Record<string, unknown>) => Promise<{
+          data: Array<{
+            sha: string;
+            commit: { author: { date?: string } };
+            files?: Array<{ filename: string }>;
+          }>;
+        }>;
+      };
+      pulls: {
+        list: (args: Record<string, unknown>) => Promise<{
+          data: Array<{
+            number: number;
+            user: { login: string } | null;
+            merged_at: string | null;
+            files?: Array<{ filename: string }>;
+          }>;
+        }>;
+        listFiles: (args: Record<string, unknown>) => Promise<{
+          data: Array<{ filename: string }>;
+        }>;
+      };
+    };
+  };
+  owner: string;
+  repo: string;
+  profileStore: ContributorProfileStore;
+  logger: Logger;
+  monthsBack?: number;
+}): Promise<void> {
+  const {
+    githubUsername,
+    octokit,
+    owner,
+    repo,
+    profileStore,
+    logger,
+    monthsBack = 12,
+  } = params;
+
+  const profile =
+    await profileStore.getOrCreateByGithubUsername(githubUsername);
+  const since = new Date();
+  since.setMonth(since.getMonth() - monthsBack);
+  const sinceIso = since.toISOString();
+
+  const allSignals: ActivitySignal[] = [];
+
+  try {
+    for (let page = 1; page <= 5; page++) {
+      const resp = await octokit.rest.repos.listCommits({
+        owner,
+        repo,
+        author: githubUsername,
+        since: sinceIso,
+        per_page: 100,
+        page,
+      });
+      if (resp.data.length === 0) break;
+
+      for (const commit of resp.data) {
+        const files = commit.files?.map((f) => f.filename) ?? [];
+        const languages = [
+          ...new Set(
+            files
+              .map((f) => classifyLanguage(f))
+              .filter((l): l is string => l !== null),
+          ),
+        ];
+        const fileAreas = [...new Set(files.map((f) => extractFileArea(f)))];
+        allSignals.push({
+          type: "commit",
+          date: new Date(commit.commit.author?.date ?? Date.now()),
+          languages,
+          fileAreas,
+        });
+      }
+      await sleep(200);
+    }
+  } catch (err) {
+    logger.warn({ err, githubUsername }, "Failed to fetch commits (fail-open)");
+  }
+
+  try {
+    for (let page = 1; page <= 3; page++) {
+      const resp = await octokit.rest.pulls.list({
+        owner,
+        repo,
+        state: "closed",
+        per_page: 100,
+        page,
+      });
+      if (resp.data.length === 0) break;
+
+      for (const pr of resp.data) {
+        if (pr.user?.login !== githubUsername || !pr.merged_at) continue;
+
+        let files: string[] = [];
+        try {
+          files = await listPullRequestFilesPaged(octokit, {
+            owner,
+            repo,
+            pullNumber: pr.number,
+          });
+        } catch {
+          // fail-open
+        }
+
+        const languages = [
+          ...new Set(
+            files
+              .map((f) => classifyLanguage(f))
+              .filter((l): l is string => l !== null),
+          ),
+        ];
+        const fileAreas = [...new Set(files.map((f) => extractFileArea(f)))];
+        allSignals.push({
+          type: "pr_authored",
+          date: new Date(pr.merged_at),
+          languages,
+          fileAreas,
+        });
+      }
+      await sleep(200);
+    }
+  } catch (err) {
+    logger.warn(
+      { err, githubUsername },
+      "Failed to fetch authored PRs (fail-open)",
+    );
+  }
+
+  const buckets = bucketSignals(allSignals);
+  for (const bucket of buckets.values()) {
+    const raw = computeDecayedScore(bucket.signals);
+    const score = normalizeScore(raw);
+    await profileStore.upsertExpertise({
+      profileId: profile.id,
+      dimension: bucket.dimension,
+      topic: bucket.topic,
+      score,
+      rawSignals: bucket.signals.length,
+      lastActive: bucket.signals[0]?.date ?? new Date(),
+    });
+  }
+
+  const expertise = await profileStore.getExpertise(profile.id);
+  const topScores = expertise.slice(0, 5).map((e) => e.score);
+  const overallScore =
+    topScores.length > 0
+      ? topScores.reduce((a, b) => a + b, 0) / topScores.length
+      : 0;
+
+  const updatedTier = await recalculateTierFailOpen({
+    profileId: profile.id,
+    updatedOverallScore: overallScore,
+    fallbackTier: profile.overallTier,
+    profileStore,
+    logger,
+  });
+
+  await profileStore.updateTier(profile.id, updatedTier, overallScore);
+  logger.info(
+    {
+      githubUsername,
+      signalCount: allSignals.length,
+      bucketCount: buckets.size,
+      overallScore,
+      updatedTier,
+    },
+    "Computed expertise scores",
+  );
 }
 
 /**

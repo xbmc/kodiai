@@ -2,6 +2,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { createHash } from "node:crypto";
 import type { MentionEvent } from "../handlers/mention-types.ts";
+import { listReviewCommentsPaged } from "../lib/github-issue-comments.ts";
 import {
   filterCommentsToTriggerTime,
   sanitizeContent,
@@ -116,6 +117,25 @@ function listFingerprintHash(value: string | null | undefined): string | null {
   return sha256(sanitizeContent(value));
 }
 
+function parseLastPageFromLinkHeader(linkHeader: unknown): number | null {
+  if (typeof linkHeader !== "string") {
+    return null;
+  }
+  const lastLink = linkHeader
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => /;\s*rel="last"/.test(part));
+  if (!lastLink) {
+    return null;
+  }
+  const pageMatch = /[?&]page=(\d+)/.exec(lastLink);
+  if (!pageMatch) {
+    return null;
+  }
+  const page = Number.parseInt(pageMatch[1]!, 10);
+  return Number.isFinite(page) && page > 0 ? page : null;
+}
+
 async function listIssueCommentsBounded(
   octokit: Octokit,
   mention: MentionEvent,
@@ -136,7 +156,7 @@ async function listIssueCommentsBounded(
   let hitTriggerTimeCap = false;
 
   for (let page = 1; page <= maxApiPages; page++) {
-    const { data } = await octokit.rest.issues.listComments({
+    const response = await octokit.rest.issues.listComments({
       owner: mention.owner,
       repo: mention.repo,
       issue_number: mention.issueNumber,
@@ -145,6 +165,31 @@ async function listIssueCommentsBounded(
       sort: "created",
       direction: "desc",
     });
+    const { data } = response;
+
+    const lastPage = page === 1 ? parseLastPageFromLinkHeader(response.headers?.link) : null;
+    if (lastPage !== null && lastPage > maxApiPages && data.length < perPage) {
+      all.length = 0;
+      const startPage = Math.max(1, lastPage - maxApiPages + 1);
+      for (let recentPage = startPage; recentPage <= lastPage; recentPage++) {
+        const recentResponse = await octokit.rest.issues.listComments({
+          owner: mention.owner,
+          repo: mention.repo,
+          issue_number: mention.issueNumber,
+          per_page: perPage,
+          page: recentPage,
+          sort: "created",
+          direction: "desc",
+        });
+        all.push(...(recentResponse.data as IssueComment[]));
+      }
+      return {
+        comments: all,
+        scannedPages: maxApiPages,
+        hitPageCap: true,
+        hitTriggerTimeCap: false,
+      };
+    }
 
     all.push(...(data as IssueComment[]));
 
@@ -350,21 +395,20 @@ export async function buildMentionContextFingerprint(
         return { fingerprint: null, status: "incomplete", missingSignals };
       }
 
-      const threadResponse = await octokit.rest.pulls.listReviewComments({
-        owner: mention.owner,
-        repo: mention.repo,
-        pull_number: mention.prNumber,
-        per_page: 100,
-        sort: "created",
-        direction: "asc",
-      });
-
       let threadRoot = mention.inReplyToId;
       if (parent.in_reply_to_id !== undefined) {
         threadRoot = parent.in_reply_to_id;
       }
 
-      const threadComments = (threadResponse.data as ReviewComment[])
+      const reviewComments = await listReviewCommentsPaged(octokit, {
+        owner: mention.owner,
+        repo: mention.repo,
+        prNumber: mention.prNumber,
+        maxPages: maxApiPages,
+        sort: "created",
+        direction: "asc",
+      });
+      const threadComments = (reviewComments.comments as ReviewComment[])
         .filter((comment) => comment.id === threadRoot || comment.in_reply_to_id === threadRoot)
         .filter((comment) => comment.id !== mention.commentId)
         .sort(compareReviewCommentsByCreatedAt);
@@ -663,22 +707,25 @@ export async function buildMentionContextDetails(
           }
         }
 
-        const threadResponse = await octokit.rest.pulls.listReviewComments({
-          owner: mention.owner,
-          repo: mention.repo,
-          pull_number: mention.prNumber,
-          per_page: 100,
-          sort: "created",
-          direction: "asc",
-        });
-
         let threadRoot = mention.inReplyToId;
         if (parent.in_reply_to_id !== undefined) {
           threadRoot = parent.in_reply_to_id;
         }
 
-        const allReviewComments = threadResponse.data as ReviewComment[];
-        const threadComments = allReviewComments
+        const allReviewComments = await listReviewCommentsPaged(octokit, {
+          owner: mention.owner,
+          repo: mention.repo,
+          prNumber: mention.prNumber,
+          maxPages: maxApiPages,
+          sort: "created",
+          direction: "asc",
+        });
+        if (allReviewComments.hitPageCap) {
+          scaleNotes.push(
+            `Review thread context scan capped at ${allReviewComments.scannedPages} page(s) of review comments (pagination guardrail).`,
+          );
+        }
+        const threadComments = (allReviewComments.comments as ReviewComment[])
           .filter((comment) => comment.id === threadRoot || comment.in_reply_to_id === threadRoot)
           .filter((comment) => comment.id !== mention.commentId)
           .sort(compareReviewCommentsByCreatedAt);

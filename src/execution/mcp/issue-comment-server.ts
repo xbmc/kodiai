@@ -1,8 +1,8 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
-import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
-import { retryGitHubRateLimitOnly } from "../../lib/github-retry.ts";
+import { retryGitHubRateLimitOnly, type GitHubRateLimitRetryOptions } from "../../lib/github-retry.ts";
+import { createIssueCommentWithPublicationPipeline, prepareGitHubPublication } from "../../lib/github-publication.ts";
 
 const MAX_COMMENT_LENGTH = 60000;
 const TRUNCATION_NOTE = "\n\n---\n*Comment truncated due to length.*";
@@ -103,8 +103,9 @@ export async function createCommentHandler(deps: {
     body?: string;
     structured?: { title: string; body: string; suggestions?: string[] };
   };
+  retryOptions?: GitHubRateLimitRetryOptions;
 }): Promise<ToolResult> {
-  const { getOctokit, owner, repo, getTriageConfig, botHandles, issueNumber, params } = deps;
+  const { getOctokit, owner, repo, getTriageConfig, botHandles, issueNumber, params, retryOptions } = deps;
 
   try {
     // Check config gating
@@ -126,9 +127,8 @@ export async function createCommentHandler(deps: {
 
     const octokit = await getOctokit();
     const rawBody = resolveBody(params);
-    const body = sanitizeOutgoingMentions(rawBody, botHandles);
-    const scanResult = scanOutgoingForSecrets(body);
-    if (scanResult.blocked) {
+    const publication = prepareGitHubPublication(rawBody, { botHandles });
+    if (publication.blocked) {
       return {
         content: [
           {
@@ -143,6 +143,7 @@ export async function createCommentHandler(deps: {
         isError: true,
       };
     }
+    const body = publication.body;
 
     // Check issue state for closed warning
     let warning: string | null = null;
@@ -156,13 +157,16 @@ export async function createCommentHandler(deps: {
     }
 
     // Post comment with retry
-    const { data } = await retryGitHubRateLimitOnly(() =>
-      octokit.rest.issues.createComment({
-        owner,
-        repo,
-        issue_number: issueNumber,
-        body,
-      }),
+    const { data } = await retryGitHubRateLimitOnly(
+      () =>
+        createIssueCommentWithPublicationPipeline(octokit, {
+          owner,
+          repo,
+          issue_number: issueNumber,
+          body,
+          botHandles,
+        }),
+      retryOptions,
     );
 
     return {

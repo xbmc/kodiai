@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { GraphAdapter, GraphBlastRadiusResult, CorpusAdapter, CorpusCodeMatch } from "./adapters.ts";
 import { boundStructuralImpactPayload } from "./adapters.ts";
+import { err, ok } from "../lib/result.ts";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ function makeCorpusMatch(overrides?: Partial<CorpusCodeMatch>): CorpusCodeMatch 
 function makeGraphAdapter(result: GraphBlastRadiusResult): GraphAdapter {
   return {
     async queryBlastRadius() {
-      return result;
+      return ok(result);
     },
   };
 }
@@ -90,7 +91,7 @@ function makeGraphAdapter(result: GraphBlastRadiusResult): GraphAdapter {
 function makeFailingGraphAdapter(message: string): GraphAdapter {
   return {
     async queryBlastRadius() {
-      throw new Error(message);
+      return err(new Error(message));
     },
   };
 }
@@ -98,7 +99,7 @@ function makeFailingGraphAdapter(message: string): GraphAdapter {
 function makeCorpusAdapter(matches: CorpusCodeMatch[]): CorpusAdapter {
   return {
     async searchCanonicalCode() {
-      return matches;
+      return ok(matches);
     },
   };
 }
@@ -106,7 +107,7 @@ function makeCorpusAdapter(matches: CorpusCodeMatch[]): CorpusAdapter {
 function makeFailingCorpusAdapter(message: string): CorpusAdapter {
   return {
     async searchCanonicalCode() {
-      throw new Error(message);
+      return err(new Error(message));
     },
   };
 }
@@ -336,17 +337,23 @@ describe("GraphAdapter contract", () => {
       changedPaths: ["src/service.cpp"],
     });
 
-    expect(result.changedFiles).toContain("src/service.cpp");
-    expect(result.graphStats.files).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw result.err;
+    expect(result.value.changedFiles).toContain("src/service.cpp");
+    expect(result.value.graphStats.files).toBeGreaterThan(0);
   });
 
-  test("failing stub throws as expected", async () => {
+  test("failing stub returns an explicit err result", async () => {
     const adapter = makeFailingGraphAdapter("graph unavailable");
-    await expect(adapter.queryBlastRadius({
+    const result = await adapter.queryBlastRadius({
       repo: "owner/repo",
       workspaceKey: "wk-1",
       changedPaths: ["src/service.cpp"],
-    })).rejects.toThrow("graph unavailable");
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected graph adapter failure");
+    expect(result.err.message).toContain("graph unavailable");
   });
 });
 
@@ -359,16 +366,22 @@ describe("CorpusAdapter contract", () => {
       query: "helper function",
     });
 
-    expect(results).toHaveLength(1);
-    expect(results[0]?.language).toBe("python");
+    expect(results.ok).toBe(true);
+    if (!results.ok) throw results.err;
+    expect(results.value).toHaveLength(1);
+    expect(results.value[0]?.language).toBe("python");
   });
 
-  test("failing stub throws as expected", async () => {
+  test("failing stub returns an explicit err result", async () => {
     const adapter = makeFailingCorpusAdapter("corpus unavailable");
-    await expect(adapter.searchCanonicalCode({
+    const result = await adapter.searchCanonicalCode({
       repo: "owner/repo",
       canonicalRef: "main",
       query: "helper function",
-    })).rejects.toThrow("corpus unavailable");
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected corpus adapter failure");
+    expect(result.err.message).toContain("corpus unavailable");
   });
 });

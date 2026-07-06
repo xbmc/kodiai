@@ -1,3 +1,5 @@
+import { runWithAbortSignalTimeout } from "./with-timeout.ts";
+
 export const ADDON_RULES_URL = "https://kodi.wiki/view/Add-on_rules";
 
 export const EMBEDDED_ADDON_RULES = [
@@ -32,16 +34,16 @@ export async function loadAddonRuleSource(opts: {
   const maxChars = opts.maxChars ?? 12_000;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetchImpl(ADDON_RULES_URL, { signal: controller.signal });
-      if (!response.ok) return fallbackSource();
-      const text = stripHtml(await readBoundedResponseText(response, maxChars * 4)).slice(0, maxChars).trim();
-      return text.length > 0 ? { kind: "wiki", url: ADDON_RULES_URL, text } : fallbackSource();
-    } finally {
-      clearTimeout(timeout);
-    }
+    return await runWithAbortSignalTimeout(
+      "addon rule source fetch",
+      timeoutMs,
+      async (signal) => {
+        const response = await fetchImpl(ADDON_RULES_URL, { signal });
+        if (!response.ok) return fallbackSource();
+        const text = stripHtml(await readBoundedResponseText(response, maxChars * 4)).slice(0, maxChars).trim();
+        return text.length > 0 ? { kind: "wiki", url: ADDON_RULES_URL, text } : fallbackSource();
+      },
+    );
   } catch {
     return fallbackSource();
   }

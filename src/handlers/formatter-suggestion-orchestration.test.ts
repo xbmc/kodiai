@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createFormatterSuggestionMentionRunner,
+  createFormatterSuggestionVisibleDiagnosticPoster,
+  runFormatterSuggestionForMention,
+  postFormatterSuggestionVisibleDiagnostic,
   renderFormatterSuggestionVisibleMessage,
   runFormatterSuggestionSubflow,
   type FormatterSuggestionSubflowDependencies,
@@ -360,5 +364,302 @@ describe("runFormatterSuggestionSubflow", () => {
     expect(result.skipped).toBe(1);
     expect(result.capped).toBe(1);
     expect(result.mapperCounts?.capped).toBe(1);
+  });
+});
+
+describe("postFormatterSuggestionVisibleDiagnostic", () => {
+  test("posts visible formatter diagnostics and reports post state", async () => {
+    const replies: string[] = [];
+    const result = await postFormatterSuggestionVisibleDiagnostic({
+      formatterResult: {
+        status: "failed",
+        suggestions: 0,
+        skipped: 0,
+        capped: 0,
+        visibleMessage: "Formatter suggestions could not be published.",
+      },
+      formatterMode: "format-only",
+      postReply: async (body) => {
+        replies.push(body);
+      },
+      logContext: {
+        surface: "issue_comment",
+        owner: "acme",
+        repo: "widgets",
+        prNumber: 42,
+      },
+      classifyFailure: () => "network",
+    });
+
+    expect(replies).toEqual(["Formatter suggestions could not be published."]);
+    expect(result).toEqual({ visibleReplyPosted: true, visibleReplyFailed: false });
+  });
+
+  test("does not post when the formatter result has no visible message", async () => {
+    let replyCalls = 0;
+    const result = await postFormatterSuggestionVisibleDiagnostic({
+      formatterResult: {
+        status: "posted",
+        suggestions: 1,
+        skipped: 0,
+        capped: 0,
+      },
+      formatterMode: "review-and-format",
+      postReply: async () => {
+        replyCalls += 1;
+      },
+      logContext: {
+        surface: "issue_comment",
+        owner: "acme",
+        repo: "widgets",
+        prNumber: 42,
+      },
+      classifyFailure: () => "unknown",
+    });
+
+    expect(replyCalls).toBe(0);
+    expect(result).toEqual({ visibleReplyPosted: false, visibleReplyFailed: false });
+  });
+
+  test("logs a bounded failure when visible diagnostic posting fails", async () => {
+    const { entries, logger } = createLogger();
+    const error = new Error("reply failed");
+    const result = await postFormatterSuggestionVisibleDiagnostic({
+      formatterResult: {
+        status: "blocked",
+        suggestions: 0,
+        skipped: 0,
+        capped: 0,
+        visibleMessage: "Formatter suggestions were blocked.",
+      },
+      formatterMode: "review-and-format",
+      postReply: async () => {
+        throw error;
+      },
+      logger,
+      logContext: {
+        surface: "pull_request_review_comment",
+        owner: "acme",
+        repo: "widgets",
+        prNumber: 42,
+      },
+      classifyFailure: (err) => err === error ? "publication" : "unknown",
+    });
+
+    expect(result).toEqual({ visibleReplyPosted: false, visibleReplyFailed: true });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      level: "warn",
+      message: "Failed to post combined review-and-format formatter suggestion visible diagnostic",
+      fields: {
+        err: error,
+        surface: "pull_request_review_comment",
+        owner: "acme",
+        repo: "widgets",
+        prNumber: 42,
+        formatterSuggestionRequest: true,
+        formatterMode: "review-and-format",
+        formatterStatus: "blocked",
+        failureCategory: "publication",
+      },
+    });
+  });
+});
+
+describe("createFormatterSuggestionVisibleDiagnosticPoster", () => {
+  test("binds mention context when posting formatter visible diagnostics", async () => {
+    const replies: string[] = [];
+    const { entries, logger } = createLogger();
+    const poster = createFormatterSuggestionVisibleDiagnosticPoster({
+      postReply: async (body) => {
+        replies.push(body);
+      },
+      logger,
+      logContext: {
+        surface: "issue_comment",
+        owner: "acme",
+        repo: "widgets",
+        prNumber: 42,
+      },
+      classifyFailure: () => "network",
+    });
+
+    const result = await poster({
+      formatterResult: {
+        status: "failed",
+        suggestions: 0,
+        skipped: 0,
+        capped: 0,
+        visibleMessage: "Formatter suggestions could not be published.",
+      },
+      formatterMode: "format-only",
+    });
+
+    expect(replies).toEqual(["Formatter suggestions could not be published."]);
+    expect(result).toEqual({ visibleReplyPosted: true, visibleReplyFailed: false });
+    expect(entries).toEqual([]);
+  });
+});
+
+describe("runFormatterSuggestionForMention", () => {
+  test("returns PR diff unavailable when formatter workspace or refs are missing", async () => {
+    const result = await runFormatterSuggestionForMention({
+      formatterMode: "format-only",
+      workspace: undefined,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      baseRef: "main",
+      headRef: "feature/format",
+      formatterCommand: "npm run format",
+      maxSuggestions: 10,
+      installationId: 123,
+      deliveryId: "delivery-abc",
+      reviewOutputAction: "mention-format-suggestions",
+      octokit: {} as never,
+      botHandles: ["kodiai"],
+      fetchPullRequestFiles: async () => [],
+      formatterSuggestionSubflow: async () => {
+        throw new Error("should not run");
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "pr-diff-unavailable",
+      reason: "missing workspace for formatter suggestion request",
+      suggestions: 0,
+      skipped: 0,
+      capped: 0,
+      partialFailure: true,
+    });
+  });
+
+  test("normalizes unknown subflow statuses to fallback failures", async () => {
+    const result = await runFormatterSuggestionForMention({
+      formatterMode: "format-only",
+      workspace: { dir: "/tmp/workspace", token: "token" },
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      baseRef: "main",
+      headRef: "feature/format",
+      formatterCommand: "npm run format",
+      maxSuggestions: 10,
+      installationId: 123,
+      deliveryId: "delivery-abc",
+      reviewOutputAction: "mention-format-suggestions",
+      octokit: {} as never,
+      botHandles: ["kodiai"],
+      fetchPullRequestFiles: async () => [],
+      formatterSuggestionSubflow: async () => ({
+        status: "surprising-status" as never,
+        commandStatus: "success",
+        publisherStatus: "posted",
+        suggestions: 1,
+        skipped: 0,
+        capped: 0,
+        reason: "unexpected",
+      }),
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      commandStatus: "success",
+      publisherStatus: "posted",
+      reason: "unexpected",
+      visibleMessage: expect.stringContaining("unexpected status"),
+      partialFailure: true,
+    });
+  });
+
+  test("logs and returns fallback failure when formatter subflow throws", async () => {
+    const { entries, logger } = createLogger();
+    const error = new Error("formatter exploded");
+    const result = await runFormatterSuggestionForMention({
+      formatterMode: "review-and-format",
+      workspace: { dir: "/tmp/workspace", token: "token" },
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      baseRef: "main",
+      headRef: "feature/format",
+      formatterCommand: "npm run format",
+      maxSuggestions: 10,
+      installationId: 123,
+      deliveryId: "delivery-abc",
+      reviewOutputAction: "mention-format-suggestions",
+      octokit: {} as never,
+      botHandles: ["kodiai"],
+      logger,
+      logContext: {
+        surface: "issue_comment",
+      },
+      classifyFailure: (err) => err === error ? "formatter" : "unknown",
+      fetchPullRequestFiles: async () => [],
+      formatterSuggestionSubflow: async () => {
+        throw error;
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      reason: "formatter subflow threw before returning a structured result",
+      partialFailure: true,
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      level: "warn",
+      message: "Combined review-and-format formatter suggestion subflow threw before returning a structured result",
+      fields: {
+        surface: "issue_comment",
+        owner: "acme",
+        repo: "widgets",
+        prNumber: 42,
+        formatterSuggestionRequest: true,
+        formatterMode: "review-and-format",
+        formatterStatus: "failed",
+        failureCategory: "formatter",
+      },
+    });
+  });
+});
+
+describe("createFormatterSuggestionMentionRunner", () => {
+  test("binds mention context and runs formatter suggestions by mode", async () => {
+    const calls: Array<{ formatterMode: string; owner: string; prNumber?: number }> = [];
+    const runner = createFormatterSuggestionMentionRunner({
+      workspace: { dir: "/tmp/workspace", token: "token" },
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      baseRef: "main",
+      headRef: "feature/format",
+      formatterCommand: "npm run format",
+      maxSuggestions: 10,
+      installationId: 123,
+      deliveryId: "delivery-abc",
+      reviewOutputAction: "mention-format-suggestions",
+      octokit: {} as never,
+      botHandles: ["kodiai"],
+      fetchPullRequestFiles: async () => [],
+      formatterSuggestionSubflow: async (options) => {
+        calls.push({
+          formatterMode: "subflow",
+          owner: options.owner,
+          prNumber: options.prNumber,
+        });
+        return {
+          status: "posted",
+          suggestions: 1,
+          skipped: 0,
+          capped: 0,
+        };
+      },
+    });
+
+    const result = await runner("review-and-format");
+
+    expect(result).toMatchObject({ status: "posted", suggestions: 1 });
+    expect(calls).toEqual([{ formatterMode: "subflow", owner: "acme", prNumber: 42 }]);
   });
 });

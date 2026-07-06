@@ -14,6 +14,10 @@ import type { PromptSectionRecord } from "../telemetry/types.ts";
 import { createProviderModel } from "./providers.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
 import { buildAgentEnv } from "../execution/env.ts";
+import {
+  abortSignalWithTimeout,
+  createAbortControllerWithTimeout,
+} from "../lib/with-timeout.ts";
 
 /**
  * Hard ceiling for a single AI SDK generateText call. Without it a hung
@@ -72,94 +76,102 @@ async function generateWithAgentSdk(opts: {
   logger: Logger;
 }): Promise<GenerateResult> {
   const startTime = Date.now();
-  const controller = new AbortController();
+  const timeout = createAbortControllerWithTimeout(
+    "Claude Agent SDK generate",
+    GENERATE_TEXT_TIMEOUT_MS,
+  );
   const modelId = opts.resolved.modelId.includes("haiku")
     ? opts.resolved.fallbackModelId
     : opts.resolved.modelId;
-  const query = await loadAgentSdkQuery();
-  const sdkQuery = query({
-    prompt: opts.prompt,
-    options: {
-      abortController: controller,
-      cwd: process.cwd(),
-      model: modelId,
-      maxTurns: 1,
-      systemPrompt: {
-        type: "preset",
-        preset: "claude_code",
-        ...(opts.system ? { append: opts.system } : {}),
-      },
-      allowedTools: [],
-      disallowedTools: [],
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      env: {
-        ...buildAgentEnv(),
-        CLAUDE_CODE_ENTRYPOINT: "kodiai-llm-generate",
-      },
-    },
-  });
 
-  let resultMessage: SDKResultMessage | undefined;
-  let lastAssistantText = "";
-  for await (const message of sdkQuery) {
-    if (message.type === "assistant") {
-      const parts = (message.message?.content ?? []) as Array<{ type?: string; text?: string }>;
-      const text = parts
-        .filter((part: { type?: string; text?: string }) => part.type === "text")
-        .map((part: { type?: string; text?: string }) => part.text ?? "")
-        .join("");
-      if (text.trim().length > 0) {
-        lastAssistantText = text;
+  try {
+    const query = await loadAgentSdkQuery();
+    const sdkQuery = query({
+      prompt: opts.prompt,
+      options: {
+        abortController: timeout.controller,
+        cwd: process.cwd(),
+        model: modelId,
+        maxTurns: 1,
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          ...(opts.system ? { append: opts.system } : {}),
+        },
+        allowedTools: [],
+        disallowedTools: [],
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+        env: {
+          ...buildAgentEnv(),
+          CLAUDE_CODE_ENTRYPOINT: "kodiai-llm-generate",
+        },
+      },
+    });
+
+    let resultMessage: SDKResultMessage | undefined;
+    let lastAssistantText = "";
+    for await (const message of sdkQuery) {
+      if (message.type === "assistant") {
+        const parts = (message.message?.content ?? []) as Array<{ type?: string; text?: string }>;
+        const text = parts
+          .filter((part: { type?: string; text?: string }) => part.type === "text")
+          .map((part: { type?: string; text?: string }) => part.text ?? "")
+          .join("");
+        if (text.trim().length > 0) {
+          lastAssistantText = text;
+        }
+      }
+      if (message.type === "result") {
+        resultMessage = message as SDKResultMessage;
       }
     }
-    if (message.type === "result") {
-      resultMessage = message as SDKResultMessage;
+
+    const durationMs = Date.now() - startTime;
+    if ((!resultMessage || resultMessage.subtype !== "success") && lastAssistantText.trim().length === 0) {
+      const errorText = resultMessage && "result" in resultMessage
+        ? String(resultMessage.result)
+        : "No successful result message received from Claude Agent SDK";
+      throw new Error(errorText);
     }
-  }
 
-  const durationMs = Date.now() - startTime;
-  if ((!resultMessage || resultMessage.subtype !== "success") && lastAssistantText.trim().length === 0) {
-    const errorText = resultMessage && "result" in resultMessage
+    const modelEntries = Object.entries(resultMessage?.modelUsage ?? {});
+    const primaryModel = modelEntries[0]?.[0] ?? modelId;
+    const totalInput = modelEntries.reduce((sum, [, u]) => sum + u.inputTokens, 0);
+    const totalOutput = modelEntries.reduce((sum, [, u]) => sum + u.outputTokens, 0);
+    const totalCacheRead = modelEntries.reduce((sum, [, u]) => sum + u.cacheReadInputTokens, 0);
+    const totalCacheCreation = modelEntries.reduce((sum, [, u]) => sum + u.cacheCreationInputTokens, 0);
+
+    if (opts.costTracker && opts.repo && resultMessage) {
+      void opts.costTracker.trackAgentSdkCall({
+        repo: opts.repo,
+        taskType: opts.taskType,
+        model: primaryModel,
+        inputTokens: totalInput,
+        outputTokens: totalOutput,
+        cacheReadTokens: totalCacheRead,
+        cacheWriteTokens: totalCacheCreation,
+        durationMs: resultMessage.duration_ms ?? durationMs,
+        costUsd: resultMessage.total_cost_usd,
+        deliveryId: opts.deliveryId,
+      });
+    }
+
+    const finalText = resultMessage && "result" in resultMessage
       ? String(resultMessage.result)
-      : "No successful result message received from Claude Agent SDK";
-    throw new Error(errorText);
-  }
+      : lastAssistantText;
 
-  const modelEntries = Object.entries(resultMessage?.modelUsage ?? {});
-  const primaryModel = modelEntries[0]?.[0] ?? modelId;
-  const totalInput = modelEntries.reduce((sum, [, u]) => sum + u.inputTokens, 0);
-  const totalOutput = modelEntries.reduce((sum, [, u]) => sum + u.outputTokens, 0);
-  const totalCacheRead = modelEntries.reduce((sum, [, u]) => sum + u.cacheReadInputTokens, 0);
-  const totalCacheCreation = modelEntries.reduce((sum, [, u]) => sum + u.cacheCreationInputTokens, 0);
-
-  if (opts.costTracker && opts.repo && resultMessage) {
-    void opts.costTracker.trackAgentSdkCall({
-      repo: opts.repo,
-      taskType: opts.taskType,
+    return {
+      text: finalText,
+      usage: { inputTokens: totalInput, outputTokens: totalOutput },
       model: primaryModel,
-      inputTokens: totalInput,
-      outputTokens: totalOutput,
-      cacheReadTokens: totalCacheRead,
-      cacheWriteTokens: totalCacheCreation,
-      durationMs: resultMessage.duration_ms ?? durationMs,
-      costUsd: resultMessage.total_cost_usd,
-      deliveryId: opts.deliveryId,
-    });
+      provider: "anthropic",
+      usedFallback: false,
+      durationMs: resultMessage?.duration_ms ?? durationMs,
+    };
+  } finally {
+    timeout.clear();
   }
-
-  const finalText = resultMessage && "result" in resultMessage
-    ? String(resultMessage.result)
-    : lastAssistantText;
-
-  return {
-    text: finalText,
-    usage: { inputTokens: totalInput, outputTokens: totalOutput },
-    model: primaryModel,
-    provider: "anthropic",
-    usedFallback: false,
-    durationMs: resultMessage?.duration_ms ?? durationMs,
-  };
 }
 
 /**
@@ -208,7 +220,7 @@ export async function generateWithFallback(opts: {
       prompt: opts.prompt,
       system: opts.system,
       tools: opts.tools,
-      abortSignal: AbortSignal.timeout(GENERATE_TEXT_TIMEOUT_MS),
+      abortSignal: abortSignalWithTimeout(GENERATE_TEXT_TIMEOUT_MS),
     });
 
     const durationMs = Date.now() - startTime;
@@ -268,7 +280,7 @@ export async function generateWithFallback(opts: {
           prompt: opts.prompt,
           system: opts.system,
           tools: opts.tools,
-          abortSignal: AbortSignal.timeout(GENERATE_TEXT_TIMEOUT_MS),
+          abortSignal: abortSignalWithTimeout(GENERATE_TEXT_TIMEOUT_MS),
         });
 
         const fallbackDurationMs = Date.now() - fallbackStartTime;

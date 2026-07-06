@@ -16,6 +16,13 @@ function makeOctokit(params: {
     updated_at?: string;
     user?: { login?: string | null } | null;
   }>;
+  commentPages?: Array<Array<{
+    id?: number;
+    body?: string | null;
+    created_at: string;
+    updated_at?: string;
+    user?: { login?: string | null } | null;
+  }>>;
   pr?: {
     title: string;
     body?: string | null;
@@ -31,6 +38,13 @@ function makeOctokit(params: {
     in_reply_to_id?: number;
     user?: { login?: string | null } | null;
   }>;
+  reviewCommentPages?: Array<Array<{
+    id: number;
+    body?: string | null;
+    created_at: string;
+    in_reply_to_id?: number;
+    user?: { login?: string | null } | null;
+  }>>;
   parentComment?: {
     id: number;
     body?: string | null;
@@ -53,7 +67,22 @@ function makeOctokit(params: {
   return {
     rest: {
       issues: {
-        listComments: async () => ({ data: params.comments }),
+        listComments: async (request: { page?: number; per_page?: number } = {}) => {
+          if (params.commentPages) {
+            const page = request.page ?? 1;
+            const pageCount = params.commentPages.length;
+            return {
+              data: params.commentPages[page - 1] ?? [],
+              headers:
+                pageCount > 1
+                  ? {
+                      link: `<https://api.github.test/repos/o/r/issues/1/comments?page=${pageCount}&per_page=${request.per_page ?? 100}>; rel="last"`,
+                    }
+                  : {},
+            };
+          }
+          return { data: params.comments, headers: {} };
+        },
       },
       pulls: {
         get: async () => ({ data: pr }),
@@ -72,7 +101,13 @@ function makeOctokit(params: {
               } as const),
           };
         },
-        listReviewComments: async () => ({ data: params.reviewComments ?? [] }),
+        listReviewComments: async (request: { page?: number } = {}) => {
+          if (params.reviewCommentPages) {
+            const page = request.page ?? 1;
+            return { data: params.reviewCommentPages[page - 1] ?? [] };
+          }
+          return { data: params.reviewComments ?? [] };
+        },
       },
     },
   } as unknown as Octokit;
@@ -525,6 +560,78 @@ describe("buildMentionContext", () => {
     expect(ctx).toContain("...[truncated]");
   });
 
+  test("uses the last issue-comment pages for recent context when GitHub returns oldest-first pages", async () => {
+    const trigger = "2025-01-15T12:00:00Z";
+    const octokit = makeOctokit({
+      comments: [],
+      commentPages: [
+        [
+          {
+            id: 1,
+            created_at: "2025-01-15T08:00:00Z",
+            body: "ancient page one",
+            user: { login: "alice" },
+          },
+        ],
+        [
+          {
+            id: 2,
+            created_at: "2025-01-15T09:00:00Z",
+            body: "middle page two",
+            user: { login: "bob" },
+          },
+        ],
+        [
+          {
+            id: 3,
+            created_at: "2025-01-15T10:00:00Z",
+            body: "recent page three",
+            user: { login: "carol" },
+          },
+          {
+            id: 4,
+            created_at: "2025-01-15T11:00:00Z",
+            body: "latest page three",
+            user: { login: "dave" },
+          },
+        ],
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "issue_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: undefined,
+      commentId: 123,
+      commentBody: "@kodiai question",
+      commentAuthor: "erin",
+      commentCreatedAt: trigger,
+      headRef: undefined,
+      baseRef: undefined,
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      maxComments: 2,
+      maxCommentChars: 500,
+      maxApiPages: 2,
+    });
+
+    expect(ctx).not.toContain("ancient page one");
+    expect(ctx).not.toContain("middle page two");
+    expect(ctx).toContain("recent page three");
+    expect(ctx).toContain("latest page three");
+  });
+
   test("includes inline review file/line and diff hunk when available", async () => {
     const trigger = "2025-01-15T12:00:00Z";
     const octokit = makeOctokit({ comments: [] });
@@ -621,6 +728,79 @@ describe("buildMentionContext", () => {
 
     expect(ctx).toContain("## Review Comment Thread Context");
     expect(ctx).toContain("Can you explain this?");
+    expect(ctx).not.toContain("Triggering mention");
+  });
+
+  test("finds review thread comments after the first PR review-comment page", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 950,
+        body: "<!-- kodiai:review-output-key:paged --> parent finding",
+        created_at: "2025-01-15T10:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewCommentPages: [
+        Array.from({ length: 100 }, (_, index) => ({
+          id: index + 1,
+          body: `unrelated page one ${index + 1}`,
+          created_at: `2025-01-15T09:${String(index % 60).padStart(2, "0")}:00Z`,
+          user: { login: "reviewer" },
+        })),
+        [
+          {
+            id: 950,
+            body: "<!-- kodiai:review-output-key:paged --> parent finding",
+            created_at: "2025-01-15T10:00:00Z",
+            user: { login: "kodiai" },
+          },
+          {
+            id: 951,
+            body: "This reply is only on page two",
+            created_at: "2025-01-15T10:05:00Z",
+            in_reply_to_id: 950,
+            user: { login: "alice" },
+          },
+          {
+            id: 952,
+            body: "Triggering mention",
+            created_at: "2025-01-15T10:06:00Z",
+            in_reply_to_id: 950,
+            user: { login: "alice" },
+          },
+        ],
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 952,
+      commentBody: "@kodiai what should I change?",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T10:06:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: "@@ -1,1 +1,1 @@",
+      filePath: "src/index.ts",
+      fileLine: 10,
+      inReplyToId: 950,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => null,
+    });
+
+    expect(ctx).toContain("## Review Comment Thread Context");
+    expect(ctx).toContain("parent finding");
+    expect(ctx).toContain("This reply is only on page two");
     expect(ctx).not.toContain("Triggering mention");
   });
 

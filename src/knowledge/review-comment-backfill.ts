@@ -5,6 +5,7 @@ import type { EmbeddingProvider } from "./types.ts";
 import { chunkReviewThread } from "./review-comment-chunker.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { withTransientDbRetry } from "../db/transient-retry.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,10 +77,6 @@ const DEFAULT_BOT_LOGINS = new Set([
 ]);
 
 // ── Rate limiter ────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 // ── Retry utility ────────────────────────────────────────────────────────────
 

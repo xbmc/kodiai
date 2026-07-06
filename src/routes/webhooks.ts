@@ -54,10 +54,10 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
     // Parsing first can alter whitespace/encoding and break HMAC verification.
     const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_GITHUB_WEBHOOK_BODY_BYTES });
     if (!bodyResult.ok) {
-      logger.warn({ deliveryId, eventName, maxBytes: bodyResult.error.maxBytes }, "GitHub webhook body too large");
+      logger.warn({ deliveryId, eventName, maxBytes: bodyResult.err.maxBytes }, "GitHub webhook body too large");
       return c.text("", 413);
     }
-    const body = bodyResult.body;
+    const body = bodyResult.value;
 
     // Verify webhook signature
     if (!signature || !(await verifyWebhookSignature(config.webhookSecret, body, signature))) {
@@ -65,8 +65,10 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
       return c.text("", 401);
     }
 
-    // Check for duplicate delivery
-    if (dedup.isDuplicate(deliveryId)) {
+    // Check for duplicate delivery. Mark only after the delivery is accepted
+    // for durable queueing or async dispatch; otherwise a rejected request
+    // would poison GitHub redelivery.
+    if (dedup.has(deliveryId)) {
       logger.info({ deliveryId, eventName }, "Duplicate delivery skipped");
       return c.json({ received: true });
     }
@@ -141,19 +143,29 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
         headersRecord[key] = value;
       }
 
-      await webhookQueueStore.enqueue({
-        source: "github",
-        deliveryId,
-        eventName,
-        headers: headersRecord,
-        body,
-      });
+      try {
+        await webhookQueueStore.enqueue({
+          source: "github",
+          deliveryId,
+          eventName,
+          headers: headersRecord,
+          body,
+        });
+      } catch (err) {
+        logger.error(
+          { err, deliveryId, eventName },
+          "Failed to queue GitHub webhook during shutdown",
+        );
+        return c.json({ received: false, queued: false }, 503);
+      }
 
+      dedup.mark(deliveryId);
       return c.json({ received: true, queued: true });
     }
 
     // Fire-and-fork: dispatch event asynchronously without awaiting.
     // Return 200 immediately to avoid GitHub's 10-second webhook timeout.
+    dedup.mark(deliveryId);
     const childLogger = createChildLogger(logger, { deliveryId, eventName });
     const untrackJob = requestTracker.trackJob();
     Promise.resolve()

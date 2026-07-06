@@ -406,6 +406,29 @@ export function createReviewGraphStore(opts: {
           }
         }
 
+        const endpointStableKeys = Array.from(new Set(
+          input.edges.flatMap((edge) => [
+            edge.sourceStableKey,
+            edge.targetStableKey,
+          ]),
+        ));
+        const missingEndpointStableKeys = endpointStableKeys.filter((stableKey) =>
+          !nodeIdByStableKey.has(stableKey)
+        );
+        if (missingEndpointStableKeys.length > 0) {
+          const existingNodeRows = await scoped`
+            SELECT id, stable_key
+            FROM review_graph_nodes
+            WHERE repo = ${input.file.repo}
+              AND workspace_key = ${input.file.workspaceKey}
+              AND stable_key = ANY(${missingEndpointStableKeys})
+          `;
+          for (const row of existingNodeRows) {
+            const existing = row as unknown as InsertedNodeRow;
+            nodeIdByStableKey.set(existing.stable_key, Number(existing.id));
+          }
+        }
+
         const edgePayload: EdgeInsertPayload[] = [];
         for (const edge of input.edges) {
           const sourceNodeId = nodeIdByStableKey.get(edge.sourceStableKey);
@@ -413,7 +436,7 @@ export function createReviewGraphStore(opts: {
 
           if (!sourceNodeId || !targetNodeId) {
             throw new Error(
-              `Cannot write review graph edge '${edge.edgeKind}' for '${input.file.path}' because one or both endpoint stable keys were not inserted`,
+              `Cannot write review graph edge '${edge.edgeKind}' for '${input.file.path}' because one or both endpoint stable keys were not inserted or indexed`,
             );
           }
 

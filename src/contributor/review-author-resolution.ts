@@ -8,6 +8,7 @@ import {
   buildSearchCacheKey,
   type SearchCache,
 } from "../lib/search-cache.ts";
+import { sleep } from "../lib/with-timeout.ts";
 import type { AuthorCacheEntry, AuthorCacheTier, KnowledgeStore } from "../knowledge/types.ts";
 import type {
   ContributorExpertise,
@@ -121,7 +122,7 @@ async function executeSearchWithRateLimitRetry(params: {
     );
 
     if (backoffMs > 0) {
-      await Bun.sleep(backoffMs);
+      await sleep(backoffMs);
     }
 
     try {

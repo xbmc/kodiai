@@ -102,6 +102,64 @@ export interface FormatterSuggestionSubflowResult {
   partialFailure?: boolean;
 }
 
+export interface FormatterSuggestionVisibleDiagnosticOptions {
+  formatterResult: FormatterSuggestionSubflowResult;
+  formatterMode: "format-only" | "review-and-format";
+  postReply: (body: string) => Promise<unknown>;
+  logger?: FormatterSuggestionSubflowLogger;
+  logContext: Record<string, unknown>;
+  classifyFailure: (err: unknown) => unknown;
+}
+
+export type FormatterSuggestionVisibleDiagnosticPoster = (params: {
+  formatterResult: FormatterSuggestionSubflowResult;
+  formatterMode: "format-only" | "review-and-format";
+}) => Promise<{ visibleReplyPosted: boolean; visibleReplyFailed: boolean }>;
+
+export type FormatterSuggestionMentionRunner = (
+  formatterMode: "format-only" | "review-and-format",
+) => Promise<FormatterSuggestionSubflowResult>;
+
+export interface FormatterSuggestionForMentionOptions {
+  formatterMode: "format-only" | "review-and-format";
+  workspace?: {
+    dir: string;
+    token?: string;
+  };
+  owner: string;
+  repo: string;
+  prNumber?: number;
+  baseRef?: string;
+  headRef?: string;
+  formatterCommand?: string;
+  maxSuggestions: number;
+  installationId: number;
+  deliveryId: string;
+  reviewOutputAction: string;
+  octokit: FormatterSuggestionPublisherOctokit;
+  botHandles: string[];
+  logger?: FormatterSuggestionSubflowLogger;
+  logContext?: Record<string, unknown>;
+  classifyFailure?: (err: unknown) => unknown;
+  fetchPullRequestFiles: (params: {
+    owner: string;
+    repo: string;
+    pullNumber: number;
+  }) => Promise<Array<{ filename: string } & DiffFallbackFile>>;
+  formatterSuggestionSubflow?: typeof runFormatterSuggestionSubflow;
+}
+
+const FORMATTER_SUBFLOW_STATUSES = new Set([
+  "setup-needed",
+  "no-op",
+  "pr-diff-unavailable",
+  "mapped-no-suggestions",
+  "posted",
+  "duplicate",
+  "blocked",
+  "failed",
+]);
+
 function noopLogger(): Required<FormatterSuggestionSubflowLogger> {
   return {
     debug: () => {},
@@ -141,6 +199,33 @@ function resultBase(overrides: Partial<FormatterSuggestionSubflowResult>): Forma
     capped: 0,
     ...overrides,
   };
+}
+
+export function isKnownFormatterSubflowStatus(status: unknown): boolean {
+  return typeof status === "string" && FORMATTER_SUBFLOW_STATUSES.has(status);
+}
+
+export function buildFormatterSubflowFallbackResult(params: {
+  status?: unknown;
+  commandStatus?: unknown;
+  publisherStatus?: unknown;
+  reason?: string;
+}): FormatterSuggestionSubflowResult {
+  const status = isKnownFormatterSubflowStatus(params.status)
+    ? params.status as FormatterSuggestionSubflowResult["status"]
+    : "failed";
+  return resultBase({
+    status,
+    commandStatus: typeof params.commandStatus === "string"
+      ? params.commandStatus as FormatterSuggestionSubflowResult["commandStatus"]
+      : undefined,
+    publisherStatus: typeof params.publisherStatus === "string"
+      ? params.publisherStatus as FormatterSuggestionSubflowResult["publisherStatus"]
+      : undefined,
+    reason: params.reason ?? "formatter subflow returned an unknown or malformed status",
+    visibleMessage: "Formatter suggestions could not be completed because the formatter subflow returned an unexpected status. Please retry after checking the formatter configuration.",
+    partialFailure: true,
+  });
 }
 
 function makeSetupNeededResult(): FormatterSuggestionSubflowResult {
@@ -319,6 +404,140 @@ export function renderFormatterSuggestionVisibleMessage(
   result: FormatterSuggestionSubflowResult,
 ): string | undefined {
   return result.visibleMessage;
+}
+
+export async function postFormatterSuggestionVisibleDiagnostic(
+  options: FormatterSuggestionVisibleDiagnosticOptions,
+): Promise<{ visibleReplyPosted: boolean; visibleReplyFailed: boolean }> {
+  let visibleReplyPosted = false;
+  let visibleReplyFailed = false;
+  const visibleMessage = renderFormatterSuggestionVisibleMessage(options.formatterResult);
+
+  if (visibleMessage) {
+    try {
+      await options.postReply(visibleMessage);
+      visibleReplyPosted = true;
+    } catch (err) {
+      visibleReplyFailed = true;
+      safeLog(
+        options.logger,
+        "warn",
+        {
+          err,
+          ...options.logContext,
+          formatterSuggestionRequest: true,
+          formatterMode: options.formatterMode,
+          formatterStatus: options.formatterResult.status,
+          failureCategory: options.classifyFailure(err),
+        },
+        options.formatterMode === "format-only"
+          ? "Failed to post format-only formatter suggestion visible diagnostic"
+          : "Failed to post combined review-and-format formatter suggestion visible diagnostic",
+      );
+    }
+  }
+
+  return { visibleReplyPosted, visibleReplyFailed };
+}
+
+export function createFormatterSuggestionVisibleDiagnosticPoster(params: {
+  postReply: (body: string) => Promise<unknown>;
+  logger?: FormatterSuggestionSubflowLogger;
+  logContext: Record<string, unknown>;
+  classifyFailure: (err: unknown) => unknown;
+}): FormatterSuggestionVisibleDiagnosticPoster {
+  return ({ formatterResult, formatterMode }) => postFormatterSuggestionVisibleDiagnostic({
+    formatterResult,
+    formatterMode,
+    postReply: params.postReply,
+    logger: params.logger,
+    logContext: params.logContext,
+    classifyFailure: params.classifyFailure,
+  });
+}
+
+export async function runFormatterSuggestionForMention(
+  options: FormatterSuggestionForMentionOptions,
+): Promise<FormatterSuggestionSubflowResult> {
+  const formatterWorkspace = options.workspace;
+  if (!formatterWorkspace || !options.baseRef || !options.headRef || options.prNumber === undefined) {
+    return buildFormatterSubflowFallbackResult({
+      status: "pr-diff-unavailable",
+      reason: !formatterWorkspace
+        ? "missing workspace for formatter suggestion request"
+        : "missing PR base/head ref for formatter suggestion mapping",
+    });
+  }
+
+  try {
+    const fallbackDiffProvider = async () => options.fetchPullRequestFiles({
+      owner: options.owner,
+      repo: options.repo,
+      pullNumber: options.prNumber!,
+    });
+    const formatterSuggestionSubflow = options.formatterSuggestionSubflow ?? runFormatterSuggestionSubflow;
+    const formatterResult = await formatterSuggestionSubflow({
+      owner: options.owner,
+      repo: options.repo,
+      prNumber: options.prNumber,
+      workspaceDir: formatterWorkspace.dir,
+      baseRef: options.baseRef,
+      headRef: options.headRef,
+      formatterCommand: options.formatterCommand,
+      maxSuggestions: options.maxSuggestions,
+      installationId: options.installationId,
+      deliveryId: options.deliveryId,
+      reviewOutputAction: options.reviewOutputAction,
+      octokit: options.octokit,
+      token: formatterWorkspace.token,
+      botHandles: options.botHandles,
+      fallbackFileProvider: async () => (await fallbackDiffProvider()).map((file) => file.filename),
+      fallbackDiffProvider,
+      logger: options.logger,
+    });
+
+    if (!isKnownFormatterSubflowStatus(formatterResult.status)) {
+      return buildFormatterSubflowFallbackResult({
+        status: formatterResult.status,
+        commandStatus: formatterResult.commandStatus,
+        publisherStatus: formatterResult.publisherStatus,
+        reason: formatterResult.reason,
+      });
+    }
+
+    return formatterResult;
+  } catch (err) {
+    safeLog(
+      options.logger,
+      "warn",
+      {
+        ...options.logContext,
+        owner: options.owner,
+        repo: options.repo,
+        prNumber: options.prNumber,
+        formatterSuggestionRequest: true,
+        formatterMode: options.formatterMode,
+        formatterStatus: "failed",
+        failureCategory: options.classifyFailure?.(err),
+      },
+      options.formatterMode === "format-only"
+        ? "Format-only formatter suggestion subflow threw before returning a structured result"
+        : "Combined review-and-format formatter suggestion subflow threw before returning a structured result",
+    );
+    return buildFormatterSubflowFallbackResult({
+      status: "failed",
+      reason: "formatter subflow threw before returning a structured result",
+    });
+  }
+}
+
+export function createFormatterSuggestionMentionRunner(
+  params: Omit<FormatterSuggestionForMentionOptions, "formatterMode">,
+): FormatterSuggestionMentionRunner {
+  return (formatterMode) => runFormatterSuggestionForMention({
+    ...params,
+    formatterMode,
+  });
 }
 
 export async function runFormatterSuggestionSubflow(

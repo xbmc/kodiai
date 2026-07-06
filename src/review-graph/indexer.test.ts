@@ -61,6 +61,18 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
   private nodesByFileId = new Map<number, ReviewGraphNodeRecord[]>();
   private edgesByFileId = new Map<number, ReviewGraphEdgeRecord[]>();
 
+  private findNodeByStableKey(repo: string, workspaceKey: string, stableKey: string): ReviewGraphNodeRecord | undefined {
+    for (const nodes of this.nodesByFileId.values()) {
+      const node = nodes.find((candidate) =>
+        candidate.repo === repo
+        && candidate.workspaceKey === workspaceKey
+        && candidate.stableKey === stableKey
+      );
+      if (node) return node;
+    }
+    return undefined;
+  }
+
   async upsertBuild(input: ReviewGraphBuildUpsert): Promise<ReviewGraphBuildRecord> {
     const key = `${input.repo}::${input.workspaceKey}`;
     const existing = this.builds.get(key);
@@ -138,7 +150,8 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
 
     const edges: ReviewGraphEdgeRecord[] = input.edges.map((edge) => {
       const sourceNodeId = nodeIdByStableKey.get(edge.sourceStableKey);
-      const targetNodeId = nodeIdByStableKey.get(edge.targetStableKey);
+      const targetNodeId = nodeIdByStableKey.get(edge.targetStableKey)
+        ?? this.findNodeByStableKey(input.file.repo, input.file.workspaceKey, edge.targetStableKey)?.id;
       if (!sourceNodeId || !targetNodeId) {
         throw new Error("Cannot write review graph edge because endpoint stable keys were not inserted");
       }
@@ -360,6 +373,62 @@ describe("createReviewGraphIndexer", () => {
     const cppFile = await store.getFile("owner/repo", "workspace-a", "src/worker.cpp");
     expect(pythonFile).not.toBeNull();
     expect(cppFile).toBeNull();
+  });
+
+  test("indexes forward cross-file Python calls after target file nodes are available", async () => {
+    const store = new InMemoryReviewGraphStore();
+    const workspaceDir = await createWorkspaceFixture({
+      "src/source.py": `from src.target import target_fn\n\ndef source_fn():\n    return target_fn()\n`,
+      "src/target.py": `def target_fn():\n    return 42\n`,
+    });
+
+    const indexer = createReviewGraphIndexer({ store, logger: mockLogger });
+    const result = await indexer.indexWorkspace({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      workspaceDir,
+      commitSha: "sha-cross-file",
+    });
+
+    expect(result.metrics.discovered).toBe(2);
+    expect(result.metrics.indexed).toBe(2);
+    expect(result.metrics.failed).toBe(0);
+    expect(result.build.status).toBe("completed");
+
+    const sourceFile = await store.getFile("owner/repo", "workspace-a", "src/source.py");
+    expect(sourceFile).not.toBeNull();
+    const sourceEdges = await store.listEdgesForFile(sourceFile!.id);
+    expect(sourceEdges.some((edge) => edge.edgeKind === "calls")).toBe(true);
+  });
+
+  test("indexes forward cross-file C++ calls through quoted header includes", async () => {
+    const store = new InMemoryReviewGraphStore();
+    const workspaceDir = await createWorkspaceFixture({
+      "src/service.cpp": `#include "service.h"\n\nvoid runService() {\n  helper();\n}\n`,
+      "src/service.h": `inline void helper() {}\n`,
+    });
+
+    const indexer = createReviewGraphIndexer({ store, logger: mockLogger });
+    const result = await indexer.indexWorkspace({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      workspaceDir,
+      commitSha: "sha-cross-file-cpp",
+    });
+
+    expect(result.metrics.discovered).toBe(2);
+    expect(result.metrics.indexed).toBe(2);
+    expect(result.metrics.failed).toBe(0);
+    expect(result.build.status).toBe("completed");
+
+    const sourceFile = await store.getFile("owner/repo", "workspace-a", "src/service.cpp");
+    expect(sourceFile).not.toBeNull();
+    const sourceEdges = await store.listEdgesForFile(sourceFile!.id);
+    expect(sourceEdges.some((edge) =>
+      edge.edgeKind === "calls"
+      && edge.attributes.crossFile === true
+      && edge.attributes.resolution === "cpp-local-include"
+    )).toBe(true);
   });
 });
 

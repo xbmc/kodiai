@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildPrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import { publishInlineReviewComment } from "./inline-review-publisher.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
+import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
 
 function createMockLogger() {
   const infoCalls: unknown[][] = [];
@@ -190,6 +191,12 @@ describe("createInlineReviewServer output idempotency", () => {
         },
       },
     };
+    const publicationGate = createReviewOutputPublicationGate({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+    });
 
     const firstServer = createInlineReviewServer({
       getOctokit: async () => octokit as never,
@@ -234,6 +241,246 @@ describe("createInlineReviewServer output idempotency", () => {
     expect(createReviewCommentCalls).toBe(1);
     expect(secondResult.content[0]?.text).toContain("\"skipped\":true");
     expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
+  });
+
+  test("replayed inline tool call skips when the first call created the comment but returned an error", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-456:head-abcdef1234";
+    const persistedBodies: string[] = [];
+    let createReviewCommentCalls = 0;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({
+            data: persistedBodies.map((body, index) => ({ id: index + 1, body })),
+          }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async ({ body }: { body: string }) => {
+            createReviewCommentCalls++;
+            persistedBodies.push(body);
+            if (createReviewCommentCalls === 1) {
+              throw new Error("network timeout after GitHub accepted inline comment");
+            }
+            return {
+              data: {
+                id: createReviewCommentCalls,
+                html_url: "https://example.test/comment",
+                path: "src/file.ts",
+                line: 10,
+                original_line: 10,
+              },
+            };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+      },
+    };
+    const publicationGate = createReviewOutputPublicationGate({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+    });
+
+    const firstServer = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-456",
+      publicationGate,
+    });
+    const firstResult = await getToolHandler(firstServer)({
+      path: "src/file.ts",
+      body: "This exact inline note should be idempotent.",
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(firstResult.isError).toBe(true);
+    expect(createReviewCommentCalls).toBe(1);
+
+    const retryServer = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-456",
+      publicationGate,
+    });
+    const retryResult = await getToolHandler(retryServer)({
+      path: "src/file.ts",
+      body: "This exact inline note should be idempotent.",
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(createReviewCommentCalls).toBe(1);
+    expect(retryResult.isError).toBeUndefined();
+    expect(retryResult.content[0]?.text).toContain("\"skipped\":true");
+    expect(retryResult.content[0]?.text).toContain("\"reason\":\"inline-already-published\"");
+  });
+
+  test("replayed inline tool call finds an existing inline marker after the first page", async () => {
+    const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-789:head-abcdef1234";
+    const body = "This exact inline note should be idempotent on busy PRs.";
+    let createReviewCommentCalls = 0;
+    const reviewCommentBodies: string[] = [];
+    const listReviewCommentCalls: Array<{ page?: number; per_page?: number }> = [];
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async (params: { page?: number; per_page?: number }) => {
+            listReviewCommentCalls.push(params);
+            if (params.page === 1) {
+              return {
+                data: Array.from({ length: 100 }, (_, index) => ({
+                  id: index + 1,
+                  body: "ordinary inline comment",
+                })),
+              };
+            }
+            return {
+              data: reviewCommentBodies.map((commentBody, index) => ({
+                id: 101 + index,
+                body: commentBody,
+              })),
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async ({ body: persistedBody }: { body: string }) => {
+            createReviewCommentCalls++;
+            reviewCommentBodies.push(persistedBody);
+            return {
+              data: {
+                id: createReviewCommentCalls,
+                html_url: "https://example.test/comment",
+                path: "src/file.ts",
+                line: 10,
+                original_line: 10,
+              },
+            };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+      },
+    };
+    const publicationGate = createReviewOutputPublicationGate({
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+    });
+
+    const firstServer = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-789",
+      publicationGate,
+    });
+    await getToolHandler(firstServer)({
+      path: "src/file.ts",
+      body,
+      line: 10,
+      side: "RIGHT",
+    });
+
+    const retryServer = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey,
+      deliveryId: "delivery-789",
+      publicationGate,
+    });
+    const retryResult = await getToolHandler(retryServer)({
+      path: "src/file.ts",
+      body,
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(createReviewCommentCalls).toBe(1);
+    expect(listReviewCommentCalls.map((call) => call.page)).toContain(2);
+    expect(listReviewCommentCalls.filter((call) => call.page === 2)).toHaveLength(3);
+    expect(listReviewCommentCalls.every((call) => call.per_page === 100)).toBe(true);
+    expect(retryResult.isError).toBeUndefined();
+    expect(retryResult.content[0]?.text).toContain("\"skipped\":true");
+    expect(retryResult.content[0]?.text).toContain("\"reason\":\"inline-already-published\"");
+  });
+});
+
+// --- Outgoing publication pipeline regression tests ---
+
+describe("outgoing publication pipeline", () => {
+  test("create_inline_comment redacts zero-width-obfuscated github tokens after content normalization", async () => {
+    let calledBody: string | undefined;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async ({ body }: { body: string }) => {
+            calledBody = body;
+            return {
+              data: {
+                id: 1,
+                html_url: "https://example.test/comment",
+                path: "src/file.ts",
+                line: 10,
+                original_line: 10,
+              },
+            };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const server = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+    });
+    const handler = getToolHandler(server);
+
+    const token = "ghs_" + "a".repeat(18) + "\u200B" + "a".repeat(18);
+    const result = await handler({
+      path: "src/file.ts",
+      body: token,
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(calledBody!).not.toContain("ghs_");
+    expect(calledBody!).not.toContain("\u200B");
   });
 });
 

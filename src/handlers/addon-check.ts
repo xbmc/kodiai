@@ -41,6 +41,11 @@ import {
 } from "../jobs/workspace.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
+import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
+import {
+  createIssueCommentWithPublicationPipeline,
+  updateIssueCommentWithPublicationPipeline,
+} from "../lib/github-publication.ts";
 
 // Re-exported so tests can reference the type without importing from runner directly.
 export type { AddonFinding };
@@ -58,6 +63,7 @@ async function upsertAddonCheckComment(params: {
           repo: string;
           issue_number: number;
           per_page: number;
+          page: number;
         }) => Promise<{ data: Array<{ id: number; body?: string }> }>;
         createComment: (args: {
           owner: string;
@@ -78,32 +84,35 @@ async function upsertAddonCheckComment(params: {
   repo: string;
   prNumber: number;
   body: string;
+  botHandles: string[];
 }): Promise<void> {
-  const { octokit, owner, repo, prNumber, body } = params;
+  const { octokit, owner, repo, prNumber, body, botHandles } = params;
   const marker = buildAddonCheckMarker(owner, repo, prNumber);
 
-  const { data: comments } = await octokit.rest.issues.listComments({
+  const existing = await findIssueCommentByMarkerPaged(octokit, {
     owner,
     repo,
-    issue_number: prNumber,
-    per_page: 100,
+    issueNumber: prNumber,
+    marker,
   });
 
-  const existing = comments.find((c) => c.body?.includes(marker));
-
   if (existing) {
-    await octokit.rest.issues.updateComment({
+    await updateIssueCommentWithPublicationPipeline(octokit as never, {
       owner,
       repo,
       comment_id: existing.id,
       body,
+      botHandles,
+      preserveKodiaiMarkers: true,
     });
   } else {
-    await octokit.rest.issues.createComment({
+    await createIssueCommentWithPublicationPipeline(octokit as never, {
       owner,
       repo,
       issue_number: prNumber,
       body,
+      botHandles,
+      preserveKodiaiMarkers: true,
     });
   }
 }
@@ -375,12 +384,16 @@ export function createAddonCheckHandler(deps: {
             } else {
               const marker = buildAddonCheckMarker(owner, repoName, prNumber);
               const body = formatAddonCheckComment(allFindings, marker, classification, addonRuleReview);
+              const appSlug = typeof githubApp.getAppSlug === "function"
+                ? githubApp.getAppSlug()
+                : "kodiai";
               await upsertAddonCheckComment({
                 octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
                 owner,
                 repo: repoName,
                 prNumber,
                 body,
+                botHandles: [appSlug, "claude"],
               });
             }
           } finally {

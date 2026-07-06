@@ -898,6 +898,93 @@ describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
       expect(second.reason).toBe("duplicate");
       expect(second.runKey).toBe(first.runKey);
     });
+
+    test("stale pending run for the same SHA pair is reclaimed after crash window", async () => {
+      const first = await store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 16,
+        baseSha: "base-stale",
+        headSha: "head-stale",
+        deliveryId: "delivery-stale-first",
+        action: "opened",
+      });
+      expect(first.shouldProcess).toBe(true);
+
+      await sql`
+        UPDATE run_state
+        SET created_at = now() - interval '2 hours'
+        WHERE run_key = ${first.runKey}
+      `;
+
+      const second = await store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 16,
+        baseSha: "base-stale",
+        headSha: "head-stale",
+        deliveryId: "delivery-stale-retry",
+        action: "synchronize",
+      });
+
+      expect(second.shouldProcess).toBe(true);
+      expect(second.reason).toBe("stale-pending");
+      expect(second.runKey).toBe(first.runKey);
+
+      const [row] = await sql`
+        SELECT delivery_id, action, status
+        FROM run_state
+        WHERE run_key = ${first.runKey}
+      `;
+      expect(row!.delivery_id).toBe("delivery-stale-retry");
+      expect(row!.action).toBe("synchronize");
+      expect(row!.status).toBe("pending");
+    });
+
+    test("fresh pending run for the same SHA pair remains a duplicate", async () => {
+      const first = await store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 17,
+        baseSha: "base-fresh",
+        headSha: "head-fresh",
+        deliveryId: "delivery-fresh-first",
+        action: "opened",
+      });
+      expect(first.shouldProcess).toBe(true);
+
+      const second = await store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 17,
+        baseSha: "base-fresh",
+        headSha: "head-fresh",
+        deliveryId: "delivery-fresh-retry",
+        action: "synchronize",
+      });
+
+      expect(second.shouldProcess).toBe(false);
+      expect(second.reason).toBe("duplicate");
+    });
+
+    test("purgeOldRuns removes abandoned pending runs older than crash-retention window", async () => {
+      const result = await store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 18,
+        baseSha: "base-old-pending",
+        headSha: "head-old-pending",
+        deliveryId: "delivery-old-pending",
+        action: "opened",
+      });
+
+      await sql`
+        UPDATE run_state
+        SET created_at = now() - interval '10 days'
+        WHERE run_key = ${result.runKey}
+      `;
+
+      const purged = await store.purgeOldRuns(30);
+      expect(purged).toBeGreaterThanOrEqual(1);
+
+      const rows = await sql`SELECT * FROM run_state WHERE run_key = ${result.runKey}`;
+      expect(rows.length).toBe(0);
+    });
   });
 
   describe("continuation family state", () => {

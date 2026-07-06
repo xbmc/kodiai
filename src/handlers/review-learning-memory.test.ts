@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import {
   buildReviewLearningMemoryRecord,
   isReviewLearningMemorySkip,
+  writeReviewLearningMemoryBatch,
   writeReviewLearningMemory,
   type BuildReviewLearningMemoryRecordInput,
 } from "./review-learning-memory.ts";
@@ -223,5 +224,68 @@ describe("writeReviewLearningMemory", () => {
     }]);
     expect(embeddingCalls).toBe(1);
     expect(written).toHaveLength(1);
+  });
+});
+
+describe("writeReviewLearningMemoryBatch", () => {
+  test("writes findings concurrently and logs aggregate outcome counts", async () => {
+    const writeFindingMemory = mock(async (input: { input: BuildReviewLearningMemoryRecordInput }) => {
+      if (input.input.finding.commentId === 1) return { status: "written" as const };
+      if (input.input.finding.commentId === 2) return { status: "skipped" as const, reason: "missing-review-id" };
+      return { status: "failed" as const };
+    });
+    const logger = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}) };
+
+    const result = await writeReviewLearningMemoryBatch({
+      findings: [
+        { commentId: 1, filePath: "src/a.ts", title: "A", severity: "major", category: "correctness", suppressed: false },
+        { commentId: 2, filePath: "include/widget.h", title: "B", severity: "minor", category: "style", suppressed: true },
+        { commentId: 3, filePath: "src/c.ts", title: "C", severity: "medium", category: "performance", suppressed: false },
+      ],
+      owner: "owner",
+      repo: "owner/repo",
+      reviewId: 42,
+      prNumber: 17,
+      store: {
+        async hasMemoryConflict() {
+          return false;
+        },
+        async writeMemory() {},
+      },
+      embeddingProvider: {
+        async generate() {
+          return { embedding: new Float32Array([1]), model: "model", dimensions: 1 };
+        },
+        model: "model",
+        dimensions: 1,
+      },
+      logger,
+      logContext: { deliveryId: "delivery-1" },
+      classifyLanguage: (filePath) => filePath.endsWith(".h") ? "cpp" : "typescript",
+      writeFindingMemory,
+    });
+
+    expect(result).toEqual({
+      written: 1,
+      failed: 1,
+      skipped: 1,
+      skipReasons: { "missing-review-id": 1 },
+      total: 3,
+    });
+    expect(writeFindingMemory).toHaveBeenCalledTimes(3);
+    expect(writeFindingMemory.mock.calls[1]?.[0].input.language).toBe("cpp");
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        deliveryId: "delivery-1",
+        gate: "learning-memory-write",
+        gateResult: "failed",
+        written: 1,
+        failed: 1,
+        skipped: 1,
+        skipReasons: { "missing-review-id": 1 },
+        total: 3,
+      },
+      "Learning memory write batch complete",
+    );
   });
 });

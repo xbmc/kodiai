@@ -7,6 +7,22 @@ const TRAILING_OWNER_PATTERN =
   /(?:^|[\s(\[{<])([A-Za-z0-9][A-Za-z0-9_.-]*)\/(?=$|[\s)\]}>,.!?;:])/;
 const LEADING_REPO_PATTERN =
   /(?:^|[\s(\[{<])\/([A-Za-z0-9][A-Za-z0-9_.-]*)(?=$|[\s)\]}>,.!?;:])/;
+const COMMON_PATH_PREFIXES = new Set([
+  "app",
+  "bin",
+  "cmd",
+  "config",
+  "docs",
+  "lib",
+  "packages",
+  "scripts",
+  "src",
+  "test",
+  "tests",
+  "tools",
+]);
+const SOURCE_FILE_EXTENSION_PATTERN =
+  /\.(?:c|cc|cpp|cxx|h|hpp|go|java|js|jsx|mjs|cjs|ts|tsx|py|rb|rs|php|swift|kt|kts|cs|scala|sh|bash|zsh|fish|sql|json|ya?ml|toml|md|txt|css|scss|html|xml)$/i;
 
 export type SlackRepoContextResolution =
   | {
@@ -35,6 +51,9 @@ function extractDistinctRepoTokens(text: string): string[] {
     const owner = (match[1] ?? "").toLowerCase();
     const repo = (match[2] ?? "").toLowerCase();
     if (!owner || !repo) {
+      continue;
+    }
+    if (COMMON_PATH_PREFIXES.has(owner) && SOURCE_FILE_EXTENSION_PATTERN.test(repo)) {
       continue;
     }
 

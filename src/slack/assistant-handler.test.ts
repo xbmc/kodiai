@@ -5,6 +5,7 @@ import {
   type SlackAssistantAddressedPayload,
   type SlackAssistantExecutorInput,
 } from "./assistant-handler.ts";
+import { createInMemoryWriteConfirmationStore } from "./write-confirmation-store.ts";
 import { SLACK_WRITE_CONFIRMATION_TIMEOUT_MS } from "./write-intent.ts";
 
 type LogCall = { bindings: Record<string, unknown>; message: string };
@@ -271,6 +272,105 @@ describe("createSlackAssistantHandler", () => {
       writeMode: true,
       triggerBody: "Can you update src/slack/assistant-handler.ts and open a PR?",
     });
+  });
+
+  test("routes explicit plan: prefix through read-only execution without write tools or confirmation", async () => {
+    const executionInputs: SlackAssistantExecutorInput[] = [];
+    const published: string[] = [];
+    let workspaceCalls = 0;
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => {
+        workspaceCalls++;
+        return {
+          dir: "/tmp/workspace",
+          cleanup: async () => undefined,
+        };
+      },
+      execute: async (input) => {
+        executionInputs.push(input);
+        return { answerText: "Here is the migration plan." };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+      defaultRepo: "xbmc/xbmc",
+    });
+
+    const result = await handler.handle(
+      createAddressedPayload("plan: draft migration steps for retry queue"),
+    );
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "read_only",
+      repo: "xbmc/xbmc",
+      publishedText: "Here is the migration plan.",
+    });
+    expect(workspaceCalls).toBe(1);
+    expect(executionInputs).toHaveLength(1);
+    expect(executionInputs[0]).toMatchObject({
+      writeMode: false,
+      enableInlineTools: false,
+      enableCommentTools: false,
+      triggerBody: "draft migration steps for retry queue",
+    });
+    expect(executionInputs[0]?.prompt).toContain("Read-only execution requirements:");
+    expect(executionInputs[0]?.prompt).not.toContain("Write-capable execution requirements:");
+    expect(published).toEqual(["Here is the migration plan."]);
+  });
+
+  test("confirmed plan pending requests still execute read-only without write tools", async () => {
+    const executionInputs: SlackAssistantExecutorInput[] = [];
+    const published: string[] = [];
+    const confirmationStore = createInMemoryWriteConfirmationStore(() => 1_000);
+    confirmationStore.openPending({
+      channel: "C123KODIAI",
+      threadTs: "1700000000.000777",
+      owner: "xbmc",
+      repo: "xbmc",
+      keyword: "plan",
+      request: "draft migration steps for retry queue",
+      prompt: "old write-capable plan prompt",
+      timeoutMs: SLACK_WRITE_CONFIRMATION_TIMEOUT_MS,
+    });
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async (input) => {
+        executionInputs.push(input);
+        return { answerText: "Here is the confirmed plan." };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+      confirmationStore,
+      defaultRepo: "xbmc/xbmc",
+    });
+
+    const result = await handler.handle(
+      createAddressedPayload("confirm: plan: draft migration steps for retry queue"),
+    );
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "read_only",
+      repo: "xbmc/xbmc",
+      publishedText: "Here is the confirmed plan.",
+    });
+    expect(executionInputs).toHaveLength(1);
+    expect(executionInputs[0]).toMatchObject({
+      writeMode: false,
+      enableInlineTools: false,
+      enableCommentTools: false,
+      triggerBody: "draft migration steps for retry queue",
+    });
+    expect(executionInputs[0]?.prompt).toContain("Read-only execution requirements:");
+    expect(executionInputs[0]?.prompt).not.toContain("Write-capable execution requirements:");
+    expect(published).toEqual(["Here is the confirmed plan."]);
   });
 
   test("uses write runner output and publishes primary PR link on success", async () => {

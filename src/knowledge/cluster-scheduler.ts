@@ -1,5 +1,5 @@
 /**
- * Cluster scheduler: weekly setInterval scheduler for running the
+ * Cluster scheduler: weekly interval scheduler for running the
  * review pattern clustering pipeline. Follows wiki-staleness-detector.ts pattern.
  *
  * - 7-day interval with 120s startup delay (staggered after wiki staleness at 90s)
@@ -11,6 +11,7 @@ import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { TaskRouter } from "../llm/task-router.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { scheduleInterval, scheduleTimeout, type ScheduledInterval, type ScheduledTimeout } from "../lib/with-timeout.ts";
 import type { ClusterScheduler } from "./cluster-types.ts";
 import { createClusterStore } from "./cluster-store.ts";
 import type { runClusterPipeline } from "./cluster-pipeline.ts";
@@ -37,8 +38,8 @@ export function createClusterScheduler(
   const { sql, taskRouter, logger, repos } = opts;
   const createStore = opts.createClusterStoreFn ?? createClusterStore;
   const store = createStore({ sql, logger });
-  let startupTimer: ReturnType<typeof setTimeout> | null = null;
-  let intervalTimer: ReturnType<typeof setInterval> | null = null;
+  let startupTimer: ScheduledTimeout | null = null;
+  let intervalTimer: ScheduledInterval | null = null;
 
   async function runAll(): Promise<void> {
     const runPipeline = opts.runClusterPipelineFn
@@ -63,11 +64,11 @@ export function createClusterScheduler(
         return;
       }
 
-      startupTimer = setTimeout(() => {
+      startupTimer = scheduleTimeout(() => {
         runAll().catch((err) => {
           logger.error({ err }, "Cluster scheduler initial run failed");
         });
-        intervalTimer = setInterval(() => {
+        intervalTimer = scheduleInterval(() => {
           runAll().catch((err) => {
             logger.error({ err }, "Cluster scheduler interval run failed");
           });
@@ -79,8 +80,8 @@ export function createClusterScheduler(
       );
     },
     stop() {
-      if (startupTimer) clearTimeout(startupTimer);
-      if (intervalTimer) clearInterval(intervalTimer);
+      if (startupTimer) startupTimer.clear();
+      if (intervalTimer) intervalTimer.clear();
       startupTimer = null;
       intervalTimer = null;
       logger.debug("Cluster scheduler stopped");

@@ -12,6 +12,8 @@ export type ReviewCommentMatch = {
   repo: string;
   prNumber: number;
   prTitle: string | null;
+  commentGithubId: number;
+  chunkIndex: number;
   filePath: string | null;
   authorLogin: string;
   authorAssociation: string | null;
@@ -71,6 +73,8 @@ export async function searchReviewComments(opts: {
       repo: r.record.repo,
       prNumber: r.record.prNumber,
       prTitle: r.record.prTitle,
+      commentGithubId: r.record.commentGithubId,
+      chunkIndex: r.record.chunkIndex,
       filePath: r.record.filePath,
       authorLogin: r.record.authorLogin,
       authorAssociation: r.record.authorAssociation,

@@ -1,7 +1,17 @@
 import type { Octokit } from "@octokit/rest";
 import type { GitHubApp } from "../auth/github-app.ts";
+import {
+  createIssueCommentWithPublicationPipeline,
+  createPullReviewWithPublicationPipeline,
+  prepareGitHubPublicationBody,
+  updateIssueCommentWithPublicationPipeline,
+  updatePullReviewWithPublicationPipeline,
+} from "../lib/github-publication.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
-import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+import {
+  findIssueCommentByMarkerPaged,
+  findPullReviewByMarkerPaged,
+} from "../lib/github-issue-comments.ts";
 import { buildReviewOutputMarker } from "./review-idempotency.ts";
 import { buildReviewDetailsMarker } from "../lib/review-details-formatting.ts";
 import { mergeReviewDetailsIntoSummaryBody } from "./review-details-summary-merge.ts";
@@ -11,6 +21,7 @@ export type CanonicalReviewSurface =
   | { kind: "pull_review"; reviewId: number; body: string };
 
 export type CanonicalSurfaceKind = CanonicalReviewSurface["kind"];
+const MARKER_LOOKUP_PAGE_SIZE = 100;
 
 export function getCanonicalReviewSurfaceId(surface: CanonicalReviewSurface): number {
   return surface.kind === "issue_comment" ? surface.commentId : surface.reviewId;
@@ -27,52 +38,38 @@ export async function findCanonicalReviewSurface(params: {
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
 
   if (params.surfaceKind === "issue_comment") {
-    const commentsResponse = await params.octokit.rest.issues.listComments({
+    const issueComment = await findIssueCommentByMarkerPaged(params.octokit, {
       owner: params.owner,
       repo: params.repo,
-      issue_number: params.prNumber,
-      per_page: 100,
-      sort: "created",
-      direction: "desc",
+      issueNumber: params.prNumber,
+      marker,
+      perPage: MARKER_LOOKUP_PAGE_SIZE,
     });
 
-    const issueComment = commentsResponse.data.find((comment) =>
-      typeof comment.id === "number"
-      && typeof comment.body === "string"
-      && comment.body.includes(marker)
-    );
-    const issueCommentBody = typeof issueComment?.body === "string" ? issueComment.body : undefined;
-
-    if (typeof issueComment?.id === "number" && issueCommentBody !== undefined) {
+    if (issueComment) {
       return {
         kind: "issue_comment",
         commentId: issueComment.id,
-        body: issueCommentBody,
+        body: issueComment.body ?? "",
       };
     }
 
     return null;
   }
 
-  const reviewsResponse = await params.octokit.rest.pulls.listReviews({
+  const pullReview = await findPullReviewByMarkerPaged(params.octokit, {
     owner: params.owner,
     repo: params.repo,
-    pull_number: params.prNumber,
-    per_page: 100,
+    prNumber: params.prNumber,
+    marker,
+    perPage: MARKER_LOOKUP_PAGE_SIZE,
   });
 
-  const pullReview = [...reviewsResponse.data].reverse().find((review) =>
-    typeof review.id === "number"
-    && typeof review.body === "string"
-    && review.body.includes(marker)
-  );
-  const pullReviewBody = typeof pullReview?.body === "string" ? pullReview.body : undefined;
-
-  if (typeof pullReview?.id === "number" && pullReviewBody !== undefined) {
+  if (pullReview) {
     return {
       kind: "pull_review",
       reviewId: pullReview.id,
-      body: pullReviewBody,
+      body: pullReview.body,
     };
   }
 
@@ -88,38 +85,42 @@ export async function updateCanonicalReviewSurface(params: {
   body: string;
   botHandles: string[];
 }): Promise<CanonicalReviewSurface> {
-  const sanitizedBody = sanitizeOutgoingMentions(params.body, params.botHandles);
+  const publicationBody = prepareGitHubPublicationBody(params.body, {
+    botHandles: params.botHandles,
+    preserveKodiaiMarkers: true,
+  });
 
   if (params.surface.kind === "issue_comment") {
-    await params.octokit.rest.issues.updateComment({
+    await updateIssueCommentWithPublicationPipeline(params.octokit, {
       owner: params.owner,
       repo: params.repo,
       comment_id: params.surface.commentId,
-      body: sanitizedBody,
+      body: params.body,
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
     });
 
     return {
       kind: "issue_comment",
       commentId: params.surface.commentId,
-      body: sanitizedBody,
+      body: publicationBody,
     };
   }
 
-  await params.octokit.request(
-    "PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
-    {
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: params.prNumber,
-      review_id: params.surface.reviewId,
-      body: sanitizedBody,
-    },
-  );
+  await updatePullReviewWithPublicationPipeline(params.octokit, {
+    owner: params.owner,
+    repo: params.repo,
+    pull_number: params.prNumber,
+    review_id: params.surface.reviewId,
+    body: params.body,
+    botHandles: params.botHandles,
+    preserveKodiaiMarkers: true,
+  });
 
   return {
     kind: "pull_review",
     reviewId: params.surface.reviewId,
-    body: sanitizedBody,
+    body: publicationBody,
   };
 }
 
@@ -134,14 +135,19 @@ export async function createCanonicalReviewSurface(params: {
   botHandles: string[];
   pullReviewEvent?: "APPROVE" | "COMMENT" | "REQUEST_CHANGES";
 }): Promise<CanonicalReviewSurface> {
-  const sanitizedBody = sanitizeOutgoingMentions(params.body, params.botHandles);
+  const publicationBody = prepareGitHubPublicationBody(params.body, {
+    botHandles: params.botHandles,
+    preserveKodiaiMarkers: true,
+  });
 
   if (params.surfaceKind === "issue_comment") {
-    const response = await params.octokit.rest.issues.createComment({
+    const response = await createIssueCommentWithPublicationPipeline(params.octokit, {
       owner: params.owner,
       repo: params.repo,
       issue_number: params.prNumber,
-      body: sanitizedBody,
+      body: params.body,
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
     });
 
     if (typeof response.data.id !== "number") {
@@ -151,23 +157,25 @@ export async function createCanonicalReviewSurface(params: {
     return {
       kind: "issue_comment",
       commentId: response.data.id,
-      body: sanitizedBody,
+      body: publicationBody,
     };
   }
 
-  const response = await params.octokit.rest.pulls.createReview({
+  const response = await createPullReviewWithPublicationPipeline(params.octokit, {
     owner: params.owner,
     repo: params.repo,
     pull_number: params.prNumber,
     event: params.pullReviewEvent ?? "COMMENT",
-    body: sanitizedBody,
+    body: params.body,
+    botHandles: params.botHandles,
+    preserveKodiaiMarkers: true,
   });
 
   if (typeof response.data.id === "number") {
     return {
       kind: "pull_review",
       reviewId: response.data.id,
-      body: sanitizedBody,
+      body: publicationBody,
     };
   }
 
@@ -288,40 +296,38 @@ export async function upsertDegradedReviewDetailsFallbackComment(params: {
 }): Promise<number | undefined> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
   const marker = buildReviewDetailsMarker(reviewOutputKey);
-  const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);
 
-  const commentsResponse = await octokit.rest.issues.listComments({
+  const existingComment = await findIssueCommentByMarkerPaged(octokit, {
     owner,
     repo,
-    issue_number: prNumber,
-    per_page: 100,
-    sort: "created",
-    direction: "desc",
+    issueNumber: prNumber,
+    marker,
+    perPage: MARKER_LOOKUP_PAGE_SIZE,
   });
-
-  const existingComment = commentsResponse.data.find((comment) =>
-    typeof comment.body === "string" && comment.body.includes(marker)
-  );
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
     return undefined;
   }
 
   if (existingComment) {
-    await octokit.rest.issues.updateComment({
+    await updateIssueCommentWithPublicationPipeline(octokit, {
       owner,
       repo,
       comment_id: existingComment.id,
-      body: sanitizedBody,
+      body,
+      botHandles,
+      preserveKodiaiMarkers: true,
     });
     return existingComment.id;
   }
 
-  const response = await octokit.rest.issues.createComment({
+  const response = await createIssueCommentWithPublicationPipeline(octokit, {
     owner,
     repo,
     issue_number: prNumber,
-    body: sanitizedBody,
+    body,
+    botHandles,
+    preserveKodiaiMarkers: true,
   });
   return response.data.id;
 }

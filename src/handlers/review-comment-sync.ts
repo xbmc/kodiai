@@ -97,11 +97,12 @@ function githubTimestampMs(value: Date | string | null | undefined): number | nu
 }
 
 function isStoredDuplicateCreate(record: ReviewCommentRecord | null): boolean {
-  return record != null && !record.deleted;
+  return record != null;
 }
 
 function isStoredDuplicateEdit(input: ReviewCommentInput, record: ReviewCommentRecord | null): boolean {
-  if (record == null || record.deleted) return false;
+  if (record == null) return false;
+  if (record.deleted) return true;
   if (record.body !== input.body) return false;
   const inputUpdatedAt = githubTimestampMs(input.githubUpdatedAt ?? input.githubCreatedAt);
   const storedUpdatedAt = githubTimestampMs(record.githubUpdatedAt ?? record.githubCreatedAt);
@@ -118,7 +119,7 @@ async function syncReviewCommentChunks(opts: {
   persistChunks: (store: ReviewCommentStore, chunks: ReviewCommentChunk[]) => Promise<void>;
 }): Promise<number> {
   const { input, store, embeddingProvider, logger, isDuplicate, logDuplicate, persistChunks } = opts;
-  const existing = await store.getByGithubId(input.repo, input.commentGithubId);
+  const existing = await store.getByGithubId(input.repo, input.commentGithubId, { includeDeleted: true });
 
   if (isDuplicate(input, existing)) {
     logDuplicate(input, logger);

@@ -271,6 +271,13 @@ async function insertReviewCommentChunkBatches(
             batch_rows.github_updated_at,
             batch_rows.backfill_batch
           FROM ${REVIEW_COMMENT_CHUNK_BATCH_RECORDSET}
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM review_comments deleted_comment
+            WHERE deleted_comment.repo = batch_rows.repo
+              AND deleted_comment.comment_github_id = batch_rows.comment_github_id
+              AND deleted_comment.deleted = true
+          )
           ${onConflictClause}
         `,
         [batch.json],
@@ -307,10 +314,27 @@ export function createReviewCommentStore(opts: {
     },
 
     async softDelete(repo: string, commentGithubId: number): Promise<void> {
+      const owner = repo.split("/")[0] ?? "";
       await sql`
         UPDATE review_comments
         SET deleted = true
         WHERE repo = ${repo} AND comment_github_id = ${commentGithubId}
+      `;
+      await sql`
+        INSERT INTO review_comments (
+          repo, owner, pr_number, comment_github_id,
+          thread_id, author_login, body,
+          chunk_index, chunk_text, token_count,
+          github_created_at, deleted
+        )
+        VALUES (
+          ${repo}, ${owner}, 0, ${commentGithubId},
+          ${`${repo}:deleted:${commentGithubId}`}, 'deleted', 'deleted',
+          0, 'deleted', 0,
+          now(), true
+        )
+        ON CONFLICT (repo, comment_github_id, chunk_index)
+        DO UPDATE SET deleted = true
       `;
     },
 
@@ -386,7 +410,7 @@ export function createReviewCommentStore(opts: {
         SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
         FROM review_comments
         WHERE thread_id = ${threadId} AND deleted = false
-        ORDER BY github_created_at, chunk_index
+        ORDER BY github_created_at, comment_github_id, chunk_index
       `;
       return rows.map((row) => rowToRecord(row as unknown as CommentRow));
     },

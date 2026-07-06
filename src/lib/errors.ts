@@ -13,6 +13,13 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { retryGitHubRateLimitOnly } from "./github-retry.ts";
+import {
+  createIssueCommentWithPublicationPipeline,
+  prepareGitHubPublicationBody,
+  updateIssueCommentWithPublicationPipeline,
+} from "./github-publication.ts";
+import { findIssueCommentsByMarkerPaged } from "./github-issue-comments.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "./result.ts";
 import { redactGitHubTokens } from "./sanitizer.ts";
 
 /** User-facing error categories. */
@@ -26,14 +33,13 @@ export type ErrorCategory =
   | "usage_limit";
 
 export type ErrorCommentPublicationMethod = "create-comment" | "update-comment";
-export type ErrorCommentPublicationResolution = "created" | "updated" | "failed";
+export type ErrorCommentPublicationResolution = "created" | "updated";
 
-export type ErrorCommentPublicationStatus = {
-  ok: boolean;
+export type ErrorCommentPublicationDelivery = {
   resolution: ErrorCommentPublicationResolution;
   method: ErrorCommentPublicationMethod;
-  error?: unknown;
 };
+export type ErrorCommentPublicationStatus = Result<ErrorCommentPublicationDelivery>;
 
 /**
  * Classify an error into a user-understandable category.
@@ -174,22 +180,17 @@ async function findRecentUsageLimitErrorComment(
     issueNumber: number;
   },
 ): Promise<number | undefined> {
-  const listComments = octokit.rest.issues.listComments;
-  if (typeof listComments !== "function") {
-    return undefined;
-  }
-
-  const { data } = await retryGitHubRateLimitOnly(() =>
-    listComments({
+  const cutoffMs = Date.now() - USAGE_LIMIT_DEDUPE_WINDOW_MS;
+  const comments = await retryGitHubRateLimitOnly(() =>
+    findIssueCommentsByMarkerPaged(octokit, {
       owner: target.owner,
       repo: target.repo,
-      issue_number: target.issueNumber,
-      per_page: 100,
-    }),
+      issueNumber: target.issueNumber,
+      marker: USAGE_LIMIT_ERROR_MARKER,
+    })
   );
 
-  const cutoffMs = Date.now() - USAGE_LIMIT_DEDUPE_WINDOW_MS;
-  const recent = data
+  const recent = comments
     .filter((comment) => {
       const body = typeof comment.body === "string" ? comment.body : "";
       const login = comment.user?.login ?? "";
@@ -230,49 +231,60 @@ export async function postOrUpdateErrorComment(
   },
   body: string,
   logger: Logger,
+  botHandles: string[] = ["kodiai", "claude"],
 ): Promise<ErrorCommentPublicationStatus> {
   const method: ErrorCommentPublicationMethod = target.trackingCommentId
     ? "update-comment"
     : "create-comment";
+  const publicationBody = prepareGitHubPublicationBody(body, {
+    botHandles,
+    preserveKodiaiMarkers: true,
+  });
 
   try {
     if (target.trackingCommentId) {
       const trackingCommentId = target.trackingCommentId;
       await retryGitHubRateLimitOnly(() =>
-        octokit.rest.issues.updateComment({
+        updateIssueCommentWithPublicationPipeline(octokit, {
           owner: target.owner,
           repo: target.repo,
           comment_id: trackingCommentId,
           body,
+          botHandles,
+          preserveKodiaiMarkers: true,
         }),
       );
-      return { ok: true, resolution: "updated", method };
+      return resultOk({ resolution: "updated", method });
     }
 
-    if (body.includes(USAGE_LIMIT_ERROR_MARKER)) {
+    if (publicationBody.includes(USAGE_LIMIT_ERROR_MARKER)) {
       const duplicateCommentId = await findRecentUsageLimitErrorComment(octokit, target);
       if (duplicateCommentId !== undefined) {
         await retryGitHubRateLimitOnly(() =>
-          octokit.rest.issues.updateComment({
+          updateIssueCommentWithPublicationPipeline(octokit, {
             owner: target.owner,
             repo: target.repo,
             comment_id: duplicateCommentId,
             body,
+            botHandles,
+            preserveKodiaiMarkers: true,
           }),
         );
-        return { ok: true, resolution: "updated", method: "update-comment" };
+        return resultOk({ resolution: "updated", method: "update-comment" });
       }
     }
 
     await retryGitHubRateLimitOnly(() =>
-      octokit.rest.issues.createComment({
+      createIssueCommentWithPublicationPipeline(octokit, {
         owner: target.owner,
         repo: target.repo,
         issue_number: target.issueNumber,
         body,
+        botHandles,
+        preserveKodiaiMarkers: true,
       }),
     );
-    return { ok: true, resolution: "created", method };
+    return resultOk({ resolution: "created", method });
   } catch (err) {
     logger.error(
       {
@@ -285,6 +297,6 @@ export async function postOrUpdateErrorComment(
       },
       "Failed to post/update error comment",
     );
-    return { ok: false, resolution: "failed", method, error: err };
+    return resultErr(toError(err));
   }
 }

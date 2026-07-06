@@ -458,6 +458,38 @@ describe("createCIFailureHandler", () => {
     });
   });
 
+  it("strips bot mentions from check names before publishing CI analysis", async () => {
+    const payload = clonePayload();
+    const harness = createHarness({
+      headChecksByRef: {
+        [payload.check_suite.head_sha]: [
+          {
+            data: [
+              { name: "@claude-build", conclusion: "failure", status: "completed" },
+            ],
+          },
+        ],
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: [
+          {
+            data: [
+              { name: "@claude-build", conclusion: "failure", status: "completed" },
+            ],
+          },
+        ],
+      },
+      baseCommitsByRef: {
+        main: [{ sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
+      },
+    });
+
+    await harness.router.captured[0]!.handler(makeEvent(payload));
+
+    expect(harness.octokit.rest.issues.createComment).toHaveBeenCalledTimes(1);
+    const body = extractPostedBody(harness);
+    expect(body).not.toContain("@claude-build");
+    expect(body).toContain("**claude-build**");
+  });
+
   it("updates the existing marker comment when flakiness overrides the classification", async () => {
     const payload = clonePayload();
     const marker = buildCIAnalysisMarker("octo-org", "widget", 17);

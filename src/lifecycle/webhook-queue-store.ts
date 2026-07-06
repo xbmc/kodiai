@@ -5,6 +5,8 @@ import type { WebhookQueueStore } from "./types.ts";
 
 const DEFAULT_DEQUEUE_BATCH_SIZE = 100;
 
+const STALE_PROCESSING_CLAIM_MINUTES = 15;
+
 /**
  * Create a PostgreSQL-backed webhook queue store for durable queuing during shutdown drain.
  *
@@ -80,9 +82,16 @@ export function createWebhookQueueStore(opts: {
         }
 
         const rows = await (tx as unknown as Sql)`
-          SELECT id, source, delivery_id, event_name, headers, body, queued_at, processed_at, status
+          SELECT id, source, delivery_id, event_name, headers, body, queued_at, claimed_at, processed_at, status
           FROM webhook_queue
           WHERE status = 'pending'
+            OR (
+              status = 'processing'
+              AND (
+                claimed_at IS NULL
+                OR claimed_at < NOW() - (${STALE_PROCESSING_CLAIM_MINUTES} * INTERVAL '1 minute')
+              )
+            )
           ORDER BY queued_at ASC
           LIMIT ${limit}
           FOR UPDATE SKIP LOCKED
@@ -95,7 +104,7 @@ export function createWebhookQueueStore(opts: {
         const ids = rows.map((r: Record<string, unknown>) => r.id as number);
         await (tx as unknown as Sql)`
           UPDATE webhook_queue
-          SET status = 'processing'
+          SET status = 'processing', claimed_at = NOW()
           WHERE id = ANY(${ids})
         `;
 
@@ -107,8 +116,9 @@ export function createWebhookQueueStore(opts: {
           headers: r.headers as Record<string, string>,
           body: r.body as string,
           queuedAt: r.queued_at as Date,
+          claimedAt: (r.claimed_at as Date) ?? undefined,
           processedAt: (r.processed_at as Date) ?? undefined,
-          status: r.status as string,
+          status: "processing",
         }));
       });
 

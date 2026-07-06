@@ -958,6 +958,34 @@ describe("createAddonCheckHandler", () => {
     expect(callArgs.body).toContain("missing changelog");
   });
 
+  it("strips bot mentions from addon check findings before publishing", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("ERROR: @claude should inspect this addon\n");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandlerForTest({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).not.toContain("@claude");
+    expect(commentBody).toContain("claude should inspect this addon");
+  });
+
   it("posts addon-rule review when no checker findings and tool not found", async () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);

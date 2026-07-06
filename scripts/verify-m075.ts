@@ -36,6 +36,7 @@ import {
   type M075S06Report,
 } from "./verify-m075-s06.ts";
 import type { ProductionLogIssueClassId } from "../src/review-audit/production-log-taxonomy.ts";
+import { runWithAbortSignalTimeout } from "../src/lib/with-timeout.ts";
 
 export const COMMAND_NAME = "verify:m075" as const;
 export const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m075.ts" as const;
@@ -559,16 +560,12 @@ function normalizeBaseUrl(value: string | undefined): string | null {
 }
 
 async function defaultHealthFetcher(url: string): Promise<M075HealthFetchResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  try {
-    const response = await fetch(url, { method: "GET", signal: controller.signal });
+  return await runWithAbortSignalTimeout("m075 health fetch", 5_000, async (signal) => {
+    const response = await fetch(url, { method: "GET", signal });
     let json: unknown = null;
     try { json = await response.json(); } catch { json = null; }
     return { status: response.status, json };
-  } finally {
-    clearTimeout(timeout);
-  }
+  });
 }
 
 async function fetchHealthJson(fetcher: M075HealthFetcher, url: string): Promise<{ readonly ok: boolean; readonly status: number | null; readonly json: unknown; readonly issues: readonly string[] }> {

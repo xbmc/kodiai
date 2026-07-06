@@ -48,6 +48,8 @@ type ImportRecord = {
   stableKey: string;
   importName: string;
   target: string;
+  targetSymbol?: string;
+  targetPath?: string;
   line: number;
   col: number;
   kind: "import" | "include";
@@ -76,6 +78,33 @@ function buildCallStableKey(path: string, line: number, caller: string, callee: 
 
 function buildSymbolStableKey(path: string, qualifiedName: string): string {
   return `symbol:${path}:${qualifiedName}`;
+}
+
+function pythonModuleToPath(moduleName: string): string {
+  return `${moduleName.replace(/\./g, "/")}.py`;
+}
+
+function dirnamePath(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
+function normalizeRepoPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function resolveLocalIncludePath(currentPath: string, includeTarget: string): string {
+  const baseDir = dirnamePath(currentPath);
+  return normalizeRepoPath(baseDir ? `${baseDir}/${includeTarget}` : includeTarget);
 }
 
 function buildTestStableKey(path: string, qualifiedName: string): string {
@@ -187,17 +216,18 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
   const importRecords: ImportRecord[] = [];
   const callRecords: CallRecord[] = [];
 
-  const classMatches = Array.from(input.content.matchAll(/^([ \t]*)class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:/gm));
-  const classByIndent = new Map<number, string>();
-  for (const match of classMatches) {
-    const indent = match[1]?.length ?? 0;
-    classByIndent.set(indent, match[2]!);
-  }
-
   const lines = input.content.split("\n");
+  const classStack: Array<{ indent: number; name: string }> = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     const lineNo = i + 1;
+    const currentIndent = line.match(/^([ \t]*)/)?.[1]?.length ?? 0;
+
+    if (line.trim()) {
+      while (classStack.length > 0 && classStack[classStack.length - 1]!.indent >= currentIndent) {
+        classStack.pop();
+      }
+    }
 
     const importMatch = line.match(/^\s*import\s+(.+)$/);
     if (importMatch) {
@@ -218,10 +248,14 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
       const moduleName = fromMatch[1]!;
       const imported = fromMatch[2]!.split(",").map((v) => v.trim()).filter(Boolean);
       for (const part of imported) {
+        const aliasMatch = part.match(/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/);
+        const importedName = aliasMatch?.[1] ?? part;
+        const localName = aliasMatch?.[2] ?? importedName;
         importRecords.push({
-          stableKey: buildImportStableKey(input.path, lineNo, `${moduleName}.${part}`),
-          importName: part,
+          stableKey: buildImportStableKey(input.path, lineNo, `${moduleName}.${importedName}`),
+          importName: localName,
           target: moduleName,
+          targetSymbol: importedName,
           line: lineNo,
           col: line.indexOf(part) + 1,
           kind: "import",
@@ -229,16 +263,19 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
       }
     }
 
+    const classMatch = line.match(/^([ \t]*)class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:/);
+    if (classMatch) {
+      classStack.push({
+        indent: classMatch[1]?.length ?? 0,
+        name: classMatch[2]!,
+      });
+      continue;
+    }
+
     const defMatch = line.match(/^([ \t]*)def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*:/);
     if (defMatch) {
       const indent = defMatch[1]?.length ?? 0;
-      let containerName: string | undefined;
-      for (const [classIndent, className] of Array.from(classByIndent.entries()).sort((a, b) => b[0] - a[0])) {
-        if (classIndent < indent) {
-          containerName = className;
-          break;
-        }
-      }
+      const containerName = [...classStack].reverse().find((entry) => entry.indent < indent)?.name;
 
       const symbolName = defMatch[2]!;
       const qualifiedName = containerName ? `${containerName}.${symbolName}` : symbolName;
@@ -280,7 +317,7 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
       const calleeName = match[1]!;
       if (["if", "for", "while", "return", "class", "def", "with", "print"].includes(calleeName)) continue;
       const relative = lineColFromIndex(body, match.index ?? 0);
-      const absoluteLine = symbol.line + relative.line - 1;
+      const absoluteLine = symbol.line + relative.line;
       callRecords.push({
         stableKey: buildCallStableKey(input.path, absoluteLine, symbol.qualifiedName, calleeName),
         callerStableKey: symbol.stableKey,
@@ -379,6 +416,14 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
     symbolBySimpleName.set(symbol.symbolName, symbol);
     symbolBySimpleName.set(symbol.qualifiedName, symbol);
   }
+  const importedSymbolTargets = new Map<string, string>();
+  for (const item of importRecords) {
+    if (!item.targetSymbol) continue;
+    importedSymbolTargets.set(
+      item.importName,
+      buildSymbolStableKey(pythonModuleToPath(item.target), item.targetSymbol),
+    );
+  }
 
   for (const call of dedupeByStableKey(callRecords)) {
     nodes.push({
@@ -404,13 +449,29 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
         confidence: call.confidence,
         attributes: { callerStableKey: call.callerStableKey },
       });
+    } else {
+      const importedTargetStableKey = importedSymbolTargets.get(call.calleeName);
+      if (importedTargetStableKey) {
+        edges.push({
+          edgeKind: "calls",
+          sourceStableKey: call.stableKey,
+          targetStableKey: importedTargetStableKey,
+          confidence: Math.min(call.confidence, 0.72),
+          attributes: {
+            callerStableKey: call.callerStableKey,
+            crossFile: true,
+            resolution: "python-from-import",
+          },
+        });
+      }
     }
   }
 
   const finalNodes = dedupeByStableKey(nodes);
   const finalNodeKeys = new Set(finalNodes.map((node) => node.stableKey));
   const finalEdges = uniqueEdges(edges).filter((edge) =>
-    finalNodeKeys.has(edge.sourceStableKey) && finalNodeKeys.has(edge.targetStableKey),
+    finalNodeKeys.has(edge.sourceStableKey)
+    && (finalNodeKeys.has(edge.targetStableKey) || edge.attributes?.crossFile === true),
   );
 
   return {
@@ -437,13 +498,15 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
     const line = lines[i]!;
     const lineNo = i + 1;
 
-    const includeMatch = line.match(/^\s*#include\s+[<"]([^>"]+)[>"]/);
+    const includeMatch = line.match(/^\s*#include\s+([<"])([^>"]+)[>"]/);
     if (includeMatch) {
-      const target = includeMatch[1]!;
+      const delimiter = includeMatch[1]!;
+      const target = includeMatch[2]!;
       importRecords.push({
         stableKey: buildImportStableKey(input.path, lineNo, target),
         importName: target,
         target,
+        targetPath: delimiter === '"' ? resolveLocalIncludePath(input.path, target) : undefined,
         line: lineNo,
         col: line.indexOf(target) + 1,
         kind: "include",
@@ -593,6 +656,9 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
     symbolBySimpleName.set(symbol.symbolName, symbol);
     symbolBySimpleName.set(symbol.qualifiedName, symbol);
   }
+  const localIncludePaths = dedupeByStableKey(importRecords)
+    .map((item) => item.targetPath)
+    .filter((targetPath): targetPath is string => typeof targetPath === "string" && targetPath.length > 0);
 
   for (const call of dedupeByStableKey(callRecords)) {
     nodes.push({
@@ -617,13 +683,29 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
         confidence: call.confidence,
         attributes: { callerStableKey: call.callerStableKey },
       });
+    } else {
+      const includeTargetPath = localIncludePaths[0];
+      if (includeTargetPath) {
+        edges.push({
+          edgeKind: "calls",
+          sourceStableKey: call.stableKey,
+          targetStableKey: buildSymbolStableKey(includeTargetPath, call.calleeName),
+          confidence: Math.min(call.confidence, 0.58),
+          attributes: {
+            callerStableKey: call.callerStableKey,
+            crossFile: true,
+            resolution: "cpp-local-include",
+          },
+        });
+      }
     }
   }
 
   const finalNodes = dedupeByStableKey(nodes);
   const finalNodeKeys = new Set(finalNodes.map((node) => node.stableKey));
   const finalEdges = uniqueEdges(edges).filter((edge) =>
-    finalNodeKeys.has(edge.sourceStableKey) && finalNodeKeys.has(edge.targetStableKey),
+    finalNodeKeys.has(edge.sourceStableKey)
+    && (finalNodeKeys.has(edge.targetStableKey) || edge.attributes?.crossFile === true),
   );
 
   return {

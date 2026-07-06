@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 const EMBEDDING_MODEL = "voyage-4";
 
@@ -23,10 +24,6 @@ export type EmbeddingSweepResult = {
   failed: number;
   durationMs: number;
 };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Sweep for chunks with null embeddings and backfill them.
@@ -63,12 +60,14 @@ export async function sweepNullEmbeddings(
   let succeeded = 0;
   let failed = 0;
   let batchNumber = 0;
+  let afterId: number | undefined;
 
   while (true) {
     if (maxBatches !== undefined && batchNumber >= maxBatches) break;
 
-    const batch = await store.getNullEmbeddingChunks(repo, batchSize);
+    const batch = await store.getNullEmbeddingChunks(repo, batchSize, afterId);
     if (batch.length === 0) break;
+    afterId = Math.max(...batch.map((chunk) => chunk.id));
 
     batchNumber++;
 

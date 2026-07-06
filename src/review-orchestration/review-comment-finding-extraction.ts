@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { findReviewCommentsByMarkerPaged } from "../lib/github-issue-comments.ts";
 import {
   parseInlineCommentMetadata,
   type FindingCategory,
@@ -31,27 +32,18 @@ export async function extractFindingsFromReviewComments(params: {
   const marker = buildReviewOutputMarker(reviewOutputKey);
 
   try {
-    const response = await octokit.rest.pulls.listReviewComments({
+    const comments = await findReviewCommentsByMarkerPaged(octokit, {
       owner,
       repo,
-      pull_number: prNumber,
-      per_page: 100,
+      prNumber,
+      marker,
       sort: "created",
       direction: "desc",
     });
-
     const findings: ExtractedFinding[] = [];
 
-    for (const comment of response.data) {
-      if (
-        typeof comment.id !== "number" ||
-        typeof comment.path !== "string" ||
-        typeof comment.body !== "string"
-      ) {
-        continue;
-      }
-
-      if (!comment.body.includes(marker)) {
+    for (const comment of comments) {
+      if (typeof comment.path !== "string" || typeof comment.body !== "string") {
         continue;
       }
 

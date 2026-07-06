@@ -8,6 +8,7 @@ import {
   type StructuralImpactSignal,
 } from "./orchestrator.ts";
 import type { FetchStructuralImpactInput } from "./orchestrator.ts";
+import { err, ok } from "../lib/result.ts";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -79,28 +80,28 @@ function makeCorpusMatches(n = 1): CorpusCodeMatch[] {
 function makeGraphAdapter(result: GraphBlastRadiusResult | Error): GraphAdapter {
   return {
     queryBlastRadius: () =>
-      result instanceof Error ? Promise.reject(result) : Promise.resolve(result),
+      Promise.resolve(result instanceof Error ? err(result) : ok(result)),
   };
 }
 
 function makeCorpusAdapter(result: CorpusCodeMatch[] | Error): CorpusAdapter {
   return {
     searchCanonicalCode: () =>
-      result instanceof Error ? Promise.reject(result) : Promise.resolve(result),
+      Promise.resolve(result instanceof Error ? err(result) : ok(result)),
   };
 }
 
 function makeSlowGraphAdapter(delayMs: number): GraphAdapter {
   return {
     queryBlastRadius: () =>
-      new Promise((resolve) => setTimeout(() => resolve(makeGraphResult()), delayMs)),
+      new Promise((resolve) => setTimeout(() => resolve(ok(makeGraphResult())), delayMs)),
   };
 }
 
 function makeSlowCorpusAdapter(delayMs: number): CorpusAdapter {
   return {
     searchCanonicalCode: () =>
-      new Promise((resolve) => setTimeout(() => resolve(makeCorpusMatches()), delayMs)),
+      new Promise((resolve) => setTimeout(() => resolve(ok(makeCorpusMatches())), delayMs)),
   };
 }
 
@@ -178,6 +179,13 @@ describe("fetchStructuralImpact — happy path", () => {
 // ── Timeout behavior ──────────────────────────────────────────────────────────
 
 describe("fetchStructuralImpact — timeout behavior", () => {
+  test("keeps adapter abort timeout wiring in the shared timeout primitive", async () => {
+    const source = await Bun.file(new URL("./orchestrator.ts", import.meta.url)).text();
+
+    expect(source).not.toContain("new AbortController()");
+    expect(source).toContain("raceWithAbortSignalTimeout");
+  });
+
   test("graph timeout → status partial, degradation record added", async () => {
     const result = await fetchStructuralImpact(
       makeBaseInput({
@@ -226,11 +234,68 @@ describe("fetchStructuralImpact — timeout behavior", () => {
     expect(result.degradations.every((d) => d.reason.includes("timed out"))).toBe(true);
     expect(result.changedFiles).toEqual(["src/service.cpp"]);
   });
+
+  test("aborts adapter signals when a timeout fires", async () => {
+    let graphSignal: AbortSignal | undefined;
+    let graphAborted = false;
+    let corpusSignal: AbortSignal | undefined;
+    let corpusAborted = false;
+
+    const result = await fetchStructuralImpact(
+      makeBaseInput({
+        graphAdapter: {
+          queryBlastRadius: (input) => {
+            graphSignal = input.signal;
+            graphSignal?.addEventListener("abort", () => {
+              graphAborted = true;
+            });
+            return new Promise(() => {});
+          },
+        },
+        corpusAdapter: {
+          searchCanonicalCode: (input) => {
+            corpusSignal = input.signal;
+            corpusSignal?.addEventListener("abort", () => {
+              corpusAborted = true;
+            });
+            return new Promise(() => {});
+          },
+        },
+        timeoutMs: 5,
+      }),
+    );
+
+    expect(result.status).toBe("unavailable");
+    expect(graphSignal).toBeDefined();
+    expect(corpusSignal).toBeDefined();
+    expect(graphAborted).toBe(true);
+    expect(corpusAborted).toBe(true);
+  });
 });
 
 // ── Error handling ────────────────────────────────────────────────────────────
 
 describe("fetchStructuralImpact — adapter errors", () => {
+  test("synchronous adapter throws are degraded instead of escaping orchestration", async () => {
+    const result = await fetchStructuralImpact(
+      makeBaseInput({
+        graphAdapter: {
+          queryBlastRadius: () => {
+            throw new Error("graph adapter threw synchronously");
+          },
+        },
+        corpusAdapter: makeCorpusAdapter(makeCorpusMatches()),
+      }),
+    );
+
+    expect(result.status).toBe("partial");
+    expect(result.canonicalEvidence).toHaveLength(1);
+    expect(result.degradations).toContainEqual({
+      source: "graph",
+      reason: "Error: graph adapter threw synchronously",
+    });
+  });
+
   test("graph error → status partial, corpus evidence still present", async () => {
     const result = await fetchStructuralImpact(
       makeBaseInput({
@@ -344,6 +409,30 @@ describe("fetchStructuralImpact — cache behavior", () => {
 
     const stored = cache.get(key);
     expect(stored?.status).toBe("partial");
+  });
+
+  test("unavailable result is not cached so later attempts can recover", async () => {
+    const cache = makeSimpleCache();
+    const key = buildStructuralImpactCacheKey({
+      repo: "acme/myrepo",
+      baseSha: "base-unavailable",
+      headSha: "head-unavailable",
+    });
+
+    const first = await fetchStructuralImpact(
+      makeBaseInput({
+        graphAdapter: makeGraphAdapter(new Error("graph down")),
+        corpusAdapter: makeCorpusAdapter(new Error("corpus down")),
+        cache,
+        cacheKey: key,
+      }),
+    );
+
+    expect(first.status).toBe("unavailable");
+    expect(cache.get(key)).toBeUndefined();
+
+    const second = await fetchStructuralImpact(makeBaseInput({ cache, cacheKey: key }));
+    expect(second.status).toBe("ok");
   });
 
   test("no cache provided → result not stored, no error", async () => {

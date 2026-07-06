@@ -70,6 +70,56 @@ describe("extractReviewGraph", () => {
     expect(testEdges.some((edge) => (edge.confidence ?? 0) >= 0.9)).toBe(true);
   });
 
+  test("attributes python methods to the nearest enclosing class and reports callsite body lines", () => {
+    const result = extractReviewGraph({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      path: "src/service.py",
+      content: [
+        "class First:",
+        "    def run(self):",
+        "        helper()",
+        "",
+        "class Second:",
+        "    def run(self):",
+        "        other()",
+      ].join("\n"),
+      language: "python",
+    });
+
+    const symbols = result.nodes.filter((node) => node.nodeKind === "symbol");
+    expect(symbols.some((node) => node.qualifiedName === "First.run")).toBe(true);
+    expect(symbols.some((node) => node.qualifiedName === "Second.run")).toBe(true);
+    expect(symbols.some((node) => node.qualifiedName === "Second.run" && node.spanStartLine === 2)).toBe(false);
+
+    const helperCallsite = result.nodes.find(
+      (node) => node.nodeKind === "callsite" && node.qualifiedName === "helper",
+    );
+    expect(helperCallsite?.spanStartLine).toBe(3);
+  });
+
+  test("keeps probable python cross-file call edges for imported symbols", () => {
+    const result = extractReviewGraph({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      path: "src/service.py",
+      content: [
+        "from app.helpers import helper",
+        "",
+        "def process(payload):",
+        "    return helper(payload)",
+      ].join("\n"),
+      language: "python",
+    });
+
+    const callEdges = result.edges.filter((edge) => edge.edgeKind === "calls");
+    expect(callEdges.some((edge) =>
+      edge.sourceStableKey.includes("process->helper")
+      && edge.targetStableKey === "symbol:app/helpers.py:helper"
+      && edge.attributes?.crossFile === true
+    )).toBe(true);
+  });
+
   test("extracts cpp includes, symbols, callsites, and probable test confidence surfaces", () => {
     const result = extractReviewGraph({
       repo: "owner/repo",
@@ -103,5 +153,29 @@ describe("extractReviewGraph", () => {
     expect(testEdges).toHaveLength(1);
     expect(testEdges[0]?.confidence).toBeGreaterThan(0.6);
     expect(testEdges[0]?.confidence).toBeLessThan(1);
+  });
+
+  test("keeps probable cpp cross-file call edges for quoted includes", () => {
+    const result = extractReviewGraph({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      path: "src/service.cpp",
+      content: [
+        '#include "service.h"',
+        "",
+        "void runService() {",
+        "  helper();",
+        "}",
+      ].join("\n"),
+      language: "cpp",
+    });
+
+    const callEdges = result.edges.filter((edge) => edge.edgeKind === "calls");
+    expect(callEdges.some((edge) =>
+      edge.sourceStableKey.includes("runService->helper")
+      && edge.targetStableKey === "symbol:src/service.h:helper"
+      && edge.attributes?.crossFile === true
+      && edge.attributes?.resolution === "cpp-local-include"
+    )).toBe(true);
   });
 });

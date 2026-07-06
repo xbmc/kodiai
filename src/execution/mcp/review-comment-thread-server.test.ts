@@ -87,6 +87,34 @@ describe("outgoing secret scan", () => {
     expect(result.content[0]?.text).toContain("SECURITY");
     expect(createReplyCalled).toBe(false);
   });
+
+  test("reply_to_pr_review_comment redacts zero-width-obfuscated github tokens after content normalization", async () => {
+    let calledBody: string | undefined;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          createReplyForReviewComment: async (params: Record<string, unknown>) => {
+            calledBody = params.body as string;
+            return { data: { id: 456, html_url: "https://example.test/reply" } };
+          },
+        },
+      },
+    };
+
+    const server = createReviewCommentThreadServer(async () => octokit as never, "acme", "repo", []);
+    const handler = getToolHandler(server);
+
+    const body = `ghs_${"a".repeat(18)}\u200B${"a".repeat(18)}`;
+    const result = await handler({ pullRequestNumber: 42, commentId: 9001, body });
+
+    expect((result as { isError?: boolean }).isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(calledBody!).not.toContain("ghs_");
+    expect(calledBody!).not.toContain("\u200B");
+  });
 });
 
 // --- Phase 50: Mention sanitization regression tests ---

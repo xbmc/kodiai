@@ -2,6 +2,27 @@ import { describe, expect, test } from "bun:test";
 import { readBoundedRequestBody, tryReadBoundedRequestBody } from "./request-body.ts";
 
 describe("readBoundedRequestBody", () => {
+  test("tryReadBoundedRequestBody uses the shared Result shape", async () => {
+    const request = new Request("http://localhost/webhook", {
+      method: "POST",
+      body: "abc",
+    });
+
+    const result = await tryReadBoundedRequestBody(request, { maxBytes: 5 });
+
+    expect(result).toEqual({ ok: true, value: "abc" });
+
+    const source = await Bun.file(new URL("./request-body.ts", import.meta.url)).text();
+    expect(source).toContain("ok, err, type Result");
+    expect(source).toContain("Result<string, RequestBodyTooLargeError>");
+    expect(source).toContain("return ok(await readBoundedRequestBody(request, options))");
+    expect(source).not.toContain("| { ok: true; body: string }");
+    expect(source).not.toContain("| { ok: false; error: RequestBodyTooLargeError }");
+    expect(source).not.toContain("return { ok: true, value:");
+    expect(source).not.toContain("return { ok: true, body:");
+    expect(source).not.toContain("return { ok: false, error");
+  });
+
   test("rejects bodies whose content-length exceeds the configured byte cap", async () => {
     const request = new Request("http://localhost/webhook", {
       method: "POST",
@@ -45,7 +66,7 @@ describe("readBoundedRequestBody", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.maxBytes).toBe(5);
+      expect(result.err.maxBytes).toBe(5);
     }
   });
 });

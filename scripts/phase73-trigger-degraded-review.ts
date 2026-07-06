@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
+import { sleep } from "../src/lib/with-timeout.ts";
 
 const DEFAULT_TEAM = "ai-review";
 const DEFAULT_ATTEMPTS = 45;
@@ -253,7 +254,7 @@ async function main(): Promise<void> {
       }
       deleteRequestedTeam(owner, repo, pr, team, verbose);
       addRequestedTeam(owner, repo, pr, team, verbose);
-      await Bun.sleep(sleepMs);
+      await sleep(sleepMs);
     } else {
       if (!skipCacheClear) {
         console.log(`Would clear author_cache for ${repoSlug}:${authorLogin}`);

@@ -193,6 +193,46 @@ describe("createIssueOpenedHandler", () => {
     expect(appliedLabels).toEqual(["possible-duplicate"]);
   });
 
+  it("sanitizes outgoing bot mentions in duplicate candidate titles", async () => {
+    let commentBody = "";
+
+    const githubApp = {
+      getInstallationOctokit: async () => ({
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async (params: { body: string }) => {
+              commentBody = params.body;
+              return { data: { id: 1 } };
+            },
+            addLabels: async () => ({ data: [] }),
+          },
+        },
+      }),
+      getAppSlug: () => "kodiai",
+    } as unknown as GitHubApp;
+
+    createIssueOpenedHandler({
+      eventRouter: router,
+      githubApp,
+      workspaceManager: createMockWorkspaceManager({
+        triage: { enabled: true, autoTriageOnOpen: true } as any,
+      }),
+      issueStore: createMockIssueStore([
+        makeSearchResult(50, "@claude duplicate report", "open", 0.1),
+      ]),
+      embeddingProvider: createMockEmbeddingProvider(),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
+      logger: createMockLogger(),
+    });
+
+    await router.captured[0]!.handler(makeEvent());
+
+    expect(commentBody).not.toContain("@claude");
+    expect(commentBody).toContain("claude duplicate report");
+  });
+
   it("continues when label API fails (fail-open)", async () => {
     let commentPosted = false;
 
@@ -271,6 +311,63 @@ describe("createIssueOpenedHandler", () => {
     });
 
     await router.captured[0]!.handler(makeEvent());
+    expect(commentPosted).toBe(false);
+  });
+
+  it("returns early when triage marker is beyond the first comment page", async () => {
+    let commentPosted = false;
+    const pagesSeen: number[] = [];
+    const githubApp = {
+      getInstallationOctokit: async () => ({
+        rest: {
+          issues: {
+            listComments: async (params: { page?: number; per_page?: number }) => {
+              const page = params.page ?? 1;
+              pagesSeen.push(page);
+              if (page === 1) {
+                return {
+                  data: Array.from({ length: params.per_page ?? 100 }, (_, index) => ({
+                    id: index + 1,
+                    body: "Some other comment",
+                  })),
+                };
+              }
+              return {
+                data: [
+                  {
+                    id: 250,
+                    body: "Possible duplicates detected:\n<!-- kodiai:triage:owner/repo:100 -->",
+                  },
+                ],
+              };
+            },
+            createComment: async () => {
+              commentPosted = true;
+              return { data: { id: 1 } };
+            },
+            addLabels: async () => ({ data: [] }),
+          },
+        },
+      }),
+    } as unknown as GitHubApp;
+
+    createIssueOpenedHandler({
+      eventRouter: router,
+      githubApp,
+      workspaceManager: createMockWorkspaceManager({
+        triage: { enabled: true, autoTriageOnOpen: true } as any,
+      }),
+      issueStore: createMockIssueStore([
+        makeSearchResult(50, "Similar issue", "open", 0.1),
+      ]),
+      embeddingProvider: createMockEmbeddingProvider(),
+      sql: createMockSql(),
+      issueTriageStateStore: createIssueTriageStateStoreHarness(),
+      logger: createMockLogger(),
+    });
+
+    await router.captured[0]!.handler(makeEvent());
+    expect(pagesSeen).toEqual([1, 2]);
     expect(commentPosted).toBe(false);
   });
 

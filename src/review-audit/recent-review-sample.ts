@@ -3,6 +3,11 @@ import {
   parseReviewOutputKey,
 } from "../review-orchestration/review-idempotency.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import {
+  listIssueCommentsPaged,
+  listPullReviewsPaged,
+  listReviewCommentsPaged,
+} from "../lib/github-issue-comments.ts";
 
 export type ReviewAuditLane = "automatic" | "explicit";
 export type ReviewArtifactSource = "review" | "issue-comment" | "review-comment";
@@ -50,9 +55,9 @@ type IssueCommentLike = {
 
 type ReviewLike = {
   body?: string | null;
-  html_url?: string;
-  submitted_at?: string;
-  updated_at?: string;
+  html_url?: string | null;
+  submitted_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type RecentReviewAuditOctokit = {
@@ -97,6 +102,7 @@ const AUTOMATIC_REVIEW_ACTIONS = new Set([
 ]);
 
 const EXPLICIT_REVIEW_ACTIONS = new Set(["mention-review"]);
+const DEFAULT_PER_PAGE = 100;
 
 function normalizeAction(action: string): string {
   return action.trim().toLowerCase();
@@ -181,86 +187,86 @@ export async function collectLatestReviewArtifacts(params: {
     params.pullRequests,
     params.concurrency ?? 4,
     async (pullRequest) => {
-    const candidates: RecentReviewArtifact[] = [];
+      const candidates: RecentReviewArtifact[] = [];
 
-    const [reviewComments, issueComments, reviews] = await Promise.all([
-      params.octokit.rest.pulls.listReviewComments({
-        owner: params.owner,
-        repo: params.repo,
-        pull_number: pullRequest.number,
-        per_page: 100,
-        page: 1,
-        sort: "created",
-        direction: "desc",
-      }),
-      params.octokit.rest.issues.listComments({
-        owner: params.owner,
-        repo: params.repo,
-        issue_number: pullRequest.number,
-        per_page: 100,
-        page: 1,
-        sort: "created",
-        direction: "desc",
-      }),
-      params.octokit.rest.pulls.listReviews({
-        owner: params.owner,
-        repo: params.repo,
-        pull_number: pullRequest.number,
-        per_page: 100,
-        page: 1,
-      }),
-    ]);
-    for (const reviewComment of reviewComments.data) {
-      const artifact = buildArtifact({
-        source: "review-comment",
-        sourceUrl: reviewComment.html_url,
-        updatedAt: reviewComment.updated_at,
-        body: reviewComment.body,
-        owner: params.owner,
-        repo: params.repo,
-        pullRequest,
-      });
-      if (artifact) {
-        candidates.push(artifact);
+      const [reviewComments, issueComments, reviews] = await Promise.all([
+        listReviewCommentsPaged(params.octokit, {
+          owner: params.owner,
+          repo: params.repo,
+          prNumber: pullRequest.number,
+          perPage: DEFAULT_PER_PAGE,
+          maxPages: Number.POSITIVE_INFINITY,
+          sort: "created",
+          direction: "desc",
+        }),
+        listIssueCommentsPaged(params.octokit, {
+          owner: params.owner,
+          repo: params.repo,
+          issueNumber: pullRequest.number,
+          perPage: DEFAULT_PER_PAGE,
+          maxPages: Number.POSITIVE_INFINITY,
+          sort: "created",
+          direction: "desc",
+        }),
+        listPullReviewsPaged(params.octokit, {
+          owner: params.owner,
+          repo: params.repo,
+          prNumber: pullRequest.number,
+          perPage: DEFAULT_PER_PAGE,
+          maxPages: Number.POSITIVE_INFINITY,
+        }),
+      ]);
+      for (const reviewComment of reviewComments.comments) {
+        const artifact = buildArtifact({
+          source: "review-comment",
+          sourceUrl: reviewComment.html_url ?? undefined,
+          updatedAt: reviewComment.updated_at,
+          body: reviewComment.body,
+          owner: params.owner,
+          repo: params.repo,
+          pullRequest,
+        });
+        if (artifact) {
+          candidates.push(artifact);
+        }
       }
-    }
 
-    for (const issueComment of issueComments.data) {
-      const artifact = buildArtifact({
-        source: "issue-comment",
-        sourceUrl: issueComment.html_url,
-        updatedAt: issueComment.updated_at,
-        body: issueComment.body,
-        owner: params.owner,
-        repo: params.repo,
-        pullRequest,
-      });
-      if (artifact) {
-        candidates.push(artifact);
+      for (const issueComment of issueComments.comments) {
+        const artifact = buildArtifact({
+          source: "issue-comment",
+          sourceUrl: issueComment.html_url ?? undefined,
+          updatedAt: issueComment.updated_at,
+          body: issueComment.body,
+          owner: params.owner,
+          repo: params.repo,
+          pullRequest,
+        });
+        if (artifact) {
+          candidates.push(artifact);
+        }
       }
-    }
 
-    for (const review of reviews.data) {
-      const artifact = buildArtifact({
-        source: "review",
-        sourceUrl: review.html_url,
-        updatedAt: getReviewTimestamp(review),
-        body: review.body,
-        owner: params.owner,
-        repo: params.repo,
-        pullRequest,
-      });
-      if (artifact) {
-        candidates.push(artifact);
+      for (const review of reviews.reviews) {
+        const artifact = buildArtifact({
+          source: "review",
+          sourceUrl: review.html_url ?? undefined,
+          updatedAt: getReviewTimestamp(review),
+          body: review.body,
+          owner: params.owner,
+          repo: params.repo,
+          pullRequest,
+        });
+        if (artifact) {
+          candidates.push(artifact);
+        }
       }
-    }
 
-    if (candidates.length === 0) {
-      return null;
-    }
+      if (candidates.length === 0) {
+        return null;
+      }
 
-    candidates.sort(compareArtifactsByRecency);
-    return candidates[0]!;
+      candidates.sort(compareArtifactsByRecency);
+      return candidates[0]!;
     },
   );
 

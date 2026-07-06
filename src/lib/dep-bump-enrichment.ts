@@ -16,6 +16,10 @@ import { parseSemver } from "./dep-bump-detector.ts";
 import { createInMemoryCache } from "./in-memory-cache.ts";
 import { dedupeInflight } from "./inflight-dedupe.ts";
 import { retryTransient } from "./transient-retry.ts";
+import {
+  abortSignalWithTimeout,
+  withTimeout as raceWithNoThrowTimeout,
+} from "./with-timeout.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,17 +106,18 @@ export function clearDepBumpEnrichmentCachesForTests(): void {
   repoResolutionInflight.clear();
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+async function enforceAdvisoryLookupTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
+  const result = await raceWithNoThrowTimeout(promise, timeoutMs);
+  if (result.timedOut) {
+    throw new Error(`${label} timed out after ${timeoutMs}ms`);
+  }
+  return result.value;
 }
 
 // ─── GitHub Advisory Response Type ────────────────────────────────────────────
@@ -170,10 +175,10 @@ export async function fetchSecurityAdvisories(params: {
   try {
     const [oldResult, newResult] = await Promise.allSettled([
       oldVersion
-        ? withTimeout(queryAdvisories(octokit, packageName, advisoryEcosystem, oldVersion), timeoutMs, "old advisory lookup")
+        ? enforceAdvisoryLookupTimeout(queryAdvisories(octokit, packageName, advisoryEcosystem, oldVersion), timeoutMs, "old advisory lookup")
         : Promise.resolve([]),
       newVersion
-        ? withTimeout(queryAdvisories(octokit, packageName, advisoryEcosystem, newVersion), timeoutMs, "new advisory lookup")
+        ? enforceAdvisoryLookupTimeout(queryAdvisories(octokit, packageName, advisoryEcosystem, newVersion), timeoutMs, "new advisory lookup")
         : Promise.resolve([]),
     ]);
 
@@ -227,21 +232,26 @@ async function queryAdvisories(
   version: string,
 ): Promise<AdvisoryInfo[]> {
   // securityAdvisories.listGlobalAdvisories is not fully typed in @octokit/rest
-  const { data } = await (
-    octokit.rest as unknown as {
-      securityAdvisories: {
-        listGlobalAdvisories: (params: {
-          ecosystem: string;
-          affects: string;
-          per_page: number;
-        }) => Promise<{ data: GitHubAdvisoryResponse[] }>;
-      };
-    }
-  ).securityAdvisories.listGlobalAdvisories({
+  const advisoryClient = octokit.rest as unknown as {
+    securityAdvisories: {
+      listGlobalAdvisories: (params: {
+        ecosystem: string;
+        affects: string;
+        per_page: number;
+      }) => Promise<{ data: GitHubAdvisoryResponse[] }>;
+    };
+  };
+  const params = {
     ecosystem,
     affects: `${packageName}@${version}`,
-    per_page: 10,
-  });
+    per_page: 100,
+  };
+  const data: GitHubAdvisoryResponse[] = typeof octokit.paginate === "function"
+    ? await (octokit.paginate as unknown as (
+      fn: typeof advisoryClient.securityAdvisories.listGlobalAdvisories,
+      requestParams: typeof params,
+    ) => Promise<GitHubAdvisoryResponse[]>)(advisoryClient.securityAdvisories.listGlobalAdvisories, params)
+    : (await advisoryClient.securityAdvisories.listGlobalAdvisories(params)).data;
 
   return data
     .filter((adv) => adv.type === "reviewed")
@@ -290,7 +300,7 @@ export async function resolveGitHubRepo(params: {
       const resp = await retryTransient(
         async () => {
           const response = await fetch(urlFn(packageName), {
-            signal: AbortSignal.timeout(3000),
+            signal: abortSignalWithTimeout(3000),
           });
           if (!response.ok && (response.status === 408 || response.status === 429 || response.status >= 500)) {
             throw { status: response.status, message: `registry lookup failed: ${response.status}` };
@@ -335,10 +345,10 @@ function extractGitHubCoords(data: RegistryData, ecosystem: string): RepoCoords 
 
   if (!url || typeof url !== "string") return null;
 
-  const match = url.match(/github\.com\/([^/]+)\/([^/.#?\s]+)/);
+  const match = url.match(/github\.com[:/]([^/\s#?]+)\/([^/\s#?]+)/);
   if (!match) return null;
 
-  return { owner: match[1]!, repo: match[2]! };
+  return { owner: match[1]!, repo: match[2]!.replace(/\.git$/i, "") };
 }
 
 // ─── Breaking Change Detection ───────────────────────────────────────────────
@@ -464,6 +474,13 @@ function semverGreaterThan(
   return a.patch > b.patch;
 }
 
+function semverEqual(
+  a: { major: number; minor: number; patch: number },
+  b: { major: number; minor: number; patch: number },
+): boolean {
+  return a.major === b.major && a.minor === b.minor && a.patch === b.patch;
+}
+
 async function fetchReleasesBetween(
   octokit: Octokit,
   repo: RepoCoords,
@@ -476,7 +493,7 @@ async function fetchReleasesBetween(
 
   const releases: Array<{ tag: string; body: string }> = [];
 
-  for (let page = 1; page <= 2; page++) {
+  for (let page = 1; ; page++) {
     const { data } = await octokit.rest.repos.listReleases({
       owner: repo.owner,
       repo: repo.repo,
@@ -486,12 +503,18 @@ async function fetchReleasesBetween(
 
     if (!data || data.length === 0) break;
 
+    let reachedOldBoundary = false;
     for (const release of data) {
       if (release.draft || !release.tag_name) continue;
 
       const tagVersion = release.tag_name.replace(/^v/i, "");
       const tagSemver = parseSemver(tagVersion);
       if (!tagSemver) continue;
+
+      if (semverEqual(tagSemver, oldSemver) || semverGreaterThan(oldSemver, tagSemver)) {
+        reachedOldBoundary = true;
+        continue;
+      }
 
       // Include releases where old < tag <= new
       if (
@@ -504,6 +527,8 @@ async function fetchReleasesBetween(
         });
       }
     }
+
+    if (reachedOldBoundary || data.length < 30) break;
   }
 
   return releases;

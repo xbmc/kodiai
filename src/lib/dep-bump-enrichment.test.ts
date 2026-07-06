@@ -91,6 +91,74 @@ describe("fetchSecurityAdvisories", () => {
     expect(result!.advisories[0]!.affectsNew).toBe(false);
   });
 
+  test("scans beyond the first advisory page before classifying a security bump", async () => {
+    const calls: Array<{ affects?: string; per_page?: number }> = [];
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      type: "reviewed",
+      ghsa_id: `GHSA-shared-${String(index).padStart(4, "0")}`,
+      cve_id: null,
+      severity: "medium",
+      summary: "Shared advisory",
+      html_url: `https://github.com/advisories/GHSA-shared-${index}`,
+      vulnerabilities: [
+        {
+          package: { name: "busy-pkg", ecosystem: "npm" },
+          vulnerable_version_range: "< 9.0.0",
+          first_patched_version: { identifier: "9.0.0" },
+        },
+      ],
+    }));
+    const oldOnlyAdvisory = {
+      type: "reviewed",
+      ghsa_id: "GHSA-old-only-page-two",
+      cve_id: null,
+      severity: "high",
+      summary: "Old-only advisory beyond page one",
+      html_url: "https://github.com/advisories/GHSA-old-only-page-two",
+      vulnerabilities: [
+        {
+          package: { name: "busy-pkg", ecosystem: "npm" },
+          vulnerable_version_range: "< 2.0.0",
+          first_patched_version: { identifier: "2.0.0" },
+        },
+      ],
+    };
+
+    const octokit = {
+      rest: {
+        securityAdvisories: {
+          listGlobalAdvisories: async (params: { affects?: string; per_page?: number }) => {
+            calls.push(params);
+            return { data: firstPage };
+          },
+        },
+      },
+      paginate: async (
+        fn: (params: { affects?: string; per_page?: number }) => Promise<{ data: unknown[] }>,
+        params: { affects?: string; per_page?: number },
+      ) => {
+        const first = await fn(params);
+        const version = params.affects?.split("@").pop();
+        return version === "1.0.0"
+          ? [...first.data, oldOnlyAdvisory]
+          : first.data;
+      },
+    };
+
+    const result = await fetchSecurityAdvisories({
+      packageName: "busy-pkg",
+      ecosystem: "npm",
+      oldVersion: "1.0.0",
+      newVersion: "2.0.0",
+      octokit: octokit as never,
+    });
+
+    expect(result).not.toBeNull();
+    expect(calls.every((call) => call.per_page === 100)).toBe(true);
+    expect(result!.isSecurityBump).toBe(true);
+    expect(result!.advisories.some((advisory) => advisory.ghsaId === "GHSA-old-only-page-two")).toBe(true);
+  });
+
   test("returns empty advisories for unknown package", async () => {
     const octokit = createMockOctokit({
       listGlobalAdvisories: async () => ({ data: [] }),
@@ -335,7 +403,29 @@ describe("resolveGitHubRepo", () => {
 
     expect(result).not.toBeNull();
     expect(result!.owner).toBe("octokit");
-    expect(result!.repo).toBe("rest");
+    expect(result!.repo).toBe("rest.js");
+  });
+
+  test("preserves dotted GitHub repository names", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            repository: { url: "git+https://github.com/vercel/next.js.git" },
+          }),
+          { status: 200 },
+        ),
+      ),
+    ) as any;
+
+    const result = await resolveGitHubRepo({
+      packageName: "next",
+      ecosystem: "npm",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.owner).toBe("vercel");
+    expect(result!.repo).toBe("next.js");
   });
 
   test("resolves python package from PyPI", async () => {
@@ -558,6 +648,65 @@ describe("fetchChangelog", () => {
     expect(result!.releaseNotes.length).toBeGreaterThanOrEqual(1);
     expect(result!.compareUrl).toContain("github.com");
     expect(result!.breakingChanges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("continues release scanning beyond two pages until the old version is reached", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            repository: { url: "git+https://github.com/owner/repo.git" },
+          }),
+          { status: 200 },
+        ),
+      ),
+    ) as any;
+
+    const calls: Array<{ page?: number; per_page?: number }> = [];
+    const octokit = createMockOctokit({
+      listReleases: async (params: any) => {
+        calls.push(params);
+        if (params.page === 1) {
+          return {
+            data: Array.from({ length: 30 }, (_, index) => ({
+              tag_name: `v3.${30 - index}.0`,
+              body: "Newer release outside target range",
+              draft: false,
+            })),
+          };
+        }
+        if (params.page === 2) {
+          return {
+            data: Array.from({ length: 30 }, (_, index) => ({
+              tag_name: `v2.${30 - index}.0`,
+              body: "Still newer than target range",
+              draft: false,
+            })),
+          };
+        }
+        return {
+          data: [
+            { tag_name: "v1.2.0", body: "Target patch notes", draft: false },
+            { tag_name: "v1.1.0", body: "Target minor notes", draft: false },
+            { tag_name: "v1.0.0", body: "Old baseline", draft: false },
+          ],
+        };
+      },
+    });
+
+    const result = await fetchChangelog({
+      packageName: "pkg",
+      ecosystem: "npm",
+      oldVersion: "1.0.0",
+      newVersion: "1.2.0",
+      octokit,
+    });
+
+    expect(result).not.toBeNull();
+    expect(calls.map((call) => call.page)).toEqual([1, 2, 3]);
+    expect(calls.every((call) => call.per_page === 30)).toBe(true);
+    expect(result!.source).toBe("releases");
+    expect(result!.releaseNotes.map((note) => note.tag)).toEqual(["v1.2.0", "v1.1.0"]);
   });
 
   test("falls back to CHANGELOG.md (tier 2) when no releases found", async () => {

@@ -2,6 +2,22 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 
+const DEFAULT_PER_PAGE = 100;
+
+async function collectPaged<T>(
+  fetchPage: (params: { page: number; per_page: number }) => Promise<T[]>,
+): Promise<T[]> {
+  const records: T[] = [];
+  for (let page = 1; ; page += 1) {
+    const data = await fetchPage({ page, per_page: DEFAULT_PER_PAGE });
+    records.push(...data);
+    if (data.length < DEFAULT_PER_PAGE) {
+      break;
+    }
+  }
+  return records;
+}
+
 export function createCIStatusServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
@@ -47,15 +63,17 @@ export function createCIStatusServer(
             });
             const headSha = pr.data.head.sha;
 
-            const { data: runsData } =
-              await octokit.rest.actions.listWorkflowRunsForRepo({
+            const runs = await collectPaged(async ({ page, per_page }) => {
+              const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
                 owner,
                 repo,
                 head_sha: headSha,
+                per_page,
+                page,
                 ...(status && { status }),
               });
-
-            const runs = runsData.workflow_runs || [];
+              return data.workflow_runs || [];
+            });
             const summary = { total_runs: runs.length, failed: 0, passed: 0, pending: 0 };
 
             const processedRuns = runs.map((run) => {
@@ -104,14 +122,18 @@ export function createCIStatusServer(
           try {
             const octokit = await getOctokit();
 
-            const { data: jobsData } =
-              await octokit.rest.actions.listJobsForWorkflowRun({
+            const jobs = await collectPaged(async ({ page, per_page }) => {
+              const { data } = await octokit.rest.actions.listJobsForWorkflowRun({
                 owner,
                 repo,
                 run_id,
+                per_page,
+                page,
               });
+              return data.jobs || [];
+            });
 
-            const processedJobs = jobsData.jobs.map((job) => {
+            const processedJobs = jobs.map((job) => {
               const failedSteps = (job.steps || [])
                 .filter((step) => step.conclusion === "failure")
                 .map((step) => ({ name: step.name, number: step.number }));

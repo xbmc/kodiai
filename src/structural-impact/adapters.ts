@@ -10,8 +10,8 @@
  *     M038 code must use these interfaces rather than importing from
  *     review-graph/ or knowledge/ directly. This bounds the API surface
  *     so future substrate changes don't sprawl through review.ts.
- *   - Both adapters are fail-open: errors and timeouts produce empty results
- *     with degradation records rather than thrown exceptions.
+ *   - Both adapters are fail-open: expected errors return explicit err results;
+ *     timeouts produce empty results with degradation records.
  *   - `boundStructuralImpactPayload` is the single assembly point that
  *     merges both adapter results into a StructuralImpactPayload.
  *
@@ -32,6 +32,7 @@ import type {
   StructuralImpactStatus,
   StructuralLikelyTest,
 } from "./types.ts";
+import type { Result } from "../lib/result.ts";
 
 // ── GraphAdapter contract ─────────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ export type GraphQueryInput = {
   changedPaths: string[];
   /** Maximum number of results per ranked list. Defaults to 20. */
   limit?: number;
+  /** Abort signal fired when the orchestration timeout expires. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -100,7 +103,7 @@ export type GraphBlastRadiusResult = {
  * Tests stub it directly.
  */
 export type GraphAdapter = {
-  queryBlastRadius(input: GraphQueryInput): Promise<GraphBlastRadiusResult>;
+  queryBlastRadius(input: GraphQueryInput): Promise<Result<GraphBlastRadiusResult>>;
 };
 
 // ── CorpusAdapter contract ────────────────────────────────────────────────────
@@ -119,6 +122,8 @@ export type CorpusQueryInput = {
   topK?: number;
   /** Optional language filter (e.g. "cpp", "python"). */
   language?: string;
+  /** Abort signal fired when the orchestration timeout expires. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -146,7 +151,7 @@ export type CorpusCodeMatch = {
  * Tests stub it directly.
  */
 export type CorpusAdapter = {
-  searchCanonicalCode(input: CorpusQueryInput): Promise<CorpusCodeMatch[]>;
+  searchCanonicalCode(input: CorpusQueryInput): Promise<Result<CorpusCodeMatch[]>>;
 };
 
 // ── Translation helpers ───────────────────────────────────────────────────────

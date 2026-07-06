@@ -99,6 +99,27 @@ export function buildOrderedReviewPhaseSummary(phases: Map<ReviewPhaseName, Revi
     phases.get(name) ?? buildUnavailableReviewPhase(name, "phase timing unavailable"));
 }
 
+export function completeReviewPublicationPhaseTiming(params: {
+  phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
+  publicationPhaseStartedAt?: number;
+  now?: () => number;
+}): boolean {
+  if (params.publicationPhaseStartedAt === undefined) {
+    return false;
+  }
+
+  const nowFn = params.now ?? (() => Date.now());
+  params.phases.set(
+    "publication",
+    createReviewPhaseTiming({
+      name: "publication",
+      status: "completed",
+      durationMs: Math.max(0, nowFn() - params.publicationPhaseStartedAt),
+    }),
+  );
+  return true;
+}
+
 export function buildReviewDetailsPhaseTimingSummary(params: {
   phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
   publicationPhaseStartedAt?: number;

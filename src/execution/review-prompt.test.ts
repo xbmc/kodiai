@@ -2409,6 +2409,8 @@ function makeReviewCommentMatch(overrides: Partial<ReviewCommentMatch> = {}): Re
     repo: "owner/repo",
     prNumber: 5678,
     prTitle: "Fix threading issue",
+    commentGithubId: 123456,
+    chunkIndex: 0,
     filePath: "src/video/VideoPlayer.cpp",
     authorLogin: "contributor",
     authorAssociation: "MEMBER",

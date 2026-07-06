@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect, mock, beforeEach, afterEach } from "bun:test";
 import { createRerankProvider } from "./embeddings.ts";
 import type { Logger } from "pino";
@@ -31,6 +32,14 @@ afterEach(() => {
 });
 
 // ── No-op provider (empty apiKey) ────────────────────────────────────────────
+
+test("uses the shared abort-signal timeout primitive for Voyage fetches", () => {
+  const source = readFileSync(new URL("./embeddings.ts", import.meta.url), "utf8");
+
+  expect(source).toContain("runWithAbortSignalTimeout");
+  expect(source).not.toContain("new AbortController");
+  expect(source).not.toContain("controller.abort");
+});
 
 test("returns null when apiKey is empty", async () => {
   const provider = createRerankProvider({ apiKey: "", logger: noopLogger });

@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { EmbeddingProvider, LearningMemoryRecord, LearningMemoryStore } from "../knowledge/types.ts";
+import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 export type ReviewLearningMemorySkipReason =
   | "missing-finding-id"
@@ -71,6 +72,14 @@ export type WriteReviewLearningMemoryInput = {
   embeddingProvider: EmbeddingProvider;
   logger: Pick<Logger, "debug" | "info" | "warn">;
   logContext?: Record<string, unknown>;
+};
+
+export type ReviewLearningMemoryBatchSummary = {
+  written: number;
+  failed: number;
+  skipped: number;
+  skipReasons: Record<string, number>;
+  total: number;
 };
 
 const VALID_SEVERITIES = new Set<LearningMemoryRecord["severity"]>([
@@ -301,4 +310,86 @@ export async function writeReviewLearningMemory(
     );
     return { status: "failed", err };
   }
+}
+
+export async function writeReviewLearningMemoryBatch(params: {
+  findings: ReviewLearningMemoryFindingInput[];
+  owner: string;
+  repo: string;
+  reviewId?: number;
+  prNumber: number;
+  store: Pick<LearningMemoryStore, "hasMemoryConflict" | "writeMemory">;
+  embeddingProvider: EmbeddingProvider;
+  logger: Pick<Logger, "debug" | "info" | "warn">;
+  logContext?: Record<string, unknown>;
+  classifyLanguage: (filePath: string) => string | null | undefined;
+  writeFindingMemory?: (params: WriteReviewLearningMemoryInput) => Promise<ReviewLearningMemoryWriteResult>;
+}): Promise<ReviewLearningMemoryBatchSummary> {
+  const {
+    findings,
+    owner,
+    repo,
+    reviewId,
+    prNumber,
+    store,
+    embeddingProvider,
+    logger,
+    logContext,
+    classifyLanguage,
+    writeFindingMemory = writeReviewLearningMemory,
+  } = params;
+
+  const results = await mapWithConcurrency(findings, 4, (finding) =>
+    writeFindingMemory({
+      input: {
+        finding,
+        owner,
+        repo,
+        reviewId,
+        prNumber,
+        language: classifyLanguage(finding.filePath ?? ""),
+      },
+      store,
+      embeddingProvider,
+      logger,
+      logContext,
+    })
+  );
+
+  const summary: ReviewLearningMemoryBatchSummary = {
+    written: 0,
+    failed: 0,
+    skipped: 0,
+    skipReasons: {},
+    total: findings.length,
+  };
+
+  for (const result of results) {
+    if (result.status === "written") {
+      summary.written++;
+    } else if (result.status === "skipped") {
+      summary.skipped++;
+      summary.skipReasons[result.reason] = (summary.skipReasons[result.reason] ?? 0) + 1;
+    } else {
+      summary.failed++;
+    }
+  }
+
+  if (summary.written > 0 || summary.failed > 0 || summary.skipped > 0) {
+    logger.info(
+      {
+        ...logContext,
+        gate: "learning-memory-write",
+        gateResult: summary.failed > 0 ? "failed" : "completed",
+        written: summary.written,
+        failed: summary.failed,
+        skipped: summary.skipped,
+        skipReasons: summary.skipReasons,
+        total: summary.total,
+      },
+      "Learning memory write batch complete",
+    );
+  }
+
+  return summary;
 }

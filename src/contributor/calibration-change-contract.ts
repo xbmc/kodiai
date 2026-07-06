@@ -88,11 +88,11 @@ const DEFAULT_CHANGE_CONTRACT_INVENTORY: readonly CalibrationChangeContractInven
     rationale:
       "S02’s replace recommendation is driven by the live path collapsing retained contributors into the newcomer default while the intended full-signal model separates them.",
     evidence: [
-      "src/handlers/review.ts only emits incremental expertise updates for `type: \"pr_authored\"`, which matches the S02 live-path compression finding.",
+      "src/handlers/review-post-execution-side-effects.ts only emits incremental expertise updates for `type: \"pr_authored\"`, which matches the S02 live-path compression finding.",
       "The S02 recommendation reports that the full-signal model differentiates retained contributors beyond the live newcomer default.",
     ],
     impactedSurfaces: [
-      "src/handlers/review.ts::updateExpertiseIncremental(type=pr_authored)",
+      "src/handlers/review-post-execution-side-effects.ts::updateExpertiseIncremental(type=pr_authored)",
     ],
   },
 ] as const;

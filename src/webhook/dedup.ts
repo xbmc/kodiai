@@ -1,6 +1,8 @@
 import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 
 export interface Deduplicator {
+  has(deliveryId: string): boolean;
+  mark(deliveryId: string): void;
   isDuplicate(deliveryId: string): boolean;
 }
 
@@ -24,6 +26,14 @@ export function createDeduplicator(options?: {
   });
 
   return {
+    has(deliveryId: string): boolean {
+      return cache.has(deliveryId);
+    },
+
+    mark(deliveryId: string): void {
+      cache.set(deliveryId, true);
+    },
+
     isDuplicate(deliveryId: string): boolean {
       if (cache.has(deliveryId)) {
         return true;

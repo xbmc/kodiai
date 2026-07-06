@@ -7,6 +7,7 @@ import {
   type ShadowSpecialistOutputInput,
   type ShadowSpecialistTriggerResult,
 } from "./shadow-specialist.ts";
+import { rejectWithTimeout } from "../lib/with-timeout.ts";
 
 export const DEFAULT_SHADOW_SPECIALIST_SUBFLOW_TIMEOUT_MS = 2_500;
 
@@ -110,8 +111,8 @@ export async function runShadowSpecialistSubflow(
   const runner = input.runner ?? defaultReadOnlyShadowSpecialistRunner;
 
   try {
-    const runnerOutput = await runWithTimeout(
-      () => runner({
+    const runnerOutput = await rejectWithTimeout(
+      Promise.resolve().then(() => runner({
         laneId: DOCS_CONFIG_TRUTH_LANE_ID,
         matchedPaths: trigger.matchedPaths,
         changedPaths: normalizeRunnerChangedPaths(input.changedPaths),
@@ -121,8 +122,11 @@ export async function runShadowSpecialistSubflow(
         reviewOutputKey: input.reviewOutputKey ?? null,
         correlationKey: trigger.correlationKey,
         readOnly: true,
-      }),
-      timeoutMs,
+      })),
+      {
+        timeoutMs,
+        createTimeoutError: () => new ShadowSpecialistTimeoutError(timeoutMs),
+      },
     );
 
     const output = normalizeShadowSpecialistOutput({
@@ -243,20 +247,4 @@ class ShadowSpecialistTimeoutError extends Error {
     super(`shadow specialist timed out after ${timeoutMs}ms`);
     this.name = "ShadowSpecialistTimeoutError";
   }
-}
-
-function runWithTimeout<T>(operation: () => Promise<T> | T, timeoutMs: number): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-
-  const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    timeoutHandle = setTimeout(() => {
-      reject(new ShadowSpecialistTimeoutError(timeoutMs));
-    }, timeoutMs);
-  });
-
-  return Promise.race([Promise.resolve().then(operation), timeoutPromise]).finally(() => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-  });
 }

@@ -23,6 +23,7 @@ import type {
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { retryGitHubTransient } from "../lib/github-retry.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
+import { scheduleInterval, scheduleTimeout, type ScheduledInterval, type ScheduledTimeout } from "../lib/with-timeout.ts";
 import {
   hasTokenOverlap,
   scoreWikiTokens,
@@ -518,8 +519,8 @@ export function createWikiStalenessDetector(
 ): WikiStalenessScheduler {
   const logger = opts.logger.child({ module: "wiki-staleness-detector" });
 
-  let intervalHandle: ReturnType<typeof setInterval> | null = null;
-  let startupHandle: ReturnType<typeof setTimeout> | null = null;
+  let intervalHandle: ScheduledInterval | null = null;
+  let startupHandle: ScheduledTimeout | null = null;
   let running = false;
 
   async function runScan(): Promise<WikiStalenessScanResult> {
@@ -710,11 +711,11 @@ export function createWikiStalenessDetector(
       }
 
       logger.info({ intervalMs, delayMs }, "Wiki staleness detector starting");
-      startupHandle = setTimeout(() => {
+      startupHandle = scheduleTimeout(() => {
         void doScan().catch((err) =>
           logger.error({ err }, "Initial wiki staleness scan failed"),
         );
-        intervalHandle = setInterval(() => {
+        intervalHandle = scheduleInterval(() => {
           void doScan().catch((err) =>
             logger.error({ err }, "Scheduled wiki staleness scan failed"),
           );
@@ -723,11 +724,11 @@ export function createWikiStalenessDetector(
     },
     stop() {
       if (startupHandle) {
-        clearTimeout(startupHandle);
+        startupHandle.clear();
         startupHandle = null;
       }
       if (intervalHandle) {
-        clearInterval(intervalHandle);
+        intervalHandle.clear();
         intervalHandle = null;
       }
       logger.info("Wiki staleness detector stopped");

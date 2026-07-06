@@ -211,11 +211,11 @@ describe("calibration change contract", () => {
           rationale:
             "S02’s replace recommendation is driven by the live path collapsing retained contributors into the newcomer default while the intended full-signal model separates them.",
           evidence: [
-            "src/handlers/review.ts only emits incremental expertise updates for `type: \"pr_authored\"`, which matches the S02 live-path compression finding.",
+            "src/handlers/review-post-execution-side-effects.ts only emits incremental expertise updates for `type: \"pr_authored\"`, which matches the S02 live-path compression finding.",
             "The S02 recommendation reports that the full-signal model differentiates retained contributors beyond the live newcomer default.",
           ],
           impactedSurfaces: [
-            "src/handlers/review.ts::updateExpertiseIncremental(type=pr_authored)",
+            "src/handlers/review-post-execution-side-effects.ts::updateExpertiseIncremental(type=pr_authored)",
           ],
         },
       ],
@@ -235,6 +235,14 @@ describe("calibration change contract", () => {
       new URL("../handlers/review.ts", import.meta.url),
       "utf8",
     );
+    const reviewAuthorContextSource = await readFile(
+      new URL("../handlers/review-author-context.ts", import.meta.url),
+      "utf8",
+    );
+    const reviewSideEffectsSource = await readFile(
+      new URL("../handlers/review-post-execution-side-effects.ts", import.meta.url),
+      "utf8",
+    );
     const slashHandlerSource = await readFile(
       new URL("../slack/slash-command-handler.ts", import.meta.url),
       "utf8",
@@ -245,13 +253,14 @@ describe("calibration change contract", () => {
     expect(experienceContractSource).toContain(
       'text: "profile-backed (using linked contributor profile guidance)"',
     );
-    expect(reviewHandlerSource).toContain(
+    expect(reviewAuthorContextSource).toContain(
       'contract: projectContributorExperienceContract({',
     );
-    expect(reviewHandlerSource).toContain(
+    expect(reviewAuthorContextSource).toContain(
       'contributorExperienceState: authorClassification.contract.state,',
     );
-    expect(reviewHandlerSource).toContain('type: "pr_authored"');
+    expect(reviewHandlerSource).toContain("resolveReviewAuthorContext(");
+    expect(reviewSideEffectsSource).toContain('type: "pr_authored"');
     expect(slashHandlerSource).toContain(
       "resolveContributorProfileSurface(",
     );

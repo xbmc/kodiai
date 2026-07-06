@@ -24,6 +24,8 @@ import {
 import { summarizeStructuralImpactDegradation } from "../src/structural-impact/degradation.ts";
 import type { GraphAdapter, CorpusAdapter, GraphBlastRadiusResult, CorpusCodeMatch } from "../src/structural-impact/adapters.ts";
 import type { StructuralImpactPayload } from "../src/structural-impact/types.ts";
+import { err, ok } from "../src/lib/result.ts";
+import { sleep } from "../src/lib/with-timeout.ts";
 
 export const M038_S03_CHECK_IDS = [
   "M038-S03-CACHE-REUSE",
@@ -124,29 +126,30 @@ function makeCorpusMatches(): CorpusCodeMatch[] {
 }
 
 function makeSuccessGraphAdapter(): GraphAdapter {
-  return { queryBlastRadius: () => Promise.resolve(makeGraphResult()) };
+  return { queryBlastRadius: () => Promise.resolve(ok(makeGraphResult())) };
 }
 
 function makeSuccessCorpusAdapter(): CorpusAdapter {
-  return { searchCanonicalCode: () => Promise.resolve(makeCorpusMatches()) };
+  return { searchCanonicalCode: () => Promise.resolve(ok(makeCorpusMatches())) };
 }
 
 function makeErrorGraphAdapter(msg = "graph adapter unavailable"): GraphAdapter {
-  return { queryBlastRadius: () => Promise.reject(new Error(msg)) };
+  return { queryBlastRadius: () => Promise.resolve(err(new Error(msg))) };
 }
 
 function makeErrorCorpusAdapter(msg = "corpus adapter unavailable"): CorpusAdapter {
-  return { searchCanonicalCode: () => Promise.reject(new Error(msg)) };
+  return { searchCanonicalCode: () => Promise.resolve(err(new Error(msg))) };
 }
 
 function makeSlowAdapter<T>(result: T, delayMs: number): { call: () => Promise<T>; callCount: number } {
   let callCount = 0;
   return {
     get callCount() { return callCount; },
-    call: () => new Promise((resolve) => {
+    call: async () => {
       callCount++;
-      setTimeout(() => resolve(result), delayMs);
-    }),
+      await sleep(delayMs);
+      return result;
+    },
   };
 }
 
@@ -257,10 +260,16 @@ export async function checkTimeoutFailOpen(): Promise<M038S03Check> {
 
   // Both adapters are slow — they exceed the timeout.
   const graphSlowAdapter: GraphAdapter = {
-    queryBlastRadius: () => new Promise((resolve) => setTimeout(() => resolve(makeGraphResult()), 500)),
+    queryBlastRadius: async () => {
+      await sleep(500);
+      return ok(makeGraphResult());
+    },
   };
   const corpusSlowAdapter: CorpusAdapter = {
-    searchCanonicalCode: () => new Promise((resolve) => setTimeout(() => resolve(makeCorpusMatches()), 500)),
+    searchCanonicalCode: async () => {
+      await sleep(500);
+      return ok(makeCorpusMatches());
+    },
   };
 
   const { signals, onSignal } = collectSignals();

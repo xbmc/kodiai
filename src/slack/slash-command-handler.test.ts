@@ -173,6 +173,109 @@ describe("handleKodiaiCommand", () => {
     expect(result.text).toContain("alphanumeric");
   });
 
+  test("link refuses to claim an existing unlinked GitHub profile with contributor signals", async () => {
+    let linkCalled = false;
+    const store = createMockProfileStore({
+      getByGithubUsername: async () =>
+        makeProfile({
+          githubUsername: "octocat",
+          slackUserId: null,
+          overallTier: "established",
+          overallScore: 0.82,
+          lastScoredAt: new Date("2026-06-01T00:00:00.000Z"),
+          trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+        }),
+      linkIdentity: async (p) => {
+        linkCalled = true;
+        return makeProfile({
+          githubUsername: p.githubUsername,
+          slackUserId: p.slackUserId,
+          displayName: p.displayName,
+        });
+      },
+    });
+
+    const result = await handleKodiaiCommand({
+      text: "link octocat",
+      slackUserId: "U001",
+      slackUserName: "Test",
+      profileStore: store,
+      logger: mockLogger,
+    });
+
+    expect(result.responseType).toBe("ephemeral");
+    expect(result.text).toBe(
+      "GitHub user `octocat` already has contributor profile data. Ask an admin to verify ownership before linking it to Slack.",
+    );
+    expect(linkCalled).toBe(false);
+  });
+
+  test("link refuses to take over a GitHub profile linked to another Slack user", async () => {
+    let linkCalled = false;
+    const store = createMockProfileStore({
+      getByGithubUsername: async () =>
+        makeProfile({
+          githubUsername: "octocat",
+          slackUserId: "U999",
+        }),
+      linkIdentity: async (p) => {
+        linkCalled = true;
+        return makeProfile({
+          githubUsername: p.githubUsername,
+          slackUserId: p.slackUserId,
+          displayName: p.displayName,
+        });
+      },
+    });
+
+    const result = await handleKodiaiCommand({
+      text: "link octocat",
+      slackUserId: "U001",
+      slackUserName: "Test",
+      profileStore: store,
+      logger: mockLogger,
+    });
+
+    expect(result.responseType).toBe("ephemeral");
+    expect(result.text).toBe(
+      "GitHub user `octocat` is already linked to a different Slack account. Ask an admin to unlink it if this is wrong.",
+    );
+    expect(linkCalled).toBe(false);
+  });
+
+  test("link requires unlinking before switching the current Slack user to another GitHub profile", async () => {
+    let linkCalled = false;
+    const store = createMockProfileStore({
+      getBySlackUserId: async () =>
+        makeProfile({
+          githubUsername: "existing-user",
+          slackUserId: "U001",
+        }),
+      linkIdentity: async (p) => {
+        linkCalled = true;
+        return makeProfile({
+          githubUsername: p.githubUsername,
+          slackUserId: p.slackUserId,
+          displayName: p.displayName,
+        });
+      },
+    });
+
+    const result = await handleKodiaiCommand({
+      text: "link octocat",
+      slackUserId: "U001",
+      slackUserName: "Test",
+      profileStore: store,
+      logger: mockLogger,
+    });
+
+    expect(result.responseType).toBe("ephemeral");
+    expect(result.text).toBe(
+      "Your Slack account is already linked to GitHub user `existing-user`. Run `/kodiai unlink` before linking a different GitHub account.",
+    );
+    expect(linkCalled).toBe(false);
+  });
+
   test("unlink with linked profile unlinks and returns success", async () => {
     let unlinkCalled = false;
     const store = createMockProfileStore({

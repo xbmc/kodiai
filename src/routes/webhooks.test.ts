@@ -93,6 +93,8 @@ function createApp(options?: {
   const cleanupSignal = Promise.withResolvers<string>();
 
   const dedup: Deduplicator = {
+    has: () => options?.dedupIsDuplicate ?? false,
+    mark: () => undefined,
     isDuplicate: () => options?.dedupIsDuplicate ?? false,
   };
 

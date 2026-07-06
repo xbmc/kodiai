@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import {
   formatPageComment,
@@ -248,6 +249,16 @@ describe("postCommentWithRetry", () => {
 // ── createWikiPublisher (pre-flight) ────────────────────────────────────
 
 describe("createWikiPublisher", () => {
+  it("uses the shared paginated issue-comment scanner for wiki marker lookup", () => {
+    const source = readFileSync(new URL("./wiki-publisher.ts", import.meta.url), "utf8");
+    const scannerStart = source.indexOf("export async function scanWikiPageCommentMarkers");
+    const scannerEnd = source.indexOf("/**\n * Scan an issue's comments", scannerStart);
+    const scannerSource = source.slice(scannerStart, scannerEnd);
+
+    expect(scannerSource).toContain("scanIssueCommentsPaged");
+    expect(scannerSource).not.toContain("octokit.rest.issues.listComments");
+  });
+
   describe("pre-flight check", () => {
     it("returns empty result when app not installed", async () => {
       const githubApp = createMockGithubApp({
@@ -373,6 +384,39 @@ describe("createWikiPublisher", () => {
       expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledTimes(1);
       // Verify issue body was updated with summary
       expect(mockOctokit.rest.issues.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("sanitizes outgoing mentions in the final summary issue body", async () => {
+      const mockOctokit = createMockOctokit();
+      const githubApp = createMockGithubApp({
+        getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
+      });
+      const { sql } = createMockSql([
+        {
+          id: 1,
+          page_id: 100,
+          page_title: "@claude Review Notes",
+          section_heading: "Section A",
+          suggestion: "New content",
+          why_summary: "PR updated this",
+          citing_prs: [{ prNumber: 42, prTitle: "Big change" }],
+          voice_mismatch_warning: false,
+        },
+      ]);
+      const logger = createSilentLogger();
+
+      const publisher = createWikiPublisher({
+        sql,
+        githubApp,
+        logger,
+        commentDelayMs: 0,
+      });
+      await publisher.publish();
+
+      const updateCall = (mockOctokit.rest.issues.update as unknown as ReturnType<typeof mock>).mock
+        .calls[0]![0] as { body: string };
+      expect(updateCall.body).not.toContain("@claude");
+      expect(updateCall.body).toContain("claude Review Notes");
     });
 
     it("handles partial failure — skips failed page and continues", async () => {
@@ -697,6 +741,51 @@ describe("upsertWikiPageComment", () => {
     });
     expect(createComment).not.toHaveBeenCalled();
     expect(result).toEqual({ commentId: 5001, action: "updated" });
+  });
+
+  it("keeps scanning after ten pages when looking for an existing marker", async () => {
+    const updateComment = mock(() => Promise.resolve({ data: {} }));
+    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
+    const listComments = mock((params: { page?: number }) =>
+      Promise.resolve({
+        data: params.page === 11
+          ? [{ id: 5011, body: "<!-- kodiai:wiki-modification:42 --> late marker" }]
+          : Array.from({ length: 100 }, (_, index) => ({
+              id: ((params.page ?? 1) - 1) * 100 + index + 1,
+              body: "ordinary comment",
+            })),
+      }),
+    );
+
+    const mockOctokit = {
+      rest: {
+        issues: {
+          listComments,
+          updateComment,
+          createComment,
+        },
+      },
+    } as unknown as Octokit;
+
+    const logger = createSilentLogger();
+    const result = await upsertWikiPageComment(
+      mockOctokit,
+      "xbmc",
+      "xbmc",
+      100,
+      42,
+      "new body",
+      logger,
+      new Map(),
+    );
+
+    expect(listComments).toHaveBeenCalledTimes(11);
+    expect(updateComment).toHaveBeenCalledTimes(1);
+    expect((updateComment as ReturnType<typeof mock>).mock.calls[0]![0]).toMatchObject({
+      comment_id: 5011,
+    });
+    expect(createComment).not.toHaveBeenCalled();
+    expect(result).toEqual({ commentId: 5011, action: "updated" });
   });
 
   it("calls createComment when no marker found, not updateComment", async () => {

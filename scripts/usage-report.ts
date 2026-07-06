@@ -8,6 +8,7 @@ import {
   type ReviewCacheTelemetrySurface,
 } from "../src/review-cache-telemetry/cache-telemetry.ts";
 import type { Sql } from "../src/db/client.ts";
+import { rejectWithTimeout } from "../src/lib/with-timeout.ts";
 import { renderUsageReportCsv, renderUsageReportText } from "./usage-report-render.ts";
 
 export { renderUsageReportCsv, renderUsageReportText };
@@ -694,21 +695,10 @@ export async function queryUsageReportWithTimeout(
     }) as Promise<UsageReportQueryResult>;
   };
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      runQuery(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`Timed out querying telemetry Postgres after ${boundedTimeoutMs}ms.`));
-        }, boundedTimeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
+  return rejectWithTimeout(runQuery(), {
+    timeoutMs: boundedTimeoutMs,
+    createTimeoutError: () => new Error(`Timed out querying telemetry Postgres after ${boundedTimeoutMs}ms.`),
+  });
 }
 
 function normalizeSince(value: string): string {

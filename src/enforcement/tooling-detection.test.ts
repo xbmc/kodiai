@@ -50,6 +50,41 @@ test("detects .black.toml as Python formatter", async () => {
   }
 });
 
+test("does not treat a generic pyproject.toml as Python formatter or linter tooling", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-tooling-"));
+  try {
+    await writeFile(join(dir, "pyproject.toml"), "[project]\nname = \"example\"\n");
+    const result = await detectRepoTooling(dir);
+    expect(result.formatters.has("Python")).toBe(false);
+    expect(result.linters.has("Python")).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("detects Black configured inside pyproject.toml as Python formatter", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-tooling-"));
+  try {
+    await writeFile(join(dir, "pyproject.toml"), "[tool.black]\nline-length = 88\n");
+    const result = await detectRepoTooling(dir);
+    expect(result.formatters.get("Python")).toContain("pyproject.toml");
+    expect(result.linters.has("Python")).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("detects Ruff configured inside pyproject.toml as Python linter", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-tooling-"));
+  try {
+    await writeFile(join(dir, "pyproject.toml"), "[tool.ruff.lint]\nselect = [\"E\"]\n");
+    const result = await detectRepoTooling(dir);
+    expect(result.linters.get("Python")).toContain("pyproject.toml");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 test("detects eslintrc.json as JS/TS linter", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-tooling-"));
   try {

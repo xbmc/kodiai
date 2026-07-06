@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 import { retryTransient } from "../lib/transient-retry.ts";
+import { abortSignalWithTimeout } from "../lib/with-timeout.ts";
 
 interface CreateSlackClientInput {
   botToken: string;
@@ -67,7 +68,7 @@ async function postSlackMethodWithRetry<T extends SlackApiResponse>(params: {
           "content-type": "application/json; charset=utf-8",
         },
         body: params.body ? JSON.stringify(params.body) : undefined,
-        signal: AbortSignal.timeout(params.timeoutMs),
+        signal: abortSignalWithTimeout(params.timeoutMs),
       });
 
       const payload = await parseSlackPayload(response, params.method) as T;

@@ -211,6 +211,58 @@ describe("ReviewCommentStore batch SQL", () => {
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
+describe("ReviewCommentStore tombstones", () => {
+  test("softDelete inserts a deleted tombstone when no chunks exist yet", async () => {
+    const calls: string[] = [];
+    const sql = (async (
+      strings: TemplateStringsArray,
+      ..._values: unknown[]
+    ) => {
+      const statement = strings.join("?");
+      calls.push(statement);
+      return [];
+    }) as unknown as Sql;
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.softDelete("acme/repo", 12345);
+
+    expect(calls.some((statement) =>
+      statement.includes("INSERT INTO review_comments")
+      && statement.includes("deleted")
+    )).toBe(true);
+  });
+
+  test("writeChunks skips all chunks when a deleted tombstone exists", async () => {
+    const calls: string[] = [];
+    const sql = (async (
+      strings: TemplateStringsArray,
+      ..._values: unknown[]
+    ) => {
+      const statement = strings.join("?");
+      calls.push(statement);
+      if (statement.includes("deleted = true")) {
+        return [{ "?column?": 1 }];
+      }
+      return [];
+    }) as unknown as Sql & { unsafe: Sql["unsafe"] };
+    sql.unsafe = (async (query: string) => {
+      calls.push(query);
+      return [];
+    }) as unknown as Sql["unsafe"];
+    const store = createReviewCommentStore({ sql, logger: mockLogger });
+
+    await store.writeChunks([
+      makeChunk({ commentGithubId: 12345, chunkIndex: 0 }),
+      makeChunk({ commentGithubId: 12345, chunkIndex: 1 }),
+    ]);
+
+    expect(calls.some((statement) =>
+      statement.includes("WHERE NOT EXISTS")
+      && statement.includes("deleted_comment.deleted = true")
+    )).toBe(true);
+  });
+});
+
 describe.skipIf(!TEST_DB_URL)("ReviewCommentStore (pgvector)", () => {
   let sql: Sql;
   let store: ReviewCommentStore;

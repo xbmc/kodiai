@@ -14,6 +14,11 @@ import {
   buildCIAnalysisMarker,
 } from "../lib/ci-failure-formatter.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
+import {
+  createIssueCommentWithPublicationPipeline,
+  updateIssueCommentWithPublicationPipeline,
+} from "../lib/github-publication.ts";
 
 const BASE_CHECK_FETCH_CONCURRENCY = 2;
 
@@ -261,7 +266,9 @@ export function createCIFailureHandler(deps: {
             const section = formatCISection(classified, failures.length);
             const marker = buildCIAnalysisMarker(owner, repoName, prNumber);
             const commentBody = `${marker}\n${section}`;
-
+            const appSlug = typeof githubApp.getAppSlug === "function"
+              ? githubApp.getAppSlug()
+              : "kodiai";
             // Upsert CI comment: find existing by marker, update or create
             await upsertCIComment(octokit, {
               owner,
@@ -269,6 +276,7 @@ export function createCIFailureHandler(deps: {
               prNumber,
               marker,
               body: commentBody,
+              botHandles: [appSlug, "claude"],
               logger,
               deliveryId: event.id,
             });
@@ -307,39 +315,36 @@ async function upsertCIComment(
     prNumber: number;
     marker: string;
     body: string;
+    botHandles: string[];
     logger: Logger;
     deliveryId: string;
   },
 ): Promise<void> {
-  const { owner, repo, prNumber, marker, body, logger, deliveryId } = params;
+  const { owner, repo, prNumber, marker, body, botHandles, logger, deliveryId } = params;
 
   // Scan existing comments for the marker
   let existingCommentId: number | null = null;
 
   try {
-    for (let page = 1; page <= 10; page++) {
-      const { data: comments } = await octokit.rest.issues.listComments({
+    existingCommentId = (await findIssueCommentByMarkerPaged(
+      {
+        rest: {
+          issues: {
+            listComments: (args) => octokit.rest.issues.listComments({
+              ...args,
+              sort: "created",
+              direction: "desc",
+            }),
+          },
+        },
+      },
+      {
         owner,
         repo,
-        issue_number: prNumber,
-        per_page: 100,
-        page,
-        sort: "created",
-        direction: "desc",
-      });
-
-      if (comments.length === 0) break;
-
-      for (const comment of comments) {
-        if (comment.body?.includes(marker)) {
-          existingCommentId = comment.id;
-          break;
-        }
-      }
-
-      if (existingCommentId !== null) break;
-      if (comments.length < 100) break;
-    }
+        issueNumber: prNumber,
+        marker,
+      },
+    ))?.id ?? null;
   } catch {
     logger.debug(
       { deliveryId, prNumber },
@@ -348,22 +353,26 @@ async function upsertCIComment(
   }
 
   if (existingCommentId !== null) {
-    await octokit.rest.issues.updateComment({
+    await updateIssueCommentWithPublicationPipeline(octokit, {
       owner,
       repo,
       comment_id: existingCommentId,
       body,
+      botHandles,
+      preserveKodiaiMarkers: true,
     });
     logger.debug(
       { deliveryId, prNumber, commentId: existingCommentId },
       "Updated existing CI analysis comment",
     );
   } else {
-    await octokit.rest.issues.createComment({
+    await createIssueCommentWithPublicationPipeline(octokit, {
       owner,
       repo,
       issue_number: prNumber,
       body,
+      botHandles,
+      preserveKodiaiMarkers: true,
     });
     logger.debug(
       { deliveryId, prNumber },

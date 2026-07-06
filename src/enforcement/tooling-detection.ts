@@ -28,7 +28,7 @@ export const FORMATTER_CONFIGS: Record<string, string[]> = {
     "prettier.config.cjs",
     ".editorconfig",
   ],
-  Python: [".black.toml", "pyproject.toml", ".editorconfig"],
+  Python: [".black.toml", ".editorconfig"],
   "C++": [".clang-format", ".editorconfig"],
   C: [".clang-format", ".editorconfig"],
   Go: [".editorconfig"],
@@ -62,10 +62,20 @@ export const LINTER_CONFIGS: Record<string, string[]> = {
     "eslint.config.mjs",
     "eslint.config.cjs",
   ],
-  Python: ["setup.cfg", "tox.ini", ".flake8", ".pylintrc", "pyproject.toml"],
+  Python: ["setup.cfg", "tox.ini", ".flake8", ".pylintrc"],
   Go: [".golangci.yml", ".golangci.yaml", ".golangci.json"],
   Rust: ["clippy.toml", ".clippy.toml"],
 };
+
+const PYPROJECT_FORMATTER_TOOLS = ["black", "autopep8", "yapf", "ruff.format"];
+const PYPROJECT_LINTER_TOOLS = ["ruff", "ruff.lint", "pylint", "flake8"];
+
+function hasPyprojectToolSection(contents: string, toolNames: string[]): boolean {
+  return toolNames.some((toolName) => {
+    const escaped = toolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`^\\s*\\[tool\\.${escaped}\\]`, "m").test(contents);
+  });
+}
 
 /**
  * Detect formatter and linter config files in a workspace directory.
@@ -102,6 +112,22 @@ export async function detectRepoTooling(
     const goModPath = join(workspaceDir, "go.mod");
     if (await Bun.file(goModPath).exists()) {
       formatters.set("Go", ["go.mod (gofmt built-in)"]);
+    }
+
+    const pyprojectPath = join(workspaceDir, "pyproject.toml");
+    const pyprojectFile = Bun.file(pyprojectPath);
+    if (await pyprojectFile.exists()) {
+      const pyproject = await pyprojectFile.text();
+      if (hasPyprojectToolSection(pyproject, PYPROJECT_FORMATTER_TOOLS)) {
+        const pythonFormatters = formatters.get("Python") ?? [];
+        pythonFormatters.push("pyproject.toml");
+        formatters.set("Python", pythonFormatters);
+      }
+      if (hasPyprojectToolSection(pyproject, PYPROJECT_LINTER_TOOLS)) {
+        const pythonLinters = linters.get("Python") ?? [];
+        pythonLinters.push("pyproject.toml");
+        linters.set("Python", pythonLinters);
+      }
     }
 
     // Detect linter configs

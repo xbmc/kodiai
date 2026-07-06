@@ -1,7 +1,9 @@
 import type { Octokit } from "@octokit/rest";
+import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../review-orchestration/review-idempotency.ts";
-import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
+import { hasReviewCommentMarkerPaged } from "../../lib/github-issue-comments.ts";
+import { createReviewCommentWithPublicationPipeline, prepareGitHubPublication } from "../../lib/github-publication.ts";
 import type { PrDiffCommentabilityIndex } from "../formatter-suggestions.ts";
 import {
   createReviewOutputPublicationGate,
@@ -9,6 +11,7 @@ import {
 } from "./review-output-publication-gate.ts";
 
 export const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
+const INLINE_OUTPUT_MARKER_PREFIX = "kodiai:inline-output-key";
 
 export type InlineCommentLocation = {
   path: string;
@@ -81,6 +84,33 @@ function formatInlineCommentLocation(location: InlineCommentLocation): string {
     return `path "${location.path}" at ${side} lines ${location.startLine}-${location.line ?? "?"}`;
   }
   return `path "${location.path}" at ${side} line ${location.line ?? "?"}`;
+}
+
+function buildInlineOutputMarker(params: {
+  reviewOutputKey: string;
+  path: string;
+  body: string;
+  line?: number;
+  startLine?: number;
+  side: "LEFT" | "RIGHT";
+}): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(params))
+    .digest("hex")
+    .slice(0, 32);
+  return `<!-- ${INLINE_OUTPUT_MARKER_PREFIX}:${digest} -->`;
+}
+
+async function hasExistingInlineOutputMarker(
+  octokit: Octokit,
+  params: {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    marker: string;
+  },
+): Promise<boolean> {
+  return hasReviewCommentMarkerPaged(octokit, params);
 }
 
 function extractGitHubApiErrorDetails(error: unknown): GitHubApiErrorDetails {
@@ -356,12 +386,11 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
           pull_number: options.prNumber,
         });
 
-        const sanitizedBody = sanitizeOutgoingMentions(input.body, options.botHandles);
-        const scanResult = scanOutgoingForSecrets(sanitizedBody);
-        if (scanResult.blocked) {
+        const publication = prepareGitHubPublication(input.body, { botHandles: options.botHandles });
+        if (publication.blocked) {
           candidateGate?.recordInlinePublicationSkipped?.("secret-detected");
           options.logger?.warn(
-            { matchedPattern: scanResult.matchedPattern, tool: "create_inline_comment" },
+            { matchedPattern: publication.matchedPattern, tool: "create_inline_comment" },
             "Outgoing secret scan blocked publish",
           );
           return {
@@ -371,9 +400,60 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
             isError: true,
           };
         }
+        const sanitizedBody = publication.body;
+        const normalizedSide = input.location.side || "RIGHT";
+        const inlineOutputMarker = options.reviewOutputKey
+          ? buildInlineOutputMarker({
+            reviewOutputKey: options.reviewOutputKey,
+            path: input.location.path,
+            body: sanitizedBody,
+            line: input.location.line,
+            startLine: input.location.startLine,
+            side: normalizedSide,
+          })
+          : null;
+
+        if (
+          inlineOutputMarker
+          && await hasExistingInlineOutputMarker(octokit, {
+            owner: options.owner,
+            repo: options.repo,
+            prNumber: options.prNumber,
+            marker: inlineOutputMarker,
+          })
+        ) {
+          candidateGate?.recordInlinePublicationSkipped?.("inline-already-published");
+          options.logger?.info(
+            {
+              deliveryId: options.deliveryId,
+              reviewOutputKey: options.reviewOutputKey,
+              idempotencyOutcome: "inline-already-published-skip",
+              path: input.location.path,
+              line: input.location.line,
+              startLine: input.location.startLine,
+            },
+            "Skipping inline review publication because inline marker already exists",
+          );
+          return {
+            status: "skipped",
+            reason: "already-published",
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  success: true,
+                  skipped: true,
+                  reason: "inline-already-published",
+                  review_output_key: options.reviewOutputKey,
+                  marker_prefix: INLINE_OUTPUT_MARKER_PREFIX,
+                }),
+              },
+            ],
+          };
+        }
 
         const body = options.reviewOutputKey
-          ? `${sanitizedBody}\n\n${buildReviewOutputMarker(options.reviewOutputKey)}`
+          ? `${sanitizedBody}\n\n${buildReviewOutputMarker(options.reviewOutputKey)}${inlineOutputMarker ? `\n${inlineOutputMarker}` : ""}`
           : sanitizedBody;
         const params: Record<string, unknown> = {
           owner: options.owner,
@@ -381,21 +461,24 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
           pull_number: options.prNumber,
           body,
           path: input.location.path,
-          side: input.location.side || "RIGHT",
+          side: normalizedSide,
           commit_id: pr.data.head.sha,
         };
 
         if (input.location.startLine) {
           params.start_line = input.location.startLine;
-          params.start_side = input.location.side || "RIGHT";
+          params.start_side = normalizedSide;
           params.line = input.location.line;
         } else {
           params.line = input.location.line;
         }
 
-        const result = await octokit.rest.pulls.createReviewComment(
-          params as Parameters<typeof octokit.rest.pulls.createReviewComment>[0],
-        );
+        const result = await createReviewCommentWithPublicationPipeline(octokit, {
+          ...(params as Parameters<typeof octokit.rest.pulls.createReviewComment>[0]),
+          body,
+          botHandles: options.botHandles,
+          preserveKodiaiMarkers: true,
+        });
 
         options.onPublish?.();
         candidateGate?.recordInlinePublicationPublished?.({

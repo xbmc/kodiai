@@ -2,6 +2,8 @@ import { describe, it, expect } from "bun:test";
 import {
   buildTroubleshootingSynthesisPrompt,
   formatTroubleshootingComment,
+  hasTroubleshootMarkerInIssueComments,
+  prepareTroubleshootingCommentForPublication,
 } from "./troubleshooting-agent.ts";
 import type { TroubleshootingResult } from "../knowledge/troubleshooting-retrieval.ts";
 
@@ -174,5 +176,64 @@ describe("formatTroubleshootingComment", () => {
     });
     expect(comment).toContain("| Issue | Title | Match |");
     expect(comment).not.toContain("Wiki:");
+  });
+});
+
+describe("prepareTroubleshootingCommentForPublication", () => {
+  it("blocks secret-like generated guidance before publication", () => {
+    const token = `ghs_${"a".repeat(36)}`;
+    const body = formatTroubleshootingComment({
+      synthesizedGuidance: `Try this diagnostic command: ${token}`,
+      result: makeResult(),
+      marker: "<!-- kodiai:troubleshoot:owner/repo:1:comment-99 -->",
+    });
+
+    const prepared = prepareTroubleshootingCommentForPublication(body, ["kodiai"]);
+
+    expect(prepared.body).toContain("I can't safely publish this response");
+    expect(prepared.body).not.toContain(token);
+    expect(prepared.blocked).toBe(true);
+    expect(prepared.matchedPattern).toBe("github-token");
+    expect(prepared.body).toContain("<!-- kodiai:troubleshoot:owner/repo:1:comment-99 -->");
+  });
+});
+
+describe("hasTroubleshootMarkerInIssueComments", () => {
+  it("finds an existing troubleshooting marker after the first page", async () => {
+    const marker = "<!-- kodiai:troubleshoot:owner/repo:77:comment-123 -->";
+    const calls: Array<{ page?: number; per_page?: number }> = [];
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async (params: { page?: number; per_page?: number }) => {
+            calls.push(params);
+            if (params.page === 1) {
+              return {
+                data: Array.from({ length: 100 }, (_, index) => ({
+                  id: index + 1,
+                  body: "ordinary comment",
+                })),
+              };
+            }
+            return {
+              data: [
+                { id: 201, body: `existing guidance\n\n${marker}` },
+              ],
+            };
+          },
+        },
+      },
+    };
+
+    await expect(
+      hasTroubleshootMarkerInIssueComments(octokit as never, {
+        owner: "owner",
+        repo: "repo",
+        issue_number: 77,
+        triggerCommentId: 123,
+      }),
+    ).resolves.toBe(true);
+    expect(calls.map((call) => call.page)).toEqual([1, 2]);
+    expect(calls.every((call) => call.per_page === 100)).toBe(true);
   });
 });

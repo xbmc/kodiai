@@ -11,6 +11,7 @@
 
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { sleep } from "../lib/with-timeout.ts";
 import type { WikiPageRecord } from "./wiki-types.ts";
 import type { PREvidence } from "./wiki-staleness-types.ts";
 import type {
@@ -442,7 +443,7 @@ export function createUpdateGenerator(opts: UpdateGeneratorOptions): {
 
         // Rate limit between pages
         if (opts.rateLimitMs && opts.rateLimitMs > 0) {
-          await new Promise((r) => setTimeout(r, opts.rateLimitMs));
+          await sleep(opts.rateLimitMs);
         }
       }
 

@@ -3,6 +3,7 @@ import type { BotUserClient } from "../auth/bot-user.ts";
 import { retryGitHubTransient } from "../lib/github-retry.ts";
 import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 import { dedupeInflight } from "../lib/inflight-dedupe.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 export interface ForkManager {
   /** Ensure a fork of owner/repo exists under the bot user. Returns fork coordinates. Uses in-memory cache. */
@@ -80,7 +81,7 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
       } catch {
         // Fork not ready yet
       }
-      await new Promise((resolve) => setTimeout(resolve, FORK_POLL_INTERVAL_MS));
+      await sleep(FORK_POLL_INTERVAL_MS);
     }
 
     throw new Error(`Timed out waiting for fork ${owner}/${repo} to become ready after ${FORK_POLL_TIMEOUT_MS}ms`);

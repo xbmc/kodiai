@@ -68,10 +68,10 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
 
     const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_EVENT_BODY_BYTES });
     if (!bodyResult.ok) {
-      requestLogger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slack event body too large");
+      requestLogger.warn({ maxBytes: bodyResult.err.maxBytes }, "Slack event body too large");
       return c.text("Payload too large", 413);
     }
-    const body = bodyResult.body;
+    const body = bodyResult.value;
     const verification = verifySlackRequest({
       signingSecret: config.slackSigningSecret,
       rawBody: body,
@@ -79,8 +79,8 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       signatureHeader,
     });
 
-    if (!verification.valid) {
-      requestLogger.warn({ reason: verification.reason }, "Rejected Slack event: verification failed");
+    if (!verification.ok) {
+      requestLogger.warn({ reason: verification.err.reason }, "Rejected Slack event: verification failed");
       return c.text("", 401);
     }
 

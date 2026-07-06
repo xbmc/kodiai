@@ -475,6 +475,149 @@ describe("createRetriever", () => {
     expect(result!.provenance.reviewCommentCount).toBe(1);
   });
 
+  test("hybrid review search fuses vector and BM25 hits using stable review identity", async () => {
+    const makeReviewRecord = (overrides: Partial<ReviewCommentSearchResult["record"]>): ReviewCommentSearchResult["record"] => ({
+      id: overrides.id ?? 1,
+      createdAt: "2025-01-01T00:00:00Z",
+      repo: "owner/repo",
+      owner: "owner",
+      prNumber: overrides.prNumber ?? 123,
+      prTitle: "Fix bug",
+      commentGithubId: overrides.commentGithubId ?? 1001,
+      threadId: "t1",
+      inReplyToId: null,
+      filePath: "src/auth.ts",
+      startLine: 42,
+      endLine: 50,
+      diffHunk: null,
+      authorLogin: "reviewer1",
+      authorAssociation: "MEMBER",
+      body: "Review comment",
+      chunkIndex: overrides.chunkIndex ?? 0,
+      chunkText: overrides.chunkText ?? "shared review guidance",
+      tokenCount: 5,
+      embedding: null,
+      embeddingModel: "voyage-code-3",
+      stale: false,
+      githubCreatedAt: "2025-08-15T10:00:00Z",
+      githubUpdatedAt: null,
+      deleted: false,
+      backfillBatch: null,
+      ...overrides,
+    });
+
+    const vectorOnly = makeReviewRecord({
+      id: 1,
+      commentGithubId: 1001,
+      chunkIndex: 0,
+      chunkText: "vector only guidance",
+    });
+    const shared = makeReviewRecord({
+      id: 2,
+      commentGithubId: 1002,
+      chunkIndex: 0,
+      chunkText: "shared review guidance",
+    });
+
+    const mockCommentStore = {
+      async writeChunks() {},
+      async softDelete() {},
+      async updateChunks() {},
+      async searchByEmbedding(): Promise<ReviewCommentSearchResult[]> {
+        return [
+          { distance: 0.10, record: vectorOnly },
+          { distance: 0.20, record: shared },
+        ];
+      },
+      async searchByFullText(): Promise<ReviewCommentSearchResult[]> {
+        return [
+          { distance: 0.95, record: shared },
+        ];
+      },
+      async getThreadComments() { return []; },
+      async getSyncState() { return null; },
+      async updateSyncState() {},
+      async getLatestCommentDate() { return null; },
+      async countByRepo() { return 0; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([]),
+      config: makeConfig({ adaptive: false }),
+      reviewCommentStore: mockCommentStore as unknown as ReviewCommentStore,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({ topK: 5 }));
+
+    expect(result).not.toBeNull();
+    const reviewChunks = result!.unifiedResults.filter((chunk) => chunk.source === "review_comment");
+    expect(reviewChunks.map((chunk) => chunk.text)).toEqual([
+      "shared review guidance",
+      "vector only guidance",
+    ]);
+  });
+
+  test("BM25-only review comment chunks preserve the store distance contract", async () => {
+    const bm25Only = {
+      id: 3,
+      repo: "owner/repo",
+      owner: "owner",
+      prNumber: 17,
+      prTitle: "Auth fix",
+      commentGithubId: 1003,
+      threadId: "t1",
+      inReplyToId: null,
+      filePath: "src/auth.ts",
+      startLine: 42,
+      endLine: 50,
+      diffHunk: null,
+      authorLogin: "reviewer1",
+      authorAssociation: "MEMBER",
+      body: "Review comment",
+      chunkIndex: 0,
+      chunkText: "bm25 only low relevance",
+      tokenCount: 5,
+      embedding: null,
+      embeddingModel: "voyage-code-3",
+      stale: false,
+      githubCreatedAt: "2025-08-15T10:00:00Z",
+      githubUpdatedAt: null,
+      deleted: false,
+      backfillBatch: null,
+      createdAt: "2025-08-15T10:00:00Z",
+    };
+    const mockCommentStore = {
+      async writeChunks() {},
+      async softDelete() {},
+      async updateChunks() {},
+      async searchByEmbedding(): Promise<ReviewCommentSearchResult[]> {
+        return [];
+      },
+      async searchByFullText(): Promise<ReviewCommentSearchResult[]> {
+        return [{ distance: 0.95, record: bm25Only }];
+      },
+      async getThreadComments() { return []; },
+      async getSyncState() { return null; },
+      async updateSyncState() {},
+      async getLatestCommentDate() { return null; },
+      async countByRepo() { return 0; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([]),
+      config: makeConfig({ adaptive: false }),
+      reviewCommentStore: mockCommentStore as unknown as ReviewCommentStore,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({ topK: 5 }));
+
+    expect(result).not.toBeNull();
+    const reviewChunk = result!.unifiedResults.find((chunk) => chunk.source === "review_comment");
+    expect(reviewChunk?.vectorDistance).toBe(0.95);
+  });
+
   test("review comment search failure does not block learning memory results", async () => {
     const results = [makeRetrievalResult(1, 0.2)];
     const throwingCommentStore = {

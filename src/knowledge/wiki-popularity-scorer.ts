@@ -19,6 +19,7 @@ import {
   computeCompositeScore,
 } from "./wiki-popularity-config.ts";
 import { fetchAllLinkshereCounts } from "./wiki-linkshere-fetcher.ts";
+import { scheduleInterval, scheduleTimeout, type ScheduledInterval, type ScheduledTimeout } from "../lib/with-timeout.ts";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -200,8 +201,8 @@ export function createWikiPopularityScorer(
 ): { start(): void; stop(): void; runNow(): Promise<WikiPopularityScoringResult> } {
   const logger = opts.logger.child({ module: "wiki-popularity-scorer" });
 
-  let intervalHandle: ReturnType<typeof setInterval> | null = null;
-  let startupHandle: ReturnType<typeof setTimeout> | null = null;
+  let intervalHandle: ScheduledInterval | null = null;
+  let startupHandle: ScheduledTimeout | null = null;
   let running = false;
 
   async function doScore(): Promise<WikiPopularityScoringResult> {
@@ -246,11 +247,11 @@ export function createWikiPopularityScorer(
       const delayMs = opts.startupDelayMs ?? DEFAULT_STARTUP_DELAY_MS;
       logger.info({ intervalMs, startupDelayMs: delayMs }, "Wiki popularity scorer starting");
 
-      startupHandle = setTimeout(() => {
+      startupHandle = scheduleTimeout(() => {
         void doScore().catch((err) =>
           logger.error({ err }, "Initial wiki popularity scoring failed"),
         );
-        intervalHandle = setInterval(() => {
+        intervalHandle = scheduleInterval(() => {
           void doScore().catch((err) =>
             logger.error({ err }, "Scheduled wiki popularity scoring failed"),
           );
@@ -260,11 +261,11 @@ export function createWikiPopularityScorer(
 
     stop() {
       if (startupHandle) {
-        clearTimeout(startupHandle);
+        startupHandle.clear();
         startupHandle = null;
       }
       if (intervalHandle) {
-        clearInterval(intervalHandle);
+        intervalHandle.clear();
         intervalHandle = null;
       }
       logger.info("Wiki popularity scorer stopped");

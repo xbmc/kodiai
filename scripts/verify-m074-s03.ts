@@ -362,6 +362,7 @@ async function exercisePublisher(input: { reviewOutputKey: string; location: { p
     rest: {
       pulls: {
         get: async () => ({ data: { head: { sha: CORRELATION.commitSha } } }),
+        listReviewComments: async () => ({ data: [] }),
         createReviewComment: async (params: PublishCall) => {
           calls.push(params);
           return {

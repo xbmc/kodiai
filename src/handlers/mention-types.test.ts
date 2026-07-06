@@ -17,6 +17,7 @@ describe("mention-types", () => {
     test("does not trigger on partial handle matches", () => {
       expect(containsMention("hi @kodiai123", ["kodiai"])).toBe(false);
       expect(containsMention("hi @claude123", ["claude"])).toBe(false);
+      expect(containsMention("hi @claudette", ["claude"])).toBe(false);
     });
 
     test("escapes metacharacters in accepted handles", () => {
@@ -51,6 +52,9 @@ describe("mention-types", () => {
     test("does not remove partial handle matches", () => {
       expect(stripMention("@claude123 please help", ["claude"])).toBe(
         "@claude123 please help",
+      );
+      expect(stripMention("@claudette please help", ["claude"])).toBe(
+        "@claudette please help",
       );
     });
 
@@ -114,7 +118,7 @@ describe("mention-types", () => {
       expect(event.inReplyToId).toBeUndefined();
     });
 
-    test("normalizeIssueComment always sets inReplyToId undefined", () => {
+    test("normalizeIssueComment reads in_reply_to_id for issue-thread replies", () => {
       const event = normalizeIssueComment({
         repository: { owner: { login: "octo" }, name: "repo" },
         issue: { number: 7, pull_request: null },
@@ -123,10 +127,11 @@ describe("mention-types", () => {
           body: "@kodiai help",
           user: { login: "bob" },
           created_at: "2026-02-14T00:00:00Z",
+          in_reply_to_id: 2999,
         },
       } as any);
 
-      expect(event.inReplyToId).toBeUndefined();
+      expect(event.inReplyToId).toBe(2999);
     });
 
     test("normalizeReviewBody always sets inReplyToId undefined", () => {

@@ -5,6 +5,7 @@ import type { EmbeddingProvider } from "./types.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
 import { buildWikiApiUrl, fetchWikiJsonWithRetry, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
+import { scheduleInterval, scheduleTimeout, sleep, type ScheduledInterval, type ScheduledTimeout } from "../lib/with-timeout.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,10 +65,6 @@ type ParseResponse = {
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function namespaceIdToName(nsId: number): string {
   const map: Record<number, string> = {
@@ -409,8 +406,8 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
   const fetchFn = withWikiRequestPolicy(opts.fetchFn ?? globalThis.fetch);
 
-  let intervalHandle: ReturnType<typeof setInterval> | null = null;
-  let startupHandle: ReturnType<typeof setTimeout> | null = null;
+  let intervalHandle: ScheduledInterval | null = null;
+  let startupHandle: ScheduledTimeout | null = null;
   let running = false;
 
   async function doSync(): Promise<WikiSyncResult> {
@@ -452,11 +449,11 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
       );
 
       // First sync after startup delay
-      startupHandle = setTimeout(() => {
+      startupHandle = scheduleTimeout(() => {
         void doSync();
 
         // Then schedule recurring syncs
-        intervalHandle = setInterval(() => {
+        intervalHandle = scheduleInterval(() => {
           void doSync();
         }, intervalMs);
       }, STARTUP_DELAY_MS);
@@ -464,11 +461,11 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
 
     stop() {
       if (startupHandle) {
-        clearTimeout(startupHandle);
+        startupHandle.clear();
         startupHandle = null;
       }
       if (intervalHandle) {
-        clearInterval(intervalHandle);
+        intervalHandle.clear();
         intervalHandle = null;
       }
       logger.info("Wiki sync scheduler stopped");

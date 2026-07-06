@@ -480,9 +480,9 @@ describe("pollUntilComplete", () => {
       return value;
     };
 
-    Bun.sleep = (async (ms: number) => {
+    const sleepFn = async (ms: number) => {
       sleepCalls.push(ms);
-    }) as typeof Bun.sleep;
+    };
 
     globalThis.fetch = (async (input) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -505,13 +505,13 @@ describe("pollUntilComplete", () => {
         executionName: "exec-123",
         timeoutMs: opts.timeoutMs ?? 20_000,
         ...(opts.pollIntervalMs !== undefined ? { pollIntervalMs: opts.pollIntervalMs } : {}),
+        sleepFn,
         logger: logger as unknown as Logger,
       });
 
       return { result, logger, sleepCalls, statusFetchCount };
     } finally {
       globalThis.fetch = originalFetch;
-      Bun.sleep = originalSleep;
       Date.now = originalNow;
       if (originalIdentityEndpoint === undefined) {
         delete process.env["IDENTITY_ENDPOINT"];
@@ -591,7 +591,6 @@ describe("pollUntilComplete", () => {
 
   test("passes abort signals to managed identity and poll fetches", async () => {
     const originalFetch = globalThis.fetch;
-    const originalSleep = Bun.sleep;
     const originalNow = Date.now;
     const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
     const originalIdentityHeader = process.env["IDENTITY_HEADER"];
@@ -603,7 +602,6 @@ describe("pollUntilComplete", () => {
     process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
     process.env["IDENTITY_HEADER"] = "identity-header";
     Date.now = () => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? 0;
-    Bun.sleep = (async () => undefined) as typeof Bun.sleep;
 
     globalThis.fetch = (async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -621,13 +619,13 @@ describe("pollUntilComplete", () => {
         executionName: "exec-123",
         timeoutMs: 20_000,
         pollIntervalMs: 1,
+        sleepFn: async () => undefined,
       });
 
       expect(signals).toHaveLength(2);
       expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
-      Bun.sleep = originalSleep;
       Date.now = originalNow;
       if (originalIdentityEndpoint === undefined) {
         delete process.env["IDENTITY_ENDPOINT"];

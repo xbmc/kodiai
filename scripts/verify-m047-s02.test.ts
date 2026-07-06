@@ -231,7 +231,7 @@ describe("evaluateM047S02", () => {
     expect(calibrated?.profile.text).toContain("Status: Linked contributor guidance is active.");
     expect(calibrated?.profile.text).toContain("language/typescript: 0.90");
     expect(calibrated?.linkContinuity?.text).toContain(
-      "Linked contributor guidance is active for your profile.",
+      "Ask an admin to verify ownership before linking it to Slack.",
     );
     expect(calibrated?.optInContinuity.text).toContain(
       "Contributor-specific guidance is now on for your linked profile.",

@@ -16,6 +16,7 @@ import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 import { dedupeInflight } from "../lib/inflight-dedupe.ts";
 import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 import { retryTransient } from "../lib/transient-retry.ts";
+import { abortSignalWithTimeout } from "../lib/with-timeout.ts";
 
 type SlackMember = {
   userId: string;
@@ -118,7 +119,7 @@ async function fetchSlackJson<T extends SlackJsonResponse>(
 ): Promise<{ response: Response; data: T }> {
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(10_000),
+    signal: abortSignalWithTimeout(10_000),
   });
   let data: T;
   try {

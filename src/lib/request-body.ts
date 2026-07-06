@@ -1,3 +1,5 @@
+import { ok, err, type Result } from "./result.ts";
+
 export class RequestBodyTooLargeError extends Error {
   constructor(readonly maxBytes: number) {
     super(`request body exceeds ${maxBytes} bytes`);
@@ -46,19 +48,17 @@ export async function readBoundedRequestBody(
   return chunks.join("");
 }
 
-export type BoundedRequestBodyResult =
-  | { ok: true; body: string }
-  | { ok: false; error: RequestBodyTooLargeError };
+export type BoundedRequestBodyResult = Result<string, RequestBodyTooLargeError>;
 
 export async function tryReadBoundedRequestBody(
   request: Request,
   options: { maxBytes: number },
 ): Promise<BoundedRequestBodyResult> {
   try {
-    return { ok: true, body: await readBoundedRequestBody(request, options) };
+    return ok(await readBoundedRequestBody(request, options));
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return { ok: false, error };
+      return err(error);
     }
     throw error;
   }

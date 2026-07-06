@@ -60,6 +60,8 @@ function logReactionFetchFailure(params: {
 const DEFAULT_MAX_CANDIDATES = 100;
 const DEFAULT_RECENT_WINDOW_DAYS = 30;
 const REACTION_FETCH_CONCURRENCY = 4;
+const REACTION_FETCH_PER_PAGE = 100;
+const REACTION_FETCH_MAX_PAGES = 10;
 
 function isRecentEnough(createdAt: string, recentWindowDays: number): boolean {
   const parsed = Date.parse(createdAt);
@@ -167,16 +169,25 @@ export function createFeedbackSyncHandler(deps: {
         permissionDenied: boolean;
       }> => {
         try {
-          const response = await octokit.rest.reactions.listForPullRequestReviewComment({
-            owner: repoOwner!,
-            repo: repoName!,
-            comment_id: commentId,
-            per_page: 100,
-          });
+          const reactions: ReactionEntry[] = [];
+          for (let page = 1; page <= REACTION_FETCH_MAX_PAGES; page += 1) {
+            const response = await octokit.rest.reactions.listForPullRequestReviewComment({
+              owner: repoOwner!,
+              repo: repoName!,
+              comment_id: commentId,
+              per_page: REACTION_FETCH_PER_PAGE,
+              page,
+            });
+            const pageReactions = response.data as ReactionEntry[];
+            reactions.push(...pageReactions);
+            if (pageReactions.length < REACTION_FETCH_PER_PAGE) {
+              break;
+            }
+          }
 
           return {
             commentId,
-            reactions: response.data as ReactionEntry[],
+            reactions,
             permissionDenied: false,
           };
         } catch (err) {

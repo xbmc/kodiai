@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { verifySlackRequest } from "./verify.ts";
+import { SlackVerifyError, verifySlackRequest } from "./verify.ts";
 
 const SECRET = "super-secret-signing-key";
 const BODY = JSON.stringify({ type: "event_callback", event: { type: "app_mention" } });
@@ -9,6 +9,14 @@ const NOW_MS = 1_700_000_000_000;
 function makeSignature(timestamp: string, body: string = BODY): string {
   const baseString = `v0:${timestamp}:${body}`;
   return `v0=${createHmac("sha256", SECRET).update(baseString).digest("hex")}`;
+}
+
+function expectSlackVerifyError(result: ReturnType<typeof verifySlackRequest>): SlackVerifyError {
+  if (result.ok) {
+    throw new Error("Expected Slack verification to fail");
+  }
+  expect(result.err).toBeInstanceOf(SlackVerifyError);
+  return result.err;
 }
 
 describe("verifySlackRequest", () => {
@@ -22,7 +30,7 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: true, reason: null });
+    expect(result).toEqual({ ok: true, value: undefined });
   });
 
   test("rejects invalid signature", () => {
@@ -35,7 +43,7 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: false, reason: "signature_mismatch" });
+    expect(expectSlackVerifyError(result).reason).toBe("signature_mismatch");
   });
 
   test("rejects missing signature header", () => {
@@ -48,7 +56,7 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: false, reason: "missing_signature" });
+    expect(expectSlackVerifyError(result).reason).toBe("missing_signature");
   });
 
   test("rejects missing timestamp header", () => {
@@ -60,7 +68,7 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: false, reason: "missing_timestamp" });
+    expect(expectSlackVerifyError(result).reason).toBe("missing_timestamp");
   });
 
   test("rejects stale timestamp beyond tolerance", () => {
@@ -73,7 +81,7 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: false, reason: "timestamp_out_of_window" });
+    expect(expectSlackVerifyError(result).reason).toBe("timestamp_out_of_window");
   });
 
   test("rejects future timestamp beyond tolerance", () => {
@@ -86,7 +94,7 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: false, reason: "timestamp_out_of_window" });
+    expect(expectSlackVerifyError(result).reason).toBe("timestamp_out_of_window");
   });
 
   test("rejects malformed timestamp header", () => {
@@ -98,6 +106,6 @@ describe("verifySlackRequest", () => {
       nowMs: NOW_MS,
     });
 
-    expect(result).toEqual({ valid: false, reason: "malformed_timestamp" });
+    expect(expectSlackVerifyError(result).reason).toBe("malformed_timestamp");
   });
 });

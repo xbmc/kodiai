@@ -1,4 +1,5 @@
 import { redactGitHubTokens } from "../lib/sanitizer.ts";
+import { raceWithTimeout } from "../lib/with-timeout.ts";
 import {
   planFormatterCommandExecution,
   spawnArgsForFormatterCommand,
@@ -699,41 +700,32 @@ const defaultFormatterProcessRunner: FormatterProcessRunner = async ({
 
   const stdoutPromise = readProcessStreamForFormatter(proc.stdout);
   const stderrPromise = readProcessStreamForFormatter(proc.stderr);
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
 
-  try {
-    const exitCode = timeoutMs > 0 && Number.isFinite(timeoutMs)
-      ? await Promise.race([
-          proc.exited,
-          new Promise<number>((resolve) => {
-            timer = setTimeout(() => {
-              timedOut = true;
-              try {
-                proc.kill();
-              } catch {
-                // The process may have exited between timeout and kill.
-              }
-              resolve(124);
-            }, timeoutMs);
-          }),
-        ])
-      : await proc.exited;
+  const exitCode = timeoutMs > 0 && Number.isFinite(timeoutMs)
+    ? await raceWithTimeout(proc.exited, {
+        timeoutMs,
+        timeoutValue: 124,
+        onTimeout: () => {
+          timedOut = true;
+          try {
+            proc.kill();
+          } catch {
+            // The process may have exited between timeout and kill.
+          }
+        },
+      })
+    : await proc.exited;
 
-    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-    return {
-      exitCode,
-      stdout,
-      stderr,
-      timedOut,
-      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      executionMode: commandResolution.executionMode,
-    };
-  } finally {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-    }
-  }
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  return {
+    exitCode,
+    stdout,
+    stderr,
+    timedOut,
+    durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    executionMode: commandResolution.executionMode,
+  };
 };
 
 function looksLikeUnifiedDiff(text: string): boolean {

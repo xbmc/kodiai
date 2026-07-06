@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import { $ } from "bun";
 import type { Logger } from "pino";
+import { runWithAbortSignalTimeout, sleep } from "../lib/with-timeout.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -145,35 +146,13 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
 // Job dispatch
 // ---------------------------------------------------------------------------
 
-async function withRequestTimeout<T>(
-  label: string,
-  timeoutMs: number,
-  run: (signal: AbortSignal) => Promise<T>,
-): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await run(controller.signal);
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`${label}: request timed out after ${timeoutMs}ms`, {
-        cause: error,
-      });
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function fetchTextWithTimeout(
   label: string,
   url: string,
   init: RequestInit,
   timeoutMs = DEFAULT_ACA_REQUEST_TIMEOUT_MS,
 ): Promise<{ response: Response; body: string }> {
-  return await withRequestTimeout(label, timeoutMs, async (signal) => {
+  return await runWithAbortSignalTimeout(label, timeoutMs, async (signal) => {
     const response = await fetch(url, { ...init, signal });
     const body = await response.text();
     return { response, body };
@@ -200,7 +179,7 @@ async function fetchManagedIdentityToken(url: string, identityHeader: string): P
     }
 
     if (attempt === maxAttempts) break;
-    await Bun.sleep(100 * attempt);
+    await sleep(100 * attempt);
   }
 
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
@@ -419,6 +398,7 @@ export async function pollUntilComplete(opts: {
   executionName: string;
   timeoutMs: number;
   pollIntervalMs?: number;
+  sleepFn?: (ms: number) => Promise<void>;
   logger?: Logger;
 }): Promise<{ status: PollStatus; durationMs: number }> {
   const {
@@ -427,6 +407,7 @@ export async function pollUntilComplete(opts: {
     executionName,
     timeoutMs,
     pollIntervalMs = DEFAULT_ACA_JOB_POLL_INTERVAL_MS,
+    sleepFn = sleep,
     logger,
   } = opts;
 
@@ -538,7 +519,7 @@ export async function pollUntilComplete(opts: {
     // Sleep before next poll (or bail out if timeout would be exceeded)
     const remaining = timeoutMs - (Date.now() - startMs);
     if (remaining <= 0) continue;
-    await Bun.sleep(Math.min(pollIntervalMs, remaining));
+    await sleepFn(Math.min(pollIntervalMs, remaining));
   }
 }
 

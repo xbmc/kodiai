@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { extractBreakingChanges } from "./dep-bump-enrichment.ts";
 import { parseSemver } from "./dep-bump-detector.ts";
 import { retryTransient } from "./transient-retry.ts";
+import { abortSignalWithTimeout } from "./with-timeout.ts";
 
 const HASH_VERIFICATION_MAX_BYTES = 50 * 1024 * 1024;
 
@@ -120,6 +121,9 @@ const REPO_MAP_LOWER: Record<string, { owner: string; repo: string }> = {};
 for (const [key, value] of Object.entries(KODI_LIB_REPO_MAP)) {
   REPO_MAP_LOWER[key.toLowerCase()] = value;
 }
+
+const GITHUB_RELEASES_PER_PAGE = 20;
+const MAX_RELEASE_PAGES_TO_SCAN = 20;
 
 // ─── Package List Entry Type ─────────────────────────────────────────────────
 
@@ -333,6 +337,40 @@ type GitHubReleaseResponse = {
   body: string | null;
 };
 
+async function listRecentReleasesPaged(
+  octokit: Octokit,
+  repo: { owner: string; repo: string },
+  oldVersion?: string,
+): Promise<GitHubReleaseResponse[]> {
+  const releases: GitHubReleaseResponse[] = [];
+  const oldSemver = oldVersion ? parseSemver(oldVersion) : null;
+
+  for (let page = 1; page <= MAX_RELEASE_PAGES_TO_SCAN; page += 1) {
+    const { data } = await octokit.rest.repos.listReleases({
+      owner: repo.owner,
+      repo: repo.repo,
+      per_page: GITHUB_RELEASES_PER_PAGE,
+      page,
+    });
+    const pageReleases = data as GitHubReleaseResponse[];
+    releases.push(...pageReleases);
+
+    if (pageReleases.length < GITHUB_RELEASES_PER_PAGE) {
+      break;
+    }
+
+    if (oldSemver && pageReleases.some((release) => {
+      if (release.draft || !release.tag_name) return false;
+      const tagSemver = parseSemver(release.tag_name.replace(/^v/i, ""));
+      return Boolean(tagSemver && !semverGreaterThan(tagSemver, oldSemver));
+    })) {
+      break;
+    }
+  }
+
+  return releases;
+}
+
 function semverGreaterThan(
   a: { major: number; minor: number; patch: number },
   b: { major: number; minor: number; patch: number },
@@ -377,13 +415,7 @@ export async function fetchDependsChangelog(params: {
   }
 
   try {
-    const { data } = await octokit.rest.repos.listReleases({
-      owner: repo.owner,
-      repo: repo.repo,
-      per_page: 20,
-    });
-
-    const releases = data as GitHubReleaseResponse[];
+    const releases = await listRecentReleasesPaged(octokit, repo, oldVersion);
 
     // Filter releases between old and new version (old < tag <= new)
     const oldSemver = parseSemver(oldVersion);
@@ -543,7 +575,7 @@ export async function verifyHash(params: {
     const actualHash = await retryTransient(
       async () => {
         const response = await fetch(url, {
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: abortSignalWithTimeout(timeoutMs),
         });
 
         if (!response.ok) {

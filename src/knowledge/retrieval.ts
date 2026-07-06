@@ -208,7 +208,7 @@ function getMaxRelatedWeight(lang: string, weightMap: Map<string, number>): numb
  */
 function reviewMatchToUnified(match: ReviewCommentMatch, repo: string): UnifiedRetrievalChunk {
   return {
-    id: `review:${repo}:${match.prNumber}:${match.distance}`,
+    id: `review:${repo}:${match.commentGithubId}:${match.chunkIndex}`,
     text: match.chunkText,
     source: "review_comment",
     sourceLabel: "[review: prior review comment]",
@@ -233,7 +233,7 @@ function reviewMatchToUnified(match: ReviewCommentMatch, repo: string): UnifiedR
  */
 function wikiMatchToUnified(match: WikiKnowledgeMatch): UnifiedRetrievalChunk {
   return {
-    id: `wiki:${match.pageId}:${match.distance}`,
+    id: `wiki:${match.pageId}:${match.sectionAnchor ?? match.sectionHeading ?? "page"}:${match.chunkText}`,
     text: match.chunkText,
     source: "wiki",
     sourceLabel: `[wiki: ${match.pageTitle}]`,
@@ -256,7 +256,7 @@ function wikiMatchToUnified(match: WikiKnowledgeMatch): UnifiedRetrievalChunk {
  */
 function snippetToUnified(match: CodeSnippetMatch, repo: string): UnifiedRetrievalChunk {
   return {
-    id: `snippet:${match.contentHash}:${match.distance}`,
+    id: `snippet:${match.contentHash}`,
     text: match.embeddedText,
     source: "snippet",
     sourceLabel: `[snippet] PR #${match.prNumber}: ${match.prTitle ?? "untitled"} — ${match.filePath}:${match.startLine}-${match.endLine}`,
@@ -281,7 +281,7 @@ function snippetToUnified(match: CodeSnippetMatch, repo: string): UnifiedRetriev
  */
 function issueMatchToUnified(match: IssueKnowledgeMatch, repo: string): UnifiedRetrievalChunk {
   return {
-    id: `issue:${repo}:${match.issueNumber}:${match.distance}`,
+    id: `issue:${repo}:${match.issueNumber}`,
     text: match.chunkText,
     source: "issue",
     sourceLabel: `[issue: #${match.issueNumber}] ${match.title} (${match.state})`,
@@ -782,14 +782,16 @@ export function createRetriever(deps: {
           ? reviewFullTextResult.value.map((r) => {
               const record = (r as { record?: unknown }).record;
               if (record && typeof record === "object" && "chunkText" in record) {
-                const rec = record as { chunkText: string; prNumber?: number; filePath?: string; authorLogin?: string; authorAssociation?: string | null; githubCreatedAt?: string; prTitle?: string | null; startLine?: number | null; endLine?: number | null };
+                const rec = record as { chunkText: string; prNumber?: number; commentGithubId?: number; chunkIndex?: number; filePath?: string; authorLogin?: string; authorAssociation?: string | null; githubCreatedAt?: string; prTitle?: string | null; startLine?: number | null; endLine?: number | null };
                 return reviewMatchToUnified(
                   {
                     chunkText: rec.chunkText,
-                    distance: 1 - Number((r as { distance?: number }).distance ?? 0),
+                    distance: Number((r as { distance?: number }).distance ?? 1),
                     repo: opts.repo,
                     prNumber: rec.prNumber ?? 0,
                     prTitle: rec.prTitle ?? null,
+                    commentGithubId: rec.commentGithubId ?? 0,
+                    chunkIndex: rec.chunkIndex ?? 0,
                     filePath: rec.filePath ?? null,
                     authorLogin: rec.authorLogin ?? "unknown",
                     authorAssociation: rec.authorAssociation ?? null,
@@ -822,7 +824,7 @@ export function createRetriever(deps: {
                 return wikiMatchToUnified({
                   chunkText: rec.chunkText,
                   rawText: rec.chunkText,
-                  distance: 1 - Number((r as { distance?: number }).distance ?? 0),
+                  distance: Number((r as { distance?: number }).distance ?? 1),
                   pageId: rec.pageId ?? 0,
                   pageTitle: rec.pageTitle ?? "",
                   namespace: rec.namespace ?? "",
@@ -855,7 +857,7 @@ export function createRetriever(deps: {
                 return issueMatchToUnified(
                   {
                     chunkText: `#${rec.issueNumber} ${rec.title}\n\n${(rec.body ?? "").slice(0, 2000)}`,
-                    distance: 1 - Number((r as { distance?: number }).distance ?? 0),
+                    distance: Number((r as { distance?: number }).distance ?? 1),
                     repo: rec.repo,
                     issueNumber: rec.issueNumber,
                     title: rec.title,

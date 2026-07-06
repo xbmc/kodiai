@@ -5,6 +5,7 @@ import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
 import { buildWikiApiUrl, fetchWikiJsonWithRetry, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 import { generateDocumentEmbeddingResultsBatch } from "./embedding-batch.ts";
+import { sleep } from "../lib/with-timeout.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -65,10 +66,6 @@ type ParseResponse = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Namespace ID to name mapping for MediaWiki.

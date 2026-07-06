@@ -6,6 +6,7 @@ import {
   stripMarkdownLinkTitles,
   stripHiddenAttributes,
   normalizeHtmlEntities,
+  prepareOutgoingBodyForPublication,
   redactGitHubTokens,
   sanitizeContent,
   filterCommentsToTriggerTime,
@@ -215,6 +216,13 @@ describe("redactGitHubTokens", () => {
     );
   });
 
+  test("redacts ghu_ token", () => {
+    const token = "ghu_" + "U".repeat(36);
+    expect(redactGitHubTokens(`token: ${token}`)).toBe(
+      "token: [REDACTED_GITHUB_TOKEN]",
+    );
+  });
+
   test("redacts github_pat_ token", () => {
     const token = "github_pat_" + "E".repeat(50);
     expect(redactGitHubTokens(`token: ${token}`)).toBe(
@@ -260,6 +268,44 @@ describe("sanitizeContent", () => {
     // Entity decoded
     expect(result).toContain("H");
     expect(result).not.toContain("&#72;");
+  });
+});
+
+describe("prepareOutgoingBodyForPublication", () => {
+  test("sanitizes mentions and safe content for publication", () => {
+    const result = prepareOutgoingBodyForPublication("Thanks @kodiai, done", [
+      "kodiai",
+    ]);
+
+    expect(result.blocked).toBe(false);
+    expect(result.body).toBe("Thanks kodiai, done");
+  });
+
+  test("blocks publication when sanitized body still contains a secret", () => {
+    const result = prepareOutgoingBodyForPublication(
+      "push failed: https://x-access-token:ghs_" + "A".repeat(36) + "@github.com/owner/repo.git",
+      ["kodiai"],
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-token");
+    expect(result.body).not.toContain("ghs_");
+    expect(result.body).not.toContain("x-access-token");
+  });
+
+  test("can preserve known Kodiai markers after HTML comment stripping", () => {
+    const marker = "<!-- kodiai:review-output-key:review-key -->";
+    const usageLimitMarker = "<!-- kodiai:error:usage-limit -->";
+    const result = prepareOutgoingBodyForPublication(
+      `Decision: APPROVE\n\n<!-- attacker: hidden prompt -->\n${marker}\n${usageLimitMarker}`,
+      ["kodiai"],
+      { preserveKodiaiMarkers: true },
+    );
+
+    expect(result.blocked).toBe(false);
+    expect(result.body).toContain(marker);
+    expect(result.body).toContain(usageLimitMarker);
+    expect(result.body).not.toContain("attacker: hidden prompt");
   });
 });
 

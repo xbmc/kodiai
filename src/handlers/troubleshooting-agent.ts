@@ -12,6 +12,7 @@
  */
 
 import type { Logger } from "pino";
+import type { Octokit } from "@octokit/rest";
 import type { IssueCommentCreatedEvent } from "@octokit/webhooks-types";
 import type { Sql } from "../db/client.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -28,12 +29,13 @@ import { containsMention, stripMention } from "./mention-types.ts";
 import {
   classifyTroubleshootingIntent,
   buildTroubleshootMarker,
-  hasTroubleshootMarker,
 } from "./troubleshooting-intent.ts";
 import { retrieveTroubleshootingContext } from "../knowledge/troubleshooting-retrieval.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
-import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
+import { createIssueCommentWithPublicationPipeline, prepareGitHubPublication } from "../lib/github-publication.ts";
+import type { OutgoingPublicationResult } from "../lib/sanitizer.ts";
 import { buildEpistemicBoundarySection } from "../execution/review-prompt.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
@@ -153,13 +155,13 @@ export function createTroubleshootingHandler(deps: {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
         // 10. Marker dedup check (TSHOOT-08)
-        const { data: existingComments } = await octokit.rest.issues.listComments({
+        const markerExists = await hasTroubleshootMarkerInIssueComments(octokit, {
           owner,
           repo: repoName,
           issue_number: issue.number,
-          per_page: 50,
+          triggerCommentId: comment.id,
         });
-        if (hasTroubleshootMarker(existingComments, comment.id)) {
+        if (markerExists) {
           handlerLogger.info("Troubleshoot marker already exists for this trigger comment, skipping");
           return;
         }
@@ -233,15 +235,27 @@ export function createTroubleshootingHandler(deps: {
           marker,
         });
 
-        // 14. Sanitize outgoing mentions
-        const sanitizedBody = sanitizeOutgoingMentions(commentBody, [appSlug]);
+        // 14. Apply final publication safety gate
+        const preparedBody = prepareTroubleshootingCommentForPublication(commentBody, [
+          appSlug,
+        ]);
+        if (preparedBody.blocked) {
+          handlerLogger.warn(
+            {
+              matchedPattern: preparedBody.matchedPattern,
+            },
+            "Blocked troubleshooting comment body before publication",
+          );
+        }
 
         // 15. Post comment
-        await octokit.rest.issues.createComment({
+        await createIssueCommentWithPublicationPipeline(octokit, {
           owner,
           repo: repoName,
           issue_number: issue.number,
-          body: sanitizedBody,
+          body: preparedBody.body,
+          botHandles: [appSlug],
+          preserveKodiaiMarkers: true,
         });
 
         // 16. Log success
@@ -275,6 +289,47 @@ export function createTroubleshootingHandler(deps: {
   }
 
   eventRouter.register("issue_comment.created", handleTroubleshootingMention);
+}
+
+export async function hasTroubleshootMarkerInIssueComments(
+  octokit: { rest: { issues: Pick<Octokit["rest"]["issues"], "listComments"> } },
+  params: {
+    owner: string;
+    repo: string;
+    issue_number: number;
+    triggerCommentId: number;
+  },
+): Promise<boolean> {
+  const marker = buildTroubleshootMarker(
+    `${params.owner}/${params.repo}`,
+    params.issue_number,
+    params.triggerCommentId,
+  );
+  return (await findIssueCommentByMarkerPaged(octokit, {
+    owner: params.owner,
+    repo: params.repo,
+    issueNumber: params.issue_number,
+    marker,
+  })) !== undefined;
+}
+
+export function prepareTroubleshootingCommentForPublication(
+  body: string,
+  allowedHandles: string[],
+): OutgoingPublicationResult {
+  const markerMatch = body.match(/\n*(<!-- kodiai:troubleshoot:[^]*? -->)\s*$/);
+  const marker = markerMatch?.[1];
+  const bodyWithoutMarker = marker
+    ? body.slice(0, markerMatch.index).trimEnd()
+    : body;
+  const prepared = prepareGitHubPublication(
+    bodyWithoutMarker,
+    { botHandles: allowedHandles },
+  );
+
+  return marker
+    ? { ...prepared, body: `${prepared.body}\n\n${marker}` }
+    : prepared;
 }
 
 /**

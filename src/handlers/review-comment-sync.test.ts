@@ -660,5 +660,59 @@ describe("review-comment-sync", () => {
       expect(store.softDeleted[0]!.repo).toBe("acme/repo");
       expect(store.softDeleted[0]!.commentGithubId).toBe(12345);
     });
+
+    test("a queued created job does not resurrect a comment deleted before the job runs", async () => {
+      const router = createMockRouter();
+      const store = createMockStore();
+      store.getByGithubId = async (_repo, _commentGithubId, options?: { includeDeleted?: boolean }) => {
+        if (!options?.includeDeleted || store.softDeleted.length === 0) return null;
+        return {
+          id: 1,
+          createdAt: "2026-02-20T10:00:00Z",
+          repo: "acme/repo",
+          owner: "acme",
+          prNumber: 101,
+          prTitle: "Fix null pointer",
+          commentGithubId: 12345,
+          threadId: "thread-1",
+          inReplyToId: null,
+          filePath: "src/index.ts",
+          startLine: 40,
+          endLine: 42,
+          diffHunk: null,
+          authorLogin: "alice",
+          authorAssociation: "CONTRIBUTOR",
+          body: "deleted",
+          chunkIndex: 0,
+          chunkText: "deleted",
+          tokenCount: 1,
+          embedding: null,
+          embeddingModel: null,
+          stale: false,
+          githubCreatedAt: "2026-02-20T10:00:00Z",
+          githubUpdatedAt: null,
+          deleted: true,
+          backfillBatch: null,
+        };
+      };
+      const jobQueue = createCapturingJobQueue();
+      const embeddingProvider = createMockEmbeddingProvider();
+
+      createReviewCommentSyncHandler({
+        eventRouter: router,
+        jobQueue,
+        store,
+        embeddingProvider,
+        logger: createNoopLogger(),
+      });
+
+      await router.registrations.get("pull_request_review_comment.created")![0]!(buildCreatedEvent());
+      await router.registrations.get("pull_request_review_comment.deleted")![0]!(buildDeletedEvent());
+      await jobQueue.capturedJobs[0]!();
+
+      expect(store.softDeleted).toHaveLength(1);
+      expect(store.writtenChunks).toHaveLength(0);
+      expect(embeddingProvider.callCount).toBe(0);
+    });
   });
 });

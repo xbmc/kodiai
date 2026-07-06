@@ -32,6 +32,7 @@ export async function searchCanonicalCode(opts: {
   topK: number;
   language?: string;
   distanceThreshold?: number;
+  signal?: AbortSignal;
   logger: Logger;
 }): Promise<CanonicalCodeMatch[]> {
   const {
@@ -43,11 +44,21 @@ export async function searchCanonicalCode(opts: {
     topK,
     language,
     distanceThreshold = DEFAULT_DISTANCE_THRESHOLD,
+    signal,
     logger,
   } = opts;
 
   try {
+    if (signal?.aborted) {
+      logger.debug("Canonical code search skipped: request was aborted before embedding");
+      return [];
+    }
+
     const embedResult = await embeddingProvider.generate(query, "query");
+    if (signal?.aborted) {
+      logger.debug("Canonical code search skipped: request was aborted after embedding");
+      return [];
+    }
     if (!embedResult) {
       logger.debug("Canonical code search skipped: embedding generation returned null");
       return [];

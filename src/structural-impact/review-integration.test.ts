@@ -147,7 +147,9 @@ describe("createReviewGraphAdapter", () => {
       limit: 25,
     });
 
-    expect(result.graphStats.changedFilesFound).toBe(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw result.err;
+    expect(result.value.graphStats.changedFilesFound).toBe(1);
     expect(captured).toEqual({
       repo: "acme/repo",
       workspaceKey: "headsha",
@@ -173,8 +175,10 @@ describe("createCanonicalCorpusAdapter", () => {
       language: "cpp",
     });
 
-    expect(matches).toHaveLength(1);
-    expect(matches[0]).toMatchObject({
+    expect(matches.ok).toBe(true);
+    if (!matches.ok) throw matches.err;
+    expect(matches.value).toHaveLength(1);
+    expect(matches.value[0]).toMatchObject({
       filePath: "src/related.cpp",
       canonicalRef: "main",
       symbolName: "parseTokenHelper",
@@ -358,12 +362,14 @@ describe("fetchReviewStructuralImpact", () => {
       language: "cpp",
     };
 
-    await fetchReviewStructuralImpact(deps, request);
-    await fetchReviewStructuralImpact(deps, request);
+    const first = await fetchReviewStructuralImpact(deps, request);
+    const second = await fetchReviewStructuralImpact(deps, request);
 
     expect(graphCalls).toBe(1);
     expect(corpusCalls).toBe(1);
     expect(cache.store.size).toBe(1);
+    expect(first.graphBlastRadius?.impactedFiles[0]?.path).toBe("src/auth.cpp");
+    expect(second.graphBlastRadius?.impactedFiles[0]?.path).toBe("src/auth.cpp");
   });
 
   test("forwards orchestration signals to the caller", async () => {

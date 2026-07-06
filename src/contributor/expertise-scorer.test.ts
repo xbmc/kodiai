@@ -4,6 +4,7 @@ import {
   extractFileArea,
   computeDecayedScore,
   normalizeScore,
+  computeExpertiseScores,
   updateExpertiseIncremental,
   deriveUpdatedOverallScore,
   recalculateTierFailOpen,
@@ -423,6 +424,87 @@ describe("updateExpertiseIncremental", () => {
     expect(updateTierCalls[0]?.tier).toBe("newcomer");
     expect(updateTierCalls[0]?.overallScore).toBeGreaterThan(0.56);
     expect(warnCalls).toHaveLength(1);
+  });
+});
+
+describe("computeExpertiseScores", () => {
+  test("includes authored PR files after the first GitHub page", async () => {
+    const upsertCalls: Array<{
+      dimension: string;
+      topic: string;
+    }> = [];
+    const expertise: ContributorExpertise[] = [];
+    const { logger } = createMockLogger();
+    const profile = makeProfile({ id: 7, githubUsername: "crystalp" });
+    const listFileCalls: Array<{ page?: number; per_page?: number }> = [];
+
+    const profileStore: ContributorProfileStore = {
+      getByGithubUsername: async () => null,
+      getBySlackUserId: async () => null,
+      linkIdentity: async () => profile,
+      unlinkSlack: async () => {},
+      setOptedOut: async () => {},
+      getExpertise: async () => expertise,
+      upsertExpertise: async (params) => {
+        upsertCalls.push({
+          dimension: params.dimension,
+          topic: params.topic,
+        });
+        expertise.push(makeExpertise({
+          dimension: params.dimension,
+          topic: params.topic,
+          score: params.score,
+          profileId: profile.id,
+        }));
+      },
+      upsertExpertiseMany: async () => {},
+      updateTier: async () => {},
+      getOrCreateByGithubUsername: async () => profile,
+      getAllScores: async () => [],
+    };
+
+    const octokit = {
+      rest: {
+        repos: {
+          listCommits: async () => ({ data: [] }),
+        },
+        pulls: {
+          list: async (params: { page?: number }) => ({
+            data: params.page === 1
+              ? [{
+                  number: 42,
+                  user: { login: "crystalp" },
+                  merged_at: new Date().toISOString(),
+                }]
+              : [],
+          }),
+          listFiles: async (params: { page?: number; per_page?: number }) => {
+            listFileCalls.push(params);
+            return {
+              data: params.page === 2
+                ? [{ filename: "src/contributor/scorer.py" }]
+                : Array.from({ length: 100 }, (_, index) => ({
+                    filename: `README-${index}.md`,
+                  })),
+            };
+          },
+        },
+      },
+    };
+
+    await computeExpertiseScores({
+      githubUsername: "crystalp",
+      octokit: octokit as never,
+      owner: "xbmc",
+      repo: "xbmc",
+      profileStore,
+      logger,
+    });
+
+    expect(listFileCalls.map((call) => call.page)).toEqual([1, 2]);
+    expect(listFileCalls.every((call) => call.per_page === 100)).toBe(true);
+    expect(upsertCalls).toContainEqual({ dimension: "language", topic: "python" });
+    expect(upsertCalls).toContainEqual({ dimension: "file_area", topic: "src/contributor/" });
   });
 });
 

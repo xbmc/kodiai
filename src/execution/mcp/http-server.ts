@@ -7,6 +7,7 @@ import {
   requestSourceKey,
   type RateLimitWindowOptions,
 } from "../../lib/sliding-window-rate-limiter.ts";
+import { err, ok, type Result } from "../../lib/result.ts";
 import { withTimeout } from "../../lib/with-timeout.ts";
 import { extractMcpAuthToken } from "./auth.ts";
 
@@ -48,6 +49,20 @@ type McpJobEntry = {
   factories: Record<string, () => McpSdkServerConfigWithInstance>;
   expiresAt: number;
 };
+
+type McpTokenInspectionFailureReason = "missing" | "expired" | "retired";
+
+export class McpTokenInspectionError extends Error {
+  constructor(
+    readonly reason: McpTokenInspectionFailureReason,
+    readonly ttlRemainingMs?: number,
+  ) {
+    super(reason);
+    this.name = "McpTokenInspectionError";
+  }
+}
+
+type McpTokenInspectionResult = Result<{ ttlRemainingMs: number }, McpTokenInspectionError>;
 
 /**
  * Registry keyed by per-job bearer token.
@@ -91,25 +106,23 @@ export function createMcpJobRegistry() {
     evictOldestMapEntries(retiredTokenFingerprints, MAX_RETIRED_TOKEN_FINGERPRINTS);
   };
 
-  const inspectToken = (token: string):
-    | { ok: true; ttlRemainingMs: number }
-    | { ok: false; reason: "missing" | "expired" | "retired"; ttlRemainingMs?: number } => {
+  const inspectToken = (token: string): McpTokenInspectionResult => {
     const entry = registry.get(token);
     if (!entry) {
       pruneRetiredTokens();
       return retiredTokenFingerprints.has(tokenFingerprint(token))
-        ? { ok: false, reason: "retired" }
-        : { ok: false, reason: "missing" };
+        ? err(new McpTokenInspectionError("retired"))
+        : err(new McpTokenInspectionError("missing"));
     }
 
     const ttlRemainingMs = entry.expiresAt - Date.now();
     if (ttlRemainingMs <= 0) {
       registry.delete(token);
       markRetired(token);
-      return { ok: false, reason: "expired", ttlRemainingMs };
+      return err(new McpTokenInspectionError("expired", ttlRemainingMs));
     }
 
-    return { ok: true, ttlRemainingMs };
+    return ok({ ttlRemainingMs });
   };
 
   return {
@@ -209,17 +222,17 @@ export function createMcpHttpRoutes(
 
     const authState = registry.inspectToken(token);
     if (!authState.ok) {
-      const authFailureExpected = authState.reason === "missing" || authState.reason === "retired" || authState.reason === "expired";
+      const authFailureExpected = authState.err.reason === "missing" || authState.err.reason === "retired" || authState.err.reason === "expired";
       const logAuthFailure = authFailureExpected
         ? logger?.info.bind(logger)
         : logger?.warn.bind(logger);
       logAuthFailure?.(
         {
           tokenLogId: registry.getTokenLogId(token),
-          authFailureReason: authState.reason,
+          authFailureReason: authState.err.reason,
           authFailureExpected,
-          ...(authState.ttlRemainingMs !== undefined
-            ? { ttlRemainingMs: authState.ttlRemainingMs }
+          ...(authState.err.ttlRemainingMs !== undefined
+            ? { ttlRemainingMs: authState.err.ttlRemainingMs }
             : {}),
         },
         "MCP HTTP: unauthorized",

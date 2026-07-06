@@ -136,6 +136,8 @@ function createStoreHarness(initialRows: CanonicalChunkWriteInput[] = []) {
 
 const MODULE_HASH = "2cf70c8516307f5fefd094fb9f66300c9be2900212b9a56d28cd4f34d3e21465";
 const FUNCTION_HASH = "5493b6cb5745787ae27cf11456fdfa17e597d683c59544f0ddd9247cd9b0a213";
+const BOOT_TRUE_HASH = "e9fdcdbc809a8916001d0507ad8f5bd769896135c87c96db249d98ee1d83dbbb";
+const SHUTDOWN_FALSE_HASH = "8184debf9907a997265d45f291873b56e0c788a122ec485ca37d002202957706";
 
 describe("updateCanonicalCodeSnapshot", () => {
   it("skips unchanged chunks without rewriting live rows", async () => {
@@ -344,6 +346,80 @@ describe("updateCanonicalCodeSnapshot", () => {
     ]);
     expect(harness.upsertCalls).toHaveLength(1);
     expect(harness.upsertCalls[0]?.chunkType).toBe("block");
+  });
+
+  it("re-inserts unchanged surviving chunks after file-level stale cleanup", async () => {
+    const existingRows: CanonicalChunkWriteInput[] = [
+      {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "abc123",
+        filePath: "src/player.ts",
+        language: "TypeScript",
+        startLine: 1,
+        endLine: 3,
+        chunkType: "function",
+        symbolName: "boot",
+        chunkText: "export function boot() {\n  return true;\n}",
+        contentHash: BOOT_TRUE_HASH,
+        embeddingModel: "voyage-test",
+      },
+      {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "abc123",
+        filePath: "src/player.ts",
+        language: "TypeScript",
+        startLine: 5,
+        endLine: 7,
+        chunkType: "function",
+        symbolName: "shutdown",
+        chunkText: "export function shutdown() {\n  return false;\n}",
+        contentHash: SHUTDOWN_FALSE_HASH,
+        embeddingModel: "voyage-test",
+      },
+    ];
+    const harness = createStoreHarness(existingRows);
+
+    const result = await updateCanonicalCodeSnapshot({
+      store: harness.store,
+      embeddingProvider: createEmbeddingProvider(),
+      logger: createMockLogger() as never,
+      request: {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "def456",
+        files: [
+          {
+            filePath: "src/player.ts",
+            fileContent: [
+              "export function boot() {",
+              "  return true;",
+              "}",
+            ].join("\n"),
+          },
+        ],
+      },
+    });
+
+    expect(result.removed).toBe(1);
+    expect(result.updated).toBe(0);
+    expect(result.unchanged).toBe(1);
+    expect(harness.deleteCalls).toEqual([
+      {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        filePath: "src/player.ts",
+      },
+    ]);
+    expect(harness.upsertCalls).toHaveLength(1);
+    expect(harness.upsertCalls[0]?.symbolName).toBe("boot");
+    expect(harness.state.get("kodi|xbmc|main|src/player.ts|function|boot")?.deleted).toBe(false);
+    expect(harness.state.get("kodi|xbmc|main|src/player.ts|function|shutdown")?.deleted).toBe(true);
   });
 
   it("skips excluded files without inspecting or rewriting store rows", async () => {

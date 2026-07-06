@@ -33,6 +33,18 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
   private nodesByFileId = new Map<number, ReviewGraphNodeRecord[]>();
   private edgesByFileId = new Map<number, ReviewGraphEdgeRecord[]>();
 
+  private findNodeByStableKey(repo: string, workspaceKey: string, stableKey: string): ReviewGraphNodeRecord | undefined {
+    for (const nodes of this.nodesByFileId.values()) {
+      const node = nodes.find((candidate) =>
+        candidate.repo === repo
+        && candidate.workspaceKey === workspaceKey
+        && candidate.stableKey === stableKey
+      );
+      if (node) return node;
+    }
+    return undefined;
+  }
+
   async upsertBuild(input: ReviewGraphBuildUpsert): Promise<ReviewGraphBuildRecord> {
     const key = `${input.repo}::${input.workspaceKey}`;
     const existing = this.builds.get(key);
@@ -106,7 +118,8 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
 
     const edges: ReviewGraphEdgeRecord[] = input.edges.map((edge) => {
       const sourceNodeId = nodeIdByStableKey.get(edge.sourceStableKey);
-      const targetNodeId = nodeIdByStableKey.get(edge.targetStableKey);
+      const targetNodeId = nodeIdByStableKey.get(edge.targetStableKey)
+        ?? this.findNodeByStableKey(input.file.repo, input.file.workspaceKey, edge.targetStableKey)?.id;
       if (!sourceNodeId || !targetNodeId) {
         throw new Error("Cannot write review graph edge because endpoint stable keys were not inserted");
       }

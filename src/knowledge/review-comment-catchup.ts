@@ -193,12 +193,14 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
         // Classify each comment in thread: new, edited, or unchanged
         let hasNew = false;
         let hasEdited = false;
+        let hasExisting = false;
 
         for (const input of thread) {
           const existing = existingByCommentId.get(input.commentGithubId) ?? null;
           if (!existing) {
             hasNew = true;
           } else {
+            hasExisting = true;
             const apiUpdatedAt = input.githubUpdatedAt ? new Date(input.githubUpdatedAt).getTime() : null;
             const storedUpdatedAt = existing.githubUpdatedAt ? new Date(existing.githubUpdatedAt).getTime() : null;
 
@@ -218,7 +220,7 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
         const chunks = chunkReviewThread(thread, { botLogins });
         if (chunks.length === 0) continue;
 
-        if (hasEdited) {
+        if (hasEdited || (hasNew && hasExisting)) {
           updatedGroups.push({ thread, chunks });
         } else {
           newGroups.push({ thread, chunks });

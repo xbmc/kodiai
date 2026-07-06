@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { abortSignalWithTimeout } from "../lib/with-timeout.ts";
 import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 
 describe("buildWikiApiUrl", () => {
@@ -82,7 +83,7 @@ describe("withWikiRequestPolicy", () => {
 
   test("preserves caller-provided timeout signals", async () => {
     const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
-    const callerSignal = AbortSignal.timeout(1234);
+    const callerSignal = abortSignalWithTimeout(1234);
     const fetchFn: FetchFn = async (input, init) => {
       calls.push({ input, init });
       return new Response("ok");

@@ -40,10 +40,10 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
 
     const bodyResult = await tryReadBoundedRequestBody(c.req.raw, { maxBytes: MAX_SLACK_COMMAND_BODY_BYTES });
     if (!bodyResult.ok) {
-      requestLogger.warn({ maxBytes: bodyResult.error.maxBytes }, "Slash command body too large");
+      requestLogger.warn({ maxBytes: bodyResult.err.maxBytes }, "Slash command body too large");
       return c.text("Payload too large", 413);
     }
-    const rawBody = bodyResult.body;
+    const rawBody = bodyResult.value;
 
     const verification = verifySlackRequest({
       signingSecret: config.slackSigningSecret,
@@ -52,9 +52,9 @@ export function createSlackCommandRoutes(deps: SlackCommandRouteDeps): Hono {
       signatureHeader: c.req.header("x-slack-signature"),
     });
 
-    if (!verification.valid) {
+    if (!verification.ok) {
       requestLogger.warn(
-        { reason: verification.reason },
+        { reason: verification.err.reason },
         "Slash command signature verification failed",
       );
       return c.text("Unauthorized", 401);

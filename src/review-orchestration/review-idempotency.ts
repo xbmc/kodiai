@@ -1,4 +1,9 @@
 import type { Octokit } from "@octokit/rest";
+import {
+  scanIssueCommentMarkerPaged,
+  scanPullReviewMarkerPaged,
+  scanReviewCommentMarkerPaged,
+} from "../lib/github-issue-comments.ts";
 import { retryGitHubTransient } from "../lib/github-retry.ts";
 
 export type ReviewOutputKeyInput = {
@@ -69,33 +74,6 @@ const DEFAULT_APPROVAL_EVIDENCE = "No actionable issues were identified in the r
 const DEFAULT_PER_PAGE = 100;
 const DEFAULT_MAX_SCAN_ITEMS = 2000;
 const EMPTY_SCAN_SUMMARY: ReviewOutputScanSummary = { scanned: 0, hitCap: false };
-
-async function scanForMarkerInPagedBodies<T extends { body?: string | null }>(params: {
-  marker: string;
-  perPage?: number;
-  maxItems?: number;
-  fetchPage: (args: { page: number; per_page: number }) => Promise<T[]>;
-}): Promise<{ found: boolean; scanned: number; hitCap: boolean }> {
-  const perPage = params.perPage ?? DEFAULT_PER_PAGE;
-  const maxItems = params.maxItems ?? DEFAULT_MAX_SCAN_ITEMS;
-
-  let scanned = 0;
-  for (let page = 1; scanned < maxItems; page++) {
-    const data = await params.fetchPage({ page, per_page: perPage });
-    for (const item of data) {
-      scanned++;
-      if (item.body?.includes(params.marker)) {
-        return { found: true, scanned, hitCap: false };
-      }
-      if (scanned >= maxItems) break;
-    }
-    if (data.length < perPage) {
-      return { found: false, scanned, hitCap: false };
-    }
-  }
-
-  return { found: false, scanned, hitCap: true };
-}
 
 function normalizeSegment(value: string): string {
   return value.trim().toLowerCase();
@@ -328,51 +306,52 @@ export async function ensureReviewOutputNotPublished(deps: {
   const scanStats: Partial<ReviewOutputScanStats> = {};
 
   const [reviewCommentsScan, issueCommentsScan, reviewsScan] = await Promise.all([
-    scanForMarkerInPagedBodies({
+    scanReviewCommentMarkerPaged({
+      rest: {
+        pulls: {
+          listReviewComments: (args) =>
+            retryGitHubTransient(() => deps.octokit.rest.pulls.listReviewComments(args)),
+        },
+      },
+    }, {
+      owner: deps.owner,
+      repo: deps.repo,
+      prNumber: deps.prNumber,
       marker,
-      fetchPage: ({ page, per_page }) =>
-        retryGitHubTransient(async () => {
-          const { data } = await deps.octokit.rest.pulls.listReviewComments({
-            owner: deps.owner,
-            repo: deps.repo,
-            pull_number: deps.prNumber,
-            per_page,
-            page,
-            sort: "created",
-            direction: "desc",
-          });
-          return data;
-        }),
+      perPage: DEFAULT_PER_PAGE,
+      maxItems: DEFAULT_MAX_SCAN_ITEMS,
+      sort: "created",
+      direction: "desc",
     }),
-    scanForMarkerInPagedBodies({
+    scanIssueCommentMarkerPaged({
+      rest: {
+        issues: {
+          listComments: (args) =>
+            retryGitHubTransient(() => deps.octokit.rest.issues.listComments(args)),
+        },
+      },
+    }, {
+      owner: deps.owner,
+      repo: deps.repo,
+      issueNumber: deps.prNumber,
       marker,
-      fetchPage: ({ page, per_page }) =>
-        retryGitHubTransient(async () => {
-          const { data } = await deps.octokit.rest.issues.listComments({
-            owner: deps.owner,
-            repo: deps.repo,
-            issue_number: deps.prNumber,
-            per_page,
-            page,
-            sort: "created",
-            direction: "desc",
-          });
-          return data;
-        }),
+      perPage: DEFAULT_PER_PAGE,
+      maxItems: DEFAULT_MAX_SCAN_ITEMS,
     }),
-    scanForMarkerInPagedBodies({
+    scanPullReviewMarkerPaged({
+      rest: {
+        pulls: {
+          listReviews: (args) =>
+            retryGitHubTransient(() => deps.octokit.rest.pulls.listReviews(args)),
+        },
+      },
+    }, {
+      owner: deps.owner,
+      repo: deps.repo,
+      prNumber: deps.prNumber,
       marker,
-      fetchPage: ({ page, per_page }) =>
-        retryGitHubTransient(async () => {
-          const { data } = await deps.octokit.rest.pulls.listReviews({
-            owner: deps.owner,
-            repo: deps.repo,
-            pull_number: deps.prNumber,
-            per_page,
-            page,
-          });
-          return data;
-        }),
+      perPage: DEFAULT_PER_PAGE,
+      maxItems: DEFAULT_MAX_SCAN_ITEMS,
     }),
   ]);
 

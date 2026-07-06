@@ -4,6 +4,7 @@ import {
   buildOrderedReviewPhaseSummary,
   buildQueueWaitPhase,
   buildReviewDetailsPhaseTimingSummary,
+  completeReviewPublicationPhaseTiming,
   formatTimeoutErrorDetail,
   isValidQueueWaitMetadata,
 } from "./review-phase-timing.ts";
@@ -72,5 +73,48 @@ describe("buildReviewDetailsPhaseTimingSummary", () => {
     const ordered = buildOrderedReviewPhaseSummary(new Map());
     expect(ordered.every((phase) => phase.status === "unavailable")).toBeTrue();
     expect(ordered).toHaveLength(6);
+  });
+});
+
+describe("completeReviewPublicationPhaseTiming", () => {
+  test("records completed publication duration when the publication phase started", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+
+    const recorded = completeReviewPublicationPhaseTiming({
+      phases,
+      publicationPhaseStartedAt: 1000,
+      now: () => 1250,
+    });
+
+    expect(recorded).toBeTrue();
+    expect(phases.get("publication")).toEqual({
+      name: "publication",
+      status: "completed",
+      durationMs: 250,
+    });
+  });
+
+  test("does not record publication timing before the publication phase starts", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+
+    const recorded = completeReviewPublicationPhaseTiming({
+      phases,
+      now: () => 1250,
+    });
+
+    expect(recorded).toBeFalse();
+    expect(phases.has("publication")).toBeFalse();
+  });
+
+  test("clamps negative publication duration to zero", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+
+    completeReviewPublicationPhaseTiming({
+      phases,
+      publicationPhaseStartedAt: 1250,
+      now: () => 1000,
+    });
+
+    expect(phases.get("publication")?.durationMs).toBe(0);
   });
 });

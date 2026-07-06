@@ -536,9 +536,33 @@ export function createKnowledgeStore(opts: {
       return await sql.begin(async (tx) => {
         // Check for existing run with this key
         const existing = await (tx as unknown as Sql)`
-          SELECT run_key, status FROM run_state WHERE run_key = ${runKey}
+          SELECT run_key, status, created_at FROM run_state WHERE run_key = ${runKey}
         `;
         if (existing.length > 0) {
+          const existingRun = existing[0]!;
+          if (existingRun.status === "pending") {
+            const reclaimed = await (tx as unknown as Sql)`
+              UPDATE run_state
+              SET delivery_id = ${params.deliveryId},
+                  action = ${params.action},
+                  status = 'pending',
+                  completed_at = NULL,
+                  superseded_by = NULL
+              WHERE run_key = ${runKey}
+                AND status = 'pending'
+                AND created_at < now() - interval '1 hour'
+              RETURNING run_key
+            `;
+            if (reclaimed.length > 0) {
+              return {
+                shouldProcess: true,
+                runKey,
+                reason: "stale-pending" as const,
+                supersededRunKeys: [],
+              };
+            }
+          }
+
           return {
             shouldProcess: false,
             runKey,
@@ -592,8 +616,12 @@ export function createKnowledgeStore(opts: {
         DELETE FROM run_state
         WHERE status = 'superseded' AND created_at < now() - ${supersededInterval}::interval
       `;
+      const abandonedPendingResult = await sql`
+        DELETE FROM run_state
+        WHERE status = 'pending' AND created_at < now() - interval '1 hour'
+      `;
       const authorCachePurged = await store.purgeStaleAuthorCache?.() ?? 0;
-      return completedResult.count + supersededResult.count + authorCachePurged;
+      return completedResult.count + supersededResult.count + abandonedPendingResult.count + authorCachePurged;
     },
 
     async getAuthorCache(params: { repo: string; authorLogin: string }): Promise<AuthorCacheEntry | null> {

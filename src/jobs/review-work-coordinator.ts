@@ -161,6 +161,20 @@ export function createReviewWorkCoordinator(options?: {
     }
   }
 
+  function recomputeAuthoritativeAttempt(familyKey: string): void {
+    const familyState = familyStatesByKey.get(familyKey);
+    if (!familyState) {
+      return;
+    }
+
+    const latestActiveAttempt = getFamilyAttempts(familyKey)
+      .filter((attempt) => attempt.lifecycle === "active")
+      .sort((left, right) => right.claimOrdinal - left.claimOrdinal)[0];
+
+    familyState.latestAuthoritativeClaimOrdinal = latestActiveAttempt?.claimOrdinal ?? 0;
+    familyState.latestAuthoritativeAttemptId = latestActiveAttempt?.attemptId;
+  }
+
   return {
     claim(claim) {
       const claimedAtMs = nowFn();
@@ -235,7 +249,9 @@ export function createReviewWorkCoordinator(options?: {
         return;
       }
 
+      const familyKey = attempt.familyKey;
       removeAttemptFromFamily(attempt);
+      recomputeAuthoritativeAttempt(familyKey);
     },
 
     complete(attemptId) {

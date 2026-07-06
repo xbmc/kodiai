@@ -465,6 +465,7 @@ describe("review candidate publication adapter", () => {
     const octokit = {
       rest: {
         pulls: {
+          listReviewComments: async () => ({ data: [] }),
           get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
           createReviewComment: async (params: { body: string; path: string; line: number }) => {
             createReviewCommentCalls++;

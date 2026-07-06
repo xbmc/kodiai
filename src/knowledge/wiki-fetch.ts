@@ -5,6 +5,8 @@
  * - Sends User-Agent: Kodiai/1.0 to pass Cloudflare WAF rules
  */
 
+import { abortSignalWithTimeout, sleep } from "../lib/with-timeout.ts";
+
 const WIKI_USER_AGENT = "Kodiai/1.0 (+https://github.com/xbmc/kodiai)";
 const DEFAULT_WIKI_REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_WIKI_RETRY_ATTEMPTS = 3;
@@ -44,16 +46,12 @@ export function withWikiRequestPolicy(fetchFn: FetchFn): FetchFn {
   return (input, init?) =>
     fetchFn(input, {
       ...init,
-      signal: init?.signal ?? AbortSignal.timeout(DEFAULT_WIKI_REQUEST_TIMEOUT_MS),
+      signal: init?.signal ?? abortSignalWithTimeout(DEFAULT_WIKI_REQUEST_TIMEOUT_MS),
       headers: {
         ...(init?.headers as Record<string, string> | undefined),
         "User-Agent": WIKI_USER_AGENT,
       },
     });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function retryDelayMs(response: Response, attempt: number): number {

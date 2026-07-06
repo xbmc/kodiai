@@ -7,9 +7,8 @@
  */
 
 /**
- * Timeout detection. AbortSignal.timeout() aborts with a DOMException named
- * "TimeoutError" whose message is "The operation timed out." — match name,
- * not just the "timeout" substring.
+ * Timeout detection. Platform timeout signals can abort with a DOMException
+ * named "TimeoutError"; match name, not just the "timeout" substring.
  */
 function isTimeoutError(err: Error): boolean {
   return err.message.includes("timeout") || err.name === "AbortError" || err.name === "TimeoutError";

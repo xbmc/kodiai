@@ -3,9 +3,15 @@ import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../review-orchestration/review-idempotency.ts";
-import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 import { wrapInDetails } from "../../lib/formatting.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
+import { hasIssueCommentMarkerPaged } from "../../lib/github-issue-comments.ts";
+import {
+  createIssueCommentWithPublicationPipeline,
+  createPullReviewWithPublicationPipeline,
+  prepareGitHubPublication,
+  updateIssueCommentWithPublicationPipeline,
+} from "../../lib/github-publication.ts";
 import {
   createReviewOutputPublicationGate,
   type CandidateReviewOutputPublicationGate,
@@ -616,23 +622,22 @@ export function createCommentServer(
               return directPublicationBlockedResult("update-comment-disabled-for-candidate-verification");
             }
             const octokit = await getOctokit();
-            const sanitized = sanitizeOutgoingMentions(
-              maybeStampMarker(
-                sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
-              ),
-              botHandles,
+            const publication = prepareGitHubPublication(
+              sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+              { botHandles },
             );
-            const scanResult = scanOutgoingForSecrets(sanitized);
-            if (scanResult.blocked) {
-              logger?.warn({ matchedPattern: scanResult.matchedPattern, tool: "update_comment" }, "Outgoing secret scan blocked publish");
+            if (publication.blocked) {
+              logger?.warn({ matchedPattern: publication.matchedPattern, tool: "update_comment" }, "Outgoing secret scan blocked publish");
               return { content: [{ type: "text" as const, text: "[SECURITY: response blocked — contained credential pattern]" }], isError: true };
             }
-            await octokit.rest.issues.updateComment({
+            const sanitized = maybeStampMarker(publication.body);
+            await updateIssueCommentWithPublicationPipeline(octokit, {
               owner,
               repo,
               comment_id: commentId,
-              // Defense-in-depth: sanitize outgoing mentions on all publish paths (Phase 50, CONV-05)
               body: sanitized,
+              botHandles,
+              preserveKodiaiMarkers: true,
             });
             onPublish?.();
             onPublishEvent?.({
@@ -683,6 +688,20 @@ export function createCommentServer(
               return directPublicationBlockedResult(candidateDirectPublicationBlockedReason());
             }
             const octokit = await getOctokit();
+            if (
+              marker
+              && await hasIssueCommentMarkerPaged(octokit, {
+                owner,
+                repo,
+                issueNumber,
+                marker,
+              })
+            ) {
+              return {
+                content: [{ type: "text" as const, text: "Comment already posted for this review output" }],
+                isError: true,
+              };
+            }
             const publicationStatus = await resolveOutputPublicationStatus(octokit);
             if (publicationStatus && !publicationStatus.shouldPublish) {
               logger?.info(
@@ -708,29 +727,28 @@ export function createCommentServer(
                 ],
               };
             }
-            const sanitized = sanitizeOutgoingMentions(
-              maybeStampMarker(
-                sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
-              ),
-              botHandles,
+            const publication = prepareGitHubPublication(
+              sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+              { botHandles },
             );
-
-            const scanResult = scanOutgoingForSecrets(sanitized);
-            if (scanResult.blocked) {
-              logger?.warn({ matchedPattern: scanResult.matchedPattern, tool: "create_comment" }, "Outgoing secret scan blocked publish");
+            if (publication.blocked) {
+              logger?.warn({ matchedPattern: publication.matchedPattern, tool: "create_comment" }, "Outgoing secret scan blocked publish");
               return { content: [{ type: "text" as const, text: "[SECURITY: response blocked — contained credential pattern]" }], isError: true };
             }
+            const sanitized = maybeStampMarker(publication.body);
 
             const isApproveNoIssues =
               prNumber !== undefined && isSharedApprovedReviewBody(sanitized);
 
             if (isApproveNoIssues) {
-              await octokit.rest.pulls.createReview({
+              await createPullReviewWithPublicationPipeline(octokit, {
                 owner,
                 repo,
                 pull_number: prNumber,
                 event: "APPROVE",
                 body: sanitized,
+                botHandles,
+                preserveKodiaiMarkers: true,
               });
               onPublish?.();
               publicationState.createCommentPublished = true;
@@ -744,11 +762,13 @@ export function createCommentServer(
               };
             }
 
-            const { data } = await octokit.rest.issues.createComment({
+            const { data } = await createIssueCommentWithPublicationPipeline(octokit, {
               owner,
               repo,
               issue_number: issueNumber,
               body: sanitized,
+              botHandles,
+              preserveKodiaiMarkers: true,
             });
             publicationState.createCommentPublished = true;
             onPublish?.();

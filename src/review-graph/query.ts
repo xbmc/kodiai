@@ -14,6 +14,7 @@ export type ReviewGraphQueryInput = {
   workspaceKey: string;
   changedPaths: string[];
   limit?: number;
+  signal?: AbortSignal;
 };
 
 export type ReviewGraphRankedFile = {

@@ -77,7 +77,10 @@ export function computeBudgetDistribution(
   if (matches.length === 0) return [];
   if (matches.length === 1) return [totalBudget];
 
-  const similarities = matches.map((m) => 1 - m.distance);
+  const similarities = matches.map((m) => {
+    const distance = Number.isFinite(m.distance) ? m.distance : 1;
+    return Math.min(1, Math.max(0, 1 - distance));
+  });
   const totalSim = similarities.reduce((sum, s) => sum + s, 0);
 
   if (totalSim === 0) {

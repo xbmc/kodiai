@@ -74,6 +74,125 @@ export function buildIssueWriteSuccessReply(params: {
   return wrapInDetails(lines.join("\n"), "kodiai response");
 }
 
+export function buildExistingPrReply(params: { prUrl: string }): string {
+  return wrapInDetails(`Existing PR: ${params.prUrl}`, "kodiai response");
+}
+
+export function buildWriteInProgressReply(): string {
+  return wrapInDetails(
+    [
+      "Write request already in progress.",
+      "",
+      "If no PR appears shortly, retry the same comment.",
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildWriteRateLimitedReply(params: { retryInSeconds: number }): string {
+  return wrapInDetails(
+    [
+      "Write request rate-limited.",
+      "",
+      `Try again in ${params.retryInSeconds}s.`,
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildPrContextRequiredReply(): string {
+  return wrapInDetails(
+    [
+      "I can only apply changes in a PR context.",
+      "",
+      "Try mentioning me on a pull request (top-level comment or inline diff thread).",
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildWriteDisabledReply(params: { retryCommand: string }): string {
+  return wrapInDetails(
+    [
+      "Write mode is disabled for this repo.",
+      "",
+      "Update `.kodiai.yml`:",
+      "```yml",
+      "write:",
+      "  enabled: true",
+      "```",
+      "",
+      `Then re-run the same \`${params.retryCommand}\` command.`,
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildNoFileChangesReply(): string {
+  return wrapInDetails(
+    [
+      "I didn't end up making any file changes.",
+      "",
+      "If you still want a change, re-run with a more specific request.",
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildEmptyPatchReply(): string {
+  return wrapInDetails("No diff content to create a patch from.", "kodiai response");
+}
+
+export function buildPatchTooLargeReply(): string {
+  return wrapInDetails(
+    "The generated patch is too large to publish as a gist. Please split the request into smaller changes.",
+    "kodiai response",
+  );
+}
+
+export function buildPatchGistReply(params: {
+  gistUrl: string;
+  changedFiles: string[];
+}): string {
+  return wrapInDetails(
+    [
+      `Patch gist: ${params.gistUrl}`,
+      "",
+      "To apply this patch locally:",
+      "```bash",
+      `curl -sL ${params.gistUrl}.patch | git apply`,
+      "```",
+      "",
+      `Files changed: ${params.changedFiles.join(", ")}`,
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildFallbackPatchGistReply(params: { gistUrl: string }): string {
+  return wrapInDetails(
+    [
+      "Could not create a PR from the fork, but here is the patch as a gist:",
+      "",
+      `Patch gist: ${params.gistUrl}`,
+      "",
+      "To apply this patch locally:",
+      "```bash",
+      `curl -sL ${params.gistUrl}.patch | git apply`,
+      "```",
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildAlreadyAppliedReply(params: { prUrl: string | undefined }): string {
+  return wrapInDetails(`Already applied (idempotent): ${params.prUrl}`, "kodiai response");
+}
+
+export function buildUpdatedPrReply(params: { prUrl: string | undefined }): string {
+  return wrapInDetails(`Updated PR: ${params.prUrl}`, "kodiai response");
+}
+
 export function buildIssueWriteFailureReply(params: {
   failedStep: IssueWriteFailureStep;
   diagnostics: string;
@@ -91,6 +210,103 @@ export function buildIssueWriteFailureReply(params: {
   ];
 
   return wrapInDetails(lines.join("\n"), "kodiai response");
+}
+
+export function buildWritePermissionFailureReply(params: {
+  retryCommand: string;
+}): string {
+  return wrapInDetails(
+    [
+      "I couldn't complete this write request because of missing GitHub App permissions.",
+      "",
+      "Minimum required permissions for write-mode PR creation:",
+      "- `Contents: Read and write`",
+      "- `Pull requests: Read and write`",
+      "- `Issues: Read and write`",
+      "",
+      "After updating permissions on the app installation, re-run the same command:",
+      `- \`${params.retryCommand}\``,
+    ].join("\n"),
+    "kodiai response",
+  );
+}
+
+export function buildWritePolicyRefusalReply(params: { refusal: string }): string {
+  return wrapInDetails(params.refusal, "kodiai response");
+}
+
+export async function maybeReplyWritePermissionFailure(params: {
+  err: unknown;
+  retryCommand: string;
+  postReply: (body: string, options?: { sanitizeMentions?: boolean }) => Promise<void>;
+}): Promise<boolean> {
+  if (!isLikelyWritePermissionFailure(params.err)) {
+    return false;
+  }
+  await params.postReply(
+    buildWritePermissionFailureReply({ retryCommand: params.retryCommand }),
+    { sanitizeMentions: false },
+  );
+  return true;
+}
+
+export async function handleIssueWritePublishFailure(params: {
+  isIssueWritePublishFlow: boolean;
+  failedStep: IssueWriteFailureStep;
+  err: unknown;
+  retryCommand: string;
+  postReply: (body: string, options?: { sanitizeMentions?: boolean }) => Promise<void>;
+  logger: {
+    warn(fields: Record<string, unknown>, message?: string): void;
+  };
+  logContext: {
+    deliveryId: string;
+    installationId: number;
+    owner: string;
+    repoName: string;
+    repo: string;
+    sourcePrNumber?: number;
+    triggerCommentId: number;
+    triggerCommentUrl?: string;
+    writeOutputKey: string;
+  };
+}): Promise<void> {
+  if (!params.isIssueWritePublishFlow) {
+    throw params.err instanceof Error ? params.err : new Error(String(params.err));
+  }
+
+  const diagnostics = summarizeErrorForDiagnostics(params.err);
+  const replyBody = buildIssueWriteFailureReply({
+    failedStep: params.failedStep,
+    diagnostics,
+    retryCommand: params.retryCommand,
+  });
+
+  await params.postReply(replyBody, { sanitizeMentions: false });
+
+  params.logger.warn(
+    {
+      evidenceType: "write-mode",
+      outcome: "pr_creation_failed",
+      ...params.logContext,
+      failedStep: params.failedStep,
+      diagnostics,
+    },
+    "Issue write-mode publish failed",
+  );
+}
+
+export function createIssueWriteFailurePoster(params: Omit<
+  Parameters<typeof handleIssueWritePublishFailure>[0],
+  "failedStep" | "err"
+>): (failedStep: IssueWriteFailureStep, err: unknown) => Promise<void> {
+  return async (failedStep, err) => {
+    await handleIssueWritePublishFailure({
+      ...params,
+      failedStep,
+      err,
+    });
+  };
 }
 
 export function isLikelyWritePermissionFailure(err: unknown): boolean {

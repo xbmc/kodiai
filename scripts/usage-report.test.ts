@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
   buildUsageReport,
@@ -278,6 +279,15 @@ describe("queryUsageReport", () => {
       query: "SELECT set_config('statement_timeout', $1, true)",
       params: ["1234ms"],
     });
+  });
+
+  test("uses the shared timeout primitive instead of owning a private race timer", () => {
+    const source = readFileSync(new URL("./usage-report.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("rejectWithTimeout");
+    expect(source).not.toContain("Promise.race");
+    expect(source).not.toContain("let timer:");
+    expect(source).not.toContain("clearTimeout(timer)");
   });
 });
 

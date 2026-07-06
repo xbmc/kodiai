@@ -426,6 +426,14 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
 
           if (confirmationResult.outcome === "confirmed") {
             const pending = confirmationResult.pending;
+            const pendingWriteMode = pending.keyword === "apply" || pending.keyword === "change";
+            const pendingPrompt = pendingWriteMode
+              ? pending.prompt
+              : buildSlackAssistantPrompt({
+                  repoContext: `${pending.owner}/${pending.repo}`,
+                  messageText: pending.request,
+                  writeMode: false,
+                });
 
             if (runWrite && (pending.keyword === "apply" || pending.keyword === "change")) {
               return runAndPublishWrite({
@@ -436,7 +444,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                 messageTs: payload.messageTs,
                 request: pending.request,
                 keyword: pending.keyword,
-                prompt: pending.prompt,
+                prompt: pendingPrompt,
               });
             }
 
@@ -446,12 +454,12 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                 workspace,
                 owner: pending.owner,
                 repo: pending.repo,
-                writeMode: true,
-                enableInlineTools: true,
-                enableCommentTools: true,
+                writeMode: pendingWriteMode,
+                enableInlineTools: pendingWriteMode,
+                enableCommentTools: pendingWriteMode,
                 eventType: "slack.message",
                 triggerBody: pending.request,
-                prompt: pending.prompt,
+                prompt: pendingPrompt,
               });
 
               // Guardrail pipeline: filter LLM-prose before publishing (GUARD-08)
@@ -485,7 +493,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
 
               return {
                 outcome: "answered",
-                route: "write",
+                route: pendingWriteMode ? "write" : "read_only",
                 repo: `${pending.owner}/${pending.repo}`,
                 publishedText: confirmedReplyText,
               };
@@ -509,7 +517,11 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
           };
         }
 
-        if (writeIntent.outcome === "write" && writeIntent.confirmationRequired) {
+        const isWriteExecutionIntent =
+          writeIntent.outcome === "write"
+          && (writeIntent.keyword === "apply" || writeIntent.keyword === "change");
+
+        if (isWriteExecutionIntent && writeIntent.confirmationRequired) {
           const prompt = buildSlackAssistantPrompt({
             repoContext: resolution.repo,
             messageText: writeIntent.request,
@@ -540,7 +552,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
           };
         }
 
-        const writeMode = writeIntent.outcome === "write";
+        const writeMode = isWriteExecutionIntent;
         const messageText = writeIntent.outcome === "read_only" ? payload.text : writeIntent.request;
         let prompt = buildSlackAssistantPrompt({
           repoContext: resolution.repo,

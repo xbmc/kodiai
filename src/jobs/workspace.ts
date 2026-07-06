@@ -460,7 +460,7 @@ export async function createBranchCommitAndPush(options: {
     await $`git -C ${dir} add -A`.quiet();
 
     // Ensure there is something to commit.
-    const staged = (await $`git -C ${dir} diff --cached --name-only`.quiet()).text().trim();
+    const staged = (await $`git -C ${dir} -c core.quotePath=false diff --cached --name-only`.quiet()).text().trim();
     if (staged.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
@@ -513,7 +513,7 @@ export async function commitAndPushToRemoteRef(options: {
   try {
     await $`git -C ${dir} add -A`.quiet();
 
-    const staged = (await $`git -C ${dir} diff --cached --name-only`.quiet()).text().trim();
+    const staged = (await $`git -C ${dir} -c core.quotePath=false diff --cached --name-only`.quiet()).text().trim();
     if (staged.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }

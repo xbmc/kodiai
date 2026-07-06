@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createRetryingFetch, normalizeMcpUrlKey } from "./mcp-fetch-retry.ts";
 
 const BASE = "http://ca-kodiai";
@@ -135,5 +136,14 @@ describe("createRetryingFetch", () => {
     expect(warns).toContainEqual(
       expect.objectContaining({ event: "mcp-fetch-retry", target: SAFE_URL, attempt: 1, status: 503 }),
     );
+  });
+});
+
+describe("mcp fetch retry structure", () => {
+  test("uses the shared abortable sleep helper instead of owning a private timeout", () => {
+    const source = readFileSync(new URL("./mcp-fetch-retry.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("sleepWithAbortSignal");
+    expect(source).not.toContain("setTimeout(");
   });
 });

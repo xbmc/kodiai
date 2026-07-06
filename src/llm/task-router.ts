@@ -32,7 +32,7 @@ export interface TaskRouterConfig {
   models: Record<string, string>;
   /** Global default model. Defaults to claude-sonnet-4-5-20250929. */
   defaultModel?: string;
-  /** Default fallback model. Defaults to claude-sonnet-4-5-20250929. */
+  /** Default fallback model. Defaults to a distinct Sonnet/Haiku counterpart. */
   defaultFallbackModel?: string;
 }
 
@@ -53,7 +53,6 @@ export function createTaskRouter(
   logger?: Logger,
 ): TaskRouter {
   const defaultModel = config.defaultModel ?? DEFAULT_MODEL;
-  const defaultFallbackModel = config.defaultFallbackModel ?? DEFAULT_MODEL;
 
   return {
     resolve(taskType: string): ResolvedModel {
@@ -87,6 +86,9 @@ export function createTaskRouter(
       }
 
       const provider = extractProvider(modelId);
+      const defaultFallbackModel =
+        config.defaultFallbackModel ??
+        (modelId === DEFAULT_HAIKU_MODEL ? DEFAULT_MODEL : DEFAULT_HAIKU_MODEL);
       const fallbackProvider = extractProvider(defaultFallbackModel);
 
       // Determine SDK

@@ -309,6 +309,46 @@ describe("sweepNullEmbeddings", () => {
     expect(store.getNullEmbeddingChunks).toHaveBeenCalledTimes(2);
   });
 
+  it("advances past failed chunks instead of re-fetching the same first page", async () => {
+    const store = createMockStore({
+      countNullEmbeddings: mock(async () => 4),
+      getNullEmbeddingChunks: mock(async (_repo: string, _limit: number, afterId?: number) => {
+        if (afterId === undefined) return [makeRecord(1), makeRecord(2)];
+        if (afterId === 2) return [makeRecord(3), makeRecord(4)];
+        return [];
+      }),
+    });
+    const embeddingProvider = {
+      async generate(text: string) {
+        if (text === "chunk-1" || text === "chunk-2") return null;
+        return {
+          embedding: new Float32Array([0.1, 0.2, 0.3]),
+          model: "voyage-4",
+          dimensions: 1024,
+        };
+      },
+      get model() { return "voyage-4"; },
+      get dimensions() { return 1024; },
+    } as unknown as EmbeddingProvider;
+
+    const result = await sweepNullEmbeddings({
+      store,
+      embeddingProvider,
+      repo: "owner/repo",
+      batchSize: 2,
+      maxBatches: 2,
+      batchDelayMs: 1,
+      logger,
+    });
+
+    expect(result.processed).toBe(4);
+    expect(result.failed).toBe(2);
+    expect(result.succeeded).toBe(2);
+    expect(store.updateEmbedding).toHaveBeenCalledTimes(2);
+    expect(store.getNullEmbeddingChunks).toHaveBeenNthCalledWith(1, "owner/repo", 2, undefined);
+    expect(store.getNullEmbeddingChunks).toHaveBeenNthCalledWith(2, "owner/repo", 2, 2);
+  });
+
   it("does not call updateEmbedding in dryRun mode", async () => {
     let callCount = 0;
 

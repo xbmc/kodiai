@@ -7,10 +7,7 @@ import {
   type ReviewOutputScanStats,
 } from "../review-orchestration/review-idempotency.ts";
 import type { FormatterDiffSkip, FormatterSuggestionPayload } from "./formatter-suggestions.ts";
-import {
-  sanitizeOutgoingMentions,
-  scanOutgoingForSecrets,
-} from "../lib/sanitizer.ts";
+import { createPullReviewWithPublicationPipeline, prepareGitHubPublication } from "../lib/github-publication.ts";
 import {
   createReviewOutputPublicationGate,
   type ReviewOutputPublicationGate,
@@ -198,27 +195,41 @@ function safelyLog(
   }
 }
 
-function sanitizeOutgoingBody(body: string, botHandles: string[] | undefined): string {
-  return sanitizeOutgoingMentions(body, botHandles ?? []);
-}
-
-function scanOutgoingBodies(params: {
+function prepareFormatterOutgoingBodies(params: {
   reviewBody: string;
   comments: FormatterSuggestionReviewCommentPayload[];
-}): FormatterSuggestionBlockedPublication | undefined {
-  const reviewScan = scanOutgoingForSecrets(params.reviewBody);
-  if (reviewScan.blocked && reviewScan.matchedPattern) {
-    return { pattern: reviewScan.matchedPattern, location: "review-body" };
+  botHandles: string[] | undefined;
+}): {
+  blocked?: FormatterSuggestionBlockedPublication;
+  reviewBody?: string;
+  comments?: FormatterSuggestionReviewCommentPayload[];
+} {
+  const botHandles = params.botHandles ?? ["kodiai", "claude"];
+  const reviewPublication = prepareGitHubPublication(
+    params.reviewBody,
+    { botHandles, preserveKodiaiMarkers: true },
+  );
+  if (reviewPublication.blocked && reviewPublication.matchedPattern) {
+    return {
+      blocked: { pattern: reviewPublication.matchedPattern, location: "review-body" },
+    };
   }
 
+  const comments: FormatterSuggestionReviewCommentPayload[] = [];
   for (const comment of params.comments) {
-    const commentScan = scanOutgoingForSecrets(comment.body);
-    if (commentScan.blocked && commentScan.matchedPattern) {
-      return { pattern: commentScan.matchedPattern, location: "comment" };
+    const commentPublication = prepareGitHubPublication(comment.body, { botHandles });
+    if (commentPublication.blocked && commentPublication.matchedPattern) {
+      return {
+        blocked: { pattern: commentPublication.matchedPattern, location: "comment" },
+      };
     }
+    comments.push({ ...comment, body: commentPublication.body });
   }
 
-  return undefined;
+  return {
+    reviewBody: reviewPublication.body,
+    comments,
+  };
 }
 
 export async function publishFormatterSuggestionReview(
@@ -280,8 +291,13 @@ export async function publishFormatterSuggestionReview(
 
   const body = buildReviewBody(options);
   const rawComments = options.suggestions.map(mapSuggestionToReviewComment);
-  const blocked = scanOutgoingBodies({ reviewBody: body, comments: rawComments });
-  if (blocked) {
+  const preparedPublication = prepareFormatterOutgoingBodies({
+    reviewBody: body,
+    comments: rawComments,
+    botHandles: options.botHandles,
+  });
+  if (preparedPublication.blocked) {
+    const blocked = preparedPublication.blocked;
     safelyLog(options.logger, "warn", {
       status: "blocked",
       posted: 0,
@@ -303,15 +319,12 @@ export async function publishFormatterSuggestionReview(
     };
   }
 
-  const sanitizedBody = sanitizeOutgoingBody(body, options.botHandles);
-  const comments = rawComments.map((comment) => ({
-    ...comment,
-    body: sanitizeOutgoingBody(comment.body, options.botHandles),
-  }));
+  const sanitizedBody = preparedPublication.reviewBody ?? "";
+  const comments = preparedPublication.comments ?? [];
 
   let response: { data: { id?: number | null; html_url?: string | null } };
   try {
-    response = await options.octokit.rest.pulls.createReview({
+    response = await createPullReviewWithPublicationPipeline(options.octokit as never, {
       owner: options.owner,
       repo: options.repo,
       pull_number: options.prNumber,
@@ -319,6 +332,8 @@ export async function publishFormatterSuggestionReview(
       event: "COMMENT",
       body: sanitizedBody,
       comments,
+      botHandles: options.botHandles ?? ["kodiai", "claude"],
+      preserveKodiaiMarkers: true,
     });
   } catch (error) {
     const rejection = {

@@ -58,6 +58,7 @@ import { registerFatalShutdownHandlers } from "./lifecycle/fatal-shutdown-handle
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
 import type { WebhookQueueEntry } from "./lifecycle/types.ts";
+import { createPullRequestWithPublicationPipeline } from "./lib/github-publication.ts";
 
 function queuedWebhookLogMetadata(entry: WebhookQueueEntry): Record<string, unknown> {
   return {
@@ -288,13 +289,15 @@ const slackWriteRunner = createSlackWriteRunner({
     }),
   createPullRequest: async ({ installationId, owner, repo, title, head, base, body }) => {
     const octokit = await githubApp.getInstallationOctokit(installationId);
-    const response = await octokit.rest.pulls.create({
+    const response = await createPullRequestWithPublicationPipeline(octokit, {
       owner,
       repo,
       title,
       head,
       base,
       body,
+      botHandles: ["kodiai"],
+      preserveKodiaiMarkers: true,
     });
     return { htmlUrl: response.data.html_url };
   },

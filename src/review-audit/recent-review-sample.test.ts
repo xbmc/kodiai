@@ -170,6 +170,109 @@ describe("recent review sample helpers", () => {
     expect(artifacts[0]?.reviewOutputKey).toBe(automaticKey);
   });
 
+  test("collectLatestReviewArtifacts paginates all review artifact sources", async () => {
+    const reviewCommentKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "xbmc",
+      repo: "xbmc",
+      prNumber: 201,
+      action: "review_requested",
+      deliveryId: "delivery-201",
+      headSha: "head-201",
+    });
+    const issueCommentKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "xbmc",
+      repo: "xbmc",
+      prNumber: 202,
+      action: "mention-review",
+      deliveryId: "delivery-202",
+      headSha: "head-202",
+    });
+    const reviewKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "xbmc",
+      repo: "xbmc",
+      prNumber: 203,
+      action: "review_requested",
+      deliveryId: "delivery-203",
+      headSha: "head-203",
+    });
+
+    const fillerReviewComments = Array.from({ length: 100 }, (_, index) => ({
+      body: `review-comment filler ${index}`,
+      html_url: `https://github.com/xbmc/xbmc/pull/201#discussion_r${index}`,
+      updated_at: "2026-04-08T09:00:00.000Z",
+    }));
+    const fillerIssueComments = Array.from({ length: 100 }, (_, index) => ({
+      body: `issue-comment filler ${index}`,
+      html_url: `https://github.com/xbmc/xbmc/pull/202#issuecomment-${index}`,
+      updated_at: "2026-04-08T09:00:00.000Z",
+    }));
+    const fillerReviews = Array.from({ length: 100 }, (_, index) => ({
+      body: `review filler ${index}`,
+      html_url: `https://github.com/xbmc/xbmc/pull/203#pullrequestreview-${index}`,
+      submitted_at: "2026-04-08T09:00:00.000Z",
+    }));
+
+    const artifacts = await collectLatestReviewArtifacts({
+      octokit: {
+        rest: {
+          pulls: {
+            listReviewComments: async ({ pull_number, page }: { pull_number: number; page?: number }) => ({
+              data: pull_number === 201 && page === 1
+                ? fillerReviewComments
+                : pull_number === 201 && page === 2
+                  ? [{
+                    body: `Review comment page 2\n\n${buildReviewOutputMarker(reviewCommentKey)}`,
+                    html_url: "https://github.com/xbmc/xbmc/pull/201#discussion_r200",
+                    updated_at: "2026-04-08T10:00:00.000Z",
+                  }]
+                  : [],
+            }),
+            listReviews: async ({ pull_number, page }: { pull_number: number; page?: number }) => ({
+              data: pull_number === 203 && page === 1
+                ? fillerReviews
+                : pull_number === 203 && page === 2
+                  ? [{
+                    body: `Review page 2\n\n${buildReviewOutputMarker(reviewKey)}`,
+                    html_url: "https://github.com/xbmc/xbmc/pull/203#pullrequestreview-200",
+                    submitted_at: "2026-04-08T12:00:00.000Z",
+                  }]
+                  : [],
+            }),
+          },
+          issues: {
+            listComments: async ({ issue_number, page }: { issue_number: number; page?: number }) => ({
+              data: issue_number === 202 && page === 1
+                ? fillerIssueComments
+                : issue_number === 202 && page === 2
+                  ? [{
+                    body: `Issue comment page 2\n\n${buildReviewOutputMarker(issueCommentKey)}`,
+                    html_url: "https://github.com/xbmc/xbmc/pull/202#issuecomment-200",
+                    updated_at: "2026-04-08T11:00:00.000Z",
+                  }]
+                  : [],
+            }),
+          },
+        },
+      } as never,
+      owner: "xbmc",
+      repo: "xbmc",
+      pullRequests: [
+        { number: 201, html_url: "https://github.com/xbmc/xbmc/pull/201" },
+        { number: 202, html_url: "https://github.com/xbmc/xbmc/pull/202" },
+        { number: 203, html_url: "https://github.com/xbmc/xbmc/pull/203" },
+      ],
+    });
+
+    expect(artifacts.map((artifact) => [artifact.prNumber, artifact.source])).toEqual([
+      [203, "review"],
+      [202, "issue-comment"],
+      [201, "review-comment"],
+    ]);
+  });
+
   test("collectLatestReviewArtifacts bounds concurrent PR artifact fetches", async () => {
     const keyByPr = new Map<number, string>();
     for (const prNumber of [401, 402, 403, 404]) {

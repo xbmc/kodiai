@@ -114,6 +114,80 @@ describe("createDepBumpMergeHistoryHandler", () => {
     expect(recorded[0]?.deliveryId).toBe("delivery-dep-bump-1");
   });
 
+  test("scans later PR file pages before deciding enrichment is unavailable", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as unknown as typeof fetch;
+    try {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const recorded: Array<Record<string, unknown>> = [];
+      const listFilePages: Array<number | undefined> = [];
+
+      createDepBumpMergeHistoryHandler({
+        eventRouter: {
+          register: (eventKey, handler) => {
+            handlers.set(eventKey, handler);
+          },
+          dispatch: async () => undefined,
+        },
+        jobQueue: {
+          enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+          getQueueSize: () => 0,
+          getPendingCount: () => 0,
+          getActiveJobs: getEmptyActiveJobs,
+        },
+        githubApp: {
+          initialize: async () => undefined,
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => ({
+            rest: {
+              pulls: {
+                listFiles: async (params: { page?: number }) => {
+                  listFilePages.push(params.page);
+                  return {
+                    data:
+                      params.page === 2
+                        ? [{ filename: "package.json" }]
+                        : Array.from({ length: 100 }, (_, index) => ({
+                            filename: `docs/generated-${index}.md`,
+                          })),
+                  };
+                },
+              },
+              securityAdvisories: {
+                listGlobalAdvisories: async () => ({ data: [] }),
+              },
+            },
+          }) as never,
+        } as unknown as GitHubApp,
+        knowledgeStore: {
+          recordDepBumpMergeHistory: (entry: Record<string, unknown>) => {
+            recorded.push(entry);
+          },
+        } as never,
+        logger: createNoopLogger(),
+      });
+
+      const handler = handlers.get("pull_request.closed");
+      expect(handler).toBeDefined();
+
+      await handler!(
+        buildPullRequestClosedEvent({
+          merged: true,
+          title: "Update dependency typescript to v5.5.0",
+          senderLogin: "renovate[bot]",
+          prNumber: 24,
+        }),
+      );
+
+      expect(listFilePages).toEqual([1, 2]);
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.packageName).toBe("typescript");
+      expect(recorded[0]?.advisoryStatus).toBe("none");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("merged non-dep PR does not record merge-history row", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const recorded: Array<Record<string, unknown>> = [];

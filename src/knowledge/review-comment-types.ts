@@ -148,7 +148,7 @@ export type ReviewCommentStore = {
   countByRepo(repo: string): Promise<number>;
 
   /** Find chunks with null embeddings for sweep recovery. */
-  getNullEmbeddingChunks(repo: string, limit: number): Promise<ReviewCommentRecord[]>;
+  getNullEmbeddingChunks(repo: string, limit: number, afterId?: number): Promise<ReviewCommentRecord[]>;
 
   /** Update embedding for a single chunk by ID. */
   updateEmbedding(id: number, embedding: Float32Array, model: string): Promise<void>;
@@ -157,7 +157,11 @@ export type ReviewCommentStore = {
   countNullEmbeddings(repo: string): Promise<number>;
 
   /** Get comment by GitHub ID for edit detection in catch-up sync. */
-  getByGithubId(repo: string, commentGithubId: number): Promise<ReviewCommentRecord | null>;
+  getByGithubId(
+    repo: string,
+    commentGithubId: number,
+    options?: { includeDeleted?: boolean },
+  ): Promise<ReviewCommentRecord | null>;
 
   /** Get comments by GitHub IDs for page-level edit detection in catch-up sync. */
   getByGithubIds?(repo: string, commentGithubIds: number[]): Promise<Map<number, ReviewCommentRecord>>;

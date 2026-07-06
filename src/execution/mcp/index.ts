@@ -58,6 +58,8 @@ const defaultMcpServerModuleLoaders: McpServerModuleLoaders = {
   candidateFinding: () => candidateFindingServer,
 };
 
+const DEFAULT_BOT_HANDLES = ["kodiai", "claude"];
+
 export interface TriageConfig {
   enabled: boolean;
   label: { enabled: boolean };
@@ -150,7 +152,7 @@ function buildIssueToolServerCreators(deps: {
           enabled: deps.getTriageConfig().enabled,
           comment: deps.getTriageConfig().comment,
         }),
-        botHandles: deps.botHandles ?? [],
+        botHandles: deps.botHandles ?? DEFAULT_BOT_HANDLES,
         issueNumber: deps.issueNumber,
       }),
   };
@@ -280,7 +282,7 @@ export function buildMcpServerFactoriesWithLoaders(
         deps.getOctokit,
         deps.owner,
         deps.repo,
-        deps.botHandles ?? [],
+        deps.botHandles ?? DEFAULT_BOT_HANDLES,
         deps.reviewOutputKey,
         deps.onPublish,
         deps.prNumber,
@@ -298,7 +300,7 @@ export function buildMcpServerFactoriesWithLoaders(
         deps.getOctokit,
         deps.owner,
         deps.repo,
-        deps.botHandles ?? [],
+        deps.botHandles ?? DEFAULT_BOT_HANDLES,
         deps.onPublish,
       ) as McpSdkServerConfigWithInstance;
   }
@@ -310,7 +312,7 @@ export function buildMcpServerFactoriesWithLoaders(
         owner: deps.owner,
         repo: deps.repo,
         prNumber: deps.prNumber!,
-        botHandles: deps.botHandles ?? [],
+        botHandles: deps.botHandles ?? DEFAULT_BOT_HANDLES,
         reviewOutputKey: deps.reviewOutputKey,
         deliveryId: deps.deliveryId,
         logger: deps.logger,
