@@ -236,6 +236,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-approval-context.ts");
   });
 
+  test("keeps candidate inline publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();");
+    expect(source).not.toContain("createCandidateVerificationPublicationEvidenceCollector(");
+    expect(source).not.toContain("candidate-approved inline review comments");
+    expect(source).not.toContain("Candidate publication skipped because review publish rights were superseded.");
+    expect(source).toContain("publishReviewCandidateInlineComments");
+    expect(source).toContain("./review-candidate-inline-publication.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

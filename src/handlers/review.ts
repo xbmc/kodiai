@@ -90,7 +90,6 @@ import {
   type ReviewCandidateApprovalResult,
 } from "../review-orchestration/review-candidate-approval.ts";
 import {
-  buildCandidateReviewOutputKey,
   convertPublishedCandidateResultsToProcessedFindings,
   toReviewCandidatePublicationAdapterSummary,
   type ReviewCandidatePublishedFindingResult,
@@ -169,11 +168,6 @@ import {
 import {
   toProductionLogBudgetReasoning,
 } from "../review-audit/production-log-projection.ts";
-import {
-  createInlineReviewPublisher,
-  type InlineReviewPublicationResult,
-} from "../execution/mcp/inline-review-publisher.ts";
-import { createReviewOutputPublicationGate, type CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
 import { type DepBumpContext } from "../lib/dep-bump-detector.ts";
 import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
@@ -192,9 +186,6 @@ import {
 import {
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
-import {
-  createCandidateVerificationPublicationEvidenceCollector,
-} from "../specialists/candidate-verification-publication-evidence.ts";
 import {
   attachReviewFindingLifecycle,
   type AttachReviewFindingLifecycleResult,
@@ -267,6 +258,7 @@ import { projectReviewExecutorState } from "./review-executor-state.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
 import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
+import { publishReviewCandidateInlineComments } from "./review-candidate-inline-publication.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1531,51 +1523,24 @@ export function createReviewHandler(deps: {
         const reviewCandidatePublicationAdapter: ReviewCandidatePublicationAdapterResult =
           reviewCandidateApprovalContext.publicationAdapter;
 
-        const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();
-        const handlerCandidateVerificationPublicationEvidenceCollector = createCandidateVerificationPublicationEvidenceCollector(
-          (summary) => {
-            reviewCandidateVerificationPublicationEvidence = summary;
-          },
-        );
-        if (reviewCandidatePublicationAdapter.payloads.length > 0) {
-          if (canPublishVisibleOutput("candidate-approved inline review comments")) {
-            for (const payload of reviewCandidatePublicationAdapter.payloads) {
-              const candidateReviewOutputKey = buildCandidateReviewOutputKey(reviewOutputKey, payload.candidateFingerprint);
-              const candidatePublisher = createInlineReviewPublisher({
-                getOctokit: async () => extractionOctokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                botHandles: [githubApp.getAppSlug(), "claude"],
-                reviewOutputKey: candidateReviewOutputKey,
-                deliveryId: event.id,
-                logger,
-                publicationGate: createReviewOutputPublicationGate({
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey: candidateReviewOutputKey,
-                  candidateVerificationContext,
-                  candidateVerificationPublicationEvidenceSink: (_summary, event) => {
-                    handlerCandidateVerificationPublicationEvidenceCollector.record(event);
-                  },
-                }),
-                prDiffCommentabilityIndex,
-              });
-              const publishResult = await candidatePublisher.publish(payload.publication);
-              candidatePublisherResults.set(payload.candidateFingerprint, publishResult);
-            }
-          } else {
-            for (const payload of reviewCandidatePublicationAdapter.payloads) {
-              candidatePublisherResults.set(payload.candidateFingerprint, {
-                status: "blocked",
-                reason: "publication-failed",
-                content: [{ type: "text", text: "Candidate publication skipped because review publish rights were superseded." }],
-                isError: true,
-              });
-            }
-          }
-        }
+        const candidateInlinePublication = await publishReviewCandidateInlineComments({
+          payloads: reviewCandidatePublicationAdapter.payloads,
+          canPublishVisibleOutput,
+          getOctokit: async () => extractionOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          botHandles: [githubApp.getAppSlug(), "claude"],
+          reviewOutputKey,
+          deliveryId: event.id,
+          logger,
+          candidateVerificationContext,
+          prDiffCommentabilityIndex,
+        });
+        const candidatePublisherResults = candidateInlinePublication.results;
+        reviewCandidateVerificationPublicationEvidence =
+          candidateInlinePublication.candidateVerificationPublicationEvidence
+          ?? reviewCandidateVerificationPublicationEvidence;
 
         const reviewCandidatePublishedFindings: ReviewCandidatePublishedFindingResult =
           convertPublishedCandidateResultsToProcessedFindings({
