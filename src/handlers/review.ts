@@ -277,6 +277,7 @@ import {
   resolveReviewLargePrTriage,
 } from "./review-large-pr-triage.ts";
 import { buildReviewPlanPublication } from "./review-plan-publication-context.ts";
+import { projectReviewExecutorState } from "./review-executor-state.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1384,15 +1385,17 @@ export function createReviewHandler(deps: {
             : undefined,
           maxTurnsOverride: reviewMaxTurnsOverride,
         });
-        executorResult = result;
-        reviewExecutorPublished = result.published ?? false;
-        reviewOutputPublished = result.published ?? false;
-        reviewPublishResolution = reviewOutputPublished ? "executor" : "none";
-        visibleBudgetState.promptSectionRecords = result.promptSections ?? visibleBudgetState.promptSectionRecords;
+        const executorState = projectReviewExecutorState({
+          result,
+          currentPromptSectionRecords: visibleBudgetState.promptSectionRecords,
+        });
+        executorResult = executorState.executorResult;
+        reviewExecutorPublished = executorState.reviewExecutorPublished;
+        reviewOutputPublished = executorState.reviewOutputPublished;
+        reviewPublishResolution = executorState.reviewPublishResolution;
+        visibleBudgetState.promptSectionRecords = executorState.promptSectionRecords;
         visibleBudgetState.refresh();
-        executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
-          "executor phase timings unavailable",
-        );
+        executorPhaseTimings = executorState.executorPhaseTimings;
         for (const phase of executorPhaseTimings) {
           reviewPhaseTimings.set(phase.name, phase);
         }

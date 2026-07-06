@@ -197,6 +197,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-plan-publication-context.ts");
   });
 
+  test("keeps executor result state projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("visibleBudgetState.promptSectionRecords = result.promptSections ?? visibleBudgetState.promptSectionRecords");
+    expect(source).not.toContain("reviewPublishResolution = reviewOutputPublished ? \"executor\" : \"none\"");
+    expect(source).not.toContain("executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases");
+    expect(source).toContain("projectReviewExecutorState");
+    expect(source).toContain("./review-executor-state.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
