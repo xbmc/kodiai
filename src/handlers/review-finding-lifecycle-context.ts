@@ -3,6 +3,7 @@ import type { InlineReviewPublicationResult } from "../execution/mcp/inline-revi
 import {
   attachReviewFindingLifecycle,
   type AttachReviewFindingLifecycleResult,
+  type AttachReviewValidationTruthResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
 import type { ReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationAdapterResult } from "../review-orchestration/review-candidate-publication-adapter.ts";
@@ -11,7 +12,7 @@ import { projectAutomaticReviewValidationTruth } from "./review-validation-truth
 
 export type ReviewFindingLifecycleContext = {
   lifecycleResult: AttachReviewFindingLifecycleResult;
-  validationTruthProjection: ReturnType<typeof projectAutomaticReviewValidationTruth>["projection"];
+  validationTruthProjection: AttachReviewValidationTruthResult["projection"] | null;
 };
 
 export function resolveReviewFindingLifecycleContext(params: {
@@ -57,23 +58,25 @@ export function resolveReviewFindingLifecycleContext(params: {
     "Projected review finding lifecycle evidence",
   );
 
+  const validationTruthResult = projectAutomaticReviewValidationTruth({
+    logger: params.logger,
+    baseLog: params.baseLog,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    reviewOutputKey: params.reviewOutputKey,
+    deliveryId: params.deliveryId,
+    headSha: params.headSha,
+    baseSha: params.baseSha,
+    headRef: params.headRef,
+    baseRef: params.baseRef,
+    lifecycleResult,
+    candidatePublicationPayloads: params.candidatePublicationPayloads,
+    candidatePublisherResults: params.candidatePublisherResults,
+  });
+
   return {
     lifecycleResult,
-    validationTruthProjection: projectAutomaticReviewValidationTruth({
-      logger: params.logger,
-      baseLog: params.baseLog,
-      owner: params.owner,
-      repo: params.repo,
-      prNumber: params.prNumber,
-      reviewOutputKey: params.reviewOutputKey,
-      deliveryId: params.deliveryId,
-      headSha: params.headSha,
-      baseSha: params.baseSha,
-      headRef: params.headRef,
-      baseRef: params.baseRef,
-      lifecycleResult,
-      candidatePublicationPayloads: params.candidatePublicationPayloads,
-      candidatePublisherResults: params.candidatePublisherResults,
-    }).projection,
+    validationTruthProjection: validationTruthResult.ok ? validationTruthResult.value : null,
   };
 }

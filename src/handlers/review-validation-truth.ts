@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { InlineReviewPublicationResult } from "../execution/mcp/inline-review-publisher.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import {
   attachReviewValidationTruth,
   type AttachReviewFindingLifecycleResult,
@@ -12,8 +13,7 @@ import {
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
 
 export type AutomaticReviewValidationTruthProjectionResult =
-  | { status: "recorded"; projection: AttachReviewValidationTruthResult["projection"] }
-  | { status: "failed"; projection: null };
+  Result<AttachReviewValidationTruthResult["projection"]>;
 
 type AutomaticReviewValidationTruthLogger = Pick<Logger, "info" | "warn">;
 
@@ -69,13 +69,14 @@ export function projectAutomaticReviewValidationTruth(
       },
       "Projected review validation truth evidence",
     );
-    return { status: "recorded", projection: reviewValidationTruth.projection };
+    return resultOk(reviewValidationTruth.projection);
   } catch (err) {
+    const error = toError(err);
     try {
       params.logger.warn(
         {
           ...params.baseLog,
-          err,
+          err: error,
           gate: "review-validation-truth",
           gateResult: "degraded",
           reviewOutputKey: params.reviewOutputKey,
@@ -86,6 +87,6 @@ export function projectAutomaticReviewValidationTruth(
     } catch {
       // Diagnostics are fail-open for review execution and must not block publication.
     }
-    return { status: "failed", projection: null };
+    return resultErr(error);
   }
 }
