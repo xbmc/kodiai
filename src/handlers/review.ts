@@ -18,13 +18,11 @@ import type { createExecutor } from "../execution/executor.ts";
 import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
-  PriorFinding,
   ContinuationFamilyProjectionStatus,
 } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
-import { buildPriorFindingContext, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
@@ -282,6 +280,7 @@ import {
 } from "./review-incremental-diff.ts";
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
+import { resolveReviewPriorFindingContext } from "./review-prior-finding-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1027,25 +1026,14 @@ export function createReviewHandler(deps: {
           "Resolved bounded repository doctrine projection",
         );
 
-        // Prior finding dedup context (REV-02)
-        let priorFindingCtx: PriorFindingContext | null = null;
-        let priorFindings: PriorFinding[] = [];
-        if (knowledgeStore && incrementalResult?.mode === "incremental") {
-          try {
-            priorFindings = await knowledgeStore.getPriorReviewFindings({
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-            });
-            if (priorFindings.length > 0) {
-              priorFindingCtx = buildPriorFindingContext({
-                priorFindings,
-                changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
-              });
-            }
-          } catch (err) {
-            logger.warn({ ...baseLog, err }, "Prior finding context failed (fail-open, no dedup)");
-          }
-        }
+        const { priorFindings, priorFindingCtx } = await resolveReviewPriorFindingContext({
+          knowledgeStore,
+          incrementalResult,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          baseLog,
+          logger,
+        });
 
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         const reviewRetrievalContext = await buildReviewRetrievalContext({

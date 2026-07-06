@@ -418,6 +418,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-incremental-diff.ts");
   });
 
+  test("keeps prior finding context lookup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let priorFindingCtx: PriorFindingContext | null = null;");
+    expect(source).not.toContain("let priorFindings: PriorFinding[] = [];");
+    expect(source).not.toContain("knowledgeStore.getPriorReviewFindings({\n              repo: `${apiOwner}/${apiRepo}`");
+    expect(source).not.toContain("Prior finding context failed (fail-open, no dedup)");
+    expect(source).toContain("resolveReviewPriorFindingContext");
+    expect(source).toContain("./review-prior-finding-context.ts");
+  });
+
   test("keeps skipPaths matching and skip logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
