@@ -20,6 +20,24 @@ describe("GitHub publication architecture", () => {
           const createReview = octokit.rest.pulls.createReview;
           await createReview({ owner, repo, pull_number, body, event: "COMMENT" });
         `,
+        "src/handlers/unsafe-payload-alias.ts": `
+          const payload = { owner, repo, issue_number, body };
+          await octokit.rest.issues.createComment(payload);
+        `,
+        "src/handlers/unsafe-typed-payload-alias.ts": `
+          const payload: { owner: string; repo: string; issue_number: number; body: string } = {
+            owner,
+            repo,
+            issue_number,
+            body,
+          };
+          await octokit.rest.issues.updateComment(payload);
+        `,
+        "src/handlers/unsafe-method-and-payload-alias.ts": `
+          const reply = octokit.rest.pulls.createReplyForReviewComment;
+          const payload = { owner, repo, pull_number, comment_id, body };
+          await reply(payload);
+        `,
         "src/handlers/unsafe-bracket-method.ts": `
           await octokit.rest.issues["createComment"]({ owner, repo, issue_number, body });
         `,
@@ -62,6 +80,14 @@ describe("GitHub publication architecture", () => {
         method: "issues.createComment",
       },
       {
+        file: "src/handlers/unsafe-method-and-payload-alias.ts",
+        method: "pulls.createReplyForReviewComment",
+      },
+      {
+        file: "src/handlers/unsafe-payload-alias.ts",
+        method: "issues.createComment",
+      },
+      {
         file: "src/handlers/unsafe-pr.ts",
         method: "pulls.create",
       },
@@ -72,6 +98,10 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-request.ts",
         method: "request:PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
+      },
+      {
+        file: "src/handlers/unsafe-typed-payload-alias.ts",
+        method: "issues.updateComment",
       },
       {
         file: "src/handlers/unsafe.ts",

@@ -52,6 +52,7 @@ export function findDirectGitHubPublicationWrites(
     if (ALLOWED_DIRECT_PUBLICATION_FILES.has(file)) {
       continue;
     }
+    const bodyBearingPayloadAliases = findBodyBearingPayloadAliases(source);
 
     for (const method of BODY_BEARING_GITHUB_PUBLICATION_METHODS) {
       const [namespace, name] = method.split(".") as [string, string];
@@ -61,14 +62,28 @@ export function findDirectGitHubPublicationWrites(
         String.raw`octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\([^)]*\bbody\b`,
         "s",
       );
-      if (directCallPattern.test(source)) {
+      const directPayloadAliasCallPattern = new RegExp(
+        String.raw`octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\(\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*[,)]`,
+        "s",
+      );
+      if (
+        directCallPattern.test(source)
+        || (bodyBearingPayloadAliases.length > 0 && directPayloadAliasCallPattern.test(source))
+      ) {
         findings.push({ file, method });
       }
 
       const aliases = findPublicationMethodAliases(source, namespace, name);
       for (const alias of aliases) {
         const aliasCallPattern = new RegExp(String.raw`\b${escapeRegExp(alias)}\s*\([^)]*\bbody\b`, "s");
-        if (aliasCallPattern.test(source)) {
+        const aliasPayloadCallPattern = new RegExp(
+          String.raw`\b${escapeRegExp(alias)}\s*\(\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*[,)]`,
+          "s",
+        );
+        if (
+          aliasCallPattern.test(source)
+          || (bodyBearingPayloadAliases.length > 0 && aliasPayloadCallPattern.test(source))
+        ) {
           findings.push({ file, method });
           break;
         }
@@ -93,6 +108,18 @@ export function findDirectGitHubPublicationWrites(
   return findings.sort((left, right) =>
     left.file.localeCompare(right.file) || left.method.localeCompare(right.method)
   );
+}
+
+function findBodyBearingPayloadAliases(source: string): string[] {
+  const aliases = new Set<string>();
+  const payloadPattern = /\b(?:const|let|var)\s+(\w+)(?:\s*:[^=]+)?\s*=\s*\{[^}]*\bbody\b[^}]*\}/gs;
+  for (const match of source.matchAll(payloadPattern)) {
+    if (match[1]) {
+      aliases.add(match[1]);
+    }
+  }
+
+  return [...aliases];
 }
 
 function findPublicationMethodAliases(source: string, namespace: string, name: string): string[] {
