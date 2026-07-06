@@ -28,7 +28,7 @@ describe("completeReviewRunFailOpen", () => {
       logContext: { deliveryId: "delivery-1" },
     });
 
-    expect(result).toBe("completed");
+    expect(result).toEqual({ ok: true, value: "completed" });
     expect(completeRun).toHaveBeenCalledWith("octo/repo:pr-42:base-base:head-head");
     expect(logger.warn).not.toHaveBeenCalled();
   });
@@ -50,7 +50,7 @@ describe("completeReviewRunFailOpen", () => {
       logContext: { deliveryId: "delivery-1" },
     });
 
-    expect(result).toBe("failed");
+    expect(result).toEqual({ ok: false, err });
     expect(logger.warn).toHaveBeenCalledWith(
       { deliveryId: "delivery-1", err },
       "Failed to mark run as completed (non-fatal)",

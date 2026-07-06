@@ -3,10 +3,13 @@ import type { ContributorProfileStore } from "../contributor/types.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import { splitDiffByFile } from "../lib/review-git-utils.ts";
 import { embedReviewDiffHunks } from "../review-orchestration/review-diff-hunk-embedding.ts";
 
 type SideEffectLogger = Pick<Logger, "warn">;
+export type ReviewRunCompletionStatus = "completed";
+export type ReviewRunCompletionResult = Result<ReviewRunCompletionStatus>;
 
 export async function completeReviewRunFailOpen(params: {
   knowledgeStore: { completeRun(runKey: string): Promise<void> };
@@ -16,16 +19,17 @@ export async function completeReviewRunFailOpen(params: {
   headSha: string;
   logger: SideEffectLogger;
   logContext: Record<string, unknown>;
-}): Promise<"completed" | "failed"> {
+}): Promise<ReviewRunCompletionResult> {
   const { knowledgeStore, repo, prNumber, baseSha, headSha, logger, logContext } = params;
   const runKey = `${repo}:pr-${prNumber}:base-${baseSha}:head-${headSha}`;
 
   try {
     await knowledgeStore.completeRun(runKey);
-    return "completed";
+    return resultOk("completed");
   } catch (err) {
-    logger.warn({ ...logContext, err }, "Failed to mark run as completed (non-fatal)");
-    return "failed";
+    const error = toError(err);
+    logger.warn({ ...logContext, err: error }, "Failed to mark run as completed (non-fatal)");
+    return resultErr(error);
   }
 }
 
