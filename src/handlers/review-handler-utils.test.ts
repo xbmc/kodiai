@@ -27,16 +27,37 @@ function makeLogger() {
 }
 
 describe("recordReviewCacheEventFailOpen", () => {
+  test("records review cache telemetry when the store method is available", async () => {
+    const { warnings, logger } = makeLogger();
+    const events: ReviewCacheEventRecord[] = [];
+    const entry = makeReviewCacheEvent({ status: "hit", reason: "safe-reuse" });
+
+    const result = await recordReviewCacheEventFailOpen({
+      telemetryStore: {
+        recordReviewCacheEvent: async (record) => {
+          events.push(record);
+        },
+      },
+      logger,
+      entry,
+    });
+
+    expect(result).toEqual({ ok: true, value: "recorded" });
+    expect(events).toEqual([entry]);
+    expect(warnings).toEqual([]);
+  });
+
   test("warns and returns when review cache telemetry is unavailable", async () => {
     const { warnings, logger } = makeLogger();
     const telemetryStore = {};
 
-    await recordReviewCacheEventFailOpen({
+    const result = await recordReviewCacheEventFailOpen({
       telemetryStore,
       logger,
       entry: makeReviewCacheEvent({ status: "bypass", reason: "incomplete-fingerprint" }),
     });
 
+    expect(result).toEqual({ ok: true, value: "skipped" });
     expect(warnings).toEqual([{
       fields: {
         deliveryId: "delivery-1",
@@ -59,7 +80,7 @@ describe("recordReviewCacheEventFailOpen", () => {
       },
     };
 
-    await recordReviewCacheEventFailOpen({
+    const result = await recordReviewCacheEventFailOpen({
       telemetryStore,
       logger,
       entry: makeReviewCacheEvent({
@@ -73,6 +94,7 @@ describe("recordReviewCacheEventFailOpen", () => {
       }),
     });
 
+    expect(result).toEqual({ ok: false, err: error });
     expect(warnings).toEqual([{
       fields: {
         err: error,
