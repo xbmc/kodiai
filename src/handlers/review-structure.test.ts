@@ -429,6 +429,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-prior-finding-context.ts");
   });
 
+  test("keeps repo doctrine context resolution out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("normalizeRepoDoctrineProjection(config.review.doctrine, changedFiles)");
+    expect(source).not.toContain("toRepoDoctrineReviewSurfaceProjection(repoDoctrineProjection)");
+    expect(source).not.toContain("Resolved bounded repository doctrine projection");
+    expect(source).toContain("resolveReviewRepoDoctrineContext");
+    expect(source).toContain("./review-repo-doctrine-context.ts");
+  });
+
   test("keeps skipPaths matching and skip logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

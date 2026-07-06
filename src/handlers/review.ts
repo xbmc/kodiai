@@ -73,9 +73,6 @@ import {
   fingerprintFindingTitle,
 } from "../lib/review-finding-metadata.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
-import {
-  normalizeRepoDoctrineProjection,
-} from "../repo-doctrine/contracts.ts";
 import { fetchAndCheckoutPullRequestHeadRef, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
   buildReviewFamilyKey,
@@ -173,7 +170,6 @@ export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orch
 import {
   buildRepoDoctrineLogFields,
   serializeReviewPlanBuilderError,
-  toRepoDoctrineReviewSurfaceProjection,
   toReviewPlanConfigSnapshot,
 } from "../review-orchestration/review-plan-doctrine-log.ts";
 import {
@@ -281,6 +277,7 @@ import {
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewPriorFindingContext } from "./review-prior-finding-context.ts";
+import { resolveReviewRepoDoctrineContext } from "./review-repo-doctrine-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1014,17 +1011,15 @@ export function createReviewHandler(deps: {
           ? matchPathInstructions(config.review.pathInstructions, changedFiles)
           : [];
 
-        const repoDoctrineProjection = normalizeRepoDoctrineProjection(config.review.doctrine, changedFiles);
-        const repoDoctrineReviewSurface = toRepoDoctrineReviewSurfaceProjection(repoDoctrineProjection);
-        logger.info(
-          {
-            ...baseLog,
-            gate: "repo-doctrine",
-            gateResult: repoDoctrineReviewSurface.status,
-            ...buildRepoDoctrineLogFields(repoDoctrineProjection),
-          },
-          "Resolved bounded repository doctrine projection",
-        );
+        const {
+          repoDoctrineProjection,
+          repoDoctrineReviewSurface,
+        } = resolveReviewRepoDoctrineContext({
+          doctrine: config.review.doctrine,
+          changedFiles,
+          baseLog,
+          logger,
+        });
 
         const { priorFindings, priorFindingCtx } = await resolveReviewPriorFindingContext({
           knowledgeStore,
