@@ -92,10 +92,6 @@ import {
 import {
   type ReviewCandidatePublicationAdapterResult,
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
-import {
-  isCandidatePublicationDraft,
-  mergeCandidatePublishedFindings,
-} from "../review-orchestration/review-candidate-finding-merge.ts";
 import { createReviewContinuationFamilyStateManager } from "../review-orchestration/review-continuation-family-state.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
@@ -252,6 +248,7 @@ import { resolveReviewCandidateFindingContext } from "./review-candidate-finding
 import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
 import { publishReviewCandidateInlineComments } from "./review-candidate-inline-publication.ts";
 import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
+import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1552,28 +1549,18 @@ export function createReviewHandler(deps: {
         const reviewCandidatePublicationRuntime = reviewCandidatePublicationContext.runtime;
         const reviewCandidatePublicationFlow = reviewCandidatePublicationContext.flow;
 
-        const directProcessedFindings = (reducerResult.findings as ProcessedReviewFinding[])
-          .filter((finding) => !isCandidatePublicationDraft(finding));
-        const directVisibleFindings = (reducerResult.visibleFindings as ProcessedReviewFinding[])
-          .filter((finding) => !isCandidatePublicationDraft(finding));
-        const directLowConfidenceFindings = (reducerResult.lowConfidenceFindings as ProcessedReviewFinding[])
-          .filter((finding) => !isCandidatePublicationDraft(finding));
-        const directFilteredInlineFindings = (reducerResult.filteredInlineFindings as ProcessedReviewFinding[])
-          .filter((finding) => !isCandidatePublicationDraft(finding));
-        const processedFindings = mergeCandidatePublishedFindings(
-          directProcessedFindings,
-          reviewCandidatePublishedFindings.findings,
-        ) as ProcessedFinding[];
-        const visibleFindings = mergeCandidatePublishedFindings(
-          directVisibleFindings,
-          reviewCandidatePublishedFindings.findings,
-        ) as ProcessedFinding[];
-        const lowConfidenceFindings = directLowConfidenceFindings as ProcessedFinding[];
-        const filteredInlineFindings = directFilteredInlineFindings as ProcessedFinding[];
-        const suppressionMatchCounts = reducerResult.suppressionMatchCounts;
-        const filterResult = { filtered: reducerResult.filterRecords };
-        const prioritizationStats = reducerResult.prioritizationStats;
-        const reviewReducerDetailsSummary = reducerResult.detailsSummary;
+        const reviewFindingPublicationContext = resolveReviewFindingPublicationContext({
+          reducer: reducerResult,
+          candidatePublishedFindings: reviewCandidatePublishedFindings,
+        });
+        const processedFindings = reviewFindingPublicationContext.processedFindings as ProcessedFinding[];
+        const visibleFindings = reviewFindingPublicationContext.visibleFindings as ProcessedFinding[];
+        const lowConfidenceFindings = reviewFindingPublicationContext.lowConfidenceFindings as ProcessedFinding[];
+        const filteredInlineFindings = reviewFindingPublicationContext.filteredInlineFindings as ProcessedFinding[];
+        const suppressionMatchCounts = reviewFindingPublicationContext.suppressionMatchCounts;
+        const filterResult = reviewFindingPublicationContext.filterResult;
+        const prioritizationStats = reviewFindingPublicationContext.prioritizationStats;
+        const reviewReducerDetailsSummary = reviewFindingPublicationContext.reviewReducerDetailsSummary;
         const reviewCandidatePublicationAdapterDetailsSummary =
           reviewCandidatePublicationContext.adapterDetailsSummary;
         const reviewFindingLifecycleResult: AttachReviewFindingLifecycleResult = attachReviewFindingLifecycle({

@@ -259,6 +259,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-publication-runtime-context.ts");
   });
 
+  test("keeps finding publication merge projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const directProcessedFindings = (reducerResult.findings as ProcessedReviewFinding[])");
+    expect(source).not.toContain("mergeCandidatePublishedFindings(");
+    expect(source).not.toContain("const filterResult = { filtered: reducerResult.filterRecords };");
+    expect(source).toContain("resolveReviewFindingPublicationContext");
+    expect(source).toContain("./review-finding-publication-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
