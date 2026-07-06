@@ -175,10 +175,6 @@ import {
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
-  attachReviewFindingLifecycle,
-  type AttachReviewFindingLifecycleResult,
-} from "../review-lifecycle/handler-lifecycle.ts";
-import {
   discardCheckpointsFailOpen,
   recordReviewCacheEventFailOpen,
 } from "./review-handler-utils.ts";
@@ -218,7 +214,6 @@ import {
 } from "./review-post-execution-side-effects.ts";
 import { recordReviewResilienceEventFailOpen } from "./review-resilience-telemetry.ts";
 import { recordReviewExecutionTelemetry } from "./review-telemetry.ts";
-import { projectAutomaticReviewValidationTruth } from "./review-validation-truth.ts";
 import { postReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
@@ -249,6 +244,7 @@ import { resolveReviewCandidateApprovalContext } from "./review-candidate-approv
 import { publishReviewCandidateInlineComments } from "./review-candidate-inline-publication.ts";
 import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
 import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
+import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1563,32 +1559,7 @@ export function createReviewHandler(deps: {
         const reviewReducerDetailsSummary = reviewFindingPublicationContext.reviewReducerDetailsSummary;
         const reviewCandidatePublicationAdapterDetailsSummary =
           reviewCandidatePublicationContext.adapterDetailsSummary;
-        const reviewFindingLifecycleResult: AttachReviewFindingLifecycleResult = attachReviewFindingLifecycle({
-          source: "automatic",
-          trigger: "pull_request",
-          correlation: {
-            repo: `${apiOwner}/${apiRepo}`,
-            pullNumber: pr.number,
-            reviewOutputKey,
-            deliveryId: event.id,
-            commitSha: pr.head.sha,
-            headSha: pr.head.sha,
-            baseSha: pr.base.sha,
-            headRef: pr.head.ref,
-            baseRef: pr.base.ref,
-          },
-          findings: processedFindings,
-          candidateFinding: reviewCandidateFindingResult,
-        });
-        logger.info(
-          {
-            ...baseLog,
-            ...reviewFindingLifecycleResult.logEvidence,
-            source: "automatic-review",
-          },
-          "Projected review finding lifecycle evidence",
-        );
-        const reviewValidationTruthProjection = projectAutomaticReviewValidationTruth({
+        const reviewFindingLifecycleContext = resolveReviewFindingLifecycleContext({
           logger,
           baseLog,
           owner: apiOwner,
@@ -1600,10 +1571,13 @@ export function createReviewHandler(deps: {
           baseSha: pr.base.sha,
           headRef: pr.head.ref,
           baseRef: pr.base.ref,
-          lifecycleResult: reviewFindingLifecycleResult,
+          findings: processedFindings,
+          candidateFinding: reviewCandidateFindingResult,
           candidatePublicationPayloads: reviewCandidatePublicationAdapter.payloads,
           candidatePublisherResults,
-        }).projection;
+        });
+        const reviewFindingLifecycleResult = reviewFindingLifecycleContext.lifecycleResult;
+        const reviewValidationTruthProjection = reviewFindingLifecycleContext.validationTruthProjection;
         logger.info(
           {
             ...baseLog,

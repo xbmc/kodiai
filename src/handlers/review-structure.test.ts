@@ -269,6 +269,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-finding-publication-context.ts");
   });
 
+  test("keeps finding lifecycle and validation-truth context out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("attachReviewFindingLifecycle({");
+    expect(source).not.toContain("Projected review finding lifecycle evidence");
+    expect(source).not.toContain("projectAutomaticReviewValidationTruth({");
+    expect(source).toContain("resolveReviewFindingLifecycleContext");
+    expect(source).toContain("./review-finding-lifecycle-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
@@ -442,13 +452,16 @@ describe("review handler structure", () => {
 
   test("keeps automatic review validation-truth projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const lifecycleContextSource = readFileSync(new URL("./review-finding-lifecycle-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("attachReviewValidationTruth({");
     expect(source).not.toContain("convertPublishedCandidateResultsToValidationTruthFixes({");
     expect(source).not.toContain("Projected review validation truth evidence");
     expect(source).not.toContain("Review validation truth diagnostics failed; continuing review publication");
-    expect(source).toContain("projectAutomaticReviewValidationTruth");
-    expect(source).toContain("./review-validation-truth.ts");
+    expect(source).not.toContain("projectAutomaticReviewValidationTruth({");
+    expect(source).toContain("./review-finding-lifecycle-context.ts");
+    expect(lifecycleContextSource).toContain("projectAutomaticReviewValidationTruth");
+    expect(lifecycleContextSource).toContain("./review-validation-truth.ts");
   });
 
   test("keeps review-requested reaction publication out of the monster handler", () => {
