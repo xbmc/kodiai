@@ -63,7 +63,7 @@ export function findDirectGitHubPublicationWrites(
         "s",
       );
       const directPayloadAliasCallPattern = new RegExp(
-        String.raw`octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\(\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*[,)]`,
+        String.raw`octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\(\s*(?:(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})|\{\s*\.\.\.\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*\})\s*[,)]`,
         "s",
       );
       if (
@@ -77,7 +77,7 @@ export function findDirectGitHubPublicationWrites(
       for (const alias of aliases) {
         const aliasCallPattern = new RegExp(String.raw`\b${escapeRegExp(alias)}\s*\([^)]*\bbody\b`, "s");
         const aliasPayloadCallPattern = new RegExp(
-          String.raw`\b${escapeRegExp(alias)}\s*\(\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*[,)]`,
+          String.raw`\b${escapeRegExp(alias)}\s*\(\s*(?:(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})|\{\s*\.\.\.\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*\})\s*[,)]`,
           "s",
         );
         if (
@@ -90,7 +90,7 @@ export function findDirectGitHubPublicationWrites(
       }
     }
 
-    const requestCallPattern = /octokit\s*\.\s*request\s*\(\s*([`"'])(POST|PATCH|PUT)\s+([^`"']*\/repos\/[^`"']*)\1\s*,\s*(\{[^)]*\bbody\b|[A-Za-z_$][\w$]*)/gs;
+    const requestCallPattern = /octokit\s*\.\s*request\s*\(\s*([`"'])(POST|PATCH|PUT)\s+([^`"']*\/repos\/[^`"']*)\1\s*,\s*(\{[^)]*(?:\bbody\b|\.\.\.\s*[A-Za-z_$][\w$]*)[^)]*\}|[A-Za-z_$][\w$]*)/gs;
     for (const match of source.matchAll(requestCallPattern)) {
       const httpMethod = match[2];
       const route = match[3];
@@ -102,6 +102,10 @@ export function findDirectGitHubPublicationWrites(
         && route
         && (
           requestPayload?.trimStart().startsWith("{")
+          && (
+            /\bbody\b/.test(requestPayload)
+            || bodyBearingPayloadAliases.some((alias) => new RegExp(String.raw`\.\.\.\s*${escapeRegExp(alias)}\b`).test(requestPayload))
+          )
           || bodyBearingPayloadAliases.includes(requestPayload ?? "")
         )
       ) {

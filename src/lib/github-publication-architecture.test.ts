@@ -24,6 +24,10 @@ describe("GitHub publication architecture", () => {
           const payload = { owner, repo, issue_number, body };
           await octokit.rest.issues.createComment(payload);
         `,
+        "src/handlers/unsafe-payload-spread.ts": `
+          const payload = { owner, repo, issue_number, body };
+          await octokit.rest.issues.createComment({ ...payload });
+        `,
         "src/handlers/unsafe-typed-payload-alias.ts": `
           const payload: { owner: string; repo: string; issue_number: number; body: string } = {
             owner,
@@ -56,6 +60,10 @@ describe("GitHub publication architecture", () => {
         "src/handlers/unsafe-request-payload-alias.ts": `
           const payload = { owner, repo, issue_number, body };
           await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", payload);
+        `,
+        "src/handlers/unsafe-request-payload-spread.ts": `
+          const payload = { owner, repo, issue_number, body };
+          await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", { ...payload });
         `,
         "src/lib/github-publication.ts": "await octokit.rest.issues.createComment({ owner, repo, issue_number, body });",
         "src/handlers/safe.ts": "await createIssueCommentWithPublicationPipeline(octokit, { owner, repo, issue_number, body });",
@@ -92,11 +100,19 @@ describe("GitHub publication architecture", () => {
         method: "issues.createComment",
       },
       {
+        file: "src/handlers/unsafe-payload-spread.ts",
+        method: "issues.createComment",
+      },
+      {
         file: "src/handlers/unsafe-pr.ts",
         method: "pulls.create",
       },
       {
         file: "src/handlers/unsafe-request-payload-alias.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      },
+      {
+        file: "src/handlers/unsafe-request-payload-spread.ts",
         method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
       },
       {
