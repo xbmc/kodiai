@@ -36,7 +36,7 @@ import {
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
-import { buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
+import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { evaluateFeedbackSuppressions } from "../feedback/index.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
@@ -278,6 +278,7 @@ import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewPriorFindingContext } from "./review-prior-finding-context.ts";
 import { resolveReviewRepoDoctrineContext } from "./review-repo-doctrine-context.ts";
+import { resolveReviewPathInstructions } from "./review-path-instructions.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1007,9 +1008,10 @@ export function createReviewHandler(deps: {
           }, "Large PR file triage applied");
         }
 
-        const matchedPathInstructions = config.review.pathInstructions.length > 0
-          ? matchPathInstructions(config.review.pathInstructions, changedFiles)
-          : [];
+        const matchedPathInstructions = resolveReviewPathInstructions({
+          pathInstructions: config.review.pathInstructions,
+          changedFiles,
+        });
 
         const {
           repoDoctrineProjection,

@@ -152,6 +152,15 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-structural-impact-selection.ts");
   });
 
+  test("keeps path instruction matching out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("config.review.pathInstructions.length > 0");
+    expect(source).not.toContain("matchPathInstructions(config.review.pathInstructions, changedFiles)");
+    expect(source).toContain("resolveReviewPathInstructions");
+    expect(source).toContain("./review-path-instructions.ts");
+  });
+
   test("keeps review runtime planning out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
