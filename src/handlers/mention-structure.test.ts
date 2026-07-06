@@ -233,6 +233,16 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-validation-truth.ts");
   });
 
+  test("keeps explicit review finding lifecycle projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("attachReviewFindingLifecycle({");
+    expect(source).not.toContain("Projected explicit mention review finding lifecycle evidence");
+    expect(source).not.toContain("trigger: event.name === \"issue_comment\"");
+    expect(source).toContain("projectExplicitMentionReviewLifecycle");
+    expect(source).toContain("./mention-explicit-review-lifecycle.ts");
+  });
+
   test("keeps clone planning out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

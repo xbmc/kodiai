@@ -76,9 +76,6 @@ import {
   logExplicitMentionReviewPublishSkipped,
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
-import {
-  attachReviewFindingLifecycle,
-} from "../review-lifecycle/handler-lifecycle.ts";
 import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 import { isMentionAuthorAllowed } from "./mention-allowed-users.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
@@ -148,6 +145,7 @@ import {
   resolveMentionPrDiffContext,
   type MentionPrDiffContext,
 } from "./mention-pr-diff-context.ts";
+import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -1045,58 +1043,17 @@ export function createMentionHandler(deps: {
         let publishResolution: MentionPublishResolution = mentionOutputPublished ? "executor" : "none";
         let publishFailureCategory: ErrorCategory | null = null;
         let publishFallbackDelivery: MentionErrorDelivery | null = null;
-        const explicitReviewFindingLifecycleResult = explicitReviewRequest && mention.prNumber !== undefined && reviewOutputKey
-          ? attachReviewFindingLifecycle({
-              source: "mention",
-              trigger: event.name === "issue_comment"
-                ? "issue_comment"
-                : event.name === "pull_request_review_comment"
-                  ? "review_comment"
-                  : event.name === "pull_request_review"
-                    ? "review_comment"
-                    : "manual",
-              correlation: {
-                repo: `${mention.owner}/${mention.repo}`,
-                pullNumber: mention.prNumber,
-                reviewOutputKey,
-                deliveryId: event.id,
-                commitSha: explicitReviewHeadSha ?? mention.headRef,
-                headSha: explicitReviewHeadSha,
-                baseSha: explicitReviewBaseSha,
-                headRef: mention.headRef,
-                baseRef: mention.baseRef,
-              },
-              findings: [],
-              candidateFinding: result.candidateFinding,
-            })
-          : null;
-        if (explicitReviewFindingLifecycleResult) {
-          logger.info(
-            {
-              surface: mention.surface,
-              owner: mention.owner,
-              repo: mention.repo,
-              prNumber: mention.prNumber,
-              ...explicitReviewFindingLifecycleResult.logEvidence,
-              source: "explicit-mention-review",
-            },
-            "Projected explicit mention review finding lifecycle evidence",
-          );
-          projectExplicitMentionReviewValidationTruth({
-            logger,
-            surface: mention.surface,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber!,
-            reviewOutputKey: reviewOutputKey!,
-            deliveryId: event.id,
-            headSha: explicitReviewHeadSha,
-            baseSha: explicitReviewBaseSha,
-            headRef: mention.headRef,
-            baseRef: mention.baseRef,
-            lifecycleResult: explicitReviewFindingLifecycleResult,
-          });
-        }
+        const explicitReviewFindingLifecycleResult = projectExplicitMentionReviewLifecycle({
+          explicitReviewRequest,
+          eventName: event.name,
+          mention,
+          reviewOutputKey,
+          deliveryId: event.id,
+          headSha: explicitReviewHeadSha,
+          baseSha: explicitReviewBaseSha,
+          candidateFinding: result.candidateFinding,
+          logger,
+        });
         const explicitReviewPublishEvaluation = evaluateExplicitMentionReviewPublish({
           explicitReviewRequest,
           prNumber: mention.prNumber,
