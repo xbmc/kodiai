@@ -1,10 +1,20 @@
 import type { Logger } from "pino";
-import type { FindingByCommentId } from "../knowledge/types.ts";
+import type { FindingByCommentId, KnowledgeStore } from "../knowledge/types.ts";
 
 export type MentionFindingLookup = (
   repo: string,
   commentId: number,
 ) => Promise<FindingByCommentId | null> | FindingByCommentId | null;
+
+export function createMentionFindingLookup(
+  knowledgeStore: Pick<KnowledgeStore, "getFindingByCommentId"> | undefined,
+): MentionFindingLookup | undefined {
+  if (!knowledgeStore?.getFindingByCommentId) {
+    return undefined;
+  }
+
+  return (repo, commentId) => knowledgeStore.getFindingByCommentId!({ repo, commentId });
+}
 
 export async function hydrateMentionFindingContext(params: {
   owner: string;

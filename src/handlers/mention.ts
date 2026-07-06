@@ -124,7 +124,10 @@ import { evaluateMentionWritePreflight } from "./mention-write-preflight.ts";
 import { maybePublishDisabledWriteModeRefusal } from "./mention-write-disabled.ts";
 import { postMentionEyesReaction } from "./mention-reactions.ts";
 import { buildMentionTriageContext } from "./mention-triage-context.ts";
-import { hydrateMentionFindingContext } from "./mention-finding-context.ts";
+import {
+  createMentionFindingLookup,
+  hydrateMentionFindingContext,
+} from "./mention-finding-context.ts";
 import { buildMentionAgentInstructions } from "./mention-agent-instructions.ts";
 import { appendMentionIssueCodePointers } from "./mention-code-pointers.ts";
 import { buildMentionDerivedContext } from "./mention-derived-context.ts";
@@ -491,10 +494,7 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        const findingLookup = deps.knowledgeStore?.getFindingByCommentId
-          ? async (repo: string, commentId: number) =>
-              deps.knowledgeStore!.getFindingByCommentId!({ repo, commentId })
-          : undefined;
+        const findingLookup = createMentionFindingLookup(deps.knowledgeStore);
 
         // Check mention.allowedUsers (CONFIG-07)
         if (!isMentionAuthorAllowed(mention.commentAuthor, config.mention.allowedUsers)) {

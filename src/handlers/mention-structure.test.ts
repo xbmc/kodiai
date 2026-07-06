@@ -162,6 +162,15 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-conversation-recording.ts");
   });
 
+  test("keeps finding lookup adapter binding out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("deps.knowledgeStore?.getFindingByCommentId");
+    expect(source).not.toContain("deps.knowledgeStore!.getFindingByCommentId!({ repo, commentId })");
+    expect(source).toContain("createMentionFindingLookup");
+    expect(source).toContain("./mention-finding-context.ts");
+  });
+
   test("keeps write request context gating out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

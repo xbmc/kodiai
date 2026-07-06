@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { hydrateMentionFindingContext } from "./mention-finding-context.ts";
+import {
+  createMentionFindingLookup,
+  hydrateMentionFindingContext,
+} from "./mention-finding-context.ts";
 import type { FindingByCommentId } from "../knowledge/types.ts";
 
 const finding: FindingByCommentId = {
@@ -94,5 +97,26 @@ describe("hydrateMentionFindingContext", () => {
       inReplyToId: 123,
     });
     expect(warnCalls[0]?.[1]).toBe("Failed to hydrate finding context; proceeding without finding metadata");
+  });
+});
+
+describe("createMentionFindingLookup", () => {
+  test("returns undefined when the knowledge store cannot look up findings", () => {
+    expect(createMentionFindingLookup(undefined)).toBeUndefined();
+    expect(createMentionFindingLookup({})).toBeUndefined();
+  });
+
+  test("adapts repo and comment id arguments to the knowledge store lookup shape", async () => {
+    const calls: unknown[] = [];
+    const lookup = createMentionFindingLookup({
+      getFindingByCommentId: async (params) => {
+        calls.push(params);
+        return finding;
+      },
+    });
+
+    expect(lookup).toBeDefined();
+    await expect(lookup?.("acme/repo", 123)).resolves.toEqual(finding);
+    expect(calls).toEqual([{ repo: "acme/repo", commentId: 123 }]);
   });
 });
