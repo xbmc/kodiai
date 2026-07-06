@@ -160,7 +160,6 @@ import {
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
   buildShadowSpecialistCorrelationKey,
-  buildShadowSpecialistLogFields,
   buildCandidateVerificationPublicationEvidenceLogFields,
 } from "../review-orchestration/review-specialist-publication-log.ts";
 import {
@@ -213,9 +212,7 @@ import {
   type ShadowSpecialistSubflowInput,
   type ShadowSpecialistSubflowResult,
 } from "../specialists/shadow-specialist-subflow.ts";
-import { projectShadowSpecialistMetrics } from "../specialists/shadow-specialist-metrics.ts";
 import {
-  buildShadowSpecialistReviewDetailsProjection,
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
@@ -230,7 +227,6 @@ import {
   type AttachReviewFindingLifecycleResult,
 } from "../review-lifecycle/handler-lifecycle.ts";
 import {
-  buildShadowSpecialistDiffSnippet,
   discardCheckpointsFailOpen,
   recordReviewCacheEventFailOpen,
 } from "./review-handler-utils.ts";
@@ -282,6 +278,7 @@ import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
 import { resolveReviewIncrementalDiff } from "./review-incremental-diff.ts";
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
+import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -907,67 +904,21 @@ export function createReviewHandler(deps: {
         if (skipPathsGate.action === "skip") return;
         const changedFiles = skipPathsGate.changedFiles;
 
-        let shadowSpecialistResult: ShadowSpecialistSubflowResult | undefined;
-        let shadowSpecialistReviewDetailsProjection: ShadowSpecialistReviewDetailsProjection | null = null;
-        let candidateVerificationContext: CandidateVerificationContext;
-        const shadowSpecialistCorrelationKey = buildShadowSpecialistCorrelationKey({
+        const {
+          shadowSpecialistResult,
+          shadowSpecialistReviewDetailsProjection,
+          candidateVerificationContext,
+        } = await resolveReviewShadowSpecialistContext({
+          changedFiles,
+          diffContentForValidation,
+          workspaceDir: workspace.dir,
           deliveryId: event.id,
           reviewOutputKey,
           prNumber: pr.number,
+          baseLog,
+          logger,
+          shadowSpecialistSubflow,
         });
-        try {
-          shadowSpecialistResult = await shadowSpecialistSubflow({
-            changedPaths: changedFiles,
-            diffText: diffContentForValidation,
-            diffSnippet: buildShadowSpecialistDiffSnippet(diffContentForValidation),
-            workspaceDir: workspace.dir,
-            deliveryId: event.id,
-            reviewOutputKey,
-            correlationKey: shadowSpecialistCorrelationKey,
-          });
-          candidateVerificationContext = {
-            docsConfigTruth: shadowSpecialistResult.output,
-            deliveryId: event.id,
-            reviewOutputKey,
-            correlationKey: shadowSpecialistResult.correlationKey ?? shadowSpecialistCorrelationKey,
-          };
-          shadowSpecialistReviewDetailsProjection = buildShadowSpecialistReviewDetailsProjection(
-            projectShadowSpecialistMetrics(shadowSpecialistResult),
-          );
-
-          const shadowLogFields = {
-            ...baseLog,
-            ...buildShadowSpecialistLogFields(shadowSpecialistResult),
-          };
-          const shadowMessage = "Shadow specialist subflow completed";
-          if (shadowSpecialistResult.timeoutReason || shadowSpecialistResult.errorReason || shadowSpecialistResult.unclassifiableReason) {
-            logger.warn(shadowLogFields, shadowMessage);
-          } else {
-            logger.info(shadowLogFields, shadowMessage);
-          }
-        } catch (err) {
-          candidateVerificationContext = {
-            docsConfigTruth: null,
-            deliveryId: event.id,
-            reviewOutputKey,
-            correlationKey: shadowSpecialistCorrelationKey,
-          };
-          shadowSpecialistReviewDetailsProjection = null;
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "shadow-specialist",
-              laneId: "docs-config-truth",
-              status: "error",
-              reason: "handler-subflow-error",
-              deliveryId: event.id,
-              reviewOutputKey,
-              correlationKey: shadowSpecialistCorrelationKey,
-              err,
-            },
-            "Shadow specialist subflow failed before normal review; continuing fail-open",
-          );
-        }
 
         // In incremental mode, further filter to only files that changed since last review
         let reviewFiles = changedFiles;

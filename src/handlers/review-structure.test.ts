@@ -418,4 +418,15 @@ describe("review handler structure", () => {
     expect(source).toContain("evaluateReviewSkipPathsGate");
     expect(source).toContain("./review-skip-paths-gate.ts");
   });
+
+  test("keeps shadow specialist subflow orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let shadowSpecialistResult");
+    expect(source).not.toContain("buildShadowSpecialistDiffSnippet(diffContentForValidation)");
+    expect(source).not.toContain("buildShadowSpecialistLogFields(shadowSpecialistResult)");
+    expect(source).not.toContain("projectShadowSpecialistMetrics(shadowSpecialistResult)");
+    expect(source).toContain("resolveReviewShadowSpecialistContext");
+    expect(source).toContain("./review-shadow-specialist.ts");
+  });
 });
