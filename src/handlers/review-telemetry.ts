@@ -1,5 +1,6 @@
 import type { ExecutionResult } from "../execution/types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
 
 type ReviewTelemetryLogger = {
@@ -7,6 +8,30 @@ type ReviewTelemetryLogger = {
 };
 
 export type ReviewDerivedPromptCacheStatus = "hit" | "miss" | "degraded" | "bypass";
+export type ReviewExecutionTelemetryStage = "reuseTelemetry" | "executionTelemetry" | "promptSections";
+export type ReviewExecutionTelemetryWriteStatus = "recorded" | "skipped";
+export type ReviewExecutionTelemetrySummary = Record<
+  ReviewExecutionTelemetryStage,
+  ReviewExecutionTelemetryWriteStatus
+>;
+export type ReviewExecutionTelemetryFailure = {
+  stage: ReviewExecutionTelemetryStage;
+  error: Error;
+};
+export type ReviewExecutionTelemetryResult = Result<
+  ReviewExecutionTelemetrySummary,
+  ReviewExecutionTelemetryError
+>;
+
+export class ReviewExecutionTelemetryError extends Error {
+  readonly failures: ReviewExecutionTelemetryFailure[];
+
+  constructor(failures: ReviewExecutionTelemetryFailure[]) {
+    super(`${failures.length} review telemetry ${failures.length === 1 ? "write" : "writes"} failed`);
+    this.name = "ReviewExecutionTelemetryError";
+    this.failures = failures;
+  }
+}
 
 function resolveReviewTelemetryConclusion(result: ExecutionResult): string {
   if (result.isTimeout && result.published) {
@@ -31,7 +56,14 @@ export async function recordReviewExecutionTelemetry(params: {
   derivedPromptCacheStatus: ReviewDerivedPromptCacheStatus;
   derivedPromptCacheReason?: string;
   warningPrefix: "Review" | "Retry";
-}): Promise<void> {
+}): Promise<ReviewExecutionTelemetryResult> {
+  const summary: ReviewExecutionTelemetrySummary = {
+    reuseTelemetry: "recorded",
+    executionTelemetry: "recorded",
+    promptSections: params.promptSections ? "recorded" : "skipped",
+  };
+  const failures: ReviewExecutionTelemetryFailure[] = [];
+
   try {
     await params.telemetryStore.recordRateLimitEvent({
       deliveryId: params.deliveryId,
@@ -47,8 +79,10 @@ export async function recordReviewExecutionTelemetry(params: {
         : params.derivedPromptCacheStatus,
     });
   } catch (err) {
+    const error = toError(err);
+    failures.push({ stage: "reuseTelemetry", error });
     params.logger.warn(
-      { err },
+      { err: error },
       `${params.warningPrefix} derived-prompt reuse telemetry write failed (non-blocking)`,
     );
   }
@@ -73,11 +107,13 @@ export async function recordReviewExecutionTelemetry(params: {
       stopReason: params.result.stopReason,
     });
   } catch (err) {
-    params.logger.warn({ err }, `${params.warningPrefix} telemetry write failed (non-blocking)`);
+    const error = toError(err);
+    failures.push({ stage: "executionTelemetry", error });
+    params.logger.warn({ err: error }, `${params.warningPrefix} telemetry write failed (non-blocking)`);
   }
 
   if (!params.promptSections) {
-    return;
+    return failures.length > 0 ? resultErr(new ReviewExecutionTelemetryError(failures)) : resultOk(summary);
   }
 
   try {
@@ -87,9 +123,13 @@ export async function recordReviewExecutionTelemetry(params: {
       (promptSectionRecord) => params.telemetryStore.recordPromptSections(promptSectionRecord),
     );
   } catch (err) {
+    const error = toError(err);
+    failures.push({ stage: "promptSections", error });
     params.logger.warn(
-      { err },
+      { err: error },
       `${params.warningPrefix} prompt-section telemetry write failed (non-blocking)`,
     );
   }
+
+  return failures.length > 0 ? resultErr(new ReviewExecutionTelemetryError(failures)) : resultOk(summary);
 }
