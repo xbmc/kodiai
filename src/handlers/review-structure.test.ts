@@ -366,4 +366,15 @@ describe("review handler structure", () => {
     expect(source).toContain("evaluateReviewRequestedGate");
     expect(source).toContain("./review-requested-gate.ts");
   });
+
+  test("keeps review clone planning out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let cloneOwner: string;");
+    expect(source).not.toContain("const isDeletedFork = !headRepo;");
+    expect(source).not.toContain("cloneRef = pr.base.ref;");
+    expect(source).not.toContain("cloneRef = pr.head.ref;");
+    expect(source).toContain("resolveReviewClonePlan");
+    expect(source).toContain("./review-clone-plan.ts");
+  });
 });

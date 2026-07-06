@@ -284,6 +284,7 @@ import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
 import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
+import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -538,28 +539,23 @@ export function createReviewHandler(deps: {
     const apiOwner = payload.repository.owner.login;
     const apiRepo = payload.repository.name;
 
-    const headRepo = pr.head.repo;
-    const isFork = Boolean(headRepo && headRepo.full_name !== payload.repository.full_name);
-    const isDeletedFork = !headRepo;
-
-    let cloneOwner: string;
-    let cloneRepo: string;
-    let cloneRef: string;
-    let usesPrRef = false;
-
-    if (isFork || isDeletedFork) {
-      // Fork PRs (or deleted forks): clone base branch and fetch PR head ref from base repo.
-      // This avoids relying on access to the contributor's fork.
-      cloneOwner = apiOwner;
-      cloneRepo = apiRepo;
-      cloneRef = pr.base.ref;
-      usesPrRef = true;
-    } else {
-      // Non-fork PR: clone the head branch directly from the base repo.
-      cloneOwner = headRepo.owner.login;
-      cloneRepo = headRepo.name;
-      cloneRef = pr.head.ref;
-    }
+    const reviewClonePlan = resolveReviewClonePlan({
+      apiOwner,
+      apiRepo,
+      repositoryFullName: payload.repository.full_name,
+      baseRef: pr.base.ref,
+      headRef: pr.head.ref,
+      headRepo: pr.head.repo,
+    });
+    const {
+      cloneOwner,
+      cloneRepo,
+      cloneRef,
+      isFork,
+      isDeletedFork,
+      usesPrRef,
+      workspaceStrategy,
+    } = reviewClonePlan;
 
     logger.info(
       {
@@ -572,9 +568,7 @@ export function createReviewHandler(deps: {
         isFork,
         isDeletedFork,
         usesPrRef,
-        workspaceStrategy: usesPrRef
-          ? "base-clone+pull-ref-fetch"
-          : "direct-head-branch-clone",
+        workspaceStrategy,
         action,
         deliveryId: event.id,
         installationId: event.installationId,
