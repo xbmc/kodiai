@@ -152,6 +152,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-structural-impact-selection.ts");
   });
 
+  test("keeps large PR risk scoring and triage out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const perFileStats = parseNumstatPerFile(numstatLines)");
+    expect(source).not.toContain("const riskScores = computeFileRiskScores({");
+    expect(source).not.toContain("let tieredFiles = triageFilesByRisk({");
+    expect(source).not.toContain("gate: \"large-pr-triage\"");
+    expect(source).toContain("buildReviewFileRiskScores");
+    expect(source).toContain("resolveReviewLargePrTriage");
+    expect(source).toContain("./review-large-pr-triage.ts");
+  });
+
   test("keeps path instruction matching out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

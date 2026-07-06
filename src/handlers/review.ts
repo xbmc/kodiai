@@ -27,12 +27,8 @@ import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-cl
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { loadRepoConfig } from "../execution/config.ts";
-import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
+import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { buildPrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
-import {
-  computeFileRiskScores,
-  triageFilesByRisk,
-} from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
@@ -279,6 +275,10 @@ import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist
 import { resolveReviewPriorFindingContext } from "./review-prior-finding-context.ts";
 import { resolveReviewRepoDoctrineContext } from "./review-repo-doctrine-context.ts";
 import { resolveReviewPathInstructions } from "./review-path-instructions.ts";
+import {
+  buildReviewFileRiskScores,
+  resolveReviewLargePrTriage,
+} from "./review-large-pr-triage.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -937,16 +937,11 @@ export function createReviewHandler(deps: {
           fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
         });
 
-        // --- Large PR file triage (LARGE-01 through LARGE-08) ---
-        // Parse per-file numstat for risk scoring
-        const perFileStats = parseNumstatPerFile(numstatLines);
-
-        // Compute risk scores for files being reviewed
-        const riskScores = computeFileRiskScores({
-          files: reviewFiles,
-          perFileStats,
+        const { riskScores, perFileStats } = buildReviewFileRiskScores({
+          reviewFiles,
+          numstatLines,
           filesByCategory: diffAnalysis.filesByCategory,
-          weights: config.largePR.riskWeights,
+          riskWeights: config.largePR.riskWeights,
         });
 
         const structuralImpactSelection = await resolveReviewStructuralImpactSelection({
@@ -976,37 +971,15 @@ export function createReviewHandler(deps: {
         const structuralImpactForReview: StructuralImpactPayload | null =
           structuralImpactSelection.structuralImpactForReview;
 
-        // Triage uses changedFiles.length (full PR size) for threshold check,
-        // not reviewFiles.length (which may be filtered for incremental mode).
-        // Per pitfall 3 in research: check full PR, triage review set.
-        let tieredFiles = triageFilesByRisk({
-          riskScores: graphSelection.riskScores,
-          fileThreshold: config.largePR.fileThreshold,
-          fullReviewCount: config.largePR.fullReviewCount,
-          abbreviatedCount: config.largePR.abbreviatedCount,
-          totalFileCount: changedFiles.length,
+        const largePrTriage = resolveReviewLargePrTriage({
+          graphSelection,
+          reviewFiles,
+          changedFiles,
+          largePrConfig: config.largePR,
+          baseLog,
+          logger,
         });
-
-        // Build the file list for the prompt: only full + abbreviated tier files.
-        // Timeout safety may tighten these tiers below, so keep this derived list mutable.
-        let promptFiles = tieredFiles.isLargePR
-          ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
-          : reviewFiles;
-
-        if (tieredFiles.isLargePR) {
-          logger.info({
-            ...baseLog,
-            gate: "large-pr-triage",
-            totalFiles: tieredFiles.totalFiles,
-            fullReview: tieredFiles.full.length,
-            abbreviated: tieredFiles.abbreviated.length,
-            mentionOnly: tieredFiles.mentionOnly.length,
-            threshold: config.largePR.fileThreshold,
-            graphHitCount: graphSelection.graphHits,
-            graphRankedSelections: graphSelection.graphRankedSelections,
-            graphAwareSelectionApplied: graphSelection.usedGraph,
-          }, "Large PR file triage applied");
-        }
+        let { tieredFiles, promptFiles } = largePrTriage;
 
         const matchedPathInstructions = resolveReviewPathInstructions({
           pathInstructions: config.review.pathInstructions,
