@@ -83,10 +83,6 @@ import {
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import {
-  toReviewCandidateFindingDetailsSummary,
-  type ReviewCandidateFindingDetailsSummary,
-} from "../review-orchestration/review-candidate-finding.ts";
-import {
   buildReviewPlan,
   type ReviewPlanBuilder,
 } from "../review-orchestration/review-plan.ts";
@@ -170,9 +166,6 @@ import {
   logReviewReducerResult,
 } from "../review-orchestration/review-reducer-log.ts";
 import {
-  logReviewCandidateFindingResult,
-  resolveReviewCandidateFindingResult,
-  toReviewCandidateFindingSafeSnapshot,
   toReviewCandidateReducerDrafts,
 } from "../review-orchestration/review-candidate-finding-handler.ts";
 import {
@@ -274,6 +267,7 @@ import {
 import { buildReviewPlanPublication } from "./review-plan-publication-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
+import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1408,36 +1402,24 @@ export function createReviewHandler(deps: {
           upstreamCorrelationKey: String(candidateVerificationContext.correlationKey),
         });
 
-        const reviewCandidateFindingResult = resolveReviewCandidateFindingResult({
+        const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        const reviewOutputSucceeded = result.conclusion === "success";
+        const reviewCandidateFindingContext = await resolveReviewCandidateFindingContext({
           candidateFinding: result.candidateFinding,
-          repo: `${apiOwner}/${apiRepo}`,
-          pullNumber: pr.number,
-          reviewOutputKey,
-          deliveryId: event.id,
-        });
-        const reviewCandidateFindingDetailsSummary: ReviewCandidateFindingDetailsSummary =
-          toReviewCandidateFindingDetailsSummary(reviewCandidateFindingResult);
-        const reviewCandidateFindingConfigSnapshot =
-          toReviewCandidateFindingSafeSnapshot(reviewCandidateFindingResult);
-        logReviewCandidateFindingResult({
+          executionSucceeded: reviewOutputSucceeded,
+          octokit: extractionOctokit,
           logger,
           baseLog,
-          result: reviewCandidateFindingResult,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          deliveryId: event.id,
+          reviewOutputKey,
         });
-
-        const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
-        const shouldProcessReviewOutput = result.conclusion === "success";
-        const extractedFindings = shouldProcessReviewOutput
-          ? await extractFindingsFromReviewComments({
-            octokit: extractionOctokit,
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            reviewOutputKey,
-            logger,
-            baseLog,
-          })
-          : [];
+        const reviewCandidateFindingResult = reviewCandidateFindingContext.result;
+        const reviewCandidateFindingDetailsSummary = reviewCandidateFindingContext.detailsSummary;
+        const reviewCandidateFindingConfigSnapshot = reviewCandidateFindingContext.configSnapshot;
+        const extractedFindings = reviewCandidateFindingContext.extractedFindings;
 
         // Feedback-driven suppression (FEED-01 through FEED-10)
         // Evaluated once and passed into the reducer so publication/deletion side effects remain outside.
@@ -1745,7 +1727,7 @@ export function createReviewHandler(deps: {
           }
         }
 
-        if (shouldProcessReviewOutput && filteredInlineFindings.length > 0) {
+        if (reviewOutputSucceeded && filteredInlineFindings.length > 0) {
           await removeFilteredInlineComments({
             octokit: extractionOctokit,
             owner: apiOwner,
@@ -1836,7 +1818,7 @@ export function createReviewHandler(deps: {
           getPublicationPhaseStartedAt: () => publicationPhaseStartedAt,
         });
 
-        if (shouldProcessReviewOutput) {
+        if (reviewOutputSucceeded) {
           logger.info(
             {
               ...baseLog,

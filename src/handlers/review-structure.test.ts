@@ -217,6 +217,15 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-publication-bridge.ts");
   });
 
+  test("keeps candidate finding extraction context out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewCandidateFindingResult = resolveReviewCandidateFindingResult({");
+    expect(source).not.toContain("const extractedFindings = shouldProcessReviewOutput");
+    expect(source).toContain("resolveReviewCandidateFindingContext");
+    expect(source).toContain("./review-candidate-finding-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
