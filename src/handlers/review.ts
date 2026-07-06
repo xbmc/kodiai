@@ -2574,7 +2574,7 @@ export function createReviewHandler(deps: {
                     ...timeoutClassificationTelemetry,
                   },
                 });
-                if (resilienceTelemetryResult === "failed") {
+                if (!resilienceTelemetryResult.ok) {
                   continuationProjectionDegraded = true;
                 }
               }
@@ -2655,7 +2655,7 @@ export function createReviewHandler(deps: {
                     ...timeoutClassificationTelemetry,
                   },
                 });
-                if (resilienceTelemetryResult === "failed") {
+                if (!resilienceTelemetryResult.ok) {
                   continuationProjectionDegraded = true;
                 }
               }

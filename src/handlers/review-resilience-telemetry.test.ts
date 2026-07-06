@@ -22,7 +22,7 @@ describe("recordReviewResilienceEventFailOpen", () => {
       entry: baseEntry,
     });
 
-    expect(result).toBe("recorded");
+    expect(result).toEqual({ ok: true, value: "recorded" });
     expect(recordResilienceEvent).toHaveBeenCalledWith(baseEntry);
     expect(logger.warn).not.toHaveBeenCalled();
   });
@@ -36,7 +36,7 @@ describe("recordReviewResilienceEventFailOpen", () => {
       entry: baseEntry,
     });
 
-    expect(result).toBe("skipped");
+    expect(result).toEqual({ ok: true, value: "skipped" });
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
@@ -53,7 +53,7 @@ describe("recordReviewResilienceEventFailOpen", () => {
       entry: baseEntry,
     });
 
-    expect(result).toBe("failed");
+    expect(result).toEqual({ ok: false, err });
     expect(logger.warn).toHaveBeenCalledWith(
       { err },
       "Resilience telemetry write failed (non-blocking)",
