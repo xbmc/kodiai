@@ -295,6 +295,18 @@ describe("mention handler structure", () => {
     expect(source).toContain("./formatter-suggestion-orchestration.ts");
   });
 
+  test("keeps explicit review prompt and routing assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const explicitReviewPrNumber = mention.prNumber");
+    expect(source).not.toContain("const promptDiffContext = mention.baseRef");
+    expect(source).not.toContain("const diffAnalysis = analyzeDiff({");
+    expect(source).not.toContain("Mention review routing decision");
+    expect(source).not.toContain("buildReviewPromptDetails({");
+    expect(source).toContain("buildMentionExplicitReviewPrompt");
+    expect(source).toContain("./mention-explicit-review-prompt.ts");
+  });
+
   test("keeps write-mode PR draft assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

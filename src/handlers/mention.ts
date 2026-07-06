@@ -48,25 +48,14 @@ import {
   buildMentionWriteContext,
 } from "./mention-write-keys.ts";
 import { evaluateMentionWriteContextGate } from "./mention-write-context-gate.ts";
-import {
-  collectPrReviewPromptDiff,
-} from "./mention-pr-review-diff.ts";
 import { buildMentionPromptDetails } from "../execution/mention-prompt.ts";
-import { buildReviewPromptDetails, matchPathInstructions } from "../execution/review-prompt.ts";
-import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
+import type { PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import {
-  resolveReviewRoutingLineCount,
-  resolveReviewTaskRouting,
-  resolveReviewMaxTurnsOverride,
   type ReviewTaskRouting,
 } from "../lib/review-routing.ts";
-import { toProductionLogTurnBudgetFields } from "../review-audit/production-log-projection.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
-import { analyzeDiff, parseNumstatPerFile } from "../execution/diff-analysis.ts";
-import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
-import { computeLanguageComplexity, estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import {
@@ -107,7 +96,6 @@ import {
   createFormatterSuggestionVisibleDiagnosticPoster,
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
-import { selectExplicitReviewPromptDiffContent } from "./mention-token-budget.ts";
 import {
   buildCombinedReviewAndFormatMentionLogFields,
   buildCombinedReviewAndFormatThrownMentionLogFields,
@@ -156,6 +144,7 @@ import {
 } from "./mention-retrieval-context.ts";
 import { recordMentionExecutionTelemetry } from "./mention-telemetry.ts";
 import { projectExplicitMentionReviewValidationTruth } from "./mention-validation-truth.ts";
+import { buildMentionExplicitReviewPrompt } from "./mention-explicit-review-prompt.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -903,184 +892,38 @@ export function createMentionHandler(deps: {
           routingReason: "standard",
         };
         if (explicitReviewRequest && mention.prNumber !== undefined) {
-          const explicitReviewPrNumber = mention.prNumber;
-          const { data: explicitReviewPr } = await octokit.rest.pulls.get({
-            owner: mention.owner,
-            repo: mention.repo,
-            pull_number: explicitReviewPrNumber,
-          });
-          explicitReviewHeadSha = explicitReviewPr.head.sha;
-          explicitReviewBaseSha = explicitReviewPr.base.sha;
-
-          const promptDiffContext = mention.baseRef
-            ? await collectPrReviewPromptDiff({
-                workspaceDir: workspace.dir,
-                owner: mention.owner,
-                repo: mention.repo,
-                prNumber: explicitReviewPrNumber,
-                baseRef: mention.baseRef,
-                surface: mention.surface,
-                logger,
-                token: workspace.token,
-                fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
-                  octokit,
-                  owner: mention.owner,
-                  repo: mention.repo,
-                  pullNumber: explicitReviewPrNumber,
-                }),
-              })
-            : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
-          const promptChangedFiles = promptDiffContext.changedFiles;
-          explicitReviewPrDiffCommentabilityIndex = promptDiffContext.diffContent
-            ? buildPrDiffCommentabilityIndex(promptDiffContext.diffContent)
-            : undefined;
-          explicitReviewPromptFileCount = promptChangedFiles.length;
-          const explicitReviewPromptDiffContent = selectExplicitReviewPromptDiffContent({
-            diffContent: promptDiffContext.diffContent,
-            changedFileCount: promptChangedFiles.length,
-          });
-
-          const diffAnalysis = analyzeDiff({
-            changedFiles: promptChangedFiles,
-            numstatLines: promptDiffContext.numstatLines,
-            fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
-          });
-          const diffAnalysisLinesChanged = (diffAnalysis.metrics.totalLinesAdded ?? 0) +
-            (diffAnalysis.metrics.totalLinesRemoved ?? 0);
-          const prApiLinesChanged = (explicitReviewPr.additions ?? 0) + (explicitReviewPr.deletions ?? 0);
-          const explicitReviewLinesChanged = resolveReviewRoutingLineCount({
-            diffLinesChanged: diffAnalysisLinesChanged,
-            prApiLinesChanged,
-          });
-          explicitReviewRouting = resolveReviewTaskRouting({
-            changedFileCount: promptChangedFiles.length,
-            linesChanged: explicitReviewLinesChanged,
-          });
-          const languageComplexity = computeLanguageComplexity(diffAnalysis.filesByLanguage);
-          const timeoutEstimate = estimateTimeoutRisk({
-            fileCount: promptChangedFiles.length,
-            linesChanged: explicitReviewLinesChanged,
-            languageComplexity,
-            isLargePR: diffAnalysis.isLargePR,
-            baseTimeoutSeconds: config.timeoutSeconds,
-          });
-          explicitReviewDynamicTimeoutSeconds = config.timeout.dynamicScaling !== false
-            ? timeoutEstimate.totalTimeoutSeconds
-            : undefined;
-          explicitReviewMaxTurnsOverride = resolveReviewMaxTurnsOverride({
-            taskType: explicitReviewRouting.taskType,
-            routingMaxTurnsOverride: explicitReviewRouting.maxTurnsOverride,
-            timeoutRiskLevel: timeoutEstimate.riskLevel,
-            baseMaxTurns: config.maxTurns,
-            changedFiles: promptChangedFiles,
-          });
-          logger.info(
-            {
-              surface: mention.surface,
-              owner: mention.owner,
-              repo: mention.repo,
-              prNumber: mention.prNumber,
-              gate: "review-routing",
-              taskType: explicitReviewRouting.taskType,
-              routingReason: explicitReviewRouting.routingReason,
-              changedFiles: promptChangedFiles.length,
-              linesChanged: explicitReviewLinesChanged,
-              ...toProductionLogTurnBudgetFields(
-                explicitReviewMaxTurnsOverride,
-                explicitReviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
-              ),
-              timeoutSeconds: explicitReviewDynamicTimeoutSeconds ?? null,
-              timeoutRiskLevel: timeoutEstimate.riskLevel,
-              remoteRuntimeBudgetSeconds: timeoutEstimate.remoteRuntimeBudgetSeconds,
-              infraOverheadBudgetSeconds: timeoutEstimate.infraOverheadBudgetSeconds,
-              lane: "interactive-review",
-            },
-            "Mention review routing decision",
-          );
-          const matchedPathInstructions = matchPathInstructions(
-            config.review.pathInstructions,
-            promptChangedFiles,
-          );
-          const perFileStats = parseNumstatPerFile(promptDiffContext.numstatLines);
-          const riskScores = computeFileRiskScores({
-            files: promptChangedFiles,
-            perFileStats,
-            filesByCategory: diffAnalysis.filesByCategory,
-            weights: config.largePR.riskWeights,
-          });
-          const tieredFiles = triageFilesByRisk({
-            riskScores,
-            fileThreshold: config.largePR.fileThreshold,
-            fullReviewCount: config.largePR.fullReviewCount,
-            abbreviatedCount: config.largePR.abbreviatedCount,
-            totalFileCount: promptChangedFiles.length,
-          });
-          const promptFiles = tieredFiles.isLargePR
-            ? [
-                ...tieredFiles.full.map((file) => file.filePath),
-                ...tieredFiles.abbreviated.map((file) => file.filePath),
-              ]
-            : promptChangedFiles;
-
-          const prLabels = (explicitReviewPr.labels ?? [])
-            .map((label) => typeof label === "string" ? label : label.name)
-            .filter((label): label is string => typeof label === "string" && label.length > 0);
-
-          const reviewPromptResult = buildReviewPromptDetails({
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber,
-            prTitle: explicitReviewPr.title,
-            prBody: explicitReviewPr.body ?? "",
-            prAuthor: explicitReviewPr.user?.login ?? "unknown",
-            baseBranch: explicitReviewPr.base.ref,
-            headBranch: explicitReviewPr.head.ref,
-            changedFiles: promptFiles,
-            customInstructions: config.review.prompt,
-            mode: config.review.mode,
-            severityMinLevel: config.review.severity.minLevel,
-            focusAreas: config.review.focusAreas,
-            ignoredAreas: config.review.ignoredAreas,
-            maxComments: config.review.maxComments,
-            suppressions: config.review.suppressions,
-            minConfidence: config.review.minConfidence,
-            diffAnalysis,
-            diffContent: explicitReviewPromptDiffContent,
-            matchedPathInstructions,
+          const explicitReviewPrompt = await buildMentionExplicitReviewPrompt({
+            mention: mention as MentionEvent & { prNumber: number },
+            config,
+            deliveryId: event.id,
+            workspaceDir: workspace.dir,
+            workspaceToken: workspace.token,
             retrievalContext,
-            reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
-            wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
-            unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+            reviewPrecedents: reviewPrecedentsForPrompt,
+            wikiKnowledge: wikiKnowledgeForPrompt,
+            unifiedResults: unifiedResultsForPrompt,
             contextWindow: contextWindowForPrompt,
-            filesByLanguage: diffAnalysis.filesByLanguage,
-            outputLanguage: config.review.outputLanguage,
-            prLabels,
-            isDraft: explicitReviewPr.draft,
-            smallDiffReview: explicitReviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
-            largePRContext: tieredFiles.isLargePR ? {
-              fullReviewFiles: tieredFiles.full.map((file) => file.filePath),
-              abbreviatedFiles: tieredFiles.abbreviated.map((file) => file.filePath),
-              mentionOnlyCount: tieredFiles.mentionOnly.length,
-              totalFiles: tieredFiles.totalFiles,
-            } : null,
-            gitDiffInstructionsAvailable: false,
-            publishToolNames: [
-              "mcp__github_comment__create_comment",
-              "mcp__github_inline_comment__create_inline_comment",
-            ],
-            candidateFindingToolName: "record_candidate_finding",
-            candidateFindingMode: "preferred",
-          });
-          prompt = reviewPromptResult.text;
-          promptSections = [
-            buildPromptSectionRecord({
-              deliveryId: event.id,
-              repo: `${mention.owner}/${mention.repo}`,
-              taskType: explicitReviewRouting.taskType,
-              promptKind: "review.user-prompt",
-              sections: reviewPromptResult.sections,
+            logger,
+            getPullRequest: async (args) => {
+              const { data } = await octokit.rest.pulls.get(args);
+              return data;
+            },
+            fetchPullRequestFiles: async (args) => await fetchAllPullRequestFiles({
+              octokit,
+              owner: args.owner,
+              repo: args.repo,
+              pullNumber: args.pullNumber,
             }),
-          ];
+          });
+          prompt = explicitReviewPrompt.prompt;
+          promptSections = explicitReviewPrompt.promptSections;
+          explicitReviewPromptFileCount = explicitReviewPrompt.promptFileCount;
+          explicitReviewDynamicTimeoutSeconds = explicitReviewPrompt.dynamicTimeoutSeconds;
+          explicitReviewMaxTurnsOverride = explicitReviewPrompt.maxTurnsOverride;
+          explicitReviewPrDiffCommentabilityIndex = explicitReviewPrompt.prDiffCommentabilityIndex;
+          explicitReviewHeadSha = explicitReviewPrompt.headSha;
+          explicitReviewBaseSha = explicitReviewPrompt.baseSha;
+          explicitReviewRouting = explicitReviewPrompt.routing;
         } else {
           const mentionPromptResult = buildMentionPromptDetails({
             mention,
