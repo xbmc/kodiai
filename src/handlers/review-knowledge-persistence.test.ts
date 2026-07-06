@@ -54,7 +54,7 @@ describe("persistReviewKnowledge", () => {
       shareGlobal: false,
     });
 
-    expect(result).toEqual({ status: "recorded", reviewId: 123 });
+    expect(result).toEqual({ ok: true, value: { reviewId: 123 } });
     expect(store.recordReview).toHaveBeenCalledWith(reviewRecord);
     expect(store.recordFindings).toHaveBeenCalledWith([
       {
@@ -171,7 +171,7 @@ describe("persistReviewKnowledge", () => {
       shareGlobal: true,
     });
 
-    expect(result).toEqual({ status: "recorded", reviewId: 789 });
+    expect(result).toEqual({ ok: true, value: { reviewId: 789 } });
     expect(logger.warn).toHaveBeenCalledWith(
       { err, repo: "octo/repo", prNumber: 42 },
       "Knowledge store global aggregate write failed (non-fatal)",
@@ -205,7 +205,7 @@ describe("persistReviewKnowledge", () => {
       shareGlobal: true,
     });
 
-    expect(result).toEqual({ status: "failed" });
+    expect(result).toEqual({ ok: false, err });
     expect(store.recordFindings).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       { err, repo: "octo/repo", prNumber: 42 },

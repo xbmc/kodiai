@@ -2025,8 +2025,8 @@ export function createReviewHandler(deps: {
             suppressionsApplied,
             shareGlobal: config.knowledge.shareGlobal,
           });
-          if (knowledgePersistence.status === "recorded") {
-            reviewId = knowledgePersistence.reviewId;
+          if (knowledgePersistence.ok) {
+            reviewId = knowledgePersistence.value.reviewId;
           }
         }
 

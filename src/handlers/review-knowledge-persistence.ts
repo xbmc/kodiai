@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { KnowledgeStore, ReviewRecord } from "../knowledge/types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import {
   fingerprintFindingTitle,
   toConfidenceBand,
@@ -27,8 +28,7 @@ export type ReviewKnowledgeFinding = {
 };
 
 export type ReviewKnowledgePersistenceResult =
-  | { status: "recorded"; reviewId: number }
-  | { status: "failed" };
+  Result<{ reviewId: number }>;
 
 export async function persistReviewKnowledge(params: {
   knowledgeStore: ReviewKnowledgeStore;
@@ -157,12 +157,13 @@ export async function persistReviewKnowledge(params: {
       "Knowledge store: findings and suppression logs recorded",
     );
 
-    return { status: "recorded", reviewId };
+    return resultOk({ reviewId });
   } catch (err) {
+    const error = toError(err);
     logger.warn(
-      { err, repo, prNumber },
+      { err: error, repo, prNumber },
       "Knowledge store write failed (non-fatal)",
     );
-    return { status: "failed" };
+    return resultErr(error);
   }
 }
