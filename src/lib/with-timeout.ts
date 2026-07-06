@@ -131,20 +131,19 @@ export async function runWithAbortSignalTimeout<T>(
   timeoutMs: number,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = createAbortControllerWithTimeout(label, timeoutMs);
 
   try {
-    return await run(controller.signal);
+    return await run(timeout.controller.signal);
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (timeout.controller.signal.aborted) {
       throw new Error(`${label}: request timed out after ${timeoutMs}ms`, {
         cause: error,
       });
     }
     throw error;
   } finally {
-    clearTimeout(timeoutHandle);
+    timeout.clear();
   }
 }
 

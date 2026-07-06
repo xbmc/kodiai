@@ -143,6 +143,18 @@ describe("runWithAbortSignalTimeout", () => {
       },
     )).resolves.toBe("ok");
   });
+
+  test("uses the shared abort controller timeout primitive", () => {
+    const source = readFileSync(new URL("./with-timeout.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("export async function runWithAbortSignalTimeout"),
+      source.indexOf("export function abortSignalWithTimeout"),
+    );
+
+    expect(implementation).toContain("createAbortControllerWithTimeout");
+    expect(implementation).not.toContain("new AbortController()");
+    expect(implementation).not.toContain("setTimeout(");
+  });
 });
 
 describe("abortSignalWithTimeout", () => {
