@@ -186,6 +186,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-runtime-plan.ts");
   });
 
+  test("keeps review plan publication context assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewPlanLinesChangedSource =");
+    expect(source).not.toContain("const reviewPlanGraphValidation = resolveGraphValidationPlanStatus({");
+    expect(source).not.toContain("const reviewPlanPublication = buildReviewPlanPublicationContext({");
+    expect(source).not.toContain("candidateFinding: {\n              mode: \"preferred\"");
+    expect(source).toContain("buildReviewPlanPublication");
+    expect(source).toContain("./review-plan-publication-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

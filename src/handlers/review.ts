@@ -88,8 +88,6 @@ import {
 } from "../review-orchestration/review-candidate-finding.ts";
 import {
   buildReviewPlan,
-  buildReviewPlanPublicationContext,
-  resolveGraphValidationPlanStatus,
   type ReviewPlanBuilder,
 } from "../review-orchestration/review-plan.ts";
 import {
@@ -180,7 +178,6 @@ import {
 } from "../review-orchestration/review-candidate-finding-handler.ts";
 import {
   toProductionLogBudgetReasoning,
-  toProductionLogTurnBudgetFields,
 } from "../review-audit/production-log-projection.ts";
 import {
   createInlineReviewPublisher,
@@ -279,6 +276,7 @@ import {
   buildReviewFileRiskScores,
   resolveReviewLargePrTriage,
 } from "./review-large-pr-triage.ts";
+import { buildReviewPlanPublication } from "./review-plan-publication-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1088,69 +1086,26 @@ export function createReviewHandler(deps: {
         tieredFiles = runtimePlan.tieredFiles;
         promptFiles = runtimePlan.promptFiles;
 
-        const reviewPlanLinesChangedSource = diffAnalysisLinesChanged === 0 && prApiLinesChanged > 0
-          ? "github-pr-api-fallback"
-          : "local-diff";
-        const reviewPlanGraphValidation = resolveGraphValidationPlanStatus({
-          configEnabled: config.review.graphValidation.enabled,
-          graphQueryAvailable: Boolean(reviewGraphQuery),
-          trivialChangeBypass: graphQueryBypassedForTrivialChange,
-          graphBlastRadiusAvailable: Boolean(graphBlastRadius),
-        });
-        const reviewPlanPublication = buildReviewPlanPublicationContext({
-          input: {
-            task: {
-              taskType: reviewRouting.taskType,
-              routingReason: reviewRouting.routingReason,
-            },
-            change: {
-              changedFileCount: changedFiles.length,
-              linesChanged: reviewRoutingLinesChanged,
-              linesChangedSource: reviewPlanLinesChangedSource,
-            },
-            budget: {
-              timeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds,
-              ...toProductionLogTurnBudgetFields(
-                reviewMaxTurnsOverride ?? config.maxTurns,
-                reviewMaxTurnsOverride !== undefined ? "dynamic-risk" : "config",
-              ),
-            },
-            context: {
-              sources: [
-                "diff-analysis",
-                ...(retrievalCtx ? ["retrieval"] : []),
-                ...(matchedPathInstructions.length > 0 ? ["path-instructions"] : []),
-                ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
-                ...(reviewBoundedness ? ["review-boundedness"] : []),
-              ],
-            },
-            gates: {
-              enabled: ["review-routing", "budget-estimation", "review-boundedness", ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : [])],
-              current: [
-                "review-routing",
-                "budget-estimation",
-                ...(repoDoctrineProjection.enabled ? ["repo-doctrine"] : []),
-                ...(reviewBoundedness ? ["review-boundedness"] : []),
-              ],
-            },
-            policy: {
-              publish: "canonical-visible-surface",
-              tools: "github-comment-tools",
-              retry: "budget-resilience",
-            },
-            graphValidation: reviewPlanGraphValidation,
-            candidateFinding: {
-              mode: "preferred",
-            },
-            repoDoctrine: repoDoctrineReviewSurface,
-          },
+        const reviewPlanPublication = buildReviewPlanPublication({
           builder: reviewPlanBuilder,
-          degraded: {
-            reason: "builder-error",
-            message: "ReviewPlan builder failed",
-            taskType: reviewRouting.taskType,
-            routingReason: reviewRouting.routingReason,
-          },
+          reviewRouting,
+          changedFileCount: changedFiles.length,
+          reviewRoutingLinesChanged,
+          diffAnalysisLinesChanged,
+          prApiLinesChanged,
+          timeoutSeconds: config.timeoutSeconds,
+          appliedTimeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds,
+          maxTurns: config.maxTurns,
+          reviewMaxTurnsOverride,
+          retrievalContextAvailable: Boolean(retrievalCtx),
+          matchedPathInstructionCount: matchedPathInstructions.length,
+          repoDoctrineEnabled: repoDoctrineProjection.enabled,
+          repoDoctrineReviewSurface,
+          reviewBoundednessAvailable: Boolean(reviewBoundedness),
+          graphValidationConfigEnabled: config.review.graphValidation.enabled,
+          graphQueryAvailable: Boolean(reviewGraphQuery),
+          graphQueryBypassedForTrivialChange,
+          graphBlastRadiusAvailable: Boolean(graphBlastRadius),
         });
         const {
           plan: reviewPlan,
