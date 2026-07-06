@@ -9,6 +9,7 @@ type ReviewIncrementalDiffKnowledgeStore = {
 };
 
 type ReviewIncrementalDiffLogger = Pick<Logger, "info" | "warn">;
+type ReviewIncrementalFilterLogger = Pick<Logger, "info">;
 
 export async function resolveReviewIncrementalDiff(params: {
   knowledgeStore: ReviewIncrementalDiffKnowledgeStore | undefined;
@@ -48,4 +49,28 @@ export async function resolveReviewIncrementalDiff(params: {
     );
     return null;
   }
+}
+
+export function resolveReviewFilesForIncrementalReview(params: {
+  changedFiles: readonly string[];
+  incrementalResult: IncrementalDiffResult | null | undefined;
+  baseLog: Record<string, unknown>;
+  logger: ReviewIncrementalFilterLogger;
+}): string[] {
+  if (params.incrementalResult?.mode !== "incremental" || params.incrementalResult.changedFilesSinceLastReview.length === 0) {
+    return [...params.changedFiles];
+  }
+
+  const incrementalSet = new Set(params.incrementalResult.changedFilesSinceLastReview);
+  const reviewFiles = params.changedFiles.filter(file => incrementalSet.has(file));
+  params.logger.info(
+    {
+      ...params.baseLog,
+      gate: "incremental-filter",
+      fullCount: params.changedFiles.length,
+      incrementalCount: reviewFiles.length,
+    },
+    "Filtered to incremental changed files",
+  );
+  return reviewFiles;
 }

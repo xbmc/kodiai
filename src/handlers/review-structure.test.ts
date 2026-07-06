@@ -408,6 +408,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-incremental-diff.ts");
   });
 
+  test("keeps incremental review file filtering out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let reviewFiles = changedFiles;");
+    expect(source).not.toContain("new Set(incrementalResult.changedFilesSinceLastReview)");
+    expect(source).not.toContain("Filtered to incremental changed files");
+    expect(source).toContain("resolveReviewFilesForIncrementalReview");
+    expect(source).toContain("./review-incremental-diff.ts");
+  });
+
   test("keeps skipPaths matching and skip logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

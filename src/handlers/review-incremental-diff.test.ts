@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
-import { resolveReviewIncrementalDiff } from "./review-incremental-diff.ts";
+import {
+  resolveReviewFilesForIncrementalReview,
+  resolveReviewIncrementalDiff,
+} from "./review-incremental-diff.ts";
 
 function makeLogger() {
   const entries: Array<{ level: string; data: Record<string, unknown>; message: string }> = [];
@@ -111,5 +114,66 @@ describe("resolveReviewIncrementalDiff", () => {
         message: "Incremental diff computation failed (fail-open, full review)",
       },
     ]);
+  });
+});
+
+describe("resolveReviewFilesForIncrementalReview", () => {
+  test("filters changed files to the incremental set and logs the reduction", () => {
+    const { logger, entries } = makeLogger();
+
+    const reviewFiles = resolveReviewFilesForIncrementalReview({
+      changedFiles: ["src/app.ts", "src/other.ts", "README.md"],
+      incrementalResult,
+      baseLog: { deliveryId: "delivery" },
+      logger,
+    });
+
+    expect(reviewFiles).toEqual(["src/app.ts"]);
+    expect(entries).toEqual([
+      {
+        level: "info",
+        data: {
+          deliveryId: "delivery",
+          gate: "incremental-filter",
+          fullCount: 3,
+          incrementalCount: 1,
+        },
+        message: "Filtered to incremental changed files",
+      },
+    ]);
+  });
+
+  test("keeps all changed files without logging when incremental filtering is unavailable", () => {
+    const { logger, entries } = makeLogger();
+
+    expect(resolveReviewFilesForIncrementalReview({
+      changedFiles: ["src/app.ts"],
+      incrementalResult: null,
+      baseLog: { deliveryId: "delivery" },
+      logger,
+    })).toEqual(["src/app.ts"]);
+
+    expect(resolveReviewFilesForIncrementalReview({
+      changedFiles: ["src/app.ts"],
+      incrementalResult: { ...incrementalResult, mode: "full", changedFilesSinceLastReview: [] },
+      baseLog: { deliveryId: "delivery" },
+      logger,
+    })).toEqual(["src/app.ts"]);
+
+    expect(entries).toEqual([]);
+  });
+
+  test("keeps all changed files when incremental mode has no changed files since last review", () => {
+    const { logger, entries } = makeLogger();
+
+    const reviewFiles = resolveReviewFilesForIncrementalReview({
+      changedFiles: ["src/app.ts"],
+      incrementalResult: { ...incrementalResult, changedFilesSinceLastReview: [] },
+      baseLog: { deliveryId: "delivery" },
+      logger,
+    });
+
+    expect(reviewFiles).toEqual(["src/app.ts"]);
+    expect(entries).toEqual([]);
   });
 });

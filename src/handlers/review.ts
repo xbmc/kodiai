@@ -276,7 +276,10 @@ import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
 import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
-import { resolveReviewIncrementalDiff } from "./review-incremental-diff.ts";
+import {
+  resolveReviewFilesForIncrementalReview,
+  resolveReviewIncrementalDiff,
+} from "./review-incremental-diff.ts";
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 
@@ -920,16 +923,12 @@ export function createReviewHandler(deps: {
           shadowSpecialistSubflow,
         });
 
-        // In incremental mode, further filter to only files that changed since last review
-        let reviewFiles = changedFiles;
-        if (incrementalResult?.mode === "incremental" && incrementalResult.changedFilesSinceLastReview.length > 0) {
-          const incrementalSet = new Set(incrementalResult.changedFilesSinceLastReview);
-          reviewFiles = changedFiles.filter(f => incrementalSet.has(f));
-          logger.info(
-            { ...baseLog, gate: "incremental-filter", fullCount: changedFiles.length, incrementalCount: reviewFiles.length },
-            "Filtered to incremental changed files",
-          );
-        }
+        const reviewFiles = resolveReviewFilesForIncrementalReview({
+          changedFiles,
+          incrementalResult,
+          baseLog,
+          logger,
+        });
 
         const numstatLines = diffContext.numstatLines;
         const diffContent = changedFiles.length <= 200 ? diffContext.diffContent : undefined;
