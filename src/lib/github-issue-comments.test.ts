@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   findIssueCommentByMarkerPaged,
@@ -10,6 +12,69 @@ import {
   listReviewCommentsPaged,
   scanIssueCommentsPaged,
 } from "./github-issue-comments.ts";
+
+const ALLOWED_DIRECT_MARKER_SCAN_FILES = new Set([
+  "src/lib/github-issue-comments.ts",
+]);
+
+function productionTypeScriptFiles(): Record<string, string> {
+  const repoRoot = join(import.meta.dir, "..", "..");
+  const files: Record<string, string> = {};
+
+  function scan(dir: string): void {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      const stat = statSync(path);
+      if (stat.isDirectory()) {
+        scan(path);
+        continue;
+      }
+      if (!path.endsWith(".ts") || path.endsWith(".test.ts") || path.endsWith("test-helpers.ts")) {
+        continue;
+      }
+
+      files[relative(repoRoot, path)] = readFileSync(path, "utf8");
+    }
+  }
+
+  scan(join(repoRoot, "src"));
+  return files;
+}
+
+function findDirectMarkerCommentScans(files: Record<string, string>): string[] {
+  const listCommentsPattern =
+    /\boctokit(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\.\s*rest\s*\.\s*(?:issues|pulls)\s*\.\s*(?:listComments|listReviewComments|listReviews)\s*\(/s;
+  const markerBodyMatchPattern =
+    /(?:body\s*\?\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER|body\s*\?\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER)/s;
+
+  return Object.entries(files)
+    .filter(([file]) => !ALLOWED_DIRECT_MARKER_SCAN_FILES.has(file))
+    .filter(([, source]) => listCommentsPattern.test(source) && markerBodyMatchPattern.test(source))
+    .map(([file]) => file)
+    .sort();
+}
+
+describe("comment marker scan architecture", () => {
+  test("detects direct marker scans that bypass the paged helpers", () => {
+    expect(findDirectMarkerCommentScans({
+      "src/handlers/unsafe.ts": `
+        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes(marker));
+      `,
+      "src/handlers/safe.ts": `
+        return findIssueCommentByMarkerPaged(octokit, { owner, repo, issueNumber, marker });
+      `,
+      "src/lib/github-issue-comments.ts": `
+        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes(params.marker));
+      `,
+    })).toEqual(["src/handlers/unsafe.ts"]);
+  });
+
+  test("keeps production marker lookups behind the paged comment helpers", () => {
+    expect(findDirectMarkerCommentScans(productionTypeScriptFiles())).toEqual([]);
+  });
+});
 
 describe("findIssueCommentByMarkerPaged", () => {
   test("lists issue comments across pages", async () => {
