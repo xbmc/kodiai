@@ -153,6 +153,15 @@ describe("mention handler structure", () => {
     expect(source).toContain("evaluateMentionConversationLimit");
   });
 
+  test("keeps successful conversation turn recording out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("conversationTurnStore.recordSuccessfulTurn(conversationKey)");
+    expect(source).not.toContain("const conversationKey = buildMentionConversationKey({");
+    expect(source).toContain("recordSuccessfulMentionConversationTurn");
+    expect(source).toContain("./mention-conversation-recording.ts");
+  });
+
   test("keeps write request context gating out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

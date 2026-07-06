@@ -78,9 +78,9 @@ import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.
 import { isMentionAuthorAllowed } from "./mention-allowed-users.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
-  buildMentionConversationKey,
   evaluateMentionConversationLimit,
 } from "./mention-conversation-limit.ts";
+import { recordSuccessfulMentionConversationTurn } from "./mention-conversation-recording.ts";
 import { maybePostMentionCostWarning } from "./mention-cost-warning.ts";
 import {
   buildAcceptedMentionHandles,
@@ -1104,15 +1104,15 @@ export function createMentionHandler(deps: {
           logMentionExecutionCompleted();
         }
 
-        if (mention.inReplyToId !== undefined && result.conclusion === "success") {
-          const conversationKey = buildMentionConversationKey({
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-            prNumber: mention.prNumber,
-          });
-          conversationTurnStore.recordSuccessfulTurn(conversationKey);
-        }
+        recordSuccessfulMentionConversationTurn({
+          owner: mention.owner,
+          repo: mention.repo,
+          issueNumber: mention.issueNumber,
+          prNumber: mention.prNumber,
+          inReplyToId: mention.inReplyToId,
+          conclusion: result.conclusion,
+          recordSuccessfulTurn: (key) => conversationTurnStore.recordSuccessfulTurn(key),
+        });
 
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
