@@ -90,16 +90,8 @@ import {
   type ReviewCandidateApprovalResult,
 } from "../review-orchestration/review-candidate-approval.ts";
 import {
-  convertPublishedCandidateResultsToProcessedFindings,
-  toReviewCandidatePublicationAdapterSummary,
-  type ReviewCandidatePublishedFindingResult,
   type ReviewCandidatePublicationAdapterResult,
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
-import {
-  classifyReviewCandidatePublicationRuntime,
-  createCandidatePublicationFlowEvidence,
-} from "../review-orchestration/review-candidate-publication-runtime.ts";
-import { logReviewCandidatePublicationRuntime } from "../review-orchestration/review-candidate-publication-log.ts";
 import {
   isCandidatePublicationDraft,
   mergeCandidatePublishedFindings,
@@ -259,6 +251,7 @@ import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candida
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
 import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
 import { publishReviewCandidateInlineComments } from "./review-candidate-inline-publication.ts";
+import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1542,32 +1535,22 @@ export function createReviewHandler(deps: {
           candidateInlinePublication.candidateVerificationPublicationEvidence
           ?? reviewCandidateVerificationPublicationEvidence;
 
-        const reviewCandidatePublishedFindings: ReviewCandidatePublishedFindingResult =
-          convertPublishedCandidateResultsToProcessedFindings({
-            payloads: reviewCandidatePublicationAdapter.payloads,
-            results: candidatePublisherResults,
-          });
-        const reviewCandidatePublicationRuntime = classifyReviewCandidatePublicationRuntime({
+        const reviewCandidatePublicationContext = resolveReviewCandidatePublicationRuntimeContext({
           approval: reviewCandidateApprovalResult,
-          adapter: reviewCandidatePublicationAdapter.summary,
-          publisher: reviewCandidatePublishedFindings.summary,
-          convertedProcessedFindingCount: reviewCandidatePublishedFindings.findings.length,
+          adapter: reviewCandidatePublicationAdapter,
+          publisherResults: candidatePublisherResults,
           directPublication: {
             attempted: directPublicationAttempted,
             allowed: directFallbackAllowed,
-            published: directPublicationAttempted ? Math.max(extractedFindings.length, result.published ? 1 : 0) : 0,
-            reason: directFallbackAllowed ? "direct-fallback-audited" : "direct-fallback-disallowed",
+            publishedFindingCount: extractedFindings.length,
+            resultPublished: result.published === true,
           },
-        });
-        const reviewCandidatePublicationFlow = createCandidatePublicationFlowEvidence({
-          payloadFingerprints: reviewCandidatePublicationAdapter.payloads.map((payload) => payload.candidateFingerprint),
-          publisher: reviewCandidatePublishedFindings.summary,
-        });
-        logReviewCandidatePublicationRuntime({
           logger,
           baseLog,
-          runtime: reviewCandidatePublicationRuntime,
         });
+        const reviewCandidatePublishedFindings = reviewCandidatePublicationContext.publishedFindings;
+        const reviewCandidatePublicationRuntime = reviewCandidatePublicationContext.runtime;
+        const reviewCandidatePublicationFlow = reviewCandidatePublicationContext.flow;
 
         const directProcessedFindings = (reducerResult.findings as ProcessedReviewFinding[])
           .filter((finding) => !isCandidatePublicationDraft(finding));
@@ -1592,7 +1575,7 @@ export function createReviewHandler(deps: {
         const prioritizationStats = reducerResult.prioritizationStats;
         const reviewReducerDetailsSummary = reducerResult.detailsSummary;
         const reviewCandidatePublicationAdapterDetailsSummary =
-          toReviewCandidatePublicationAdapterSummary(reviewCandidatePublicationAdapter.summary);
+          reviewCandidatePublicationContext.adapterDetailsSummary;
         const reviewFindingLifecycleResult: AttachReviewFindingLifecycleResult = attachReviewFindingLifecycle({
           source: "automatic",
           trigger: "pull_request",

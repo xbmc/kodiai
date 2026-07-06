@@ -247,6 +247,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-inline-publication.ts");
   });
 
+  test("keeps candidate publication runtime projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("convertPublishedCandidateResultsToProcessedFindings({");
+    expect(source).not.toContain("classifyReviewCandidatePublicationRuntime({");
+    expect(source).not.toContain("createCandidatePublicationFlowEvidence({");
+    expect(source).not.toContain("logReviewCandidatePublicationRuntime({");
+    expect(source).not.toContain("toReviewCandidatePublicationAdapterSummary(reviewCandidatePublicationAdapter.summary)");
+    expect(source).toContain("resolveReviewCandidatePublicationRuntimeContext");
+    expect(source).toContain("./review-candidate-publication-runtime-context.ts");
+  });
+
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
