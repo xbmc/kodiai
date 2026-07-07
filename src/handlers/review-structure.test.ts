@@ -285,9 +285,22 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("await telemetryStore.recordResilienceEvent?.({");
     expect(source).not.toMatch(/recordReviewResilienceEventFailOpen\(\{[\s\S]{0,200}entry:\s*\{/);
-    expect(source).toContain("buildReviewTimeoutResilienceTelemetryEntry");
-    expect(source).toContain("recordReviewResilienceEventFailOpen");
-    expect(source).toContain("./review-resilience-telemetry.ts");
+    expect(source).toContain("recordReviewTimeoutResilienceTelemetry");
+    expect(source).toContain("./review-timeout-resilience-telemetry.ts");
+  });
+
+  test("keeps timeout resilience telemetry entry assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const timeoutTelemetrySource = readFileSync(
+      new URL("./review-timeout-resilience-telemetry.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("buildReviewTimeoutResilienceTelemetryEntry({");
+    expect(source).not.toContain("recordReviewResilienceEventFailOpen({");
+    expect(source).toContain("recordReviewTimeoutResilienceTelemetry");
+    expect(timeoutTelemetrySource).toContain("buildReviewTimeoutResilienceTelemetryEntry({");
+    expect(timeoutTelemetrySource).toContain("recordReviewResilienceEventFailOpen({");
   });
 
   test("keeps review knowledge persistence mechanics out of the monster handler", () => {

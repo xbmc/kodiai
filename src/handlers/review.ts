@@ -135,10 +135,7 @@ import {
 import {
   recordReviewPostExecutionSideEffects,
 } from "./review-post-execution-side-effects.ts";
-import {
-  buildReviewTimeoutResilienceTelemetryEntry,
-  recordReviewResilienceEventFailOpen,
-} from "./review-resilience-telemetry.ts";
+import { recordReviewTimeoutResilienceTelemetry } from "./review-timeout-resilience-telemetry.ts";
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
@@ -1721,34 +1718,30 @@ export function createReviewHandler(deps: {
                 renderReviewDetailsBody,
               });
 
-              // Structured resilience telemetry (best-effort)
-              if (config.telemetry.enabled) {
-                const resilienceTelemetryResult = await recordReviewResilienceEventFailOpen({
-                  telemetryStore,
-                  logger,
-                  entry: buildReviewTimeoutResilienceTelemetryEntry({
-                    deliveryId: event.id,
-                    repo: `${apiOwner}/${apiRepo}`,
-                    prNumber: pr.number,
-                    prAuthor: pr.user.login,
-                    eventType: `pull_request.${payload.action}`,
-                    reviewOutputKey,
-                    executionConclusion,
-                    hadInlineOutput: hasPublishedInlines,
-                    checkpointFilesReviewed: timeoutReviewedFiles.length,
-                    checkpointFilesInspected: timeoutInspectedFiles.length,
-                    checkpointFindingCount: timeoutFindingCount,
-                    checkpointTotalFiles: timeoutTotalFiles,
-                    partialCommentId,
-                    recentTimeouts,
-                    chronicTimeout: isChronicTimeout,
-                    retry: { enqueued: false },
-                    timeoutClassificationTelemetry,
-                  }),
-                });
-                if (!resilienceTelemetryResult.ok) {
-                  continuationProjectionDegraded = true;
-                }
+              const timeoutResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({
+                telemetryEnabled: config.telemetry.enabled,
+                telemetryStore,
+                logger,
+                deliveryId: event.id,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                prAuthor: pr.user.login,
+                eventType: `pull_request.${payload.action}`,
+                reviewOutputKey,
+                executionConclusion,
+                hadInlineOutput: hasPublishedInlines,
+                checkpointFilesReviewed: timeoutReviewedFiles.length,
+                checkpointFilesInspected: timeoutInspectedFiles.length,
+                checkpointFindingCount: timeoutFindingCount,
+                checkpointTotalFiles: timeoutTotalFiles,
+                partialCommentId,
+                recentTimeouts,
+                chronicTimeout: isChronicTimeout,
+                retry: { enqueued: false },
+                timeoutClassificationTelemetry,
+              });
+              if (timeoutResilienceTelemetry.projectionDegraded) {
+                continuationProjectionDegraded = true;
               }
               }
             }
@@ -1801,41 +1794,37 @@ export function createReviewHandler(deps: {
                 phase: "claimed",
               });
 
-              // Update resilience telemetry with retry plan
-              if (config.telemetry.enabled) {
-                const resilienceTelemetryResult = await recordReviewResilienceEventFailOpen({
-                  telemetryStore,
-                  logger,
-                  entry: buildReviewTimeoutResilienceTelemetryEntry({
-                    deliveryId: event.id,
-                    repo: `${apiOwner}/${apiRepo}`,
-                    prNumber: pr.number,
-                    prAuthor: pr.user.login,
-                    eventType: `pull_request.${payload.action}`,
-                    reviewOutputKey,
-                    executionConclusion,
-                    hadInlineOutput: hasPublishedInlines,
-                    checkpointFilesReviewed: timeoutReviewedFiles.length,
-                    checkpointFilesInspected: timeoutInspectedFiles.length,
-                    checkpointFindingCount: timeoutFindingCount,
-                    checkpointTotalFiles: timeoutTotalFiles,
-                    partialCommentId,
-                    recentTimeouts,
-                    chronicTimeout: isChronicTimeout,
-                    retry: {
-                      enqueued: true,
-                      filesCount: retryFiles.length,
-                      scopeRatio: retryScopeRatio,
-                      timeoutSeconds: retryTimeout,
-                      riskLevel: retryTimeoutEstimate.riskLevel,
-                      checkpointEnabled: retryCheckpointEnabled,
-                    },
-                    timeoutClassificationTelemetry,
-                  }),
-                });
-                if (!resilienceTelemetryResult.ok) {
-                  continuationProjectionDegraded = true;
-                }
+              const retryResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({
+                telemetryEnabled: config.telemetry.enabled,
+                telemetryStore,
+                logger,
+                deliveryId: event.id,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                prAuthor: pr.user.login,
+                eventType: `pull_request.${payload.action}`,
+                reviewOutputKey,
+                executionConclusion,
+                hadInlineOutput: hasPublishedInlines,
+                checkpointFilesReviewed: timeoutReviewedFiles.length,
+                checkpointFilesInspected: timeoutInspectedFiles.length,
+                checkpointFindingCount: timeoutFindingCount,
+                checkpointTotalFiles: timeoutTotalFiles,
+                partialCommentId,
+                recentTimeouts,
+                chronicTimeout: isChronicTimeout,
+                retry: {
+                  enqueued: true,
+                  filesCount: retryFiles.length,
+                  scopeRatio: retryScopeRatio,
+                  timeoutSeconds: retryTimeout,
+                  riskLevel: retryTimeoutEstimate.riskLevel,
+                  checkpointEnabled: retryCheckpointEnabled,
+                },
+                timeoutClassificationTelemetry,
+              });
+              if (retryResilienceTelemetry.projectionDegraded) {
+                continuationProjectionDegraded = true;
               }
 
               logReviewTimeoutRetryEnqueue({
