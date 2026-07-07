@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1485);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1481);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -772,6 +772,7 @@ describe("review handler structure", () => {
 
   test("keeps executor result state projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const dispatchSource = readFileSync(new URL("./review-execution-dispatch.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("visibleBudgetState.promptSectionRecords = result.promptSections ?? visibleBudgetState.promptSectionRecords");
     expect(source).not.toContain("reviewPublishResolution = reviewOutputPublished ? \"executor\" : \"none\"");
@@ -779,20 +780,28 @@ describe("review handler structure", () => {
     expect(source).not.toContain("publicationState.executorResult = executorState.executorResult");
     expect(source).not.toContain("visibleBudgetState.promptSectionRecords = executorState.promptSectionRecords");
     expect(source).not.toContain("timingState.executorPhaseTimings = executorState.executorPhaseTimings");
-    expect(source).toContain("applyReviewExecutorState");
-    expect(source).toContain("projectReviewExecutorState");
-    expect(source).toContain("./review-executor-state.ts");
+    expect(source).not.toContain("const executorState = projectReviewExecutorState({");
+    expect(source).not.toContain("applyReviewExecutorState({");
+    expect(source).toContain("dispatchInitialReviewExecution");
+    expect(source).toContain("./review-execution-dispatch.ts");
+    expect(dispatchSource).toContain("./review-executor-state.ts");
+    expect(dispatchSource).toContain("projectReviewExecutorState");
+    expect(dispatchSource).toContain("applyReviewExecutorState");
   });
 
   test("keeps initial review executor context projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(new URL("./review-execution-context.ts", import.meta.url), "utf8");
+    const dispatchSource = readFileSync(new URL("./review-execution-dispatch.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const result = await executor.execute({");
+    expect(source).not.toContain("const result = await executor.execute(buildReviewExecutionContext({");
     expect(source).not.toContain("triggerBody: reviewPrompt,\n          prompt: reviewPrompt");
-    expect(source).toContain("executor.execute(buildReviewExecutionContext({");
+    expect(source).toContain("dispatchInitialReviewExecution");
     expect(source).toContain("./review-execution-context.ts");
+    expect(source).toContain("./review-execution-dispatch.ts");
     expect(contextSource).toContain("export function buildReviewExecutionContext");
+    expect(dispatchSource).toContain("execute(buildReviewExecutionContext(");
   });
 
   test("keeps retry review executor context projection out of the monster handler", () => {

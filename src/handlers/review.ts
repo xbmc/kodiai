@@ -73,8 +73,8 @@ import {
 } from "./review-incremental-diff.ts";
 import { resolveReviewFileSelectionContext } from "./review-file-selection-context.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
-import { applyReviewExecutorState, projectReviewExecutorState } from "./review-executor-state.ts";
-import { buildReviewBotHandles, buildReviewExecutionContext } from "./review-execution-context.ts";
+import { dispatchInitialReviewExecution } from "./review-execution-dispatch.ts";
+import { buildReviewBotHandles } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import {
   buildReviewCandidatePublicationPreparationAdapters,
@@ -643,40 +643,36 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           baseLog,
         });
 
-        // Execute review via Claude
-        setReviewWorkPhase("executor-dispatch");
-        const result = await executor.execute(buildReviewExecutionContext({
-          workspace,
-          installationId: event.installationId,
-          owner: apiOwner,
-          repo: apiRepo,
-          prNumber: pr.number,
-          appSlug: githubApp.getAppSlug(),
-          action: payload.action,
-          taskType: reviewRouting.taskType,
-          reviewPrompt,
-          reviewPromptSections,
-          reviewOutputKey,
-          deliveryId: event.id,
-          candidateVerificationContext,
-          knowledgeStore,
-          changedFileCount: changedFiles.length,
-          checkpointEnabled,
-          prDiffCommentabilityIndex,
-          appliedTimeoutBudget,
-          reviewMaxTurnsOverride,
-        }));
-        const executorState = projectReviewExecutorState({
-          result,
+        const { result } = await dispatchInitialReviewExecution({
+          executor,
+          executionContext: {
+            workspace,
+            installationId: event.installationId,
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            appSlug: githubApp.getAppSlug(),
+            action: payload.action,
+            taskType: reviewRouting.taskType,
+            reviewPrompt,
+            reviewPromptSections,
+            reviewOutputKey,
+            deliveryId: event.id,
+            candidateVerificationContext,
+            knowledgeStore,
+            changedFileCount: changedFiles.length,
+            checkpointEnabled,
+            prDiffCommentabilityIndex,
+            appliedTimeoutBudget,
+            reviewMaxTurnsOverride,
+          },
           currentPromptSectionRecords: visibleBudgetState.promptSectionRecords,
-        });
-        applyReviewExecutorState({
-          projection: executorState,
           publicationState,
           visibleBudgetState,
           timingState,
           reviewPhaseTimings,
           recordExecutorPhaseTimings: recordReviewExecutorPhaseTimings,
+          setReviewWorkPhase,
         });
 
         let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
