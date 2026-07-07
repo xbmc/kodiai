@@ -136,7 +136,7 @@ import {
 import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
-import { buildReviewPromptResultWithCache } from "./review-prompt-cache-runtime.ts";
+import { buildRetryReviewPromptRuntime, buildReviewPromptResultWithCache } from "./review-prompt-cache-runtime.ts";
 import { publishReviewFailureFallback } from "./review-failure-publication.ts";
 import {
   publishReviewExecutionErrorFallback,
@@ -2076,57 +2076,27 @@ export function createReviewHandler(deps: {
                       promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords),
                       cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []),
                     });
-                    const retryPromptCacheState: ReviewPromptCacheState = {
-                      status: retryReviewPromptDerivedCacheStatus,
-                      reason: retryReviewPromptDerivedCacheReason,
-                    };
-                    const retryPromptResult = await buildReviewPromptResultWithCache({
-                      cacheQuery: `retry:${pr.number}:${retryReviewOutputKey}`,
+                    const retryPromptRuntime = await buildRetryReviewPromptRuntime({
+                      deliveryId: retryDeliveryId,
+                      repo: `${apiOwner}/${apiRepo}`,
+                      prNumber: pr.number,
+                      taskType: reviewRouting.taskType,
+                      reviewOutputKey: retryReviewOutputKey,
                       context: retryPromptBuildContext,
-                      statusTarget: retryPromptCacheState,
                       promptBuilder: reviewPromptBuilder,
                       cache: reviewPromptDerivedCache,
                       getCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
                       buildFingerprint: buildReviewPromptFingerprint,
+                      visibleBudgetState,
+                      telemetryEnabled: config.telemetry.enabled,
+                      telemetryStore,
                       logger,
+                      baseLog,
                     });
-                    retryReviewPromptDerivedCacheStatus = retryPromptCacheState.status;
-                    retryReviewPromptDerivedCacheReason = retryPromptCacheState.reason;
-                    const retryPrompt = retryPromptResult.text;
-                    const retryPromptSections = [
-                      buildPromptSectionRecord({
-                        deliveryId: retryDeliveryId,
-                        repo: `${apiOwner}/${apiRepo}`,
-                        taskType: reviewRouting.taskType,
-                        promptKind: "review.user-prompt",
-                        sections: retryPromptResult.sections,
-                      }),
-                    ];
-                    logger.info(
-                      {
-                        ...baseLog,
-                        deliveryId: retryDeliveryId,
-                        gate: "review-derived-prompt-cache",
-                        gateResult: retryReviewPromptDerivedCacheStatus,
-                        ...(retryReviewPromptDerivedCacheReason ? { reason: retryReviewPromptDerivedCacheReason } : {}),
-                      },
-                      "Resolved retry review prompt derived-cache state",
-                    );
-                    const retryPromptCacheEvent = buildPromptReviewCacheEvent({
-                      deliveryId: retryDeliveryId,
-                      repo: `${apiOwner}/${apiRepo}`,
-                      prNumber: pr.number,
-                      state: retryPromptCacheState,
-                    });
-                    visibleBudgetState.reviewCacheObservations.push(retryPromptCacheEvent);
-                    visibleBudgetState.refresh();
-                    if (config.telemetry.enabled) {
-                      await recordReviewCacheEventFailOpen({
-                        telemetryStore,
-                        logger,
-                        entry: retryPromptCacheEvent,
-                      });
-                    }
+                    retryReviewPromptDerivedCacheStatus = retryPromptRuntime.cacheStatus;
+                    retryReviewPromptDerivedCacheReason = retryPromptRuntime.cacheReason;
+                    const retryPrompt = retryPromptRuntime.prompt;
+                    const retryPromptSections = retryPromptRuntime.promptSections;
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({

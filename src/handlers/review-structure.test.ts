@@ -262,6 +262,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-prompt-cache-runtime.ts");
   });
 
+  test("keeps retry review prompt cache runtime out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const retryPromptCacheState: ReviewPromptCacheState =");
+    expect(source).not.toContain("const retryPromptCacheEvent = buildPromptReviewCacheEvent({");
+    expect(source).not.toContain("\"Resolved retry review prompt derived-cache state\"");
+    expect(source).toContain("buildRetryReviewPromptRuntime");
+    expect(promptCacheRuntimeSource).toContain("buildRetryReviewPromptRuntime");
+    expect(promptCacheRuntimeSource).toContain("review-derived-prompt-cache");
+  });
+
   test("keeps author PR-count search cache fail-open setup out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const runtimeSource = readFileSync(new URL("./review-handler-runtime.ts", import.meta.url), "utf8");
