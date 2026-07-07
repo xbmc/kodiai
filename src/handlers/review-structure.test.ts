@@ -146,6 +146,20 @@ describe("review handler structure", () => {
     expect(runtimeSource).toContain("logReviewReducerResult");
   });
 
+  test("keeps review reducer input projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const inputSource = readFileSync(new URL("./review-reducer-input.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const commentSlopFindings = toCommentSlopReducerFindings");
+    expect(source).not.toContain("const candidateReducerFindings = toReviewCandidateReducerDrafts");
+    expect(source).not.toContain("const reviewReducerInput: ReviewReducerInput = {");
+    expect(source).toContain("buildReviewReducerInput");
+    expect(source).toContain("./review-reducer-input.ts");
+    expect(inputSource).toContain("export function buildReviewReducerInput");
+    expect(inputSource).toContain("toCommentSlopReducerFindings");
+    expect(inputSource).toContain("toReviewCandidateReducerDrafts");
+  });
+
   test("keeps timeout progress context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

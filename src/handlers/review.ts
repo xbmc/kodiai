@@ -34,7 +34,6 @@ import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import {
   reduceReviewFindings,
-  type ProcessedReviewFinding,
   type ReviewReducerInput,
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
@@ -69,10 +68,6 @@ import {
   extractFindingsFromReviewComments,
   removeFilteredInlineComments,
 } from "../review-orchestration/review-comment-finding-extraction.ts";
-import {
-  detectCommentSlopInDiff,
-  toCommentSlopReducerFindings,
-} from "../review-orchestration/comment-slop-detector.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
   buildReviewPromptFingerprint,
@@ -87,9 +82,6 @@ import {
   buildRepoDoctrineLogFields,
   toReviewPlanConfigSnapshot,
 } from "../review-orchestration/review-plan-doctrine-log.ts";
-import {
-  toReviewCandidateReducerDrafts,
-} from "../review-orchestration/review-candidate-finding-handler.ts";
 import {
   toProductionLogBudgetReasoning,
 } from "../review-audit/production-log-projection.ts";
@@ -215,6 +207,7 @@ import {
   buildReviewRetryJobQueueContext,
 } from "./review-job-context.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
+import { buildReviewReducerInput } from "./review-reducer-input.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
@@ -1038,19 +1031,12 @@ export function createReviewHandler(deps: {
           logger,
         });
 
-        const commentSlopFindings = toCommentSlopReducerFindings(
-          detectCommentSlopInDiff(diffContext.diffContent ?? ""),
-        );
-        const candidateReducerFindings = toReviewCandidateReducerDrafts(reviewCandidateFindingResult);
-        const reviewReducerInput: ReviewReducerInput = {
-          findings: [
-            ...(extractedFindings as unknown as ProcessedReviewFinding[]),
-            ...commentSlopFindings,
-            ...candidateReducerFindings,
-          ],
+        const reviewReducerInput = buildReviewReducerInput({
+          extractedFindings,
+          reviewCandidateFindingResult,
           workspaceDir: workspace.dir,
-          filesByCategory: diffAnalysis?.filesByCategory ?? {},
-          filesByLanguage: diffAnalysis?.filesByLanguage ?? {},
+          filesByCategory: diffAnalysis?.filesByCategory,
+          filesByLanguage: diffAnalysis?.filesByLanguage,
           languageRules: config.languageRules,
           reviewSuppressions: config.review.suppressions,
           minConfidence: config.review.minConfidence,
@@ -1068,13 +1054,13 @@ export function createReviewHandler(deps: {
           logger,
           baseLog,
           repo: `${apiOwner}/${apiRepo}`,
-          clusterModelStore: clusterModelStore ?? null,
-          embeddingProvider: embeddingProvider ?? null,
+          clusterModelStore,
+          embeddingProvider,
           guardrailAuditStore,
           guardrailStrictness: config.guardrails?.strictness ?? "standard",
           graphValidationLLM,
           repoDoctrine: repoDoctrineReviewSurface,
-        };
+        });
 
         const reducerResult = await runReviewReducerFailOpen({
           reducer: reviewReducer,
