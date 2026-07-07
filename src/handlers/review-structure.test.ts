@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1527);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1525);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -1298,12 +1298,16 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const projectionSource = readFileSync(new URL("./review-details-body-base.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length");
+    expect(source).not.toContain("tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd }");
+    expect(source).not.toContain("reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary");
     expect(source).not.toContain("const reviewDetailsBodyBase = {");
     expect(source).not.toContain("largePRTriage: tieredFiles.isLargePR ? {");
     expect(source).not.toContain("phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({");
-    expect(source).toContain("buildReviewDetailsBodyBase");
+    expect(source).toContain("resolveReviewDetailsBodyBase");
     expect(source).toContain("./review-details-body-base.ts");
     expect(projectionSource).toContain("export function buildReviewDetailsBodyBase");
+    expect(projectionSource).toContain("export function resolveReviewDetailsBodyBase");
     expect(projectionSource).toContain("buildReviewDetailsPhaseTimingSummary");
   });
 

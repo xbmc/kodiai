@@ -48,7 +48,7 @@ import {
   buildReviewDetailsPublicationRuntimeAdapters,
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
-import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
+import { resolveReviewDetailsBodyBase } from "./review-details-body-base.ts";
 import { buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies } from "./review-handler-failure-publication-adapter.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewSetupOctokitAdapters } from "./review-setup-octokit.ts";
@@ -881,11 +881,11 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         });
 
         let canonicalReviewDetailsBody: string | null = null;
-        const reviewDetailsBodyBase = buildReviewDetailsBodyBase({
+        const reviewDetailsBodyBase = resolveReviewDetailsBodyBase({
           reviewOutputKey,
-          filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
-          linesAdded: reviewDetailsLineCounts.linesAdded,
-          linesRemoved: reviewDetailsLineCounts.linesRemoved,
+          diffMetrics: diffAnalysis?.metrics,
+          changedFileCount: changedFiles.length,
+          reviewDetailsLineCounts,
           findingCounts,
           tieredFiles,
           reviewBoundedness,
@@ -898,18 +898,17 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           candidateVerificationPublicationEvidence: reviewCandidateVerificationPublicationEvidence,
           prioritization: prioritizationStats,
           usageLimit: result.usageLimit,
-          tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
+          tokenUsageSource: result,
           structuralImpact: structuralImpactForReview,
           reviewPlan: reviewPlanDetailsSummary,
           reviewReducer: reviewReducerDetailsSummary,
           reviewCandidateFinding: reviewCandidateFindingDetailsSummary,
-          reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
+          candidatePublicationDetails: reviewCandidatePublicationRuntime.detailsSummary,
           reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
           reviewValidationTruth: reviewValidationTruthProjection,
           phaseTimings: reviewPhaseTimings,
           publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
           totalPhaseStartAt: timingState.totalPhaseStartAt,
-          lineCountSource: reviewDetailsLineCounts.source,
         });
         const {
           renderReviewDetailsBody,
