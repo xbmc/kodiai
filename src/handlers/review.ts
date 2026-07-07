@@ -136,7 +136,10 @@ import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import { buildReviewRuntimePlan } from "./review-runtime-plan.ts";
 import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
 import { buildInitialReviewPromptContext, buildRetryReviewPromptContext } from "./review-prompt-build-context.ts";
-import { persistReviewKnowledge } from "./review-knowledge-persistence.ts";
+import {
+  buildReviewKnowledgeConfigSnapshot,
+  persistReviewKnowledge,
+} from "./review-knowledge-persistence.ts";
 import {
   completeReviewRunFailOpen,
   scheduleContributorExpertiseUpdate,
@@ -1363,14 +1366,16 @@ export function createReviewHandler(deps: {
               findingsMinor: findingCounts.minor,
               findingsTotal: processedFindings.length,
               suppressionsApplied,
-              configSnapshot: JSON.stringify({
-                mode: config.review.mode,
-                severityMinLevel: config.review.severity.minLevel,
-                focusAreas: config.review.focusAreas,
-                maxComments: config.review.maxComments,
-                suppressionCount: config.review.suppressions.length,
-                minConfidence: config.review.minConfidence,
-                profile: config.review.profile,
+              configSnapshot: buildReviewKnowledgeConfigSnapshot({
+                reviewConfig: {
+                  mode: config.review.mode,
+                  severityMinLevel: config.review.severity.minLevel,
+                  focusAreas: config.review.focusAreas,
+                  maxComments: config.review.maxComments,
+                  suppressionCount: config.review.suppressions.length,
+                  minConfidence: config.review.minConfidence,
+                  profile: config.review.profile,
+                },
                 shareGlobal: config.knowledge.shareGlobal,
                 reviewPlan: reviewPlanConfigSnapshot,
                 reviewReducer: {

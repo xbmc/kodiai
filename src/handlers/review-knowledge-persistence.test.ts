@@ -1,7 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ReviewRecord } from "../knowledge/types.ts";
 import { fingerprintFindingTitle } from "../lib/review-finding-metadata.ts";
-import { persistReviewKnowledge } from "./review-knowledge-persistence.ts";
+import {
+  buildReviewKnowledgeConfigSnapshot,
+  persistReviewKnowledge,
+} from "./review-knowledge-persistence.ts";
 
 const reviewRecord = {
   repo: "octo/repo",
@@ -16,6 +19,78 @@ const reviewRecord = {
   suppressionsApplied: 1,
   conclusion: "success",
 } satisfies ReviewRecord;
+
+describe("buildReviewKnowledgeConfigSnapshot", () => {
+  test("serializes safe review config and publication metadata without raw prompt or diff content", () => {
+    const snapshot = buildReviewKnowledgeConfigSnapshot({
+      reviewConfig: {
+        mode: "enhanced",
+        severityMinLevel: "medium",
+        focusAreas: ["correctness"],
+        maxComments: 8,
+        suppressionCount: 2,
+        minConfidence: 0.7,
+        profile: "balanced",
+      },
+      shareGlobal: true,
+      reviewPlan: {
+        status: "ok",
+        graphValidationStatus: "enabled",
+      },
+      reviewReducer: {
+        status: "degraded",
+        counts: { input: 4, output: 2 },
+        reason: "reducer fallback",
+      },
+      reviewCandidateFinding: {
+        enabled: true,
+        status: "candidate-present",
+      },
+      reviewCandidatePublication: {
+        mode: "candidate-approved",
+        prompt: "RAW BODY MUST NOT LEAK",
+      },
+      reviewCandidatePublicationFlow: {
+        outcome: "published",
+        body: "diff --git a/src/a.ts b/src/a.ts",
+      },
+    });
+
+    const parsed = JSON.parse(snapshot) as Record<string, unknown>;
+
+    expect(parsed).toMatchObject({
+      mode: "enhanced",
+      severityMinLevel: "medium",
+      focusAreas: ["correctness"],
+      maxComments: 8,
+      suppressionCount: 2,
+      minConfidence: 0.7,
+      profile: "balanced",
+      shareGlobal: true,
+      reviewPlan: {
+        status: "ok",
+        graphValidationStatus: "enabled",
+      },
+      reviewReducer: {
+        status: "degraded",
+        counts: { input: 4, output: 2 },
+        reason: "reducer fallback",
+      },
+      reviewCandidateFinding: {
+        enabled: true,
+        status: "candidate-present",
+      },
+      reviewCandidatePublication: {
+        mode: "candidate-approved",
+      },
+      reviewCandidatePublicationFlow: {
+        outcome: "published",
+      },
+    });
+    expect(snapshot).not.toContain("RAW BODY MUST NOT LEAK");
+    expect(snapshot).not.toContain("diff --git");
+  });
+});
 
 describe("persistReviewKnowledge", () => {
   test("records the review, findings, and suppression log rows", async () => {

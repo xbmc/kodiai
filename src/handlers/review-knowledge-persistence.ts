@@ -14,6 +14,39 @@ type ReviewKnowledgeStore = Pick<
   "recordReview" | "recordFindings" | "recordSuppressionLog" | "recordGlobalPattern"
 >;
 
+const UNSAFE_CONFIG_SNAPSHOT_KEYS = new Set([
+  "body",
+  "diff",
+  "diffContent",
+  "prompt",
+  "rawBody",
+  "rawDiff",
+  "rawPrompt",
+  "resultText",
+]);
+
+export type ReviewKnowledgeConfigSnapshotParams = {
+  reviewConfig: {
+    mode: string;
+    severityMinLevel: string;
+    focusAreas: readonly string[];
+    maxComments: number;
+    suppressionCount: number;
+    minConfidence: number;
+    profile: string | null | undefined;
+  };
+  shareGlobal: boolean;
+  reviewPlan: unknown;
+  reviewReducer: {
+    status: string;
+    counts: unknown;
+    reason?: string;
+  };
+  reviewCandidateFinding: unknown;
+  reviewCandidatePublication: unknown;
+  reviewCandidatePublicationFlow: unknown;
+};
+
 export type ReviewKnowledgeFinding = {
   commentId?: number;
   filePath: string;
@@ -29,6 +62,43 @@ export type ReviewKnowledgeFinding = {
 
 export type ReviewKnowledgePersistenceResult =
   Result<{ reviewId: number }>;
+
+function sanitizeConfigSnapshotValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeConfigSnapshotValue(item));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (UNSAFE_CONFIG_SNAPSHOT_KEYS.has(key)) continue;
+    sanitized[key] = sanitizeConfigSnapshotValue(child);
+  }
+  return sanitized;
+}
+
+export function buildReviewKnowledgeConfigSnapshot(
+  params: ReviewKnowledgeConfigSnapshotParams,
+): string {
+  return JSON.stringify({
+    mode: params.reviewConfig.mode,
+    severityMinLevel: params.reviewConfig.severityMinLevel,
+    focusAreas: params.reviewConfig.focusAreas,
+    maxComments: params.reviewConfig.maxComments,
+    suppressionCount: params.reviewConfig.suppressionCount,
+    minConfidence: params.reviewConfig.minConfidence,
+    profile: params.reviewConfig.profile,
+    shareGlobal: params.shareGlobal,
+    reviewPlan: sanitizeConfigSnapshotValue(params.reviewPlan),
+    reviewReducer: sanitizeConfigSnapshotValue(params.reviewReducer),
+    reviewCandidateFinding: sanitizeConfigSnapshotValue(params.reviewCandidateFinding),
+    reviewCandidatePublication: sanitizeConfigSnapshotValue(params.reviewCandidatePublication),
+    reviewCandidatePublicationFlow: sanitizeConfigSnapshotValue(params.reviewCandidatePublicationFlow),
+  });
+}
 
 export async function persistReviewKnowledge(params: {
   knowledgeStore: ReviewKnowledgeStore;
