@@ -26,10 +26,12 @@ describe("mention handler structure", () => {
   test("keeps same-repo PR write idempotency helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const normalizeName =");
     expect(source).not.toContain("git -C ${workspace.dir} log -n 50");
-    expect(source).toContain("./mention-write-output-routing.ts");
+    expect(source).toContain("./mention-post-executor-publication.ts");
+    expect(postExecutorSource).toContain("./mention-write-output-routing.ts");
     expect(routingSource).toContain("./mention-pr-write.ts");
   });
 
@@ -102,24 +104,28 @@ describe("mention handler structure", () => {
 
   test("keeps mention execution completion logging out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const logMentionExecutionCompleted = (): void =>");
     expect(source).not.toContain("buildMentionExecutionCompletedLogFields({");
     expect(source).not.toContain("createMentionExecutionCompletedLogger({");
-    expect(source).toContain("handleMentionPostExecution");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("handleMentionPostExecution");
     expect(postExecutionSource).toContain("createMentionExecutionCompletedLogger({");
   });
 
   test("keeps mention execution completion state projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const publicationStateSource = readFileSync(new URL("./mention-publication-state.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("getState: () => ({\n            surface: mention.surface");
     expect(source).not.toContain("issueNumber: mention.issueNumber,\n            result,");
     expect(source).not.toContain("buildMentionExecutionCompletedState({");
-    expect(source).toContain("handleMentionPostExecution");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("handleMentionPostExecution");
     expect(postExecutionSource).toContain("buildMentionExecutionCompletedState({");
     expect(publicationStateSource).toContain("export function buildMentionExecutionCompletedState");
   });
@@ -134,18 +140,19 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("const mentionExecutionErrorCategory = result.errorMessage !== undefined");
     expect(source).not.toContain("const mentionFailureSubtype = result.failureSubtype");
     expect(source).not.toContain("const shouldDeferMentionCompletionLog =");
-    expect(source).toContain("resolveMentionExecutionPublicationState");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
   });
 
   test("keeps mention execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const mentionPostExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("executionIdentity: `${event.id}:reuse.mention-derived-context`");
     expect(source).not.toContain("Mention reuse telemetry write failed (non-blocking)");
-    expect(source).toContain("handleMentionPostExecution");
-    expect(source).toContain("./mention-post-execution.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("./mention-post-execution.ts");
     expect(mentionPostExecutionSource).toContain("recordMentionPostExecutionTelemetry");
     expect(postExecutionSource).toContain("recordMentionExecutionTelemetry");
     expect(postExecutionSource).toContain("./mention-telemetry.ts");
@@ -153,14 +160,15 @@ describe("mention handler structure", () => {
 
   test("keeps post-execution telemetry and cost-warning orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const mentionPostExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("if (config.telemetry.enabled)");
     expect(source).not.toContain("maybePostMentionCostWarning({");
     expect(source).not.toContain("recordMentionExecutionTelemetry({");
-    expect(source).toContain("handleMentionPostExecution");
-    expect(source).toContain("./mention-post-execution.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("./mention-post-execution.ts");
     expect(mentionPostExecutionSource).toContain("recordMentionPostExecutionTelemetry");
     expect(postExecutionSource).toContain("recordMentionExecutionTelemetry");
     expect(postExecutionSource).toContain("maybePostMentionCostWarning");
@@ -233,12 +241,14 @@ describe("mention handler structure", () => {
 
   test("keeps combined review-and-format formatter completion orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("if (executorPlan.isCombinedFormatterSuggestionRequest)");
     expect(source).not.toContain("const formatterResult = await runFormatterSuggestionForMention(\"review-and-format\")");
     expect(source).not.toContain("Combined review-and-format mention request completed");
-    expect(source).toContain("publishCombinedReviewAndFormatMentionFormatterResult");
-    expect(source).toContain("./mention-combined-format-publication.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishCombinedReviewAndFormatMentionFormatterResult");
+    expect(postExecutorSource).toContain("./mention-combined-format-publication.ts");
   });
 
   test("keeps format-only formatter log shaping out of the monster handler", () => {
@@ -314,6 +324,27 @@ describe("mention handler structure", () => {
     expect(dispatchPhaseSource).toContain("resolveMentionExecutorPlan({");
     expect(dispatchPhaseSource).toContain("buildMentionExecutionContext({");
     expect(dispatchPhaseSource).toContain("executeMentionWithFormatterRecovery({");
+  });
+
+  test("keeps post-executor mention publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const publicationSource = readFileSync(
+      new URL("./mention-post-executor-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("publishExplicitMentionReviewIfEligible({");
+    expect(source).not.toContain("resolveMentionExecutionPublicationState({");
+    expect(source).not.toContain("handleMentionPostExecution({");
+    expect(source).not.toContain("routeMentionWriteOutputIfEnabled({");
+    expect(source).not.toContain("publishMentionExecutionFallbacks({");
+    expect(source).not.toContain("publishCombinedReviewAndFormatMentionFormatterResult({");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(source).toContain("./mention-post-executor-publication.ts");
+    expect(publicationSource).toContain("export async function publishMentionPostExecutorOutputs");
+    expect(publicationSource).toContain("publishExplicitMentionReviewIfEligible({");
+    expect(publicationSource).toContain("publishMentionExecutionFallbacks({");
+    expect(publicationSource).toContain("publishCombinedReviewAndFormatMentionFormatterResult({");
   });
 
   test("keeps mention handler failure recovery out of the monster handler", () => {
@@ -452,12 +483,14 @@ describe("mention handler structure", () => {
 
   test("keeps successful conversation turn recording out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("recordSuccessfulMentionConversationTurn({");
     expect(source).not.toContain("conversationTurnStore.recordSuccessfulTurn(conversationKey)");
     expect(source).not.toContain("const conversationKey = buildMentionConversationKey({");
-    expect(source).toContain("handleMentionPostExecution");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("handleMentionPostExecution");
     expect(postExecutionSource).toContain("recordSuccessfulMentionConversationTurn({");
   });
 
@@ -511,32 +544,38 @@ describe("mention handler structure", () => {
 
   test("keeps write permission failure reply binding out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const maybeReplyWritePermissionFailure = async");
     expect(source).not.toContain("maybePostWritePermissionFailureReply");
-    expect(source).toContain("maybeReplyWritePermissionFailure");
-    expect(source).toContain("./mention-write-replies.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("maybeReplyWritePermissionFailure");
+    expect(postExecutorSource).toContain("./mention-write-replies.ts");
   });
 
   test("keeps issue write failure poster binding out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const postIssueWriteFailure = async");
-    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("createIssueWriteFailurePoster");
-    expect(source).toContain("./mention-write-replies.ts");
+    expect(postExecutorSource).toContain("./mention-write-replies.ts");
   });
 
   test("keeps cost warning publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const mentionPostExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("This execution cost");
     expect(source).not.toContain("costWarningUsd: 5.0");
     expect(source).not.toContain("explicit mention review cost warning comment");
-    expect(source).toContain("handleMentionPostExecution");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("handleMentionPostExecution");
     expect(mentionPostExecutionSource).toContain("recordMentionPostExecutionTelemetry");
     expect(postExecutionSource).toContain("./mention-cost-warning.ts");
     expect(postExecutionSource).toContain("maybePostMentionCostWarning");
@@ -569,16 +608,19 @@ describe("mention handler structure", () => {
 
   test("keeps post-execution fallback branching out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("publishResolution !== \"publish-failure-comment-failed\"");
     expect(source).not.toContain("const errorFallbackPublication = await publishMentionErrorFallback");
     expect(source).not.toContain("const fallbackPublication = await publishMentionFailureFallback");
-    expect(source).toContain("publishMentionExecutionFallbacks");
-    expect(source).toContain("./mention-execution-fallbacks.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishMentionExecutionFallbacks");
+    expect(postExecutorSource).toContain("./mention-execution-fallbacks.ts");
   });
 
   test("keeps explicit review approval publication recovery out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
     const publicationSource = readFileSync(new URL("./mention-explicit-review-publication.ts", import.meta.url), "utf8");
 
@@ -587,60 +629,69 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("publishResolution = \"duplicate-suppressed\"");
     expect(source).not.toContain("publishResolution = \"publish-failure-comment-failed\"");
     expect(source).not.toContain("Explicit mention review publish fallback could not be delivered");
-    expect(source).toContain("publishExplicitMentionReviewIfEligible");
-    expect(source).toContain("./mention-explicit-review-publication-orchestration.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishExplicitMentionReviewIfEligible");
+    expect(postExecutorSource).toContain("./mention-explicit-review-publication-orchestration.ts");
     expect(orchestrationSource).toContain("publishExplicitMentionReviewResult");
     expect(publicationSource).toContain("Explicit mention review publish fallback could not be delivered");
   });
 
   test("keeps explicit review validation-truth projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const lifecycleSource = readFileSync(new URL("./mention-explicit-review-lifecycle.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("attachReviewValidationTruth({");
     expect(source).not.toContain("Projected explicit mention review validation truth evidence");
     expect(source).not.toContain("Explicit mention review validation truth diagnostics failed; continuing review publication");
-    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishExplicitMentionReviewIfEligible");
     expect(lifecycleSource).toContain("projectExplicitMentionReviewValidationTruth");
     expect(lifecycleSource).toContain("./mention-validation-truth.ts");
   });
 
   test("keeps explicit review finding lifecycle projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
     const lifecycleSource = readFileSync(new URL("./mention-explicit-review-lifecycle.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("attachReviewFindingLifecycle({");
     expect(source).not.toContain("Projected explicit mention review finding lifecycle evidence");
     expect(source).not.toContain("trigger: event.name === \"issue_comment\"");
-    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishExplicitMentionReviewIfEligible");
     expect(orchestrationSource).toContain("projectExplicitMentionReviewLifecycle");
     expect(lifecycleSource).toContain("attachReviewFindingLifecycle");
   });
 
   test("keeps explicit review publish eligibility and skip logging out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
     const decisionSource = readFileSync(new URL("./mention-explicit-review-publish-decision.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("evaluateExplicitMentionReviewPublish({");
     expect(source).not.toContain("logExplicitMentionReviewPublishSkipped({");
     expect(source).not.toContain("const explicitReviewResultFindingLines = explicitReviewPublishEvaluation.findingLines");
-    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishExplicitMentionReviewIfEligible");
     expect(orchestrationSource).toContain("resolveExplicitMentionReviewPublishDecision");
     expect(decisionSource).toContain("evaluateExplicitMentionReviewPublish");
   });
 
   test("keeps explicit review publication orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const explicitReviewFindingLifecycleResult = projectExplicitMentionReviewLifecycle({");
     expect(source).not.toContain("const explicitReviewPublishDecision = resolveExplicitMentionReviewPublishDecision({");
     expect(source).not.toContain("publishExplicitMentionReviewResult({");
     expect(source).not.toContain("let explicitReviewPublication:");
-    expect(source).toContain("publishExplicitMentionReviewIfEligible");
-    expect(source).toContain("./mention-explicit-review-publication-orchestration.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("publishExplicitMentionReviewIfEligible");
+    expect(postExecutorSource).toContain("./mention-explicit-review-publication-orchestration.ts");
     expect(orchestrationSource).toContain("projectExplicitMentionReviewLifecycle");
     expect(orchestrationSource).toContain("resolveExplicitMentionReviewPublishDecision");
     expect(orchestrationSource).toContain("publishExplicitMentionReviewResult");
@@ -773,33 +824,39 @@ describe("mention handler structure", () => {
 
   test("keeps write-mode PR draft assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("git -C ${workspace.dir} diff --stat HEAD~1 HEAD");
     expect(source).not.toContain("scanDiffForFabricatedContent(workspace.dir)");
     expect(source).not.toContain("const prBody = generatePrBody({");
-    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("publishMentionBotWritePullRequest");
     expect(routingSource).toContain("publishMentionForkWriteOutput");
   });
 
   test("keeps write-mode PR publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("createPullRequestWithPublicationPipeline");
-    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("publishMentionBotWritePullRequest");
     expect(routingSource).toContain("publishMentionForkWriteOutput");
   });
 
   test("keeps write-mode commit message assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const commitMessage = [");
     expect(source).not.toContain("deliveryId: ${event.id}");
-    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("publishMentionBotWritePullRequest");
     expect(routingSource).toContain("publishMentionForkWriteOutput");
   });
@@ -878,6 +935,7 @@ describe("mention handler structure", () => {
 
   test("keeps same-repo PR write branch updates out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("remoteHeadContainsMarker({");
@@ -885,26 +943,30 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("pushHeadToRemoteRef({");
     expect(source).not.toContain("git -C ${workspace.dir} checkout -B pr-head");
     expect(source).not.toContain("Applied changes but failed to post confirmation reply");
-    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("attemptSameRepoPrWrite");
     expect(routingSource).toContain("./mention-same-repo-write.ts");
   });
 
   test("keeps bot-branch PR write publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Failed to look up existing PR after push failure");
     expect(source).not.toContain("Issue write-mode PR creation failed, retrying once");
     expect(source).not.toContain("GitHub pulls.create response did not include html_url");
     expect(source).not.toContain("outcome: \"created-pr\"");
-    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("publishMentionBotWritePullRequest");
     expect(routingSource).toContain("./mention-bot-pr-write.ts");
   });
 
   test("keeps fork/gist write output routing out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("getGitStatusPorcelain(workspace.dir)");
     expect(source).not.toContain("buildNoFileChangesReply()");
@@ -917,18 +979,21 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("outcome: \"created-cross-fork-pr\"");
     expect(source).not.toContain("Fork-based PR creation failed; falling back to gist");
     expect(source).not.toContain("Fork-based write mode failed completely; falling through to legacy direct-push path");
-    expect(source).toContain("routeMentionWriteOutput");
-    expect(source).toContain("./mention-write-output-routing.ts");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
+    expect(postExecutorSource).toContain("./mention-write-output-routing.ts");
   });
 
   test("keeps write-output routing parameter plumbing out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(new URL("./mention-post-executor-publication.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("if (writeEnabled && writeOutputKey && writeBranchName)");
     expect(source).not.toContain("writeKeyword: writeIntent.keyword ?? \"\"");
     expect(source).not.toContain("recordWriteRateLimitSuccess: (owner, repo) => writeRateLimit.recordSuccess(owner, repo)");
-    expect(source).toContain("routeMentionWriteOutputIfEnabled");
+    expect(source).toContain("publishMentionPostExecutorOutputs");
+    expect(postExecutorSource).toContain("routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("export async function routeMentionWriteOutputIfEnabled");
     expect(routingSource).toContain("routeMentionWriteOutput({");
   });

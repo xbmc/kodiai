@@ -9,18 +9,11 @@ import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { createRetriever } from "../knowledge/retrieval.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
-import {
-  maybeReplyWritePermissionFailure,
-} from "./mention-write-replies.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
-import {
-  type MentionExecutionFailureSubtype,
-  resolveMentionExecutionPublicationState,
-} from "./mention-publication-state.ts";
 import {
   createMentionPublisher,
 } from "./mention-publication.ts";
@@ -33,23 +26,19 @@ import {
   usesCanonicalExplicitReviewHandle,
 } from "./mention-review-work-runtime.ts";
 import { createMentionFindingLookup } from "./mention-finding-context.ts";
-import { publishExplicitMentionReviewIfEligible } from "./mention-explicit-review-publication-orchestration.ts";
-import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
-import { routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
-import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
 import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
-import { handleMentionPostExecution } from "./mention-post-execution.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
 import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
 import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
 import { runMentionExecutorDispatchPhase } from "./mention-executor-dispatch-phase.ts";
 import { prepareMentionRequestExecutionContext } from "./mention-request-preparation.ts";
+import { publishMentionPostExecutorOutputs } from "./mention-post-executor-publication.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -447,30 +436,19 @@ export function createMentionHandler(deps: {
           postFormatterVisibleDiagnostic,
           logger,
         });
-        const { executorPlan, result } = mentionExecutorDispatch;
         reviewOutputKey = mentionExecutorDispatch.reviewOutputKey;
 
-        const {
-          explicitReviewPublishEvaluation,
-          explicitReviewResultFindingLines,
-          explicitReviewPublication,
-        } = await publishExplicitMentionReviewIfEligible({
+        const postExecutorPublication = await publishMentionPostExecutorOutputs({
+          executorDispatch: mentionExecutorDispatch,
           explicitReviewRequest,
           eventName: event.name,
+          eventAction: action,
           mention,
           reviewOutputKey,
           deliveryId: event.id,
           installationId: event.installationId,
-          headSha: explicitReviewHeadSha,
-          baseSha: explicitReviewBaseSha,
-          result: {
-            conclusion: result.conclusion,
-            published: result.published,
-            usedRepoInspectionTools: result.usedRepoInspectionTools,
-            resultText: result.resultText,
-            toolUseNames: result.toolUseNames,
-            candidateFinding: result.candidateFinding,
-          },
+          explicitReviewHeadSha,
+          explicitReviewBaseSha,
           appSlug,
           autoApprove: config.review.autoApprove,
           explicitReviewPromptFileCount,
@@ -479,121 +457,33 @@ export function createMentionHandler(deps: {
           setReviewWorkPhase,
           postMentionError,
           logger,
-        });
-
-        let {
-          mentionOutputPublished,
-          publishResolution,
-          publishFailureCategory,
-          publishFallbackDelivery,
-          mentionExecutionErrorCategory,
-          mentionFailureSubtype,
-          shouldDeferCompletionLog,
-        } = resolveMentionExecutionPublicationState({
-          result,
-          explicitReviewPublication,
           reviewPublishRightsLost: reviewWorkRuntime.reviewPublishRightsLost,
-        });
-
-        const mentionPostExecution = await handleMentionPostExecution({
-          logger,
-          mention,
-          result,
-          getPublicationState: () => ({
-            mentionFailureSubtype,
-            mentionExecutionErrorCategory,
-            mentionOutputPublished,
-            publishResolution,
-            publishFailureCategory,
-            publishFallbackDelivery,
-          }),
           writeEnabled,
           mentionDerivedContextCacheStatus,
           mentionDerivedContextCacheReason,
-          explicitReviewRequest,
-          reviewOutputKey,
-          shouldDeferCompletionLog,
           recordSuccessfulTurn: (key) => conversationTurnStore.recordSuccessfulTurn(key),
           telemetryEnabled: config.telemetry.enabled,
           telemetryStore,
-          deliveryId: event.id,
-          eventType: `${event.name}.${action ?? ""}`,
           promptSections,
           costWarningUsd: config.telemetry.costWarningUsd,
-          canPublishExplicitReviewOutput,
-          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
           botHandles: possibleHandles,
-        });
-
-        if (await routeMentionWriteOutputIfEnabled({
           workspace,
           workspaceToken: workspace.token,
           octokit,
-          mention,
           forkContext,
           gistPublisher,
           writeContext: mentionWriteRequestContext,
           cloneRef,
           writeConfig: config.write,
-          deliveryId: event.id,
-          installationId: event.installationId,
-          appSlug,
-          logger,
           postMentionReply,
-          maybeReplyWritePermissionFailure,
           writeRateLimit,
-        })) {
-          return;
-        }
-
-        ({
-          mentionOutputPublished,
-          publishResolution,
-          publishFallbackDelivery,
-        } = await publishMentionExecutionFallbacks({
-          writeEnabled,
-          reviewPublishRightsLost: reviewWorkRuntime.reviewPublishRightsLost,
-          mentionOutputPublished,
-          publishResolution,
-          publishFallbackDelivery,
-          result,
-          explicitReviewRequest,
-          hasUnpublishedFindings: explicitReviewPublishEvaluation.hasUnpublishedFindings,
-          findingLines: explicitReviewResultFindingLines,
-          skipReason: explicitReviewPublishEvaluation.skipReason,
-          routingReason: explicitReviewRouting.routingReason,
-          reviewOutputKey,
-          surface: mention.surface,
-          issueNumber: mention.issueNumber,
-          canPublishExplicitReviewOutput,
-          postMentionReply,
-          postMentionError,
-          logger,
-        }));
-
-        if (shouldDeferCompletionLog) {
-          mentionPostExecution.logMentionExecutionCompleted();
-        }
-
-        const combinedFormatterPublication = await publishCombinedReviewAndFormatMentionFormatterResult({
-          enabled: executorPlan.isCombinedFormatterSuggestionRequest,
+          explicitReviewRoutingReason: explicitReviewRouting.routingReason,
           runFormatterSuggestionForMention,
           postFormatterVisibleDiagnostic,
-          mention,
-          deliveryId: event.id,
           reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
-          result: {
-            conclusion: result.conclusion,
-            stopReason: result.stopReason,
-            failureSubtype: result.failureSubtype,
-          },
-          publishResolution,
-          publishFailureCategory,
-          publishFallbackDelivery,
-          logger,
         });
-        if (!combinedFormatterPublication.ok) {
-          throw combinedFormatterPublication.err.error;
+        if (postExecutorPublication.writeOutputHandled) {
+          return;
         }
       } catch (err) {
         await handleMentionHandlerFailureRecovery({
