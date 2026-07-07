@@ -1,11 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
+function readTimeoutContinuationOrchestrationSource(): string {
+  return readFileSync(new URL("./review-timeout-continuation-orchestration.ts", import.meta.url), "utf8");
+}
+
 describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1434);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1144);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -220,9 +224,9 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const timeoutFirstPass = normalizeReviewFirstPass({");
     expect(source).not.toContain("getCheckpoint: async (key) => (await knowledgeStore?.getCheckpoint?.(key)) ?? null");
     expect(source).not.toContain("extractInlineFindings: async () => await extractFindingsFromReviewComments({");
-    expect(source).toContain("buildReviewTimeoutProgressAdapters");
-    expect(source).toContain("resolveReviewTimeoutProgressContext");
-    expect(source).toContain("./review-timeout-progress-context.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewTimeoutProgressAdapters");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("resolveReviewTimeoutProgressContext");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-progress-context.ts");
   });
 
   test("keeps timeout retry decision policy out of the monster handler", () => {
@@ -235,9 +239,9 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryRemoteRuntimeBudgetSeconds = Math.max(30, Math.floor(timeoutDuration / 2));");
     expect(source).not.toContain("const retryScope = computeRetryScope({");
     expect(source).not.toContain("const retryLinesChanged = files.reduce((sum, filePath) => {");
-    expect(source).toContain("buildReviewContinuationTimeoutEstimator");
-    expect(source).toContain("resolveReviewTimeoutRetryContext");
-    expect(source).toContain("./review-timeout-retry-context.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewContinuationTimeoutEstimator");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("resolveReviewTimeoutRetryContext");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-context.ts");
     expect(retryContextSource).toContain("export function buildReviewContinuationTimeoutEstimator");
   });
 
@@ -253,8 +257,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const timeoutClassificationTelemetry = logReviewTimeoutClassification({");
     expect(source).not.toContain("timeoutFirstPass: timeoutFirstPass\n                ? {");
     expect(source).not.toContain("checkpoint: checkpoint\n                ? {");
-    expect(source).toContain("resolveReviewTimeoutClassificationContext");
-    expect(source).toContain("./review-timeout-classification-context.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("resolveReviewTimeoutClassificationContext");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-classification-context.ts");
     expect(classificationSource).toContain("buildReviewTimeoutClassificationContextParams");
     expect(classificationSource).toContain("classifyReviewTimeoutOutcome");
     expect(classificationSource).toContain("logReviewTimeoutClassification");
@@ -268,8 +272,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const timeoutReviewDetails = {");
     expect(source).not.toContain("deferredPublicOutputForContinuation = turnBudgetExhausted");
     expect(source).not.toContain("const partialBody = formatPartialReviewComment({");
-    expect(source).toContain("resolveReviewTimeoutPublicationContext");
-    expect(source).toContain("./review-timeout-publication-context.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("resolveReviewTimeoutPublicationContext");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-publication-context.ts");
   });
 
   test("keeps timeout execution-conclusion projection out of the monster handler", () => {
@@ -280,9 +284,9 @@ describe("review handler structure", () => {
     expect(source).not.toContain("countRecentTimeouts: (repo, prAuthor) => telemetryStore.countRecentTimeouts?.(repo, prAuthor)");
     expect(source).not.toContain("const isChronicTimeout = recentTimeouts >= 3;");
     expect(source).not.toContain("const executionConclusion = result.isTimeout && result.published");
-    expect(source).toContain("buildReviewTimeoutExecutionAdapters");
-    expect(source).toContain("resolveReviewTimeoutExecutionContext");
-    expect(source).toContain("./review-timeout-execution-context.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewTimeoutExecutionAdapters");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("resolveReviewTimeoutExecutionContext");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-execution-context.ts");
     expect(timeoutExecutionSource).toContain("export function buildReviewTimeoutExecutionAdapters");
   });
 
@@ -295,7 +299,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId)");
     expect(source).not.toContain("Checkpoint comment id update failed (non-blocking)");
-    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("publishBoundedFirstPassTimeoutOutput");
     expect(orchestrationSource).toContain("persistPartialReviewCheckpoint");
     expect(orchestrationSource).toContain("./review-partial-checkpoint.ts");
   });
@@ -307,8 +311,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryTimeout = retryPlan.timeoutSeconds;");
     expect(source).not.toContain("const retryFiles = retryPlan.continuationFiles;");
     expect(source).not.toContain("const retryDeliveryId = `${event.id}-retry-1`;");
-    expect(source).toContain("resolveReviewRetryEnqueueContext");
-    expect(source).toContain("./review-retry-enqueue-context.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("resolveReviewRetryEnqueueContext");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-retry-enqueue-context.ts");
   });
 
   test("keeps timeout continuation-family state policy out of the monster handler", () => {
@@ -322,8 +326,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const timeoutContinuationState = resolveReviewTimeoutContinuationState({");
     expect(source).not.toContain("logReviewTimeoutZeroEvidenceWarning({");
     expect(source).not.toContain("await persistContinuationFamilyState(timeoutContinuationState.blockedFamilyState)");
-    expect(source).toContain("applyReviewTimeoutContinuationStateSideEffects");
-    expect(source).toContain("./review-timeout-continuation-state.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("applyReviewTimeoutContinuationStateSideEffects");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-continuation-state.ts");
     expect(continuationStateSource).toContain("resolveReviewTimeoutContinuationState");
     expect(continuationStateSource).toContain("logReviewTimeoutZeroEvidenceWarning");
   });
@@ -343,7 +347,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("finalStopReason: \"awaiting-continuation\"");
     expect(source).not.toContain("finalStopReason: \"settled-without-update\"");
     expect(source).not.toContain("finalStopReason: \"merged-continuation-results\"");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(preEnqueueSource).toContain("resolvePendingContinuationFamilyState");
     expect(preEnqueueSource).toContain("./review-continuation-family-state-projection.ts");
     expect(retrySettlementSource).toContain("resolveQuietSettledContinuationFamilyState");
@@ -357,7 +361,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("Retry produced no additional results -- keeping original partial review");
     expect(source).not.toContain("resolveQuietSettledContinuationFamilyState({");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("settleRetryWithNoAdditionalResults");
 
@@ -374,12 +378,34 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryResult = await executor.execute(buildReviewRetryExecutionContext({");
     expect(source).not.toContain("await resolveReviewRetryExecutionOutcome({");
     expect(source).not.toContain("await settleRetryContinuationResults({");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryJobSource).toContain("prepareReviewRetryWorkspace({");
     expect(retryJobSource).toContain("buildReviewRetryExecutionContext({");
     expect(retryJobSource).toContain("resolveReviewRetryExecutionOutcome({");
     expect(retryJobSource).toContain("settleRetryContinuationResults({");
+  });
+
+  test("keeps timeout continuation orchestration wiring out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-timeout-continuation-orchestration.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("buildReviewTimeoutProgressAdapters({");
+    expect(source).not.toContain("resolveReviewTimeoutProgressContext({");
+    expect(source).not.toContain("resolveReviewTimeoutRetryContext({");
+    expect(source).not.toContain("publishBoundedFirstPassTimeoutOutput({");
+    expect(source).not.toContain("scheduleReviewTimeoutRetryContinuation({");
+    expect(source).toContain("handleReviewTimeoutContinuationOutcome");
+    expect(source).toContain("./review-timeout-continuation-orchestration.ts");
+    expect(orchestrationSource).toContain("export async function handleReviewTimeoutContinuationOutcome");
+    expect(orchestrationSource).toContain("buildReviewTimeoutProgressAdapters");
+    expect(orchestrationSource).toContain("resolveReviewTimeoutProgressContext");
+    expect(orchestrationSource).toContain("resolveReviewTimeoutRetryContext");
+    expect(orchestrationSource).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(orchestrationSource).toContain("scheduleReviewTimeoutRetryContinuation");
   });
 
   test("keeps review execution telemetry persistence out of the monster handler", () => {
@@ -459,7 +485,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("topic: e.topic");
     expect(source).not.toContain("score: e.score");
     expect(source).toContain("prepareInitialReviewPrompt");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(initialPreparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
     expect(retryPreparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
@@ -475,7 +501,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("await telemetryStore.recordResilienceEvent?.({");
     expect(source).not.toMatch(/recordReviewResilienceEventFailOpen\(\{[\s\S]{0,200}entry:\s*\{/);
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(preEnqueueSource).toContain("recordReviewTimeoutResilienceTelemetry");
     expect(preEnqueueSource).toContain("./review-timeout-resilience-telemetry.ts");
   });
@@ -489,7 +515,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("buildReviewTimeoutResilienceTelemetryEntry({");
     expect(source).not.toContain("recordReviewResilienceEventFailOpen({");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(timeoutTelemetrySource).toContain("recordReviewTimeoutResilienceTelemetry");
     expect(timeoutTelemetrySource).toContain("buildReviewTimeoutResilienceTelemetryEntry({");
     expect(timeoutTelemetrySource).toContain("recordReviewResilienceEventFailOpen({");
@@ -592,7 +618,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("async function buildReviewPromptResultWithCache");
     expect(source).not.toContain("const cacheErrorsBeforeLookup = reviewPromptDerivedCacheErrorCount;");
     expect(source).toContain("prepareInitialReviewPrompt");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(initialPreparationSource).toContain("./review-prompt-cache-runtime.ts");
     expect(retryPreparationSource).toContain("./review-prompt-cache-runtime.ts");
@@ -607,7 +633,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryPromptCacheState: ReviewPromptCacheState =");
     expect(source).not.toContain("const retryPromptCacheEvent = buildPromptReviewCacheEvent({");
     expect(source).not.toContain("\"Resolved retry review prompt derived-cache state\"");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("buildRetryReviewPromptRuntime");
@@ -838,7 +864,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("eventType: \"pull_request.review-retry\"");
     expect(source).not.toContain("triggerBody: \"\",\n                      prompt: retryPrompt");
     expect(source).not.toContain("buildShadowSpecialistCorrelationKey({\n                          deliveryId: retryDeliveryId");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("executor.execute(buildReviewRetryExecutionContext({");
     expect(contextSource).toContain("export function buildReviewRetryExecutionContext");
   });
@@ -1067,8 +1093,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryPromptBuildContext = {");
     expect(source).not.toContain("buildRetryReviewPromptContext({");
     expect(source).not.toContain("cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildReviewRetryPromptBuildContext");
     expect(preparationSource).toContain("./review-retry-prompt-context.ts");
@@ -1086,8 +1112,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("buildReviewRetryPromptBuildContext({");
     expect(source).not.toContain("buildRetryReviewPromptRuntime({");
     expect(source).not.toContain("const retryPromptRuntime = await");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("export async function prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildReviewRetryPromptBuildContext({");
@@ -1148,7 +1174,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("const partialComment = await createIssueCommentWithPublicationPipeline");
     expect(source).not.toContain("partialCommentId = partialComment.data.id");
-    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("publishBoundedFirstPassTimeoutOutput");
     expect(orchestrationSource).toContain("./review-partial-publication.ts");
     expect(orchestrationSource).toContain("publishBoundedFirstPassReview");
   });
@@ -1164,8 +1190,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("await persistPartialReviewCheckpoint({");
     expect(source).not.toContain("logBoundedFirstPassReviewPublished({");
     expect(source).not.toContain("await publishTimeoutReviewDetailsMerge({");
-    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
-    expect(source).toContain("./review-bounded-first-pass-timeout-publication.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-bounded-first-pass-timeout-publication.ts");
     expect(orchestrationSource).toContain("publishBoundedFirstPassReview");
     expect(orchestrationSource).toContain("persistPartialReviewCheckpoint");
     expect(orchestrationSource).toContain("publishTimeoutReviewDetailsMerge");
@@ -1180,7 +1206,7 @@ describe("review handler structure", () => {
     );
 
     expect(source).not.toContain("Published bounded first-pass review on timeout");
-    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("publishBoundedFirstPassTimeoutOutput");
     expect(orchestrationSource).toContain("logBoundedFirstPassReviewPublished");
     expect(orchestrationSource).toContain("./review-bounded-first-pass-evidence.ts");
     expect(evidenceSource).toContain("Published bounded first-pass review on timeout");
@@ -1196,7 +1222,7 @@ describe("review handler structure", () => {
     );
 
     expect(source).not.toContain("Enqueueing retry with reduced scope");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(preEnqueueSource).toContain("logReviewTimeoutRetryEnqueue");
     expect(preEnqueueSource).toContain("./review-timeout-retry-enqueue-log.ts");
     expect(evidenceSource).toContain("Enqueueing retry with reduced scope");
@@ -1213,8 +1239,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({");
     expect(source).not.toContain("await persistContinuationFamilyState(resolvePendingContinuationFamilyState({");
     expect(source).not.toContain("if (timeoutFirstPass?.zeroEvidenceFailure && knowledgeStore?.saveCheckpoint)");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(preEnqueueSource).toContain("recordReviewTimeoutResilienceTelemetry");
     expect(preEnqueueSource).toContain("logReviewTimeoutRetryEnqueue");
     expect(preEnqueueSource).toContain("resolvePendingContinuationFamilyState");
@@ -1226,8 +1252,8 @@ describe("review handler structure", () => {
     const warningSource = readFileSync(new URL("./review-timeout-zero-evidence-log.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Constrained timeout remained a zero-evidence hard failure");
-    expect(source).toContain("applyReviewTimeoutContinuationStateSideEffects");
-    expect(source).toContain("./review-timeout-continuation-state.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("applyReviewTimeoutContinuationStateSideEffects");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-continuation-state.ts");
     expect(continuationStateSource).toContain("logReviewTimeoutZeroEvidenceWarning");
     expect(continuationStateSource).toContain("./review-timeout-zero-evidence-log.ts");
     expect(warningSource).toContain("Constrained timeout remained a zero-evidence hard failure");
@@ -1243,7 +1269,7 @@ describe("review handler structure", () => {
     );
 
     expect(source).not.toContain("Failed to publish bounded first-pass review");
-    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("publishBoundedFirstPassTimeoutOutput");
     expect(orchestrationSource).toContain("logBoundedFirstPassPublicationFailure");
     expect(orchestrationSource).toContain("./review-bounded-first-pass-publication-failure-log.ts");
     expect(warningSource).toContain("Failed to publish bounded first-pass review");
@@ -1427,7 +1453,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("timeout canonical Review Details merge");
     expect(source).not.toContain("Failed to update timeout canonical review surface with Review Details");
-    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("publishBoundedFirstPassTimeoutOutput");
     expect(orchestrationSource).toContain("publishTimeoutReviewDetailsMerge");
     expect(orchestrationSource).toContain("./review-details-timeout-publication.ts");
   });
@@ -1441,7 +1467,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("retry canonical Review Details merge");
     expect(source).not.toContain("Failed to update retry canonical review surface with Review Details");
     expect(source).not.toContain("retry degraded Review Details fallback comment");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryJobSource).toContain("./review-retry-continuation-settlement.ts");
     expect(retryContinuationSettlementSource).toContain("./review-retry-merge-publication.ts");
     expect(retryMergeSource).toContain("./review-details-retry-publication.ts");
@@ -1457,7 +1483,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryReviewDetailsPublication = await publishRetryReviewDetailsMerge({");
     expect(source).not.toContain("resolveMergedContinuationFamilyState({");
     expect(source).not.toContain("Retry Review Details publication failed");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("publishRetryMergeContinuationResults");
 
@@ -1476,8 +1502,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("settlementReason: \"no-meaningful-delta\"");
     expect(source).not.toContain("Retry settlement skipped because the base checkpoint was missing");
     expect(source).not.toContain("Retry merge skipped because bounded first-pass state became non-publishable");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retrySettlementSource).toContain("settleReviewContinuation");
     expect(retrySettlementSource).toContain("publishRetryMergeContinuationResults");
@@ -1493,8 +1519,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("reviewWorkCoordinator.complete(retryReviewWorkAttempt.attemptId)");
     expect(source).not.toContain("reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId)");
     expect(source).not.toContain("Best-effort checkpoint cleanup even on retry failure");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryEnqueueSource).toContain("handleRetryJobFailure");
     expect(retryEnqueueSource).toContain("handleRetryEnqueueFailure");
     expect(retryEnqueueSource).toContain("finalizeRetryJobAttempt");
@@ -1536,7 +1562,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("This is a retry of a timed-out review with reduced scope.");
     expect(source).not.toContain("This is a retry of a review that exhausted max turns with reduced scope.");
     expect(source).not.toContain("save_review_checkpoint with a summaryDraft");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildReviewRetryPromptBuildContext");
     expect(retryPromptContextSource).toContain("buildReviewRetryCustomInstructions");
@@ -1553,8 +1579,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("warningPrefix: \"Retry\"");
     expect(source).not.toContain("kind: \"retry\",\n                            reviewOutputKey: retryReviewOutputKey");
     expect(source).not.toContain("timeoutClassification: retryTimeoutClassification.classification");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(retryJobSource).toContain("resolveReviewRetryExecutionOutcome");
   });
 
@@ -1563,8 +1589,8 @@ describe("review handler structure", () => {
     const adaptersSource = readFileSync(new URL("./review-timeout-retry-adapters.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null)");
-    expect(source).toContain("buildReviewRetryOutcomeCheckpointLookup");
-    expect(source).toContain("./review-timeout-retry-adapters.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewRetryOutcomeCheckpointLookup");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-adapters.ts");
     expect(adaptersSource).toContain("export function buildReviewRetryOutcomeCheckpointLookup");
   });
 
@@ -1598,7 +1624,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("knowledgeStore.getPriorReviewFindings({\n                              repo: `${apiOwner}/${apiRepo}`");
     expect(source).not.toContain("currentFindings: currentFindings.map((finding) => ({");
     expect(source).not.toContain("Continuation delta classification failed (fail-open, merging without revision labels)");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("resolveReviewContinuationRevisionCounts");
   });
@@ -1629,7 +1655,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const summaryDraftForMerge =");
     expect(source).not.toContain("const maxTurnsContinuationCompleted =");
     expect(source).not.toContain("const mergedBody = maxTurnsContinuationCompleted");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("resolveReviewContinuationMergeContext");
   });
@@ -1983,8 +2009,8 @@ describe("review handler structure", () => {
     expect(source).not.toContain("handleRetryJobFailure({");
     expect(source).not.toContain("finalizeRetryJobAttempt({");
     expect(source).not.toContain("handleRetryEnqueueFailure({");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
   });
 
   test("keeps retry job parameter projection out of the monster handler", () => {
@@ -1993,8 +2019,8 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("buildRetryJobParams: (retryAttemptId) => {");
     expect(source).not.toContain("preparePrompt: {\n                      owner: apiOwner");
-    expect(source).toContain("buildReviewTimeoutRetryJobParams");
-    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewTimeoutRetryJobParams");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-job.ts");
     expect(retryJobSource).toContain("export function buildReviewTimeoutRetryJobParams");
   });
 
@@ -2012,11 +2038,11 @@ describe("review handler structure", () => {
     expect(source).not.toContain("enqueue: {\n                  jobQueue");
     expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n                    getAppSlug: () => githubApp.getAppSlug(),");
     expect(source).not.toContain("setPublishPhase: () => setReviewWorkPhaseForAttempt(retryAttemptId, \"publish\")");
-    expect(source).toContain("buildReviewTimeoutRetryPreEnqueueParams");
-    expect(source).toContain("buildReviewTimeoutRetryEnqueueParams");
-    expect(source).toContain("buildReviewTimeoutRetrySettlementAdapters");
-    expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
-    expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewTimeoutRetryPreEnqueueParams");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewTimeoutRetryEnqueueParams");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("buildReviewTimeoutRetrySettlementAdapters");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("scheduleReviewTimeoutRetryContinuation");
+    expect(readTimeoutContinuationOrchestrationSource()).toContain("./review-timeout-retry-scheduling.ts");
     expect(schedulingSource).toContain("export function buildReviewTimeoutRetrySettlementAdapters");
     expect(schedulingSource).toContain("export function buildReviewTimeoutRetryPreEnqueueParams");
     expect(schedulingSource).toContain("export function buildReviewTimeoutRetryEnqueueParams");
