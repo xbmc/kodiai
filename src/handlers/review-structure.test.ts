@@ -61,6 +61,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-progress-context.ts");
   });
 
+  test("keeps timeout retry decision policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let retryState = isChronicTimeout");
+    expect(source).not.toContain("let retrySummaryNote: string | undefined;");
+    expect(source).not.toContain("case \"zero-evidence-failure\": {");
+    expect(source).not.toContain("const retryRemoteRuntimeBudgetSeconds = Math.max(30, Math.floor(timeoutDuration / 2));");
+    expect(source).not.toContain("const retryScope = computeRetryScope({");
+    expect(source).toContain("resolveReviewTimeoutRetryContext");
+    expect(source).toContain("./review-timeout-retry-context.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

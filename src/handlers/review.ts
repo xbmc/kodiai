@@ -41,10 +41,8 @@ import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import {
-  planReviewContinuation,
   settleReviewContinuation,
 } from "../lib/review-continuation-lifecycle.ts";
-import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
 import {
   buildReviewOutputKey,
@@ -249,6 +247,7 @@ import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publi
 import { publishRetryReviewDetailsMerge } from "./review-details-retry-publication.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
+import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1967,124 +1966,46 @@ export function createReviewHandler(deps: {
                   ? "max_turns"
                   : result.conclusion;
 
-            let retryState = isChronicTimeout
-              ? "skipped (frequent timeouts for this repo/author)"
-              : hasPublishedInlines
-                ? "not scheduled (GitHub-visible findings already posted)"
-                : "not scheduled";
-            let retrySummaryNote: string | undefined;
-            let retryPlan: ReturnType<typeof planReviewContinuation> | null = null;
+            const retryContext = resolveReviewTimeoutRetryContext({
+              reviewOutputKey,
+              timeoutFirstPass,
+              checkpoint,
+              riskScores,
+              timeoutDurationSeconds: timeoutDuration,
+              continuationCompaction: {
+                attemptId: reviewWorkAttempt.attemptId,
+                attemptOrdinal: 0,
+                promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords),
+                cacheTelemetryObservations: visibleBudgetState.reviewCacheObservations,
+              },
+              hasPublishedInlines,
+              isChronicTimeout,
+              timeoutReviewedFiles,
+              timeoutTotalFiles,
+              checkpointPersistenceUnavailableForFamilyState:
+                Boolean(knowledgeStore?.upsertContinuationFamilyState) && !knowledgeStore?.saveCheckpoint,
+              forceCheckpointEnabled: reviewRouting.taskType === TASK_TYPES.REVIEW_FULL,
+              estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
+                const retryLinesChanged = files.reduce((sum, filePath) => {
+                  const stats = perFileStats.get(filePath);
+                  if (!stats) return sum;
+                  return sum + stats.added + stats.removed;
+                }, 0);
+                return estimateTimeoutRisk({
+                  fileCount: files.length,
+                  linesChanged: retryLinesChanged,
+                  languageComplexity,
+                  isLargePR: false,
+                  baseTimeoutSeconds: timeoutSeconds,
+                });
+              },
+            });
+            const { retryPlan, retryState, retrySummaryNote } = retryContext;
             let continuationProjectionDegraded = false;
 
-            if (timeoutFirstPass) {
-              retryPlan = planReviewContinuation({
-                reviewOutputKey,
-                firstPass: timeoutFirstPass,
-                checkpoint,
-                riskScores,
-                timeoutSeconds: timeoutDuration,
-                continuationCompaction: {
-                  attemptId: reviewWorkAttempt.attemptId,
-                  attemptOrdinal: 0,
-                  promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords),
-                  cacheTelemetryObservations: visibleBudgetState.reviewCacheObservations,
-                },
-                hasPublishedInlineFindings: hasPublishedInlines,
-                isChronicTimeout,
-                estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
-                  const retryLinesChanged = files.reduce((sum, filePath) => {
-                    const stats = perFileStats.get(filePath);
-                    if (!stats) return sum;
-                    return sum + stats.added + stats.removed;
-                  }, 0);
-                  return estimateTimeoutRisk({
-                    fileCount: files.length,
-                    linesChanged: retryLinesChanged,
-                    languageComplexity,
-                    isLargePR: false,
-                    baseTimeoutSeconds: timeoutSeconds,
-                  });
-                },
-              });
-
-              switch (retryPlan.decision) {
-                case "schedule-continuation":
-                  if (retryPlan.continuationCompaction) {
-                    visibleBudgetState.continuationCompactionObservations.push(retryPlan.continuationCompaction);
-                    visibleBudgetState.refresh();
-                  }
-                  retryState = "scheduled reduced-scope retry";
-                  retrySummaryNote = "Scheduling a reduced-scope retry.";
-                  break;
-                case "skip-continuation":
-                  switch (retryPlan.reason) {
-                    case "chronic-timeout":
-                      retryState = "skipped (frequent timeouts for this repo/author)";
-                      break;
-                    case "inline-output-already-published":
-                      retryState = "not scheduled (GitHub-visible findings already posted)";
-                      retrySummaryNote = "Retry not scheduled because GitHub-visible findings were already posted.";
-                      break;
-                    case "no-remaining-scope":
-                      retryState = "not scheduled (no remaining files outside analyzed progress)";
-                      retrySummaryNote = "Retry not scheduled because no remaining files were outside the analyzed progress.";
-                      break;
-                    case "invalid-checkpoint-scope":
-                      retryState = "not scheduled (invalid checkpoint scope)";
-                      retrySummaryNote = "Retry not scheduled because checkpoint scope was malformed.";
-                      break;
-                    case "zero-evidence-failure": {
-                      retryState = "not scheduled (zero-evidence timeout)";
-                      if (knowledgeStore?.upsertContinuationFamilyState && !knowledgeStore.saveCheckpoint) {
-                        retrySummaryNote = "Retry not scheduled because the first pass produced no trustworthy evidence and checkpoint persistence is unavailable.";
-                        break;
-                      }
-
-                      const retryRemoteRuntimeBudgetSeconds = Math.max(30, Math.floor(timeoutDuration / 2));
-                      const retryScope = computeRetryScope({
-                        allFiles: riskScores,
-                        filesAlreadyReviewed: timeoutReviewedFiles,
-                        totalFiles: timeoutTotalFiles,
-                      });
-
-                      if (retryScope.filesToReview.length > 0) {
-                        const continuationFiles = retryScope.filesToReview.map((file) => file.filePath);
-                        const timeoutEstimate = estimateTimeoutRisk({
-                          fileCount: continuationFiles.length,
-                          linesChanged: continuationFiles.reduce((sum, filePath) => {
-                            const stats = perFileStats.get(filePath);
-                            if (!stats) return sum;
-                            return sum + stats.added + stats.removed;
-                          }, 0),
-                          languageComplexity,
-                          isLargePR: false,
-                          baseTimeoutSeconds: retryRemoteRuntimeBudgetSeconds,
-                        });
-                        retryPlan = {
-                          decision: "schedule-continuation",
-                          reason: "remaining-scope-available",
-                          reviewOutputKey,
-                          continuationReviewOutputKey: `${reviewOutputKey}-retry-1`,
-                          continuationNumber: 1,
-                          continuationFiles,
-                          scopeRatio: retryScope.scopeRatio,
-                          timeoutSeconds: timeoutEstimate.totalTimeoutSeconds,
-                          checkpointEnabled:
-                            reviewRouting.taskType === TASK_TYPES.REVIEW_FULL ||
-                            timeoutEstimate.riskLevel === "medium" ||
-                            timeoutEstimate.riskLevel === "high",
-                          timeoutEstimate,
-                          firstPass: timeoutFirstPass,
-                          checkpoint,
-                        };
-                        retryState = "scheduled reduced-scope retry";
-                        retrySummaryNote = "Scheduling a reduced-scope retry.";
-                      }
-                      break;
-                    }
-                  }
-                  break;
-              }
+            if (retryPlan?.decision === "schedule-continuation" && retryPlan.continuationCompaction) {
+              visibleBudgetState.continuationCompactionObservations.push(retryPlan.continuationCompaction);
+              visibleBudgetState.refresh();
             }
 
             const retryClassificationInput = retryPlan?.decision === "schedule-continuation"
