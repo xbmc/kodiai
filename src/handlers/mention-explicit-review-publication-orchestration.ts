@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import { ok, type Result } from "../lib/result.ts";
 import type { WebhookEvent } from "../webhook/types.ts";
 import { summarizeErrorForDiagnostics } from "./mention-write-replies.ts";
 import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
@@ -9,6 +10,15 @@ import {
   type ExplicitMentionReviewPublicationStatus,
 } from "./mention-explicit-review-publication.ts";
 import type { MentionEvent } from "./mention-types.ts";
+
+export type ExplicitMentionReviewPublicationOrchestrationValue = {
+  explicitReviewPublishEvaluation: ReturnType<typeof resolveExplicitMentionReviewPublishDecision>["evaluation"];
+  explicitReviewResultFindingLines: string[];
+  explicitReviewPublication: ExplicitMentionReviewPublicationStatus | null;
+};
+
+export type ExplicitMentionReviewPublicationOrchestrationResult =
+  Result<ExplicitMentionReviewPublicationOrchestrationValue>;
 
 export async function publishExplicitMentionReviewIfEligible(params: {
   explicitReviewRequest: boolean;
@@ -33,11 +43,7 @@ export async function publishExplicitMentionReviewIfEligible(params: {
   projectLifecycle?: typeof projectExplicitMentionReviewLifecycle;
   resolvePublishDecision?: typeof resolveExplicitMentionReviewPublishDecision;
   publishReview?: typeof publishExplicitMentionReviewResult;
-}): Promise<{
-  explicitReviewPublishEvaluation: ReturnType<typeof resolveExplicitMentionReviewPublishDecision>["evaluation"];
-  explicitReviewResultFindingLines: string[];
-  explicitReviewPublication: ExplicitMentionReviewPublicationStatus | null;
-}> {
+}): Promise<ExplicitMentionReviewPublicationOrchestrationResult> {
   const projectLifecycle = params.projectLifecycle ?? projectExplicitMentionReviewLifecycle;
   const resolvePublishDecision = params.resolvePublishDecision ?? resolveExplicitMentionReviewPublishDecision;
   const publishReview = params.publishReview ?? publishExplicitMentionReviewResult;
@@ -99,9 +105,9 @@ export async function publishExplicitMentionReviewIfEligible(params: {
     });
   }
 
-  return {
+  return ok({
     explicitReviewPublishEvaluation: explicitReviewPublishDecision.evaluation,
     explicitReviewResultFindingLines: explicitReviewPublishDecision.findingLines,
     explicitReviewPublication,
-  };
+  });
 }

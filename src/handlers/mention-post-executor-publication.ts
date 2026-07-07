@@ -93,11 +93,7 @@ export async function publishMentionPostExecutorOutputs(params: {
 }): Promise<MentionPostExecutorPublicationResult> {
   const { executorPlan, result } = params.executorDispatch;
 
-  const {
-    explicitReviewPublishEvaluation,
-    explicitReviewResultFindingLines,
-    explicitReviewPublication,
-  } = await publishExplicitMentionReviewIfEligible({
+  const explicitReviewPublicationOrchestration = await publishExplicitMentionReviewIfEligible({
     explicitReviewRequest: params.explicitReviewRequest,
     eventName: params.eventName,
     mention: params.mention,
@@ -123,6 +119,14 @@ export async function publishMentionPostExecutorOutputs(params: {
     postMentionError: params.postMentionError,
     logger: params.logger,
   });
+  if (!explicitReviewPublicationOrchestration.ok) {
+    return err({ error: explicitReviewPublicationOrchestration.err });
+  }
+  const {
+    explicitReviewPublishEvaluation,
+    explicitReviewResultFindingLines,
+    explicitReviewPublication,
+  } = explicitReviewPublicationOrchestration.value;
 
   let publicationState: MentionExecutionPublicationState = resolveMentionExecutionPublicationState({
     result,

@@ -132,4 +132,22 @@ describe("publication result structure", () => {
     expect(postExecutorSource).toContain("if (!fallbackPublication.ok)");
     expect(postExecutorSource).toContain("...fallbackPublication.value");
   });
+
+  test("keeps explicit mention review publication orchestration on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
+    const postExecutorSource = readFileSync(
+      new URL("./mention-post-executor-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("ExplicitMentionReviewPublicationOrchestrationResult");
+    expect(source).toContain("Result<ExplicitMentionReviewPublicationOrchestrationValue>");
+    expect(source).toMatch(/\bok\(/);
+    expect(postExecutorSource).toContain("if (!explicitReviewPublicationOrchestration.ok)");
+    expect(postExecutorSource).toContain("explicitReviewPublicationOrchestration.value");
+  });
 });

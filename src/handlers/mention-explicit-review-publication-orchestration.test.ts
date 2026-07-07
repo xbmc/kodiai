@@ -75,13 +75,15 @@ describe("publishExplicitMentionReviewIfEligible", () => {
       publishReview,
     });
 
-    expect(result.explicitReviewPublication).toBeNull();
-    expect(result.explicitReviewPublishEvaluation).toMatchObject({
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw result.err;
+    expect(result.value.explicitReviewPublication).toBeNull();
+    expect(result.value.explicitReviewPublishEvaluation).toMatchObject({
       eligible: false,
       skipReason: "result-text-findings",
       hasUnpublishedFindings: true,
     });
-    expect(result.explicitReviewResultFindingLines).toEqual([
+    expect(result.value.explicitReviewResultFindingLines).toEqual([
       "- (1) [major] src/a.ts (10): Broken branch",
     ]);
     expect(projectLifecycle).toHaveBeenCalledTimes(1);
