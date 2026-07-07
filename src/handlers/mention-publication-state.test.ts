@@ -4,6 +4,7 @@ import {
   buildCombinedReviewAndFormatMentionLogFields,
   buildCombinedReviewAndFormatThrownMentionLogFields,
   buildFormatOnlyMentionLogFields,
+  buildMentionExecutionCompletedState,
   buildMentionExecutionCompletedLogFields,
   createMentionExecutionCompletedLogger,
   mentionErrorDeliveryFromResult,
@@ -11,6 +12,55 @@ import {
   resolveMentionExecutionPublicationState,
   type MentionPublishResolution,
 } from "./mention-publication-state.ts";
+
+describe("buildMentionExecutionCompletedState", () => {
+  test("projects completion logger state from handler execution state", () => {
+    const result = {
+      conclusion: "success",
+      published: true,
+      costUsd: 1.25,
+      numTurns: 4,
+      durationMs: 1500,
+      sessionId: "session-1",
+      usedRepoInspectionTools: true,
+      toolUseNames: ["view_file"],
+    };
+
+    expect(buildMentionExecutionCompletedState({
+      mention: {
+        surface: "issue_comment",
+        issueNumber: 42,
+      },
+      result,
+      mentionFailureSubtype: undefined,
+      mentionExecutionErrorCategory: undefined,
+      mentionOutputPublished: true,
+      publishResolution: "executor",
+      publishFailureCategory: null,
+      publishFallbackDelivery: null,
+      writeEnabled: false,
+      mentionDerivedContextCacheStatus: "hit",
+      mentionDerivedContextCacheReason: "fingerprint-match",
+      explicitReviewRequest: true,
+      reviewOutputKey: "review-output-key",
+    })).toEqual({
+      surface: "issue_comment",
+      issueNumber: 42,
+      result,
+      mentionFailureSubtype: undefined,
+      mentionExecutionErrorCategory: undefined,
+      mentionOutputPublished: true,
+      publishResolution: "executor",
+      publishFailureCategory: null,
+      publishFallbackDelivery: null,
+      writeEnabled: false,
+      mentionDerivedContextCacheStatus: "hit",
+      mentionDerivedContextCacheReason: "fingerprint-match",
+      explicitReviewRequest: true,
+      reviewOutputKey: "review-output-key",
+    });
+  });
+});
 
 describe("buildFormatOnlyMentionLogFields", () => {
   test("reports format-only formatter completion fields", () => {

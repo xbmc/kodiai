@@ -25,6 +25,7 @@ import {
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
 import {
+  buildMentionExecutionCompletedState,
   createMentionExecutionCompletedLogger,
   type MentionExecutionFailureSubtype,
   resolveMentionExecutionPublicationState,
@@ -665,9 +666,8 @@ export function createMentionHandler(deps: {
 
         const logMentionExecutionCompleted = createMentionExecutionCompletedLogger({
           logger,
-          getState: () => ({
-            surface: mention.surface,
-            issueNumber: mention.issueNumber,
+          getState: () => buildMentionExecutionCompletedState({
+            mention,
             result,
             mentionFailureSubtype,
             mentionExecutionErrorCategory,

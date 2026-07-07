@@ -106,6 +106,16 @@ describe("mention handler structure", () => {
     expect(source).toContain("createMentionExecutionCompletedLogger");
   });
 
+  test("keeps mention execution completion state projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const publicationStateSource = readFileSync(new URL("./mention-publication-state.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("getState: () => ({\n            surface: mention.surface");
+    expect(source).not.toContain("issueNumber: mention.issueNumber,\n            result,");
+    expect(source).toContain("buildMentionExecutionCompletedState");
+    expect(publicationStateSource).toContain("export function buildMentionExecutionCompletedState");
+  });
+
   test("keeps mention execution publication state projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

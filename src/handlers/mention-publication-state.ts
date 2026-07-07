@@ -412,6 +412,42 @@ export function buildMentionExecutionCompletedLogFields(params: {
   };
 }
 
+export function buildMentionExecutionCompletedState(params: {
+  mention: {
+    surface: string;
+    issueNumber: number;
+  };
+  result: Parameters<typeof buildMentionExecutionCompletedLogFields>[0]["result"];
+  mentionFailureSubtype?: string;
+  mentionExecutionErrorCategory?: unknown;
+  mentionOutputPublished: boolean;
+  publishResolution: MentionPublishResolution;
+  publishFailureCategory: unknown;
+  publishFallbackDelivery: MentionErrorDelivery | null;
+  writeEnabled: boolean;
+  mentionDerivedContextCacheStatus: unknown;
+  mentionDerivedContextCacheReason?: string | null;
+  explicitReviewRequest: boolean;
+  reviewOutputKey?: string;
+}): Parameters<typeof buildMentionExecutionCompletedLogFields>[0] {
+  return {
+    surface: params.mention.surface,
+    issueNumber: params.mention.issueNumber,
+    result: params.result,
+    mentionFailureSubtype: params.mentionFailureSubtype,
+    mentionExecutionErrorCategory: params.mentionExecutionErrorCategory,
+    mentionOutputPublished: params.mentionOutputPublished,
+    publishResolution: params.publishResolution,
+    publishFailureCategory: params.publishFailureCategory,
+    publishFallbackDelivery: params.publishFallbackDelivery,
+    writeEnabled: params.writeEnabled,
+    mentionDerivedContextCacheStatus: params.mentionDerivedContextCacheStatus,
+    mentionDerivedContextCacheReason: params.mentionDerivedContextCacheReason,
+    explicitReviewRequest: params.explicitReviewRequest,
+    reviewOutputKey: params.reviewOutputKey,
+  };
+}
+
 export function createMentionExecutionCompletedLogger(params: {
   logger: {
     info(fields: Record<string, unknown>, message?: string): void;
