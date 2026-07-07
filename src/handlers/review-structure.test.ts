@@ -421,6 +421,19 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-retry-instructions.ts");
   });
 
+  test("keeps retry execution outcome telemetry out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const retryHasStructuredProgress =");
+    expect(source).not.toContain("const retryHasResults =");
+    expect(source).not.toContain("const retryTimeoutClassification = classifyReviewTimeoutOutcome({");
+    expect(source).not.toContain("warningPrefix: \"Retry\"");
+    expect(source).not.toContain("kind: \"retry\",\n                            reviewOutputKey: retryReviewOutputKey");
+    expect(source).not.toContain("timeoutClassification: retryTimeoutClassification.classification");
+    expect(source).toContain("resolveReviewRetryExecutionOutcome");
+    expect(source).toContain("./review-retry-execution-outcome.ts");
+  });
+
   test("keeps clean review approval body assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const cleanApprovalSource = readFileSync(new URL("./review-clean-approval.ts", import.meta.url), "utf8");

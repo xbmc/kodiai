@@ -247,6 +247,7 @@ import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-con
 import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome.ts";
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
+import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2909,90 +2910,33 @@ export function createReviewHandler(deps: {
                       enableCommentTools: false,
                     });
 
-                      const retryCheckpoint = (await knowledgeStore?.getCheckpoint?.(retryReviewOutputKey)) ?? null;
-                      const retryHasStructuredProgress =
-                        (retryCheckpoint?.filesReviewed?.length ?? 0) > 0 ||
-                        (retryCheckpoint?.filesInspected?.length ?? 0) > 0;
-                      const retryHasResults =
-                        retryHasStructuredProgress ||
-                        (retryCheckpoint?.findingCount ?? 0) >= 1 ||
-                        (retryResult.published ?? false);
-                      const retryTimeoutClassification = classifyReviewTimeoutOutcome({
-                        deliveryId: retryDeliveryId,
-                        reviewOutputKey: retryReviewOutputKey,
-                        outcome: {
-                          isTimeout: retryResult.isTimeout,
-                          stopReason: retryResult.stopReason,
-                          failureSubtype: retryResult.failureSubtype,
-                        },
-                        checkpoint: retryCheckpoint
-                          ? {
-                              filesReviewed: retryCheckpoint.filesReviewed?.length,
-                              filesInspected: retryCheckpoint.filesInspected?.length,
-                              findingCount: retryCheckpoint.findingCount,
-                              totalFiles: timeoutTotalFiles,
-                            }
-                          : null,
-                        retry: {
-                          completed: retryResult.conclusion === "success" || retryHasResults,
-                          failed: retryResult.conclusion !== "success" && !retryHasResults,
-                          hasResults: retryHasResults,
-                          filesCount: retryFiles.length,
-                        },
+                      const {
+                        retryCheckpoint,
+                        retryHasResults,
+                        retryTimeoutClassification,
+                      } = await resolveReviewRetryExecutionOutcome({
+                        telemetryEnabled: config.telemetry.enabled,
+                        telemetryStore,
+                        logger,
+                        retryDeliveryId,
+                        parentDeliveryId: event.id,
+                        repo: `${apiOwner}/${apiRepo}`,
+                        prNumber: pr.number,
+                        prAuthor: pr.user.login,
+                        retryReviewOutputKey,
+                        retryResult,
+                        retryPromptSections,
+                        retryReviewPromptDerivedCacheStatus,
+                        retryReviewPromptDerivedCacheReason: retryReviewPromptDerivedCacheReason ?? undefined,
+                        retryFilesCount: retryFiles.length,
+                        retryScopeRatio,
+                        retryTimeoutSeconds: retryTimeout,
+                        retryRiskLevel: retryTimeoutEstimate.riskLevel,
+                        retryCheckpointEnabled,
+                        partialCommentId,
+                        timeoutTotalFiles,
+                        getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
                       });
-
-                      if (config.telemetry.enabled) {
-                        await recordReviewExecutionTelemetry({
-                          telemetryStore,
-                          logger,
-                          deliveryId: retryDeliveryId,
-                          repo: `${apiOwner}/${apiRepo}`,
-                          prNumber: pr.number,
-                          prAuthor: pr.user.login,
-                          eventType: "pull_request.review-retry",
-                          result: retryResult,
-                          promptSections: retryResult.promptSections ?? retryPromptSections,
-                          derivedPromptCacheStatus: retryReviewPromptDerivedCacheStatus,
-                          derivedPromptCacheReason: retryReviewPromptDerivedCacheReason ?? undefined,
-                          warningPrefix: "Retry",
-                        });
-                      }
-
-                      if (config.telemetry.enabled) {
-                        await recordReviewResilienceEventFailOpen({
-                          telemetryStore,
-                          logger,
-                          entry: {
-                            deliveryId: retryDeliveryId,
-                            parentDeliveryId: event.id,
-                            repo: `${apiOwner}/${apiRepo}`,
-                            prNumber: pr.number,
-                            prAuthor: pr.user.login,
-                            eventType: "pull_request.review-retry",
-                            kind: "retry",
-                            reviewOutputKey: retryReviewOutputKey,
-                            executionConclusion: retryResult.isTimeout && retryResult.published
-                              ? "timeout_partial"
-                              : retryResult.isTimeout
-                                ? "timeout"
-                                : retryResult.conclusion,
-                            hadInlineOutput: retryResult.published ?? false,
-                            checkpointFilesReviewed: retryCheckpoint?.filesReviewed?.length,
-                            checkpointFindingCount: retryCheckpoint?.findingCount,
-                            checkpointTotalFiles: timeoutTotalFiles,
-                            partialCommentId,
-                            retryHasResults,
-                            retryFilesCount: retryFiles.length,
-                            retryScopeRatio,
-                            retryTimeoutSeconds: retryTimeout,
-                            retryRiskLevel: retryTimeoutEstimate.riskLevel,
-                            retryCheckpointEnabled,
-                            timeoutClassification: retryTimeoutClassification.classification,
-                            timeoutClassificationMode: retryTimeoutClassification.mode,
-                            timeoutClassificationReasons: retryTimeoutClassification.reasonCodes,
-                          },
-                        });
-                      }
 
                     if (
                       retryResult.conclusion === "success" ||
