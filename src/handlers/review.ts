@@ -4,7 +4,7 @@ import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
+import type { TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
 } from "../knowledge/types.ts";
@@ -129,7 +129,6 @@ import {
   publishReviewExecutionErrorFallback,
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
-import { maybePostReviewCostWarning } from "./review-cost-warning.ts";
 import { publishBoundedFirstPassReview } from "./review-partial-publication.ts";
 import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
 import { publishCleanReviewApproval } from "./review-clean-approval-publication.ts";
@@ -146,7 +145,7 @@ import {
   scheduleReviewHunkEmbedding,
 } from "./review-post-execution-side-effects.ts";
 import { recordReviewResilienceEventFailOpen } from "./review-resilience-telemetry.ts";
-import { recordReviewExecutionTelemetry } from "./review-telemetry.ts";
+import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
@@ -1335,36 +1334,26 @@ export function createReviewHandler(deps: {
         });
         canonicalReviewDetailsBody = firstPassReviewDetailsPublication.canonicalReviewDetailsBody;
 
-        // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
-        if (config.telemetry.enabled) {
-          await recordReviewExecutionTelemetry({
-            telemetryStore,
-            logger,
-            deliveryId: event.id,
-            repo: `${apiOwner}/${apiRepo}`,
-            prNumber: pr.number,
-            prAuthor: pr.user.login,
-            eventType: `pull_request.${payload.action}`,
-            result,
-            promptSections: result.promptSections ?? reviewPromptSections,
-            derivedPromptCacheStatus: reviewPromptDerivedCacheStatus,
-            derivedPromptCacheReason: reviewPromptDerivedCacheReason ?? undefined,
-            warningPrefix: "Review",
-          });
-
-          await maybePostReviewCostWarning({
-            costUsd: result.costUsd,
-            thresholdUsd: config.telemetry.costWarningUsd,
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            canPublishVisibleOutput,
-            setReviewWorkPhase,
-            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-            botHandles: [githubApp.getAppSlug(), "claude"],
-            logger,
-          });
-        }
+        await recordReviewPostExecutionTelemetry({
+          telemetryEnabled: config.telemetry.enabled,
+          telemetryStore,
+          logger,
+          deliveryId: event.id,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          prAuthor: pr.user.login,
+          eventType: `pull_request.${payload.action}`,
+          result,
+          promptSections: reviewPromptSections,
+          derivedPromptCacheStatus: reviewPromptDerivedCacheStatus,
+          derivedPromptCacheReason: reviewPromptDerivedCacheReason ?? undefined,
+          costWarningUsd: config.telemetry.costWarningUsd,
+          canPublishVisibleOutput,
+          setReviewWorkPhase,
+          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          botHandles: [githubApp.getAppSlug(), "claude"],
+        });
 
         let reviewId: number | undefined;
 

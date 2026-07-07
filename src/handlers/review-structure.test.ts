@@ -211,14 +211,30 @@ describe("review handler structure", () => {
 
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("recordRateLimitEvent({\n              deliveryId: event.id");
     expect(source).not.toContain("recordRateLimitEvent({\n                          deliveryId: retryDeliveryId");
     expect(source).not.toContain("conclusion: result.isTimeout && result.published");
     expect(source).not.toContain("conclusion: retryResult.isTimeout && retryResult.published");
     expect(source).not.toContain("Retry derived-prompt reuse telemetry write failed (non-blocking)");
-    expect(source).toContain("recordReviewExecutionTelemetry");
-    expect(source).toContain("./review-telemetry.ts");
+    expect(source).toContain("recordReviewPostExecutionTelemetry");
+    expect(source).toContain("./review-post-execution-telemetry.ts");
+    expect(postExecutionSource).toContain("recordReviewExecutionTelemetry");
+    expect(postExecutionSource).toContain("./review-telemetry.ts");
+  });
+
+  test("keeps first-pass telemetry and cost-warning orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (config.telemetry.enabled) {\n          await recordReviewExecutionTelemetry");
+    expect(source).not.toContain("recordReviewExecutionTelemetry({");
+    expect(source).not.toContain("maybePostReviewCostWarning({");
+    expect(source).toContain("recordReviewPostExecutionTelemetry");
+    expect(source).toContain("./review-post-execution-telemetry.ts");
+    expect(postExecutionSource).toContain("recordReviewExecutionTelemetry");
+    expect(postExecutionSource).toContain("maybePostReviewCostWarning");
   });
 
   test("keeps review resilience telemetry persistence out of the monster handler", () => {
@@ -577,11 +593,13 @@ describe("review handler structure", () => {
 
   test("keeps review cost warning publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("costWarningUsd: 5.0  # or 0 to disable");
     expect(source).not.toContain("Failed to post cost warning comment");
-    expect(source).toContain("./review-cost-warning.ts");
-    expect(source).toContain("maybePostReviewCostWarning");
+    expect(source).toContain("recordReviewPostExecutionTelemetry");
+    expect(postExecutionSource).toContain("./review-cost-warning.ts");
+    expect(postExecutionSource).toContain("maybePostReviewCostWarning");
   });
 
   test("keeps depends review publication out of the monster handler", () => {
