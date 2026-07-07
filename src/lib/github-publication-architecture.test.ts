@@ -16,6 +16,10 @@ describe("GitHub publication architecture", () => {
           const { createComment } = octokit.rest.issues;
           await createComment({ owner, repo, issue_number, body });
         `,
+        "src/handlers/unsafe-property-octokit-destructured.ts": `
+          const { createComment } = params.octokit.rest.issues;
+          await createComment({ owner, repo, issue_number, body });
+        `,
         "src/handlers/unsafe-aliased.ts": `
           const createReview = octokit.rest.pulls.createReview;
           await createReview({ owner, repo, pull_number, body, event: "COMMENT" });
@@ -59,10 +63,19 @@ describe("GitHub publication architecture", () => {
           const create = octokit.rest["issues"]["create"];
           await create({ owner, repo, title, body });
         `,
+        "src/handlers/unsafe-property-octokit.ts": `
+          await params.octokit.rest.issues.createComment({ owner, repo, issue_number, body });
+        `,
         "src/handlers/unsafe-request.ts": `await octokit.request(
           "PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
           { owner, repo, pull_number, review_id, body },
         );`,
+        "src/handlers/unsafe-property-octokit-request.ts": `
+          await botClient.octokit.request(
+            "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+            { owner, repo, issue_number, body },
+          );
+        `,
         "src/handlers/unsafe-request-template.ts": "await octokit.request(`PATCH /repos/{owner}/{repo}/issues/{issue_number}`, { owner, repo, issue_number, body });",
         "src/handlers/unsafe-request-payload-alias.ts": `
           const payload = { owner, repo, issue_number, body };
@@ -71,6 +84,20 @@ describe("GitHub publication architecture", () => {
         "src/handlers/unsafe-request-payload-spread.ts": `
           const payload = { owner, repo, issue_number, body };
           await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", { ...payload });
+        `,
+        "src/handlers/unsafe-request-assignment-alias.ts": `
+          const request = octokit.request;
+          await request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", { owner, repo, issue_number, body });
+        `,
+        "src/handlers/unsafe-request-destructured-alias.ts": `
+          const { request: githubRequest } = octokit;
+          const payload = { owner, repo, issue_number, body };
+          await githubRequest("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", payload);
+        `,
+        "src/handlers/unsafe-property-octokit-request-destructured-alias.ts": `
+          const { request: githubRequest } = params.octokit;
+          const payload = { owner, repo, issue_number, body };
+          await githubRequest("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", payload);
         `,
         "src/lib/github-publication.ts": "await octokit.rest.issues.createComment({ owner, repo, issue_number, body });",
         "src/handlers/safe.ts": "await createIssueCommentWithPublicationPipeline(octokit, { owner, repo, issue_number, body });",
@@ -117,6 +144,30 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-pr.ts",
         method: "pulls.create",
+      },
+      {
+        file: "src/handlers/unsafe-property-octokit-destructured.ts",
+        method: "issues.createComment",
+      },
+      {
+        file: "src/handlers/unsafe-property-octokit-request-destructured-alias.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      },
+      {
+        file: "src/handlers/unsafe-property-octokit-request.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      },
+      {
+        file: "src/handlers/unsafe-property-octokit.ts",
+        method: "issues.createComment",
+      },
+      {
+        file: "src/handlers/unsafe-request-assignment-alias.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      },
+      {
+        file: "src/handlers/unsafe-request-destructured-alias.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
       },
       {
         file: "src/handlers/unsafe-request-payload-alias.ts",

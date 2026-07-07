@@ -44,6 +44,8 @@ const OUTGOING_PUBLICATION_SANITIZER_SYMBOLS = [
   "sanitizeOutgoingMentions",
 ] as const;
 
+const OCTOKIT_RECEIVER_PATTERN = String.raw`(?:\b[A-Za-z_$][\w$]*\s*(?:\.\s*[A-Za-z_$][\w$]*|\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*\.\s*)?octokit\b`;
+
 export function findDirectGitHubPublicationWrites(
   input: FindDirectGitHubPublicationWritesInput,
 ): GitHubPublicationArchitectureFinding[] {
@@ -60,11 +62,11 @@ export function findDirectGitHubPublicationWrites(
       const namespaceAccess = buildPropertyAccessPattern(namespace);
       const methodAccess = buildPropertyAccessPattern(name);
       const directCallPattern = new RegExp(
-        String.raw`octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\([^)]*\bbody\b`,
+        String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\([^)]*\bbody\b`,
         "s",
       );
       const directPayloadAliasCallPattern = new RegExp(
-        String.raw`octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\(\s*(?:(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})|\{\s*\.\.\.\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*\})\s*[,)]`,
+        String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\(\s*(?:(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})|\{\s*\.\.\.\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*\})\s*[,)]`,
         "s",
       );
       if (
@@ -91,26 +93,35 @@ export function findDirectGitHubPublicationWrites(
       }
     }
 
-    const requestCallPattern = /octokit\s*\.\s*request\s*\(\s*([`"'])(POST|PATCH|PUT)\s+([^`"']*\/repos\/[^`"']*)\1\s*,\s*(\{[^)]*(?:\bbody\b|\.\.\.\s*[A-Za-z_$][\w$]*)[^)]*\}|[A-Za-z_$][\w$]*)/gs;
-    for (const match of source.matchAll(requestCallPattern)) {
-      const httpMethod = match[2];
-      const route = match[3];
-      const requestPayload = match[4];
-      if (
-        BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS.includes(
-          httpMethod as (typeof BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS)[number],
-        )
-        && route
-        && (
-          requestPayload?.trimStart().startsWith("{")
-          && (
-            /\bbody\b/.test(requestPayload)
-            || bodyBearingPayloadAliases.some((alias) => new RegExp(String.raw`\.\.\.\s*${escapeRegExp(alias)}\b`).test(requestPayload))
+    const requestCalleePatterns = [
+      String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*${buildPropertyAccessPattern("request")}`,
+      ...findGitHubRequestAliases(source).map((alias) => String.raw`\b${escapeRegExp(alias)}\b`),
+    ];
+    for (const requestCalleePattern of requestCalleePatterns) {
+      const requestCallPattern = new RegExp(
+        String.raw`${requestCalleePattern}\s*\(\s*([` + "`" + String.raw`"'])(POST|PATCH|PUT)\s+([^` + "`" + String.raw`"']*\/repos\/[^` + "`" + String.raw`"']*)\1\s*,\s*(\{[^)]*(?:\bbody\b|\.\.\.\s*[A-Za-z_$][\w$]*)[^)]*\}|[A-Za-z_$][\w$]*)`,
+        "gs",
+      );
+      for (const match of source.matchAll(requestCallPattern)) {
+        const httpMethod = match[2];
+        const route = match[3];
+        const requestPayload = match[4];
+        if (
+          BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS.includes(
+            httpMethod as (typeof BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS)[number],
           )
-          || bodyBearingPayloadAliases.includes(requestPayload ?? "")
-        )
-      ) {
-        findings.push({ file, method: `request:${httpMethod} ${route}` });
+          && route
+          && (
+            requestPayload?.trimStart().startsWith("{")
+            && (
+              /\bbody\b/.test(requestPayload)
+              || bodyBearingPayloadAliases.some((alias) => new RegExp(String.raw`\.\.\.\s*${escapeRegExp(alias)}\b`).test(requestPayload))
+            )
+            || bodyBearingPayloadAliases.includes(requestPayload ?? "")
+          )
+        ) {
+          findings.push({ file, method: `request:${httpMethod} ${route}` });
+        }
       }
     }
   }
@@ -190,7 +201,7 @@ function findPublicationMethodAliases(source: string, namespace: string, name: s
   const namespaceAccess = buildPropertyAccessPattern(namespace);
   const methodAccess = buildPropertyAccessPattern(name);
   const destructuredPattern = new RegExp(
-    String.raw`\{\s*${name}(?:\s*:\s*(\w+))?\s*\}\s*=\s*octokit\s*\.\s*rest\s*${namespaceAccess}`,
+    String.raw`\{\s*${name}(?:\s*:\s*(\w+))?\s*\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}`,
     "g",
   );
   for (const match of source.matchAll(destructuredPattern)) {
@@ -198,7 +209,31 @@ function findPublicationMethodAliases(source: string, namespace: string, name: s
   }
 
   const assignmentPattern = new RegExp(
-    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*octokit\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}`,
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}`,
+    "g",
+  );
+  for (const match of source.matchAll(assignmentPattern)) {
+    if (match[1]) {
+      aliases.add(match[1]);
+    }
+  }
+
+  return [...aliases];
+}
+
+function findGitHubRequestAliases(source: string): string[] {
+  const aliases = new Set<string>();
+  const destructuredPattern = new RegExp(
+    String.raw`\{\s*request(?:\s*:\s*(\w+))?\s*\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}`,
+    "g",
+  );
+  for (const match of source.matchAll(destructuredPattern)) {
+    aliases.add(match[1] ?? "request");
+  }
+
+  const requestAccess = buildPropertyAccessPattern("request");
+  const assignmentPattern = new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*${requestAccess}`,
     "g",
   );
   for (const match of source.matchAll(assignmentPattern)) {
