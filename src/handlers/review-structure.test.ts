@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1476);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1434);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -498,6 +498,7 @@ describe("review handler structure", () => {
   test("keeps review knowledge persistence mechanics out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const persistenceSource = readFileSync(new URL("./review-knowledge-persistence.ts", import.meta.url), "utf8");
+    const postExecutionKnowledgeSource = readFileSync(new URL("./review-post-execution-knowledge.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("knowledgeStore.recordReview({");
     expect(source).not.toContain("knowledgeStore.recordFindings(");
@@ -508,8 +509,11 @@ describe("review handler structure", () => {
     expect(source).not.toContain("buildReviewKnowledgeConfigSnapshot({");
     expect(source).not.toContain("const knowledgePersistence = await persistReviewKnowledge({");
     expect(source).not.toContain("buildReviewKnowledgeRecord({");
-    expect(source).toContain("persistReviewKnowledgeIfAvailable");
-    expect(source).toContain("./review-knowledge-persistence.ts");
+    expect(source).not.toContain("const reviewId = await persistReviewKnowledgeIfAvailable({");
+    expect(source).toContain("recordReviewPostExecutionKnowledge");
+    expect(source).toContain("./review-post-execution-knowledge.ts");
+    expect(postExecutionKnowledgeSource).toContain("persistReviewKnowledgeIfAvailable");
+    expect(postExecutionKnowledgeSource).toContain("./review-knowledge-persistence.ts");
     expect(persistenceSource).toContain("buildReviewKnowledgeConfigSnapshot");
     expect(persistenceSource).toContain("buildReviewKnowledgeRecord");
     expect(persistenceSource).toContain("persistReviewKnowledgeIfAvailable");
@@ -519,13 +523,15 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const learningMemorySource = readFileSync(new URL("./review-learning-memory.ts", import.meta.url), "utf8");
     const sideEffectsSource = readFileSync(new URL("./review-post-execution-side-effects.ts", import.meta.url), "utf8");
+    const postExecutionKnowledgeSource = readFileSync(new URL("./review-post-execution-knowledge.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("writeReviewLearningMemory({");
     expect(source).not.toContain("Learning memory write batch complete");
     expect(source).not.toContain("Promise.resolve().then(async () =>");
     expect(source).not.toContain("Learning memory write pipeline failed (fail-open)");
     expect(source).not.toContain("scheduleReviewLearningMemoryBatch({");
-    expect(source).toContain("recordReviewPostExecutionSideEffects");
+    expect(source).toContain("recordReviewPostExecutionKnowledge");
+    expect(postExecutionKnowledgeSource).toContain("recordReviewPostExecutionSideEffects");
     expect(sideEffectsSource).toContain("scheduleReviewLearningMemoryBatch");
     expect(sideEffectsSource).toContain("./review-learning-memory.ts");
     expect(learningMemorySource).toContain("writeReviewLearningMemoryBatch");
@@ -535,6 +541,7 @@ describe("review handler structure", () => {
   test("keeps post-execution side-effect mechanics out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const sideEffectsSource = readFileSync(new URL("./review-post-execution-side-effects.ts", import.meta.url), "utf8");
+    const postExecutionKnowledgeSource = readFileSync(new URL("./review-post-execution-knowledge.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("knowledgeStore.completeRun(runKey)");
     expect(source).not.toContain("updateExpertiseIncremental({");
@@ -544,8 +551,11 @@ describe("review handler structure", () => {
     expect(source).not.toContain("scheduleContributorExpertiseUpdate({");
     expect(source).not.toContain("scheduleReviewLearningMemoryBatch({");
     expect(source).not.toContain("scheduleReviewHunkEmbedding({");
-    expect(source).toContain("recordReviewPostExecutionSideEffects");
-    expect(source).toContain("./review-post-execution-side-effects.ts");
+    expect(source).not.toContain("await recordReviewPostExecutionSideEffects({");
+    expect(source).toContain("recordReviewPostExecutionKnowledge");
+    expect(source).toContain("./review-post-execution-knowledge.ts");
+    expect(postExecutionKnowledgeSource).toContain("recordReviewPostExecutionSideEffects");
+    expect(postExecutionKnowledgeSource).toContain("./review-post-execution-side-effects.ts");
     expect(sideEffectsSource).toContain("completeReviewRunFailOpen");
     expect(sideEffectsSource).toContain("scheduleContributorExpertiseUpdate");
     expect(sideEffectsSource).toContain("scheduleReviewLearningMemoryBatch");

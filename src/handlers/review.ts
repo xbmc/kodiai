@@ -52,12 +52,7 @@ import { buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies } fr
 import { resolveReviewIdempotencyContext } from "./review-idempotency-context.ts";
 import { resolveReviewRetrievalPromptContext } from "./review-retrieval-context.ts";
 import { resolveReviewDependencyBumpFlowContext } from "./review-dependency-bump-flow.ts";
-import {
-  persistReviewKnowledgeIfAvailable,
-} from "./review-knowledge-persistence.ts";
-import {
-  recordReviewPostExecutionSideEffects,
-} from "./review-post-execution-side-effects.ts";
+import { recordReviewPostExecutionKnowledge } from "./review-post-execution-knowledge.ts";
 import { recordReviewPostExecutionTelemetryForInstallation } from "./review-post-execution-telemetry-context.ts";
 import {
   publishReviewRequestedEyesReactionFromHandlerDependencies,
@@ -939,74 +934,37 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           setReviewWorkPhase,
         });
 
-        const reviewId = await persistReviewKnowledgeIfAvailable({
+        await recordReviewPostExecutionKnowledge({
           knowledgeStore,
           logger,
           repo: `${apiOwner}/${apiRepo}`,
-          prNumber: pr.number,
-          reviewOutputKey,
-          record: {
-            repo: `${apiOwner}/${apiRepo}`,
-            prNumber: pr.number,
-            headSha: pr.head.sha,
-            deliveryId: event.id,
-            filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
-            linesChanged,
-            findingCounts,
-            findingsTotal: processedFindings.length,
-            suppressionsApplied,
-            reviewConfig: {
-              mode: config.review.mode,
-              severityMinLevel: config.review.severity.minLevel,
-              focusAreas: config.review.focusAreas,
-              maxComments: config.review.maxComments,
-              suppressionCount: config.review.suppressions.length,
-              minConfidence: config.review.minConfidence,
-              profile: config.review.profile,
-            },
-            shareGlobal: config.knowledge.shareGlobal,
-            reviewPlan: reviewPlanConfigSnapshot,
-            reviewReducer: {
-              status: reducerResult.status,
-              counts: reducerResult.counts,
-              reason: reducerResult.reason,
-            },
-            reviewCandidateFinding: reviewCandidateFindingConfigSnapshot,
-            reviewCandidatePublication: reviewCandidatePublicationRuntime.safeConfigSnapshot,
-            reviewCandidatePublicationFlow,
-            durationMs: result.durationMs,
-            model: config.model,
-            conclusion: result.conclusion,
-          },
+          owner: apiOwner,
+          pr,
+          deliveryId: event.id,
+          filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
+          linesChanged,
+          findingCounts,
           processedFindings,
           suppressionMatchCounts,
           visibleFindingCount: visibleFindings.length,
           lowConfidenceFindingCount: lowConfidenceFindings.length,
           suppressionsApplied,
-          shareGlobal: config.knowledge.shareGlobal,
-        });
-
-        await recordReviewPostExecutionSideEffects({
-          knowledgeStore,
-          repo: `${apiOwner}/${apiRepo}`,
-          owner: apiOwner,
-          prNumber: pr.number,
-          prAuthor: pr.user.login,
-          prTitle: pr.title,
-          baseSha: pr.base.sha,
-          headSha: pr.head.sha,
-          filesChanged: reviewFiles,
-          changedFilesForLanguageContext: changedFiles,
-          findings: processedFindings,
-          reviewId,
-          diffContent: diffContext.diffContent,
-          hunkEmbeddingConfig: config.knowledge.retrieval.hunkEmbedding,
+          config,
+          reviewPlanConfigSnapshot,
+          reducerResult,
+          reviewCandidateFindingConfigSnapshot,
+          reviewCandidatePublicationRuntime,
+          reviewCandidatePublicationFlow,
+          result,
           contributorProfileStore,
           learningMemoryStore,
           codeSnippetStore,
           embeddingProvider,
-          logger,
-          logContext: baseLog,
+          reviewFiles,
+          changedFiles,
+          diffContent: diffContext.diffContent,
+          baseLog,
+          reviewOutputKey,
         });
 
         logPublishedReviewOutputEvidence({
