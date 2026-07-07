@@ -13,7 +13,6 @@ import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
-import { stripMention, type MentionEvent } from "./mention-types.ts";
 import {
   detectImplicitIssueIntent,
   detectImplicitPrPatchIntent,
@@ -21,7 +20,6 @@ import {
   isReviewRequest,
 } from "./mention-request-classification.ts";
 import {
-  parseWriteIntent,
   resolveMentionWriteIntent,
 } from "./mention-write-formatters.ts";
 import {
@@ -113,6 +111,7 @@ import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts"
 import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
+import { resolveMentionForkContext } from "./mention-fork-context.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -338,41 +337,16 @@ export function createMentionHandler(deps: {
           "Creating workspace for mention execution",
         );
 
-        // Fork-based write mode: ensure fork exists and sync before cloning (Phase 127)
-        // Preliminary write intent check before config is available -- fork setup is
-        // harmless if config later disables write, so we gate only on user intent.
-        const prelimWriteIntent = parseWriteIntent(
-          stripMention(mention.commentBody, [appSlug, "claude"]),
-        );
-        const maybeWriteMode = prelimWriteIntent.writeIntent && prelimWriteIntent.keyword !== "plan";
-        let forkContext: { forkOwner: string; forkRepo: string; botPat: string } | undefined;
-        if (maybeWriteMode && !forkManager?.enabled) {
-          logger.warn(
-            { owner: mention.owner, repo: mention.repo },
-            "Write-mode active without BOT_USER_PAT; using legacy direct-push behavior",
-          );
-        }
-        if (forkManager?.enabled && maybeWriteMode && !usesPrRef) {
-          try {
-            const fork = await forkManager.ensureFork(mention.owner, mention.repo);
-            await forkManager.syncFork(fork.forkOwner, fork.forkRepo, cloneRef!);
-            forkContext = {
-              forkOwner: fork.forkOwner,
-              forkRepo: fork.forkRepo,
-              botPat: forkManager.getBotPat(),
-            };
-            logger.info(
-              { owner: mention.owner, repo: mention.repo, forkOwner: fork.forkOwner, forkRepo: fork.forkRepo },
-              "Fork ensured and synced for write-mode",
-            );
-          } catch (forkErr) {
-            logger.warn(
-              { err: forkErr, owner: mention.owner, repo: mention.repo },
-              "Fork setup failed; will fall back to gist or legacy mode",
-            );
-            // forkContext stays undefined -- handled later in output routing
-          }
-        }
+        const forkContext = await resolveMentionForkContext({
+          forkManager,
+          appSlug,
+          commentBody: mention.commentBody,
+          owner: mention.owner,
+          repo: mention.repo,
+          cloneRef,
+          usesPrRef,
+          logger,
+        });
 
         // Clone workspace
         if (explicitReviewUsesCanonicalHandle) {

@@ -556,4 +556,15 @@ describe("mention handler structure", () => {
     expect(source).toContain("routeMentionWriteOutput");
     expect(source).toContain("./mention-write-output-routing.ts");
   });
+
+  test("keeps pre-workspace fork setup orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("forkManager.ensureFork");
+    expect(source).not.toContain("forkManager.syncFork");
+    expect(source).not.toContain("Write-mode active without BOT_USER_PAT");
+    expect(source).not.toContain("Fork setup failed; will fall back to gist or legacy mode");
+    expect(source).toContain("resolveMentionForkContext");
+    expect(source).toContain("./mention-fork-context.ts");
+  });
 });
