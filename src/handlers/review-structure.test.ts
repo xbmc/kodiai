@@ -397,7 +397,7 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("updateIssueCommentWithPublicationPipeline");
-    expect(source).toContain("updateFinalizedReviewDetailsComment");
+    expect(source).not.toContain("updateFinalizedReviewDetailsComment");
   });
 
   test("keeps Review Details runtime count projection out of the monster handler", () => {
@@ -429,6 +429,15 @@ describe("review handler structure", () => {
     expect(source).not.toContain("Failed to refresh finalized moved-to-details Review Details surface");
     expect(source).toContain("publishMovedToDetailsReviewDetailsMerge");
     expect(source).toContain("./review-details-moved-to-details-merge.ts");
+  });
+
+  test("keeps standalone degraded Review Details fallback orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({");
+    expect(source).not.toContain("await updateFinalizedReviewDetailsComment({");
+    expect(source).toContain("publishStandaloneReviewDetailsFallback");
+    expect(source).toContain("./review-details-standalone-fallback.ts");
   });
 
   test("keeps retry custom instruction assembly out of the monster handler", () => {

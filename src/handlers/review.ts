@@ -184,7 +184,6 @@ import {
 } from "./review-details-body.ts";
 import {
   createReviewDetailsPublicationRuntime,
-  updateFinalizedReviewDetailsComment,
 } from "./review-details-publication-runtime.ts";
 import { buildReviewPromptResultWithCache } from "./review-prompt-cache-runtime.ts";
 import { publishReviewFailureFallback } from "./review-failure-publication.ts";
@@ -252,6 +251,7 @@ import { resolveReviewContinuationRevisionCounts } from "./review-continuation-r
 import { resolveReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
 import { publishPublishedReviewDetailsMerge } from "./review-details-published-merge.ts";
 import { publishMovedToDetailsReviewDetailsMerge } from "./review-details-moved-to-details-merge.ts";
+import { publishStandaloneReviewDetailsFallback } from "./review-details-standalone-fallback.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1768,42 +1768,21 @@ export function createReviewHandler(deps: {
                   logReviewDetailsPublicationCompleted,
                   logCanonicalReviewDetailsPublicationCompleted,
                 });
-              } else if (!approvalWillOwnCanonicalSurface && canPublishVisibleOutput("degraded Review Details fallback comment")) {
-                setReviewWorkPhase("publish");
-                const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
+              } else if (!approvalWillOwnCanonicalSurface) {
+                await publishStandaloneReviewDetailsFallback({
                   octokit: extractionOctokit,
                   owner: apiOwner,
                   repo: apiRepo,
                   prNumber: pr.number,
                   reviewOutputKey,
-                  body: fullDetailsBody,
+                  fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
-                  recheckCanPublish: () =>
-                    canPublishVisibleOutput("degraded Review Details fallback comment"),
+                  canPublishVisibleOutput,
+                  setReviewWorkPhase,
+                  renderReviewDetailsBody,
+                  finalizePublicationPhaseTiming,
+                  logReviewDetailsPublicationCompleted,
                 });
-
-                if (typeof reviewDetailsCommentId === "number") {
-                  logReviewDetailsPublicationCompleted({
-                    surfaceKind: "issue_comment",
-                    commentId: reviewDetailsCommentId,
-                    publicationMode: "degraded-fallback",
-                  });
-                }
-
-                finalizePublicationPhaseTiming();
-                if (
-                  reviewDetailsCommentId !== undefined &&
-                  canPublishVisibleOutput("finalized Review Details timing update")
-                ) {
-                  await updateFinalizedReviewDetailsComment({
-                    octokit: extractionOctokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    commentId: reviewDetailsCommentId,
-                    body: renderReviewDetailsBody(),
-                    botHandles: [githubApp.getAppSlug(), "claude"],
-                  });
-                }
               }
             }
           } catch (err) {
