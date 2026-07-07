@@ -191,3 +191,15 @@ export function applyReviewFallbackPublicationStatePatch(
     target.reviewPublishFallbackDelivery = patch.reviewPublishFallbackDelivery;
   }
 }
+
+export async function publishAndApplyReviewFallbackOutputs(
+  params: Parameters<typeof publishReviewFallbackOutputs>[0] & {
+    publicationState: ReviewFallbackPublicationStateTarget;
+  },
+): Promise<void> {
+  const { publicationState, ...publicationParams } = params;
+  applyReviewFallbackPublicationStatePatch(
+    publicationState,
+    await publishReviewFallbackOutputs(publicationParams),
+  );
+}

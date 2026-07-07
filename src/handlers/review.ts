@@ -136,8 +136,7 @@ import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import {
-  applyReviewFallbackPublicationStatePatch,
-  publishReviewFallbackOutputs,
+  publishAndApplyReviewFallbackOutputs,
   type ReviewFallbackExecutionErrorContext,
 } from "./review-fallback-publication-orchestration.ts";
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
@@ -1564,44 +1563,42 @@ export function createReviewHandler(deps: {
 
         }
 
-        applyReviewFallbackPublicationStatePatch(
+        await publishAndApplyReviewFallbackOutputs({
           publicationState,
-          await publishReviewFallbackOutputs({
-            result: {
-              conclusion: result.conclusion,
-              published: result.published,
-              errorMessage: result.errorMessage,
-            },
-            executionErrorContext,
-            publishedPartialReview,
-            deferredPublicOutputForContinuation,
-            turnBudgetExhausted,
-            fallbackRetryState,
-            appliedTimeoutBudget,
-            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-            getAppSlug: () => githubApp.getAppSlug(),
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            autoApprove: config.review.autoApprove,
-            reviewOutputKey,
-            deliveryId: event.id,
-            installationId: event.installationId,
-            promptFileCount: promptFiles.length,
-            canonicalReviewDetailsBody,
-            authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-            reviewBoundedness,
-            mergeConfidence: depBumpContext?.mergeConfidence ?? null,
-            logger,
-            canPublishVisibleOutput,
-            setReviewWorkPhase,
-            refreshVisibleBudgetProjection: () => visibleBudgetState.refresh(),
-            renderReviewDetailsBody,
-            finalizePublicationPhaseTiming,
-            logReviewDetailsPublicationCompleted,
-            logCanonicalReviewDetailsPublicationCompleted,
-          }),
-        );
+          result: {
+            conclusion: result.conclusion,
+            published: result.published,
+            errorMessage: result.errorMessage,
+          },
+          executionErrorContext,
+          publishedPartialReview,
+          deferredPublicOutputForContinuation,
+          turnBudgetExhausted,
+          fallbackRetryState,
+          appliedTimeoutBudget,
+          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          getAppSlug: () => githubApp.getAppSlug(),
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          autoApprove: config.review.autoApprove,
+          reviewOutputKey,
+          deliveryId: event.id,
+          installationId: event.installationId,
+          promptFileCount: promptFiles.length,
+          canonicalReviewDetailsBody,
+          authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+          reviewBoundedness,
+          mergeConfidence: depBumpContext?.mergeConfidence ?? null,
+          logger,
+          canPublishVisibleOutput,
+          setReviewWorkPhase,
+          refreshVisibleBudgetProjection: () => visibleBudgetState.refresh(),
+          renderReviewDetailsBody,
+          finalizePublicationPhaseTiming,
+          logReviewDetailsPublicationCompleted,
+          logCanonicalReviewDetailsPublicationCompleted,
+        });
       } catch (err) {
         timingState.publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
           error: err,

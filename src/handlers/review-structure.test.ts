@@ -114,9 +114,10 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const errorPublication = await publishReviewExecutionErrorFallback");
     expect(source).not.toContain("const failurePublication = await publishReviewFailureFallback");
     expect(source).not.toContain("const cleanReviewPublication = await publishCleanReviewApproval");
-    expect(source).toContain("publishReviewFallbackOutputs");
-    expect(source).toContain("applyReviewFallbackPublicationStatePatch");
+    expect(source).not.toContain("applyReviewFallbackPublicationStatePatch(");
+    expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(source).toContain("./review-fallback-publication-orchestration.ts");
+    expect(orchestrationSource).toContain("export async function publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("export async function publishReviewFallbackOutputs");
     expect(orchestrationSource).toContain("export function applyReviewFallbackPublicationStatePatch");
   });
@@ -1441,7 +1442,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const cleanReviewPublicationReason =");
     expect(source).not.toContain("const canonicalApprovalReview = await upsertCanonicalReviewSurface");
     expect(source).not.toContain("Skipping auto-approval because review output marker was published");
-    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("publishCleanReviewApproval");
     expect(orchestrationSource).toContain("./review-clean-approval-publication.ts");
   });
@@ -1456,7 +1457,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("let errorBody: string;");
     expect(source).not.toContain("errorBody = buildReviewTurnLimitFallbackBody");
     expect(source).not.toContain("errorBody = buildReviewRunErrorFallbackBody");
-    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("publishReviewExecutionErrorFallback");
   });
 
@@ -1470,7 +1471,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const errorBody = buildReviewExecutionErrorFallbackBody");
     expect(source).not.toContain("reviewPublishResolution = exhaustedTurnBudget ? \"turn-limit-fallback\" : \"error-fallback\"");
     expect(source).not.toContain("reviewPublishResolution = exhaustedTurnBudget ? \"turn-limit-fallback-undelivered\" : \"error-comment-failed\"");
-    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("publishReviewExecutionErrorFallback");
     expect(orchestrationSource).toContain("./review-error-publication.ts");
   });
@@ -1519,7 +1520,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const failureBody = buildReviewFailureFallbackBody();");
     expect(source).not.toContain("reviewPublishResolution = \"failure-fallback\"");
     expect(source).not.toContain("reviewPublishResolution = \"failure-fallback-failed\"");
-    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("publishReviewFailureFallback");
     expect(orchestrationSource).toContain("./review-failure-publication.ts");
   });
