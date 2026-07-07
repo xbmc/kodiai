@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
+import {
+  evaluateM065S02,
+  M065_S02_CHECK_IDS,
+  main,
+  parseVerifyM065S02Args,
+} from "./verify-m065-s02.ts";
 
 type RuntimeReport = {
   command: "verify:m048:s01";
@@ -216,14 +222,8 @@ function makeOperatorReport(overrides?: Partial<OperatorReport>): OperatorReport
   };
 }
 
-async function loadModule() {
-  return await import("./verify-m065-s02.ts");
-}
-
 describe("verify-m065-s02", () => {
-  test("parse args accepts review-output-key plus optional delivery-id, repo, and json", async () => {
-    const { parseVerifyM065S02Args } = await loadModule();
-
+  test("parse args accepts review-output-key plus optional delivery-id, repo, and json", () => {
     const result = parseVerifyM065S02Args([
       "--review-output-key",
       makeReviewKey(),
@@ -244,9 +244,7 @@ describe("verify-m065-s02", () => {
     });
   });
 
-  test("parse args does not consume the next flag when an option value is missing", async () => {
-    const { parseVerifyM065S02Args } = await loadModule();
-
+  test("parse args does not consume the next flag when an option value is missing", () => {
     const result = parseVerifyM065S02Args([
       "--review-output-key",
       "--repo",
@@ -259,16 +257,12 @@ describe("verify-m065-s02", () => {
     expect(result.json).toBe(true);
   });
 
-  test("parse args rejects unknown flags with a named invalidArg result", async () => {
-    const { parseVerifyM065S02Args } = await loadModule();
-
+  test("parse args rejects unknown flags with a named invalidArg result", () => {
     expect(parseVerifyM065S02Args(["--wat"]))
       .toEqual({ help: false, json: false, reviewOutputKey: null, deliveryId: null, repo: null, invalidArg: "Unknown argument: --wat." });
   });
 
-  test("stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle sufficiency", async () => {
-    const { M065_S02_CHECK_IDS } = await loadModule();
-
+  test("stable check ids stay pinned to identity, runtime, visible review, operator evidence, and bundle sufficiency", () => {
     expect(M065_S02_CHECK_IDS).toEqual([
       "M065-S02-IDENTITY-CORRELATION",
       "M065-S02-RUNTIME-TIMING-EVIDENCE",
@@ -279,7 +273,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle passes only when runtime, visible review, and canonical operator evidence agree on the same base identity", async () => {
-    const { evaluateM065S02 } = await loadModule();
     const reviewOutputKey = makeReviewKey();
 
     const report = await evaluateM065S02({
@@ -378,7 +371,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle normalizes retry review-output keys back to the base key before evaluating nested proofs", async () => {
-    const { evaluateM065S02 } = await loadModule();
     const baseReviewOutputKey = makeReviewKey();
     const retryKey = `${baseReviewOutputKey}-retry-2`;
 
@@ -413,8 +405,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("evaluate rejects malformed nested report blocks instead of flattening or omitting them", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     const report = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
@@ -443,8 +433,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("evaluate rejects nested report fields with non-string scalar shapes", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     const report = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
@@ -480,8 +468,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle fails when nested proofs disagree on delivery, repo, or PR identity", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     const report = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
@@ -506,8 +492,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle fails when runtime evidence is unavailable even if the other seams pass", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     const report = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
@@ -523,8 +507,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle fails when visible review proof reports duplicate or drifting artifacts", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     const report = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
@@ -539,8 +521,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle fails when operator evidence is missing or malformed", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     const missingCanonical = await evaluateM065S02({
       reviewOutputKey: makeReviewKey(),
       generatedAt: "2026-04-24T09:45:00.000Z",
@@ -573,8 +553,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("representative live bundle accepts only canonical operator truth and rejects pending, degraded, or superseded family state", async () => {
-    const { evaluateM065S02 } = await loadModule();
-
     for (const operatorStatus of ["pending", "degraded", "superseded"] as const) {
       const report = await evaluateM065S02({
         reviewOutputKey: makeReviewKey(),
@@ -599,8 +577,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("main invalid arg rejects missing review-output-key, malformed review-output-key, malformed repo, and delivery mismatches before evaluation", async () => {
-    const { main } = await loadModule();
-
     const missingStdout: string[] = [];
     const missingExit = await main(["--json"], {
       stdout: { write: (chunk: string) => void missingStdout.push(chunk) },
@@ -666,8 +642,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("main invalid arg rejects unknown flags and missing option values with a named status", async () => {
-    const { main } = await loadModule();
-
     const unknownStdout: string[] = [];
     const unknownExit = await main(["--wat", "--json"], {
       stdout: { write: (chunk: string) => void unknownStdout.push(chunk) },
@@ -697,7 +671,6 @@ describe("verify-m065-s02", () => {
   });
 
   test("main prints help, supports json output, and preserves the dedicated command name", async () => {
-    const { main } = await loadModule();
     const helpStdout: string[] = [];
 
     const helpExit = await main(["--help"], {
