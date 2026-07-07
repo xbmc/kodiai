@@ -39,6 +39,24 @@ export type ReviewFallbackPublicationStateTarget = {
   reviewPublishFallbackDelivery?: string;
 };
 
+export function buildReviewFallbackPublicationAdapters(params: {
+  installationId: number;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+  appSlug: string;
+  visibleBudgetProjection: {
+    refresh: () => VisibleBudgetProjection | null;
+  };
+}): Pick<
+  Parameters<typeof publishReviewFallbackOutputs>[0],
+  "getOctokit" | "getAppSlug" | "refreshVisibleBudgetProjection"
+> {
+  return {
+    getOctokit: () => params.getInstallationOctokit(params.installationId),
+    getAppSlug: () => params.appSlug,
+    refreshVisibleBudgetProjection: () => params.visibleBudgetProjection.refresh(),
+  };
+}
+
 export async function publishReviewFallbackOutputs(params: {
   result: Pick<ExecutionResult, "conclusion" | "published" | "errorMessage">;
   executionErrorContext?: ReviewFallbackExecutionErrorContext;

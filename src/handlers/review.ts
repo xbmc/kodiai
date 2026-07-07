@@ -133,6 +133,7 @@ import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import {
+  buildReviewFallbackPublicationAdapters,
   publishAndApplyReviewFallbackOutputs,
   type ReviewFallbackExecutionErrorContext,
 } from "./review-fallback-publication-orchestration.ts";
@@ -1573,6 +1574,12 @@ export function createReviewHandler(deps: {
 
         }
 
+        const fallbackPublicationAdapters = buildReviewFallbackPublicationAdapters({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+          appSlug: githubApp.getAppSlug(),
+          visibleBudgetProjection: visibleBudgetState,
+        });
         await publishAndApplyReviewFallbackOutputs({
           publicationState,
           result: {
@@ -1586,8 +1593,8 @@ export function createReviewHandler(deps: {
           turnBudgetExhausted,
           fallbackRetryState,
           appliedTimeoutBudget,
-          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-          getAppSlug: () => githubApp.getAppSlug(),
+          getOctokit: fallbackPublicationAdapters.getOctokit,
+          getAppSlug: fallbackPublicationAdapters.getAppSlug,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -1603,7 +1610,7 @@ export function createReviewHandler(deps: {
           logger,
           canPublishVisibleOutput,
           setReviewWorkPhase,
-          refreshVisibleBudgetProjection: () => visibleBudgetState.refresh(),
+          refreshVisibleBudgetProjection: fallbackPublicationAdapters.refreshVisibleBudgetProjection,
           renderReviewDetailsBody,
           finalizePublicationPhaseTiming,
           logReviewDetailsPublicationCompleted,

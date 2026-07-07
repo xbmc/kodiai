@@ -127,8 +127,12 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const failurePublication = await publishReviewFailureFallback");
     expect(source).not.toContain("const cleanReviewPublication = await publishCleanReviewApproval");
     expect(source).not.toContain("applyReviewFallbackPublicationStatePatch(");
+    expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n          getAppSlug: () => githubApp.getAppSlug(),");
+    expect(source).not.toContain("refreshVisibleBudgetProjection: () => visibleBudgetState.refresh()");
+    expect(source).toContain("buildReviewFallbackPublicationAdapters");
     expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(source).toContain("./review-fallback-publication-orchestration.ts");
+    expect(orchestrationSource).toContain("export function buildReviewFallbackPublicationAdapters");
     expect(orchestrationSource).toContain("export async function publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("export async function publishReviewFallbackOutputs");
     expect(orchestrationSource).toContain("export function applyReviewFallbackPublicationStatePatch");

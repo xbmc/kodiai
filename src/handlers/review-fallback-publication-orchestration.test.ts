@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import {
+  buildReviewFallbackPublicationAdapters,
   publishReviewFallbackOutputs,
   type ReviewFallbackPublicationStatePatch,
 } from "./review-fallback-publication-orchestration.ts";
@@ -80,6 +81,30 @@ function baseParams(
 }
 
 describe("publishReviewFallbackOutputs", () => {
+  test("builds fallback publication adapters from handler dependencies", async () => {
+    const octokit = { rest: {} } as never;
+    let refreshCount = 0;
+    const adapters = buildReviewFallbackPublicationAdapters({
+      installationId: 123,
+      getInstallationOctokit: async (installationId) => {
+        expect(installationId).toBe(123);
+        return octokit;
+      },
+      appSlug: "kodiai",
+      visibleBudgetProjection: {
+        refresh: () => {
+          refreshCount += 1;
+          return null;
+        },
+      },
+    });
+
+    await expect(adapters.getOctokit()).resolves.toBe(octokit);
+    expect(adapters.getAppSlug()).toBe("kodiai");
+    expect(adapters.refreshVisibleBudgetProjection()).toBeNull();
+    expect(refreshCount).toBe(1);
+  });
+
   test("maps execution error fallback publication into a state patch", async () => {
     await expect(publishReviewFallbackOutputs(baseParams())).resolves.toEqual({
       reviewOutputPublished: true,
