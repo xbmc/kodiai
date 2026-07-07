@@ -41,10 +41,6 @@ import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import {
-  normalizeReviewFirstPass,
-  type ReviewFirstPassPayload,
-} from "../lib/review-first-pass.ts";
-import {
   planReviewContinuation,
   settleReviewContinuation,
 } from "../lib/review-continuation-lifecycle.ts";
@@ -252,6 +248,7 @@ import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-d
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 import { publishRetryReviewDetailsMerge } from "./review-details-retry-publication.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
+import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1922,36 +1919,20 @@ export function createReviewHandler(deps: {
           let deferredPublicOutputForContinuation = false;
 
           if (result.isTimeout || turnBudgetExhausted) {
-            // Step 1: Read checkpoint/progress data
-            const checkpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
-            const hasPublishedInlines = result.published ?? false;
-            const timeoutInlineFindings = hasPublishedInlines
-              ? await extractFindingsFromReviewComments({
-                  octokit: extractionOctokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  logger,
-                  baseLog,
-                })
-              : [];
-            const timeoutReviewedFiles = Array.from(new Set([
-              ...(checkpoint?.filesReviewed ?? []),
-              ...timeoutInlineFindings.map((finding) => finding.filePath),
-            ]));
-            const timeoutInspectedFiles = Array.from(new Set([
-              ...timeoutReviewedFiles,
-              ...(checkpoint?.filesInspected ?? []),
-            ]));
-            const timeoutFindingCount = Math.max(
-              checkpoint?.findingCount ?? 0,
-              timeoutInlineFindings.length,
-            );
-            const timeoutTotalFiles = checkpoint?.totalFiles ?? changedFiles.length;
-            const timeoutFirstPass = normalizeReviewFirstPass({
-              boundedness: reviewBoundedness,
+            const {
               checkpoint,
+              hasPublishedInlines,
+              timeoutInlineFindings,
+              timeoutReviewedFiles,
+              timeoutInspectedFiles,
+              timeoutFindingCount,
+              timeoutTotalFiles,
+              timeoutFirstPass,
+              hasPartialResults,
+            } = await resolveReviewTimeoutProgressContext({
+              reviewOutputKey,
+              changedFileCount: changedFiles.length,
+              reviewBoundedness,
               outcome: {
                 conclusion: result.conclusion,
                 stopReason: result.stopReason,
@@ -1959,8 +1940,17 @@ export function createReviewHandler(deps: {
                 isTimeout: result.isTimeout,
                 published: result.published,
               },
+              getCheckpoint: async (key) => (await knowledgeStore?.getCheckpoint?.(key)) ?? null,
+              extractInlineFindings: async () => await extractFindingsFromReviewComments({
+                octokit: extractionOctokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                logger,
+                baseLog,
+              }),
             });
-            const hasPartialResults = timeoutFirstPass?.state === "bounded-first-pass";
 
             // Step 2: Check chronic timeout threshold before publishing
             const recentTimeouts = await telemetryStore.countRecentTimeouts?.(

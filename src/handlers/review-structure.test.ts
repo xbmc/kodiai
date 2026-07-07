@@ -50,6 +50,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-execution-outcome.ts");
   });
 
+  test("keeps timeout progress context assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const checkpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;");
+    expect(source).not.toContain("const timeoutInlineFindings = hasPublishedInlines");
+    expect(source).not.toContain("const timeoutReviewedFiles = Array.from(new Set([");
+    expect(source).not.toContain("const timeoutFirstPass = normalizeReviewFirstPass({");
+    expect(source).toContain("resolveReviewTimeoutProgressContext");
+    expect(source).toContain("./review-timeout-progress-context.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
