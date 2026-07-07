@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1525);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1522);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -119,6 +119,20 @@ describe("review handler structure", () => {
     expect(retryEnqueueSource).toContain("buildReviewRetryJobQueueContext");
     expect(jobContextSource).toContain("export function buildReviewJobQueueContext");
     expect(jobContextSource).toContain("export function buildReviewRetryJobQueueContext");
+  });
+
+  test("keeps review idempotency setup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const contextSource = readFileSync(new URL("./review-idempotency-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("buildReviewSetupOctokitAdapters");
+    expect(source).not.toContain("evaluateReviewOutputIdempotencyGate({");
+    expect(source).not.toContain("const idempotencyOctokit = await");
+    expect(source).toContain("resolveReviewIdempotencyContext");
+    expect(source).toContain("./review-idempotency-context.ts");
+    expect(contextSource).toContain("buildReviewSetupOctokitAdapters");
+    expect(contextSource).toContain("evaluateReviewOutputIdempotencyGate");
+    expect(contextSource).toContain("export async function resolveReviewIdempotencyContext");
   });
 
   test("keeps review fallback publication orchestration out of the monster handler", () => {
@@ -1217,16 +1231,19 @@ describe("review handler structure", () => {
 
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const contextSource = readFileSync(new URL("./review-idempotency-context.ts", import.meta.url), "utf8");
     const setupOctokitSource = readFileSync(new URL("./review-setup-octokit.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const idempotencyCheck = await ensureReviewOutputNotPublished");
     expect(source).not.toContain("const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);");
     expect(source).not.toContain("const canonicalSurfaceHasReviewDetails =");
     expect(source).not.toContain("Skipping review execution because output already published for key");
-    expect(source).toContain("buildReviewSetupOctokitAdapters");
-    expect(source).toContain("evaluateReviewOutputIdempotencyGate");
-    expect(source).toContain("./review-idempotency-gate.ts");
-    expect(source).toContain("./review-setup-octokit.ts");
+    expect(source).toContain("resolveReviewIdempotencyContext");
+    expect(source).toContain("./review-idempotency-context.ts");
+    expect(contextSource).toContain("buildReviewSetupOctokitAdapters");
+    expect(contextSource).toContain("evaluateReviewOutputIdempotencyGate");
+    expect(contextSource).toContain("./review-idempotency-gate.ts");
+    expect(contextSource).toContain("./review-setup-octokit.ts");
     expect(setupOctokitSource).toContain("export function buildReviewSetupOctokitAdapters");
   });
 

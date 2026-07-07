@@ -50,8 +50,7 @@ import {
 } from "./review-details-publication-runtime.ts";
 import { resolveReviewDetailsBodyBase } from "./review-details-body-base.ts";
 import { buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies } from "./review-handler-failure-publication-adapter.ts";
-import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
-import { buildReviewSetupOctokitAdapters } from "./review-setup-octokit.ts";
+import { resolveReviewIdempotencyContext } from "./review-idempotency-context.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import {
@@ -332,13 +331,9 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         });
         if (triggerConfigGate.action === "skip") return;
 
-        const reviewSetupOctokitAdapters = buildReviewSetupOctokitAdapters({
+        const reviewIdempotencyContext = await resolveReviewIdempotencyContext({
           installationId: event.installationId,
           getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
-        });
-        const idempotencyOctokit = await reviewSetupOctokitAdapters.getOctokit();
-        const idempotencyGate = await evaluateReviewOutputIdempotencyGate({
-          octokit: idempotencyOctokit,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -346,9 +341,11 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           baseLog,
           logger,
         });
+        const idempotencyGate = reviewIdempotencyContext.idempotencyGate;
         if (idempotencyGate.action === "skip") return;
+        const idempotencyOctokit = reviewIdempotencyContext.octokit;
         const acceptedCanonicalSurface: CanonicalReviewSurface | null =
-          idempotencyGate.acceptedCanonicalSurface;
+          reviewIdempotencyContext.acceptedCanonicalSurface;
 
         const prIntent = await resolveReviewPrIntent({
           octokit: idempotencyOctokit,
