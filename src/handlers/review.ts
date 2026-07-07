@@ -57,6 +57,7 @@ import {
   buildReviewDetailsPhaseTimingSummary,
   completeReviewRetrievalContextPhaseTiming,
   formatTimeoutErrorDetail,
+  recordReviewExecutorPhaseTimings,
 } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
 import {
@@ -1000,9 +1001,7 @@ export function createReviewHandler(deps: {
         visibleBudgetState.promptSectionRecords = executorState.promptSectionRecords;
         visibleBudgetState.refresh();
         timingState.executorPhaseTimings = executorState.executorPhaseTimings;
-        for (const phase of timingState.executorPhaseTimings) {
-          reviewPhaseTimings.set(phase.name, phase);
-        }
+        recordReviewExecutorPhaseTimings(reviewPhaseTimings, timingState.executorPhaseTimings);
         timingState.publicationPhaseStartedAt = Date.now();
 
         let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
@@ -2258,11 +2257,7 @@ export function createReviewHandler(deps: {
           }),
         });
       } finally {
-        for (const phase of timingState.executorPhaseTimings) {
-          if (!reviewPhaseTimings.has(phase.name)) {
-            reviewPhaseTimings.set(phase.name, phase);
-          }
-        }
+        recordReviewExecutorPhaseTimings(reviewPhaseTimings, timingState.executorPhaseTimings, { overwrite: false });
 
         logReviewExecutionCompleted();
 

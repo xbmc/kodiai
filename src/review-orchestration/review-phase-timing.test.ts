@@ -8,6 +8,7 @@ import {
   completeReviewPublicationPhaseTiming,
   formatTimeoutErrorDetail,
   isValidQueueWaitMetadata,
+  recordReviewExecutorPhaseTimings,
 } from "./review-phase-timing.ts";
 
 describe("isValidQueueWaitMetadata", () => {
@@ -147,5 +148,45 @@ describe("completeReviewRetrievalContextPhaseTiming", () => {
     });
 
     expect(phases.get("retrieval/context assembly")?.durationMs).toBe(0);
+  });
+});
+
+describe("recordReviewExecutorPhaseTimings", () => {
+  test("records executor phases into the review phase map", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+
+    recordReviewExecutorPhaseTimings(phases, [
+      { name: "executor handoff", status: "completed", durationMs: 20 },
+      { name: "remote runtime", status: "completed", durationMs: 100 },
+    ]);
+
+    expect(phases.get("executor handoff")).toEqual({
+      name: "executor handoff",
+      status: "completed",
+      durationMs: 20,
+    });
+    expect(phases.get("remote runtime")).toEqual({
+      name: "remote runtime",
+      status: "completed",
+      durationMs: 100,
+    });
+  });
+
+  test("can preserve existing phase entries during finalization", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>([
+      ["executor handoff", { name: "executor handoff", status: "completed", durationMs: 20 }],
+    ]);
+
+    recordReviewExecutorPhaseTimings(
+      phases,
+      [{ name: "executor handoff", status: "degraded", durationMs: 200, detail: "late fallback" }],
+      { overwrite: false },
+    );
+
+    expect(phases.get("executor handoff")).toEqual({
+      name: "executor handoff",
+      status: "completed",
+      durationMs: 20,
+    });
   });
 });

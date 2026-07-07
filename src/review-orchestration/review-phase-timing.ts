@@ -136,6 +136,19 @@ export function completeReviewRetrievalContextPhaseTiming(params: {
   );
 }
 
+export function recordReviewExecutorPhaseTimings(
+  phases: Map<ReviewPhaseName, ReviewPhaseTiming>,
+  executorPhases: readonly ExecutorPhaseTiming[],
+  options?: { overwrite?: boolean },
+): void {
+  const overwrite = options?.overwrite ?? true;
+  for (const phase of executorPhases) {
+    if (overwrite || !phases.has(phase.name)) {
+      phases.set(phase.name, phase);
+    }
+  }
+}
+
 export function buildReviewDetailsPhaseTimingSummary(params: {
   phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
   publicationPhaseStartedAt?: number;

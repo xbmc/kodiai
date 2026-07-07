@@ -488,6 +488,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-executor-state.ts");
   });
 
+  test("keeps executor phase timing map mutation out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const phaseTimingSource = readFileSync(new URL("../review-orchestration/review-phase-timing.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("for (const phase of timingState.executorPhaseTimings)");
+    expect(source).not.toContain("reviewPhaseTimings.set(phase.name, phase)");
+    expect(source).toContain("recordReviewExecutorPhaseTimings");
+    expect(phaseTimingSource).toContain("recordReviewExecutorPhaseTimings");
+  });
+
   test("keeps candidate publication bridge projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
