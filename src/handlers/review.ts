@@ -247,6 +247,7 @@ import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle
 import { logReviewCandidatePublicationAdapterContext } from "./review-candidate-publication-adapter-context.ts";
 import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-context.ts";
 import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome.ts";
+import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -3440,41 +3441,15 @@ export function createReviewHandler(deps: {
           }
         }
       } catch (err) {
-        if (!reviewPhaseTimings.has("workspace preparation") && workspacePhaseStartedAt !== undefined) {
-          reviewPhaseTimings.set(
-            "workspace preparation",
-            createReviewPhaseTiming({
-              name: "workspace preparation",
-              status: "degraded",
-              durationMs: Math.max(0, Date.now() - workspacePhaseStartedAt),
-              detail: "workspace preparation failed",
-            }),
-          );
-        }
-
-        if (!reviewPhaseTimings.has("retrieval/context assembly") && retrievalPhaseStartedAt !== undefined) {
-          reviewPhaseTimings.set(
-            "retrieval/context assembly",
-            createReviewPhaseTiming({
-              name: "retrieval/context assembly",
-              status: "degraded",
-              durationMs: Math.max(0, Date.now() - retrievalPhaseStartedAt),
-              detail: "retrieval/context assembly failed",
-            }),
-          );
-        }
-
-        if (publicationPhaseStartedAt === undefined) {
-          publicationPhaseStartedAt = Date.now();
-        }
-
-        logger.error(
-          { err, prNumber: pr.number },
-          "Review handler failed",
-        );
-
-        try {
-          const handlerFailurePublication = await publishReviewHandlerFailureError({
+        publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
+          error: err,
+          prNumber: pr.number,
+          reviewPhaseTimings,
+          workspacePhaseStartedAt,
+          retrievalPhaseStartedAt,
+          publicationPhaseStartedAt,
+          logger,
+          publishHandlerFailureError: async () => await publishReviewHandlerFailureError({
             octokit: await githubApp.getInstallationOctokit(event.installationId),
             owner: apiOwner,
             repo: apiRepo,
@@ -3483,28 +3458,8 @@ export function createReviewHandler(deps: {
             logger,
             canPublishVisibleOutput,
             setReviewWorkPhase,
-          });
-          reviewPhaseTimings.set(
-            "publication",
-            createReviewPhaseTiming({
-              name: "publication",
-              status: "degraded",
-              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-              detail: handlerFailurePublication.phaseDetail,
-            }),
-          );
-        } catch (commentErr) {
-          logger.error({ err: commentErr }, "Failed to post error comment to PR");
-          reviewPhaseTimings.set(
-            "publication",
-            createReviewPhaseTiming({
-              name: "publication",
-              status: "degraded",
-              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-              detail: "failed to publish error comment after handler failure",
-            }),
-          );
-        }
+          }),
+        });
       } finally {
         for (const phase of executorPhaseTimings) {
           if (!reviewPhaseTimings.has(phase.name)) {

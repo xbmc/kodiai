@@ -473,6 +473,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-error-publication.ts");
   });
 
+  test("keeps review handler failure recovery policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("workspace preparation failed");
+    expect(source).not.toContain("retrieval/context assembly failed");
+    expect(source).not.toContain("if (publicationPhaseStartedAt === undefined)");
+    expect(source).not.toContain("Failed to post error comment to PR");
+    expect(source).not.toContain("failed to publish error comment after handler failure");
+    expect(source).toContain("handleReviewHandlerFailureRecovery");
+    expect(source).toContain("./review-handler-failure-recovery.ts");
+  });
+
   test("keeps generic failure fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
