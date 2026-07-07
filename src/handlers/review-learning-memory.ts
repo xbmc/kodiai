@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { EmbeddingProvider, LearningMemoryRecord, LearningMemoryStore } from "../knowledge/types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 
 export type ReviewLearningMemorySkipReason =
   | "missing-finding-id"
@@ -38,10 +39,11 @@ export type ReviewLearningMemoryCandidate = {
 
 export type ReviewLearningMemoryDecision = ReviewLearningMemoryCandidate | ReviewLearningMemorySkipResult;
 
-export type ReviewLearningMemoryWriteResult =
+export type ReviewLearningMemoryWriteStatus =
   | { status: "written" }
-  | { status: "skipped"; reason: string }
-  | { status: "failed"; err?: unknown };
+  | { status: "skipped"; reason: string };
+
+export type ReviewLearningMemoryWriteResult = Result<ReviewLearningMemoryWriteStatus, unknown>;
 
 export type ReviewLearningMemoryEmbeddingMetadata = {
   model: string | null | undefined;
@@ -245,7 +247,7 @@ export async function writeReviewLearningMemory(
 
   if (isReviewLearningMemorySkip(decision)) {
     logLearningMemorySkip(logger, logContext, decision, "Learning memory write skipped for finding");
-    return { status: "skipped", reason: decision.reason };
+    return ok({ status: "skipped", reason: decision.reason });
   }
 
   try {
@@ -277,12 +279,12 @@ export async function writeReviewLearningMemory(
         },
         "Learning memory write skipped for duplicate finding",
       );
-      return { status: "skipped", reason: "duplicate-memory" };
+      return ok({ status: "skipped", reason: "duplicate-memory" });
     }
 
     const embeddingResult = await embeddingProvider.generate(decision.embeddingText, "document");
     if (!embeddingResult) {
-      return { status: "failed" };
+      return err(new Error("Learning memory embedding generation returned no result"));
     }
 
     const memoryRecord = decision.toRecord({
@@ -291,11 +293,11 @@ export async function writeReviewLearningMemory(
     });
     if (isReviewLearningMemorySkip(memoryRecord)) {
       logLearningMemorySkip(logger, logContext, memoryRecord, "Learning memory write skipped for finding");
-      return { status: "skipped", reason: memoryRecord.reason };
+      return ok({ status: "skipped", reason: memoryRecord.reason });
     }
 
     await store.writeMemory(memoryRecord, embeddingResult.embedding);
-    return { status: "written" };
+    return ok({ status: "written" });
   } catch (err) {
     logger.warn(
       {
@@ -308,7 +310,7 @@ export async function writeReviewLearningMemory(
       },
       "Learning memory write failed for finding (fail-open)",
     );
-    return { status: "failed", err };
+    return { ok: false, err };
   }
 }
 
@@ -365,13 +367,16 @@ export async function writeReviewLearningMemoryBatch(params: {
   };
 
   for (const result of results) {
-    if (result.status === "written") {
-      summary.written++;
-    } else if (result.status === "skipped") {
-      summary.skipped++;
-      summary.skipReasons[result.reason] = (summary.skipReasons[result.reason] ?? 0) + 1;
-    } else {
+    if (!result.ok) {
       summary.failed++;
+      continue;
+    }
+
+    if (result.value.status === "written") {
+      summary.written++;
+    } else if (result.value.status === "skipped") {
+      summary.skipped++;
+      summary.skipReasons[result.value.reason] = (summary.skipReasons[result.value.reason] ?? 0) + 1;
     }
   }
 

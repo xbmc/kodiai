@@ -174,7 +174,7 @@ describe("writeReviewLearningMemory", () => {
       logger: noopLogger(),
     });
 
-    expect(result).toEqual({ status: "skipped", reason: "duplicate-memory" });
+    expect(result).toEqual({ ok: true, value: { status: "skipped", reason: "duplicate-memory" } });
     expect(embeddingCalls).toBe(0);
     expect(calls).toEqual([{
       repo: "owner/repo",
@@ -216,7 +216,7 @@ describe("writeReviewLearningMemory", () => {
       logger: noopLogger(),
     });
 
-    expect(result).toEqual({ status: "written" });
+    expect(result).toEqual({ ok: true, value: { status: "written" } });
     expect(conflictCalls).toEqual([{
       repo: "owner/repo",
       findingId: 1234,
@@ -230,9 +230,11 @@ describe("writeReviewLearningMemory", () => {
 describe("writeReviewLearningMemoryBatch", () => {
   test("writes findings concurrently and logs aggregate outcome counts", async () => {
     const writeFindingMemory = mock(async (input: { input: BuildReviewLearningMemoryRecordInput }) => {
-      if (input.input.finding.commentId === 1) return { status: "written" as const };
-      if (input.input.finding.commentId === 2) return { status: "skipped" as const, reason: "missing-review-id" };
-      return { status: "failed" as const };
+      if (input.input.finding.commentId === 1) return { ok: true as const, value: { status: "written" as const } };
+      if (input.input.finding.commentId === 2) {
+        return { ok: true as const, value: { status: "skipped" as const, reason: "missing-review-id" } };
+      }
+      return { ok: false as const, err: new Error("embedding unavailable") };
     });
     const logger = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}) };
 
