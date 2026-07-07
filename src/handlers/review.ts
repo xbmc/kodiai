@@ -1974,7 +1974,7 @@ export function createReviewHandler(deps: {
               && !deferredPublicOutputForContinuation
               && partialBody !== undefined
             ) {
-              partialCommentId = await publishBoundedFirstPassReview({
+              const partialPublication = await publishBoundedFirstPassReview({
                 octokit,
                 owner: apiOwner,
                 repo: apiRepo,
@@ -1984,8 +1984,15 @@ export function createReviewHandler(deps: {
                 canPublishVisibleOutput,
                 setReviewWorkPhase,
               });
+              if (partialPublication.ok) {
+                partialCommentId = partialPublication.value.commentId;
+              } else {
+                logger.warn(
+                  { err: partialPublication.err.error, deliveryId: event.id, prNumber: pr.number },
+                  "Failed to publish bounded first-pass review",
+                );
+              }
               if (partialCommentId !== undefined) {
-
               await persistPartialReviewCheckpoint({
                 knowledgeStore,
                 logger,
