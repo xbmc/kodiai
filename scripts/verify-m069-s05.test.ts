@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -58,6 +59,17 @@ function liveReviewDetailsBody(extra = ""): string {
 }
 
 describe("verify-m069-s05", () => {
+  test("live GitHub artifact collection uses shared paginated review marker helpers", () => {
+    const source = readFileSync(new URL("./verify-m069-s05.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("listPullReviewsPaged");
+    expect(source).toContain("listReviewCommentsPaged");
+    expect(source).toContain("listIssueCommentsPaged");
+    expect(source).not.toContain("installationOctokit.rest.pulls.listReviews({");
+    expect(source).not.toContain("installationOctokit.rest.pulls.listReviewComments({");
+    expect(source).not.toContain("installationOctokit.rest.issues.listComments({");
+  });
+
   test("exports stable check ids and parses only bounded CLI flags", () => {
     expect(M069_S05_CHECK_IDS).toEqual([
       "M069-S05-LIVE-SOURCE-AVAILABILITY",

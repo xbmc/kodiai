@@ -5,10 +5,13 @@ import {
   parseReviewOutputKey,
   type ParsedReviewOutputKey,
 } from "../src/review-orchestration/review-idempotency.ts";
+import {
+  listPullReviewsPaged,
+  listReviewCommentsPaged,
+} from "../src/lib/github-issue-comments.ts";
 
 type AccessState = "available" | "missing" | "unavailable";
 
-const DEFAULT_PER_PAGE = 100;
 const DEFAULT_REPO = "xbmc/kodiai";
 const DEFAULT_RESOURCE_GROUP = "rg-kodiai";
 const SUGGESTION_FENCE_REGEX = /```suggestion(?:\s|\n)[\s\S]*?```/i;
@@ -294,47 +297,31 @@ async function createLiveGitHubContext(repo: string): Promise<{
   return { octokit, owner, repoName };
 }
 
-async function collectPaged<T>(fetchPage: (args: { page: number; per_page: number }) => Promise<T[]>): Promise<T[]> {
-  const items: T[] = [];
-
-  for (let page = 1; ; page += 1) {
-    const data = await fetchPage({ page, per_page: DEFAULT_PER_PAGE });
-    items.push(...data);
-    if (data.length < DEFAULT_PER_PAGE) {
-      return items;
-    }
-  }
-}
-
 async function collectProofLive(params: ValidatedArgs): Promise<M066S05ProofCollection> {
   const live = await createLiveGitHubContext(params.repo);
   const prUrl = `https://github.com/${params.parsedKey.owner}/${params.parsedKey.repo}/pull/${params.prNumber}`;
 
-  const reviews = await collectPaged<M066S05Review>(async ({ page, per_page }) => {
-    const { data } = await live.octokit.rest.pulls.listReviews({
+  const [{ reviews }, { comments: reviewComments }] = await Promise.all([
+    listPullReviewsPaged(live.octokit, {
       owner: live.owner,
       repo: live.repoName,
-      pull_number: params.prNumber,
-      per_page,
-      page,
-    });
-    return data as M066S05Review[];
-  });
-
-  const reviewComments = await collectPaged<M066S05ReviewComment>(async ({ page, per_page }) => {
-    const { data } = await live.octokit.rest.pulls.listReviewComments({
+      prNumber: params.prNumber,
+    }),
+    listReviewCommentsPaged(live.octokit, {
       owner: live.owner,
       repo: live.repoName,
-      pull_number: params.prNumber,
-      per_page,
-      page,
+      prNumber: params.prNumber,
       sort: "created",
       direction: "desc",
-    });
-    return data as M066S05ReviewComment[];
-  });
+      maxPages: Number.POSITIVE_INFINITY,
+    }),
+  ]);
 
-  return { prUrl, reviews, reviewComments };
+  return {
+    prUrl,
+    reviews: reviews as M066S05Review[],
+    reviewComments: reviewComments as M066S05ReviewComment[],
+  };
 }
 
 function createBaseReport(params: {

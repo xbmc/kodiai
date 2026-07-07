@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { buildReviewOutputKey, buildReviewOutputMarker } from "../src/review-orchestration/review-idempotency.ts";
 
@@ -122,6 +123,16 @@ async function loadModule() {
 }
 
 describe("verify-m066-s05", () => {
+  test("live proof collection uses shared paginated review marker helpers", () => {
+    const source = readFileSync(new URL("./verify-m066-s05.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("listPullReviewsPaged");
+    expect(source).toContain("listReviewCommentsPaged");
+    expect(source).not.toContain("async function collectPaged");
+    expect(source).not.toContain("live.octokit.rest.pulls.listReviews({");
+    expect(source).not.toContain("live.octokit.rest.pulls.listReviewComments({");
+  });
+
   test("parse args accepts repo, review-output-key, optional delivery-id, json, and help", async () => {
     const { parseVerifyM066S05Args } = await loadModule();
     const reviewOutputKey = makeReviewOutputKey();

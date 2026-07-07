@@ -4,6 +4,11 @@ import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
 import { extractReviewOutputKey, parseReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import { discoverLogAnalyticsWorkspaceIds, queryReviewAuditLogs, type NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
+import {
+  listIssueCommentsPaged,
+  listPullReviewsPaged,
+  listReviewCommentsPaged,
+} from "../src/lib/github-issue-comments.ts";
 
 export const M069_S05_DEFAULT_TARGET = {
   owner: "xbmc",
@@ -591,15 +596,32 @@ async function collectGitHubArtifactsFromLiveGitHub(args: M069S05CliArgs): Promi
       auth: { appId: config.appId, privateKey: config.privateKey, installationId: installation.data.id },
       request: { timeout: REQUEST_TIMEOUT_MS },
     });
-    const [reviews, reviewComments, issueComments] = await Promise.all([
-      installationOctokit.rest.pulls.listReviews({ owner: args.owner, repo: args.repo, pull_number: args.pr, per_page: 100, page: 1 }),
-      installationOctokit.rest.pulls.listReviewComments({ owner: args.owner, repo: args.repo, pull_number: args.pr, per_page: 100, page: 1, sort: "created", direction: "desc" }),
-      installationOctokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.pr, per_page: 100, page: 1, sort: "created", direction: "desc" }),
+    const [reviewsResult, reviewCommentsResult, issueCommentsResult] = await Promise.all([
+      listPullReviewsPaged(installationOctokit, {
+        owner: args.owner,
+        repo: args.repo,
+        prNumber: args.pr,
+      }),
+      listReviewCommentsPaged(installationOctokit, {
+        owner: args.owner,
+        repo: args.repo,
+        prNumber: args.pr,
+        sort: "created",
+        direction: "desc",
+        maxPages: Number.POSITIVE_INFINITY,
+      }),
+      listIssueCommentsPaged(installationOctokit, {
+        owner: args.owner,
+        repo: args.repo,
+        issueNumber: args.pr,
+        sort: "created",
+        direction: "desc",
+      }),
     ]);
     const artifacts: M069S05GitHubArtifact[] = [
-      ...reviews.data.map((item) => ({ source: "review" as const, body: boundArtifactText(item.body), state: item.state ?? null, updatedAt: item.submitted_at ?? null })),
-      ...reviewComments.data.map((item) => ({ source: "review-comment" as const, body: boundArtifactText(item.body), updatedAt: item.updated_at ?? null })),
-      ...issueComments.data.map((item) => ({ source: "issue-comment" as const, body: boundArtifactText(item.body), updatedAt: item.updated_at ?? null })),
+      ...reviewsResult.reviews.map((item) => ({ source: "review" as const, body: boundArtifactText(item.body), state: item.state ?? null, updatedAt: item.submitted_at ?? null })),
+      ...reviewCommentsResult.comments.map((item) => ({ source: "review-comment" as const, body: boundArtifactText(item.body), updatedAt: item.updated_at ?? null })),
+      ...issueCommentsResult.comments.map((item) => ({ source: "issue-comment" as const, body: boundArtifactText(item.body), updatedAt: item.updated_at ?? null })),
     ];
     return {
       artifacts,
