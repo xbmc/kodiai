@@ -123,6 +123,17 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-execution-dispatch.ts");
   });
 
+  test("keeps mention executor planning policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const mentionMaxTurns =");
+    expect(source).not.toContain("reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined");
+    expect(source).not.toContain("eventType: `${event.name}.${action ?? \"\"}`.replace(/\\.$/, \"\")");
+    expect(source).not.toContain("triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody");
+    expect(source).toContain("resolveMentionExecutorPlan");
+    expect(source).toContain("./mention-executor-plan.ts");
+  });
+
   test("keeps accepted mention handle normalization out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const requestContextSource = readFileSync(new URL("./mention-request-context.ts", import.meta.url), "utf8");

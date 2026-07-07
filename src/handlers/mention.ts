@@ -58,9 +58,6 @@ import {
   createWriteRateLimitStore,
 } from "../lib/mention-state-stores.ts";
 import {
-  buildReviewOutputKey,
-} from "../review-orchestration/review-idempotency.ts";
-import {
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
 import { isMentionAuthorAllowed } from "./mention-allowed-users.ts";
@@ -131,6 +128,7 @@ import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-
 import { resolveMentionRequestContext } from "./mention-request-context.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
+import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -875,27 +873,21 @@ export function createMentionHandler(deps: {
           ].filter((record) => record.sections.length > 0);
         }
 
-        // Cap max turns for read-only conversational PR mentions.
-        // Explicit `@kodiai review` requests should use the full review budget so
-        // large PRs do not terminate mid-tool-call before any publish step occurs.
-        const mentionMaxTurns =
-          explicitReviewRequest
-            ? explicitReviewMaxTurnsOverride
-            : (!writeEnabled && mention.prNumber !== undefined)
-              ? (prDiffContext !== undefined ? 12 : 20)
-              : undefined; // undefined → falls through to config.maxTurns
-
-        reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined
-          ? buildReviewOutputKey({
-              installationId: event.installationId,
-              owner: mention.owner,
-              repo: mention.repo,
-              prNumber: mention.prNumber,
-              action: "mention-review",
-              deliveryId: event.id,
-              headSha: mention.headRef ?? "unknown-head-sha",
-            })
-          : undefined;
+        const executorPlan = resolveMentionExecutorPlan({
+          mention,
+          installationId: event.installationId,
+          deliveryId: event.id,
+          eventName: event.name,
+          eventAction: action,
+          explicitReviewRequest,
+          explicitReviewTaskType: explicitReviewRouting.taskType,
+          explicitReviewMaxTurnsOverride,
+          formatterSuggestionMode: formatterSuggestionRequest?.mode,
+          writeEnabled,
+          hasPrDiffContext: prDiffContext !== undefined,
+          userQuestion,
+        });
+        reviewOutputKey = executorPlan.reviewOutputKey;
 
         // Execute via Claude. Combined review-and-format requests run Claude first so
         // formatter workspace mutations cannot affect review prompt/executor context;
@@ -903,8 +895,6 @@ export function createMentionHandler(deps: {
         if (reviewWorkAttempt) {
           setReviewWorkPhase("executor-dispatch");
         }
-        const isCombinedFormatterSuggestionRequest =
-          isPrSurface && formatterSuggestionRequest?.mode === "review-and-format";
         const result = await executeMentionWithFormatterRecovery({
           execute: (context) => executor.execute(context),
           context: {
@@ -920,22 +910,22 @@ export function createMentionHandler(deps: {
             deliveryId: event.id,
             botHandles: possibleHandles,
             writeMode: writeEnabled,
-            taskType: explicitReviewRequest ? explicitReviewRouting.taskType : "mention.response",
-            eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
-            triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
+            taskType: executorPlan.taskType,
+            eventType: executorPlan.eventType,
+            triggerBody: executorPlan.triggerBody,
             prompt,
             promptSections,
             reviewOutputKey,
-            maxTurnsOverride: mentionMaxTurns,
+            maxTurnsOverride: executorPlan.maxTurnsOverride,
             dynamicTimeoutSeconds: explicitReviewDynamicTimeoutSeconds,
             knowledgeStore: deps.knowledgeStore,
             formatterSuggestionRequest,
             totalFiles: explicitReviewPromptFileCount,
-            enableInlineTools: explicitReviewRequest ? true : undefined,
-            enableCandidateFindingTool: explicitReviewRequest ? true : undefined,
+            enableInlineTools: executorPlan.enableInlineTools,
+            enableCandidateFindingTool: executorPlan.enableCandidateFindingTool,
             prDiffCommentabilityIndex: explicitReviewRequest ? explicitReviewPrDiffCommentabilityIndex : undefined,
           },
-          isCombinedFormatterSuggestionRequest,
+          isCombinedFormatterSuggestionRequest: executorPlan.isCombinedFormatterSuggestionRequest,
           mention,
           deliveryId: event.id,
           reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
@@ -1235,7 +1225,7 @@ export function createMentionHandler(deps: {
           logMentionExecutionCompleted();
         }
 
-        if (isCombinedFormatterSuggestionRequest) {
+        if (executorPlan.isCombinedFormatterSuggestionRequest) {
           const formatterResult = await runFormatterSuggestionForMention("review-and-format");
           const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic({
             formatterResult,
