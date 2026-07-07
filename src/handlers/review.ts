@@ -89,6 +89,7 @@ import {
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
+  buildReviewDetailsPublicationRuntimeAdapters,
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
 import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
@@ -1030,6 +1031,12 @@ export function createReviewHandler(deps: {
           logReviewDetailsPublicationCompleted,
           logCanonicalReviewDetailsPublicationCompleted,
         } = createReviewDetailsPublicationRuntime({
+          ...buildReviewDetailsPublicationRuntimeAdapters({
+            visibleBudgetProjection: visibleBudgetState,
+            publicationPhaseTiming: {
+              getStartedAt: () => timingState.publicationPhaseStartedAt,
+            },
+          }),
           logger,
           baseLog,
           reviewOutputKey,
@@ -1037,10 +1044,8 @@ export function createReviewHandler(deps: {
           doctrineFields: buildRepoDoctrineLogFields(repoDoctrineProjection),
           reviewDetailsBodyBase,
           hasOperationalSignal: hasReviewDetailsOperationalSignal,
-          getVisibleBudgetProjection: () => visibleBudgetState.refresh(),
           filteredFindings: filterResult.filtered,
           reviewPhaseTimings,
-          getPublicationPhaseStartedAt: () => timingState.publicationPhaseStartedAt,
         });
 
         const firstPassReviewDetailsPublication = await publishFirstPassReviewDetails({

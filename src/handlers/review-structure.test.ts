@@ -20,12 +20,17 @@ describe("review handler structure", () => {
 
   test("keeps Review Details publication runtime helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-details-publication-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const renderReviewDetailsBody =");
     expect(source).not.toContain("const finalizePublicationPhaseTiming =");
     expect(source).not.toContain("const logReviewDetailsPublicationCompleted =");
     expect(source).not.toContain("const logCanonicalReviewDetailsPublicationCompleted =");
+    expect(source).not.toContain("getVisibleBudgetProjection: () => visibleBudgetState.refresh()");
+    expect(source).not.toContain("getPublicationPhaseStartedAt: () => timingState.publicationPhaseStartedAt");
+    expect(source).toContain("buildReviewDetailsPublicationRuntimeAdapters");
     expect(source).toContain("./review-details-publication-runtime.ts");
+    expect(runtimeSource).toContain("export function buildReviewDetailsPublicationRuntimeAdapters");
   });
 
   test("keeps review work lifecycle helpers out of the monster handler", () => {
@@ -576,7 +581,7 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const visibleReviewCacheObservations: ReviewCacheTelemetryObservation[] = [];");
     expect(source).not.toContain("const refreshReviewVisibleBudgetProjection = (): VisibleBudgetProjection | null =>");
     expect(source).not.toContain("buildVisibleBudgetProjectionFromEvidence({");
-    expect(source).toContain("visibleBudgetState.refresh()");
+    expect(source).toContain("visibleBudgetState");
     expect(source).toContain("./review-retrieval-context.ts");
   });
 

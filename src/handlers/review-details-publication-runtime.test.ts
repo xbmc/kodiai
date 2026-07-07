@@ -3,6 +3,7 @@ import { projectContributorExperienceContract } from "../contributor/experience-
 import type { ReviewPhaseName, ReviewPhaseTiming } from "../execution/types.ts";
 import { createReviewPhaseTiming } from "../review-orchestration/review-phase-timing.ts";
 import {
+  buildReviewDetailsPublicationRuntimeAdapters,
   createReviewDetailsPublicationRuntime,
   updateFinalizedReviewDetailsComment,
 } from "./review-details-publication-runtime.ts";
@@ -29,6 +30,25 @@ function baseReviewDetailsBodyParams() {
 }
 
 describe("createReviewDetailsPublicationRuntime", () => {
+  test("builds runtime adapters from visible budget and timing dependencies", () => {
+    let refreshCount = 0;
+    const adapters = buildReviewDetailsPublicationRuntimeAdapters({
+      visibleBudgetProjection: {
+        refresh: () => {
+          refreshCount += 1;
+          return null;
+        },
+      },
+      publicationPhaseTiming: {
+        getStartedAt: () => 123,
+      },
+    });
+
+    expect(adapters.getVisibleBudgetProjection()).toBeNull();
+    expect(refreshCount).toBe(1);
+    expect(adapters.getPublicationPhaseStartedAt()).toBe(123);
+  });
+
   test("updates finalized Review Details comments through the GitHub publication pipeline", async () => {
     const updateComment = mock(async (params: unknown) => ({ data: { id: 456, params } }));
     const octokit = {

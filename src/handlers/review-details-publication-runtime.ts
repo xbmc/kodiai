@@ -36,6 +36,23 @@ export type ReviewDetailsPublicationRuntime = {
   ): void;
 };
 
+export function buildReviewDetailsPublicationRuntimeAdapters(params: {
+  visibleBudgetProjection: {
+    refresh: () => VisibleBudgetProjection | null;
+  };
+  publicationPhaseTiming: {
+    getStartedAt: () => number | undefined;
+  };
+}): Pick<
+  Parameters<typeof createReviewDetailsPublicationRuntime>[0],
+  "getVisibleBudgetProjection" | "getPublicationPhaseStartedAt"
+> {
+  return {
+    getVisibleBudgetProjection: () => params.visibleBudgetProjection.refresh(),
+    getPublicationPhaseStartedAt: () => params.publicationPhaseTiming.getStartedAt(),
+  };
+}
+
 export async function updateFinalizedReviewDetailsComment(params: {
   octokit: Octokit;
   owner: string;
