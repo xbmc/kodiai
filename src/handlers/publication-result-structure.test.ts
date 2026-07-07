@@ -180,4 +180,22 @@ describe("publication result structure", () => {
     expect(handlerSource).toContain("resolveBoundedFirstPassTimeoutPublicationState");
     expect(handlerSource).toContain("boundedFirstPassPublicationState.partialCommentId");
   });
+
+  test("keeps timeout Review Details publication on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-details-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const timeoutSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("TimeoutReviewDetailsPublicationResult");
+    expect(source).toContain("Result<TimeoutReviewDetailsPublicationStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(timeoutSource).toContain("if (!timeoutReviewDetailsPublication.ok)");
+    expect(timeoutSource).toContain("timeoutReviewDetailsPublication.value");
+  });
 });

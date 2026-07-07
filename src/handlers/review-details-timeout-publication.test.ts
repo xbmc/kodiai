@@ -75,7 +75,12 @@ describe("publishTimeoutReviewDetailsMerge", () => {
       },
     });
 
-    await publishTimeoutReviewDetailsMerge(params);
+    const result = await publishTimeoutReviewDetailsMerge(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "canonical-merge", published: true },
+    });
 
     expect(upsertCalls).toHaveLength(1);
     const [upsertCall] = upsertCalls as [Record<string, unknown>];
@@ -116,7 +121,12 @@ describe("publishTimeoutReviewDetailsMerge", () => {
       },
     });
 
-    await publishTimeoutReviewDetailsMerge(params);
+    const result = await publishTimeoutReviewDetailsMerge(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "skipped", published: false },
+    });
 
     expect(upsertCalled).toBe(false);
     expect(fallbackCalled).toBe(false);
@@ -136,7 +146,12 @@ describe("publishTimeoutReviewDetailsMerge", () => {
       },
     });
 
-    await publishTimeoutReviewDetailsMerge(params);
+    const result = await publishTimeoutReviewDetailsMerge(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: true },
+    });
 
     expect(params.testState.warnings).toHaveLength(1);
     const [warning] = params.testState.warnings as [{ data: Record<string, unknown>; message: string }];

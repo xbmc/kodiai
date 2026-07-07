@@ -160,7 +160,7 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
     zeroEvidenceFailure: params.timeoutFirstPass.zeroEvidenceFailure,
   });
 
-  await publishTimeoutReviewDetailsMerge({
+  const timeoutReviewDetailsPublication = await publishTimeoutReviewDetailsMerge({
     octokit: params.octokit,
     owner: params.owner,
     repo: params.repo,
@@ -181,6 +181,14 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
     canPublishVisibleOutput: params.canPublishVisibleOutput,
     renderReviewDetailsBody: params.renderReviewDetailsBody,
   });
+  if (!timeoutReviewDetailsPublication.ok) {
+    return ok({
+      partialCommentId,
+      publishedPartialReview: true,
+      continuationProjectionDegraded: true,
+    });
+  }
+  const timeoutReviewDetailsPublicationStatus = timeoutReviewDetailsPublication.value;
 
   const timeoutResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({
     telemetryEnabled: params.telemetryEnabled,
@@ -208,6 +216,7 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
   return ok({
     partialCommentId,
     publishedPartialReview: true,
-    continuationProjectionDegraded: timeoutResilienceTelemetry.projectionDegraded,
+    continuationProjectionDegraded: timeoutResilienceTelemetry.projectionDegraded
+      || timeoutReviewDetailsPublicationStatus.delivery === "degraded-fallback",
   });
 }

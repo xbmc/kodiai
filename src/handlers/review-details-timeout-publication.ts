@@ -1,6 +1,7 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { ok, type Result } from "../lib/result.ts";
 import {
   upsertCanonicalReviewSurface,
 } from "../review-orchestration/review-canonical-surface.ts";
@@ -12,6 +13,14 @@ import {
 
 type UpsertCanonicalReviewSurface = typeof upsertCanonicalReviewSurface;
 type PublishDegradedReviewDetailsFallbackFailOpen = typeof publishDegradedReviewDetailsFallbackFailOpen;
+
+export type TimeoutReviewDetailsPublicationStatus = {
+  delivery: "canonical-merge" | "degraded-fallback" | "skipped";
+  published: boolean;
+};
+
+export type TimeoutReviewDetailsPublicationResult =
+  Result<TimeoutReviewDetailsPublicationStatus, never>;
 
 export async function publishTimeoutReviewDetailsMerge(params: {
   octokit: Octokit;
@@ -31,12 +40,12 @@ export async function publishTimeoutReviewDetailsMerge(params: {
   renderReviewDetailsBody: ReviewDetailsPublicationRuntime["renderReviewDetailsBody"];
   upsertCanonicalReviewSurfaceFn?: UpsertCanonicalReviewSurface;
   publishDegradedReviewDetailsFallbackFailOpenFn?: PublishDegradedReviewDetailsFallbackFailOpen;
-}): Promise<void> {
+}): Promise<TimeoutReviewDetailsPublicationResult> {
   const renderBody = () => params.renderReviewDetailsBody(params.timeoutReviewDetailsRuntime);
 
   try {
     if (!params.canPublishVisibleOutput("timeout canonical Review Details merge")) {
-      return;
+      return ok({ delivery: "skipped", published: false });
     }
 
     const upsertCanonical = params.upsertCanonicalReviewSurfaceFn ?? upsertCanonicalReviewSurface;
@@ -58,6 +67,7 @@ export async function publishTimeoutReviewDetailsMerge(params: {
       recheckCanPublish: () =>
         params.canPublishVisibleOutput("timeout canonical Review Details merge"),
     });
+    return ok({ delivery: "canonical-merge", published: true });
   } catch (reviewDetailsErr) {
     params.logger.warn(
       {
@@ -86,5 +96,6 @@ export async function publishTimeoutReviewDetailsMerge(params: {
       logger: params.logger,
       canPublishVisibleOutput: params.canPublishVisibleOutput,
     });
+    return ok({ delivery: "degraded-fallback", published: true });
   }
 }
