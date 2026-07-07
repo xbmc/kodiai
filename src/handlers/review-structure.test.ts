@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1505);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1493);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -1850,12 +1850,15 @@ describe("review handler structure", () => {
 
   test("keeps incremental review file filtering out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const fileSelectionSource = readFileSync(new URL("./review-file-selection-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let reviewFiles = changedFiles;");
     expect(source).not.toContain("new Set(incrementalResult.changedFilesSinceLastReview)");
     expect(source).not.toContain("Filtered to incremental changed files");
-    expect(source).toContain("resolveReviewFilesForIncrementalReview");
-    expect(source).toContain("./review-incremental-diff.ts");
+    expect(source).toContain("resolveReviewFileSelectionContext");
+    expect(source).toContain("./review-file-selection-context.ts");
+    expect(fileSelectionSource).toContain("resolveReviewFilesForIncrementalReview");
+    expect(fileSelectionSource).toContain("./review-incremental-diff.ts");
   });
 
   test("keeps prior finding context lookup out of the monster handler", () => {
@@ -1908,24 +1911,30 @@ describe("review handler structure", () => {
 
   test("keeps skipPaths matching and skip logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const fileSelectionSource = readFileSync(new URL("./review-file-selection-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const skipMatchers = config.review.skipPaths");
     expect(source).not.toContain(".map(normalizeSkipPattern)");
     expect(source).not.toContain("picomatch(p, { dot: true })");
     expect(source).not.toContain("All changed files matched skipPaths, skipping review");
-    expect(source).toContain("evaluateReviewSkipPathsGate");
-    expect(source).toContain("./review-skip-paths-gate.ts");
+    expect(source).not.toContain("evaluateReviewSkipPathsGate({");
+    expect(source).toContain("resolveReviewFileSelectionContext");
+    expect(source).toContain("./review-file-selection-context.ts");
+    expect(fileSelectionSource).toContain("evaluateReviewSkipPathsGate");
   });
 
   test("keeps shadow specialist subflow orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const fileSelectionSource = readFileSync(new URL("./review-file-selection-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let shadowSpecialistResult");
     expect(source).not.toContain("buildShadowSpecialistDiffSnippet(diffContentForValidation)");
     expect(source).not.toContain("buildShadowSpecialistLogFields(shadowSpecialistResult)");
     expect(source).not.toContain("projectShadowSpecialistMetrics(shadowSpecialistResult)");
-    expect(source).toContain("resolveReviewShadowSpecialistContext");
-    expect(source).toContain("./review-shadow-specialist.ts");
+    expect(source).not.toContain("resolveReviewShadowSpecialistContext({");
+    expect(source).toContain("resolveReviewFileSelectionContext");
+    expect(source).toContain("./review-file-selection-context.ts");
+    expect(fileSelectionSource).toContain("resolveReviewShadowSpecialistContext");
   });
 
   test("keeps retry queue execution wrapper out of the monster handler", () => {

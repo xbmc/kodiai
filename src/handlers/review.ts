@@ -69,11 +69,9 @@ import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts
 import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
 import {
-  resolveReviewFilesForIncrementalReview,
   resolveReviewIncrementalDiff,
 } from "./review-incremental-diff.ts";
-import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
-import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
+import { resolveReviewFileSelectionContext } from "./review-file-selection-context.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { applyReviewExecutorState, projectReviewExecutorState } from "./review-executor-state.ts";
 import { buildReviewBotHandles, buildReviewExecutionContext } from "./review-execution-context.ts";
@@ -450,40 +448,30 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         if (dependencyBumpFlow.action === "skip-standard-review") return;
         const depBumpContext = dependencyBumpFlow.depBumpContext;
 
-        const skipPathsGate = evaluateReviewSkipPathsGate({
+        const fileSelectionContext = await resolveReviewFileSelectionContext({
           prNumber: pr.number,
           allChangedFiles,
           skipPaths: config.review.skipPaths,
-          logger,
-        });
-        if (skipPathsGate.action === "skip") return;
-        const changedFiles = skipPathsGate.changedFiles;
-
-        const {
-          shadowSpecialistResult,
-          shadowSpecialistReviewDetailsProjection,
-          candidateVerificationContext,
-        } = await resolveReviewShadowSpecialistContext({
-          changedFiles,
           diffContentForValidation,
+          diffContext,
           workspaceDir: workspace.dir,
           deliveryId: event.id,
           reviewOutputKey,
-          prNumber: pr.number,
+          incrementalResult,
           baseLog,
           logger,
           shadowSpecialistSubflow,
         });
-
-        const reviewFiles = resolveReviewFilesForIncrementalReview({
+        if (fileSelectionContext.action === "skip") return;
+        const {
           changedFiles,
-          incrementalResult,
-          baseLog,
-          logger,
-        });
-
-        const numstatLines = diffContext.numstatLines;
-        const diffContent = changedFiles.length <= 200 ? diffContext.diffContent : undefined;
+          shadowSpecialistResult,
+          shadowSpecialistReviewDetailsProjection,
+          candidateVerificationContext,
+          reviewFiles,
+          numstatLines,
+          diffContent,
+        } = fileSelectionContext;
 
         const changedFileContext = await resolveReviewChangedFileContext({
           changedFiles,
