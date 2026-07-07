@@ -94,6 +94,7 @@ import {
 import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
 import { buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies } from "./review-handler-failure-publication-adapter.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
+import { buildReviewSetupOctokitAdapters } from "./review-setup-octokit.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import {
@@ -449,7 +450,11 @@ export function createReviewHandler(deps: {
         });
         if (triggerConfigGate.action === "skip") return;
 
-        const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        const reviewSetupOctokitAdapters = buildReviewSetupOctokitAdapters({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+        });
+        const idempotencyOctokit = await reviewSetupOctokitAdapters.getOctokit();
         const idempotencyGate = await evaluateReviewOutputIdempotencyGate({
           octokit: idempotencyOctokit,
           owner: apiOwner,

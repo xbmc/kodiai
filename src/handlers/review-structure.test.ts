@@ -1195,12 +1195,17 @@ describe("review handler structure", () => {
 
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const setupOctokitSource = readFileSync(new URL("./review-setup-octokit.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const idempotencyCheck = await ensureReviewOutputNotPublished");
+    expect(source).not.toContain("const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);");
     expect(source).not.toContain("const canonicalSurfaceHasReviewDetails =");
     expect(source).not.toContain("Skipping review execution because output already published for key");
+    expect(source).toContain("buildReviewSetupOctokitAdapters");
     expect(source).toContain("evaluateReviewOutputIdempotencyGate");
     expect(source).toContain("./review-idempotency-gate.ts");
+    expect(source).toContain("./review-setup-octokit.ts");
+    expect(setupOctokitSource).toContain("export function buildReviewSetupOctokitAdapters");
   });
 
   test("keeps PR intent fetch/parse orchestration out of the monster handler", () => {
