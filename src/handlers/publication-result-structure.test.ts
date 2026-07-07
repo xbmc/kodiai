@@ -54,4 +54,17 @@ describe("publication result structure", () => {
       expect(source, helper).toMatch(/\bok\(/);
     }
   });
+
+  test("keeps formatter suggestion publisher on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("../execution/formatter-suggestion-publisher.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toMatch(/Promise<[^>]*Result/);
+    expect(source).not.toContain("failed?: boolean");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toMatch(/\berr\(/);
+  });
 });

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
 import {
   publishFormatterSuggestionReview,
+  type FormatterSuggestionPublisherFailure,
   type FormatterSuggestionPublisherOctokit,
+  type FormatterSuggestionPublisherResult,
+  type FormatterSuggestionPublisherSuccess,
 } from "./formatter-suggestion-publisher.ts";
 import type { ReviewOutputPublicationGate } from "./mcp/review-output-publication-gate.ts";
 import type { FormatterSuggestionPayload } from "./formatter-suggestions.ts";
@@ -122,6 +125,22 @@ function createRejectingPublicationGate(error: unknown): {
   };
 }
 
+function expectPublisherOk(result: FormatterSuggestionPublisherResult): FormatterSuggestionPublisherSuccess {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(`expected ok publisher result, got ${result.err.status}`);
+  }
+  return result.value;
+}
+
+function expectPublisherErr(result: FormatterSuggestionPublisherResult): FormatterSuggestionPublisherFailure {
+  expect(result.ok).toBe(false);
+  if (result.ok) {
+    throw new Error(`expected err publisher result, got ${result.value.status}`);
+  }
+  return result.err;
+}
+
 describe("publishFormatterSuggestionReview", () => {
   test("publishes one COMMENT review with batched single-line and multi-line formatter suggestions", async () => {
     const { octokit, createReviewCalls } = createFakeOctokit();
@@ -159,6 +178,7 @@ describe("publishFormatterSuggestionReview", () => {
       suggestions,
       publicationGate: gate,
     });
+    const outcome = expectPublisherOk(result);
 
     expect(resolveCalls).toEqual([octokit]);
     expect(createReviewCalls).toHaveLength(1);
@@ -187,7 +207,7 @@ describe("publishFormatterSuggestionReview", () => {
         body: "```suggestion\nfunction demo() {\n  return true;\n}\n```",
       },
     ]);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "posted",
       posted: 2,
       skipped: 0,
@@ -209,7 +229,7 @@ describe("publishFormatterSuggestionReview", () => {
   test("omits the review output marker when no reviewOutputKey is provided", async () => {
     const { octokit, createReviewCalls } = createFakeOctokit();
 
-    await publishFormatterSuggestionReview({
+    const result = await publishFormatterSuggestionReview({
       octokit,
       owner: "acme",
       repo: "widgets",
@@ -217,6 +237,7 @@ describe("publishFormatterSuggestionReview", () => {
       commitId: "abc123def456",
       suggestions: [makeSuggestion()],
     });
+    expectPublisherOk(result);
 
     expect(createReviewCalls).toHaveLength(1);
     expect(createReviewCalls[0]?.body).not.toContain("kodiai:review-output-key");
@@ -246,10 +267,11 @@ describe("publishFormatterSuggestionReview", () => {
       skipped,
       publicationGate: gate,
     });
+    const outcome = expectPublisherOk(result);
 
     expect(resolveCalls).toHaveLength(0);
     expect(createReviewCalls).toHaveLength(0);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "no-suggestions",
       posted: 0,
       skipped: 1,
@@ -281,10 +303,11 @@ describe("publishFormatterSuggestionReview", () => {
       suggestions: [makeSuggestion()],
       publicationGate: gate,
     });
+    const outcome = expectPublisherOk(result);
 
     expect(resolveCalls).toEqual([octokit]);
     expect(createReviewCalls).toHaveLength(0);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "skipped",
       posted: 0,
       skipped: 0,
@@ -313,12 +336,13 @@ describe("publishFormatterSuggestionReview", () => {
       reviewOutputKey: "formatter-output-key",
       suggestions: [makeSuggestion()],
     });
+    const outcome = expectPublisherOk(result);
 
     expect(createReviewCalls).toHaveLength(0);
     expect(listReviewCommentsCalls).toHaveLength(1);
     expect(listIssueCommentsCalls).toHaveLength(1);
     expect(listReviewsCalls).toHaveLength(1);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "skipped",
       posted: 0,
       reviewOutput: {
@@ -345,10 +369,11 @@ describe("publishFormatterSuggestionReview", () => {
       suggestions: [makeSuggestion()],
       publicationGate: gate,
     });
+    const outcome = expectPublisherErr(result);
 
     expect(resolveCalls).toEqual([octokit]);
     expect(createReviewCalls).toHaveLength(0);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "failed",
       posted: 0,
       skipped: 0,
@@ -359,8 +384,8 @@ describe("publishFormatterSuggestionReview", () => {
       },
       skippedSuggestions: [],
     });
-    expect(result.error).toContain("GitHub scan failed");
-    expect(result.error).not.toContain("ghp_secret");
+    expect(outcome.error).toContain("GitHub scan failed");
+    expect(outcome.error).not.toContain("ghp_secret");
   });
 
   test("strips configured bot mentions from review and inline suggestion bodies before publishing", async () => {
@@ -378,8 +403,9 @@ describe("publishFormatterSuggestionReview", () => {
         suggestionBody: "```suggestion\n// @kodiai should not be pinged\nconst value = 1;\n```",
       })],
     });
+    const outcome = expectPublisherOk(result);
 
-    expect(result.status).toBe("posted");
+    expect(outcome.status).toBe("posted");
     expect(createReviewCalls).toHaveLength(1);
     expect(createReviewCalls[0]?.body).toContain("kodiai-output-key");
     expect(createReviewCalls[0]?.body).not.toContain("@kodiai");
@@ -399,8 +425,9 @@ describe("publishFormatterSuggestionReview", () => {
         suggestionBody: "```suggestion\n// @claude should not be pinged\nconst value = 1;\n```",
       })],
     });
+    const outcome = expectPublisherOk(result);
 
-    expect(result.status).toBe("posted");
+    expect(outcome.status).toBe("posted");
     expect(createReviewCalls).toHaveLength(1);
     expect(createReviewCalls[0]?.comments[0]?.body).not.toContain("@claude");
     expect(createReviewCalls[0]?.comments[0]?.body).toContain("claude should not be pinged");
@@ -419,9 +446,10 @@ describe("publishFormatterSuggestionReview", () => {
         suggestionBody: "```suggestion\nconst token = 'ghp_123456789012345678901234567890123456';\n```",
       })],
     });
+    const outcome = expectPublisherErr(result);
 
     expect(createReviewCalls).toHaveLength(0);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "blocked",
       posted: 0,
       skipped: 0,
@@ -430,7 +458,7 @@ describe("publishFormatterSuggestionReview", () => {
         location: "comment",
       },
     });
-    expect(JSON.stringify(result)).not.toContain("ghp_123456789012345678901234567890123456");
+    expect(JSON.stringify(outcome)).not.toContain("ghp_123456789012345678901234567890123456");
   });
 
   test("blocks publication when the generated review body contains a credential-like literal", async () => {
@@ -449,9 +477,10 @@ describe("publishFormatterSuggestionReview", () => {
       publicationGate: gate,
       suggestions: [makeSuggestion()],
     });
+    const outcome = expectPublisherErr(result);
 
     expect(createReviewCalls).toHaveLength(0);
-    expect(result).toMatchObject({
+    expect(outcome).toMatchObject({
       status: "blocked",
       posted: 0,
       blocked: {
@@ -459,7 +488,7 @@ describe("publishFormatterSuggestionReview", () => {
         location: "review-body",
       },
     });
-    expect(JSON.stringify(result)).not.toContain(tokenLikeKey);
+    expect(JSON.stringify(outcome)).not.toContain(tokenLikeKey);
   });
 
   test("returns failed with bounded sanitized rejection details when GitHub rejects the review batch", async () => {
@@ -488,18 +517,18 @@ describe("publishFormatterSuggestionReview", () => {
       commitId: "abc123def456",
       suggestions: [makeSuggestion()],
     });
+    const outcome = expectPublisherErr(result);
 
     expect(createReviewCalls).toHaveLength(1);
-    expect(result.status).toBe("failed");
-    expect(result.posted).toBe(0);
-    expect(result).toMatchObject({
-      failed: true,
+    expect(outcome.status).toBe("failed");
+    expect(outcome.posted).toBe(0);
+    expect(outcome).toMatchObject({
       rejection: {
         status: 422,
       },
     });
-    expect(result.rejection?.message.length).toBeLessThanOrEqual(500);
-    expect(result.rejection?.message).toContain("Validation Failed");
-    expect(result.rejection?.message).not.toContain("ghp_123456789012345678901234567890123456");
+    expect(outcome.rejection?.message.length).toBeLessThanOrEqual(500);
+    expect(outcome.rejection?.message).toContain("Validation Failed");
+    expect(outcome.rejection?.message).not.toContain("ghp_123456789012345678901234567890123456");
   });
 });

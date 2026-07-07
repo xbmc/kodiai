@@ -14,8 +14,10 @@ import type {
   FormatterSuggestionPayload,
 } from "../execution/formatter-suggestions.ts";
 import type {
-  FormatterSuggestionPublisherResult,
+  FormatterSuggestionPublisherFailure,
+  FormatterSuggestionPublisherSuccess,
 } from "../execution/formatter-suggestion-publisher.ts";
+import { err, ok } from "../lib/result.ts";
 
 const PR_DIFF = [
   "diff --git a/src/example.ts b/src/example.ts",
@@ -93,13 +95,25 @@ function makeSuggestion(overrides: Partial<FormatterSuggestionPayload> = {}): Fo
   };
 }
 
-function makePublisherResult(overrides: Partial<FormatterSuggestionPublisherResult> = {}): FormatterSuggestionPublisherResult {
+function makePublisherSuccess(overrides: Partial<FormatterSuggestionPublisherSuccess> = {}): FormatterSuggestionPublisherSuccess {
   return {
     status: "posted",
     posted: 1,
     skipped: 0,
     review: { id: 987, url: "https://github.com/acme/widgets/pull/42#pullrequestreview-987" },
     reviewOutput: { key: "formatter-output-key", markerIncluded: true },
+    skippedSuggestions: [],
+    ...overrides,
+  };
+}
+
+function makePublisherFailure(overrides: Partial<FormatterSuggestionPublisherFailure> = {}): FormatterSuggestionPublisherFailure {
+  return {
+    status: "failed",
+    posted: 0,
+    skipped: 0,
+    error: "formatter suggestion publication failed",
+    reviewOutput: { key: "formatter-output-key", markerIncluded: false },
     skippedSuggestions: [],
     ...overrides,
   };
@@ -118,7 +132,7 @@ function makeDeps(overrides: Partial<FormatterSuggestionSubflowDependencies> = {
       unshallowAttempted: false,
       diffRange: "origin/main...HEAD",
     }),
-    publishFormatterSuggestionReview: async () => makePublisherResult(),
+    publishFormatterSuggestionReview: async () => ok(makePublisherSuccess()),
     resolveHeadSha: async () => "abc123def456",
     ...overrides,
   };
@@ -166,7 +180,7 @@ describe("runFormatterSuggestionSubflow", () => {
       makeOptions(),
       makeDeps({
         runFormatterCommand: async () => makeCommandResult({ status: "no-op", stdout: "" }),
-        publishFormatterSuggestionReview: async () => { publishCalls += 1; return makePublisherResult(); },
+        publishFormatterSuggestionReview: async () => { publishCalls += 1; return ok(makePublisherSuccess()); },
       }),
     );
 
@@ -226,7 +240,7 @@ describe("runFormatterSuggestionSubflow", () => {
           unshallowAttempted: false,
           diffRange: "github-api:file-list",
         }),
-        publishFormatterSuggestionReview: async () => { publishCalls += 1; return makePublisherResult(); },
+        publishFormatterSuggestionReview: async () => { publishCalls += 1; return ok(makePublisherSuccess()); },
       }),
     );
 
@@ -258,7 +272,7 @@ describe("runFormatterSuggestionSubflow", () => {
       makeDeps({
         publishFormatterSuggestionReview: async (payload) => {
           publishCalls.push(payload);
-          return makePublisherResult();
+          return ok(makePublisherSuccess());
         },
       }),
     );
@@ -279,13 +293,13 @@ describe("runFormatterSuggestionSubflow", () => {
     const result = await runFormatterSuggestionSubflow(
       makeOptions(),
       makeDeps({
-        publishFormatterSuggestionReview: async () => makePublisherResult({
+        publishFormatterSuggestionReview: async () => ok(makePublisherSuccess({
           status: "skipped",
           posted: 0,
           skipped: 1,
           review: undefined,
           reviewOutput: { key: "formatter-output-key", markerIncluded: false, idempotencyDecision: "skip-existing-review" },
-        }),
+        })),
       }),
     );
 
@@ -297,11 +311,12 @@ describe("runFormatterSuggestionSubflow", () => {
     const result = await runFormatterSuggestionSubflow(
       makeOptions(),
       makeDeps({
-        publishFormatterSuggestionReview: async () => makePublisherResult({
+        publishFormatterSuggestionReview: async () => err(makePublisherFailure({
           status: "blocked",
           posted: 0,
+          error: undefined,
           blocked: { pattern: "github_pat_", location: "comment" },
-        }),
+        })),
       }),
     );
 
@@ -313,12 +328,12 @@ describe("runFormatterSuggestionSubflow", () => {
     const rejected = await runFormatterSuggestionSubflow(
       makeOptions(),
       makeDeps({
-        publishFormatterSuggestionReview: async () => makePublisherResult({
+        publishFormatterSuggestionReview: async () => err(makePublisherFailure({
           status: "failed",
           posted: 0,
           error: "Validation Failed",
           rejection: { status: 422, message: "Validation Failed" },
-        }),
+        })),
       }),
     );
 
@@ -351,11 +366,11 @@ describe("runFormatterSuggestionSubflow", () => {
           unshallowAttempted: false,
           diffRange: "origin/main...HEAD",
         }),
-        publishFormatterSuggestionReview: async () => makePublisherResult({
+        publishFormatterSuggestionReview: async () => ok(makePublisherSuccess({
           status: "posted",
           posted: 1,
           skipped: 1,
-        }),
+        })),
       }),
     );
 

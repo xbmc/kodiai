@@ -12,11 +12,19 @@ import {
   createReviewOutputPublicationGate,
   type ReviewOutputPublicationGate,
 } from "./mcp/review-output-publication-gate.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 
 export type FormatterSuggestionPublisherStatus =
   | "posted"
   | "skipped"
   | "no-suggestions"
+  | "blocked"
+  | "failed";
+export type FormatterSuggestionPublisherSuccessStatus =
+  | "posted"
+  | "skipped"
+  | "no-suggestions";
+export type FormatterSuggestionPublisherFailureStatus =
   | "blocked"
   | "failed";
 
@@ -91,18 +99,33 @@ export interface FormatterSuggestionRejectedPublication {
   message: string;
 }
 
-export interface FormatterSuggestionPublisherResult {
-  status: FormatterSuggestionPublisherStatus;
+interface FormatterSuggestionPublisherBase {
   posted: number;
   skipped: number;
-  review?: FormatterSuggestionPublishedReview;
   reviewOutput: FormatterSuggestionReviewOutputResult;
   skippedSuggestions: FormatterDiffSkip[];
+}
+
+export interface FormatterSuggestionPublisherSuccess extends FormatterSuggestionPublisherBase {
+  status: FormatterSuggestionPublisherSuccessStatus;
+  review?: FormatterSuggestionPublishedReview;
+}
+
+export interface FormatterSuggestionPublisherFailure extends FormatterSuggestionPublisherBase {
+  status: FormatterSuggestionPublisherFailureStatus;
   error?: string;
   blocked?: FormatterSuggestionBlockedPublication;
-  failed?: boolean;
   rejection?: FormatterSuggestionRejectedPublication;
 }
+
+export type FormatterSuggestionPublisherOutcome =
+  | FormatterSuggestionPublisherSuccess
+  | FormatterSuggestionPublisherFailure;
+
+export type FormatterSuggestionPublisherResult = Result<
+  FormatterSuggestionPublisherSuccess,
+  FormatterSuggestionPublisherFailure
+>;
 
 function buildReviewBody(options: Pick<PublishFormatterSuggestionReviewOptions, "suggestions" | "reviewOutputKey">): string {
   const summary = [
@@ -236,7 +259,7 @@ export async function publishFormatterSuggestionReview(
   options: PublishFormatterSuggestionReviewOptions,
 ): Promise<FormatterSuggestionPublisherResult> {
   if (options.suggestions.length === 0) {
-    return {
+    return ok({
       status: "no-suggestions",
       posted: 0,
       skipped: options.skipped?.length ?? 0,
@@ -245,7 +268,7 @@ export async function publishFormatterSuggestionReview(
         markerIncluded: false,
       }),
       skippedSuggestions: options.skipped ?? [],
-    };
+    });
   }
 
   const publicationGate = options.reviewOutputKey
@@ -262,7 +285,7 @@ export async function publishFormatterSuggestionReview(
       ? await publicationGate.resolve(options.octokit as unknown as Octokit)
       : undefined;
   } catch (error) {
-    return {
+    return err({
       status: "failed",
       posted: 0,
       skipped: options.skipped?.length ?? 0,
@@ -272,11 +295,11 @@ export async function publishFormatterSuggestionReview(
       }),
       skippedSuggestions: options.skipped ?? [],
       error: buildBoundedErrorMessage(error),
-    };
+    });
   }
 
   if (publicationStatus && !publicationStatus.shouldPublish) {
-    return {
+    return ok({
       status: "skipped",
       posted: 0,
       skipped: options.skipped?.length ?? 0,
@@ -286,7 +309,7 @@ export async function publishFormatterSuggestionReview(
         publicationStatus,
       }),
       skippedSuggestions: options.skipped ?? [],
-    };
+    });
   }
 
   const body = buildReviewBody(options);
@@ -305,7 +328,7 @@ export async function publishFormatterSuggestionReview(
       location: blocked.location,
       suggestions: rawComments.length,
     }, "Blocked formatter suggestion review publication due to outgoing secret pattern");
-    return {
+    return err({
       status: "blocked",
       posted: 0,
       skipped: options.skipped?.length ?? 0,
@@ -316,7 +339,7 @@ export async function publishFormatterSuggestionReview(
         publicationStatus: blocked.location === "review-body" ? undefined : publicationStatus,
       }),
       skippedSuggestions: options.skipped ?? [],
-    };
+    });
   }
 
   const sanitizedBody = preparedPublication.reviewBody ?? "";
@@ -347,11 +370,10 @@ export async function publishFormatterSuggestionReview(
       rejectionMessage: rejection.message,
       suggestions: comments.length,
     }, "GitHub rejected formatter suggestion review batch");
-    return {
+    return err({
       status: "failed",
       posted: 0,
       skipped: options.skipped?.length ?? 0,
-      failed: true,
       rejection,
       error: rejection.message,
       reviewOutput: buildReviewOutputResult({
@@ -360,10 +382,10 @@ export async function publishFormatterSuggestionReview(
         publicationStatus,
       }),
       skippedSuggestions: options.skipped ?? [],
-    };
+    });
   }
 
-  return {
+  return ok({
     status: "posted",
     posted: comments.length,
     skipped: options.skipped?.length ?? 0,
@@ -377,5 +399,5 @@ export async function publishFormatterSuggestionReview(
       publicationStatus,
     }),
     skippedSuggestions: options.skipped ?? [],
-  };
+  });
 }

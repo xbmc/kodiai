@@ -12,6 +12,7 @@ import {
 } from "../execution/formatter-suggestions.ts";
 import {
   publishFormatterSuggestionReview,
+  type FormatterSuggestionPublisherOutcome,
   type FormatterSuggestionPublisherOctokit,
   type FormatterSuggestionPublisherResult,
   type FormatterSuggestionPublisherStatus,
@@ -291,7 +292,7 @@ function makeMappedNoSuggestionsResult(params: {
 }
 
 function mapPublisherResult(params: {
-  publisherResult: FormatterSuggestionPublisherResult;
+  publisherResult: FormatterSuggestionPublisherOutcome;
   commandStatus: FormatterCommandStatus;
   suggestions: FormatterSuggestionPayload[];
   mapperCounts: FormatterSuggestionCounts;
@@ -308,14 +309,14 @@ function mapPublisherResult(params: {
     skipped: publisherResult.skipped,
     capped: params.capped,
     posted: publisherResult.posted,
-    reviewUrl: publisherResult.review?.url,
-    reviewId: publisherResult.review?.id,
+    reviewUrl: publisherResult.status === "posted" ? publisherResult.review?.url : undefined,
+    reviewId: publisherResult.status === "posted" ? publisherResult.review?.id : undefined,
     reviewOutputKey: params.reviewOutputKey,
     headSha: params.headSha,
     diffRange: params.diffRange,
     mapperCounts: params.mapperCounts,
     publisherSkipped: publisherResult.skipped,
-    publisherFailed: publisherResult.failed,
+    publisherFailed: publisherResult.status === "failed",
   } satisfies Partial<FormatterSuggestionSubflowResult>;
 
   switch (publisherResult.status) {
@@ -712,8 +713,10 @@ export async function runFormatterSuggestionSubflow(
     return result;
   }
 
+  const publisherOutcome = publisherResult.ok ? publisherResult.value : publisherResult.err;
+
   const result = mapPublisherResult({
-    publisherResult,
+    publisherResult: publisherOutcome,
     commandStatus: commandResult.status,
     suggestions: mapped.suggestions,
     mapperCounts: mapped.counts,
