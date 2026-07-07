@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ok } from "../lib/result.ts";
 import { publishMentionBotWritePullRequest } from "./mention-bot-pr-write.ts";
 
 function createLogger() {
@@ -64,7 +65,7 @@ function baseParams(overrides: Partial<Parameters<typeof publishMentionBotWriteP
       diffStat: "",
       warnings: [],
     }),
-    publishMentionWritePullRequest: async () => ({ data: { html_url: "https://github.com/acme/widgets/pull/9" } }),
+    publishMentionWritePullRequest: async () => ok({ data: { html_url: "https://github.com/acme/widgets/pull/9" } }),
     recordWriteRateLimitSuccess: () => undefined,
     ...overrides,
   } satisfies Parameters<typeof publishMentionBotWritePullRequest>[0];
@@ -136,9 +137,9 @@ describe("publishMentionBotWritePullRequest", () => {
       publishMentionWritePullRequest: async () => {
         publishAttempts += 1;
         if (publishAttempts === 1) {
-          throw new Error("transient create-pr failure");
+          return { ok: false, err: new Error("transient create-pr failure") };
         }
-        return { data: { html_url: "https://github.com/acme/widgets/pull/10" } };
+        return ok({ data: { html_url: "https://github.com/acme/widgets/pull/10" } });
       },
     }));
 

@@ -30,7 +30,7 @@ describe("publishMentionWritePullRequest", () => {
       },
     }));
 
-    const response = await publishMentionWritePullRequest({
+    const result = await publishMentionWritePullRequest({
       octokit: {} as Octokit,
       owner: "xbmc",
       repo: "kodiai",
@@ -41,7 +41,14 @@ describe("publishMentionWritePullRequest", () => {
       createPullRequestWithPublicationPipeline,
     });
 
-    expect(response.data.html_url).toBe("https://github.com/xbmc/kodiai/pull/42");
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        data: {
+          html_url: "https://github.com/xbmc/kodiai/pull/42",
+        },
+      },
+    });
     expect(createPullRequestWithPublicationPipeline).toHaveBeenCalledTimes(1);
     expect(createPullRequestWithPublicationPipeline.mock.calls[0]![1]).toEqual({
       owner: "xbmc",
@@ -53,5 +60,28 @@ describe("publishMentionWritePullRequest", () => {
       botHandles: ["kodiai", "claude"],
       preserveKodiaiMarkers: true,
     });
+  });
+
+  test("returns failed Result when the GitHub publication pipeline rejects", async () => {
+    const publishError = new Error("create PR failed");
+    const createPullRequestWithPublicationPipeline = mock(async (): Promise<MentionWritePullRequestPublicationResponse> => {
+      throw publishError;
+    });
+
+    const result = await publishMentionWritePullRequest({
+      octokit: {} as Octokit,
+      owner: "xbmc",
+      repo: "kodiai",
+      draft: {
+        title: "Fix issue",
+        body: "Generated patch summary",
+      },
+      head: "kodiai-fork:fix-issue",
+      base: "main",
+      botHandles: ["kodiai", "claude"],
+      createPullRequestWithPublicationPipeline,
+    });
+
+    expect(result).toEqual({ ok: false, err: publishError });
   });
 });

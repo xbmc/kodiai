@@ -24,6 +24,7 @@ import {
 } from "./mention-write-pr-draft.ts";
 import {
   publishMentionWritePullRequest as defaultPublishMentionWritePullRequest,
+  type MentionWritePullRequestPublicationResult,
 } from "./mention-write-pr-publication.ts";
 import {
   buildStagedPatchForGist as defaultBuildStagedPatchForGist,
@@ -69,7 +70,7 @@ type PublishMentionWritePullRequest = (params: {
   head: string;
   base: string;
   botHandles: string[];
-}) => Promise<{ data: { html_url: string } }>;
+}) => Promise<MentionWritePullRequestPublicationResult>;
 
 export type ForkWriteOutputStatus = {
   status: "handled" | "fall-through";
@@ -200,8 +201,11 @@ export async function publishMentionForkWriteOutput(params: {
       base: prBaseRef,
       botHandles: params.botHandles,
     });
+    if (!response.ok) {
+      throw response.err;
+    }
 
-    const createdPrUrl = response.data.html_url;
+    const createdPrUrl = response.value.data.html_url;
     const issueLinkbackUrl =
       params.mention.prNumber !== undefined
         ? `https://github.com/${params.mention.owner}/${params.mention.repo}/pull/${params.mention.prNumber}`

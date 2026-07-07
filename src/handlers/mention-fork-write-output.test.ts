@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ok } from "../lib/result.ts";
 import { publishMentionForkWriteOutput } from "./mention-fork-write-output.ts";
 
 function createLogger() {
@@ -67,7 +68,7 @@ function baseParams(overrides: Partial<Parameters<typeof publishMentionForkWrite
       diffStat: "",
       warnings: [],
     }),
-    publishMentionWritePullRequest: async () => ({ data: { html_url: "https://github.com/acme/widgets/pull/9" } }),
+    publishMentionWritePullRequest: async () => ok({ data: { html_url: "https://github.com/acme/widgets/pull/9" } }),
     recordWriteRateLimitSuccess: () => undefined,
     ...overrides,
   } satisfies Parameters<typeof publishMentionForkWriteOutput>[0];
@@ -113,7 +114,7 @@ describe("publishMentionForkWriteOutput", () => {
       },
       publishMentionWritePullRequest: async ({ head }) => {
         publishedHead = head;
-        return { data: { html_url: "https://github.com/acme/widgets/pull/11" } };
+        return ok({ data: { html_url: "https://github.com/acme/widgets/pull/11" } });
       },
       postMentionReply: async (body) => {
         replies.push(body);

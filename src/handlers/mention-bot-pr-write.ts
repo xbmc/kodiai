@@ -18,6 +18,7 @@ import {
 } from "./mention-write-pr-draft.ts";
 import {
   publishMentionWritePullRequest as defaultPublishMentionWritePullRequest,
+  type MentionWritePullRequestPublicationResult,
 } from "./mention-write-pr-publication.ts";
 
 type BotWriteMention = {
@@ -72,7 +73,7 @@ type PublishMentionWritePullRequest = (params: {
   head: string;
   base: string;
   botHandles: string[];
-}) => Promise<{ data: { html_url: string } }>;
+}) => Promise<MentionWritePullRequestPublicationResult>;
 
 export type BotWritePullRequestStatus = {
   status: "handled";
@@ -214,7 +215,10 @@ export async function publishMentionBotWritePullRequest(params: {
         base: prBaseRef,
         botHandles: params.botHandles,
       });
-      createdPr = response.data;
+      if (!response.ok) {
+        throw response.err;
+      }
+      createdPr = response.value.data;
       break;
     } catch (err) {
       if (await params.maybeReplyWritePermissionFailure({

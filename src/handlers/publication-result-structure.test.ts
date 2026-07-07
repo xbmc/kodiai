@@ -376,4 +376,20 @@ describe("publication result structure", () => {
     expect(prePromptSource).toContain("if (!disabledWriteRefusal.ok)");
     expect(prePromptSource).toContain("disabledWriteRefusal.value.refused");
   });
+
+  test("keeps mention write PR publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./mention-write-pr-publication.ts", import.meta.url), "utf8");
+    const botSource = readFileSync(new URL("./mention-bot-pr-write.ts", import.meta.url), "utf8");
+    const forkSource = readFileSync(new URL("./mention-fork-write-output.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("MentionWritePullRequestPublicationResult");
+    expect(source).toMatch(/Result<\s*MentionWritePullRequestPublicationResponse/);
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toMatch(/\berr\(/);
+    expect(botSource).toContain("if (!response.ok)");
+    expect(botSource).toContain("createdPr = response.value.data");
+    expect(forkSource).toContain("if (!response.ok)");
+    expect(forkSource).toContain("const createdPrUrl = response.value.data.html_url");
+  });
 });
