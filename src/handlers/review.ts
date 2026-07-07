@@ -204,7 +204,6 @@ import { resolveReviewContinuationRevisionCounts } from "./review-continuation-r
 import { resolveReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
-import { publishRetryReviewDetailsMerge } from "./review-details-retry-publication.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
@@ -212,10 +211,10 @@ import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publica
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 import {
-  resolveMergedContinuationFamilyState,
   resolvePendingContinuationFamilyState,
 } from "./review-continuation-family-state-projection.ts";
 import { settleRetryWithNoAdditionalResults } from "./review-retry-settlement.ts";
+import { publishRetryMergeContinuationResults } from "./review-retry-merge-publication.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
@@ -2255,74 +2254,31 @@ export function createReviewHandler(deps: {
                           return;
                         }
 
-                        const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
-                        const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
-                        const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
-
-                        if (canPublishReviewWorkOutput(
-                          retryReviewWorkAttempt.attemptId,
-                          "retry partial review merge",
-                          retryDeliveryId,
-                        )) {
-                          setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
-
-                          const retryReviewDetailsPublication = await publishRetryReviewDetailsMerge({
-                            octokit: retryOctokit,
-                            owner: apiOwner,
-                            repo: apiRepo,
-                            prNumber: pr.number,
-                            attemptId: retryReviewWorkAttempt.attemptId,
-                            deliveryId: retryDeliveryId,
-                            reviewOutputKey,
-                            retryReviewOutputKey,
-                            commentIdToUpdate,
-                            mergeBody: mergeContext.body,
-                            reviewDetailsFirstPass: mergeContext.reviewDetailsFirstPass,
-                            botHandles: [githubApp.getAppSlug(), "claude"],
-                            authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                            reviewBoundedness,
-                            baseLog,
-                            logger,
-                            canPublishReviewWorkOutput,
-                            renderReviewDetailsBody,
-                            settleRetryWithoutCanonicalUpdate,
-                          });
-
-                          if (!retryReviewDetailsPublication.ok) {
-                            logger.warn(
-                              { ...baseLog, err: retryReviewDetailsPublication.err },
-                              "Retry Review Details publication failed",
-                            );
-                            return;
-                          }
-
-                          const retryReviewDetailsPublicationStatus = retryReviewDetailsPublication.value;
-                          if (retryReviewDetailsPublicationStatus.status === "settled-without-canonical-update") {
-                            return;
-                          }
-
-                          logger.info(
-                            {
-                              deliveryId: retryDeliveryId,
-                              prNumber: pr.number,
-                              retryConclusion: retryResult.conclusion,
-                              retryFilesReviewed: mergeContext.retryFilesReviewed,
-                              partialCommentId,
-                              settlementReason: settlementDecision.reason,
-                              projectionStatus: retryReviewDetailsPublicationStatus.projectionStatus,
-                            },
-                            retryReviewDetailsPublicationStatus.logMessage,
-                          );
-
-                          await persistContinuationFamilyState(resolveMergedContinuationFamilyState({
-                            attemptId: retryReviewWorkAttempt.attemptId,
-                            projectionStatus: retryReviewDetailsPublicationStatus.projectionStatus,
-                            reviewOutputKey: retryReviewOutputKey,
-                          }));
-
-                          // Cleanup checkpoint data after successful merge
-                          discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
-                        }
+                        await publishRetryMergeContinuationResults({
+                          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+                          getAppSlug: () => githubApp.getAppSlug(),
+                          owner: apiOwner,
+                          repo: apiRepo,
+                          prNumber: pr.number,
+                          attemptId: retryReviewWorkAttempt.attemptId,
+                          deliveryId: retryDeliveryId,
+                          reviewOutputKey,
+                          retryReviewOutputKey,
+                          retryConclusion: retryResult.conclusion,
+                          partialCommentId,
+                          settlementReason: settlementDecision.reason,
+                          mergeContext,
+                          knowledgeStore,
+                          authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                          reviewBoundedness,
+                          baseLog,
+                          logger,
+                          canPublishReviewWorkOutput,
+                          setPublishPhase: () => setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish"),
+                          renderReviewDetailsBody,
+                          settleRetryWithoutCanonicalUpdate,
+                          persistContinuationFamilyState,
+                        });
                       } else {
                         await settleRetryWithNoAdditionalResults({
                           logger,
