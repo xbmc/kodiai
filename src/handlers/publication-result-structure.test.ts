@@ -198,4 +198,20 @@ describe("publication result structure", () => {
     expect(timeoutSource).toContain("if (!timeoutReviewDetailsPublication.ok)");
     expect(timeoutSource).toContain("timeoutReviewDetailsPublication.value");
   });
+
+  test("keeps first-pass Review Details publication on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-details-first-pass-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const handlerSource = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("FirstPassReviewDetailsPublicationResult");
+    expect(source).toContain("Result<FirstPassReviewDetailsPublicationValue");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toContain("resolveFirstPassReviewDetailsPublicationBody");
+    expect(handlerSource).toContain("resolveFirstPassReviewDetailsPublicationBody");
+    expect(handlerSource).toContain("firstPassReviewDetailsPublication");
+  });
 });

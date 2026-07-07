@@ -94,7 +94,7 @@ import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
-import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
+import { publishFirstPassReviewDetails, resolveFirstPassReviewDetailsPublicationBody } from "./review-details-first-pass-publication.ts";
 import {
   buildReviewFallbackPublicationAdapters,
   buildReviewFallbackPublicationParams,
@@ -961,7 +961,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           logReviewDetailsPublicationCompleted,
           logCanonicalReviewDetailsPublicationCompleted,
         });
-        canonicalReviewDetailsBody = firstPassReviewDetailsPublication.canonicalReviewDetailsBody;
+        canonicalReviewDetailsBody = resolveFirstPassReviewDetailsPublicationBody(firstPassReviewDetailsPublication);
 
         const postExecutionTelemetryPublicationContext = buildReviewPostExecutionTelemetryPublicationContext({
           installationId: event.installationId,
