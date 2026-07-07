@@ -35,10 +35,7 @@ import {
   buildMentionPostExecutorPublicationAdapters,
   publishMentionPostExecutorOutputs,
 } from "./mention-post-executor-publication.ts";
-
-const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
-
-
+import { FORMATTER_REVIEW_OUTPUT_ACTION } from "./mention-formatter-review-output-action.ts";
 
 
 /**

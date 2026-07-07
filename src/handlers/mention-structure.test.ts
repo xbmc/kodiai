@@ -5,7 +5,7 @@ describe("mention handler structure", () => {
   test("keeps the mention handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(493);
+    expect(source.split("\n").length).toBeLessThanOrEqual(490);
   });
 
   test("keeps mention handler dependency contract out of the monster handler", () => {
@@ -17,6 +17,17 @@ describe("mention handler structure", () => {
     expect(source).toContain("import type { MentionHandlerDependencies }");
     expect(source).toContain("./mention-handler-dependencies.ts");
     expect(dependenciesSource).toContain("export type MentionHandlerDependencies");
+  });
+
+  test("keeps formatter review-output action policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const actionSource = readFileSync(new URL("./mention-formatter-review-output-action.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const FORMATTER_REVIEW_OUTPUT_ACTION");
+    expect(source).toContain("FORMATTER_REVIEW_OUTPUT_ACTION");
+    expect(source).toContain("./mention-formatter-review-output-action.ts");
+    expect(actionSource).toContain("export const FORMATTER_REVIEW_OUTPUT_ACTION");
+    expect(actionSource).toContain("mention-format-suggestions");
   });
 
   test("keeps GitHub mention publication helpers out of the monster handler", () => {
