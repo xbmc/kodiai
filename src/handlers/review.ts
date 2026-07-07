@@ -97,6 +97,7 @@ import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-d
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import {
   buildReviewFallbackPublicationAdapters,
+  buildReviewFallbackPublicationParams,
   publishAndApplyReviewFallbackOutputs,
   type ReviewFallbackExecutionErrorContext,
 } from "./review-fallback-publication-orchestration.ts";
@@ -1449,42 +1450,36 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           appSlug: githubApp.getAppSlug(),
           visibleBudgetProjection: visibleBudgetState,
         });
-        await publishAndApplyReviewFallbackOutputs({
+        await publishAndApplyReviewFallbackOutputs(buildReviewFallbackPublicationParams({
           publicationState,
-          result: {
-            conclusion: result.conclusion,
-            published: result.published,
-            errorMessage: result.errorMessage,
-          },
+          executionResult: result,
           executionErrorContext,
           publishedPartialReview,
           deferredPublicOutputForContinuation,
           turnBudgetExhausted,
           fallbackRetryState,
           appliedTimeoutBudget,
-          getOctokit: fallbackPublicationAdapters.getOctokit,
-          getAppSlug: fallbackPublicationAdapters.getAppSlug,
+          adapters: fallbackPublicationAdapters,
           owner: apiOwner,
           repo: apiRepo,
-          prNumber: pr.number,
-          autoApprove: config.review.autoApprove,
+          pr,
+          reviewConfig: config.review,
           reviewOutputKey,
           deliveryId: event.id,
           installationId: event.installationId,
-          promptFileCount: promptFiles.length,
+          promptFiles,
           canonicalReviewDetailsBody,
-          authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+          authorClassification,
           reviewBoundedness,
-          mergeConfidence: depBumpContext?.mergeConfidence ?? null,
+          depBumpContext,
           logger,
           canPublishVisibleOutput,
           setReviewWorkPhase,
-          refreshVisibleBudgetProjection: fallbackPublicationAdapters.refreshVisibleBudgetProjection,
           renderReviewDetailsBody,
           finalizePublicationPhaseTiming,
           logReviewDetailsPublicationCompleted,
           logCanonicalReviewDetailsPublicationCompleted,
-        });
+        }));
       } catch (err) {
         timingState.publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
           error: err,

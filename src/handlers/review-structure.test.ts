@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1550);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1545);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -134,10 +134,14 @@ describe("review handler structure", () => {
     expect(source).not.toContain("applyReviewFallbackPublicationStatePatch(");
     expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n          getAppSlug: () => githubApp.getAppSlug(),");
     expect(source).not.toContain("refreshVisibleBudgetProjection: () => visibleBudgetState.refresh()");
+    expect(source).not.toContain("publicationState,\n          result: {\n            conclusion: result.conclusion");
+    expect(source).not.toContain("mergeConfidence: depBumpContext?.mergeConfidence ?? null");
     expect(source).toContain("buildReviewFallbackPublicationAdapters");
+    expect(source).toContain("buildReviewFallbackPublicationParams");
     expect(source).toContain("publishAndApplyReviewFallbackOutputs");
     expect(source).toContain("./review-fallback-publication-orchestration.ts");
     expect(orchestrationSource).toContain("export function buildReviewFallbackPublicationAdapters");
+    expect(orchestrationSource).toContain("export function buildReviewFallbackPublicationParams");
     expect(orchestrationSource).toContain("export async function publishAndApplyReviewFallbackOutputs");
     expect(orchestrationSource).toContain("export async function publishReviewFallbackOutputs");
     expect(orchestrationSource).toContain("export function applyReviewFallbackPublicationStatePatch");

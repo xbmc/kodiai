@@ -57,6 +57,77 @@ export function buildReviewFallbackPublicationAdapters(params: {
   };
 }
 
+export function buildReviewFallbackPublicationParams(params: {
+  publicationState: ReviewFallbackPublicationStateTarget;
+  executionResult: Pick<ExecutionResult, "conclusion" | "published" | "errorMessage">;
+  executionErrorContext?: ReviewFallbackExecutionErrorContext;
+  publishedPartialReview: boolean;
+  deferredPublicOutputForContinuation: boolean;
+  turnBudgetExhausted: boolean;
+  fallbackRetryState?: string;
+  appliedTimeoutBudget?: TimeoutBudgetDetails | null;
+  adapters: Pick<
+    Parameters<typeof publishReviewFallbackOutputs>[0],
+    "getOctokit" | "getAppSlug" | "refreshVisibleBudgetProjection"
+  >;
+  owner: string;
+  repo: string;
+  pr: { number: number };
+  reviewConfig: { autoApprove: boolean };
+  reviewOutputKey: string;
+  deliveryId: string;
+  installationId: number;
+  promptFiles: readonly unknown[];
+  canonicalReviewDetailsBody?: string | null;
+  authorClassification: { searchEnrichment: { degraded: boolean } };
+  reviewBoundedness: ReviewBoundednessContract | null;
+  depBumpContext?: { mergeConfidence?: MergeConfidence | null } | null;
+  logger: Logger;
+  canPublishVisibleOutput: (reason: string) => boolean;
+  setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
+  renderReviewDetailsBody: ReviewDetailsPublicationRuntime["renderReviewDetailsBody"];
+  finalizePublicationPhaseTiming: ReviewDetailsPublicationRuntime["finalizePublicationPhaseTiming"];
+  logReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logReviewDetailsPublicationCompleted"];
+  logCanonicalReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logCanonicalReviewDetailsPublicationCompleted"];
+}): Parameters<typeof publishAndApplyReviewFallbackOutputs>[0] {
+  return {
+    publicationState: params.publicationState,
+    result: {
+      conclusion: params.executionResult.conclusion,
+      published: params.executionResult.published,
+      errorMessage: params.executionResult.errorMessage,
+    },
+    executionErrorContext: params.executionErrorContext,
+    publishedPartialReview: params.publishedPartialReview,
+    deferredPublicOutputForContinuation: params.deferredPublicOutputForContinuation,
+    turnBudgetExhausted: params.turnBudgetExhausted,
+    fallbackRetryState: params.fallbackRetryState,
+    appliedTimeoutBudget: params.appliedTimeoutBudget,
+    getOctokit: params.adapters.getOctokit,
+    getAppSlug: params.adapters.getAppSlug,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.pr.number,
+    autoApprove: params.reviewConfig.autoApprove,
+    reviewOutputKey: params.reviewOutputKey,
+    deliveryId: params.deliveryId,
+    installationId: params.installationId,
+    promptFileCount: params.promptFiles.length,
+    canonicalReviewDetailsBody: params.canonicalReviewDetailsBody,
+    authorSearchEnrichmentDegraded: params.authorClassification.searchEnrichment.degraded,
+    reviewBoundedness: params.reviewBoundedness,
+    mergeConfidence: params.depBumpContext?.mergeConfidence ?? null,
+    logger: params.logger,
+    canPublishVisibleOutput: params.canPublishVisibleOutput,
+    setReviewWorkPhase: params.setReviewWorkPhase,
+    refreshVisibleBudgetProjection: params.adapters.refreshVisibleBudgetProjection,
+    renderReviewDetailsBody: params.renderReviewDetailsBody,
+    finalizePublicationPhaseTiming: params.finalizePublicationPhaseTiming,
+    logReviewDetailsPublicationCompleted: params.logReviewDetailsPublicationCompleted,
+    logCanonicalReviewDetailsPublicationCompleted: params.logCanonicalReviewDetailsPublicationCompleted,
+  };
+}
+
 export async function publishReviewFallbackOutputs(params: {
   result: Pick<ExecutionResult, "conclusion" | "published" | "errorMessage">;
   executionErrorContext?: ReviewFallbackExecutionErrorContext;
