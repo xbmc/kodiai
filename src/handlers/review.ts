@@ -122,7 +122,7 @@ import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
-import { buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
+import { buildReviewExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidatePublicationPreparation } from "./review-candidate-publication-preparation.ts";
 import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
@@ -133,7 +133,6 @@ import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-con
 import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome.ts";
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
-import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import {
@@ -147,14 +146,13 @@ import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publica
 import { resolveReviewTimeoutExecutionContext } from "./review-timeout-execution-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
-import { settleRetryContinuationResults } from "./review-retry-continuation-settlement.ts";
 import {
   finalizeRetryJobAttempt,
   handleRetryEnqueueFailure,
   handleRetryJobFailure,
 } from "./review-retry-failure-handling.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
-import { prepareReviewRetryWorkspace, prepareReviewWorkspace } from "./review-workspace-preparation.ts";
+import { prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 import {
   resolveReviewEventRuntime,
   type ReviewWebhookPayload,
@@ -174,7 +172,7 @@ import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
-import { prepareRetryReviewPrompt } from "./review-retry-prompt-preparation.ts";
+import { runReviewTimeoutRetryJob } from "./review-timeout-retry-job.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1427,11 +1425,6 @@ export function createReviewHandler(deps: {
             if (retryEnqueueContext) {
               const {
                 retryReviewOutputKey,
-                retryTimeout,
-                retryFiles,
-                retryTimeoutEstimate,
-                retryCheckpointEnabled,
-                retryScopeRatio,
                 retryDeliveryId,
               } = retryEnqueueContext;
               const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
@@ -1481,155 +1474,111 @@ export function createReviewHandler(deps: {
                   let retryWorkspace: Workspace | undefined;
                   try {
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "workspace-create");
-                    retryWorkspace = await prepareReviewRetryWorkspace({
+                    retryWorkspace = await runReviewTimeoutRetryJob({
                       workspaceManager,
                       installationId: event.installationId,
-                      owner: cloneOwner,
-                      repo: cloneRepo,
-                      ref: cloneRef,
+                      cloneOwner,
+                      cloneRepo,
+                      cloneRef,
                       depth: REVIEW_WORKSPACE_FETCH_DEPTH,
                       usesPrRef,
                       prNumber: pr.number,
                       baseRef: pr.base.ref,
                       fallbackHeadRepoFullName: pr.head.repo?.full_name ?? null,
                       fallbackHeadRef: pr.head.ref,
-                      localBranch: "pr-review-retry-1",
                       fetchRemoteTrackingBranchFn,
-                    });
-
-                    const {
-                      retryReviewPromptDerivedCacheStatus,
-                      retryReviewPromptDerivedCacheReason,
-                      retryPrompt,
-                      retryPromptSections,
-                    } = await prepareRetryReviewPrompt({
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      pr,
                       retryAttemptId: retryReviewWorkAttempt.attemptId,
-                      retryDeliveryId,
-                      retryReviewOutputKey,
-                      config,
-                      taskType: reviewRouting.taskType,
-                      resolvedSeverityMinLevel,
-                      resolvedFocusAreas,
-                      resolvedIgnoredAreas,
-                      resolvedMaxComments,
-                      diffAnalysis,
-                      diffContent: diffContext.diffContent,
-                      matchedPathInstructions,
-                      incrementalResult,
-                      priorFindingContext: priorFindingCtx,
-                      retrievalContext: retrievalCtx,
-                      reviewPrecedents: reviewPrecedentsForPrompt,
-                      wikiKnowledge: wikiKnowledgeForPrompt,
-                      unifiedResults: unifiedResultsForPrompt,
-                      contextWindow: contextWindowForPrompt,
-                      prLabels,
-                      focusHints: parsedIntent.unrecognized,
-                      conventionalType: parsedIntent.conventionalType,
-                      priorFindings,
-                      authorClassification,
-                      depBumpContext,
-                      isDraft,
-                      clusterPatterns: clusterPatternsForPrompt,
-                      linkedIssues: linkedIssueResult,
-                      structuralImpact: structuralImpactForReview,
-                      repoDoctrineProjection,
-                      checkpoint,
-                      isTimeout: result.isTimeout === true,
                       retryEnqueueContext,
-                      visibleBudgetState,
-                      promptBuilder: reviewPromptBuilder,
-                      promptCache: reviewPromptDerivedCache,
-                      getPromptCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
-                      buildPromptFingerprint: buildReviewPromptFingerprint,
-                      telemetryStore,
+                      preparePrompt: {
+                        owner: apiOwner,
+                        repo: apiRepo,
+                        pr,
+                        config,
+                        taskType: reviewRouting.taskType,
+                        resolvedSeverityMinLevel,
+                        resolvedFocusAreas,
+                        resolvedIgnoredAreas,
+                        resolvedMaxComments,
+                        diffAnalysis,
+                        diffContent: diffContext.diffContent,
+                        matchedPathInstructions,
+                        incrementalResult,
+                        priorFindingContext: priorFindingCtx,
+                        retrievalContext: retrievalCtx,
+                        reviewPrecedents: reviewPrecedentsForPrompt,
+                        wikiKnowledge: wikiKnowledgeForPrompt,
+                        unifiedResults: unifiedResultsForPrompt,
+                        contextWindow: contextWindowForPrompt,
+                        prLabels,
+                        focusHints: parsedIntent.unrecognized,
+                        conventionalType: parsedIntent.conventionalType,
+                        priorFindings,
+                        authorClassification,
+                        depBumpContext,
+                        isDraft,
+                        clusterPatterns: clusterPatternsForPrompt,
+                        linkedIssues: linkedIssueResult,
+                        structuralImpact: structuralImpactForReview,
+                        repoDoctrineProjection,
+                        checkpoint,
+                        isTimeout: result.isTimeout === true,
+                        visibleBudgetState,
+                        promptBuilder: reviewPromptBuilder,
+                        promptCache: reviewPromptDerivedCache,
+                        getPromptCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
+                        buildPromptFingerprint: buildReviewPromptFingerprint,
+                        telemetryStore,
+                        setReviewWorkPhaseForAttempt,
+                        logger,
+                        baseLog,
+                      },
+                      executor,
+                      execution: {
+                        owner: apiOwner,
+                        repo: apiRepo,
+                        appSlug: githubApp.getAppSlug(),
+                        taskType: reviewRouting.taskType,
+                        reviewMaxTurnsOverride,
+                        knowledgeStore,
+                        timeoutTotalFiles,
+                        prDiffCommentabilityIndex,
+                      },
+                      outcome: {
+                        telemetryEnabled: config.telemetry.enabled,
+                        telemetryStore,
+                        logger,
+                        parentDeliveryId: event.id,
+                        repo: `${apiOwner}/${apiRepo}`,
+                        prNumber: pr.number,
+                        prAuthor: pr.user.login,
+                        partialCommentId,
+                        timeoutTotalFiles,
+                        getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
+                      },
+                      settlement: {
+                        getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+                        getAppSlug: () => githubApp.getAppSlug(),
+                        owner: apiOwner,
+                        repo: apiRepo,
+                        prNumber: pr.number,
+                        reviewOutputKey,
+                        firstPassOutcome: result,
+                        baseCheckpoint: checkpoint,
+                        partialCommentId,
+                        timeoutDurationSeconds: timeoutDuration,
+                        timeoutFirstPassBoundedReason: timeoutFirstPass?.boundedReason,
+                        knowledgeStore,
+                        authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                        reviewBoundedness,
+                        baseLog,
+                        logger,
+                        canPublishReviewWorkOutput,
+                        setPublishPhase: () => setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish"),
+                        renderReviewDetailsBody,
+                        settleRetryWithoutCanonicalUpdate,
+                        persistContinuationFamilyState,
+                      },
                       setReviewWorkPhaseForAttempt,
-                      logger,
-                      baseLog,
-                    });
-
-                    setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
-                    const retryResult = await executor.execute(buildReviewRetryExecutionContext({
-                      workspace: retryWorkspace,
-                      installationId: event.installationId,
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      prNumber: pr.number,
-                      appSlug: githubApp.getAppSlug(),
-                      taskType: reviewRouting.taskType,
-                      retryPrompt,
-                      retryPromptSections,
-                      retryReviewOutputKey,
-                      retryDeliveryId,
-                      retryTimeoutSeconds: retryTimeout,
-                      reviewMaxTurnsOverride,
-                      knowledgeStore,
-                      timeoutTotalFiles,
-                      retryCheckpointEnabled,
-                      prDiffCommentabilityIndex,
-                    }));
-
-                    const {
-                      retryCheckpoint,
-                      retryHasResults,
-                      retryTimeoutClassification,
-                    } = await resolveReviewRetryExecutionOutcome({
-                      telemetryEnabled: config.telemetry.enabled,
-                      telemetryStore,
-                      logger,
-                      retryDeliveryId,
-                      parentDeliveryId: event.id,
-                      repo: `${apiOwner}/${apiRepo}`,
-                      prNumber: pr.number,
-                      prAuthor: pr.user.login,
-                      retryReviewOutputKey,
-                      retryResult,
-                      retryPromptSections,
-                      retryReviewPromptDerivedCacheStatus,
-                      retryReviewPromptDerivedCacheReason: retryReviewPromptDerivedCacheReason ?? undefined,
-                      retryFilesCount: retryFiles.length,
-                      retryScopeRatio,
-                      retryTimeoutSeconds: retryTimeout,
-                      retryRiskLevel: retryTimeoutEstimate.riskLevel,
-                      retryCheckpointEnabled,
-                      partialCommentId,
-                      timeoutTotalFiles,
-                      getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
-                    });
-
-                    await settleRetryContinuationResults({
-                      retryCompletedWithResults:
-                        retryResult.conclusion === "success" ||
-                        (retryResult.isTimeout === true && retryHasResults),
-                      getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-                      getAppSlug: () => githubApp.getAppSlug(),
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      prNumber: pr.number,
-                      attemptId: retryReviewWorkAttempt.attemptId,
-                      deliveryId: retryDeliveryId,
-                      reviewOutputKey,
-                      retryReviewOutputKey,
-                      retryResult,
-                      firstPassOutcome: result,
-                      baseCheckpoint: checkpoint,
-                      retryCheckpoint,
-                      partialCommentId,
-                      retryFilesCount: retryFiles.length,
-                      timeoutDurationSeconds: timeoutDuration,
-                      timeoutFirstPassBoundedReason: timeoutFirstPass?.boundedReason,
-                      knowledgeStore,
-                      authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                      reviewBoundedness,
-                      baseLog,
-                      logger,
-                      canPublishReviewWorkOutput,
-                      setPublishPhase: () => setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish"),
-                      renderReviewDetailsBody,
-                      settleRetryWithoutCanonicalUpdate,
-                      persistContinuationFamilyState,
                     });
 
                   } catch (retryErr) {

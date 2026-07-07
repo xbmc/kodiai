@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(2650);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1800);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -292,15 +292,33 @@ describe("review handler structure", () => {
   test("keeps retry no-additional-results settlement policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Retry produced no additional results -- keeping original partial review");
     expect(source).not.toContain("resolveQuietSettledContinuationFamilyState({");
-    expect(source).toContain("settleRetryContinuationResults");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("settleRetryWithNoAdditionalResults");
 
     const retrySettlementSource = readFileSync(new URL("./review-retry-settlement.ts", import.meta.url), "utf8");
     expect(retrySettlementSource).toContain("resolveQuietSettledContinuationFamilyState");
     expect(retrySettlementSource).toContain("Retry produced no additional results -- keeping original partial review");
+  });
+
+  test("keeps timeout retry job execution mechanics out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("prepareReviewRetryWorkspace({");
+    expect(source).not.toContain("const retryResult = await executor.execute(buildReviewRetryExecutionContext({");
+    expect(source).not.toContain("await resolveReviewRetryExecutionOutcome({");
+    expect(source).not.toContain("await settleRetryContinuationResults({");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("prepareReviewRetryWorkspace({");
+    expect(retryJobSource).toContain("buildReviewRetryExecutionContext({");
+    expect(retryJobSource).toContain("resolveReviewRetryExecutionOutcome({");
+    expect(retryJobSource).toContain("settleRetryContinuationResults({");
   });
 
   test("keeps review execution telemetry persistence out of the monster handler", () => {
@@ -336,13 +354,15 @@ describe("review handler structure", () => {
     const authorContextSource = readFileSync(new URL("./review-author-context.ts", import.meta.url), "utf8");
     const initialPreparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
     const retryPreparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("authorClassification.expertise?.map");
     expect(source).not.toContain("dimension: e.dimension");
     expect(source).not.toContain("topic: e.topic");
     expect(source).not.toContain("score: e.score");
     expect(source).toContain("prepareInitialReviewPrompt");
-    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(initialPreparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
     expect(retryPreparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
     expect(authorContextSource).toContain("projectReviewAuthorExpertiseForPrompt");
@@ -454,11 +474,13 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const initialPreparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
     const retryPreparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("async function buildReviewPromptResultWithCache");
     expect(source).not.toContain("const cacheErrorsBeforeLookup = reviewPromptDerivedCacheErrorCount;");
     expect(source).toContain("prepareInitialReviewPrompt");
-    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(initialPreparationSource).toContain("./review-prompt-cache-runtime.ts");
     expect(retryPreparationSource).toContain("./review-prompt-cache-runtime.ts");
   });
@@ -467,11 +489,13 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
     const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryPromptCacheState: ReviewPromptCacheState =");
     expect(source).not.toContain("const retryPromptCacheEvent = buildPromptReviewCacheEvent({");
     expect(source).not.toContain("\"Resolved retry review prompt derived-cache state\"");
-    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("review-derived-prompt-cache");
@@ -674,12 +698,14 @@ describe("review handler structure", () => {
   test("keeps retry review executor context projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(new URL("./review-execution-context.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryResult = await executor.execute({");
     expect(source).not.toContain("eventType: \"pull_request.review-retry\"");
     expect(source).not.toContain("triggerBody: \"\",\n                      prompt: retryPrompt");
     expect(source).not.toContain("buildShadowSpecialistCorrelationKey({\n                          deliveryId: retryDeliveryId");
-    expect(source).toContain("executor.execute(buildReviewRetryExecutionContext({");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("executor.execute(buildReviewRetryExecutionContext({");
     expect(contextSource).toContain("export function buildReviewRetryExecutionContext");
   });
 
@@ -893,12 +919,14 @@ describe("review handler structure", () => {
     const promptContextSource = readFileSync(new URL("./review-prompt-build-context.ts", import.meta.url), "utf8");
     const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
     const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryPromptBuildContext = {");
     expect(source).not.toContain("buildRetryReviewPromptContext({");
     expect(source).not.toContain("cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap");
-    expect(source).toContain("prepareRetryReviewPrompt");
-    expect(source).toContain("./review-retry-prompt-preparation.ts");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildReviewRetryPromptBuildContext");
     expect(preparationSource).toContain("./review-retry-prompt-context.ts");
     expect(retryPromptContextSource).toContain("buildRetryReviewPromptContext");
@@ -910,12 +938,14 @@ describe("review handler structure", () => {
   test("keeps retry review prompt preparation orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("buildReviewRetryPromptBuildContext({");
     expect(source).not.toContain("buildRetryReviewPromptRuntime({");
     expect(source).not.toContain("const retryPromptRuntime = await");
-    expect(source).toContain("prepareRetryReviewPrompt");
-    expect(source).toContain("./review-retry-prompt-preparation.ts");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("export async function prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildReviewRetryPromptBuildContext({");
     expect(preparationSource).toContain("buildRetryReviewPromptRuntime({");
@@ -1234,13 +1264,15 @@ describe("review handler structure", () => {
 
   test("keeps retry Review Details publication orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
     const retryMergeSource = readFileSync(new URL("./review-retry-merge-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("retry canonical Review Details merge");
     expect(source).not.toContain("Failed to update retry canonical review surface with Review Details");
     expect(source).not.toContain("retry degraded Review Details fallback comment");
-    expect(source).toContain("./review-retry-continuation-settlement.ts");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("./review-retry-continuation-settlement.ts");
     expect(retryContinuationSettlementSource).toContain("./review-retry-merge-publication.ts");
     expect(retryMergeSource).toContain("./review-details-retry-publication.ts");
     expect(retryMergeSource).toContain("publishRetryReviewDetailsMerge");
@@ -1249,12 +1281,14 @@ describe("review handler structure", () => {
   test("keeps retry merge publication settlement out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryOctokit = await githubApp.getInstallationOctokit");
     expect(source).not.toContain("const retryReviewDetailsPublication = await publishRetryReviewDetailsMerge({");
     expect(source).not.toContain("resolveMergedContinuationFamilyState({");
     expect(source).not.toContain("Retry Review Details publication failed");
-    expect(source).toContain("settleRetryContinuationResults");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("publishRetryMergeContinuationResults");
 
     const retryMergeSource = readFileSync(new URL("./review-retry-merge-publication.ts", import.meta.url), "utf8");
@@ -1265,14 +1299,16 @@ describe("review handler structure", () => {
   test("keeps retry continuation settlement orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retrySettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const settlementDecision = settleReviewContinuation({");
     expect(source).not.toContain("const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({");
     expect(source).not.toContain("settlementReason: \"no-meaningful-delta\"");
     expect(source).not.toContain("Retry settlement skipped because the base checkpoint was missing");
     expect(source).not.toContain("Retry merge skipped because bounded first-pass state became non-publishable");
-    expect(source).toContain("settleRetryContinuationResults");
-    expect(source).toContain("./review-retry-continuation-settlement.ts");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retrySettlementSource).toContain("settleReviewContinuation");
     expect(retrySettlementSource).toContain("publishRetryMergeContinuationResults");
   });
@@ -1308,11 +1344,13 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
     const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("This is a retry of a timed-out review with reduced scope.");
     expect(source).not.toContain("This is a retry of a review that exhausted max turns with reduced scope.");
     expect(source).not.toContain("save_review_checkpoint with a summaryDraft");
-    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("prepareRetryReviewPrompt");
     expect(preparationSource).toContain("buildReviewRetryPromptBuildContext");
     expect(retryPromptContextSource).toContain("buildReviewRetryCustomInstructions");
     expect(retryPromptContextSource).toContain("./review-retry-instructions.ts");
@@ -1320,6 +1358,7 @@ describe("review handler structure", () => {
 
   test("keeps retry execution outcome telemetry out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryHasStructuredProgress =");
     expect(source).not.toContain("const retryHasResults =");
@@ -1327,18 +1366,21 @@ describe("review handler structure", () => {
     expect(source).not.toContain("warningPrefix: \"Retry\"");
     expect(source).not.toContain("kind: \"retry\",\n                            reviewOutputKey: retryReviewOutputKey");
     expect(source).not.toContain("timeoutClassification: retryTimeoutClassification.classification");
-    expect(source).toContain("resolveReviewRetryExecutionOutcome");
-    expect(source).toContain("./review-retry-execution-outcome.ts");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("resolveReviewRetryExecutionOutcome");
   });
 
   test("keeps continuation revision delta classification out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("knowledgeStore.getPriorReviewFindings({\n                              repo: `${apiOwner}/${apiRepo}`");
     expect(source).not.toContain("currentFindings: currentFindings.map((finding) => ({");
     expect(source).not.toContain("Continuation delta classification failed (fail-open, merging without revision labels)");
-    expect(source).toContain("settleRetryContinuationResults");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("resolveReviewContinuationRevisionCounts");
   });
 
@@ -1358,12 +1400,14 @@ describe("review handler structure", () => {
   test("keeps retry continuation merge body context out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const mergedFirstPass = normalizeReviewFirstPass({");
     expect(source).not.toContain("const summaryDraftForMerge =");
     expect(source).not.toContain("const maxTurnsContinuationCompleted =");
     expect(source).not.toContain("const mergedBody = maxTurnsContinuationCompleted");
-    expect(source).toContain("settleRetryContinuationResults");
+    expect(source).toContain("runReviewTimeoutRetryJob");
+    expect(retryJobSource).toContain("settleRetryContinuationResults");
     expect(retryContinuationSettlementSource).toContain("resolveReviewContinuationMergeContext");
   });
 
