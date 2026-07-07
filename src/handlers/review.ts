@@ -217,6 +217,7 @@ import { resolveReviewDeltaClassification } from "./review-delta-classification.
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-evidence.ts";
 import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log.ts";
+import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1802,15 +1803,13 @@ export function createReviewHandler(deps: {
             });
 
             if (timeoutContinuationState.zeroEvidenceWarning) {
-              logger.warn(
-                {
-                  deliveryId: event.id,
-                  prNumber: pr.number,
-                  ...timeoutContinuationState.zeroEvidenceWarning,
-                  reviewOutputKey,
-                },
-                "Constrained timeout remained a zero-evidence hard failure",
-              );
+              logReviewTimeoutZeroEvidenceWarning({
+                logger,
+                deliveryId: event.id,
+                prNumber: pr.number,
+                reviewOutputKey,
+                zeroEvidenceWarning: timeoutContinuationState.zeroEvidenceWarning,
+              });
             }
 
             if (timeoutContinuationState.blockedFamilyState) {

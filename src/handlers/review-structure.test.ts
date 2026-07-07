@@ -663,6 +663,17 @@ describe("review handler structure", () => {
     expect(evidenceSource).toContain("retryRiskLevel");
   });
 
+  test("keeps zero-evidence timeout warning logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const warningSource = readFileSync(new URL("./review-timeout-zero-evidence-log.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Constrained timeout remained a zero-evidence hard failure");
+    expect(source).toContain("logReviewTimeoutZeroEvidenceWarning");
+    expect(source).toContain("./review-timeout-zero-evidence-log.ts");
+    expect(warningSource).toContain("Constrained timeout remained a zero-evidence hard failure");
+    expect(warningSource).toContain("zeroEvidenceWarning");
+  });
+
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
