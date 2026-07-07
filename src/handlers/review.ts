@@ -219,6 +219,7 @@ import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-
 import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logBoundedFirstPassPublicationFailure } from "./review-bounded-first-pass-publication-failure-log.ts";
+import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2307,10 +2308,7 @@ export function createReviewHandler(deps: {
     reviewWorkRuntime.finalize();
   }
 
-  logger.info(
-    { ...baseLog, gate: "enqueue", gateResult: "completed" },
-    "Review enqueue completed",
-  );
+  logReviewEnqueueCompleted({ logger, baseLog });
 }
 
 // Register for review trigger events

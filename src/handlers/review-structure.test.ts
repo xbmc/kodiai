@@ -685,6 +685,17 @@ describe("review handler structure", () => {
     expect(warningSource).toContain("error");
   });
 
+  test("keeps review enqueue completion logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const logSource = readFileSync(new URL("./review-enqueue-completion-log.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Review enqueue completed");
+    expect(source).toContain("logReviewEnqueueCompleted");
+    expect(source).toContain("./review-enqueue-completion-log.ts");
+    expect(logSource).toContain("Review enqueue completed");
+    expect(logSource).toContain("gateResult");
+  });
+
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
