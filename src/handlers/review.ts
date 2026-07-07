@@ -2,19 +2,11 @@ import type { WebhookEvent } from "../webhook/types.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import type { DeltaClassification } from "../lib/delta-classifier.ts";
-import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import { formatErrorComment } from "../lib/errors.ts";
 import {
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
 } from "../lib/review-details-formatting.ts";
-import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
-import {
-  reduceReviewFindings,
-} from "../review-orchestration/review-reducer.ts";
-import {
-  buildReviewPlan,
-} from "../review-orchestration/review-plan.ts";
 import {
   formatTimeoutErrorDetail,
   recordReviewExecutorPhaseTimings,
@@ -38,7 +30,6 @@ import {
 } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
 import {
-  collectDiffContext,
   REVIEW_WORKSPACE_FETCH_DEPTH,
 } from "../review-orchestration/review-diff-collection.ts";
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
@@ -52,12 +43,7 @@ import { type DepBumpContext } from "../lib/dep-bump-detector.ts";
 import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
-import {
-  runShadowSpecialistSubflow,
-} from "../specialists/shadow-specialist-subflow.ts";
-import {
-  type ShadowSpecialistReviewDetailsProjection,
-} from "../specialists/shadow-specialist-review-details.ts";
+import { type ShadowSpecialistReviewDetailsProjection } from "../specialists/shadow-specialist-review-details.ts";
 import {
   buildReviewDetailsPublicationRuntimeAdapters,
   createReviewDetailsPublicationRuntime,
@@ -100,8 +86,7 @@ import {
   buildReviewCandidatePublicationPreparationAdapters,
   resolveReviewCandidatePublicationPreparation,
 } from "./review-candidate-publication-preparation.ts";
-import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
-import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
+import { resolveReviewPublicationContext } from "./review-publication-context.ts";
 import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
 import { logReviewCandidatePublicationAdapterContext } from "./review-candidate-publication-adapter-context.ts";
 import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-context.ts";
@@ -135,7 +120,7 @@ import {
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 import { createReviewHandlerRuntime } from "./review-handler-runtime.ts";
-import type { ReviewHandlerDependencies } from "./review-handler-dependencies.ts";
+import { resolveReviewHandlerDependencies, type ReviewHandlerDependencies } from "./review-handler-dependencies.ts";
 import { cleanupReviewExecutionResources } from "./review-execution-cleanup.ts";
 import { prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 import { createReviewWorkspacePhaseHooks } from "./review-workspace-phase-hooks.ts";
@@ -165,7 +150,7 @@ import {
 } from "./review-timeout-retry-scheduling.ts";
 import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filtered-inline-cleanup.ts";
 import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
-import type { ProcessedFinding } from "./review-processed-finding.ts";
+import { registerReviewHandlerEvents } from "./review-event-registration.ts";
 
 /**
  * Create the review handler and register it with the event router.
@@ -197,7 +182,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
     searchCache: injectedSearchCache,
     searchCacheFactory,
     reviewPromptDerivedCacheOptions,
-    reviewPromptBuilder = buildReviewPromptDetails,
+    reviewPromptBuilder,
     codeSnippetStore,
     contributorProfileStore,
     slackBotToken,
@@ -207,13 +192,13 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
     sql,
     reviewWorkCoordinator: injectedReviewWorkCoordinator,
     clusterModelStore,
-    fetchRemoteTrackingBranchFn = fetchRemoteTrackingBranch,
-    diffContextCollector = collectDiffContext,
-    shadowSpecialistSubflow = runShadowSpecialistSubflow,
-    reviewPlanBuilder = buildReviewPlan,
-    reviewReducer = reduceReviewFindings,
+    fetchRemoteTrackingBranchFn,
+    diffContextCollector,
+    shadowSpecialistSubflow,
+    reviewPlanBuilder,
+    reviewReducer,
     logger,
-  } = deps;
+  } = resolveReviewHandlerDependencies(deps);
 
   const {
     guardrailAuditStore,
@@ -795,7 +780,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         });
         reviewCandidateVerificationPublicationEvidence = preparedCandidateVerificationPublicationEvidence;
 
-        const reviewCandidatePublicationContext = resolveReviewCandidatePublicationRuntimeContext({
+        const reviewPublicationContext = resolveReviewPublicationContext({
           approval: reviewCandidateApprovalResult,
           adapter: reviewCandidatePublicationAdapter,
           publisherResults: candidatePublisherResults,
@@ -805,27 +790,23 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             publishedFindingCount: extractedFindings.length,
             resultPublished: result.published === true,
           },
+          reducer: reducerResult,
           logger,
           baseLog,
         });
-        const reviewCandidatePublishedFindings = reviewCandidatePublicationContext.publishedFindings;
-        const reviewCandidatePublicationRuntime = reviewCandidatePublicationContext.runtime;
-        const reviewCandidatePublicationFlow = reviewCandidatePublicationContext.flow;
-
-        const reviewFindingPublicationContext = resolveReviewFindingPublicationContext({
-          reducer: reducerResult,
-          candidatePublishedFindings: reviewCandidatePublishedFindings,
-        });
-        const processedFindings = reviewFindingPublicationContext.processedFindings as ProcessedFinding[];
-        const visibleFindings = reviewFindingPublicationContext.visibleFindings as ProcessedFinding[];
-        const lowConfidenceFindings = reviewFindingPublicationContext.lowConfidenceFindings as ProcessedFinding[];
-        const filteredInlineFindings = reviewFindingPublicationContext.filteredInlineFindings as ProcessedFinding[];
-        const suppressionMatchCounts = reviewFindingPublicationContext.suppressionMatchCounts;
-        const filterResult = reviewFindingPublicationContext.filterResult;
-        const prioritizationStats = reviewFindingPublicationContext.prioritizationStats;
-        const reviewReducerDetailsSummary = reviewFindingPublicationContext.reviewReducerDetailsSummary;
-        const reviewCandidatePublicationAdapterDetailsSummary =
-          reviewCandidatePublicationContext.adapterDetailsSummary;
+        const {
+          reviewCandidatePublicationRuntime,
+          reviewCandidatePublicationFlow,
+          processedFindings,
+          visibleFindings,
+          lowConfidenceFindings,
+          filteredInlineFindings,
+          suppressionMatchCounts,
+          filterResult,
+          prioritizationStats,
+          reviewReducerDetailsSummary,
+          reviewCandidatePublicationAdapterDetailsSummary,
+        } = reviewPublicationContext;
         const reviewFindingLifecycleContext = resolveReviewFindingLifecycleContext({
           logger,
           baseLog,
@@ -1597,9 +1578,5 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
   logReviewEnqueueCompleted({ logger, baseLog });
 }
 
-// Register for review trigger events
-eventRouter.register("pull_request.opened", handleReview);
-eventRouter.register("pull_request.ready_for_review", handleReview);
-eventRouter.register("pull_request.review_requested", handleReview);
-eventRouter.register("pull_request.synchronize", handleReview);
+registerReviewHandlerEvents(eventRouter, handleReview);
 }

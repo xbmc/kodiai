@@ -3,25 +3,29 @@ import type {
   ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import type { ReviewCandidatePublishedFindingResult } from "../review-orchestration/review-candidate-publication-adapter.ts";
+import type { ReviewCandidatePublicationAdapterDetailsSummary } from "../review-orchestration/review-candidate-publication-adapter.ts";
 import {
   isCandidatePublicationDraft,
   mergeCandidatePublishedFindings,
 } from "../review-orchestration/review-candidate-finding-merge.ts";
+import type { ProcessedFinding } from "./review-processed-finding.ts";
 
 export type ReviewFindingPublicationContext = {
-  processedFindings: ProcessedReviewFinding[];
-  visibleFindings: ProcessedReviewFinding[];
-  lowConfidenceFindings: ProcessedReviewFinding[];
-  filteredInlineFindings: ProcessedReviewFinding[];
+  processedFindings: ProcessedFinding[];
+  visibleFindings: ProcessedFinding[];
+  lowConfidenceFindings: ProcessedFinding[];
+  filteredInlineFindings: ProcessedFinding[];
   suppressionMatchCounts: ReviewReducerResult["suppressionMatchCounts"];
   filterResult: { filtered: ReviewReducerResult["filterRecords"] };
   prioritizationStats: ReviewReducerResult["prioritizationStats"];
   reviewReducerDetailsSummary: ReviewReducerResult["detailsSummary"];
+  reviewCandidatePublicationAdapterDetailsSummary: ReviewCandidatePublicationAdapterDetailsSummary;
 };
 
 export function resolveReviewFindingPublicationContext(params: {
   reducer: ReviewReducerResult;
   candidatePublishedFindings: ReviewCandidatePublishedFindingResult;
+  adapterDetailsSummary: ReviewCandidatePublicationAdapterDetailsSummary;
 }): ReviewFindingPublicationContext {
   const directProcessedFindings = params.reducer.findings
     .filter((finding) => !isCandidatePublicationDraft(finding));
@@ -36,16 +40,17 @@ export function resolveReviewFindingPublicationContext(params: {
     processedFindings: mergeCandidatePublishedFindings(
       directProcessedFindings,
       params.candidatePublishedFindings.findings,
-    ),
+    ) as ProcessedFinding[],
     visibleFindings: mergeCandidatePublishedFindings(
       directVisibleFindings,
       params.candidatePublishedFindings.findings,
-    ),
-    lowConfidenceFindings: directLowConfidenceFindings,
-    filteredInlineFindings: directFilteredInlineFindings,
+    ) as ProcessedFinding[],
+    lowConfidenceFindings: directLowConfidenceFindings as ProcessedFinding[],
+    filteredInlineFindings: directFilteredInlineFindings as ProcessedFinding[],
     suppressionMatchCounts: params.reducer.suppressionMatchCounts,
     filterResult: { filtered: params.reducer.filterRecords },
     prioritizationStats: params.reducer.prioritizationStats,
     reviewReducerDetailsSummary: params.reducer.detailsSummary,
+    reviewCandidatePublicationAdapterDetailsSummary: params.adapterDetailsSummary,
   };
 }

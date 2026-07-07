@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1610);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1585);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -896,24 +896,30 @@ describe("review handler structure", () => {
 
   test("keeps candidate publication runtime projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const publicationContextSource = readFileSync(new URL("./review-publication-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("convertPublishedCandidateResultsToProcessedFindings({");
     expect(source).not.toContain("classifyReviewCandidatePublicationRuntime({");
     expect(source).not.toContain("createCandidatePublicationFlowEvidence({");
     expect(source).not.toContain("logReviewCandidatePublicationRuntime({");
     expect(source).not.toContain("toReviewCandidatePublicationAdapterSummary(reviewCandidatePublicationAdapter.summary)");
-    expect(source).toContain("resolveReviewCandidatePublicationRuntimeContext");
-    expect(source).toContain("./review-candidate-publication-runtime-context.ts");
+    expect(source).toContain("resolveReviewPublicationContext");
+    expect(source).toContain("./review-publication-context.ts");
+    expect(publicationContextSource).toContain("resolveReviewCandidatePublicationRuntimeContext");
+    expect(publicationContextSource).toContain("./review-candidate-publication-runtime-context.ts");
   });
 
   test("keeps finding publication merge projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const publicationContextSource = readFileSync(new URL("./review-publication-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const directProcessedFindings = (reducerResult.findings as ProcessedReviewFinding[])");
     expect(source).not.toContain("mergeCandidatePublishedFindings(");
     expect(source).not.toContain("const filterResult = { filtered: reducerResult.filterRecords };");
-    expect(source).toContain("resolveReviewFindingPublicationContext");
-    expect(source).toContain("./review-finding-publication-context.ts");
+    expect(source).toContain("resolveReviewPublicationContext");
+    expect(source).toContain("./review-publication-context.ts");
+    expect(publicationContextSource).toContain("resolveReviewFindingPublicationContext");
+    expect(publicationContextSource).toContain("./review-finding-publication-context.ts");
   });
 
   test("keeps finding lifecycle and validation-truth context out of the monster handler", () => {

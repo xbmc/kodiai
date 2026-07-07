@@ -2,10 +2,10 @@ import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { buildReviewPromptDetails } from "../execution/review-prompt.ts";
+import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import type { JobQueue, WorkspaceManager } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
-import type { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
+import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
@@ -15,14 +15,19 @@ import type { EmbeddingProvider, KnowledgeStore, LearningMemoryStore } from "../
 import type { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import type { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import type { SearchCache } from "../lib/search-cache.ts";
-import type { collectDiffContext } from "../review-orchestration/review-diff-collection.ts";
-import type { ReviewPlanBuilder } from "../review-orchestration/review-plan.ts";
+import { collectDiffContext } from "../review-orchestration/review-diff-collection.ts";
+import { buildReviewPlan, type ReviewPlanBuilder } from "../review-orchestration/review-plan.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-import type { ReviewReducerInput, ReviewReducerResult } from "../review-orchestration/review-reducer.ts";
+import {
+  reduceReviewFindings,
+  type ReviewReducerInput,
+  type ReviewReducerResult,
+} from "../review-orchestration/review-reducer.ts";
 import type {
   ShadowSpecialistSubflowInput,
   ShadowSpecialistSubflowResult,
 } from "../specialists/shadow-specialist-subflow.ts";
+import { runShadowSpecialistSubflow } from "../specialists/shadow-specialist-subflow.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { EventRouter } from "../webhook/types.ts";
 import type { ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
@@ -87,3 +92,27 @@ export type ReviewHandlerDependencies = {
   reviewReducer?: ReviewReducer;
   logger: Logger;
 };
+
+export type ResolvedReviewHandlerDependencies = ReviewHandlerDependencies & Required<Pick<
+  ReviewHandlerDependencies,
+  | "reviewPromptBuilder"
+  | "fetchRemoteTrackingBranchFn"
+  | "diffContextCollector"
+  | "shadowSpecialistSubflow"
+  | "reviewPlanBuilder"
+  | "reviewReducer"
+>>;
+
+export function resolveReviewHandlerDependencies(
+  deps: ReviewHandlerDependencies,
+): ResolvedReviewHandlerDependencies {
+  return {
+    ...deps,
+    reviewPromptBuilder: deps.reviewPromptBuilder ?? buildReviewPromptDetails,
+    fetchRemoteTrackingBranchFn: deps.fetchRemoteTrackingBranchFn ?? fetchRemoteTrackingBranch,
+    diffContextCollector: deps.diffContextCollector ?? collectDiffContext,
+    shadowSpecialistSubflow: deps.shadowSpecialistSubflow ?? runShadowSpecialistSubflow,
+    reviewPlanBuilder: deps.reviewPlanBuilder ?? buildReviewPlan,
+    reviewReducer: deps.reviewReducer ?? reduceReviewFindings,
+  };
+}

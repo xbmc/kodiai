@@ -87,6 +87,10 @@ describe("resolveReviewFindingPublicationContext", () => {
     const context = resolveReviewFindingPublicationContext({
       reducer: reducer(),
       candidatePublishedFindings: publishedCandidate(),
+      adapterDetailsSummary: {
+        label: "Review candidate publication adapter",
+        text: "adapter summary",
+      },
     });
 
     expect(context.processedFindings.map((item) => item.title)).toEqual(["direct", "published candidate"]);
@@ -104,5 +108,9 @@ describe("resolveReviewFindingPublicationContext", () => {
       }],
     });
     expect(context.reviewReducerDetailsSummary).toEqual({ label: "Review reducer", text: "summary", status: "ready" });
+    expect(context.reviewCandidatePublicationAdapterDetailsSummary).toEqual({
+      label: "Review candidate publication adapter",
+      text: "adapter summary",
+    });
   });
 });
