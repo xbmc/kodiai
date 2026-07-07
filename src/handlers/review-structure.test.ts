@@ -85,6 +85,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-publication-context.ts");
   });
 
+  test("keeps retry enqueue field projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const retryReviewOutputKey = retryPlan.continuationReviewOutputKey;");
+    expect(source).not.toContain("const retryTimeout = retryPlan.timeoutSeconds;");
+    expect(source).not.toContain("const retryFiles = retryPlan.continuationFiles;");
+    expect(source).not.toContain("const retryDeliveryId = `${event.id}-retry-1`;");
+    expect(source).toContain("resolveReviewRetryEnqueueContext");
+    expect(source).toContain("./review-retry-enqueue-context.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

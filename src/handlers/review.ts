@@ -248,6 +248,7 @@ import { publishFirstPassReviewDetails } from "./review-details-first-pass-publi
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
+import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2249,14 +2250,21 @@ export function createReviewHandler(deps: {
             // Retry is only useful when no GitHub-visible output was published.
             // If inline comments were already posted, avoid a retry that could
             // create additional noise or duplicates.
-            if (retryPlan?.decision === "schedule-continuation") {
-              const retryReviewOutputKey = retryPlan.continuationReviewOutputKey;
-              const retryTimeout = retryPlan.timeoutSeconds;
-              const retryFiles = retryPlan.continuationFiles;
-              const retryTimeoutEstimate = retryPlan.timeoutEstimate;
-              const retryCheckpointEnabled = retryPlan.checkpointEnabled;
-              const retryScopeRatio = retryPlan.scopeRatio;
-              const retryDeliveryId = `${event.id}-retry-1`;
+            const retryEnqueueContext = resolveReviewRetryEnqueueContext({
+              deliveryId: event.id,
+              retryPlan,
+            });
+            if (retryEnqueueContext) {
+              const {
+                retryReviewOutputKey,
+                retryTimeout,
+                retryFiles,
+                retryTimeoutEstimate,
+                retryCheckpointEnabled,
+                retryScopeRatio,
+                retryDeliveryId,
+                retryContinuationCompaction,
+              } = retryEnqueueContext;
               const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
                 familyKey: reviewFamilyKey,
                 source: "automatic-review",
@@ -2451,9 +2459,9 @@ export function createReviewHandler(deps: {
                       structuralImpact: structuralImpactForReview,
                       repoDoctrine: repoDoctrineProjection,
                       smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
-                      retryPromptCompaction: retryPlan.continuationCompaction
+                      retryPromptCompaction: retryContinuationCompaction
                         ? {
-                            observation: retryPlan.continuationCompaction,
+                            observation: retryContinuationCompaction,
                             checkpointSummaries: checkpoint
                               ? [{
                                   reviewOutputKey: checkpoint.reviewOutputKey,
