@@ -369,10 +369,13 @@ describe("resolveMentionExecutionPublicationState", () => {
         published: false,
       },
       explicitReviewPublication: {
-        outputPublished: false,
-        resolution: "publish-failure-fallback",
-        failureCategory: "api_error",
-        fallbackDelivery: "error-comment-created",
+        ok: false,
+        err: {
+          outputPublished: false,
+          resolution: "publish-failure-fallback",
+          failureCategory: "api_error",
+          fallbackDelivery: "error-comment-created",
+        },
       },
       reviewPublishRightsLost: false,
     });

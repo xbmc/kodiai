@@ -1,6 +1,6 @@
 import { classifyError, type ErrorCategory } from "../lib/errors.ts";
-import type { WriteRateLimitStore } from "../lib/mention-state-stores.ts";
 import type { Result } from "../lib/result.ts";
+import type { WriteRateLimitStore } from "../lib/mention-state-stores.ts";
 import type { ExplicitMentionReviewPublishSkipReason } from "../review-orchestration/explicit-mention-review-publish.ts";
 
 export type MentionPublishResolution =
@@ -294,20 +294,18 @@ export function resolveMentionExecutionPublicationState(params: {
     isTimeout?: boolean;
     failureSubtype?: string;
   };
-  explicitReviewPublication: {
-    outputPublished: boolean;
-    resolution: MentionPublishResolution;
-    failureCategory?: ErrorCategory | null;
-    fallbackDelivery: MentionErrorDelivery | null;
-  } | null;
+  explicitReviewPublication: Result<ExplicitReviewPublicationState, ExplicitReviewPublicationState> | null;
   reviewPublishRightsLost: boolean;
 }): MentionExecutionPublicationState {
+  const explicitReviewPublicationState = params.explicitReviewPublication
+    ? unwrapExplicitReviewPublicationState(params.explicitReviewPublication)
+    : null;
   const mentionOutputPublished =
-    params.explicitReviewPublication?.outputPublished ?? Boolean(params.result.published);
+    explicitReviewPublicationState?.outputPublished ?? Boolean(params.result.published);
   const publishResolution =
-    params.explicitReviewPublication?.resolution ?? (mentionOutputPublished ? "executor" : "none");
-  const publishFailureCategory = params.explicitReviewPublication?.failureCategory ?? null;
-  const publishFallbackDelivery = params.explicitReviewPublication?.fallbackDelivery ?? null;
+    explicitReviewPublicationState?.resolution ?? (mentionOutputPublished ? "executor" : "none");
+  const publishFailureCategory = explicitReviewPublicationState?.failureCategory ?? null;
+  const publishFallbackDelivery = explicitReviewPublicationState?.fallbackDelivery ?? null;
   const mentionExecutionErrorCategory = params.result.errorMessage !== undefined
     ? classifyError(new Error(params.result.errorMessage), params.result.isTimeout ?? false, params.result.published)
     : undefined;
@@ -327,6 +325,19 @@ export function resolveMentionExecutionPublicationState(params: {
     mentionFailureSubtype,
     shouldDeferCompletionLog,
   };
+}
+
+type ExplicitReviewPublicationState = {
+  outputPublished: boolean;
+  resolution: MentionPublishResolution;
+  failureCategory?: ErrorCategory | null;
+  fallbackDelivery: MentionErrorDelivery | null;
+};
+
+function unwrapExplicitReviewPublicationState(
+  result: Result<ExplicitReviewPublicationState, ExplicitReviewPublicationState>,
+): ExplicitReviewPublicationState {
+  return result.ok ? result.value : result.err;
 }
 
 export function buildMentionExecutionCompletedLogFields(params: {

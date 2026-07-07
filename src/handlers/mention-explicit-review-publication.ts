@@ -1,6 +1,7 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { classifyError, type ErrorCategory } from "../lib/errors.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import {
   buildApprovedReviewBody,
   buildReviewOutputPublicationLogFields,
@@ -25,6 +26,11 @@ export type ExplicitMentionReviewPublicationResult = {
   fallbackDelivery: MentionErrorDelivery | null;
 };
 
+export type ExplicitMentionReviewPublicationStatus = Result<
+  ExplicitMentionReviewPublicationResult,
+  ExplicitMentionReviewPublicationResult
+>;
+
 export async function publishExplicitMentionReviewResult(params: {
   octokit: Octokit;
   owner: string;
@@ -44,7 +50,7 @@ export async function publishExplicitMentionReviewResult(params: {
   postMentionError: (errorBody: string) => Promise<MentionErrorPostResult>;
   summarizeError: (error: unknown) => string;
   logger: Logger;
-}): Promise<ExplicitMentionReviewPublicationResult> {
+}): Promise<ExplicitMentionReviewPublicationStatus> {
   try {
     const idempotencyCheck = await ensureReviewOutputNotPublished({
       octokit: params.octokit,
@@ -68,11 +74,11 @@ export async function publishExplicitMentionReviewResult(params: {
         },
         "Skipping explicit mention review publish because output already exists",
       );
-      return {
+      return ok({
         outputPublished: true,
         resolution: "idempotency-skip",
         fallbackDelivery: null,
-      };
+      });
     }
 
     params.logger.info(
@@ -129,11 +135,11 @@ export async function publishExplicitMentionReviewResult(params: {
         },
         "Skipping explicit mention review publish because publish rights were superseded",
       );
-      return {
+      return ok({
         outputPublished: false,
         resolution: "none",
         fallbackDelivery: null,
-      };
+      });
     }
 
     params.setReviewWorkPhase("publish");
@@ -167,11 +173,11 @@ export async function publishExplicitMentionReviewResult(params: {
         ? "Submitted approval review for explicit mention request"
         : "Submitted approval-shaped comment for explicit mention request",
     );
-    return {
+    return ok({
       outputPublished: true,
       resolution,
       fallbackDelivery: null,
-    };
+    });
   } catch (publishErr) {
     const publishFailureCategory = classifyError(publishErr, false);
     params.logger.warn(
@@ -232,12 +238,12 @@ export async function publishExplicitMentionReviewResult(params: {
     }
 
     if (outputDetectedAfterError) {
-      return {
+      return ok({
         outputPublished: true,
         resolution: "duplicate-suppressed",
         failureCategory: publishFailureCategory,
         fallbackDelivery: null,
-      };
+      });
     }
 
     if (!params.canPublishExplicitReviewOutput("explicit mention review fallback comment", params.reviewOutputKey)) {
@@ -255,12 +261,12 @@ export async function publishExplicitMentionReviewResult(params: {
         },
         "Skipping explicit mention review fallback because publish rights were superseded",
       );
-      return {
+      return ok({
         outputPublished: false,
         resolution: "none",
         failureCategory: publishFailureCategory,
         fallbackDelivery: null,
-      };
+      });
     }
 
     params.setReviewWorkPhase("publish");
@@ -273,12 +279,12 @@ export async function publishExplicitMentionReviewResult(params: {
     const fallbackDelivery = mentionErrorDeliveryFromResult(fallbackResult);
 
     if (fallbackResult.ok) {
-      return {
+      return ok({
         outputPublished: true,
         resolution: "publish-failure-fallback",
         failureCategory: publishFailureCategory,
         fallbackDelivery,
-      };
+      });
     }
 
     params.logger.warn(
@@ -294,11 +300,11 @@ export async function publishExplicitMentionReviewResult(params: {
       },
       "Explicit mention review publish fallback could not be delivered",
     );
-    return {
+    return err({
       outputPublished: false,
       resolution: "publish-failure-comment-failed",
       failureCategory: publishFailureCategory,
       fallbackDelivery,
-    };
+    });
   }
 }

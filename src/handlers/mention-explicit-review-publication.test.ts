@@ -105,9 +105,12 @@ describe("publishExplicitMentionReviewResult", () => {
     }));
 
     expect(result).toEqual({
-      outputPublished: true,
-      resolution: "idempotency-skip",
-      fallbackDelivery: null,
+      ok: true,
+      value: {
+        outputPublished: true,
+        resolution: "idempotency-skip",
+        fallbackDelivery: null,
+      },
     });
     expect(harness.createReview).not.toHaveBeenCalled();
   });
@@ -119,9 +122,12 @@ describe("publishExplicitMentionReviewResult", () => {
     }));
 
     expect(result).toEqual({
-      outputPublished: true,
-      resolution: "approval-bridge",
-      fallbackDelivery: null,
+      ok: true,
+      value: {
+        outputPublished: true,
+        resolution: "approval-bridge",
+        fallbackDelivery: null,
+      },
     });
     expect(harness.createReview).toHaveBeenCalledTimes(1);
     const call = harness.createReview.mock.calls[0]![0] as { body: string; event: string };
@@ -141,10 +147,15 @@ describe("publishExplicitMentionReviewResult", () => {
       octokit: harness.octokit as never,
     }));
 
-    expect(result.resolution).toBe("duplicate-suppressed");
-    expect(result.outputPublished).toBe(true);
-    expect(result.failureCategory).toBe("api_error");
-    expect(result.fallbackDelivery).toBeNull();
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        outputPublished: true,
+        resolution: "duplicate-suppressed",
+        failureCategory: "api_error",
+        fallbackDelivery: null,
+      },
+    });
   });
 
   test("posts fallback error and reports delivery when approval publish fails", async () => {
@@ -157,10 +168,15 @@ describe("publishExplicitMentionReviewResult", () => {
       postMentionError,
     }));
 
-    expect(result.outputPublished).toBe(false);
-    expect(result.resolution).toBe("publish-failure-comment-failed");
-    expect(result.failureCategory).toBe("api_error");
-    expect(result.fallbackDelivery).toBe("error-comment-failed");
+    expect(result).toEqual({
+      ok: false,
+      err: {
+        outputPublished: false,
+        resolution: "publish-failure-comment-failed",
+        failureCategory: "api_error",
+        fallbackDelivery: "error-comment-failed",
+      },
+    });
     expect(postMentionError).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,6 +5,7 @@ const publicationResultHelpers = [
   "./mention-failure-publication.ts",
   "./mention-format-only-publication.ts",
   "./mention-combined-format-publication.ts",
+  "./mention-explicit-review-publication.ts",
   "./mention-result-fallback-publication.ts",
   "./review-clean-approval-publication.ts",
   "./review-depends-publication.ts",
