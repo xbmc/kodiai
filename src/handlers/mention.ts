@@ -45,13 +45,12 @@ import {
 } from "./mention-result-fallback-publication.ts";
 import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
-  prepareMentionCheckoutAndLoadConfig,
-} from "./mention-workspace.ts";
+  createMentionWorkspaceRuntime,
+} from "./mention-workspace-runtime.ts";
 import {
   createMentionReviewWorkRuntime,
   usesCanonicalExplicitReviewHandle,
 } from "./mention-review-work-runtime.ts";
-import { createMentionWriteRateLimitRuntime } from "./mention-write-rate-limit.ts";
 import { evaluateMentionWritePreflight } from "./mention-write-preflight.ts";
 import { maybePublishDisabledWriteModeRefusal } from "./mention-write-disabled.ts";
 import { postMentionEyesReaction } from "./mention-reactions.ts";
@@ -84,7 +83,6 @@ import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts"
 import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
-import { resolveMentionForkContext } from "./mention-fork-context.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
 import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
 import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
@@ -247,66 +245,33 @@ export function createMentionHandler(deps: {
           octokit,
         });
 
-        logger.info(
-          {
-            surface: mention.surface,
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-            prNumber: mention.prNumber,
-            cloneOwner,
-            cloneRepo,
-            cloneRef,
-            cloneDepth,
-            usesPrRef,
-            workspaceStrategy,
-          },
-          "Creating workspace for mention execution",
-        );
-
-        const forkContext = await resolveMentionForkContext({
-          forkManager,
-          appSlug,
-          commentBody: mention.commentBody,
-          owner: mention.owner,
-          repo: mention.repo,
-          cloneRef,
-          usesPrRef,
-          logger,
-        });
-
-        // Clone workspace
         if (explicitReviewUsesCanonicalHandle) {
           setReviewWorkPhase("workspace-create");
         }
-        workspace = await workspaceManager.create(event.installationId, {
-          owner: cloneOwner,
-          repo: cloneRepo,
-          ref: cloneRef!,
-          depth: cloneDepth,
-          forkContext,
-        });
-
-        if (explicitReviewUsesCanonicalHandle) {
-          setReviewWorkPhase("load-config");
-        }
-        const { config, warnings } = await prepareMentionCheckoutAndLoadConfig({
-          workspace,
-          usesPrRef,
-          mention,
-          cloneDepth,
-        });
-        const writeRateLimit = createMentionWriteRateLimitRuntime({
-          store: writeRateLimitStore,
+        const workspaceRuntime = await createMentionWorkspaceRuntime({
+          workspaceManager,
           installationId: event.installationId,
-          minIntervalSeconds: config.write.minIntervalSeconds,
+          forkManager,
+          appSlug,
+          mention,
+          cloneOwner,
+          cloneRepo,
+          cloneRef,
+          cloneDepth,
+          usesPrRef,
+          workspaceStrategy,
+          writeRateLimitStore,
+          beforeLoadConfig: explicitReviewUsesCanonicalHandle
+            ? () => setReviewWorkPhase("load-config")
+            : undefined,
+          logger,
         });
-        for (const w of warnings) {
-          logger.warn(
-            { section: w.section, issues: w.issues },
-            "Config warning detected",
-          );
-        }
+        workspace = workspaceRuntime.workspace;
+        const {
+          forkContext,
+          config,
+          writeRateLimit,
+        } = workspaceRuntime;
 
         // Check mention.enabled
         if (!config.mention.enabled) {

@@ -2,6 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
 describe("mention handler structure", () => {
+  test("keeps the mention handler below the current decomposition line budget", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source.split("\n").length).toBeLessThanOrEqual(1000);
+  });
+
   test("keeps GitHub mention publication helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const publicationSource = readFileSync(new URL("./mention-publication.ts", import.meta.url), "utf8");
@@ -78,6 +84,7 @@ describe("mention handler structure", () => {
 
   test("keeps write rate limit success key construction out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const workspaceRuntimeSource = readFileSync(new URL("./mention-workspace-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const recordWriteRateLimitSuccess =");
     expect(source).not.toContain("recordWriteRateLimitSuccess(event, mention.owner, mention.repo)");
@@ -85,8 +92,10 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("const key = `${event.installationId}:${mention.owner}/${mention.repo}`;");
     expect(source).not.toContain("writeRateLimitStore.getLastWriteAt(key)");
     expect(source).not.toContain("config.write.minIntervalSeconds * 1000");
-    expect(source).toContain("createMentionWriteRateLimitRuntime");
-    expect(source).toContain("./mention-write-rate-limit.ts");
+    expect(source).toContain("createMentionWorkspaceRuntime");
+    expect(source).toContain("./mention-workspace-runtime.ts");
+    expect(workspaceRuntimeSource).toContain("createMentionWriteRateLimitRuntime");
+    expect(workspaceRuntimeSource).toContain("./mention-write-rate-limit.ts");
   });
 
   test("keeps mention execution completion logging out of the monster handler", () => {
@@ -659,12 +668,15 @@ describe("mention handler structure", () => {
 
   test("keeps pre-workspace fork setup orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const workspaceRuntimeSource = readFileSync(new URL("./mention-workspace-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("forkManager.ensureFork");
     expect(source).not.toContain("forkManager.syncFork");
     expect(source).not.toContain("Write-mode active without BOT_USER_PAT");
     expect(source).not.toContain("Fork setup failed; will fall back to gist or legacy mode");
-    expect(source).toContain("resolveMentionForkContext");
-    expect(source).toContain("./mention-fork-context.ts");
+    expect(source).toContain("createMentionWorkspaceRuntime");
+    expect(source).toContain("./mention-workspace-runtime.ts");
+    expect(workspaceRuntimeSource).toContain("resolveMentionForkContext");
+    expect(workspaceRuntimeSource).toContain("./mention-fork-context.ts");
   });
 });
