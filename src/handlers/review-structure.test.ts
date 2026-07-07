@@ -10,9 +10,12 @@ describe("review handler structure", () => {
 
   test("keeps Review Details body assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-details-publication-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const buildReviewDetailsBody =");
-    expect(source).toContain("./review-details-body.ts");
+    expect(source).toContain("createReviewDetailsPublicationRuntime");
+    expect(source).toContain("./review-details-publication-runtime.ts");
+    expect(runtimeSource).toContain("./review-details-body.ts");
   });
 
   test("keeps Review Details publication runtime helpers out of the monster handler", () => {
@@ -892,6 +895,19 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const hasReviewDetailsOperationalSignal =");
     expect(source).toContain("resolveReviewDetailsRuntimeContext");
     expect(source).toContain("./review-details-runtime-context.ts");
+  });
+
+  test("keeps Review Details body-base projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const projectionSource = readFileSync(new URL("./review-details-body-base.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewDetailsBodyBase = {");
+    expect(source).not.toContain("largePRTriage: tieredFiles.isLargePR ? {");
+    expect(source).not.toContain("phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({");
+    expect(source).toContain("buildReviewDetailsBodyBase");
+    expect(source).toContain("./review-details-body-base.ts");
+    expect(projectionSource).toContain("export function buildReviewDetailsBodyBase");
+    expect(projectionSource).toContain("buildReviewDetailsPhaseTimingSummary");
   });
 
   test("keeps published-output Review Details merge orchestration out of the monster handler", () => {

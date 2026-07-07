@@ -51,7 +51,6 @@ import {
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
-  buildReviewDetailsPhaseTimingSummary,
   completeReviewRetrievalContextPhaseTiming,
   formatTimeoutErrorDetail,
   recordReviewExecutorPhaseTimings,
@@ -111,11 +110,9 @@ import {
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
-  type ReviewDetailsBodyBaseParams,
-} from "./review-details-body.ts";
-import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
+import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
 import { buildInitialReviewPromptRuntime, buildRetryReviewPromptRuntime } from "./review-prompt-cache-runtime.ts";
 import {
   publishReviewHandlerFailureError,
@@ -1223,18 +1220,13 @@ export function createReviewHandler(deps: {
         });
 
         let canonicalReviewDetailsBody: string | null = null;
-        const reviewDetailsBodyBase = {
+        const reviewDetailsBodyBase = buildReviewDetailsBodyBase({
           reviewOutputKey,
           filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
           linesAdded: reviewDetailsLineCounts.linesAdded,
           linesRemoved: reviewDetailsLineCounts.linesRemoved,
           findingCounts,
-          largePRTriage: tieredFiles.isLargePR ? {
-            fullCount: tieredFiles.full.length,
-            abbreviatedCount: tieredFiles.abbreviated.length,
-            mentionOnlyFiles: tieredFiles.mentionOnly.map((f) => ({ filePath: f.filePath, score: f.score })),
-            totalFiles: tieredFiles.totalFiles,
-          } : undefined,
+          tieredFiles,
           reviewBoundedness,
           feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
           keywordParsing: parsedIntent,
@@ -1253,13 +1245,11 @@ export function createReviewHandler(deps: {
           reviewCandidatePublication: reviewCandidatePublicationRuntime.detailsSummary,
           reviewFindingLifecycle: reviewFindingLifecycleResult.projection,
           reviewValidationTruth: reviewValidationTruthProjection,
-          phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
-            phases: reviewPhaseTimings,
-            publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
-            totalPhaseStartAt: timingState.totalPhaseStartAt,
-          }),
+          phaseTimings: reviewPhaseTimings,
+          publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
+          totalPhaseStartAt: timingState.totalPhaseStartAt,
           lineCountSource: reviewDetailsLineCounts.source,
-        } satisfies ReviewDetailsBodyBaseParams;
+        });
         const {
           renderReviewDetailsBody,
           finalizePublicationPhaseTiming,
