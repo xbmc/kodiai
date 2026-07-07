@@ -120,14 +120,11 @@ import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
 import { buildInitialReviewPromptRuntime, buildRetryReviewPromptRuntime } from "./review-prompt-cache-runtime.ts";
-import { publishReviewFailureFallback } from "./review-failure-publication.ts";
 import {
-  publishReviewExecutionErrorFallback,
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
 import { publishBoundedFirstPassReview } from "./review-partial-publication.ts";
 import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
-import { publishCleanReviewApproval } from "./review-clean-approval-publication.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
@@ -192,6 +189,11 @@ import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-out
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
+import {
+  applyReviewFallbackPublicationStatePatch,
+  publishReviewFallbackOutputs,
+  type ReviewFallbackExecutionErrorContext,
+} from "./review-fallback-publication-orchestration.ts";
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
@@ -1442,14 +1444,16 @@ export function createReviewHandler(deps: {
           timeoutComplexityReasoning: timeoutEstimate?.reasoning,
         });
         const turnBudgetExhausted = executionOutcome.exhaustedTurnBudget;
+        let publishedPartialReview = false;
+        let fallbackRetryState: string | undefined;
+        let deferredPublicOutputForContinuation = false;
+        let executionErrorContext: ReviewFallbackExecutionErrorContext | undefined;
 
         // Post error or partial-review comment if execution failed, timed out, or exhausted review turns.
         if (executionOutcome.shouldHandleErrorOrTurnLimit) {
           const { category, timeoutDuration, complexityInfo } = executionOutcome;
-          let publishedPartialReview = false;
+          executionErrorContext = { category, timeoutDuration, complexityInfo };
           let partialCommentId: number | undefined;
-          let fallbackRetryState: string | undefined;
-          let deferredPublicOutputForContinuation = false;
 
           if (result.isTimeout || turnBudgetExhausted) {
             const {
@@ -2116,63 +2120,28 @@ export function createReviewHandler(deps: {
             }
           }
 
-          if (!publishedPartialReview && !deferredPublicOutputForContinuation) {
-            const errorPublication = await publishReviewExecutionErrorFallback({
-              octokit: await githubApp.getInstallationOctokit(event.installationId),
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              exhaustedTurnBudget: turnBudgetExhausted,
-              retryScheduled: fallbackRetryState?.startsWith("scheduled") === true,
-              category,
+        }
+
+        applyReviewFallbackPublicationStatePatch(
+          publicationState,
+          await publishReviewFallbackOutputs({
+            result: {
+              conclusion: result.conclusion,
+              published: result.published,
               errorMessage: result.errorMessage,
-              totalTimeoutSeconds: timeoutDuration,
-              complexityInfo,
-              timeoutEstimate: appliedTimeoutBudget,
-              logger,
-              canPublishVisibleOutput,
-              setReviewWorkPhase,
-            });
-            const errorPublicationState = errorPublication.ok ? errorPublication.value : errorPublication.err;
-            if (errorPublicationState.resolution !== "skipped") {
-              publicationState.reviewOutputPublished = errorPublicationState.published;
-              publicationState.reviewPublishResolution = errorPublicationState.resolution;
-              publicationState.reviewPublishFallbackDelivery = errorPublicationState.fallbackDelivery;
-            }
-          }
-        }
-
-        if (result.conclusion === "failure" && !(result.published ?? false) && !turnBudgetExhausted) {
-          const octokit = await githubApp.getInstallationOctokit(event.installationId);
-          const failurePublication = await publishReviewFailureFallback({
-            octokit,
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            logger,
-            canPublishVisibleOutput,
-            setReviewWorkPhase,
-          });
-          const failurePublicationState = failurePublication.ok ? failurePublication.value : failurePublication.err;
-          publicationState.reviewPublishFallbackDelivery = failurePublicationState.fallbackDelivery;
-          if (failurePublicationState.resolution !== "skipped") {
-            publicationState.reviewOutputPublished = failurePublicationState.published;
-            publicationState.reviewPublishResolution = failurePublicationState.resolution;
-          }
-        }
-
-        // Clean review publication: when no output was produced, publish the clean
-        // result either as an approving pull review (explicit opt-in) or as a
-        // normal issue comment (default behavior).
-        if (result.conclusion === "success") {
-          const cleanReviewPublication = await publishCleanReviewApproval({
-            resultPublished: result.published ?? false,
-            autoApprove: config.review.autoApprove,
+            },
+            executionErrorContext,
+            publishedPartialReview,
+            deferredPublicOutputForContinuation,
+            turnBudgetExhausted,
+            fallbackRetryState,
+            appliedTimeoutBudget,
             getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
             getAppSlug: () => githubApp.getAppSlug(),
             owner: apiOwner,
             repo: apiRepo,
             prNumber: pr.number,
+            autoApprove: config.review.autoApprove,
             reviewOutputKey,
             deliveryId: event.id,
             installationId: event.installationId,
@@ -2189,15 +2158,8 @@ export function createReviewHandler(deps: {
             finalizePublicationPhaseTiming,
             logReviewDetailsPublicationCompleted,
             logCanonicalReviewDetailsPublicationCompleted,
-          });
-          const cleanReviewPublicationState = cleanReviewPublication.ok
-            ? cleanReviewPublication.value
-            : { published: false as const, resolution: "skipped" as const };
-          if (cleanReviewPublicationState.published) {
-            publicationState.reviewOutputPublished = true;
-            publicationState.reviewPublishResolution = cleanReviewPublicationState.resolution;
-          }
-        }
+          }),
+        );
       } catch (err) {
         timingState.publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
           error: err,

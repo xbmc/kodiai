@@ -1,0 +1,182 @@
+import { describe, expect, mock, test } from "bun:test";
+import type { Logger } from "pino";
+import {
+  publishReviewFallbackOutputs,
+  type ReviewFallbackPublicationStatePatch,
+} from "./review-fallback-publication-orchestration.ts";
+
+function baseParams(
+  overrides: Partial<Parameters<typeof publishReviewFallbackOutputs>[0]> = {},
+): Parameters<typeof publishReviewFallbackOutputs>[0] {
+  return {
+    result: {
+      conclusion: "error",
+      published: false,
+      errorMessage: "boom",
+    },
+    publishedPartialReview: false,
+    deferredPublicOutputForContinuation: false,
+    turnBudgetExhausted: false,
+    fallbackRetryState: undefined,
+    executionErrorContext: {
+      category: "api_error",
+      timeoutDuration: 600,
+      complexityInfo: "risk=low",
+    },
+    appliedTimeoutBudget: null,
+    getOctokit: mock(async () => ({} as never)),
+    getAppSlug: mock(() => "kodiai"),
+    owner: "xbmc",
+    repo: "kodiai",
+    prNumber: 42,
+    autoApprove: false,
+    reviewOutputKey: "xbmc/kodiai#42:delivery",
+    deliveryId: "delivery-1",
+    installationId: 123,
+    promptFileCount: 4,
+    canonicalReviewDetailsBody: null,
+    authorSearchEnrichmentDegraded: false,
+    reviewBoundedness: null,
+    mergeConfidence: null,
+    logger: { info: mock(() => undefined), error: mock(() => undefined) } as unknown as Logger,
+    canPublishVisibleOutput: mock(() => true),
+    setReviewWorkPhase: mock(() => undefined),
+    refreshVisibleBudgetProjection: mock(() => null),
+    renderReviewDetailsBody: mock(() => "details"),
+    finalizePublicationPhaseTiming: mock(() => undefined),
+    logReviewDetailsPublicationCompleted: mock(() => undefined),
+    logCanonicalReviewDetailsPublicationCompleted: mock(() => undefined),
+    publishExecutionErrorFallback: mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "error-fallback" as const,
+          fallbackDelivery: "error-comment-created",
+        },
+      })
+    ),
+    publishFailureFallback: mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "failure-fallback" as const,
+          fallbackDelivery: "error-comment-created",
+        },
+      })
+    ),
+    publishCleanReviewApproval: mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "clean-review-comment" as const,
+        },
+      })
+    ),
+    ...overrides,
+  };
+}
+
+describe("publishReviewFallbackOutputs", () => {
+  test("maps execution error fallback publication into a state patch", async () => {
+    await expect(publishReviewFallbackOutputs(baseParams())).resolves.toEqual({
+      reviewOutputPublished: true,
+      reviewPublishResolution: "error-fallback",
+      reviewPublishFallbackDelivery: "error-comment-created",
+    } satisfies ReviewFallbackPublicationStatePatch);
+  });
+
+  test("does not update state when execution error fallback publication is skipped", async () => {
+    await expect(publishReviewFallbackOutputs(baseParams({
+      publishExecutionErrorFallback: mock(async () =>
+        ({
+          ok: true as const,
+          value: {
+            published: false as const,
+            resolution: "skipped" as const,
+            fallbackDelivery: undefined,
+          },
+        })
+      ),
+    }))).resolves.toEqual({});
+  });
+
+  test("maps generic failure fallback errors into a state patch", async () => {
+    await expect(publishReviewFallbackOutputs(baseParams({
+      result: {
+        conclusion: "failure",
+        published: false,
+        errorMessage: undefined,
+      },
+      publishFailureFallback: mock(async () =>
+        ({
+          ok: false as const,
+          err: {
+            published: false as const,
+            resolution: "failure-fallback-failed" as const,
+            fallbackDelivery: "error-comment-failed",
+          },
+        })
+      ),
+    }))).resolves.toEqual({
+      reviewOutputPublished: false,
+      reviewPublishResolution: "failure-fallback-failed",
+      reviewPublishFallbackDelivery: "error-comment-failed",
+    } satisfies ReviewFallbackPublicationStatePatch);
+  });
+
+  test("uses execution fallback and not generic failure fallback for turn-budget exhaustion", async () => {
+    const publishExecutionErrorFallback = mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "turn-limit-fallback" as const,
+          fallbackDelivery: "turn-limit-comment-created",
+        },
+      })
+    );
+    const publishFailureFallback = mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "failure-fallback" as const,
+          fallbackDelivery: "error-comment-created",
+        },
+      })
+    );
+
+    await expect(publishReviewFallbackOutputs(baseParams({
+      result: {
+        conclusion: "failure",
+        published: false,
+        errorMessage: undefined,
+      },
+      turnBudgetExhausted: true,
+      publishExecutionErrorFallback,
+      publishFailureFallback,
+    }))).resolves.toEqual({
+      reviewOutputPublished: true,
+      reviewPublishResolution: "turn-limit-fallback",
+      reviewPublishFallbackDelivery: "turn-limit-comment-created",
+    } satisfies ReviewFallbackPublicationStatePatch);
+    expect(publishExecutionErrorFallback).toHaveBeenCalledTimes(1);
+    expect(publishFailureFallback).not.toHaveBeenCalled();
+  });
+
+  test("maps clean review publication into a state patch only when it published", async () => {
+    await expect(publishReviewFallbackOutputs(baseParams({
+      result: {
+        conclusion: "success",
+        published: false,
+        errorMessage: undefined,
+      },
+    }))).resolves.toEqual({
+      reviewOutputPublished: true,
+      reviewPublishResolution: "clean-review-comment",
+    } satisfies ReviewFallbackPublicationStatePatch);
+  });
+});

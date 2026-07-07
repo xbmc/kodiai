@@ -100,6 +100,23 @@ describe("review handler structure", () => {
     expect(jobContextSource).toContain("export function buildReviewRetryJobQueueContext");
   });
 
+  test("keeps review fallback publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("const errorPublication = await publishReviewExecutionErrorFallback");
+    expect(source).not.toContain("const failurePublication = await publishReviewFailureFallback");
+    expect(source).not.toContain("const cleanReviewPublication = await publishCleanReviewApproval");
+    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(source).toContain("applyReviewFallbackPublicationStatePatch");
+    expect(source).toContain("./review-fallback-publication-orchestration.ts");
+    expect(orchestrationSource).toContain("export async function publishReviewFallbackOutputs");
+    expect(orchestrationSource).toContain("export function applyReviewFallbackPublicationStatePatch");
+  });
+
   test("keeps review execution outcome fallback policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
@@ -1024,42 +1041,61 @@ describe("review handler structure", () => {
   test("keeps clean review approval body assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const cleanApprovalSource = readFileSync(new URL("./review-clean-approval.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const approvalEvidence = [");
     expect(source).not.toContain("Review prompt covered ${promptFiles.length} changed file");
     expect(source).not.toContain("renderApprovalConfidence(depBumpContext.mergeConfidence)");
     expect(source).not.toContain("buildCleanReviewApprovalBody");
     expect(cleanApprovalSource).toContain("buildCleanReviewApprovalBody");
-    expect(source).toContain("./review-clean-approval-publication.ts");
+    expect(orchestrationSource).toContain("./review-clean-approval-publication.ts");
   });
 
   test("keeps clean review approval publication orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const cleanReviewPublicationReason =");
     expect(source).not.toContain("const canonicalApprovalReview = await upsertCanonicalReviewSurface");
     expect(source).not.toContain("Skipping auto-approval because review output marker was published");
-    expect(source).toContain("publishCleanReviewApproval");
-    expect(source).toContain("./review-clean-approval-publication.ts");
+    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(orchestrationSource).toContain("publishCleanReviewApproval");
+    expect(orchestrationSource).toContain("./review-clean-approval-publication.ts");
   });
 
   test("keeps review execution error fallback body selection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("let errorBody: string;");
     expect(source).not.toContain("errorBody = buildReviewTurnLimitFallbackBody");
     expect(source).not.toContain("errorBody = buildReviewRunErrorFallbackBody");
-    expect(source).toContain("publishReviewExecutionErrorFallback");
+    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(orchestrationSource).toContain("publishReviewExecutionErrorFallback");
   });
 
   test("keeps review execution error fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const errorBody = buildReviewExecutionErrorFallbackBody");
     expect(source).not.toContain("reviewPublishResolution = exhaustedTurnBudget ? \"turn-limit-fallback\" : \"error-fallback\"");
     expect(source).not.toContain("reviewPublishResolution = exhaustedTurnBudget ? \"turn-limit-fallback-undelivered\" : \"error-comment-failed\"");
-    expect(source).toContain("publishReviewExecutionErrorFallback");
-    expect(source).toContain("./review-error-publication.ts");
+    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(orchestrationSource).toContain("publishReviewExecutionErrorFallback");
+    expect(orchestrationSource).toContain("./review-error-publication.ts");
   });
 
   test("keeps review handler failure error publication out of the monster handler", () => {
@@ -1098,12 +1134,17 @@ describe("review handler structure", () => {
 
   test("keeps generic failure fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const failureBody = buildReviewFailureFallbackBody();");
     expect(source).not.toContain("reviewPublishResolution = \"failure-fallback\"");
     expect(source).not.toContain("reviewPublishResolution = \"failure-fallback-failed\"");
-    expect(source).toContain("publishReviewFailureFallback");
-    expect(source).toContain("./review-failure-publication.ts");
+    expect(source).toContain("publishReviewFallbackOutputs");
+    expect(orchestrationSource).toContain("publishReviewFailureFallback");
+    expect(orchestrationSource).toContain("./review-failure-publication.ts");
   });
 
   test("keeps automatic review validation-truth projection out of the monster handler", () => {
