@@ -1427,6 +1427,16 @@ describe("review handler structure", () => {
     expect(retryJobSource).toContain("resolveReviewRetryExecutionOutcome");
   });
 
+  test("keeps retry outcome checkpoint adapters out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const adaptersSource = readFileSync(new URL("./review-timeout-retry-adapters.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null)");
+    expect(source).toContain("buildReviewRetryOutcomeCheckpointLookup");
+    expect(source).toContain("./review-timeout-retry-adapters.ts");
+    expect(adaptersSource).toContain("export function buildReviewRetryOutcomeCheckpointLookup");
+  });
+
   test("keeps continuation revision delta classification out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");

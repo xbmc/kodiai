@@ -143,6 +143,7 @@ import {
   resolveReviewTimeoutProgressContext,
 } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
+import { buildReviewRetryOutcomeCheckpointLookup } from "./review-timeout-retry-adapters.ts";
 import {
   normalizeReviewTimeoutBudgetDetails,
   resolveReviewTimeoutPublicationContext,
@@ -1383,6 +1384,9 @@ export function createReviewHandler(deps: {
               deliveryId: event.id,
               retryPlan,
             });
+            const retryOutcomeCheckpointLookup = buildReviewRetryOutcomeCheckpointLookup({
+              knowledgeStore,
+            });
             const timeoutContinuationState = resolveReviewTimeoutContinuationState({
               attemptId: reviewWorkAttempt.attemptId,
               timeoutFirstPass,
@@ -1529,7 +1533,7 @@ export function createReviewHandler(deps: {
                     prAuthor: pr.user.login,
                     partialCommentId,
                     timeoutTotalFiles,
-                    getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
+                    getCheckpoint: retryOutcomeCheckpointLookup,
                   },
                   settlement: {
                     getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
