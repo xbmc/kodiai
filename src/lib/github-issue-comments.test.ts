@@ -66,12 +66,53 @@ function hasDirectCommentListCall(source: string): boolean {
     return true;
   }
 
+  const namespaceAliases = findCommentListNamespaceAliases(source);
+  if (namespaceAliases.length > 0) {
+    const namespaceAliasMethodPattern = new RegExp(
+      String.raw`\b(?:${namespaceAliases.map(escapeRegExp).join("|")})\b\s*${methodAccess}\s*\(`,
+      "s",
+    );
+    if (namespaceAliasMethodPattern.test(source)) {
+      return true;
+    }
+  }
+
   for (const alias of findCommentListMethodAliases(source)) {
     if (new RegExp(String.raw`\b${escapeRegExp(alias)}\s*\(`, "s").test(source)) {
       return true;
     }
   }
   return false;
+}
+
+function findCommentListNamespaceAliases(source: string): string[] {
+  const aliases = new Set<string>();
+  const octokitReceiverPattern = buildOctokitReceiverPattern();
+  const restAccess = buildPropertyAccessPattern("rest");
+  const namespaceAccess = String.raw`(?:${buildPropertyAccessPattern("issues")}|${buildPropertyAccessPattern("pulls")})`;
+  const assignmentPattern = new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${octokitReceiverPattern}(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*${restAccess}\s*${namespaceAccess}`,
+    "g",
+  );
+  for (const match of source.matchAll(assignmentPattern)) {
+    if (match[1]) {
+      aliases.add(match[1]);
+    }
+  }
+
+  const destructuredPattern = new RegExp(
+    String.raw`\{([^}]*)\}\s*=\s*${octokitReceiverPattern}(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*${restAccess}\b`,
+    "g",
+  );
+  for (const match of source.matchAll(destructuredPattern)) {
+    for (const property of ["issues", "pulls"]) {
+      for (const alias of findDestructuredPropertyAliases(match[1] ?? "", property)) {
+        aliases.add(alias);
+      }
+    }
+  }
+
+  return [...aliases];
 }
 
 function findCommentListMethodAliases(source: string): string[] {
@@ -153,6 +194,16 @@ describe("comment marker scan architecture", () => {
         const { data } = await listComments({ owner, repo, issue_number });
         return data.find((comment) => comment.body?.includes(marker));
       `,
+      "src/handlers/unsafe-namespace-list-alias.ts": `
+        const issues = params.octokit.rest.issues;
+        const { data } = await issues.listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes(marker));
+      `,
+      "src/handlers/unsafe-destructured-namespace-list-alias.ts": `
+        const { pulls: reviews } = params.octokit.rest;
+        const { data } = await reviews.listReviews({ owner, repo, pull_number });
+        return data.find((review) => review.body?.includes(marker));
+      `,
       "src/handlers/unsafe-destructured-list-alias.ts": `
         const { listComments } = params.octokit.rest.issues;
         const { data } = await listComments({ owner, repo, issue_number });
@@ -168,8 +219,10 @@ describe("comment marker scan architecture", () => {
     })).toEqual([
       "src/handlers/unsafe-bracket-access.ts",
       "src/handlers/unsafe-destructured-list-alias.ts",
+      "src/handlers/unsafe-destructured-namespace-list-alias.ts",
       "src/handlers/unsafe-list-alias.ts",
       "src/handlers/unsafe-literal-marker.ts",
+      "src/handlers/unsafe-namespace-list-alias.ts",
       "src/handlers/unsafe-property-octokit.ts",
       "src/handlers/unsafe.ts",
     ]);
