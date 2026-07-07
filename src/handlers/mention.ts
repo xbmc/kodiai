@@ -11,7 +11,6 @@ import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
   buildReviewFamilyKey,
-  createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
 import {
   maybeReplyWritePermissionFailure,
@@ -100,6 +99,7 @@ import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-
 import { resolveMentionForkContext } from "./mention-fork-context.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
 import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
+import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -164,18 +164,11 @@ export function createMentionHandler(deps: {
   } = deps;
 
   const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
-  const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();
-  if (!injectedReviewWorkCoordinator) {
-    logger.warn(
-      {
-        gate: "review-family-coordinator",
-        gateResult: "private-fallback",
-        coordinationScope: "handler-local",
-        handler: "mention",
-      },
-      "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
-    );
-  }
+  const reviewWorkCoordinator = resolveReviewWorkCoordinator({
+    injected: injectedReviewWorkCoordinator,
+    handler: "mention",
+    logger,
+  });
 
   let mentionDerivedContextCacheErrorCount = 0;
   const mentionDerivedContextCache = createSearchCache<PromptBuildResult>({

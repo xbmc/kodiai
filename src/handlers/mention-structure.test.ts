@@ -46,6 +46,15 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-review-work-runtime.ts");
   });
 
+  test("keeps handler-local review coordinator fallback policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();");
+    expect(source).not.toContain("Review work coordinator not injected; using a private handler-local fallback");
+    expect(source).toContain("resolveReviewWorkCoordinator");
+    expect(source).toContain("./review-work-coordinator-fallback.ts");
+  });
+
   test("keeps canonical explicit-review handle matching out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

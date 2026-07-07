@@ -62,7 +62,6 @@ import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { fetchAndCheckoutPullRequestHeadRef, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
   buildReviewFamilyKey,
-  createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import {
@@ -255,6 +254,7 @@ import {
 } from "./review-continuation-family-state-projection.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
+import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -391,18 +391,11 @@ export function createReviewHandler(deps: {
 
   const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
   const structuralImpactCache = createStructuralImpactCache();
-  const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();
-  if (!injectedReviewWorkCoordinator) {
-    logger.warn(
-      {
-        gate: "review-family-coordinator",
-        gateResult: "private-fallback",
-        coordinationScope: "handler-local",
-        handler: "review",
-      },
-      "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
-    );
-  }
+  const reviewWorkCoordinator = resolveReviewWorkCoordinator({
+    injected: injectedReviewWorkCoordinator,
+    handler: "review",
+    logger,
+  });
 
   let reviewPromptDerivedCacheErrorCount = 0;
   const reviewPromptDerivedCache = createSearchCache<PromptBuildResult>({
