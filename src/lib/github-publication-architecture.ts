@@ -39,6 +39,15 @@ const BODY_BEARING_GITHUB_PUBLICATION_REQUEST_METHODS = [
   "PUT",
 ] as const;
 
+const BODY_BEARING_GITHUB_GRAPHQL_MUTATIONS = [
+  "addComment",
+  "addPullRequestReview",
+  "addPullRequestReviewComment",
+  "updateIssueComment",
+  "updatePullRequestReview",
+  "updatePullRequestReviewComment",
+] as const;
+
 const OUTGOING_PUBLICATION_SANITIZER_SYMBOLS = [
   "prepareOutgoingBodyForPublication",
   "sanitizeOutgoingMentions",
@@ -121,6 +130,36 @@ export function findDirectGitHubPublicationWrites(
           )
         ) {
           findings.push({ file, method: `request:${httpMethod} ${route}` });
+        }
+      }
+    }
+
+    const graphqlCalleePatterns = [
+      String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*${buildPropertyAccessPattern("graphql")}`,
+      ...findGitHubGraphqlAliases(source).map((alias) => String.raw`\b${escapeRegExp(alias)}\b`),
+    ];
+    for (const graphqlCalleePattern of graphqlCalleePatterns) {
+      const graphqlCallPattern = new RegExp(
+        String.raw`${graphqlCalleePattern}\s*\(\s*([` + "`" + String.raw`"'])([\s\S]*?)\1\s*,\s*(\{[^)]*(?:\bbody\b|\.\.\.\s*[A-Za-z_$][\w$]*)[^)]*\}|[A-Za-z_$][\w$]*)`,
+        "gs",
+      );
+      for (const match of source.matchAll(graphqlCallPattern)) {
+        const mutation = match[2] ?? "";
+        const requestPayload = match[3] ?? "";
+        const mutationName = BODY_BEARING_GITHUB_GRAPHQL_MUTATIONS.find((name) =>
+          new RegExp(String.raw`\b${escapeRegExp(name)}\b`).test(mutation)
+        );
+        if (
+          mutationName
+          && (
+            requestPayload.trimStart().startsWith("{") && (
+              /\bbody\b/.test(requestPayload)
+              || bodyBearingPayloadAliases.some((alias) => new RegExp(String.raw`\.\.\.\s*${escapeRegExp(alias)}\b`).test(requestPayload))
+            )
+            || bodyBearingPayloadAliases.includes(requestPayload)
+          )
+        ) {
+          findings.push({ file, method: `graphql:${mutationName}` });
         }
       }
     }
@@ -238,6 +277,32 @@ function findGitHubRequestAliases(source: string): string[] {
   const requestAccess = buildPropertyAccessPattern("request");
   const assignmentPattern = new RegExp(
     String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*${requestAccess}`,
+    "g",
+  );
+  for (const match of source.matchAll(assignmentPattern)) {
+    if (match[1]) {
+      aliases.add(match[1]);
+    }
+  }
+
+  return [...aliases];
+}
+
+function findGitHubGraphqlAliases(source: string): string[] {
+  const aliases = new Set<string>();
+  const destructuredPattern = new RegExp(
+    String.raw`\{([^}]*)\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}`,
+    "g",
+  );
+  for (const match of source.matchAll(destructuredPattern)) {
+    for (const alias of findDestructuredPropertyAliases(match[1] ?? "", "graphql")) {
+      aliases.add(alias);
+    }
+  }
+
+  const graphqlAccess = buildPropertyAccessPattern("graphql");
+  const assignmentPattern = new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*${graphqlAccess}`,
     "g",
   );
   for (const match of source.matchAll(assignmentPattern)) {
