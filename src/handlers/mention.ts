@@ -63,7 +63,6 @@ import {
 } from "./formatter-suggestion-orchestration.ts";
 import {
   buildCombinedReviewAndFormatMentionLogFields,
-  buildFormatOnlyMentionLogFields,
   classifyMentionExecutionFailureSubtype,
   createMentionExecutionCompletedLogger,
   type MentionErrorDelivery,
@@ -113,6 +112,7 @@ import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
+import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -565,30 +565,16 @@ export function createMentionHandler(deps: {
           classifyFailure: (err) => classifyError(err, false),
         });
 
-        if (isPrSurface && formatterSuggestionRequest?.mode === "format-only") {
-          const formatterResult = await runFormatterSuggestionForMention("format-only");
-          const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic({
-            formatterResult,
-            formatterMode: "format-only",
-          });
-
-          logger.info(
-            buildFormatOnlyMentionLogFields({
-              mention: {
-                surface: mention.surface,
-                owner: mention.owner,
-                repo: mention.repo,
-                issueNumber: mention.issueNumber,
-                prNumber: mention.prNumber,
-              },
-              deliveryId: event.id,
-              reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
-              formatterResult,
-              visibleReplyPosted,
-              visibleReplyFailed,
-            }),
-            "Format-only formatter suggestion request completed",
-          );
+        if (await publishFormatOnlyMentionFormatterResult({
+          isPrSurface,
+          formatterSuggestionMode: formatterSuggestionRequest?.mode,
+          runFormatterSuggestionForMention,
+          postFormatterVisibleDiagnostic,
+          mention,
+          deliveryId: event.id,
+          reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
+          logger,
+        })) {
           return;
         }
 

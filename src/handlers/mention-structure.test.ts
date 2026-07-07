@@ -110,9 +110,21 @@ describe("mention handler structure", () => {
 
   test("keeps format-only formatter log shaping out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const formatOnlySource = readFileSync(new URL("./mention-format-only-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("partialFailure: formatterResult.partialFailure ?? false");
-    expect(source).toContain("buildFormatOnlyMentionLogFields");
+    expect(source).not.toContain("buildFormatOnlyMentionLogFields");
+    expect(formatOnlySource).toContain("buildFormatOnlyMentionLogFields");
+  });
+
+  test("keeps format-only formatter completion orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("formatterSuggestionRequest?.mode === \"format-only\"");
+    expect(source).not.toContain("const formatterResult = await runFormatterSuggestionForMention(\"format-only\")");
+    expect(source).not.toContain("Format-only formatter suggestion request completed");
+    expect(source).toContain("publishFormatOnlyMentionFormatterResult");
+    expect(source).toContain("./mention-format-only-publication.ts");
   });
 
   test("keeps mention executor dispatch and combined formatter throw recovery out of the monster handler", () => {
