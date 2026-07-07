@@ -1,4 +1,5 @@
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
+import type { Octokit } from "@octokit/rest";
 import type { enqueueReviewTimeoutRetryJob } from "./review-timeout-retry-enqueue.ts";
 import type { ReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { enqueueReviewTimeoutRetryJob as defaultEnqueueReviewTimeoutRetryJob } from "./review-timeout-retry-enqueue.ts";
@@ -13,6 +14,20 @@ type PreEnqueueParams = Omit<
   Parameters<typeof recordReviewTimeoutRetryPreEnqueueSideEffects>[0],
   "retryEnqueueContext" | "retryAttemptId"
 >;
+
+export function buildReviewTimeoutRetrySettlementAdapters(params: {
+  retryAttemptId: string;
+  installationId: number;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+  appSlug: string;
+  setReviewWorkPhaseForAttempt: (attemptId: string, phase: "publish") => void;
+}): Pick<RetryJobParams["settlement"], "getOctokit" | "getAppSlug" | "setPublishPhase"> {
+  return {
+    getOctokit: () => params.getInstallationOctokit(params.installationId),
+    getAppSlug: () => params.appSlug,
+    setPublishPhase: () => params.setReviewWorkPhaseForAttempt(params.retryAttemptId, "publish"),
+  };
+}
 
 export async function scheduleReviewTimeoutRetryContinuation(params: {
   retryEnqueueContext: ReviewRetryEnqueueContext;

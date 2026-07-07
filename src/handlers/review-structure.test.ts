@@ -1866,8 +1866,12 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryReviewWorkAttempt = reviewWorkCoordinator.claim({");
     expect(source).not.toContain("recordReviewTimeoutRetryPreEnqueueSideEffects({");
     expect(source).not.toContain("retryAttemptId: retryReviewWorkAttempt.attemptId");
+    expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n                    getAppSlug: () => githubApp.getAppSlug(),");
+    expect(source).not.toContain("setPublishPhase: () => setReviewWorkPhaseForAttempt(retryAttemptId, \"publish\")");
+    expect(source).toContain("buildReviewTimeoutRetrySettlementAdapters");
     expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(source).toContain("./review-timeout-retry-scheduling.ts");
+    expect(schedulingSource).toContain("export function buildReviewTimeoutRetrySettlementAdapters");
     expect(schedulingSource).toContain("reviewWorkCoordinator.claim({");
     expect(schedulingSource).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects({");
     expect(schedulingSource).toContain("enqueueRetryJob({");
