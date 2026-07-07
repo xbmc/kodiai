@@ -1018,4 +1018,16 @@ describe("mention handler structure", () => {
     expect(workspaceRuntimeSource).toContain("resolveMentionForkContext");
     expect(workspaceRuntimeSource).toContain("./mention-fork-context.ts");
   });
+
+  test("keeps explicit review workspace phase hooks out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const hooksSource = readFileSync(new URL("./mention-workspace-phase-hooks.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (explicitReviewUsesCanonicalHandle) {\n          setReviewWorkPhase(\"workspace-create\");");
+    expect(source).not.toContain("beforeLoadConfig: explicitReviewUsesCanonicalHandle");
+    expect(source).toContain("createMentionWorkspacePhaseHooks");
+    expect(source).toContain("./mention-workspace-phase-hooks.ts");
+    expect(hooksSource).toContain("workspace-create");
+    expect(hooksSource).toContain("load-config");
+  });
 });

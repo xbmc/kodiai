@@ -21,6 +21,7 @@ import { handleMentionHandlerFailureRecovery } from "./mention-handler-failure-r
 import {
   createMentionWorkspaceRuntime,
 } from "./mention-workspace-runtime.ts";
+import { createMentionWorkspacePhaseHooks } from "./mention-workspace-phase-hooks.ts";
 import { createMentionReviewWorkSession } from "./mention-review-work-session.ts";
 import { createMentionFindingLookup } from "./mention-finding-context.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
@@ -183,9 +184,10 @@ export function createMentionHandler(deps: {
           octokit,
         });
 
-        if (explicitReviewUsesCanonicalHandle) {
-          setReviewWorkPhase("workspace-create");
-        }
+        const workspacePhaseHooks = createMentionWorkspacePhaseHooks({
+          explicitReviewUsesCanonicalHandle,
+          setReviewWorkPhase,
+        });
         const workspaceRuntime = await createMentionWorkspaceRuntime({
           workspaceManager,
           installationId: event.installationId,
@@ -199,9 +201,7 @@ export function createMentionHandler(deps: {
           usesPrRef,
           workspaceStrategy,
           writeRateLimitStore,
-          beforeLoadConfig: explicitReviewUsesCanonicalHandle
-            ? () => setReviewWorkPhase("load-config")
-            : undefined,
+          beforeLoadConfig: workspacePhaseHooks.beforeLoadConfig,
           logger,
         });
         workspace = workspaceRuntime.workspace;
