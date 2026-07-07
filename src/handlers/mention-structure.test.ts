@@ -262,35 +262,58 @@ describe("mention handler structure", () => {
 
   test("keeps mention executor dispatch and combined formatter throw recovery out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const dispatchPhaseSource = readFileSync(new URL("./mention-executor-dispatch-phase.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("result = await executor.execute({");
     expect(source).not.toContain("Combined review-and-format review executor threw before formatter subflow");
     expect(source).not.toContain("Combined review-and-format formatter subflow completed after review executor threw");
-    expect(source).toContain("executeMentionWithFormatterRecovery");
-    expect(source).toContain("./mention-execution-dispatch.ts");
+    expect(source).toContain("runMentionExecutorDispatchPhase");
+    expect(source).toContain("./mention-executor-dispatch-phase.ts");
+    expect(dispatchPhaseSource).toContain("executeMentionWithFormatterRecovery");
+    expect(dispatchPhaseSource).toContain("./mention-execution-dispatch.ts");
   });
 
   test("keeps mention executor planning policy out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const dispatchPhaseSource = readFileSync(new URL("./mention-executor-dispatch-phase.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const mentionMaxTurns =");
     expect(source).not.toContain("reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined");
     expect(source).not.toContain("eventType: `${event.name}.${action ?? \"\"}`.replace(/\\.$/, \"\")");
     expect(source).not.toContain("triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody");
-    expect(source).toContain("resolveMentionExecutorPlan");
-    expect(source).toContain("./mention-executor-plan.ts");
+    expect(source).toContain("runMentionExecutorDispatchPhase");
+    expect(dispatchPhaseSource).toContain("resolveMentionExecutorPlan");
+    expect(dispatchPhaseSource).toContain("./mention-executor-plan.ts");
   });
 
   test("keeps mention executor context projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const dispatchPhaseSource = readFileSync(new URL("./mention-executor-dispatch-phase.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(new URL("./mention-execution-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("commentId: mention.surface === \"pr_review_comment\"");
     expect(source).not.toContain("prDiffCommentabilityIndex: explicitReviewRequest");
     expect(source).not.toContain("writeMode: writeEnabled");
-    expect(source).toContain("buildMentionExecutionContext");
-    expect(source).toContain("./mention-execution-context.ts");
+    expect(source).toContain("runMentionExecutorDispatchPhase");
+    expect(dispatchPhaseSource).toContain("buildMentionExecutionContext");
+    expect(dispatchPhaseSource).toContain("./mention-execution-context.ts");
     expect(contextSource).toContain("export function buildMentionExecutionContext");
+  });
+
+  test("keeps mention executor dispatch phase orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const dispatchPhaseSource = readFileSync(new URL("./mention-executor-dispatch-phase.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("resolveMentionExecutorPlan({");
+    expect(source).not.toContain("buildMentionExecutionContext({");
+    expect(source).not.toContain("executeMentionWithFormatterRecovery({");
+    expect(source).not.toContain("setReviewWorkPhase(\"executor-dispatch\")");
+    expect(source).toContain("runMentionExecutorDispatchPhase");
+    expect(source).toContain("./mention-executor-dispatch-phase.ts");
+    expect(dispatchPhaseSource).toContain("export async function runMentionExecutorDispatchPhase");
+    expect(dispatchPhaseSource).toContain("resolveMentionExecutorPlan({");
+    expect(dispatchPhaseSource).toContain("buildMentionExecutionContext({");
+    expect(dispatchPhaseSource).toContain("executeMentionWithFormatterRecovery({");
   });
 
   test("keeps mention handler failure recovery out of the monster handler", () => {

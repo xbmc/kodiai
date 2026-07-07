@@ -14,7 +14,6 @@ import {
 } from "./mention-write-replies.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
-import { classifyError } from "../lib/errors.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
   runFormatterSuggestionSubflow,
@@ -35,12 +34,9 @@ import {
   usesCanonicalExplicitReviewHandle,
 } from "./mention-review-work-runtime.ts";
 import { createMentionFindingLookup } from "./mention-finding-context.ts";
-import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
 import { publishExplicitMentionReviewIfEligible } from "./mention-explicit-review-publication-orchestration.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
-import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
-import { buildMentionExecutionContext } from "./mention-execution-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
@@ -55,6 +51,7 @@ import { handleMentionPostExecution } from "./mention-post-execution.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
 import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
 import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
+import { runMentionExecutorDispatchPhase } from "./mention-executor-dispatch-phase.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -434,56 +431,40 @@ export function createMentionHandler(deps: {
           explicitReviewRouting,
         } = mentionPromptRuntime;
 
-        const executorPlan = resolveMentionExecutorPlan({
-          mention,
+        // Execute via Claude. Combined review-and-format requests run Claude first so
+        // formatter workspace mutations cannot affect review prompt/executor context;
+        // if Claude throws, the formatter subflow still gets an independent attempt.
+        const mentionExecutorDispatch = await runMentionExecutorDispatchPhase({
+          executor,
+          workspace,
           installationId: event.installationId,
           deliveryId: event.id,
           eventName: event.name,
           eventAction: action,
+          mention,
+          possibleHandles,
           explicitReviewRequest,
           explicitReviewTaskType: explicitReviewRouting.taskType,
           explicitReviewMaxTurnsOverride,
-          formatterSuggestionMode: formatterSuggestionRequest?.mode,
+          formatterSuggestionRequest,
           writeEnabled,
           hasPrDiffContext: prDiffContext !== undefined,
           userQuestion,
-        });
-        reviewOutputKey = executorPlan.reviewOutputKey;
-
-        // Execute via Claude. Combined review-and-format requests run Claude first so
-        // formatter workspace mutations cannot affect review prompt/executor context;
-        // if Claude throws, the formatter subflow still gets an independent attempt.
-        if (reviewWorkAttempt) {
-          setReviewWorkPhase("executor-dispatch");
-        }
-        const result = await executeMentionWithFormatterRecovery({
-          execute: (context) => executor.execute(context),
-          context: buildMentionExecutionContext({
-            workspace,
-            installationId: event.installationId,
-            mention,
-            deliveryId: event.id,
-            botHandles: possibleHandles,
-            writeEnabled,
-            executorPlan,
-            prompt,
-            promptSections,
-            knowledgeStore: deps.knowledgeStore,
-            formatterSuggestionRequest,
-            explicitReviewPromptFileCount,
-            explicitReviewRequest,
-            explicitReviewDynamicTimeoutSeconds,
-            explicitReviewPrDiffCommentabilityIndex,
-          }),
-          isCombinedFormatterSuggestionRequest: executorPlan.isCombinedFormatterSuggestionRequest,
-          mention,
-          deliveryId: event.id,
+          prompt,
+          promptSections,
+          knowledgeStore: deps.knowledgeStore,
+          explicitReviewPromptFileCount,
+          explicitReviewDynamicTimeoutSeconds,
+          explicitReviewPrDiffCommentabilityIndex,
+          reviewWorkAttempt,
+          setReviewWorkPhase,
           reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
           runFormatterSuggestionForMention,
           postFormatterVisibleDiagnostic,
-          classifyFailure: (err) => classifyError(err, false),
           logger,
         });
+        const { executorPlan, result } = mentionExecutorDispatch;
+        reviewOutputKey = mentionExecutorDispatch.reviewOutputKey;
 
         const {
           explicitReviewPublishEvaluation,
