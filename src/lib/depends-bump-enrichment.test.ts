@@ -1,4 +1,5 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   parseVersionFileDiff,
   parseVersionFileContent,
@@ -477,6 +478,17 @@ describe("fetchDependsChangelog", () => {
 // ─── verifyHash ─────────────────────────────────────────────────────────────
 
 describe("verifyHash", () => {
+  test("uses the shared cancellable timeout primitive for upstream tarball fetches", () => {
+    const source = readFileSync(new URL("./depends-bump-enrichment.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("export async function verifyHash"),
+      source.indexOf("// ─── Patch Detection"),
+    );
+
+    expect(implementation).toContain("runWithAbortSignalTimeout");
+    expect(implementation).not.toContain("abortSignalWithTimeout");
+  });
+
   test("returns verified when hash matches upstream tarball", async () => {
     // Create a known content and compute its SHA512
     const content = "test tarball content";

@@ -1,4 +1,5 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   fetchSecurityAdvisories,
   fetchChangelog,
@@ -315,6 +316,17 @@ describe("fetchSecurityAdvisories", () => {
 // ─── resolveGitHubRepo ───────────────────────────────────────────────────────
 
 describe("resolveGitHubRepo", () => {
+  test("uses the shared cancellable timeout primitive for registry lookups", () => {
+    const source = readFileSync(new URL("./dep-bump-enrichment.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("export async function resolveGitHubRepo"),
+      source.indexOf("// ─── Changelog Fetching"),
+    );
+
+    expect(implementation).toContain("runWithAbortSignalTimeout");
+    expect(implementation).not.toContain("abortSignalWithTimeout");
+  });
+
   test("resolves npm package to GitHub repo", async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(

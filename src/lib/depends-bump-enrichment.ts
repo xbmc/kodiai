@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { extractBreakingChanges } from "./dep-bump-enrichment.ts";
 import { parseSemver } from "./dep-bump-detector.ts";
 import { retryTransient } from "./transient-retry.ts";
-import { abortSignalWithTimeout } from "./with-timeout.ts";
+import { runWithAbortSignalTimeout } from "./with-timeout.ts";
 
 const HASH_VERIFICATION_MAX_BYTES = 50 * 1024 * 1024;
 
@@ -33,6 +33,9 @@ class HashVerificationFetchError extends Error {
 function isRetryableHashVerificationError(error: unknown): boolean {
   if (error instanceof HashVerificationFetchError) {
     return error.status === undefined || error.status === 429 || error.status >= 500;
+  }
+  if (error instanceof Error && /^hash verification: request timed out after \d+ms$/.test(error.message)) {
+    return true;
   }
   if (error instanceof DOMException && error.name === "TimeoutError") return true;
   return error instanceof TypeError;
@@ -574,9 +577,11 @@ export async function verifyHash(params: {
   try {
     const actualHash = await retryTransient(
       async () => {
-        const response = await fetch(url, {
-          signal: abortSignalWithTimeout(timeoutMs),
-        });
+        const response = await runWithAbortSignalTimeout(
+          "hash verification",
+          timeoutMs,
+          (signal) => fetch(url, { signal }),
+        );
 
         if (!response.ok) {
           throw new HashVerificationFetchError(

@@ -17,7 +17,7 @@ import { createInMemoryCache } from "./in-memory-cache.ts";
 import { dedupeInflight } from "./inflight-dedupe.ts";
 import { retryTransient } from "./transient-retry.ts";
 import {
-  abortSignalWithTimeout,
+  runWithAbortSignalTimeout,
   withTimeout as raceWithNoThrowTimeout,
 } from "./with-timeout.ts";
 
@@ -299,9 +299,11 @@ export async function resolveGitHubRepo(params: {
     try {
       const resp = await retryTransient(
         async () => {
-          const response = await fetch(urlFn(packageName), {
-            signal: abortSignalWithTimeout(3000),
-          });
+          const response = await runWithAbortSignalTimeout(
+            "registry lookup",
+            3000,
+            (signal) => fetch(urlFn(packageName), { signal }),
+          );
           if (!response.ok && (response.status === 408 || response.status === 429 || response.status >= 500)) {
             throw { status: response.status, message: `registry lookup failed: ${response.status}` };
           }

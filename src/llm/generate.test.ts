@@ -10,6 +10,13 @@ describe("generateWithFallback module loading", () => {
     expect(source).not.toContain("new AbortController()");
   });
 
+  test("uses the shared cancellable timeout primitive for AI SDK generateText calls", () => {
+    const source = readFileSync(new URL("./generate.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("runWithAbortSignalTimeout");
+    expect(source).not.toContain("abortSignalWithTimeout");
+  });
+
   test("loads the Claude Agent SDK through an explicit lazy loader", async () => {
     let loadCount = 0;
     const query = () => ({}) as never;

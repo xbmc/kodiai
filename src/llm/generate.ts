@@ -15,8 +15,8 @@ import { createProviderModel } from "./providers.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
 import { buildAgentEnv } from "../execution/env.ts";
 import {
-  abortSignalWithTimeout,
   createAbortControllerWithTimeout,
+  runWithAbortSignalTimeout,
 } from "../lib/with-timeout.ts";
 
 /**
@@ -42,6 +42,17 @@ export async function loadGenerateText(
   loader: AiSdkLoader = () => import("ai"),
 ): Promise<typeof aiGenerateText> {
   return (await loader()).generateText;
+}
+
+async function runAiSdkGenerateText(
+  generateText: typeof aiGenerateText,
+  params: Parameters<typeof aiGenerateText>[0],
+): ReturnType<typeof aiGenerateText> {
+  return await runWithAbortSignalTimeout(
+    "AI SDK generateText",
+    GENERATE_TEXT_TIMEOUT_MS,
+    (abortSignal) => generateText({ ...params, abortSignal }),
+  );
 }
 
 /** Result from generateWithFallback. */
@@ -215,12 +226,11 @@ export async function generateWithFallback(opts: {
 
     const generateText = await loadGenerateText();
     const model = await createProviderModel(resolved.modelId);
-    const response = await generateText({
+    const response = await runAiSdkGenerateText(generateText, {
       model,
       prompt: opts.prompt,
       system: opts.system,
       tools: opts.tools,
-      abortSignal: abortSignalWithTimeout(GENERATE_TEXT_TIMEOUT_MS),
     });
 
     const durationMs = Date.now() - startTime;
@@ -275,12 +285,11 @@ export async function generateWithFallback(opts: {
         const generateText = await loadGenerateText();
         const fallbackModel = await createProviderModel(resolved.fallbackModelId);
         const fallbackStartTime = Date.now();
-        const fallbackResponse = await generateText({
+        const fallbackResponse = await runAiSdkGenerateText(generateText, {
           model: fallbackModel,
           prompt: opts.prompt,
           system: opts.system,
           tools: opts.tools,
-          abortSignal: abortSignalWithTimeout(GENERATE_TEXT_TIMEOUT_MS),
         });
 
         const fallbackDurationMs = Date.now() - fallbackStartTime;
