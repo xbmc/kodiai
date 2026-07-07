@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(2750);
+    expect(source.split("\n").length).toBeLessThanOrEqual(2720);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -96,6 +96,20 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const timeoutDuration = appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds;");
     expect(source).toContain("resolveReviewExecutionOutcomeContext");
     expect(source).toContain("./review-execution-outcome.ts");
+  });
+
+  test("keeps review reducer fail-open runtime out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-reducer-runtime.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("malformed-review-reducer-result");
+    expect(source).not.toContain("reducer-exception");
+    expect(source).not.toContain("createDegradedReviewReducerResult");
+    expect(source).not.toContain("logReviewReducerResult({");
+    expect(source).toContain("runReviewReducerFailOpen");
+    expect(source).toContain("./review-reducer-runtime.ts");
+    expect(runtimeSource).toContain("createDegradedReviewReducerResult");
+    expect(runtimeSource).toContain("logReviewReducerResult");
   });
 
   test("keeps timeout progress context assembly out of the monster handler", () => {

@@ -43,7 +43,6 @@ import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import {
-  createDegradedReviewReducerResult,
   reduceReviewFindings,
   type ProcessedReviewFinding,
   type ReviewReducerInput,
@@ -107,10 +106,6 @@ import {
   serializeReviewPlanBuilderError,
   toReviewPlanConfigSnapshot,
 } from "../review-orchestration/review-plan-doctrine-log.ts";
-import {
-  isTrustedReviewReducerResult,
-  logReviewReducerResult,
-} from "../review-orchestration/review-reducer-log.ts";
 import {
   toReviewCandidateReducerDrafts,
 } from "../review-orchestration/review-candidate-finding-handler.ts";
@@ -229,6 +224,7 @@ import {
   type ReviewWebhookPayload,
 } from "./review-event-runtime.ts";
 import { createReviewJobRuntime } from "./review-job-runtime.ts";
+import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1205,28 +1201,12 @@ export function createReviewHandler(deps: {
           repoDoctrine: repoDoctrineReviewSurface,
         };
 
-        let reducerResult: ReviewReducerResult;
-        try {
-          const candidateReducerResult = await reviewReducer(reviewReducerInput);
-          if (!isTrustedReviewReducerResult(candidateReducerResult)) {
-            throw new Error("malformed-review-reducer-result");
-          }
-          reducerResult = candidateReducerResult;
-        } catch (err) {
-          logger.warn(
-            { ...baseLog, gate: "review-reducer", gateResult: "degraded", reason: "reducer-exception", err },
-            "Review reducer failed unexpectedly (fail-open, destructive cleanup disabled)",
-          );
-          reducerResult = createDegradedReviewReducerResult({
-            findings: reviewReducerInput.findings,
-            reason: "reducer-exception",
-          });
-        }
-        logReviewReducerResult({
+        const reducerResult = await runReviewReducerFailOpen({
+          reducer: reviewReducer,
+          input: reviewReducerInput,
+          graphValidationEnabled: config.review.graphValidation.enabled,
           logger,
           baseLog,
-          reducerResult,
-          graphValidationEnabled: config.review.graphValidation.enabled,
         });
 
         const reviewCandidateApprovalContext = resolveReviewCandidateApprovalContext({
