@@ -255,6 +255,7 @@ import {
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
+import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2102,11 +2103,10 @@ export function createReviewHandler(deps: {
               });
               if (partialCommentId !== undefined) {
 
-              // Store partial comment ID in checkpoint for retry to find (best-effort).
-              // Use saveCheckpoint() to ensure a record exists even when the run
-              // timed out before the checkpoint tool was ever called.
-              if (knowledgeStore?.saveCheckpoint) {
-                await knowledgeStore.saveCheckpoint({
+              await persistPartialReviewCheckpoint({
+                knowledgeStore,
+                logger,
+                checkpoint: {
                   reviewOutputKey,
                   repo: `${apiOwner}/${apiRepo}`,
                   prNumber: pr.number,
@@ -2116,12 +2116,8 @@ export function createReviewHandler(deps: {
                   summaryDraft,
                   totalFiles: timeoutTotalFiles,
                   partialCommentId,
-                });
-              } else {
-                void knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId)?.catch((err) => {
-                  logger.warn({ err, reviewOutputKey }, "Checkpoint comment id update failed (non-blocking)");
-                });
-              }
+                },
+              });
 
               publishedPartialReview = true;
 

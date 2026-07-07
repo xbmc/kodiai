@@ -94,6 +94,15 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-publication-context.ts");
   });
 
+  test("keeps partial review checkpoint persistence out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId)");
+    expect(source).not.toContain("Checkpoint comment id update failed (non-blocking)");
+    expect(source).toContain("persistPartialReviewCheckpoint");
+    expect(source).toContain("./review-partial-checkpoint.ts");
+  });
+
   test("keeps retry enqueue field projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
