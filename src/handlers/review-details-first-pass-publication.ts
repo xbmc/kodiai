@@ -110,7 +110,7 @@ export async function publishFirstPassReviewDetails(params: {
     if (params.candidateMovedToDetailsCount > 0) {
       const publishMovedToDetails =
         params.publishMovedToDetailsReviewDetailsMergeFn ?? publishMovedToDetailsReviewDetailsMerge;
-      await publishMovedToDetails({
+      const movedToDetailsMerge = await publishMovedToDetails({
         octokit: params.octokit,
         owner: params.owner,
         repo: params.repo,
@@ -130,6 +130,11 @@ export async function publishFirstPassReviewDetails(params: {
         logReviewDetailsPublicationCompleted: params.logReviewDetailsPublicationCompleted,
         logCanonicalReviewDetailsPublicationCompleted: params.logCanonicalReviewDetailsPublicationCompleted,
       });
+      if (!movedToDetailsMerge.ok) return ok({ canonicalReviewDetailsBody: null });
+      const movedToDetailsMergeStatus = movedToDetailsMerge.value;
+      if (movedToDetailsMergeStatus.delivery === "skipped") {
+        return ok({ canonicalReviewDetailsBody: fullDetailsBody });
+      }
       return ok({ canonicalReviewDetailsBody: fullDetailsBody });
     }
 

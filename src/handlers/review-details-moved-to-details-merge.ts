@@ -2,6 +2,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { ok, type Result } from "../lib/result.ts";
 import {
   type CanonicalReviewSurface,
   upsertCanonicalReviewSurface,
@@ -11,6 +12,14 @@ import type { ReviewDetailsPublicationRuntime } from "./review-details-publicati
 
 type UpsertCanonicalReviewSurface = typeof upsertCanonicalReviewSurface;
 type UpsertDegradedReviewDetailsFallbackComment = typeof upsertDegradedReviewDetailsFallbackComment;
+
+export type MovedToDetailsReviewDetailsMergeStatus = {
+  delivery: "canonical-merge" | "degraded-fallback" | "skipped";
+  published: boolean;
+};
+
+export type MovedToDetailsReviewDetailsMergeResult =
+  Result<MovedToDetailsReviewDetailsMergeStatus, never>;
 
 export async function publishMovedToDetailsReviewDetailsMerge(params: {
   octokit: Octokit;
@@ -33,14 +42,15 @@ export async function publishMovedToDetailsReviewDetailsMerge(params: {
   logCanonicalReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logCanonicalReviewDetailsPublicationCompleted"];
   upsertCanonicalReviewSurfaceFn?: UpsertCanonicalReviewSurface;
   upsertDegradedReviewDetailsFallbackCommentFn?: UpsertDegradedReviewDetailsFallbackComment;
-}): Promise<void> {
+}): Promise<MovedToDetailsReviewDetailsMergeResult> {
   if (!params.canPublishVisibleOutput("canonical Review Details moved-to-details preservation")) {
-    return;
+    return ok({ delivery: "skipped", published: false });
   }
 
   const upsertCanonical = params.upsertCanonicalReviewSurfaceFn ?? upsertCanonicalReviewSurface;
   const upsertDegraded = params.upsertDegradedReviewDetailsFallbackCommentFn ?? upsertDegradedReviewDetailsFallbackComment;
   let movedDetailsSurface: CanonicalReviewSurface | undefined;
+  let degradedFallbackPublished = false;
 
   try {
     params.setReviewWorkPhase("publish");
@@ -91,6 +101,7 @@ export async function publishMovedToDetailsReviewDetailsMerge(params: {
         ? fallbackPublication.value.commentId
         : undefined;
       if (typeof fallbackCommentId === "number") {
+        degradedFallbackPublished = true;
         params.logReviewDetailsPublicationCompleted({
           surfaceKind: "issue_comment",
           commentId: fallbackCommentId,
@@ -101,7 +112,10 @@ export async function publishMovedToDetailsReviewDetailsMerge(params: {
   }
 
   if (movedDetailsSurface?.kind !== "issue_comment") {
-    return;
+    return ok({
+      delivery: movedDetailsSurface === undefined ? "degraded-fallback" : "canonical-merge",
+      published: movedDetailsSurface !== undefined || degradedFallbackPublished,
+    });
   }
 
   params.finalizePublicationPhaseTiming();
@@ -132,4 +146,5 @@ export async function publishMovedToDetailsReviewDetailsMerge(params: {
       "Failed to refresh finalized moved-to-details Review Details surface",
     );
   }
+  return ok({ delivery: "canonical-merge", published: true });
 }
