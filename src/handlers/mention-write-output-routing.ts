@@ -3,6 +3,7 @@ import {
   getGitStatusPorcelain as defaultGetGitStatusPorcelain,
 } from "../jobs/workspace.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
+import { ok, type Result } from "../lib/result.ts";
 import { buildNoFileChangesReply, createIssueWriteFailurePoster } from "./mention-write-replies.ts";
 import type { MentionEvent } from "./mention-types.ts";
 import {
@@ -40,6 +41,7 @@ type PullsListOctokit = {
 type PublishMentionForkWriteOutput = typeof defaultPublishMentionForkWriteOutput;
 type AttemptSameRepoPrWrite = typeof defaultAttemptSameRepoPrWrite;
 type PublishMentionBotWritePullRequest = typeof defaultPublishMentionBotWritePullRequest;
+type MentionWriteOutputRoutingResult = Result<{ status: "handled" }>;
 
 export async function routeMentionWriteOutput(params: {
   workspaceDir: string;
@@ -74,7 +76,7 @@ export async function routeMentionWriteOutput(params: {
   publishMentionForkWriteOutput?: PublishMentionForkWriteOutput;
   attemptSameRepoPrWrite?: AttemptSameRepoPrWrite;
   publishMentionBotWritePullRequest?: PublishMentionBotWritePullRequest;
-}): Promise<{ status: "handled" }> {
+}): Promise<MentionWriteOutputRoutingResult> {
   const getGitStatusPorcelain = params.getGitStatusPorcelain ?? defaultGetGitStatusPorcelain;
   const publishMentionForkWriteOutput =
     params.publishMentionForkWriteOutput ?? defaultPublishMentionForkWriteOutput;
@@ -104,7 +106,7 @@ export async function routeMentionWriteOutput(params: {
   if (status.trim().length === 0) {
     const replyBody = buildNoFileChangesReply();
     await params.postMentionReply(replyBody);
-    return { status: "handled" };
+    return ok({ status: "handled" });
   }
 
   const forkWriteOutput = await publishMentionForkWriteOutput({
@@ -130,7 +132,7 @@ export async function routeMentionWriteOutput(params: {
     recordWriteRateLimitSuccess: params.recordWriteRateLimitSuccess,
   });
   if (forkWriteOutput.status === "handled") {
-    return { status: "handled" };
+    return ok({ status: "handled" });
   }
 
   const sourcePrUrl =
@@ -167,7 +169,7 @@ export async function routeMentionWriteOutput(params: {
     maybeReplyWritePermissionFailure: params.maybeReplyWritePermissionFailure,
   });
   if (sameRepoPrWriteResult.status === "handled") {
-    return { status: "handled" };
+    return ok({ status: "handled" });
   }
 
   await publishMentionBotWritePullRequest({
@@ -195,5 +197,5 @@ export async function routeMentionWriteOutput(params: {
     recordWriteRateLimitSuccess: params.recordWriteRateLimitSuccess,
   });
 
-  return { status: "handled" };
+  return ok({ status: "handled" });
 }

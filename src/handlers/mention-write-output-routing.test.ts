@@ -107,7 +107,7 @@ describe("routeMentionWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("I didn't end up making any file changes.");
     expect(forkCalls).toBe(0);
@@ -134,7 +134,7 @@ describe("routeMentionWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(sameRepoCalls).toBe(0);
     expect(botPrCalls).toBe(0);
   });
@@ -155,7 +155,7 @@ describe("routeMentionWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(botPrCalls).toBe(0);
   });
 
@@ -173,7 +173,7 @@ describe("routeMentionWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(botPrCalls).toBe(1);
   });
 });
