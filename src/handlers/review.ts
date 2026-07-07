@@ -142,7 +142,10 @@ import {
 } from "./review-fallback-publication-orchestration.ts";
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
-import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
+import {
+  normalizeReviewTimeoutBudgetDetails,
+  resolveReviewTimeoutPublicationContext,
+} from "./review-timeout-publication-context.ts";
 import { resolveReviewTimeoutExecutionContext } from "./review-timeout-execution-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
@@ -1310,6 +1313,7 @@ export function createReviewHandler(deps: {
               durationMs: result.durationMs,
               timeoutDurationSeconds: timeoutDuration,
             });
+            const timeoutBudgetDetails = normalizeReviewTimeoutBudgetDetails(appliedTimeoutBudget);
 
             const timeoutPublicationContext = resolveReviewTimeoutPublicationContext({
               reviewOutputKey,
@@ -1325,13 +1329,7 @@ export function createReviewHandler(deps: {
               retryScheduled: retryPlan?.decision === "schedule-continuation",
               timeoutFirstPass,
               timeoutDurationSeconds: timeoutDuration,
-              timeoutBudget: appliedTimeoutBudget
-                ? {
-                    remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                    infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                    totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                  }
-                : null,
+              timeoutBudget: timeoutBudgetDetails,
               isChronicTimeout,
             });
             const {
@@ -1368,13 +1366,7 @@ export function createReviewHandler(deps: {
               recentTimeouts,
               retryState,
               timeoutReviewDetails,
-              timeoutBudget: appliedTimeoutBudget
-                ? {
-                    remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                    infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                    totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                  }
-                : null,
+              timeoutBudget: timeoutBudgetDetails,
               authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
               reviewBoundedness,
               baseLog,

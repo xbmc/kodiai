@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CheckpointRecord } from "../knowledge/types.ts";
 import type { ReviewFirstPassPayload } from "../lib/review-first-pass.ts";
-import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
+import {
+  normalizeReviewTimeoutBudgetDetails,
+  resolveReviewTimeoutPublicationContext,
+} from "./review-timeout-publication-context.ts";
 
 function checkpoint(overrides: Partial<CheckpointRecord> = {}): CheckpointRecord {
   return {
@@ -32,6 +35,22 @@ function boundedFirstPass(overrides: Partial<ReviewFirstPassPayload> = {}): Revi
 }
 
 describe("resolveReviewTimeoutPublicationContext", () => {
+  test("normalizes timeout budget details for all timeout publication paths", () => {
+    expect(normalizeReviewTimeoutBudgetDetails(null)).toBeNull();
+    expect(normalizeReviewTimeoutBudgetDetails({
+      remoteRuntimeBudgetSeconds: 120,
+      infraOverheadBudgetSeconds: 180,
+      totalTimeoutSeconds: 300,
+      dynamicTimeoutSeconds: 120,
+      riskLevel: "medium",
+      reasoning: "medium risk",
+    })).toEqual({
+      remoteRuntimeBudgetSeconds: 120,
+      infraOverheadBudgetSeconds: 180,
+      totalTimeoutSeconds: 300,
+    });
+  });
+
   test("builds a partial review body from checkpoint summary plus retry note", () => {
     const context = resolveReviewTimeoutPublicationContext({
       reviewOutputKey: "review-key",

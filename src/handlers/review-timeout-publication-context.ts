@@ -10,6 +10,20 @@ export type ReviewTimeoutPublicationContext = {
   partialBody?: string;
 };
 
+export function normalizeReviewTimeoutBudgetDetails(
+  timeoutBudget: (TimeoutBudgetDetails & Record<string, unknown>) | null | undefined,
+): TimeoutBudgetDetails | null {
+  if (!timeoutBudget) {
+    return null;
+  }
+
+  return {
+    remoteRuntimeBudgetSeconds: timeoutBudget.remoteRuntimeBudgetSeconds,
+    infraOverheadBudgetSeconds: timeoutBudget.infraOverheadBudgetSeconds,
+    totalTimeoutSeconds: timeoutBudget.totalTimeoutSeconds,
+  };
+}
+
 function resolveSummaryDraftBase(params: {
   checkpoint: CheckpointRecord | null;
   hasPublishedInlines: boolean;
