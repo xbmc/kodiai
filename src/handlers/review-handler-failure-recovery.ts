@@ -1,10 +1,20 @@
 import type { Logger } from "pino";
 import type { ReviewPhaseName, ReviewPhaseTiming } from "../execution/types.ts";
+import type { Result } from "../lib/result.ts";
 import { createReviewPhaseTiming } from "../review-orchestration/review-phase-timing.ts";
 
-export type ReviewHandlerFailurePublicationResult = {
+export type ReviewHandlerFailurePublicationValue = {
   phaseDetail: string;
 };
+
+export type ReviewHandlerFailurePublicationError = {
+  phaseDetail: string;
+};
+
+export type ReviewHandlerFailurePublicationResult = Result<
+  ReviewHandlerFailurePublicationValue,
+  ReviewHandlerFailurePublicationError
+>;
 
 export async function handleReviewHandlerFailureRecovery(params: {
   error: unknown;
@@ -52,13 +62,16 @@ export async function handleReviewHandlerFailureRecovery(params: {
 
   try {
     const handlerFailurePublication = await params.publishHandlerFailureError();
+    const phaseDetail = handlerFailurePublication.ok
+      ? handlerFailurePublication.value.phaseDetail
+      : handlerFailurePublication.err.phaseDetail;
     params.reviewPhaseTimings.set(
       "publication",
       createReviewPhaseTiming({
         name: "publication",
         status: "degraded",
         durationMs: Math.max(0, now() - publicationPhaseStartedAt),
-        detail: handlerFailurePublication.phaseDetail,
+        detail: phaseDetail,
       }),
     );
   } catch (commentErr) {

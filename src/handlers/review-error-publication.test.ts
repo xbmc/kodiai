@@ -153,10 +153,38 @@ describe("publishReviewHandlerFailureError", () => {
     });
 
     expect(result).toEqual({
-      phaseDetail: "posted error comment after handler failure",
+      ok: true,
+      value: {
+        phaseDetail: "posted error comment after handler failure",
+      },
     });
     expect(setReviewWorkPhase).toHaveBeenCalledWith("publish");
     expect(postOrUpdateErrorComment).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns a publication error when handler failure error comment delivery fails", async () => {
+    const postOrUpdateErrorComment = mock(async (): Promise<ErrorCommentPublicationStatus> =>
+      resultErr(new Error("comment failed"))
+    );
+
+    const result = await publishReviewHandlerFailureError({
+      octokit: {} as never,
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 42,
+      error: new Error("handler exploded"),
+      logger: { warn: mock(() => {}) } as unknown as Logger,
+      canPublishVisibleOutput: mock(() => true),
+      setReviewWorkPhase: mock((_phase: "publish") => {}),
+      postOrUpdateErrorComment,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      err: {
+        phaseDetail: "failed to publish error comment after handler failure",
+      },
+    });
   });
 
   test("skips handler failure publication when publish rights are unavailable", async () => {
@@ -178,7 +206,10 @@ describe("publishReviewHandlerFailureError", () => {
     });
 
     expect(result).toEqual({
-      phaseDetail: "suppressed error comment after handler failure because publish rights were lost",
+      ok: true,
+      value: {
+        phaseDetail: "suppressed error comment after handler failure because publish rights were lost",
+      },
     });
     expect(setReviewWorkPhase).not.toHaveBeenCalled();
     expect(postOrUpdateErrorComment).not.toHaveBeenCalled();

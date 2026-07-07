@@ -36,12 +36,21 @@ export type ReviewExecutionErrorFallbackPublicationResult = Result<
   ReviewExecutionErrorFallbackPublicationError
 >;
 
-export type ReviewHandlerFailureErrorPublicationResult = {
+export type ReviewHandlerFailureErrorPublicationValue = {
   phaseDetail:
     | "posted error comment after handler failure"
-    | "suppressed error comment after handler failure because publish rights were lost"
+    | "suppressed error comment after handler failure because publish rights were lost";
+};
+
+export type ReviewHandlerFailureErrorPublicationError = {
+  phaseDetail:
     | "failed to publish error comment after handler failure";
 };
+
+export type ReviewHandlerFailureErrorPublicationResult = Result<
+  ReviewHandlerFailureErrorPublicationValue,
+  ReviewHandlerFailureErrorPublicationError
+>;
 
 export async function publishReviewExecutionErrorFallback(params: {
   octokit: Octokit;
@@ -141,14 +150,14 @@ export async function publishReviewHandlerFailureError(params: {
   ) => Promise<ErrorCommentPublicationStatus>;
 }): Promise<ReviewHandlerFailureErrorPublicationResult> {
   if (!params.canPublishVisibleOutput("handler failure error comment")) {
-    return {
+    return ok({
       phaseDetail: "suppressed error comment after handler failure because publish rights were lost",
-    };
+    });
   }
 
   params.setReviewWorkPhase("publish");
   const postOrUpdateErrorComment = params.postOrUpdateErrorComment ?? defaultPostOrUpdateErrorComment;
-  await postOrUpdateErrorComment(
+  const publicationStatus = await postOrUpdateErrorComment(
     params.octokit,
     {
       owner: params.owner,
@@ -159,7 +168,13 @@ export async function publishReviewHandlerFailureError(params: {
     params.logger,
   );
 
-  return {
+  if (!publicationStatus.ok) {
+    return err({
+      phaseDetail: "failed to publish error comment after handler failure",
+    });
+  }
+
+  return ok({
     phaseDetail: "posted error comment after handler failure",
-  };
+  });
 }

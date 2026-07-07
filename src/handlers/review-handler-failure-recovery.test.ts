@@ -9,7 +9,10 @@ describe("handleReviewHandlerFailureRecovery", () => {
       error: mock(() => undefined),
     };
     const publishHandlerFailureError = mock(async () => ({
-      phaseDetail: "posted error comment after handler failure",
+      ok: true as const,
+      value: {
+        phaseDetail: "posted error comment after handler failure",
+      },
     }));
 
     const publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
@@ -48,6 +51,38 @@ describe("handleReviewHandlerFailureRecovery", () => {
       "Review handler failed",
     );
     expect(publishHandlerFailureError).toHaveBeenCalledTimes(1);
+  });
+
+  test("records degraded publication detail when handler-failure publication returns an error", async () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+    const logger = {
+      error: mock(() => undefined),
+    };
+
+    const publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
+      error: "handler failed",
+      prNumber: 99,
+      reviewPhaseTimings: phases,
+      workspacePhaseStartedAt: undefined,
+      retrievalPhaseStartedAt: undefined,
+      publicationPhaseStartedAt: 1_075,
+      now: () => 1_100,
+      logger,
+      publishHandlerFailureError: async () => ({
+        ok: false,
+        err: {
+          phaseDetail: "failed to publish error comment after handler failure",
+        },
+      }),
+    });
+
+    expect(publicationPhaseStartedAt).toBe(1_075);
+    expect(phases.get("publication")).toEqual({
+      name: "publication",
+      status: "degraded",
+      durationMs: 25,
+      detail: "failed to publish error comment after handler failure",
+    });
   });
 
   test("records degraded publication detail when handler-failure publication throws", async () => {
