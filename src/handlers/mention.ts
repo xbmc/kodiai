@@ -89,6 +89,7 @@ import { resolveMentionWriteRequestContext } from "./mention-write-request-conte
 import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
 import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
+import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -996,12 +997,11 @@ export function createMentionHandler(deps: {
           logger.error({ err: commentErr }, "Failed to post error comment");
         }
       } finally {
-        if (acquiredWriteKey) {
-          inFlightWriteKeys.delete(acquiredWriteKey);
-        }
-        if (workspace) {
-          await workspace.cleanup();
-        }
+        await cleanupMentionExecutionResources({
+          acquiredWriteKey,
+          releaseWriteKey: (key) => inFlightWriteKeys.delete(key),
+          workspace,
+        });
       }
       }, {
       deliveryId: event.id,

@@ -592,6 +592,16 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-handler-runtime.ts");
   });
 
+  test("keeps mention execution resource cleanup out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const cleanupSource = readFileSync(new URL("./mention-execution-cleanup.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("inFlightWriteKeys.delete(acquiredWriteKey)");
+    expect(source).not.toContain("await workspace.cleanup()");
+    expect(source).toContain("cleanupMentionExecutionResources");
+    expect(cleanupSource).toContain("export async function cleanupMentionExecutionResources");
+  });
+
   test("keeps same-repo PR write branch updates out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
