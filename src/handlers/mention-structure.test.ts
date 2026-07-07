@@ -602,6 +602,16 @@ describe("mention handler structure", () => {
     expect(cleanupSource).toContain("export async function cleanupMentionExecutionResources");
   });
 
+  test("keeps mention job queue context projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const jobContextSource = readFileSync(new URL("./mention-job-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("lane: isExplicitReviewRequest ? \"interactive-review\" : \"sync\"");
+    expect(source).not.toContain("jobType: \"mention\"");
+    expect(source).toContain("buildMentionJobQueueContext");
+    expect(jobContextSource).toContain("export function buildMentionJobQueueContext");
+  });
+
   test("keeps same-repo PR write branch updates out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
