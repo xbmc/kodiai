@@ -43,16 +43,65 @@ function productionTypeScriptFiles(): Record<string, string> {
 }
 
 function findDirectMarkerCommentScans(files: Record<string, string>): string[] {
-  const listCommentsPattern =
-    /\boctokit(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\.\s*rest\s*\.\s*(?:issues|pulls)\s*\.\s*(?:listComments|listReviewComments|listReviews)\s*\(/s;
   const markerBodyMatchPattern =
     /(?:body\s*\?\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER|body\s*\?\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER)/s;
 
   return Object.entries(files)
     .filter(([file]) => !ALLOWED_DIRECT_MARKER_SCAN_FILES.has(file))
-    .filter(([, source]) => listCommentsPattern.test(source) && markerBodyMatchPattern.test(source))
+    .filter(([, source]) => hasDirectCommentListCall(source) && markerBodyMatchPattern.test(source))
     .map(([file]) => file)
     .sort();
+}
+
+function hasDirectCommentListCall(source: string): boolean {
+  const octokitReceiverPattern = buildOctokitReceiverPattern();
+  const restAccess = buildPropertyAccessPattern("rest");
+  const namespaceAccess = String.raw`(?:${buildPropertyAccessPattern("issues")}|${buildPropertyAccessPattern("pulls")})`;
+  const methodAccess = String.raw`(?:${buildPropertyAccessPattern("listComments")}|${buildPropertyAccessPattern("listReviewComments")}|${buildPropertyAccessPattern("listReviews")})`;
+  const directPattern = new RegExp(
+    String.raw`${octokitReceiverPattern}(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*${restAccess}\s*${namespaceAccess}\s*${methodAccess}\s*\(`,
+    "s",
+  );
+  if (directPattern.test(source)) {
+    return true;
+  }
+
+  for (const alias of findCommentListMethodAliases(source)) {
+    if (new RegExp(String.raw`\b${escapeRegExp(alias)}\s*\(`, "s").test(source)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findCommentListMethodAliases(source: string): string[] {
+  const aliases = new Set<string>();
+  const octokitReceiverPattern = buildOctokitReceiverPattern();
+  const restAccess = buildPropertyAccessPattern("rest");
+  const namespaceAccess = String.raw`(?:${buildPropertyAccessPattern("issues")}|${buildPropertyAccessPattern("pulls")})`;
+  const methodAccess = String.raw`(?:${buildPropertyAccessPattern("listComments")}|${buildPropertyAccessPattern("listReviewComments")}|${buildPropertyAccessPattern("listReviews")})`;
+  const assignmentPattern = new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${octokitReceiverPattern}(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*${restAccess}\s*${namespaceAccess}\s*${methodAccess}`,
+    "g",
+  );
+  for (const match of source.matchAll(assignmentPattern)) {
+    if (match[1]) {
+      aliases.add(match[1]);
+    }
+  }
+  return [...aliases];
+}
+
+function buildPropertyAccessPattern(property: string): string {
+  return String.raw`(?:\s*\.\s*${escapeRegExp(property)}|\s*\[\s*["']${escapeRegExp(property)}["']\s*\])`;
+}
+
+function buildOctokitReceiverPattern(): string {
+  return String.raw`(?:\b[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*\.\s*)?octokit\b`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 describe("comment marker scan architecture", () => {
@@ -62,6 +111,19 @@ describe("comment marker scan architecture", () => {
         const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number });
         return data.find((comment) => comment.body?.includes(marker));
       `,
+      "src/handlers/unsafe-property-octokit.ts": `
+        const { data } = await params.octokit.rest.pulls.listReviewComments({ owner, repo, pull_number });
+        return data.find((comment) => comment.body?.includes(marker));
+      `,
+      "src/handlers/unsafe-bracket-access.ts": `
+        const { data } = await octokit.rest["pulls"]["listReviews"]({ owner, repo, pull_number });
+        return data.find((review) => review.body?.includes(REVIEW_MARKER));
+      `,
+      "src/handlers/unsafe-list-alias.ts": `
+        const listComments = params.octokit.rest.issues.listComments;
+        const { data } = await listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes(marker));
+      `,
       "src/handlers/safe.ts": `
         return findIssueCommentByMarkerPaged(octokit, { owner, repo, issueNumber, marker });
       `,
@@ -69,7 +131,12 @@ describe("comment marker scan architecture", () => {
         const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number });
         return data.find((comment) => comment.body?.includes(params.marker));
       `,
-    })).toEqual(["src/handlers/unsafe.ts"]);
+    })).toEqual([
+      "src/handlers/unsafe-bracket-access.ts",
+      "src/handlers/unsafe-list-alias.ts",
+      "src/handlers/unsafe-property-octokit.ts",
+      "src/handlers/unsafe.ts",
+    ]);
   });
 
   test("keeps production marker lookups behind the paged comment helpers", () => {
