@@ -46,6 +46,16 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-review-work-runtime.ts");
   });
 
+  test("keeps explicit review work claim and predecessor logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const queuedReviewWorkAttempt = reviewPrNumber !== undefined && isExplicitReviewRequest");
+    expect(source).not.toContain("findLatestReviewPredecessor(");
+    expect(source).not.toContain("Explicit review claim found a stale predecessor attempt");
+    expect(source).toContain("claimMentionReviewWorkAttempt");
+    expect(source).toContain("./mention-review-work-claim.ts");
+  });
+
   test("keeps handler-local review coordinator fallback policy out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

@@ -10,9 +10,6 @@ import type { createRetriever } from "../knowledge/retrieval.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
-  buildReviewFamilyKey,
-} from "../jobs/review-work-coordinator.ts";
-import {
   maybeReplyWritePermissionFailure,
   summarizeErrorForDiagnostics,
 } from "./mention-write-replies.ts";
@@ -56,7 +53,6 @@ import {
 } from "./mention-result-fallback-publication.ts";
 import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
-  findLatestReviewPredecessor,
   prepareMentionCheckoutAndLoadConfig,
 } from "./mention-workspace.ts";
 import {
@@ -100,6 +96,7 @@ import { resolveMentionForkContext } from "./mention-fork-context.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
 import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
 import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
+import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -218,42 +215,14 @@ export function createMentionHandler(deps: {
       isExplicitReviewRequest,
       mentionQueueKey,
     } = triggerContext;
-    const queuedReviewWorkAttempt = reviewPrNumber !== undefined && isExplicitReviewRequest
-      ? reviewWorkCoordinator.claim({
-          familyKey: buildReviewFamilyKey(mention.owner, mention.repo, reviewPrNumber),
-          source: "explicit-review",
-          lane: "interactive-review",
-          deliveryId: event.id,
-          phase: "claimed",
-        })
-      : undefined;
-    if (queuedReviewWorkAttempt) {
-      const predecessor = findLatestReviewPredecessor(
-        reviewWorkCoordinator.getSnapshot(queuedReviewWorkAttempt.familyKey),
-        queuedReviewWorkAttempt.attemptId,
-      );
-      if (predecessor) {
-        logger.info(
-          {
-            surface: mention.surface,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: reviewPrNumber,
-            gate: "review-family-coordinator",
-            gateResult: "claimed-with-predecessor",
-            reviewFamilyKey: queuedReviewWorkAttempt.familyKey,
-            reviewWorkAttemptId: queuedReviewWorkAttempt.attemptId,
-            predecessorAttemptId: predecessor.attemptId,
-            predecessorPhase: predecessor.phase,
-            predecessorAgeMs: Math.max(
-              0,
-              queuedReviewWorkAttempt.claimedAtMs - predecessor.lastProgressAtMs,
-            ),
-          },
-          "Explicit review claim found a stale predecessor attempt",
-        );
-      }
-    }
+    const queuedReviewWorkAttempt = claimMentionReviewWorkAttempt({
+      coordinator: reviewWorkCoordinator,
+      mention,
+      reviewPrNumber,
+      isExplicitReviewRequest,
+      deliveryId: event.id,
+      logger,
+    });
     const reviewWorkRuntime = createMentionReviewWorkRuntime({
       attempt: queuedReviewWorkAttempt,
       coordinator: reviewWorkCoordinator,
