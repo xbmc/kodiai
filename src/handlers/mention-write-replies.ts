@@ -1,7 +1,11 @@
 import { wrapInDetails } from "../lib/formatting.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 
 export type IssueWriteFailureStep = "branch-push" | "create-pr" | "issue-linkback";
+export type IssueWriteFailurePublicationStatus = {
+  status: "posted";
+};
+export type IssueWriteFailurePublicationResult = Result<IssueWriteFailurePublicationStatus, unknown>;
 export type WritePermissionFailureReplyStatus = {
   status: "handled" | "not-applicable";
 };
@@ -275,9 +279,9 @@ export async function handleIssueWritePublishFailure(params: {
     triggerCommentUrl?: string;
     writeOutputKey: string;
   };
-}): Promise<void> {
+}): Promise<IssueWriteFailurePublicationResult> {
   if (!params.isIssueWritePublishFlow) {
-    throw params.err instanceof Error ? params.err : new Error(String(params.err));
+    return err(params.err instanceof Error ? params.err : new Error(String(params.err)));
   }
 
   const diagnostics = summarizeErrorForDiagnostics(params.err);
@@ -287,7 +291,11 @@ export async function handleIssueWritePublishFailure(params: {
     retryCommand: params.retryCommand,
   });
 
-  await params.postReply(replyBody, { sanitizeMentions: false });
+  try {
+    await params.postReply(replyBody, { sanitizeMentions: false });
+  } catch (postErr) {
+    return err(postErr);
+  }
 
   params.logger.warn(
     {
@@ -299,14 +307,16 @@ export async function handleIssueWritePublishFailure(params: {
     },
     "Issue write-mode publish failed",
   );
+
+  return ok({ status: "posted" });
 }
 
 export function createIssueWriteFailurePoster(params: Omit<
   Parameters<typeof handleIssueWritePublishFailure>[0],
   "failedStep" | "err"
->): (failedStep: IssueWriteFailureStep, err: unknown) => Promise<void> {
+>): (failedStep: IssueWriteFailureStep, err: unknown) => Promise<IssueWriteFailurePublicationResult> {
   return async (failedStep, err) => {
-    await handleIssueWritePublishFailure({
+    return await handleIssueWritePublishFailure({
       ...params,
       failedStep,
       err,

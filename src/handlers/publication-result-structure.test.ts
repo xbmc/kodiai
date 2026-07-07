@@ -423,6 +423,22 @@ describe("publication result structure", () => {
     expect(botSource).toContain("permissionReply.value.status === \"handled\"");
   });
 
+  test("keeps issue write failure publication on shared Result shape", () => {
+    const repliesSource = readFileSync(new URL("./mention-write-replies.ts", import.meta.url), "utf8");
+    const botSource = readFileSync(new URL("./mention-bot-pr-write.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
+
+    expect(repliesSource).toContain("IssueWriteFailurePublicationResult");
+    expect(repliesSource).toContain("Result<IssueWriteFailurePublicationStatus");
+    expect(repliesSource).toMatch(/\bok\(/);
+    expect(repliesSource).toMatch(/\berr\(/);
+    expect(repliesSource).not.toContain("}): Promise<void> {");
+    expect(botSource).toContain("IssueWriteFailurePublicationResult");
+    expect(botSource).toContain("const issueWriteFailure = await params.postIssueWriteFailure");
+    expect(botSource).toContain("if (!issueWriteFailure.ok)");
+    expect(routingSource).toContain("if (!botWritePullRequest.ok)");
+  });
+
   test("keeps mention write-output enabled routing on shared Result shape", () => {
     const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
     const postExecutorSource = readFileSync(

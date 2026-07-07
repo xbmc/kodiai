@@ -3,13 +3,14 @@ import {
   createBranchCommitAndPush as defaultCreateBranchCommitAndPush,
   WritePolicyError,
 } from "../jobs/workspace.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err as resultErr, ok, type Result } from "../lib/result.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import { buildMentionWriteCommitMessage } from "./mention-write-formatters.ts";
 import {
   buildExistingPrReply,
   buildIssueWriteSuccessReply,
   buildWritePolicyRefusalReply,
+  type IssueWriteFailurePublicationResult,
   type IssueWriteFailureStep,
   type WritePermissionFailureReplyResult,
 } from "./mention-write-replies.ts";
@@ -100,7 +101,7 @@ export async function publishMentionBotWritePullRequest(params: {
   botHandles: string[];
   logger: Logger;
   postMentionReply: PostMentionReply;
-  postIssueWriteFailure: (step: IssueWriteFailureStep, err: unknown) => Promise<void>;
+  postIssueWriteFailure: (step: IssueWriteFailureStep, err: unknown) => Promise<IssueWriteFailurePublicationResult>;
   maybeReplyWritePermissionFailure: (input: {
     err: unknown;
     retryCommand: string;
@@ -110,7 +111,7 @@ export async function publishMentionBotWritePullRequest(params: {
   buildMentionWritePullRequestDraft?: BuildMentionWritePullRequestDraft;
   publishMentionWritePullRequest?: PublishMentionWritePullRequest;
   recordWriteRateLimitSuccess: (owner: string, repo: string) => void;
-}): Promise<Result<BotWritePullRequestStatus>> {
+}): Promise<Result<BotWritePullRequestStatus, unknown>> {
   const createBranchCommitAndPush = params.createBranchCommitAndPush ?? defaultCreateBranchCommitAndPush;
   const buildMentionWritePullRequestDraft =
     params.buildMentionWritePullRequestDraft ?? defaultBuildMentionWritePullRequestDraft;
@@ -185,7 +186,10 @@ export async function publishMentionBotWritePullRequest(params: {
       }
     }
 
-    await params.postIssueWriteFailure("branch-push", err);
+    const issueWriteFailure = await params.postIssueWriteFailure("branch-push", err);
+    if (!issueWriteFailure.ok) {
+      return resultErr(issueWriteFailure.err);
+    }
     return ok({ status: "handled" });
   }
 
@@ -249,16 +253,22 @@ export async function publishMentionBotWritePullRequest(params: {
         continue;
       }
 
-      await params.postIssueWriteFailure("create-pr", err);
+      const issueWriteFailure = await params.postIssueWriteFailure("create-pr", err);
+      if (!issueWriteFailure.ok) {
+        return resultErr(issueWriteFailure.err);
+      }
       return ok({ status: "handled" });
     }
   }
 
   if (!createdPr?.html_url) {
-    await params.postIssueWriteFailure(
+    const issueWriteFailure = await params.postIssueWriteFailure(
       "create-pr",
       new Error("GitHub pulls.create response did not include html_url"),
     );
+    if (!issueWriteFailure.ok) {
+      return resultErr(issueWriteFailure.err);
+    }
     return ok({ status: "handled" });
   }
 
@@ -274,7 +284,10 @@ export async function publishMentionBotWritePullRequest(params: {
   try {
     await params.postMentionReply(replyBody);
   } catch (err) {
-    await params.postIssueWriteFailure("issue-linkback", err);
+    const issueWriteFailure = await params.postIssueWriteFailure("issue-linkback", err);
+    if (!issueWriteFailure.ok) {
+      return resultErr(issueWriteFailure.err);
+    }
     return ok({ status: "handled" });
   }
 

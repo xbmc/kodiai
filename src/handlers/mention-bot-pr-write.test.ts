@@ -55,7 +55,7 @@ function baseParams(overrides: Partial<Parameters<typeof publishMentionBotWriteP
     botHandles: ["kodiai", "claude", "kodai"],
     logger: logger as never,
     postMentionReply: async () => undefined,
-    postIssueWriteFailure: async () => undefined,
+    postIssueWriteFailure: async () => ok({ status: "posted" }),
     maybeReplyWritePermissionFailure: async () => ok({ status: "not-applicable" }),
     createBranchCommitAndPush: async () => ({ branchName: "kodiai/write/acme-widgets-5", headSha: "abc123" }),
     buildMentionWritePullRequestDraft: async () => ({
@@ -107,6 +107,7 @@ describe("publishMentionBotWritePullRequest", () => {
       },
       postIssueWriteFailure: async (step) => {
         failures.push(step);
+        return ok({ status: "posted" });
       },
       octokit: {
         rest: {
@@ -159,6 +160,7 @@ describe("publishMentionBotWritePullRequest", () => {
       },
       postIssueWriteFailure: async (step) => {
         failures.push(step);
+        return ok({ status: "posted" });
       },
       recordWriteRateLimitSuccess: () => {
         recorded = true;

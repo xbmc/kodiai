@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ok } from "../lib/result.ts";
+import { err, ok } from "../lib/result.ts";
 import { routeMentionWriteOutput, routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing.ts";
 import type { MentionEvent } from "./mention-types.ts";
 
@@ -176,6 +176,18 @@ describe("routeMentionWriteOutput", () => {
 
     expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(botPrCalls).toBe(1);
+  });
+
+  test("propagates bot PR publication Result errors", async () => {
+    const publicationError = new Error("bot PR publication failed");
+
+    const result = await routeMentionWriteOutput(createBaseParams({
+      publishMentionForkWriteOutput: async () => ok({ status: "fall-through" }),
+      attemptSameRepoPrWrite: async () => ok({ status: "not-applicable" }),
+      publishMentionBotWritePullRequest: async () => err(publicationError),
+    }));
+
+    expect(result).toEqual({ ok: false, err: publicationError });
   });
 });
 

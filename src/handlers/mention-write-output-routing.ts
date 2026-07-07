@@ -4,7 +4,7 @@ import {
 } from "../jobs/workspace.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
-import { err, ok, type Result } from "../lib/result.ts";
+import { err as resultErr, ok, type Result } from "../lib/result.ts";
 import {
   buildNoFileChangesReply,
   createIssueWriteFailurePoster,
@@ -49,8 +49,8 @@ type PublishMentionForkWriteOutput = typeof defaultPublishMentionForkWriteOutput
 type AttemptSameRepoPrWrite = typeof defaultAttemptSameRepoPrWrite;
 type PublishMentionBotWritePullRequest = typeof defaultPublishMentionBotWritePullRequest;
 type MentionWriteOutputEnabledRoutingStatus = { routed: boolean };
-type MentionWriteOutputEnabledRoutingResult = Result<MentionWriteOutputEnabledRoutingStatus>;
-type MentionWriteOutputRoutingResult = Result<{ status: "handled" }>;
+type MentionWriteOutputEnabledRoutingResult = Result<MentionWriteOutputEnabledRoutingStatus, unknown>;
+type MentionWriteOutputRoutingResult = Result<{ status: "handled" }, unknown>;
 
 export async function routeMentionWriteOutputIfEnabled(params: {
   workspace: Workspace;
@@ -119,7 +119,7 @@ export async function routeMentionWriteOutputIfEnabled(params: {
     recordWriteRateLimitSuccess: (owner, repo) => params.writeRateLimit.recordSuccess(owner, repo),
   });
   if (!writeOutput.ok) {
-    return err(writeOutput.err);
+    return resultErr(writeOutput.err);
   }
 
   return ok({ routed: true });
@@ -254,7 +254,7 @@ export async function routeMentionWriteOutput(params: {
     return ok({ status: "handled" });
   }
 
-  await publishMentionBotWritePullRequest({
+  const botWritePullRequest = await publishMentionBotWritePullRequest({
     workspaceDir: params.workspaceDir,
     workspaceToken: params.workspaceToken,
     octokit: params.octokit,
@@ -278,6 +278,9 @@ export async function routeMentionWriteOutput(params: {
     maybeReplyWritePermissionFailure: params.maybeReplyWritePermissionFailure,
     recordWriteRateLimitSuccess: params.recordWriteRateLimitSuccess,
   });
+  if (!botWritePullRequest.ok) {
+    return resultErr(botWritePullRequest.err);
+  }
 
   return ok({ status: "handled" });
 }

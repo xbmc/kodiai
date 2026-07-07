@@ -147,7 +147,7 @@ describe("mention write replies", () => {
     const warnings: Array<{ fields: Record<string, unknown>; message?: string }> = [];
     const err = new Error("create PR failed");
 
-    await handleIssueWritePublishFailure({
+    await expect(handleIssueWritePublishFailure({
       isIssueWritePublishFlow: true,
       failedStep: "create-pr",
       err,
@@ -169,7 +169,7 @@ describe("mention write replies", () => {
         triggerCommentUrl: "https://github.com/acme/widgets/issues/7#issuecomment-456",
         writeOutputKey: "write-key",
       },
-    });
+    })).resolves.toEqual({ ok: true, value: { status: "posted" } });
 
     expect(posted).toHaveLength(1);
     expect(posted[0]?.body).toContain("failed_step: create-pr");
@@ -220,7 +220,8 @@ describe("mention write replies", () => {
       },
     });
 
-    await postIssueWriteFailure("branch-push", new Error("push failed"));
+    await expect(postIssueWriteFailure("branch-push", new Error("push failed")))
+      .resolves.toEqual({ ok: true, value: { status: "posted" } });
 
     expect(posted).toHaveLength(1);
     expect(posted[0]?.body).toContain("failed_step: branch-push");
@@ -232,7 +233,7 @@ describe("mention write replies", () => {
     });
   });
 
-  test("rethrows write publish failures outside issue write flow", async () => {
+  test("returns write publish failures outside issue write flow as Result errors", async () => {
     const err = new Error("branch push failed");
 
     await expect(handleIssueWritePublishFailure({
@@ -254,6 +255,6 @@ describe("mention write replies", () => {
         triggerCommentUrl: "https://github.com/acme/widgets/pull/7#issuecomment-456",
         writeOutputKey: "write-key",
       },
-    })).rejects.toThrow(err);
+    })).resolves.toEqual({ ok: false, err });
   });
 });
