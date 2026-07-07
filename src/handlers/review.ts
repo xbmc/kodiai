@@ -47,8 +47,6 @@ import {
 import {
   type ReviewCandidatePublicationAdapterResult,
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
-import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
-import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
   completeReviewRetrievalContextPhaseTiming,
   formatTimeoutErrorDetail,
@@ -217,6 +215,7 @@ import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evide
 import { logBoundedFirstPassPublicationFailure } from "./review-bounded-first-pass-publication-failure-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completion-log.ts";
+import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1511,28 +1510,18 @@ export function createReviewHandler(deps: {
               visibleBudgetState.refresh();
             }
 
-            const retryClassificationInput = retryPlan?.decision === "schedule-continuation"
-              ? {
-                  enqueued: true,
-                  filesCount: retryPlan.continuationFiles.length,
-                  scopeRatio: retryPlan.scopeRatio,
-                  timeoutSeconds: retryPlan.timeoutSeconds,
-                  checkpointEnabled: retryPlan.checkpointEnabled,
-                  riskLevel: retryPlan.timeoutEstimate.riskLevel,
-                }
-              : {
-                  enqueued: false,
-                  filesCount: 0,
-                };
-            const timeoutClassification = classifyReviewTimeoutOutcome({
+            const timeoutClassificationTelemetry = resolveReviewTimeoutClassificationContext({
+              logger,
+              baseLog,
               deliveryId: event.id,
               reviewOutputKey,
+              prNumber: pr.number,
               outcome: {
                 isTimeout: result.isTimeout,
                 stopReason: result.stopReason,
                 failureSubtype: result.failureSubtype,
               },
-              firstPass: timeoutFirstPass
+              timeoutFirstPass: timeoutFirstPass
                 ? {
                     state: timeoutFirstPass.state,
                     boundedReason: timeoutFirstPass.boundedReason,
@@ -1549,27 +1538,11 @@ export function createReviewHandler(deps: {
                     totalFiles: timeoutTotalFiles,
                   }
                 : null,
-              retry: retryClassificationInput,
-              continuation: retryPlan
-                ? { decision: retryPlan.decision, reason: retryPlan.reason }
-                : null,
+              retryPlan,
               chronicTimeout: isChronicTimeout,
               recentTimeouts,
-              longRun: {
-                thresholdExceeded: false,
-                durationSeconds: typeof result.durationMs === "number" ? Math.floor(result.durationMs / 1000) : undefined,
-                thresholdSeconds: timeoutDuration,
-              },
-            });
-            const timeoutClassificationTelemetry = logReviewTimeoutClassification({
-              logger,
-              baseLog,
-              classification: timeoutClassification,
-              deliveryId: event.id,
-              reviewOutputKey,
-              prNumber: pr.number,
-              chronicBudgetExhaustion: isChronicTimeout,
-              retryEnqueued: retryPlan?.decision === "schedule-continuation",
+              durationMs: result.durationMs,
+              timeoutDurationSeconds: timeoutDuration,
             });
 
             const timeoutPublicationContext = resolveReviewTimeoutPublicationContext({

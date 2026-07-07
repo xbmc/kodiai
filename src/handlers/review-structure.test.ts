@@ -183,6 +183,22 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-retry-context.ts");
   });
 
+  test("keeps timeout classification projection and logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const classificationSource = readFileSync(
+      new URL("./review-timeout-classification-context.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("const retryClassificationInput =");
+    expect(source).not.toContain("const timeoutClassification = classifyReviewTimeoutOutcome({");
+    expect(source).not.toContain("const timeoutClassificationTelemetry = logReviewTimeoutClassification({");
+    expect(source).toContain("resolveReviewTimeoutClassificationContext");
+    expect(source).toContain("./review-timeout-classification-context.ts");
+    expect(classificationSource).toContain("classifyReviewTimeoutOutcome");
+    expect(classificationSource).toContain("logReviewTimeoutClassification");
+  });
+
   test("keeps timeout publication summary and partial body policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
