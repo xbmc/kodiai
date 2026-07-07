@@ -271,4 +271,28 @@ describe("publication result structure", () => {
     expect(firstPassSource).toContain("if (!standaloneFallback.ok)");
     expect(firstPassSource).toContain("standaloneFallback.value");
   });
+
+  test("keeps degraded Review Details fallback fail-open helper on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-details-degraded-fallback.ts", import.meta.url),
+      "utf8",
+    );
+    const timeoutSource = readFileSync(
+      new URL("./review-details-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const retrySource = readFileSync(
+      new URL("./review-details-retry-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("DegradedReviewDetailsFallbackFailOpenResult");
+    expect(source).toContain("Result<DegradedReviewDetailsFallbackFailOpenStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(timeoutSource).toContain("const fallbackPublication = await publishFallback");
+    expect(timeoutSource).toContain("fallbackPublication.value");
+    expect(retrySource).toContain("const fallbackPublication = await publishFallback");
+    expect(retrySource).toContain("fallbackPublication.value");
+  });
 });

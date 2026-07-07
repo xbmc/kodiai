@@ -55,7 +55,10 @@ function makeParams(
       commentId: 321,
       body: "partial body",
     }),
-    publishDegradedReviewDetailsFallbackFailOpenFn: async () => undefined,
+    publishDegradedReviewDetailsFallbackFailOpenFn: async () => ({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: true },
+    }),
     ...overrides,
     testState: {
       warnings,
@@ -118,6 +121,10 @@ describe("publishTimeoutReviewDetailsMerge", () => {
       },
       publishDegradedReviewDetailsFallbackFailOpenFn: async () => {
         fallbackCalled = true;
+        return {
+          ok: true,
+          value: { delivery: "degraded-fallback", published: true },
+        };
       },
     });
 
@@ -143,6 +150,10 @@ describe("publishTimeoutReviewDetailsMerge", () => {
       },
       publishDegradedReviewDetailsFallbackFailOpenFn: async (input) => {
         fallbackCalls.push(input as Record<string, unknown>);
+        return {
+          ok: true,
+          value: { delivery: "degraded-fallback", published: true },
+        };
       },
     });
 

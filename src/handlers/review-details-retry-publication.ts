@@ -126,7 +126,7 @@ export async function publishRetryReviewDetailsMerge(params: {
 
     const publishFallback =
       params.publishDegradedReviewDetailsFallbackFailOpenFn ?? publishDegradedReviewDetailsFallbackFailOpen;
-    await publishFallback({
+    const fallbackPublication = await publishFallback({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -142,10 +142,13 @@ export async function publishRetryReviewDetailsMerge(params: {
         params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
     });
 
+    const fallbackPublished = fallbackPublication.ok && fallbackPublication.value.published;
     return resultOk({
       status: "published",
-      projectionStatus: "degraded",
-      logMessage: degradedLogMessage,
+      projectionStatus: fallbackPublished ? "degraded" : "pending",
+      logMessage: fallbackPublished
+        ? degradedLogMessage
+        : `${degradedLogMessage}; degraded fallback publication did not publish visible output`,
     });
   }
 }

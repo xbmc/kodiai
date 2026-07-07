@@ -1,10 +1,19 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import { ok, type Result } from "../lib/result.ts";
 import {
   upsertDegradedReviewDetailsFallbackComment,
 } from "../review-orchestration/review-canonical-surface.ts";
 
 type UpsertDegradedReviewDetailsFallbackComment = typeof upsertDegradedReviewDetailsFallbackComment;
+
+export type DegradedReviewDetailsFallbackFailOpenStatus = {
+  delivery: "degraded-fallback" | "skipped";
+  published: boolean;
+};
+
+export type DegradedReviewDetailsFallbackFailOpenResult =
+  Result<DegradedReviewDetailsFallbackFailOpenStatus, never>;
 
 export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
   octokit: Octokit;
@@ -20,9 +29,9 @@ export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
   logger: Pick<Logger, "warn">;
   canPublishVisibleOutput: (reason: string) => boolean;
   upsertDegradedReviewDetailsFallbackCommentFn?: UpsertDegradedReviewDetailsFallbackComment;
-}): Promise<void> {
+}): Promise<DegradedReviewDetailsFallbackFailOpenResult> {
   if (!params.canPublishVisibleOutput(params.publishReason)) {
-    return;
+    return ok({ delivery: "skipped", published: false });
   }
 
   const upsertDegraded =
@@ -40,7 +49,10 @@ export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
       recheckCanPublish: () => params.canPublishVisibleOutput(params.publishReason),
     });
     if (fallbackResult.ok) {
-      return;
+      return ok({
+        delivery: "degraded-fallback",
+        published: fallbackResult.value.published,
+      });
     }
     params.logger.warn(
       {
@@ -52,6 +64,7 @@ export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
       },
       params.failureMessage,
     );
+    return ok({ delivery: "degraded-fallback", published: false });
   } catch (fallbackErr) {
     params.logger.warn(
       {
@@ -63,5 +76,6 @@ export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
       },
       params.failureMessage,
     );
+    return ok({ delivery: "degraded-fallback", published: false });
   }
 }

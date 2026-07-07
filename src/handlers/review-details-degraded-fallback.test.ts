@@ -56,8 +56,12 @@ describe("publishDegradedReviewDetailsFallbackFailOpen", () => {
       },
     });
 
-    await publishDegradedReviewDetailsFallbackFailOpen(params);
+    const result = await publishDegradedReviewDetailsFallbackFailOpen(params);
 
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: true },
+    });
     expect(upsertCalls).toHaveLength(1);
     const [upsertCall] = upsertCalls as [Record<string, unknown>];
     expect(upsertCall.body).toBe("details-body");
@@ -86,8 +90,12 @@ describe("publishDegradedReviewDetailsFallbackFailOpen", () => {
       },
     });
 
-    await publishDegradedReviewDetailsFallbackFailOpen(params);
+    const result = await publishDegradedReviewDetailsFallbackFailOpen(params);
 
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "skipped", published: false },
+    });
     expect(renderBodyCalled).toBe(false);
     expect(upsertCalled).toBe(false);
     expect(params.testState.warnings).toEqual([]);
@@ -102,8 +110,12 @@ describe("publishDegradedReviewDetailsFallbackFailOpen", () => {
       }),
     });
 
-    await publishDegradedReviewDetailsFallbackFailOpen(params);
+    const result = await publishDegradedReviewDetailsFallbackFailOpen(params);
 
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: false },
+    });
     expect(params.testState.warnings).toHaveLength(1);
     const [warning] = params.testState.warnings as [{ data: Record<string, unknown>; message: string }];
     expect(warning.message).toBe("Failed to publish degraded Review Details fallback comment");

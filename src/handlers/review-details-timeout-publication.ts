@@ -82,7 +82,7 @@ export async function publishTimeoutReviewDetailsMerge(params: {
 
     const publishFallback =
       params.publishDegradedReviewDetailsFallbackFailOpenFn ?? publishDegradedReviewDetailsFallbackFailOpen;
-    await publishFallback({
+    const fallbackPublication = await publishFallback({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -96,6 +96,9 @@ export async function publishTimeoutReviewDetailsMerge(params: {
       logger: params.logger,
       canPublishVisibleOutput: params.canPublishVisibleOutput,
     });
-    return ok({ delivery: "degraded-fallback", published: true });
+    if (!fallbackPublication.ok) {
+      return ok({ delivery: "degraded-fallback", published: false });
+    }
+    return ok(fallbackPublication.value);
   }
 }
