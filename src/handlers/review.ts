@@ -168,8 +168,7 @@ import { resolveReviewPlanningContext } from "./review-planning-context.ts";
 import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.ts";
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
-import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
-import { enqueueReviewTimeoutRetryJob } from "./review-timeout-retry-enqueue.ts";
+import { scheduleReviewTimeoutRetryContinuation } from "./review-timeout-retry-scheduling.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1409,58 +1408,48 @@ export function createReviewHandler(deps: {
             // If inline comments were already posted, avoid a retry that could
             // create additional noise or duplicates.
             if (retryEnqueueContext) {
-              const {
-                retryReviewOutputKey,
-                retryDeliveryId,
-              } = retryEnqueueContext;
-              const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
-                familyKey: reviewFamilyKey,
-                source: "automatic-review",
-                lane: "review",
-                deliveryId: retryDeliveryId,
-                phase: "claimed",
-              });
-
-              const retryPreEnqueueSideEffects = await recordReviewTimeoutRetryPreEnqueueSideEffects({
-                telemetryEnabled: config.telemetry.enabled,
-                telemetryStore,
-                logger,
-                deliveryId: event.id,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                prAuthor: pr.user.login,
-                eventType: `pull_request.${payload.action}`,
-                reviewOutputKey,
-                executionConclusion,
-                hadInlineOutput: hasPublishedInlines,
-                checkpointFilesReviewed: timeoutReviewedFiles,
-                checkpointFilesInspected: timeoutInspectedFiles,
-                checkpointFindingCount: timeoutFindingCount,
-                checkpointSummaryDraft: summaryDraft,
-                checkpointTotalFiles: timeoutTotalFiles,
-                partialCommentId,
-                recentTimeouts,
-                chronicTimeout: isChronicTimeout,
+              const retryScheduling = await scheduleReviewTimeoutRetryContinuation({
                 retryEnqueueContext,
-                timeoutClassificationTelemetry,
-                timeoutFirstPass,
-                knowledgeStore,
-                retryAttemptId: retryReviewWorkAttempt.attemptId,
-                persistContinuationFamilyState,
-              });
-              if (retryPreEnqueueSideEffects.continuationProjectionDegraded) {
-                continuationProjectionDegraded = true;
-              }
-
-              enqueueReviewTimeoutRetryJob({
-                jobQueue,
-                installationId: event.installationId,
-                parentDeliveryId: event.id,
-                eventName: event.name,
                 reviewFamilyKey,
-                prNumber: pr.number,
-                reviewOutputKey,
-                retryJobParams: {
+                reviewWorkCoordinator,
+                preEnqueue: {
+                  telemetryEnabled: config.telemetry.enabled,
+                  telemetryStore,
+                  logger,
+                  deliveryId: event.id,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  prAuthor: pr.user.login,
+                  eventType: `pull_request.${payload.action}`,
+                  reviewOutputKey,
+                  executionConclusion,
+                  hadInlineOutput: hasPublishedInlines,
+                  checkpointFilesReviewed: timeoutReviewedFiles,
+                  checkpointFilesInspected: timeoutInspectedFiles,
+                  checkpointFindingCount: timeoutFindingCount,
+                  checkpointSummaryDraft: summaryDraft,
+                  checkpointTotalFiles: timeoutTotalFiles,
+                  partialCommentId,
+                  recentTimeouts,
+                  chronicTimeout: isChronicTimeout,
+                  timeoutClassificationTelemetry,
+                  timeoutFirstPass,
+                  knowledgeStore,
+                  persistContinuationFamilyState,
+                },
+                enqueue: {
+                  jobQueue,
+                  installationId: event.installationId,
+                  parentDeliveryId: event.id,
+                  eventName: event.name,
+                  reviewFamilyKey,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  knowledgeStore,
+                  logger,
+                  finalizeContinuationAttempt,
+                },
+                buildRetryJobParams: (retryAttemptId) => ({
                   workspaceManager,
                   installationId: event.installationId,
                   cloneOwner,
@@ -1473,7 +1462,7 @@ export function createReviewHandler(deps: {
                   fallbackHeadRepoFullName: pr.head.repo?.full_name ?? null,
                   fallbackHeadRef: pr.head.ref,
                   fetchRemoteTrackingBranchFn,
-                  retryAttemptId: retryReviewWorkAttempt.attemptId,
+                  retryAttemptId,
                   retryEnqueueContext,
                   preparePrompt: {
                     owner: apiOwner,
@@ -1559,18 +1548,17 @@ export function createReviewHandler(deps: {
                     baseLog,
                     logger,
                     canPublishReviewWorkOutput,
-                    setPublishPhase: () => setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish"),
+                    setPublishPhase: () => setReviewWorkPhaseForAttempt(retryAttemptId, "publish"),
                     renderReviewDetailsBody,
                     settleRetryWithoutCanonicalUpdate,
                     persistContinuationFamilyState,
                   },
                   setReviewWorkPhaseForAttempt,
-                },
-                reviewWorkCoordinator,
-                knowledgeStore,
-                logger,
-                finalizeContinuationAttempt,
+                }),
               });
+              if (retryScheduling.continuationProjectionDegraded) {
+                continuationProjectionDegraded = true;
+              }
             }
           }
 
