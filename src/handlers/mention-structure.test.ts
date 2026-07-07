@@ -67,6 +67,19 @@ describe("mention handler structure", () => {
     expect(source).toContain("createMentionExecutionCompletedLogger");
   });
 
+  test("keeps mention execution publication state projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let mentionOutputPublished = Boolean(result.published)");
+    expect(source).not.toContain("let publishResolution: MentionPublishResolution");
+    expect(source).not.toContain("let publishFailureCategory: ErrorCategory | null");
+    expect(source).not.toContain("let publishFallbackDelivery: MentionErrorDelivery | null");
+    expect(source).not.toContain("const mentionExecutionErrorCategory = result.errorMessage !== undefined");
+    expect(source).not.toContain("const mentionFailureSubtype = result.failureSubtype");
+    expect(source).not.toContain("const shouldDeferMentionCompletionLog =");
+    expect(source).toContain("resolveMentionExecutionPublicationState");
+  });
+
   test("keeps mention execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

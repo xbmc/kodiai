@@ -1,4 +1,4 @@
-import { classifyError } from "../lib/errors.ts";
+import { classifyError, type ErrorCategory } from "../lib/errors.ts";
 import type { WriteRateLimitStore } from "../lib/mention-state-stores.ts";
 import type { Result } from "../lib/result.ts";
 import type { ExplicitMentionReviewPublishSkipReason } from "../review-orchestration/explicit-mention-review-publish.ts";
@@ -273,6 +273,59 @@ export function classifyMentionExecutionFailureSubtype(
     return undefined;
   }
   return classifyError(new Error(errorMessage), false) === "usage_limit" ? "usage_limit" : undefined;
+}
+
+export type MentionExecutionPublicationState = {
+  mentionOutputPublished: boolean;
+  publishResolution: MentionPublishResolution;
+  publishFailureCategory: ErrorCategory | null;
+  publishFallbackDelivery: MentionErrorDelivery | null;
+  mentionExecutionErrorCategory: ErrorCategory | undefined;
+  mentionFailureSubtype: string | undefined;
+  shouldDeferCompletionLog: boolean;
+};
+
+export function resolveMentionExecutionPublicationState(params: {
+  result: {
+    conclusion: string;
+    published?: boolean;
+    errorMessage?: string;
+    isTimeout?: boolean;
+    failureSubtype?: string;
+  };
+  explicitReviewPublication: {
+    outputPublished: boolean;
+    resolution: MentionPublishResolution;
+    failureCategory?: ErrorCategory | null;
+    fallbackDelivery: MentionErrorDelivery | null;
+  } | null;
+  reviewPublishRightsLost: boolean;
+}): MentionExecutionPublicationState {
+  const mentionOutputPublished =
+    params.explicitReviewPublication?.outputPublished ?? Boolean(params.result.published);
+  const publishResolution =
+    params.explicitReviewPublication?.resolution ?? (mentionOutputPublished ? "executor" : "none");
+  const publishFailureCategory = params.explicitReviewPublication?.failureCategory ?? null;
+  const publishFallbackDelivery = params.explicitReviewPublication?.fallbackDelivery ?? null;
+  const mentionExecutionErrorCategory = params.result.errorMessage !== undefined
+    ? classifyError(new Error(params.result.errorMessage), params.result.isTimeout ?? false, params.result.published)
+    : undefined;
+  const mentionFailureSubtype = params.result.failureSubtype
+    ?? classifyMentionExecutionFailureSubtype(params.result.errorMessage);
+  const shouldDeferCompletionLog =
+    !mentionOutputPublished
+    && !params.reviewPublishRightsLost
+    && (params.result.conclusion === "failure" || params.result.conclusion === "error");
+
+  return {
+    mentionOutputPublished,
+    publishResolution,
+    publishFailureCategory,
+    publishFallbackDelivery,
+    mentionExecutionErrorCategory,
+    mentionFailureSubtype,
+    shouldDeferCompletionLog,
+  };
 }
 
 export function buildMentionExecutionCompletedLogFields(params: {

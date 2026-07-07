@@ -8,6 +8,7 @@ import {
   createMentionExecutionCompletedLogger,
   mentionErrorDeliveryFromResult,
   recordMentionWriteRateLimitSuccess,
+  resolveMentionExecutionPublicationState,
   type MentionPublishResolution,
 } from "./mention-publication-state.ts";
 
@@ -336,6 +337,88 @@ describe("buildMentionExecutionCompletedLogFields", () => {
     expect(fields).not.toHaveProperty("failureSubtype");
     expect(fields).not.toHaveProperty("publishFailureCategory");
     expect(fields).not.toHaveProperty("errorCategory");
+  });
+});
+
+describe("resolveMentionExecutionPublicationState", () => {
+  test("uses executor publication state when no explicit review publication ran", () => {
+    const state = resolveMentionExecutionPublicationState({
+      result: {
+        conclusion: "success",
+        published: true,
+      },
+      explicitReviewPublication: null,
+      reviewPublishRightsLost: false,
+    });
+
+    expect(state).toEqual({
+      mentionOutputPublished: true,
+      publishResolution: "executor",
+      publishFailureCategory: null,
+      publishFallbackDelivery: null,
+      mentionExecutionErrorCategory: undefined,
+      mentionFailureSubtype: undefined,
+      shouldDeferCompletionLog: false,
+    });
+  });
+
+  test("projects explicit review publication failure into final mention publication state", () => {
+    const state = resolveMentionExecutionPublicationState({
+      result: {
+        conclusion: "success",
+        published: false,
+      },
+      explicitReviewPublication: {
+        outputPublished: false,
+        resolution: "publish-failure-fallback",
+        failureCategory: "api_error",
+        fallbackDelivery: "error-comment-created",
+      },
+      reviewPublishRightsLost: false,
+    });
+
+    expect(state).toEqual({
+      mentionOutputPublished: false,
+      publishResolution: "publish-failure-fallback",
+      publishFailureCategory: "api_error",
+      publishFallbackDelivery: "error-comment-created",
+      mentionExecutionErrorCategory: undefined,
+      mentionFailureSubtype: undefined,
+      shouldDeferCompletionLog: false,
+    });
+  });
+
+  test("defers completion logging for unpublished failures while publish rights remain current", () => {
+    const state = resolveMentionExecutionPublicationState({
+      result: {
+        conclusion: "failure",
+        published: false,
+        errorMessage: "Claude AI usage limit reached",
+      },
+      explicitReviewPublication: null,
+      reviewPublishRightsLost: false,
+    });
+
+    expect(state.mentionOutputPublished).toBe(false);
+    expect(state.publishResolution).toBe("none");
+    expect(state.mentionFailureSubtype).toBe("usage_limit");
+    expect(state.shouldDeferCompletionLog).toBe(true);
+  });
+
+  test("does not defer completion logging after review publish rights are lost", () => {
+    const state = resolveMentionExecutionPublicationState({
+      result: {
+        conclusion: "error",
+        published: false,
+        errorMessage: "request timed out",
+        isTimeout: true,
+      },
+      explicitReviewPublication: null,
+      reviewPublishRightsLost: true,
+    });
+
+    expect(state.mentionExecutionErrorCategory).toBe("timeout");
+    expect(state.shouldDeferCompletionLog).toBe(false);
   });
 });
 

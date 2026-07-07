@@ -22,10 +22,7 @@ import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
-import {
-  type ErrorCategory,
-  classifyError,
-} from "../lib/errors.ts";
+import { classifyError } from "../lib/errors.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import {
   createConversationTurnStore,
@@ -48,11 +45,9 @@ import {
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
 import {
-  classifyMentionExecutionFailureSubtype,
   createMentionExecutionCompletedLogger,
-  type MentionErrorDelivery,
   type MentionExecutionFailureSubtype,
-  type MentionPublishResolution,
+  resolveMentionExecutionPublicationState,
 } from "./mention-publication-state.ts";
 import {
   createMentionPublisher,
@@ -820,10 +815,6 @@ export function createMentionHandler(deps: {
         // Explicit PR review mentions bypass the pull_request review handler's
         // deterministic clean-review publish path. Bridge that gap here so a
         // successful no-issues run still produces a GitHub-visible approval.
-        let mentionOutputPublished = Boolean(result.published);
-        let publishResolution: MentionPublishResolution = mentionOutputPublished ? "executor" : "none";
-        let publishFailureCategory: ErrorCategory | null = null;
-        let publishFallbackDelivery: MentionErrorDelivery | null = null;
         const explicitReviewFindingLifecycleResult = projectExplicitMentionReviewLifecycle({
           explicitReviewRequest,
           eventName: event.name,
@@ -855,10 +846,11 @@ export function createMentionHandler(deps: {
         const explicitReviewPublishEvaluation = explicitReviewPublishDecision.evaluation;
         const explicitReviewResultFindingLines = explicitReviewPublishDecision.findingLines;
         const explicitReviewPublishEligible = explicitReviewPublishDecision.eligible;
+        let explicitReviewPublication: Awaited<ReturnType<typeof publishExplicitMentionReviewResult>> | null = null;
 
         if (explicitReviewPublishEligible && reviewOutputKey && mention.prNumber !== undefined) {
           const publishOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          const explicitReviewPublication = await publishExplicitMentionReviewResult({
+          explicitReviewPublication = await publishExplicitMentionReviewResult({
             octokit: publishOctokit,
             owner: mention.owner,
             repo: mention.repo,
@@ -878,17 +870,21 @@ export function createMentionHandler(deps: {
             summarizeError: summarizeErrorForDiagnostics,
             logger,
           });
-          mentionOutputPublished = explicitReviewPublication.outputPublished;
-          publishResolution = explicitReviewPublication.resolution;
-          publishFailureCategory = explicitReviewPublication.failureCategory ?? publishFailureCategory;
-          publishFallbackDelivery = explicitReviewPublication.fallbackDelivery;
         }
 
-        const mentionExecutionErrorCategory = result.errorMessage !== undefined
-          ? classifyError(new Error(result.errorMessage), result.isTimeout ?? false, result.published)
-          : undefined;
-        const mentionFailureSubtype = result.failureSubtype
-          ?? classifyMentionExecutionFailureSubtype(result.errorMessage);
+        let {
+          mentionOutputPublished,
+          publishResolution,
+          publishFailureCategory,
+          publishFallbackDelivery,
+          mentionExecutionErrorCategory,
+          mentionFailureSubtype,
+          shouldDeferCompletionLog,
+        } = resolveMentionExecutionPublicationState({
+          result,
+          explicitReviewPublication,
+          reviewPublishRightsLost: reviewWorkRuntime.reviewPublishRightsLost,
+        });
 
         const logMentionExecutionCompleted = createMentionExecutionCompletedLogger({
           logger,
@@ -909,11 +905,7 @@ export function createMentionHandler(deps: {
             reviewOutputKey,
           }),
         });
-        const shouldDeferMentionCompletionLog =
-          !mentionOutputPublished
-          && !reviewWorkRuntime.reviewPublishRightsLost
-          && (result.conclusion === "failure" || result.conclusion === "error");
-        if (!shouldDeferMentionCompletionLog) {
+        if (!shouldDeferCompletionLog) {
           logMentionExecutionCompleted();
         }
 
@@ -1014,7 +1006,7 @@ export function createMentionHandler(deps: {
           logger,
         }));
 
-        if (shouldDeferMentionCompletionLog) {
+        if (shouldDeferCompletionLog) {
           logMentionExecutionCompleted();
         }
 
