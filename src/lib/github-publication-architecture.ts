@@ -29,6 +29,7 @@ const BODY_BEARING_GITHUB_PUBLICATION_METHODS = [
   "pulls.create",
   "pulls.createReplyForReviewComment",
   "pulls.createReviewComment",
+  "pulls.updateReviewComment",
   "pulls.createReview",
 ] as const;
 
@@ -229,7 +230,7 @@ export function findDirectOutgoingPublicationSanitizerUsage(
     }
 
     for (const symbol of OUTGOING_PUBLICATION_SANITIZER_SYMBOLS) {
-      const callPattern = new RegExp(String.raw`\b${symbol}\s*\(`);
+      const callPattern = buildSymbolCallPattern(symbol);
       if (callPattern.test(source)) {
         findings.push({ file, symbol });
         continue;
@@ -268,4 +269,11 @@ function findSymbolAliases(source: string, symbol: string): string[] {
   }
 
   return [...aliases];
+}
+
+function buildSymbolCallPattern(symbol: string): RegExp {
+  const escaped = escapeRegExp(symbol);
+  return new RegExp(
+    String.raw`(?:\b${escaped}\s*\(|(?:\.\s*${escaped}\b|\[\s*["']${escaped}["']\s*\])\s*\()`,
+  );
 }

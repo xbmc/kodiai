@@ -52,6 +52,9 @@ describe("GitHub publication architecture", () => {
         "src/handlers/unsafe-bracket-namespace.ts": `
           await octokit.rest["pulls"].createReview({ owner, repo, pull_number, body, event: "COMMENT" });
         `,
+        "src/handlers/unsafe-review-comment-update.ts": `
+          await octokit.rest.pulls.updateReviewComment({ owner, repo, comment_id, body });
+        `,
         "src/handlers/unsafe-bracket-alias.ts": `
           const create = octokit.rest["issues"]["create"];
           await create({ owner, repo, title, body });
@@ -132,6 +135,10 @@ describe("GitHub publication architecture", () => {
         method: "request:PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
       },
       {
+        file: "src/handlers/unsafe-review-comment-update.ts",
+        method: "pulls.updateReviewComment",
+      },
+      {
         file: "src/handlers/unsafe-typed-payload-alias.ts",
         method: "issues.updateComment",
       },
@@ -180,6 +187,14 @@ describe("GitHub publication architecture", () => {
           const prepare = prepareOutgoingBodyForPublication;
           prepare(body, ["kodiai"]);
         `,
+        "src/handlers/unsafe-namespace-import.ts": `
+          import * as sanitizer from "../lib/sanitizer.ts";
+          sanitizer["sanitizeOutgoingMentions"](body, ["kodiai"]);
+        `,
+        "src/handlers/unsafe-publication-namespace-import.ts": `
+          import * as publication from "../lib/github-publication.ts";
+          publication["prepareOutgoingBodyForPublication"](body, ["kodiai"]);
+        `,
         "src/lib/github-publication.ts": "prepareOutgoingBodyForPublication(body, ['kodiai']);",
         "src/lib/sanitizer.ts": "export function sanitizeOutgoingMentions(body: string) { return body; }",
         "src/handlers/safe.ts": "prepareGitHubPublication(body, { botHandles });",
@@ -198,6 +213,14 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-import-alias.ts",
         symbol: "sanitizeOutgoingMentions",
+      },
+      {
+        file: "src/handlers/unsafe-namespace-import.ts",
+        symbol: "sanitizeOutgoingMentions",
+      },
+      {
+        file: "src/handlers/unsafe-publication-namespace-import.ts",
+        symbol: "prepareOutgoingBodyForPublication",
       },
       {
         file: "src/handlers/unsafe.ts",
