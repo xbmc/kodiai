@@ -58,8 +58,7 @@ import {
 import {
   recordReviewPostExecutionSideEffects,
 } from "./review-post-execution-side-effects.ts";
-import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
-import { buildReviewPostExecutionTelemetryPublicationContext } from "./review-post-execution-telemetry-context.ts";
+import { recordReviewPostExecutionTelemetryForInstallation } from "./review-post-execution-telemetry-context.ts";
 import {
   publishReviewRequestedEyesReactionFromHandlerDependencies,
 } from "./review-reactions.ts";
@@ -918,12 +917,10 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         });
         canonicalReviewDetailsBody = resolveFirstPassReviewDetailsPublicationBody(firstPassReviewDetailsPublication);
 
-        const postExecutionTelemetryPublicationContext = buildReviewPostExecutionTelemetryPublicationContext({
+        await recordReviewPostExecutionTelemetryForInstallation({
           installationId: event.installationId,
           getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
           appSlug: githubApp.getAppSlug(),
-        });
-        await recordReviewPostExecutionTelemetry({
           telemetryEnabled: config.telemetry.enabled,
           telemetryStore,
           logger,
@@ -932,7 +929,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           repo: apiRepo,
           prNumber: pr.number,
           prAuthor: pr.user.login,
-          eventType: `pull_request.${payload.action}`,
+          eventAction: payload.action,
           result,
           promptSections: reviewPromptSections,
           derivedPromptCacheStatus: reviewPromptDerivedCacheStatus,
@@ -940,8 +937,6 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           costWarningUsd: config.telemetry.costWarningUsd,
           canPublishVisibleOutput,
           setReviewWorkPhase,
-          getOctokit: postExecutionTelemetryPublicationContext.getOctokit,
-          botHandles: postExecutionTelemetryPublicationContext.botHandles,
         });
 
         const reviewId = await persistReviewKnowledgeIfAvailable({

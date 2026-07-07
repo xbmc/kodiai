@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1481);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1476);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -385,14 +385,19 @@ describe("review handler structure", () => {
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
+    const postExecutionContextSource = readFileSync(
+      new URL("./review-post-execution-telemetry-context.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("recordRateLimitEvent({\n              deliveryId: event.id");
     expect(source).not.toContain("recordRateLimitEvent({\n                          deliveryId: retryDeliveryId");
     expect(source).not.toContain("conclusion: result.isTimeout && result.published");
     expect(source).not.toContain("conclusion: retryResult.isTimeout && retryResult.published");
     expect(source).not.toContain("Retry derived-prompt reuse telemetry write failed (non-blocking)");
-    expect(source).toContain("recordReviewPostExecutionTelemetry");
-    expect(source).toContain("./review-post-execution-telemetry.ts");
+    expect(source).toContain("recordReviewPostExecutionTelemetryForInstallation");
+    expect(source).toContain("./review-post-execution-telemetry-context.ts");
+    expect(postExecutionContextSource).toContain("./review-post-execution-telemetry.ts");
     expect(postExecutionSource).toContain("recordReviewExecutionTelemetry");
     expect(postExecutionSource).toContain("./review-telemetry.ts");
   });
@@ -400,12 +405,17 @@ describe("review handler structure", () => {
   test("keeps first-pass telemetry and cost-warning orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
+    const postExecutionContextSource = readFileSync(
+      new URL("./review-post-execution-telemetry-context.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("if (config.telemetry.enabled) {\n          await recordReviewExecutionTelemetry");
     expect(source).not.toContain("recordReviewExecutionTelemetry({");
     expect(source).not.toContain("maybePostReviewCostWarning({");
-    expect(source).toContain("recordReviewPostExecutionTelemetry");
-    expect(source).toContain("./review-post-execution-telemetry.ts");
+    expect(source).toContain("recordReviewPostExecutionTelemetryForInstallation");
+    expect(source).toContain("./review-post-execution-telemetry-context.ts");
+    expect(postExecutionContextSource).toContain("recordReviewPostExecutionTelemetry");
     expect(postExecutionSource).toContain("recordReviewExecutionTelemetry");
     expect(postExecutionSource).toContain("maybePostReviewCostWarning");
   });
@@ -418,9 +428,14 @@ describe("review handler structure", () => {
     );
 
     expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n          botHandles: [githubApp.getAppSlug(), \"claude\"],");
-    expect(source).toContain("buildReviewPostExecutionTelemetryPublicationContext");
+    expect(source).not.toContain("const postExecutionTelemetryPublicationContext = buildReviewPostExecutionTelemetryPublicationContext({");
+    expect(source).not.toContain("await recordReviewPostExecutionTelemetry({");
+    expect(source).toContain("recordReviewPostExecutionTelemetryForInstallation");
     expect(source).toContain("./review-post-execution-telemetry-context.ts");
     expect(adapterSource).toContain("export function buildReviewPostExecutionTelemetryPublicationContext");
+    expect(adapterSource).toContain("export async function recordReviewPostExecutionTelemetryForInstallation");
+    expect(adapterSource).toContain("import { recordReviewPostExecutionTelemetry }");
+    expect(adapterSource).toContain("await recordTelemetry({");
   });
 
   test("keeps review publication bot handle projection out of the monster handler", () => {
@@ -1093,7 +1108,7 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("costWarningUsd: 5.0  # or 0 to disable");
     expect(source).not.toContain("Failed to post cost warning comment");
-    expect(source).toContain("recordReviewPostExecutionTelemetry");
+    expect(source).toContain("recordReviewPostExecutionTelemetryForInstallation");
     expect(postExecutionSource).toContain("./review-cost-warning.ts");
     expect(postExecutionSource).toContain("maybePostReviewCostWarning");
   });
