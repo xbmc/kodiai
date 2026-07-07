@@ -114,7 +114,6 @@ import {
   type CanonicalReviewSurface,
   type CanonicalSurfaceKind,
   upsertCanonicalReviewSurface,
-  upsertDegradedReviewDetailsFallbackComment,
 } from "../review-orchestration/review-canonical-surface.ts";
 import {
   type ExtractedFinding,
@@ -252,6 +251,7 @@ import { resolveReviewContinuationMergeContext } from "./review-continuation-mer
 import { publishPublishedReviewDetailsMerge } from "./review-details-published-merge.ts";
 import { publishMovedToDetailsReviewDetailsMerge } from "./review-details-moved-to-details-merge.ts";
 import { publishStandaloneReviewDetailsFallback } from "./review-details-standalone-fallback.ts";
+import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2362,42 +2362,31 @@ export function createReviewHandler(deps: {
                   "Failed to update timeout canonical review surface with Review Details; using degraded fallback comment",
                 );
 
-                if (canPublishVisibleOutput("timeout degraded Review Details fallback comment")) {
-                  try {
-                    await upsertDegradedReviewDetailsFallbackComment({
-                      octokit,
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      prNumber: pr.number,
-                      reviewOutputKey,
-                      body: renderReviewDetailsBody({
-                        timeoutProgress: timeoutReviewDetails,
-                        reviewFirstPass: timeoutFirstPass,
-                        timeoutBudget: appliedTimeoutBudget
-                          ? {
-                              remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                              infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                              totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                            }
-                          : null,
-                      }),
-                      botHandles: [githubApp.getAppSlug(), "claude"],
-                      recheckCanPublish: () =>
-                        canPublishVisibleOutput("timeout degraded Review Details fallback comment"),
-                    });
-                  } catch (fallbackErr) {
-                    logger.warn(
-                      {
-                        ...baseLog,
-                        gate: "review-details-output",
-                        gateResult: "failed",
-                        reviewOutputKey,
-                        err: fallbackErr,
-                      },
-                      "Failed to publish degraded Review Details fallback comment for timeout partial output",
-                    );
-                  }
-                }
+                await publishDegradedReviewDetailsFallbackFailOpen({
+                  octokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  renderBody: () =>
+                    renderReviewDetailsBody({
+                      timeoutProgress: timeoutReviewDetails,
+                      reviewFirstPass: timeoutFirstPass,
+                      timeoutBudget: appliedTimeoutBudget
+                        ? {
+                            remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                            infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                            totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                          }
+                        : null,
+                    }),
+                  botHandles: [githubApp.getAppSlug(), "claude"],
+                  publishReason: "timeout degraded Review Details fallback comment",
+                  failureMessage: "Failed to publish degraded Review Details fallback comment for timeout partial output",
+                  baseLog,
+                  logger,
+                  canPublishVisibleOutput,
+                });
               }
 
               // Structured resilience telemetry (best-effort)
@@ -2971,44 +2960,28 @@ export function createReviewHandler(deps: {
                               ? "Retry complete -- updated partial review comment with merged results; Review Details published via degraded fallback comment"
                               : "Retry complete -- published final review comment with merged results; Review Details published via degraded fallback comment";
 
-                            if (
-                              canPublishReviewWorkOutput(
-                                retryReviewWorkAttempt.attemptId,
-                                "retry degraded Review Details fallback comment",
-                                retryDeliveryId,
-                              )
-                            ) {
-                              try {
-                                await upsertDegradedReviewDetailsFallbackComment({
-                                  octokit: retryOctokit,
-                                  owner: apiOwner,
-                                  repo: apiRepo,
-                                  prNumber: pr.number,
-                                  reviewOutputKey,
-                                  body: renderReviewDetailsBody({
-                                    reviewFirstPass: mergeContext.reviewDetailsFirstPass,
-                                  }),
-                                  botHandles: [githubApp.getAppSlug(), "claude"],
-                                  recheckCanPublish: () =>
-                                    canPublishReviewWorkOutput(
-                                      retryReviewWorkAttempt.attemptId,
-                                      "retry degraded Review Details fallback comment",
-                                      retryDeliveryId,
-                                    ),
-                                });
-                              } catch (fallbackErr) {
-                                logger.warn(
-                                  {
-                                    ...baseLog,
-                                    gate: "review-details-output",
-                                    gateResult: "failed",
-                                    reviewOutputKey,
-                                    err: fallbackErr,
-                                  },
-                                  "Failed to publish degraded Review Details fallback comment after retry merge",
-                                );
-                              }
-                            }
+                            await publishDegradedReviewDetailsFallbackFailOpen({
+                              octokit: retryOctokit,
+                              owner: apiOwner,
+                              repo: apiRepo,
+                              prNumber: pr.number,
+                              reviewOutputKey,
+                              renderBody: () =>
+                                renderReviewDetailsBody({
+                                  reviewFirstPass: mergeContext.reviewDetailsFirstPass,
+                                }),
+                              botHandles: [githubApp.getAppSlug(), "claude"],
+                              publishReason: "retry degraded Review Details fallback comment",
+                              failureMessage: "Failed to publish degraded Review Details fallback comment after retry merge",
+                              baseLog,
+                              logger,
+                              canPublishVisibleOutput: (reason) =>
+                                canPublishReviewWorkOutput(
+                                  retryReviewWorkAttempt.attemptId,
+                                  reason,
+                                  retryDeliveryId,
+                                ),
+                            });
                           }
 
                           logger.info(

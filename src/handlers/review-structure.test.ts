@@ -440,6 +440,14 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-details-standalone-fallback.ts");
   });
 
+  test("keeps fail-open degraded Review Details fallback publication out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("await upsertDegradedReviewDetailsFallbackComment({");
+    expect(source).toContain("publishDegradedReviewDetailsFallbackFailOpen");
+    expect(source).toContain("./review-details-degraded-fallback.ts");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
