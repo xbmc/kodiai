@@ -254,6 +254,7 @@ import {
   resolvePendingContinuationFamilyState,
   resolveQuietSettledContinuationFamilyState,
 } from "./review-continuation-family-state-projection.ts";
+import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1418,27 +1419,13 @@ export function createReviewHandler(deps: {
             })
           : { suppressedFingerprints: new Set<string>(), suppressedPatternCount: 0, patterns: [] };
 
-        const graphValidationLLM = graphBlastRadius && config.review.graphValidation.enabled
-          ? {
-              generate: async (prompt: string, system: string): Promise<string> => {
-                const { createTaskRouter } = await import("../llm/task-router.ts");
-                const { TASK_TYPES } = await import("../llm/task-types.ts");
-                const { generateWithFallback } = await import("../llm/generate.ts");
-                const taskRouter = createTaskRouter({ models: {} });
-                const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
-                const genResult = await generateWithFallback({
-                  taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
-                  resolved,
-                  system,
-                  prompt,
-                  logger,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  deliveryId: event.id,
-                });
-                return genResult.text;
-              },
-            }
-          : null;
+        const graphValidationLLM = resolveReviewGraphValidationLLM({
+          enabled: config.review.graphValidation.enabled,
+          hasGraphBlastRadius: Boolean(graphBlastRadius),
+          repo: `${apiOwner}/${apiRepo}`,
+          deliveryId: event.id,
+          logger,
+        });
 
         const commentSlopFindings = toCommentSlopReducerFindings(
           detectCommentSlopInDiff(diffContext.diffContent ?? ""),

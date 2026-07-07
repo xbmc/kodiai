@@ -310,6 +310,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-finding-context.ts");
   });
 
+  test("keeps graph-validation LLM routing out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const graphValidationLLM = graphBlastRadius && config.review.graphValidation.enabled");
+    expect(source).not.toContain("const { createTaskRouter } = await import(\"../llm/task-router.ts\")");
+    expect(source).not.toContain("const genResult = await generateWithFallback({");
+    expect(source).toContain("resolveReviewGraphValidationLLM");
+    expect(source).toContain("./review-graph-validation-llm.ts");
+  });
+
   test("keeps candidate approval adapter context out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
