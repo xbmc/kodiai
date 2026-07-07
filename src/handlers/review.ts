@@ -146,7 +146,10 @@ import {
   normalizeReviewTimeoutBudgetDetails,
   resolveReviewTimeoutPublicationContext,
 } from "./review-timeout-publication-context.ts";
-import { resolveReviewTimeoutExecutionContext } from "./review-timeout-execution-context.ts";
+import {
+  buildReviewTimeoutExecutionAdapters,
+  resolveReviewTimeoutExecutionContext,
+} from "./review-timeout-execution-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
@@ -1228,7 +1231,9 @@ export function createReviewHandler(deps: {
                 conclusion: result.conclusion,
               },
               turnBudgetExhausted,
-              countRecentTimeouts: (repo, prAuthor) => telemetryStore.countRecentTimeouts?.(repo, prAuthor),
+              countRecentTimeouts: buildReviewTimeoutExecutionAdapters({
+                telemetryStore,
+              }).countRecentTimeouts,
             });
 
             const retryContext = resolveReviewTimeoutRetryContext({

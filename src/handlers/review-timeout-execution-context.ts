@@ -10,6 +10,21 @@ export type ReviewTimeoutExecutionContext = {
   executionConclusion: ReviewTimeoutExecutionConclusion;
 };
 
+type ReviewTimeoutTelemetryStore = {
+  countRecentTimeouts?: (repo: string, prAuthor: string) => Promise<number | undefined> | number | undefined;
+};
+
+export function buildReviewTimeoutExecutionAdapters(params: {
+  telemetryStore: ReviewTimeoutTelemetryStore;
+}): {
+  countRecentTimeouts: (repo: string, prAuthor: string) => Promise<number | undefined>;
+} {
+  return {
+    countRecentTimeouts: async (repo, prAuthor) =>
+      await params.telemetryStore.countRecentTimeouts?.(repo, prAuthor),
+  };
+}
+
 export async function resolveReviewTimeoutExecutionContext(params: {
   repo: string;
   prAuthor: string;
