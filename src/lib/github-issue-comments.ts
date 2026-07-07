@@ -139,6 +139,8 @@ export type IssueCommentScanResult = {
   hitCap: boolean;
 };
 
+export type PagedScanResult = IssueCommentScanResult;
+
 export type ReviewCommentListResult = {
   comments: ReviewCommentPaged[];
   scannedPages: number;
@@ -158,6 +160,37 @@ export type PullReviewListResult = {
 };
 
 const DEFAULT_REVIEW_COMMENT_LIST_MAX_PAGES = 10;
+
+export async function scanPagedItems<T>(params: {
+  perPage?: number;
+  maxItems?: number;
+  fetchPage: (params: { page: number; perPage: number }) => Promise<T[]>;
+  onItem: (item: T) => boolean;
+}): Promise<PagedScanResult> {
+  const perPage = params.perPage ?? 100;
+  const maxItems = params.maxItems ?? Number.POSITIVE_INFINITY;
+  let scanned = 0;
+
+  for (let page = 1; scanned < maxItems; page += 1) {
+    const items = await params.fetchPage({ page, perPage });
+
+    for (const item of items) {
+      scanned += 1;
+      if (params.onItem(item)) {
+        return { scanned, stopped: true, hitCap: false };
+      }
+      if (scanned >= maxItems) {
+        break;
+      }
+    }
+
+    if (items.length < perPage) {
+      return { scanned, stopped: false, hitCap: false };
+    }
+  }
+
+  return { scanned, stopped: false, hitCap: true };
+}
 
 export async function listReviewCommentsPaged(
   octokit: ReviewCommentMarkerLookupOctokit,
@@ -276,37 +309,23 @@ export async function scanIssueCommentsPaged(
     onComment: (comment: IssueCommentMarkerCandidate) => boolean;
   },
 ): Promise<IssueCommentScanResult> {
-  const perPage = params.perPage ?? 100;
-  const maxItems = params.maxItems ?? Number.POSITIVE_INFINITY;
-  let scanned = 0;
-
-  for (let page = 1; scanned < maxItems; page += 1) {
-    const { data: comments } = await octokit.rest.issues.listComments({
-      owner: params.owner,
-      repo: params.repo,
-      issue_number: params.issueNumber,
-      per_page: perPage,
-      page,
-      ...(params.sort ? { sort: params.sort } : {}),
-      ...(params.direction ? { direction: params.direction } : {}),
-    });
-
-    for (const comment of comments) {
-      scanned += 1;
-      if (params.onComment(comment)) {
-        return { scanned, stopped: true, hitCap: false };
-      }
-      if (scanned >= maxItems) {
-        break;
-      }
-    }
-
-    if (comments.length < perPage) {
-      return { scanned, stopped: false, hitCap: false };
-    }
-  }
-
-  return { scanned, stopped: false, hitCap: true };
+  return await scanPagedItems({
+    perPage: params.perPage,
+    maxItems: params.maxItems,
+    fetchPage: async ({ page, perPage }) => {
+      const { data } = await octokit.rest.issues.listComments({
+        owner: params.owner,
+        repo: params.repo,
+        issue_number: params.issueNumber,
+        per_page: perPage,
+        page,
+        ...(params.sort ? { sort: params.sort } : {}),
+        ...(params.direction ? { direction: params.direction } : {}),
+      });
+      return data as IssueCommentMarkerCandidate[];
+    },
+    onItem: params.onComment,
+  });
 }
 
 async function scanIssueCommentsByMarkerPaged(
@@ -357,41 +376,35 @@ async function scanReviewCommentsByMarkerPaged(
     }) => boolean;
   },
 ): Promise<MarkerScanResult> {
-  const perPage = params.perPage ?? 100;
-  const maxItems = params.maxItems ?? Number.POSITIVE_INFINITY;
-  let scanned = 0;
   let found = false;
 
-  for (let page = 1; scanned < maxItems; page += 1) {
-    const { data: comments } = await octokit.rest.pulls.listReviewComments({
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: params.prNumber,
-      per_page: perPage,
-      page,
-      ...(params.sort ? { sort: params.sort } : {}),
-      ...(params.direction ? { direction: params.direction } : {}),
-    });
-
-    for (const comment of comments) {
-      scanned += 1;
+  const result = await scanPagedItems({
+    perPage: params.perPage,
+    maxItems: params.maxItems,
+    fetchPage: async ({ page, perPage }) => {
+      const { data } = await octokit.rest.pulls.listReviewComments({
+        owner: params.owner,
+        repo: params.repo,
+        pull_number: params.prNumber,
+        per_page: perPage,
+        page,
+        ...(params.sort ? { sort: params.sort } : {}),
+        ...(params.direction ? { direction: params.direction } : {}),
+      });
+      return data;
+    },
+    onItem: (comment) => {
       if (comment.body?.includes(params.marker) === true) {
         found = true;
         if (params.onMatch(comment)) {
-          return { found: true, scanned, hitCap: false };
+          return true;
         }
       }
-      if (scanned >= maxItems) {
-        break;
-      }
-    }
+      return false;
+    },
+  });
 
-    if (comments.length < perPage) {
-      return { found, scanned, hitCap: false };
-    }
-  }
-
-  return { found, scanned, hitCap: true };
+  return { found, scanned: result.scanned, hitCap: result.hitCap };
 }
 
 async function scanPullReviewsByMarkerPaged(
@@ -406,39 +419,33 @@ async function scanPullReviewsByMarkerPaged(
     onMatch: (review: PullReviewPaged) => boolean;
   },
 ): Promise<MarkerScanResult> {
-  const perPage = params.perPage ?? 100;
-  const maxItems = params.maxItems ?? Number.POSITIVE_INFINITY;
-  let scanned = 0;
   let found = false;
 
-  for (let page = 1; scanned < maxItems; page += 1) {
-    const { data: reviews } = await octokit.rest.pulls.listReviews({
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: params.prNumber,
-      per_page: perPage,
-      page,
-    });
-
-    for (const review of reviews as PullReviewPaged[]) {
-      scanned += 1;
+  const result = await scanPagedItems({
+    perPage: params.perPage,
+    maxItems: params.maxItems,
+    fetchPage: async ({ page, perPage }) => {
+      const { data } = await octokit.rest.pulls.listReviews({
+        owner: params.owner,
+        repo: params.repo,
+        pull_number: params.prNumber,
+        per_page: perPage,
+        page,
+      });
+      return data as PullReviewPaged[];
+    },
+    onItem: (review) => {
       if (typeof review.body === "string" && review.body.includes(params.marker)) {
         found = true;
         if (params.onMatch(review)) {
-          return { found: true, scanned, hitCap: false };
+          return true;
         }
       }
-      if (scanned >= maxItems) {
-        break;
-      }
-    }
+      return false;
+    },
+  });
 
-    if (reviews.length < perPage) {
-      return { found, scanned, hitCap: false };
-    }
-  }
-
-  return { found, scanned, hitCap: true };
+  return { found, scanned: result.scanned, hitCap: result.hitCap };
 }
 
 export async function scanIssueCommentMarkerPaged(

@@ -10,6 +10,7 @@ import {
   listIssueCommentsPaged,
   listPullReviewsPaged,
   listReviewCommentsPaged,
+  scanPagedItems,
   scanIssueCommentsPaged,
 } from "./github-issue-comments.ts";
 
@@ -73,6 +74,39 @@ describe("comment marker scan architecture", () => {
 
   test("keeps production marker lookups behind the paged comment helpers", () => {
     expect(findDirectMarkerCommentScans(productionTypeScriptFiles())).toEqual([]);
+  });
+});
+
+describe("scanPagedItems", () => {
+  test("stops when a callback matches and reports scanned count", async () => {
+    const calls: number[] = [];
+
+    const result = await scanPagedItems({
+      perPage: 2,
+      maxItems: 10,
+      fetchPage: async ({ page, perPage }) => {
+        calls.push(page);
+        return page === 1
+          ? [{ id: 1 }, { id: 2 }]
+          : [{ id: 3 }, { id: 4 }];
+      },
+      onItem: (item) => item.id === 3,
+    });
+
+    expect(result).toEqual({ scanned: 3, stopped: true, hitCap: false });
+    expect(calls).toEqual([1, 2]);
+  });
+
+  test("reports a hit cap when full pages exhaust the max item budget", async () => {
+    const result = await scanPagedItems({
+      perPage: 2,
+      maxItems: 3,
+      fetchPage: async ({ page, perPage }) =>
+        Array.from({ length: perPage }, (_, index) => ({ id: page * 10 + index })),
+      onItem: () => false,
+    });
+
+    expect(result).toEqual({ scanned: 3, stopped: false, hitCap: true });
   });
 });
 
