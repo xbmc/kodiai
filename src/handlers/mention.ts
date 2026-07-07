@@ -15,7 +15,10 @@ import {
 import { createMentionWorkspacePhaseHooks } from "./mention-workspace-phase-hooks.ts";
 import { createMentionReviewWorkSession } from "./mention-review-work-session.ts";
 import { createMentionFindingLookup } from "./mention-finding-context.ts";
-import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
+import {
+  logSkippedMentionTriggerContext,
+  resolveMentionTriggerContext,
+} from "./mention-trigger-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { createMentionHandlerRuntime } from "./mention-handler-runtime.ts";
@@ -88,12 +91,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
     const appSlug = githubApp.getAppSlug();
     const triggerContext = resolveMentionTriggerContext({ event, appSlug });
     if (triggerContext.action === "skip") {
-      if (triggerContext.reason === "self-authored") {
-        logger.debug(
-          triggerContext.logContext,
-          "Skipping mention from self (comment-author defense)",
-        );
-      }
+      logSkippedMentionTriggerContext({ triggerContext, logger });
       return;
     }
 

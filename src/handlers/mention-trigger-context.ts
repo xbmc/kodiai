@@ -143,3 +143,18 @@ export function resolveMentionTriggerContext(params: {
     ),
   };
 }
+
+export function logSkippedMentionTriggerContext(params: {
+  triggerContext: MentionTriggerContext;
+  logger: {
+    debug: (bindings: unknown, message: string) => void;
+  };
+}): void {
+  if (params.triggerContext.action !== "skip") return;
+  if (params.triggerContext.reason !== "self-authored") return;
+
+  params.logger.debug(
+    params.triggerContext.logContext,
+    "Skipping mention from self (comment-author defense)",
+  );
+}

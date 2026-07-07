@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { WebhookEvent } from "../webhook/types.ts";
-import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
+import {
+  logSkippedMentionTriggerContext,
+  resolveMentionTriggerContext,
+} from "./mention-trigger-context.ts";
 
 function issueCommentEvent(params: {
   body: string;
@@ -138,5 +141,56 @@ describe("resolveMentionTriggerContext", () => {
     if (context.action !== "process") return;
     expect(context.provisionalUserQuestion).toBe("summarize this");
     expect(context.isExplicitReviewRequest).toBe(false);
+  });
+});
+
+describe("logSkippedMentionTriggerContext", () => {
+  test("logs self-authored skips with trigger log context", () => {
+    const debugCalls: Array<{ bindings: unknown; message: string }> = [];
+    const context = resolveMentionTriggerContext({
+      event: issueCommentEvent({ body: "@kodiai hello", author: "kodiai[bot]" }),
+      appSlug: "kodiai",
+    });
+
+    logSkippedMentionTriggerContext({
+      triggerContext: context,
+      logger: {
+        debug: (bindings, message) => {
+          debugCalls.push({ bindings, message });
+        },
+      },
+    });
+
+    expect(debugCalls).toEqual([
+      {
+        bindings: {
+          owner: "owner",
+          repo: "repo",
+          commentAuthor: "kodiai[bot]",
+          issueNumber: 42,
+          prNumber: undefined,
+        },
+        message: "Skipping mention from self (comment-author defense)",
+      },
+    ]);
+  });
+
+  test("does not log non-self-authored skips", () => {
+    const debugCalls: Array<{ bindings: unknown; message: string }> = [];
+    const context = resolveMentionTriggerContext({
+      event: issueCommentEvent({ body: "plain comment" }),
+      appSlug: "kodiai",
+    });
+
+    logSkippedMentionTriggerContext({
+      triggerContext: context,
+      logger: {
+        debug: (bindings, message) => {
+          debugCalls.push({ bindings, message });
+        },
+      },
+    });
+
+    expect(debugCalls).toEqual([]);
   });
 });

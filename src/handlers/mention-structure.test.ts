@@ -5,7 +5,7 @@ describe("mention handler structure", () => {
   test("keeps the mention handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(510);
+    expect(source.split("\n").length).toBeLessThanOrEqual(493);
   });
 
   test("keeps mention handler dependency contract out of the monster handler", () => {
@@ -107,6 +107,18 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("mention.commentBody.toLowerCase().includes(\"@kodai\")");
     expect(source).toContain("createMentionReviewWorkSession");
     expect(sessionSource).toContain("usesCanonicalExplicitReviewHandle");
+  });
+
+  test("keeps skipped mention trigger logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const triggerSource = readFileSync(new URL("./mention-trigger-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("triggerContext.reason === \"self-authored\"");
+    expect(source).not.toContain("Skipping mention from self (comment-author defense)");
+    expect(source).toContain("logSkippedMentionTriggerContext");
+    expect(source).toContain("./mention-trigger-context.ts");
+    expect(triggerSource).toContain("export function logSkippedMentionTriggerContext");
+    expect(triggerSource).toContain("Skipping mention from self (comment-author defense)");
   });
 
   test("keeps write rate limit success key construction out of the monster handler", () => {
