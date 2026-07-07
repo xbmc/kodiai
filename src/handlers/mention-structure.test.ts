@@ -19,10 +19,12 @@ describe("mention handler structure", () => {
 
   test("keeps same-repo PR write idempotency helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const normalizeName =");
     expect(source).not.toContain("git -C ${workspace.dir} log -n 50");
-    expect(source).toContain("./mention-pr-write.ts");
+    expect(source).toContain("./mention-write-output-routing.ts");
+    expect(routingSource).toContain("./mention-pr-write.ts");
   });
 
   test("keeps write-mode preflight publication out of the monster handler", () => {
@@ -238,9 +240,11 @@ describe("mention handler structure", () => {
 
   test("keeps issue write failure poster binding out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const postIssueWriteFailure = async");
-    expect(source).toContain("createIssueWriteFailurePoster");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(routingSource).toContain("createIssueWriteFailurePoster");
     expect(source).toContain("./mention-write-replies.ts");
   });
 
@@ -432,29 +436,35 @@ describe("mention handler structure", () => {
 
   test("keeps write-mode PR draft assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("git -C ${workspace.dir} diff --stat HEAD~1 HEAD");
     expect(source).not.toContain("scanDiffForFabricatedContent(workspace.dir)");
     expect(source).not.toContain("const prBody = generatePrBody({");
-    expect(source).toContain("publishMentionBotWritePullRequest");
-    expect(source).toContain("publishMentionForkWriteOutput");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(routingSource).toContain("publishMentionBotWritePullRequest");
+    expect(routingSource).toContain("publishMentionForkWriteOutput");
   });
 
   test("keeps write-mode PR publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("createPullRequestWithPublicationPipeline");
-    expect(source).toContain("publishMentionBotWritePullRequest");
-    expect(source).toContain("publishMentionForkWriteOutput");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(routingSource).toContain("publishMentionBotWritePullRequest");
+    expect(routingSource).toContain("publishMentionForkWriteOutput");
   });
 
   test("keeps write-mode commit message assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const commitMessage = [");
     expect(source).not.toContain("deliveryId: ${event.id}");
-    expect(source).toContain("publishMentionBotWritePullRequest");
-    expect(source).toContain("publishMentionForkWriteOutput");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(routingSource).toContain("publishMentionBotWritePullRequest");
+    expect(routingSource).toContain("publishMentionForkWriteOutput");
   });
 
   test("keeps issue code pointer context assembly out of the monster handler", () => {
@@ -480,37 +490,46 @@ describe("mention handler structure", () => {
 
   test("keeps same-repo PR write branch updates out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("remoteHeadContainsMarker({");
     expect(source).not.toContain("commitAndPushToRemoteRef({");
     expect(source).not.toContain("pushHeadToRemoteRef({");
     expect(source).not.toContain("git -C ${workspace.dir} checkout -B pr-head");
     expect(source).not.toContain("Applied changes but failed to post confirmation reply");
-    expect(source).toContain("attemptSameRepoPrWrite");
-    expect(source).toContain("./mention-same-repo-write.ts");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(routingSource).toContain("attemptSameRepoPrWrite");
+    expect(routingSource).toContain("./mention-same-repo-write.ts");
   });
 
   test("keeps bot-branch PR write publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Failed to look up existing PR after push failure");
     expect(source).not.toContain("Issue write-mode PR creation failed, retrying once");
     expect(source).not.toContain("GitHub pulls.create response did not include html_url");
     expect(source).not.toContain("outcome: \"created-pr\"");
-    expect(source).toContain("publishMentionBotWritePullRequest");
-    expect(source).toContain("./mention-bot-pr-write.ts");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(routingSource).toContain("publishMentionBotWritePullRequest");
+    expect(routingSource).toContain("./mention-bot-pr-write.ts");
   });
 
   test("keeps fork/gist write output routing out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("getGitStatusPorcelain(workspace.dir)");
+    expect(source).not.toContain("buildNoFileChangesReply()");
+    expect(source).not.toContain("publishMentionForkWriteOutput({");
+    expect(source).not.toContain("attemptSameRepoPrWrite({");
+    expect(source).not.toContain("publishMentionBotWritePullRequest({");
     expect(source).not.toContain("const useGist = shouldUseGist({ keyword: writeIntent.keyword }, changedFiles);");
     expect(source).not.toContain("Gist creation failed; falling through to PR path");
     expect(source).not.toContain("outcome: \"created-gist\"");
     expect(source).not.toContain("outcome: \"created-cross-fork-pr\"");
     expect(source).not.toContain("Fork-based PR creation failed; falling back to gist");
     expect(source).not.toContain("Fork-based write mode failed completely; falling through to legacy direct-push path");
-    expect(source).toContain("publishMentionForkWriteOutput");
-    expect(source).toContain("./mention-fork-write-output.ts");
+    expect(source).toContain("routeMentionWriteOutput");
+    expect(source).toContain("./mention-write-output-routing.ts");
   });
 });

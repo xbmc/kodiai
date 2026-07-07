@@ -7,9 +7,6 @@ import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { createRetriever } from "../knowledge/retrieval.ts";
-import {
-  getGitStatusPorcelain,
-} from "../jobs/workspace.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
@@ -28,8 +25,6 @@ import {
   resolveMentionWriteIntent,
 } from "./mention-write-formatters.ts";
 import {
-  buildNoFileChangesReply,
-  createIssueWriteFailurePoster,
   maybeReplyWritePermissionFailure,
   summarizeErrorForDiagnostics,
 } from "./mention-write-replies.ts";
@@ -86,9 +81,6 @@ import {
   findLatestReviewPredecessor,
   prepareMentionCheckoutAndLoadConfig,
 } from "./mention-workspace.ts";
-import {
-  isSameRepoPrHead,
-} from "./mention-pr-write.ts";
 import { createMentionReviewWorkRuntime } from "./mention-review-work-runtime.ts";
 import { createMentionWriteRateLimitRuntime } from "./mention-write-rate-limit.ts";
 import { evaluateMentionWritePreflight } from "./mention-write-preflight.ts";
@@ -102,9 +94,6 @@ import {
 import { buildMentionAgentInstructions } from "./mention-agent-instructions.ts";
 import { appendMentionIssueCodePointers } from "./mention-code-pointers.ts";
 import { buildMentionDerivedContext } from "./mention-derived-context.ts";
-import { attemptSameRepoPrWrite } from "./mention-same-repo-write.ts";
-import { publishMentionBotWritePullRequest } from "./mention-bot-pr-write.ts";
-import { publishMentionForkWriteOutput } from "./mention-fork-write-output.ts";
 import {
   buildMentionRetrievalContextForPrompt,
   type MentionRetrievalContext,
@@ -123,6 +112,7 @@ import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
+import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -1037,35 +1027,9 @@ export function createMentionHandler(deps: {
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
         if (writeEnabled && writeOutputKey && writeBranchName) {
-          const isIssueWritePublishFlow = isIssueThreadComment;
-
-          const postIssueWriteFailure = createIssueWriteFailurePoster({
-            isIssueWritePublishFlow,
-            retryCommand,
-            postReply: postMentionReply,
-            logger,
-            logContext: {
-              deliveryId: event.id,
-              installationId: event.installationId,
-              owner: mention.owner,
-              repoName: mention.repo,
-              repo: `${mention.owner}/${mention.repo}`,
-              sourcePrNumber: mention.prNumber,
-              triggerCommentId: mention.commentId,
-              triggerCommentUrl,
-              writeOutputKey,
-            },
-          });
-
-          const status = await getGitStatusPorcelain(workspace.dir);
-          if (status.trim().length === 0) {
-            const replyBody = buildNoFileChangesReply();
-            await postMentionReply(replyBody);
-            return;
-          }
-
-          const forkWriteOutput = await publishMentionForkWriteOutput({
+          await routeMentionWriteOutput({
             workspaceDir: workspace.dir,
+            workspaceToken: workspace.token,
             octokit,
             mention,
             forkContext,
@@ -1081,74 +1045,11 @@ export function createMentionHandler(deps: {
             allowPaths: config.write.allowPaths,
             denyPaths: config.write.denyPaths,
             secretScanEnabled: config.write.secretScan.enabled,
+            retryCommand,
+            isIssueThreadComment,
             botHandles: [appSlug, "claude", "kodai"],
             logger,
             postMentionReply,
-            recordWriteRateLimitSuccess: (owner, repo) => writeRateLimit.recordSuccess(owner, repo),
-          });
-          if (forkWriteOutput.status === "handled") {
-            return;
-          }
-
-          const sourcePrUrl =
-            mention.prNumber !== undefined
-              ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
-              : undefined;
-
-          const sameRepoHead = isSameRepoPrHead({
-            owner: mention.owner,
-            repo: mention.repo,
-            headRepoOwner: mention.headRepoOwner,
-            headRepoName: mention.headRepoName,
-            headRef: mention.headRef,
-          });
-
-          // Preferred path: update existing PR branch when possible.
-          const sameRepoPrWriteResult = await attemptSameRepoPrWrite({
-            workspaceDir: workspace.dir,
-            workspaceToken: workspace.token,
-            mention,
-            sameRepoHead,
-            sourcePrUrl,
-            writeOutputKey,
-            writeBranchName,
-            writeRequest: writeIntent.request,
-            deliveryId: event.id,
-            installationId: event.installationId,
-            triggerCommentUrl,
-            allowPaths: config.write.allowPaths,
-            denyPaths: config.write.denyPaths,
-            secretScanEnabled: config.write.secretScan.enabled,
-            retryCommand,
-            logger,
-            postMentionReply,
-            maybeReplyWritePermissionFailure,
-          });
-          if (sameRepoPrWriteResult.status === "handled") {
-            return;
-          }
-
-          await publishMentionBotWritePullRequest({
-            workspaceDir: workspace.dir,
-            workspaceToken: workspace.token,
-            octokit,
-            mention,
-            cloneRef,
-            writeBranchName,
-            writeOutputKey,
-            writeRequest: writeIntent.request,
-            triggerCommentUrl,
-            deliveryId: event.id,
-            installationId: event.installationId,
-            allowPaths: config.write.allowPaths,
-            denyPaths: config.write.denyPaths,
-            secretScanEnabled: config.write.secretScan.enabled,
-            retryCommand,
-            isIssueWritePublishFlow,
-            botHandles: [appSlug, "claude", "kodai"],
-            logger,
-            postMentionReply,
-            postIssueWriteFailure,
             maybeReplyWritePermissionFailure,
             recordWriteRateLimitSuccess: (owner, repo) => writeRateLimit.recordSuccess(owner, repo),
           });
