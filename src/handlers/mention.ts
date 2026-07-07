@@ -22,8 +22,6 @@ import {
 } from "./mention-conversation-limit.ts";
 import { recordSuccessfulMentionConversationTurn } from "./mention-conversation-recording.ts";
 import {
-  createFormatterSuggestionMentionRunner,
-  createFormatterSuggestionVisibleDiagnosticPoster,
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
 import {
@@ -79,6 +77,7 @@ import { buildMentionJobQueueContext } from "./mention-job-context.ts";
 import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
 import { recordMentionPostExecutionTelemetry } from "./mention-post-execution-telemetry.ts";
 import { logMentionProcessing } from "./mention-processing-log.ts";
+import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -313,44 +312,22 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        const runFormatterSuggestionForMention = createFormatterSuggestionMentionRunner({
+        const {
+          runFormatterSuggestionForMention,
+          postFormatterVisibleDiagnostic,
+        } = createMentionFormatterRuntime({
           workspace,
-          owner: mention.owner,
-          repo: mention.repo,
-          prNumber: mention.prNumber,
-          baseRef: mention.baseRef,
-          headRef: mention.headRef,
+          mention,
           formatterCommand: config.review.formatterSuggestions.command,
           maxSuggestions: config.review.formatterSuggestions.maxSuggestions,
           installationId: event.installationId,
           deliveryId: event.id,
           reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
-          octokit: octokit as never,
+          octokit,
           botHandles: possibleHandles,
-          logger,
-          logContext: {
-            surface: mention.surface,
-          },
-          classifyFailure: (err) => classifyError(err, false),
-          fetchPullRequestFiles: (params) => fetchAllPullRequestFiles({
-            octokit,
-            owner: params.owner,
-            repo: params.repo,
-            pullNumber: params.pullNumber,
-          }),
-          formatterSuggestionSubflow,
-        });
-
-        const postFormatterVisibleDiagnostic = createFormatterSuggestionVisibleDiagnosticPoster({
           postReply: postMentionReply,
           logger,
-          logContext: {
-            surface: mention.surface,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber,
-          },
-          classifyFailure: (err) => classifyError(err, false),
+          formatterSuggestionSubflow,
         });
 
         const formatOnlyPublication = await publishFormatOnlyMentionFormatterResult({

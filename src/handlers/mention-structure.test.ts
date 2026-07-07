@@ -157,10 +157,13 @@ describe("mention handler structure", () => {
 
   test("keeps formatter visible diagnostic option binding out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./mention-formatter-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const postFormatterVisibleDiagnostic = (");
     expect(source).not.toContain("postFormatterSuggestionVisibleDiagnostic({");
-    expect(source).toContain("createFormatterSuggestionVisibleDiagnosticPoster");
+    expect(source).not.toContain("createFormatterSuggestionVisibleDiagnosticPoster");
+    expect(source).toContain("createMentionFormatterRuntime");
+    expect(runtimeSource).toContain("createFormatterSuggestionVisibleDiagnosticPoster");
   });
 
   test("keeps combined review-and-format log shaping out of the monster handler", () => {
@@ -569,10 +572,26 @@ describe("mention handler structure", () => {
 
   test("keeps formatter suggestion runner binding out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./mention-formatter-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const runFormatterSuggestionForMention = async");
-    expect(source).toContain("createFormatterSuggestionMentionRunner");
-    expect(source).toContain("./formatter-suggestion-orchestration.ts");
+    expect(source).not.toContain("createFormatterSuggestionMentionRunner");
+    expect(source).toContain("createMentionFormatterRuntime");
+    expect(source).toContain("./mention-formatter-runtime.ts");
+    expect(runtimeSource).toContain("createFormatterSuggestionMentionRunner");
+  });
+
+  test("keeps formatter suggestion runtime dependency assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./mention-formatter-runtime.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("createFormatterSuggestionMentionRunner({");
+    expect(source).not.toContain("createFormatterSuggestionVisibleDiagnosticPoster({");
+    expect(source).not.toContain("fetchPullRequestFiles({");
+    expect(source).toContain("createMentionFormatterRuntime");
+    expect(source).toContain("./mention-formatter-runtime.ts");
+    expect(runtimeSource).toContain("createFormatterSuggestionMentionRunner");
+    expect(runtimeSource).toContain("createFormatterSuggestionVisibleDiagnosticPoster");
   });
 
   test("keeps explicit review prompt and routing assembly out of the monster handler", () => {
