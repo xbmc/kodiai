@@ -5,7 +5,18 @@ describe("mention handler structure", () => {
   test("keeps the mention handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1000);
+    expect(source.split("\n").length).toBeLessThanOrEqual(510);
+  });
+
+  test("keeps mention handler dependency contract out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const dependenciesSource = readFileSync(new URL("./mention-handler-dependencies.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("eventRouter: EventRouter;");
+    expect(source).not.toContain("formatterSuggestionSubflow?: typeof runFormatterSuggestionSubflow;");
+    expect(source).toContain("import type { MentionHandlerDependencies }");
+    expect(source).toContain("./mention-handler-dependencies.ts");
+    expect(dependenciesSource).toContain("export type MentionHandlerDependencies");
   });
 
   test("keeps GitHub mention publication helpers out of the monster handler", () => {

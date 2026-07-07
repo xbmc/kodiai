@@ -1,14 +1,5 @@
-import type { Logger } from "pino";
-import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
-import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
-import type { GitHubApp } from "../auth/github-app.ts";
-import type { createExecutor } from "../execution/executor.ts";
-import type { TelemetryStore } from "../telemetry/types.ts";
-import type { KnowledgeStore } from "../knowledge/types.ts";
-import type { createRetriever } from "../knowledge/retrieval.ts";
-import type { ForkManager } from "../jobs/fork-manager.ts";
-import type { GistPublisher } from "../jobs/gist-publisher.ts";
+import type { WebhookEvent } from "../webhook/types.ts";
+import type { Workspace } from "../jobs/types.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
@@ -27,7 +18,7 @@ import { createMentionFindingLookup } from "./mention-finding-context.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
-import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
+import { createMentionHandlerRuntime } from "./mention-handler-runtime.ts";
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
@@ -36,6 +27,7 @@ import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
 import { runMentionExecutorDispatchPhase } from "./mention-executor-dispatch-phase.ts";
 import { prepareMentionRequestExecutionContext } from "./mention-request-preparation.ts";
 import { buildMentionSetupOctokitAdapters } from "./mention-setup-octokit.ts";
+import type { MentionHandlerDependencies } from "./mention-handler-dependencies.ts";
 import {
   buildMentionPostExecutorPublicationAdapters,
   publishMentionPostExecutorOutputs,
@@ -54,33 +46,7 @@ const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
  * - pull_request_review_comment.created (inline diff comments)
  * - pull_request_review.submitted (review body)
  */
-export function createMentionHandler(deps: {
-  eventRouter: EventRouter;
-  jobQueue: JobQueue;
-  workspaceManager: WorkspaceManager;
-  githubApp: GitHubApp;
-  executor: ReturnType<typeof createExecutor>;
-  telemetryStore: TelemetryStore;
-  knowledgeStore?: KnowledgeStore;
-  retriever?: ReturnType<typeof createRetriever>;
-  /** Fork manager for fork-based write mode (Phase 127). */
-  forkManager?: ForkManager;
-  /** Gist publisher for patch output mode (Phase 127). */
-  gistPublisher?: GistPublisher;
-  /** Optional SQL client for guardrail audit logging (GUARD-06). */
-  sql?: import("../db/client.ts").Sql;
-  /** Optional in-memory coordinator for same-PR review-family publish rights. */
-  reviewWorkCoordinator?: ReviewWorkCoordinator;
-  /** Optional derived-context cache store overrides for mention-context reuse tests/fail-open wiring. */
-  mentionDerivedContextCacheOptions?: MentionDerivedContextCacheOptions;
-  /** Optional formatter-suggestion subflow override for mention orchestration tests. */
-  formatterSuggestionSubflow?: typeof runFormatterSuggestionSubflow;
-  /** Optional addon-review dispatcher override for addon-repo explicit review routing tests. */
-  addonReviewDispatcher?: (event: WebhookEvent) => Promise<void>;
-  /** Configured addon repositories that should route `@kodiai review` to addon-rule review. */
-  addonRepos?: readonly string[];
-  logger: Logger;
-}): void {
+export function createMentionHandler(deps: MentionHandlerDependencies): void {
   const {
     eventRouter,
     jobQueue,
