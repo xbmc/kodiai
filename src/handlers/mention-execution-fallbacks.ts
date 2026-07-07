@@ -1,0 +1,118 @@
+import type { Logger } from "pino";
+import type { ExplicitMentionReviewPublishSkipReason } from "../review-orchestration/explicit-mention-review-publish.ts";
+import {
+  type MentionErrorDelivery,
+  type MentionErrorPostResult,
+  type MentionPublishResolution,
+} from "./mention-publication-state.ts";
+import { publishMentionFailureFallback } from "./mention-failure-publication.ts";
+import {
+  publishMentionErrorFallback,
+  publishMentionSuccessFallback,
+} from "./mention-result-fallback-publication.ts";
+
+export type MentionExecutionFallbackResult = {
+  conclusion: string;
+  resultText?: string;
+  isTimeout?: boolean;
+  errorMessage?: string;
+  stopReason?: string;
+  failureSubtype?: string;
+};
+
+export type MentionExecutionFallbackState = {
+  mentionOutputPublished: boolean;
+  publishResolution: MentionPublishResolution;
+  publishFallbackDelivery: MentionErrorDelivery | null;
+};
+
+export async function publishMentionExecutionFallbacks(params: MentionExecutionFallbackState & {
+  writeEnabled: boolean;
+  reviewPublishRightsLost: boolean;
+  result: MentionExecutionFallbackResult;
+  explicitReviewRequest: boolean;
+  hasUnpublishedFindings: boolean;
+  findingLines: string[];
+  skipReason: ExplicitMentionReviewPublishSkipReason | undefined;
+  routingReason: string | undefined;
+  reviewOutputKey: string | undefined;
+  surface: string;
+  issueNumber: number;
+  canPublishExplicitReviewOutput: (reason: string, reviewOutputKey: string | undefined) => boolean;
+  postMentionReply: (replyBody: string) => Promise<void>;
+  postMentionError: (errorBody: string) => Promise<MentionErrorPostResult>;
+  logger: Logger;
+}): Promise<MentionExecutionFallbackState> {
+  let mentionOutputPublished = params.mentionOutputPublished;
+  let publishResolution = params.publishResolution;
+  let publishFallbackDelivery = params.publishFallbackDelivery;
+
+  if (
+    !params.writeEnabled
+    && params.result.conclusion === "success"
+    && !mentionOutputPublished
+    && publishResolution !== "publish-failure-comment-failed"
+    && !params.reviewPublishRightsLost
+  ) {
+    await publishMentionSuccessFallback({
+      explicitReviewRequest: params.explicitReviewRequest,
+      hasUnpublishedFindings: params.hasUnpublishedFindings,
+      findingLines: params.findingLines,
+      resultText: params.result.resultText,
+      skipReason: params.skipReason,
+      reviewOutputKey: params.reviewOutputKey,
+      canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
+      postMentionReply: params.postMentionReply,
+    });
+  }
+
+  if (params.result.conclusion === "error" && !params.reviewPublishRightsLost) {
+    const errorFallbackPublication = await publishMentionErrorFallback({
+      explicitReviewRequest: params.explicitReviewRequest,
+      isTimeout: params.result.isTimeout,
+      errorMessage: params.result.errorMessage,
+      reviewOutputKey: params.reviewOutputKey,
+      canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
+      postMentionError: params.postMentionError,
+    });
+    const errorFallbackPublicationState = errorFallbackPublication.ok
+      ? errorFallbackPublication.value
+      : errorFallbackPublication.err;
+    if (errorFallbackPublicationState.resolution !== "skipped") {
+      mentionOutputPublished = errorFallbackPublicationState.published;
+      publishResolution = errorFallbackPublicationState.resolution;
+      publishFallbackDelivery = errorFallbackPublicationState.fallbackDelivery;
+    }
+  }
+
+  if (
+    params.result.conclusion === "failure"
+    && !mentionOutputPublished
+    && !params.reviewPublishRightsLost
+  ) {
+    const fallbackPublication = await publishMentionFailureFallback({
+      explicitReviewRequest: params.explicitReviewRequest,
+      routingReason: params.routingReason,
+      stopReason: params.result.stopReason,
+      failureSubtype: params.result.failureSubtype,
+      reviewOutputKey: params.reviewOutputKey,
+      surface: params.surface,
+      issueNumber: params.issueNumber,
+      canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
+      postMentionError: params.postMentionError,
+      logger: params.logger,
+    });
+    const fallbackPublicationState = fallbackPublication.ok ? fallbackPublication.value : fallbackPublication.err;
+    if (fallbackPublicationState.resolution !== "skipped") {
+      mentionOutputPublished = fallbackPublicationState.published;
+      publishResolution = fallbackPublicationState.resolution;
+      publishFallbackDelivery = fallbackPublicationState.fallbackDelivery;
+    }
+  }
+
+  return {
+    mentionOutputPublished,
+    publishResolution,
+    publishFallbackDelivery,
+  };
+}

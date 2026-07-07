@@ -232,25 +232,37 @@ describe("mention handler structure", () => {
 
   test("keeps execution failure fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const fallbackSource = readFileSync(new URL("./mention-execution-fallbacks.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const failureFallbackBody = buildMentionFailureFallbackBody");
     expect(source).not.toContain("publishResolution = \"turn-limit-fallback-failed\"");
     expect(source).not.toContain("publishResolution = \"failure-fallback-failed\"");
     expect(source).not.toContain("Failed to post turn-limit notice (non-blocking)");
     expect(source).not.toContain("Failed to post failure fallback notice (non-blocking)");
-    expect(source).toContain("publishMentionFailureFallback");
-    expect(source).toContain("./mention-failure-publication.ts");
+    expect(fallbackSource).toContain("publishMentionFailureFallback");
+    expect(fallbackSource).toContain("./mention-failure-publication.ts");
   });
 
   test("keeps execution success and error fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const fallbackSource = readFileSync(new URL("./mention-execution-fallbacks.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const fallbackBody = buildMentionSuccessFallbackBody");
     expect(source).not.toContain("const errorBody = buildMentionErrorFallbackBody");
     expect(source).not.toContain("publishResolution = \"error-comment-failed\"");
-    expect(source).toContain("publishMentionSuccessFallback");
-    expect(source).toContain("publishMentionErrorFallback");
-    expect(source).toContain("./mention-result-fallback-publication.ts");
+    expect(fallbackSource).toContain("publishMentionSuccessFallback");
+    expect(fallbackSource).toContain("publishMentionErrorFallback");
+    expect(fallbackSource).toContain("./mention-result-fallback-publication.ts");
+  });
+
+  test("keeps post-execution fallback branching out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("publishResolution !== \"publish-failure-comment-failed\"");
+    expect(source).not.toContain("const errorFallbackPublication = await publishMentionErrorFallback");
+    expect(source).not.toContain("const fallbackPublication = await publishMentionFailureFallback");
+    expect(source).toContain("publishMentionExecutionFallbacks");
+    expect(source).toContain("./mention-execution-fallbacks.ts");
   });
 
   test("keeps explicit review approval publication recovery out of the monster handler", () => {

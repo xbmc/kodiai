@@ -100,11 +100,8 @@ import {
   createMentionPublisher,
 } from "./mention-publication.ts";
 import {
-  publishMentionErrorFallback,
   publishMentionHandlerFailureError,
-  publishMentionSuccessFallback,
 } from "./mention-result-fallback-publication.ts";
-import { publishMentionFailureFallback } from "./mention-failure-publication.ts";
 import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
   buildMentionQueueKey,
@@ -145,6 +142,7 @@ import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review
 import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
 import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-review-publish-decision.ts";
 import { resolveMentionRequestContext } from "./mention-request-context.ts";
+import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -1263,76 +1261,30 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        // If Claude finished successfully but did not publish any output, post a fallback reply.
-        // This prevents "silent success" where the model chose not to call any comment tools.
-        // Explicit review publish failures that already exhausted the comment fallback path must
-        // not fall through here, or we spam the same broken comment surface with a less specific reply.
-        if (
-          !writeEnabled &&
-          result.conclusion === "success" &&
-          !mentionOutputPublished &&
-          publishResolution !== "publish-failure-comment-failed" &&
-          !reviewWorkRuntime.reviewPublishRightsLost
-        ) {
-          await publishMentionSuccessFallback({
-            explicitReviewRequest,
-            hasUnpublishedFindings: explicitReviewPublishEvaluation.hasUnpublishedFindings,
-            findingLines: explicitReviewResultFindingLines,
-            resultText: result.resultText,
-            skipReason: explicitReviewPublishEvaluation.skipReason,
-            reviewOutputKey,
-            canPublishExplicitReviewOutput,
-            postMentionReply,
-          });
-        }
-
-        // If execution errored, post or update error comment with classified message
-        if (result.conclusion === "error" && !reviewWorkRuntime.reviewPublishRightsLost) {
-          const errorFallbackPublication = await publishMentionErrorFallback({
-            explicitReviewRequest,
-            isTimeout: result.isTimeout,
-            errorMessage: result.errorMessage,
-            reviewOutputKey,
-            canPublishExplicitReviewOutput,
-            postMentionError,
-          });
-          const errorFallbackPublicationState = errorFallbackPublication.ok
-            ? errorFallbackPublication.value
-            : errorFallbackPublication.err;
-          if (errorFallbackPublicationState.resolution !== "skipped") {
-            mentionOutputPublished = errorFallbackPublicationState.published;
-            publishResolution = errorFallbackPublicationState.resolution;
-            publishFallbackDelivery = errorFallbackPublicationState.fallbackDelivery;
-          }
-        }
-
-        // If execution failed without publishing, always post a user-visible fallback.
-        // The SDK can return conclusion="failure" with stop reasons other than max_turns,
-        // and previously those paths could finish silently.
-        if (
-          result.conclusion === "failure"
-          && !mentionOutputPublished
-          && !reviewWorkRuntime.reviewPublishRightsLost
-        ) {
-          const fallbackPublication = await publishMentionFailureFallback({
-            explicitReviewRequest,
-            routingReason: explicitReviewRouting.routingReason,
-            stopReason: result.stopReason,
-            failureSubtype: result.failureSubtype,
-            reviewOutputKey,
-            surface: mention.surface,
-            issueNumber: mention.issueNumber,
-            canPublishExplicitReviewOutput,
-            postMentionError,
-            logger,
-          });
-          const fallbackPublicationState = fallbackPublication.ok ? fallbackPublication.value : fallbackPublication.err;
-          if (fallbackPublicationState.resolution !== "skipped") {
-            mentionOutputPublished = fallbackPublicationState.published;
-            publishResolution = fallbackPublicationState.resolution;
-            publishFallbackDelivery = fallbackPublicationState.fallbackDelivery;
-          }
-        }
+        ({
+          mentionOutputPublished,
+          publishResolution,
+          publishFallbackDelivery,
+        } = await publishMentionExecutionFallbacks({
+          writeEnabled,
+          reviewPublishRightsLost: reviewWorkRuntime.reviewPublishRightsLost,
+          mentionOutputPublished,
+          publishResolution,
+          publishFallbackDelivery,
+          result,
+          explicitReviewRequest,
+          hasUnpublishedFindings: explicitReviewPublishEvaluation.hasUnpublishedFindings,
+          findingLines: explicitReviewResultFindingLines,
+          skipReason: explicitReviewPublishEvaluation.skipReason,
+          routingReason: explicitReviewRouting.routingReason,
+          reviewOutputKey,
+          surface: mention.surface,
+          issueNumber: mention.issueNumber,
+          canPublishExplicitReviewOutput,
+          postMentionReply,
+          postMentionError,
+          logger,
+        }));
 
         if (shouldDeferMentionCompletionLog) {
           logMentionExecutionCompleted();
