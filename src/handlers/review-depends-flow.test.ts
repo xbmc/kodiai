@@ -2,6 +2,11 @@ import { describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import type { DependsBumpInfo } from "../lib/depends-bump-detector.ts";
 import type { DependsReviewData, InlineComment } from "../lib/depends-review-builder.ts";
+import { err as resultErr, ok as resultOk } from "../lib/result.ts";
+import type {
+  DependsReviewPublicationError,
+  DependsReviewPublicationValue,
+} from "./review-depends-publication.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 
 function createLogger() {
@@ -57,7 +62,10 @@ describe("resolveReviewDependsFlow", () => {
       hasSourceChanges: false,
       prFiles: [],
     }));
-    const publishOutput = mock(async () => ({
+    const publishOutput = mock(async () => resultOk<
+      DependsReviewPublicationValue,
+      DependsReviewPublicationError
+    >({
       publishedSummary: true,
       publishedInlineComments: true,
     }));
@@ -147,7 +155,10 @@ describe("resolveReviewDependsFlow", () => {
       })),
       buildComment: mock(() => "depends summary"),
       buildInlineComments: mock(() => []),
-      publishOutput: mock(async () => ({
+      publishOutput: mock(async () => resultOk<
+        DependsReviewPublicationValue,
+        DependsReviewPublicationError
+      >({
         publishedSummary: false,
         publishedInlineComments: false,
       })),
@@ -202,6 +213,53 @@ describe("resolveReviewDependsFlow", () => {
       gate: "depends-pipeline",
     });
     expect(warn.mock.calls[0]?.[1]).toBe(
+      "[depends] pipeline failed (fail-open, falling through to standard review)",
+    );
+  });
+
+  test("fails open to standard review when depends publication returns an error", async () => {
+    const { logger, warn } = createLogger();
+    const detected = dependsInfo();
+    const publishError = new Error("depends publication failed");
+
+    const result = await resolveReviewDependsFlow({
+      prTitle: detected.rawTitle,
+      octokit: {} as never,
+      owner: "acme",
+      repo: "widgets",
+      prNumber: 42,
+      workspaceDir: null,
+      logger,
+      baseLog: { deliveryId: "delivery-1", prNumber: 42 },
+      botHandles: ["kodiai", "claude"],
+      canPublishVisibleOutput: () => true,
+      setReviewWorkPhase: mock((_phase: "publish") => {}),
+      detectBump: mock(() => detected),
+      fetchPullRequestFiles: mock(async () => []),
+      buildContext: mock(async () => ({
+        reviewData: reviewData(detected),
+        hasSourceChanges: false,
+        prFiles: [],
+      })),
+      buildComment: mock(() => "depends summary"),
+      buildInlineComments: mock(() => []),
+      publishOutput: mock(async () => resultErr<DependsReviewPublicationError>({
+        publicationStep: "summary",
+        publishedSummary: false,
+        publishedInlineComments: false,
+        error: publishError,
+      })),
+    });
+
+    expect(result).toEqual({
+      action: "continue-standard-review",
+      dependsBumpInfo: null,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: publishError,
+        gate: "depends-pipeline",
+      }),
       "[depends] pipeline failed (fail-open, falling through to standard review)",
     );
   });

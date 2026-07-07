@@ -4,11 +4,24 @@ import {
   createPullReviewWithPublicationPipeline,
 } from "../lib/github-publication.ts";
 import type { InlineComment } from "../lib/depends-review-builder.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 
-export type DependsReviewPublicationResult = {
+export type DependsReviewPublicationValue = {
   publishedSummary: boolean;
   publishedInlineComments: boolean;
 };
+
+export type DependsReviewPublicationError = {
+  publicationStep: "summary" | "inline";
+  publishedSummary: boolean;
+  publishedInlineComments: boolean;
+  error: unknown;
+};
+
+export type DependsReviewPublicationResult = Result<
+  DependsReviewPublicationValue,
+  DependsReviewPublicationError
+>;
 
 export async function publishDependsReviewOutput(params: {
   octokit: Octokit;
@@ -26,14 +39,23 @@ export async function publishDependsReviewOutput(params: {
 
   if (params.canPublishVisibleOutput("[depends] deep review summary comment")) {
     params.setReviewWorkPhase("publish");
-    await createIssueCommentWithPublicationPipeline(params.octokit, {
-      owner: params.owner,
-      repo: params.repo,
-      issue_number: params.prNumber,
-      body: params.summaryBody,
-      botHandles: params.botHandles,
-      preserveKodiaiMarkers: true,
-    });
+    try {
+      await createIssueCommentWithPublicationPipeline(params.octokit, {
+        owner: params.owner,
+        repo: params.repo,
+        issue_number: params.prNumber,
+        body: params.summaryBody,
+        botHandles: params.botHandles,
+        preserveKodiaiMarkers: true,
+      });
+    } catch (error) {
+      return err({
+        publicationStep: "summary",
+        publishedSummary,
+        publishedInlineComments,
+        error,
+      });
+    }
     publishedSummary = true;
   }
 
@@ -42,20 +64,29 @@ export async function publishDependsReviewOutput(params: {
     && params.canPublishVisibleOutput("[depends] deep review inline comments")
   ) {
     params.setReviewWorkPhase("publish");
-    await createPullReviewWithPublicationPipeline(params.octokit, {
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: params.prNumber,
-      event: "COMMENT",
-      comments: params.inlineComments.map(comment => ({
-        path: comment.path,
-        line: comment.line,
-        body: comment.body,
-      })),
-      botHandles: params.botHandles,
-    });
+    try {
+      await createPullReviewWithPublicationPipeline(params.octokit, {
+        owner: params.owner,
+        repo: params.repo,
+        pull_number: params.prNumber,
+        event: "COMMENT",
+        comments: params.inlineComments.map(comment => ({
+          path: comment.path,
+          line: comment.line,
+          body: comment.body,
+        })),
+        botHandles: params.botHandles,
+      });
+    } catch (error) {
+      return err({
+        publicationStep: "inline",
+        publishedSummary,
+        publishedInlineComments,
+        error,
+      });
+    }
     publishedInlineComments = true;
   }
 
-  return { publishedSummary, publishedInlineComments };
+  return ok({ publishedSummary, publishedInlineComments });
 }

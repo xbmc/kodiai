@@ -149,7 +149,7 @@ export async function resolveReviewDependsFlow(params: {
     const inlineComments = buildInlineComments(dependsContext.reviewData, prFilesForDepends);
 
     params.setReviewWorkPhase("publish");
-    const publication: DependsReviewPublicationResult = await publishOutput({
+    const publicationResult: DependsReviewPublicationResult = await publishOutput({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -160,6 +160,10 @@ export async function resolveReviewDependsFlow(params: {
       canPublishVisibleOutput: params.canPublishVisibleOutput,
       setReviewWorkPhase: params.setReviewWorkPhase,
     });
+    if (!publicationResult.ok) {
+      throw publicationResult.err.error;
+    }
+    const publication = publicationResult.value;
 
     if (publication.publishedSummary || publication.publishedInlineComments) {
       logger.info({

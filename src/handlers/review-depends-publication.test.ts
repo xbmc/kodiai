@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { err as resultErr } from "../lib/result.ts";
 import { publishDependsReviewOutput } from "./review-depends-publication.ts";
 
 describe("depends review publication", () => {
@@ -28,8 +29,11 @@ describe("depends review publication", () => {
     });
 
     expect(result).toEqual({
-      publishedSummary: true,
-      publishedInlineComments: true,
+      ok: true,
+      value: {
+        publishedSummary: true,
+        publishedInlineComments: true,
+      },
     });
     expect(phaseCalls).toEqual(["publish", "publish"]);
     expect(createComment).toHaveBeenCalledTimes(1);
@@ -78,10 +82,49 @@ describe("depends review publication", () => {
     });
 
     expect(result).toEqual({
-      publishedSummary: false,
-      publishedInlineComments: false,
+      ok: true,
+      value: {
+        publishedSummary: false,
+        publishedInlineComments: false,
+      },
     });
     expect(createComment).not.toHaveBeenCalled();
+    expect(createReview).not.toHaveBeenCalled();
+  });
+
+  test("returns a publication error when summary publication fails", async () => {
+    const publishError = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw publishError;
+    });
+    const createReview = mock(async () => ({ data: { id: 101 } }));
+    const octokit = {
+      rest: {
+        issues: { createComment },
+        pulls: { createReview },
+      },
+    } as any;
+
+    const result = await publishDependsReviewOutput({
+      octokit,
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      summaryBody: "Depends review",
+      inlineComments: [
+        { path: "depends/common/libfoo/libfoo.txt", line: 12, body: "Check this." },
+      ],
+      botHandles: ["kodiai", "claude"],
+      canPublishVisibleOutput: () => true,
+      setReviewWorkPhase: mock((_phase: "publish") => {}),
+    });
+
+    expect(result).toEqual(resultErr({
+      publicationStep: "summary",
+      publishedSummary: false,
+      publishedInlineComments: false,
+      error: publishError,
+    }));
     expect(createReview).not.toHaveBeenCalled();
   });
 });
