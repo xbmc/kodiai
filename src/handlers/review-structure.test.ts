@@ -485,6 +485,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-handler-failure-recovery.ts");
   });
 
+  test("keeps review phase summary finalization out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const shouldLogPhaseSummary =");
+    expect(source).not.toContain("buildOrderedReviewPhaseSummary(reviewPhaseTimings)");
+    expect(source).not.toContain("buildReviewPhaseTimingSummaryLogFields({");
+    expect(source).not.toContain("\"Review phase timing summary\"");
+    expect(source).toContain("finalizeReviewPhaseSummary");
+    expect(source).toContain("./review-phase-summary-finalization.ts");
+  });
+
   test("keeps generic failure fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

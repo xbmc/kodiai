@@ -96,7 +96,6 @@ import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-tim
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
   buildExecutorUnavailablePhases,
-  buildOrderedReviewPhaseSummary,
   buildQueueWaitPhase,
   buildReviewDetailsPhaseTimingSummary,
   createReviewPhaseTiming,
@@ -178,7 +177,6 @@ import {
   recordReviewCacheEventFailOpen,
 } from "./review-handler-utils.ts";
 import {
-  buildReviewPhaseTimingSummaryLogFields,
   createReviewExecutionCompletedLogger,
 } from "./review-publication-state.ts";
 import {
@@ -248,6 +246,7 @@ import { logReviewCandidatePublicationAdapterContext } from "./review-candidate-
 import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-context.ts";
 import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome.ts";
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
+import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -3467,54 +3466,25 @@ export function createReviewHandler(deps: {
           }
         }
 
-        if (publicationPhaseStartedAt !== undefined && !reviewPhaseTimings.has("publication")) {
-          reviewPhaseTimings.set(
-            "publication",
-            createReviewPhaseTiming({
-              name: "publication",
-              status: "completed",
-              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-            }),
-          );
-        }
-
         logReviewExecutionCompleted();
 
-        const shouldLogPhaseSummary =
-          workspacePhaseStartedAt !== undefined ||
-          retrievalPhaseStartedAt !== undefined ||
-          publicationPhaseStartedAt !== undefined ||
-          executorResult !== undefined;
-
-        if (
-          shouldLogPhaseSummary &&
-          typeof event.id === "string" &&
-          event.id.length > 0 &&
-          reviewOutputKey.length > 0
-        ) {
-          const phases = buildOrderedReviewPhaseSummary(reviewPhaseTimings);
-          const totalDurationMs = Math.max(0, Date.now() - totalPhaseStartAt);
-          try {
-            logger.info(
-              buildReviewPhaseTimingSummaryLogFields({
-                deliveryId: event.id,
-                reviewOutputKey,
-                installationId: event.installationId,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                executorResult,
-                reviewOutputPublished,
-                reviewPublishResolution,
-                reviewPublishFallbackDelivery,
-                totalDurationMs,
-                phases,
-              }),
-              "Review phase timing summary",
-            );
-          } catch {
-            // logging failures must never block review publication
-          }
-        }
+        finalizeReviewPhaseSummary({
+          reviewPhaseTimings,
+          workspacePhaseStartedAt,
+          retrievalPhaseStartedAt,
+          publicationPhaseStartedAt,
+          totalPhaseStartAt,
+          executorResult,
+          deliveryId: event.id,
+          reviewOutputKey,
+          installationId: event.installationId,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          reviewOutputPublished,
+          reviewPublishResolution,
+          reviewPublishFallbackDelivery,
+          logger,
+        });
 
         if (workspace) {
           await workspace.cleanup();
