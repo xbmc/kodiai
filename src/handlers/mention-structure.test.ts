@@ -196,6 +196,18 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-request-context.ts");
   });
 
+  test("keeps mention write request projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const isIssueThreadComment = event.name === \"issue_comment\"");
+    expect(source).not.toContain("const isPrSurface = mention.prNumber !== undefined;");
+    expect(source).not.toContain("const writeIntent = resolveMentionWriteIntent({");
+    expect(source).not.toContain("const writeKeyword = writeIntent.keyword ?? \"apply\";");
+    expect(source).not.toContain("buildMentionWriteContext({");
+    expect(source).toContain("resolveMentionWriteRequestContext");
+    expect(source).toContain("./mention-write-request-context.ts");
+  });
+
   test("keeps allowed-users matching out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

@@ -14,21 +14,12 @@ import {
   createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
 import {
-  detectImplicitIssueIntent,
-  detectImplicitPrPatchIntent,
   isCodeSeekingMentionRequest,
-  isReviewRequest,
 } from "./mention-request-classification.ts";
-import {
-  resolveMentionWriteIntent,
-} from "./mention-write-formatters.ts";
 import {
   maybeReplyWritePermissionFailure,
   summarizeErrorForDiagnostics,
 } from "./mention-write-replies.ts";
-import {
-  buildMentionWriteContext,
-} from "./mention-write-keys.ts";
 import { evaluateMentionWriteContextGate } from "./mention-write-context-gate.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
@@ -112,6 +103,7 @@ import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
 import { resolveMentionForkContext } from "./mention-fork-context.ts";
+import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -449,11 +441,30 @@ export function createMentionHandler(deps: {
         }
         const { userQuestion, formatterSuggestionRequest } = mentionRequestContext;
 
-        const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
-        const isPrSurface = mention.prNumber !== undefined;
-        explicitReviewRequest = isPrSurface && (
-          isReviewRequest(userQuestion) || formatterSuggestionRequest?.mode === "review-and-format"
-        );
+        const mentionWriteRequestContext = resolveMentionWriteRequestContext({
+          eventName: event.name,
+          installationId: event.installationId,
+          appSlug,
+          mention,
+          userQuestion,
+          formatterSuggestionRequestMode: formatterSuggestionRequest?.mode,
+          writeConfigEnabled: config.write.enabled,
+        });
+        const {
+          isIssueThreadComment,
+          isPrSurface,
+          writeIntent,
+          isWriteRequest,
+          isPlanOnly,
+          writeEnabled,
+          writeKeyword,
+          retryCommand,
+          triggerCommentUrl,
+          writeBranchName,
+          writeOutputKey,
+          writeSource,
+        } = mentionWriteRequestContext;
+        explicitReviewRequest = mentionWriteRequestContext.explicitReviewRequest;
         if (explicitReviewRequest && mention.prNumber !== undefined && await routeAddonRuleReviewMention({
           event,
           owner: mention.owner,
@@ -466,38 +477,6 @@ export function createMentionHandler(deps: {
         })) {
           return;
         }
-        const writeIntent = resolveMentionWriteIntent({
-          userQuestion,
-          isIssueThreadComment,
-          isPrSurface,
-          formatterSuggestionRequestMode: formatterSuggestionRequest?.mode,
-          detectImplicitIssueIntent,
-          detectImplicitPrPatchIntent,
-          isReviewRequest,
-        });
-
-        const isWriteRequest = writeIntent.writeIntent;
-        const isPlanOnly = writeIntent.keyword === "plan";
-        const writeEnabled = isWriteRequest && !isPlanOnly && config.write.enabled;
-        const writeKeyword = writeIntent.keyword ?? "apply";
-        const {
-          retryCommand,
-          triggerCommentUrl,
-          writeBranchName,
-          writeOutputKey,
-          writeSource,
-        } = buildMentionWriteContext({
-          writeEnabled,
-          writeKeyword,
-          writeRequest: writeIntent.request,
-          installationId: event.installationId,
-          owner: mention.owner,
-          repo: mention.repo,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-          commentId: mention.commentId,
-          appSlug,
-        });
 
         const runFormatterSuggestionForMention = createFormatterSuggestionMentionRunner({
           workspace,
