@@ -142,7 +142,10 @@ import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { resolveReviewChangedFileContext } from "./review-changed-file-context.ts";
 import { resolveReviewPlanningContext } from "./review-planning-context.ts";
 import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.ts";
-import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
+import {
+  buildReviewTimeoutClassificationContextParams,
+  resolveReviewTimeoutClassificationContext,
+} from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import {
   buildReviewTimeoutRetryEnqueueParams,
@@ -1175,40 +1178,31 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
               visibleBudgetState.refresh();
             }
 
-            const timeoutClassificationTelemetry = resolveReviewTimeoutClassificationContext({
-              logger,
-              baseLog,
-              deliveryId: event.id,
-              reviewOutputKey,
-              prNumber: pr.number,
-              outcome: {
-                isTimeout: result.isTimeout,
-                stopReason: result.stopReason,
-                failureSubtype: result.failureSubtype,
-              },
-              timeoutFirstPass: timeoutFirstPass
-                ? {
-                    state: timeoutFirstPass.state,
-                    boundedReason: timeoutFirstPass.boundedReason,
-                    evidenceSource: timeoutFirstPass.evidenceSource,
-                    continuationPending: timeoutFirstPass.continuationPending,
-                    zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
-                  }
-                : null,
-              checkpoint: checkpoint
-                ? {
-                    filesReviewed: timeoutReviewedFiles.length,
-                    filesInspected: timeoutInspectedFiles.length,
-                    findingCount: timeoutFindingCount,
-                    totalFiles: timeoutTotalFiles,
-                  }
-                : null,
-              retryPlan,
-              chronicTimeout: isChronicTimeout,
-              recentTimeouts,
-              durationMs: result.durationMs,
-              timeoutDurationSeconds: timeoutDuration,
-            });
+            const timeoutClassificationTelemetry = resolveReviewTimeoutClassificationContext(
+              buildReviewTimeoutClassificationContextParams({
+                logger,
+                baseLog,
+                deliveryId: event.id,
+                reviewOutputKey,
+                prNumber: pr.number,
+                outcome: {
+                  isTimeout: result.isTimeout,
+                  stopReason: result.stopReason,
+                  failureSubtype: result.failureSubtype,
+                },
+                timeoutFirstPass,
+                hasCheckpoint: checkpoint !== null,
+                timeoutReviewedFiles,
+                timeoutInspectedFiles,
+                timeoutFindingCount,
+                timeoutTotalFiles,
+                retryPlan,
+                chronicTimeout: isChronicTimeout,
+                recentTimeouts,
+                durationMs: result.durationMs,
+                timeoutDurationSeconds: timeoutDuration,
+              }),
+            );
             const timeoutBudgetDetails = normalizeReviewTimeoutBudgetDetails(appliedTimeoutBudget);
 
             const timeoutPublicationContext = resolveReviewTimeoutPublicationContext({

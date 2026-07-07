@@ -7,9 +7,10 @@ import {
   logReviewTimeoutClassification,
   type ReviewTimeoutClassificationTelemetry,
 } from "../review-orchestration/review-timeout-classification-log.ts";
+import type { ReviewFirstPassPayload } from "../lib/review-first-pass.ts";
 import type { ReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 
-export function resolveReviewTimeoutClassificationContext(params: {
+type ReviewTimeoutClassificationContextParams = {
   logger: Logger;
   baseLog: Record<string, unknown>;
   deliveryId: string;
@@ -23,7 +24,44 @@ export function resolveReviewTimeoutClassificationContext(params: {
   recentTimeouts: number;
   durationMs: number | undefined;
   timeoutDurationSeconds: number;
-}): ReviewTimeoutClassificationTelemetry {
+};
+
+export function buildReviewTimeoutClassificationContextParams(params: Omit<
+  ReviewTimeoutClassificationContextParams,
+  "timeoutFirstPass" | "checkpoint"
+> & {
+  timeoutFirstPass: ReviewFirstPassPayload | null;
+  hasCheckpoint: boolean;
+  timeoutReviewedFiles: readonly unknown[];
+  timeoutInspectedFiles: readonly unknown[];
+  timeoutFindingCount: number;
+  timeoutTotalFiles: number;
+}): ReviewTimeoutClassificationContextParams {
+  return {
+    ...params,
+    timeoutFirstPass: params.timeoutFirstPass
+      ? {
+          state: params.timeoutFirstPass.state,
+          boundedReason: params.timeoutFirstPass.boundedReason,
+          evidenceSource: params.timeoutFirstPass.evidenceSource,
+          continuationPending: params.timeoutFirstPass.continuationPending,
+          zeroEvidenceFailure: params.timeoutFirstPass.zeroEvidenceFailure,
+        }
+      : null,
+    checkpoint: params.hasCheckpoint
+      ? {
+          filesReviewed: params.timeoutReviewedFiles.length,
+          filesInspected: params.timeoutInspectedFiles.length,
+          findingCount: params.timeoutFindingCount,
+          totalFiles: params.timeoutTotalFiles,
+        }
+      : null,
+  };
+}
+
+export function resolveReviewTimeoutClassificationContext(
+  params: ReviewTimeoutClassificationContextParams,
+): ReviewTimeoutClassificationTelemetry {
   const retry = params.retryPlan?.decision === "schedule-continuation"
     ? {
         enqueued: true,

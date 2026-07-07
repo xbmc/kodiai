@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1533);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1527);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -237,8 +237,11 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryClassificationInput =");
     expect(source).not.toContain("const timeoutClassification = classifyReviewTimeoutOutcome({");
     expect(source).not.toContain("const timeoutClassificationTelemetry = logReviewTimeoutClassification({");
+    expect(source).not.toContain("timeoutFirstPass: timeoutFirstPass\n                ? {");
+    expect(source).not.toContain("checkpoint: checkpoint\n                ? {");
     expect(source).toContain("resolveReviewTimeoutClassificationContext");
     expect(source).toContain("./review-timeout-classification-context.ts");
+    expect(classificationSource).toContain("buildReviewTimeoutClassificationContextParams");
     expect(classificationSource).toContain("classifyReviewTimeoutOutcome");
     expect(classificationSource).toContain("logReviewTimeoutClassification");
   });
