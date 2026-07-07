@@ -434,44 +434,71 @@ describe("mention handler structure", () => {
 
   test("keeps explicit review approval publication recovery out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
+    const publicationSource = readFileSync(new URL("./mention-explicit-review-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const explicitReviewLifecycleEvidenceLine = buildExplicitReviewLifecycleEvidenceLine");
     expect(source).not.toContain("const approvalEvidence = [");
     expect(source).not.toContain("publishResolution = \"duplicate-suppressed\"");
     expect(source).not.toContain("publishResolution = \"publish-failure-comment-failed\"");
     expect(source).not.toContain("Explicit mention review publish fallback could not be delivered");
-    expect(source).toContain("publishExplicitMentionReviewResult");
-    expect(source).toContain("./mention-explicit-review-publication.ts");
+    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(source).toContain("./mention-explicit-review-publication-orchestration.ts");
+    expect(orchestrationSource).toContain("publishExplicitMentionReviewResult");
+    expect(publicationSource).toContain("Explicit mention review publish fallback could not be delivered");
   });
 
   test("keeps explicit review validation-truth projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const lifecycleSource = readFileSync(new URL("./mention-explicit-review-lifecycle.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("attachReviewValidationTruth({");
     expect(source).not.toContain("Projected explicit mention review validation truth evidence");
     expect(source).not.toContain("Explicit mention review validation truth diagnostics failed; continuing review publication");
-    expect(source).toContain("projectExplicitMentionReviewValidationTruth");
-    expect(source).toContain("./mention-validation-truth.ts");
+    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(lifecycleSource).toContain("projectExplicitMentionReviewValidationTruth");
+    expect(lifecycleSource).toContain("./mention-validation-truth.ts");
   });
 
   test("keeps explicit review finding lifecycle projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
+    const lifecycleSource = readFileSync(new URL("./mention-explicit-review-lifecycle.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("attachReviewFindingLifecycle({");
     expect(source).not.toContain("Projected explicit mention review finding lifecycle evidence");
     expect(source).not.toContain("trigger: event.name === \"issue_comment\"");
-    expect(source).toContain("projectExplicitMentionReviewLifecycle");
-    expect(source).toContain("./mention-explicit-review-lifecycle.ts");
+    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(orchestrationSource).toContain("projectExplicitMentionReviewLifecycle");
+    expect(lifecycleSource).toContain("attachReviewFindingLifecycle");
   });
 
   test("keeps explicit review publish eligibility and skip logging out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
+    const decisionSource = readFileSync(new URL("./mention-explicit-review-publish-decision.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("evaluateExplicitMentionReviewPublish({");
     expect(source).not.toContain("logExplicitMentionReviewPublishSkipped({");
     expect(source).not.toContain("const explicitReviewResultFindingLines = explicitReviewPublishEvaluation.findingLines");
-    expect(source).toContain("resolveExplicitMentionReviewPublishDecision");
-    expect(source).toContain("./mention-explicit-review-publish-decision.ts");
+    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(orchestrationSource).toContain("resolveExplicitMentionReviewPublishDecision");
+    expect(decisionSource).toContain("evaluateExplicitMentionReviewPublish");
+  });
+
+  test("keeps explicit review publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(new URL("./mention-explicit-review-publication-orchestration.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const explicitReviewFindingLifecycleResult = projectExplicitMentionReviewLifecycle({");
+    expect(source).not.toContain("const explicitReviewPublishDecision = resolveExplicitMentionReviewPublishDecision({");
+    expect(source).not.toContain("publishExplicitMentionReviewResult({");
+    expect(source).not.toContain("let explicitReviewPublication:");
+    expect(source).toContain("publishExplicitMentionReviewIfEligible");
+    expect(source).toContain("./mention-explicit-review-publication-orchestration.ts");
+    expect(orchestrationSource).toContain("projectExplicitMentionReviewLifecycle");
+    expect(orchestrationSource).toContain("resolveExplicitMentionReviewPublishDecision");
+    expect(orchestrationSource).toContain("publishExplicitMentionReviewResult");
   });
 
   test("keeps clone planning out of the monster handler", () => {

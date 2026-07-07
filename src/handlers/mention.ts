@@ -11,15 +11,11 @@ import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
   maybeReplyWritePermissionFailure,
-  summarizeErrorForDiagnostics,
 } from "./mention-write-replies.ts";
 import { evaluateMentionWriteContextGate } from "./mention-write-context-gate.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { classifyError } from "../lib/errors.ts";
-import {
-  type ExplicitMentionReviewPublishSkipReason,
-} from "../review-orchestration/explicit-mention-review-publish.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
   evaluateMentionConversationLimit,
@@ -39,7 +35,6 @@ import {
   createMentionPublisher,
 } from "./mention-publication.ts";
 import { handleMentionHandlerFailureRecovery } from "./mention-handler-failure-recovery.ts";
-import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
   createMentionWorkspaceRuntime,
 } from "./mention-workspace-runtime.ts";
@@ -62,14 +57,12 @@ import {
   buildMentionRetrievalContextForPrompt,
   type MentionRetrievalContext,
 } from "./mention-retrieval-context.ts";
-import { projectExplicitMentionReviewValidationTruth } from "./mention-validation-truth.ts";
 import {
   resolveMentionPrDiffContext,
   type MentionPrDiffContext,
 } from "./mention-pr-diff-context.ts";
-import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
 import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
-import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-review-publish-decision.ts";
+import { publishExplicitMentionReviewIfEligible } from "./mention-explicit-review-publication-orchestration.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
@@ -664,65 +657,36 @@ export function createMentionHandler(deps: {
           logger,
         });
 
-        // Explicit PR review mentions bypass the pull_request review handler's
-        // deterministic clean-review publish path. Bridge that gap here so a
-        // successful no-issues run still produces a GitHub-visible approval.
-        const explicitReviewFindingLifecycleResult = projectExplicitMentionReviewLifecycle({
+        const {
+          explicitReviewPublishEvaluation,
+          explicitReviewResultFindingLines,
+          explicitReviewPublication,
+        } = await publishExplicitMentionReviewIfEligible({
           explicitReviewRequest,
           eventName: event.name,
           mention,
           reviewOutputKey,
           deliveryId: event.id,
+          installationId: event.installationId,
           headSha: explicitReviewHeadSha,
           baseSha: explicitReviewBaseSha,
-          candidateFinding: result.candidateFinding,
-          logger,
-        });
-        const explicitReviewPublishDecision = resolveExplicitMentionReviewPublishDecision({
-          explicitReviewRequest,
-          prNumber: mention.prNumber,
-          reviewOutputKey,
           result: {
             conclusion: result.conclusion,
             published: result.published,
             usedRepoInspectionTools: result.usedRepoInspectionTools,
             resultText: result.resultText,
             toolUseNames: result.toolUseNames,
+            candidateFinding: result.candidateFinding,
           },
-          surface: mention.surface,
-          owner: mention.owner,
-          repo: mention.repo,
+          appSlug,
           autoApprove: config.review.autoApprove,
+          explicitReviewPromptFileCount,
+          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          canPublishExplicitReviewOutput,
+          setReviewWorkPhase,
+          postMentionError,
           logger,
         });
-        const explicitReviewPublishEvaluation = explicitReviewPublishDecision.evaluation;
-        const explicitReviewResultFindingLines = explicitReviewPublishDecision.findingLines;
-        const explicitReviewPublishEligible = explicitReviewPublishDecision.eligible;
-        let explicitReviewPublication: Awaited<ReturnType<typeof publishExplicitMentionReviewResult>> | null = null;
-
-        if (explicitReviewPublishEligible && reviewOutputKey && mention.prNumber !== undefined) {
-          const publishOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          explicitReviewPublication = await publishExplicitMentionReviewResult({
-            octokit: publishOctokit,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber,
-            surface: mention.surface,
-            deliveryId: event.id,
-            installationId: event.installationId,
-            reviewOutputKey,
-            appSlug,
-            autoApprove: config.review.autoApprove,
-            usedRepoInspectionTools: result.usedRepoInspectionTools === true,
-            explicitReviewPromptFileCount,
-            explicitReviewFindingLifecycleResult,
-            canPublishExplicitReviewOutput,
-            setReviewWorkPhase,
-            postMentionError,
-            summarizeError: summarizeErrorForDiagnostics,
-            logger,
-          });
-        }
 
         let {
           mentionOutputPublished,
