@@ -1,8 +1,12 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import type { ReviewAuthorClassification } from "../contributor/review-author-resolution.ts";
+import type { ContributorExpertise } from "../contributor/types.ts";
 import type { RateLimitEventRecord } from "../telemetry/types.ts";
-import { resolveReviewAuthorContext } from "./review-author-context.ts";
+import {
+  projectReviewAuthorExpertiseForPrompt,
+  resolveReviewAuthorContext,
+} from "./review-author-context.ts";
 
 function createLogger() {
   const info = mock((_bindings: Record<string, unknown>, _message: string) => {});
@@ -49,6 +53,52 @@ function createClassification(): ReviewAuthorClassification {
     fallbackPath: "legacy-profile->generic-known",
   };
 }
+
+function createExpertise(overrides: Partial<ContributorExpertise> = {}): ContributorExpertise {
+  return {
+    id: 1,
+    profileId: 2,
+    dimension: "language",
+    topic: "typescript",
+    score: 0.84,
+    rawSignals: 12,
+    lastActive: new Date("2026-07-07T00:00:00Z"),
+    createdAt: new Date("2026-07-07T00:00:00Z"),
+    updatedAt: new Date("2026-07-07T00:00:00Z"),
+    ...overrides,
+  };
+}
+
+describe("projectReviewAuthorExpertiseForPrompt", () => {
+  test("projects expertise only for profile-backed contributor contracts", () => {
+    const classification = createClassification();
+    classification.contract = {
+      ...classification.contract,
+      state: "profile-backed",
+    };
+    classification.expertise = [
+      createExpertise(),
+      createExpertise({
+        id: 2,
+        dimension: "file_area",
+        topic: "src/handlers/",
+        score: 0.72,
+      }),
+    ];
+
+    expect(projectReviewAuthorExpertiseForPrompt(classification)).toEqual([
+      { dimension: "language", topic: "typescript", score: 0.84 },
+      { dimension: "file_area", topic: "src/handlers/", score: 0.72 },
+    ]);
+  });
+
+  test("hides expertise for generic contributor contracts", () => {
+    const classification = createClassification();
+    classification.expertise = [createExpertise()];
+
+    expect(projectReviewAuthorExpertiseForPrompt(classification)).toBeUndefined();
+  });
+});
 
 describe("resolveReviewAuthorContext", () => {
   test("resolves author classification, logs diagnostics, suggests identity, and records rate-limit telemetry", async () => {

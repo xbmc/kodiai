@@ -146,7 +146,10 @@ import { recordReviewResilienceEventFailOpen } from "./review-resilience-telemet
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
-import { resolveReviewAuthorContext } from "./review-author-context.ts";
+import {
+  projectReviewAuthorExpertiseForPrompt,
+  resolveReviewAuthorContext,
+} from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
@@ -913,13 +916,7 @@ export function createReviewHandler(deps: {
           priorFindings,
           tieredFiles,
           contributorExperienceContract: authorClassification.contract,
-          authorExpertise: authorClassification.contract.state === "profile-backed"
-            ? authorClassification.expertise?.map(e => ({
-              dimension: e.dimension,
-              topic: e.topic,
-              score: e.score,
-            }))
-            : undefined,
+          authorExpertise: projectReviewAuthorExpertiseForPrompt(authorClassification),
           depBumpContext,
           searchRateLimitDegradation: authorClassification.searchEnrichment,
           isDraft,
@@ -1974,13 +1971,7 @@ export function createReviewHandler(deps: {
                       conventionalType: parsedIntent.conventionalType,
                       priorFindings,
                       contributorExperienceContract: authorClassification.contract,
-                      authorExpertise: authorClassification.contract.state === "profile-backed"
-                        ? authorClassification.expertise?.map(e => ({
-                            dimension: e.dimension,
-                            topic: e.topic,
-                            score: e.score,
-                          }))
-                        : undefined,
+                      authorExpertise: projectReviewAuthorExpertiseForPrompt(authorClassification),
                       depBumpContext,
                       searchRateLimitDegradation: authorClassification.searchEnrichment,
                       isDraft,

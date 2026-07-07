@@ -3,6 +3,7 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import type { ReviewAuthorClassification } from "../contributor/review-author-resolution.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
+import type { ReviewPromptBuildContext } from "../review-orchestration/review-prompt-fingerprint.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { SearchCache } from "../lib/search-cache.ts";
 import { resolveAuthorTier } from "../review-orchestration/review-author-tier.ts";
@@ -32,6 +33,20 @@ function createDefaultAuthorClassification(): ReviewAuthorClassification {
     storedProfileTrust: null,
     fallbackPath: "no-stored-profile->generic-unknown",
   };
+}
+
+export function projectReviewAuthorExpertiseForPrompt(
+  authorClassification: ReviewAuthorClassification,
+): ReviewPromptBuildContext["authorExpertise"] {
+  if (authorClassification.contract.state !== "profile-backed") {
+    return undefined;
+  }
+
+  return authorClassification.expertise?.map((expertise) => ({
+    dimension: expertise.dimension,
+    topic: expertise.topic,
+    score: expertise.score,
+  }));
 }
 
 function logAuthorClassificationResolved(params: {

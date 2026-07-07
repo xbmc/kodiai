@@ -237,6 +237,18 @@ describe("review handler structure", () => {
     expect(postExecutionSource).toContain("maybePostReviewCostWarning");
   });
 
+  test("keeps author expertise prompt projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const authorContextSource = readFileSync(new URL("./review-author-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("authorClassification.expertise?.map");
+    expect(source).not.toContain("dimension: e.dimension");
+    expect(source).not.toContain("topic: e.topic");
+    expect(source).not.toContain("score: e.score");
+    expect(source).toContain("projectReviewAuthorExpertiseForPrompt");
+    expect(authorContextSource).toContain("projectReviewAuthorExpertiseForPrompt");
+  });
+
   test("keeps review resilience telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
