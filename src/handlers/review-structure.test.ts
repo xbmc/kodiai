@@ -674,6 +674,17 @@ describe("review handler structure", () => {
     expect(warningSource).toContain("zeroEvidenceWarning");
   });
 
+  test("keeps bounded first-pass publication failure logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const warningSource = readFileSync(new URL("./review-bounded-first-pass-publication-failure-log.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Failed to publish bounded first-pass review");
+    expect(source).toContain("logBoundedFirstPassPublicationFailure");
+    expect(source).toContain("./review-bounded-first-pass-publication-failure-log.ts");
+    expect(warningSource).toContain("Failed to publish bounded first-pass review");
+    expect(warningSource).toContain("error");
+  });
+
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

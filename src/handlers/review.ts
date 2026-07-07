@@ -218,6 +218,7 @@ import { logPublishedReviewOutputEvidence } from "./review-published-output-evid
 import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-evidence.ts";
 import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
+import { logBoundedFirstPassPublicationFailure } from "./review-bounded-first-pass-publication-failure-log.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1688,10 +1689,12 @@ export function createReviewHandler(deps: {
               if (partialPublication.ok) {
                 partialCommentId = partialPublication.value.commentId;
               } else {
-                logger.warn(
-                  { err: partialPublication.err.error, deliveryId: event.id, prNumber: pr.number },
-                  "Failed to publish bounded first-pass review",
-                );
+                logBoundedFirstPassPublicationFailure({
+                  logger,
+                  error: partialPublication.err.error,
+                  deliveryId: event.id,
+                  prNumber: pr.number,
+                });
               }
               if (partialCommentId !== undefined) {
               await persistPartialReviewCheckpoint({
