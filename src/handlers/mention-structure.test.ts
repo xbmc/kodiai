@@ -121,11 +121,27 @@ describe("mention handler structure", () => {
 
   test("keeps mention execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("executionIdentity: `${event.id}:reuse.mention-derived-context`");
     expect(source).not.toContain("Mention reuse telemetry write failed (non-blocking)");
-    expect(source).toContain("recordMentionExecutionTelemetry");
-    expect(source).toContain("./mention-telemetry.ts");
+    expect(source).toContain("recordMentionPostExecutionTelemetry");
+    expect(source).toContain("./mention-post-execution-telemetry.ts");
+    expect(postExecutionSource).toContain("recordMentionExecutionTelemetry");
+    expect(postExecutionSource).toContain("./mention-telemetry.ts");
+  });
+
+  test("keeps post-execution telemetry and cost-warning orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (config.telemetry.enabled)");
+    expect(source).not.toContain("maybePostMentionCostWarning({");
+    expect(source).not.toContain("recordMentionExecutionTelemetry({");
+    expect(source).toContain("recordMentionPostExecutionTelemetry");
+    expect(source).toContain("./mention-post-execution-telemetry.ts");
+    expect(postExecutionSource).toContain("recordMentionExecutionTelemetry");
+    expect(postExecutionSource).toContain("maybePostMentionCostWarning");
   });
 
   test("keeps mention retrieval context assembly out of the monster handler", () => {
@@ -371,12 +387,14 @@ describe("mention handler structure", () => {
 
   test("keeps cost warning publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("This execution cost");
     expect(source).not.toContain("costWarningUsd: 5.0");
     expect(source).not.toContain("explicit mention review cost warning comment");
-    expect(source).toContain("./mention-cost-warning.ts");
-    expect(source).toContain("maybePostMentionCostWarning");
+    expect(source).toContain("recordMentionPostExecutionTelemetry");
+    expect(postExecutionSource).toContain("./mention-cost-warning.ts");
+    expect(postExecutionSource).toContain("maybePostMentionCostWarning");
   });
 
   test("keeps execution failure fallback publication out of the monster handler", () => {

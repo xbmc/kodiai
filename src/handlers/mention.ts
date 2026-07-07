@@ -25,7 +25,6 @@ import {
   evaluateMentionConversationLimit,
 } from "./mention-conversation-limit.ts";
 import { recordSuccessfulMentionConversationTurn } from "./mention-conversation-recording.ts";
-import { maybePostMentionCostWarning } from "./mention-cost-warning.ts";
 import {
   createFormatterSuggestionMentionRunner,
   createFormatterSuggestionVisibleDiagnosticPoster,
@@ -63,7 +62,6 @@ import {
   buildMentionRetrievalContextForPrompt,
   type MentionRetrievalContext,
 } from "./mention-retrieval-context.ts";
-import { recordMentionExecutionTelemetry } from "./mention-telemetry.ts";
 import { projectExplicitMentionReviewValidationTruth } from "./mention-validation-truth.ts";
 import {
   resolveMentionPrDiffContext,
@@ -86,6 +84,7 @@ import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } f
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
 import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
+import { recordMentionPostExecutionTelemetry } from "./mention-post-execution-telemetry.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -772,36 +771,27 @@ export function createMentionHandler(deps: {
           recordSuccessfulTurn: (key) => conversationTurnStore.recordSuccessfulTurn(key),
         });
 
-        // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
-        if (config.telemetry.enabled) {
-          await recordMentionExecutionTelemetry({
-            telemetryStore,
-            logger,
-            deliveryId: event.id,
-            repo: `${mention.owner}/${mention.repo}`,
-            prNumber: mention.prNumber,
-            eventType: `${event.name}.${action ?? ""}`,
-            result,
-            promptSections: result.promptSections ?? promptSections,
-            derivedContextCacheStatus: mentionDerivedContextCacheStatus,
-            derivedContextCacheReason: mentionDerivedContextCacheReason ?? undefined,
-          });
-
-          await maybePostMentionCostWarning({
-            costUsd: result.costUsd,
-            thresholdUsd: config.telemetry.costWarningUsd,
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-            prNumber: mention.prNumber,
-            explicitReviewRequest,
-            reviewOutputKey,
-            canPublishExplicitReviewOutput,
-            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-            botHandles: possibleHandles,
-            logger,
-          });
-        }
+        await recordMentionPostExecutionTelemetry({
+          telemetryEnabled: config.telemetry.enabled,
+          telemetryStore,
+          logger,
+          deliveryId: event.id,
+          owner: mention.owner,
+          repo: mention.repo,
+          issueNumber: mention.issueNumber,
+          prNumber: mention.prNumber,
+          eventType: `${event.name}.${action ?? ""}`,
+          result,
+          promptSections,
+          derivedContextCacheStatus: mentionDerivedContextCacheStatus,
+          derivedContextCacheReason: mentionDerivedContextCacheReason ?? undefined,
+          costWarningUsd: config.telemetry.costWarningUsd,
+          explicitReviewRequest,
+          reviewOutputKey,
+          canPublishExplicitReviewOutput,
+          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          botHandles: possibleHandles,
+        });
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
         if (writeEnabled && writeOutputKey && writeBranchName) {
