@@ -263,10 +263,11 @@ describe("review handler structure", () => {
 
   test("keeps review cache telemetry fail-open helper out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("async function recordReviewCacheEventFailOpen");
     expect(source).not.toContain("Review cache telemetry store method unavailable (non-blocking)");
-    expect(source).toContain("recordReviewCacheEventFailOpen");
+    expect(promptCacheRuntimeSource).toContain("recordReviewCacheEventFailOpen");
   });
 
   test("keeps review prompt cache runtime out of the monster handler", () => {
@@ -287,6 +288,18 @@ describe("review handler structure", () => {
     expect(source).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("review-derived-prompt-cache");
+  });
+
+  test("keeps initial review prompt cache runtime out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewPromptCacheState: ReviewPromptCacheState =");
+    expect(source).not.toContain("const reviewPromptCacheEvent = buildPromptReviewCacheEvent({");
+    expect(source).not.toContain("\"Resolved review prompt derived-cache state\"");
+    expect(source).toContain("buildInitialReviewPromptRuntime");
+    expect(promptCacheRuntimeSource).toContain("buildInitialReviewPromptRuntime");
+    expect(promptCacheRuntimeSource).toContain("Resolved review prompt derived-cache state");
   });
 
   test("keeps author PR-count search cache fail-open setup out of the monster handler", () => {

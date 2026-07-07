@@ -85,6 +85,89 @@ export type RetryReviewPromptRuntimeResult = {
   cacheReason: string | null;
 };
 
+export type InitialReviewPromptRuntimeResult = {
+  prompt: string;
+  promptSections: PromptSectionRecord[];
+  cacheStatus: ReviewPromptCacheState["status"];
+  cacheReason: string | null;
+};
+
+export async function buildInitialReviewPromptRuntime<Context extends { owner: string; repo: string }>(params: {
+  deliveryId: string;
+  repo: string;
+  prNumber: number;
+  headSha: string | null | undefined;
+  taskType: string;
+  context: Context;
+  promptBuilder: (context: Context) => PromptBuildResult | Promise<PromptBuildResult>;
+  cache: SearchCache<PromptBuildResult>;
+  getCacheErrorCount: () => number;
+  buildFingerprint: (context: Context) => ReviewPromptCacheFingerprintResult;
+  visibleBudgetState: ReviewVisibleBudgetProjectionState;
+  telemetryEnabled: boolean;
+  telemetryStore: Pick<TelemetryStore, "recordReviewCacheEvent">;
+  logger: Pick<Logger, "info" | "warn">;
+  baseLog: Record<string, unknown>;
+}): Promise<InitialReviewPromptRuntimeResult> {
+  const reviewPromptCacheState: ReviewPromptCacheState = {
+    status: "bypass",
+    reason: null,
+  };
+  const reviewPromptResult = await buildReviewPromptResultWithCache({
+    cacheQuery: `initial:${params.prNumber}:${params.headSha ?? "unknown-head-sha"}`,
+    context: params.context,
+    statusTarget: reviewPromptCacheState,
+    promptBuilder: params.promptBuilder,
+    cache: params.cache,
+    getCacheErrorCount: params.getCacheErrorCount,
+    buildFingerprint: params.buildFingerprint,
+    logger: params.logger,
+  });
+  const reviewPromptSections = [
+    buildPromptSectionRecord({
+      deliveryId: params.deliveryId,
+      repo: params.repo,
+      taskType: params.taskType,
+      promptKind: "review.user-prompt",
+      sections: reviewPromptResult.sections,
+    }),
+  ];
+  params.visibleBudgetState.promptSectionRecords = reviewPromptSections;
+
+  params.logger.info(
+    {
+      ...params.baseLog,
+      gate: "review-derived-prompt-cache",
+      gateResult: reviewPromptCacheState.status,
+      ...(reviewPromptCacheState.reason ? { reason: reviewPromptCacheState.reason } : {}),
+    },
+    "Resolved review prompt derived-cache state",
+  );
+
+  const reviewPromptCacheEvent = buildPromptReviewCacheEvent({
+    deliveryId: params.deliveryId,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    state: reviewPromptCacheState,
+  });
+  params.visibleBudgetState.reviewCacheObservations.push(reviewPromptCacheEvent);
+  params.visibleBudgetState.refresh();
+  if (params.telemetryEnabled) {
+    await recordReviewCacheEventFailOpen({
+      telemetryStore: params.telemetryStore,
+      logger: params.logger,
+      entry: reviewPromptCacheEvent,
+    });
+  }
+
+  return {
+    prompt: reviewPromptResult.text,
+    promptSections: reviewPromptSections,
+    cacheStatus: reviewPromptCacheState.status,
+    cacheReason: reviewPromptCacheState.reason,
+  };
+}
+
 export async function buildRetryReviewPromptRuntime<Context extends { owner: string; repo: string }>(params: {
   deliveryId: string;
   repo: string;

@@ -17,7 +17,6 @@ import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
-import { buildPromptSectionRecord } from "../execution/prompt-section-metrics.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
@@ -66,10 +65,6 @@ import {
   formatTimeoutErrorDetail,
 } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
-import {
-  buildPromptReviewCacheEvent,
-  type ReviewPromptCacheState,
-} from "../review-orchestration/review-prompt-cache-events.ts";
 import {
   buildPromptBudgetOutcomes,
 } from "../review-orchestration/review-visible-budget-evidence.ts";
@@ -128,7 +123,6 @@ import {
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
   discardCheckpointsFailOpen,
-  recordReviewCacheEventFailOpen,
 } from "./review-handler-utils.ts";
 import {
   type ReviewDetailsBodyBaseParams,
@@ -136,7 +130,7 @@ import {
 import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
-import { buildRetryReviewPromptRuntime, buildReviewPromptResultWithCache } from "./review-prompt-cache-runtime.ts";
+import { buildInitialReviewPromptRuntime, buildRetryReviewPromptRuntime } from "./review-prompt-cache-runtime.ts";
 import { publishReviewFailureFallback } from "./review-failure-publication.ts";
 import {
   publishReviewExecutionErrorFallback,
@@ -944,57 +938,27 @@ export function createReviewHandler(deps: {
           repoDoctrine: repoDoctrineProjection,
           taskType: reviewRouting.taskType,
         });
-        const reviewPromptCacheState: ReviewPromptCacheState = {
-          status: reviewPromptDerivedCacheStatus,
-          reason: reviewPromptDerivedCacheReason,
-        };
-        const reviewPromptResult = await buildReviewPromptResultWithCache({
-          cacheQuery: `initial:${pr.number}:${pr.head.sha ?? "unknown-head-sha"}`,
+        const reviewPromptRuntime = await buildInitialReviewPromptRuntime({
+          deliveryId: event.id,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          headSha: pr.head.sha,
+          taskType: reviewRouting.taskType,
           context: reviewPromptBuildContext,
-          statusTarget: reviewPromptCacheState,
           promptBuilder: reviewPromptBuilder,
           cache: reviewPromptDerivedCache,
           getCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
           buildFingerprint: buildReviewPromptFingerprint,
+          visibleBudgetState,
+          telemetryEnabled: config.telemetry.enabled,
+          telemetryStore,
           logger,
+          baseLog,
         });
-        reviewPromptDerivedCacheStatus = reviewPromptCacheState.status;
-        reviewPromptDerivedCacheReason = reviewPromptCacheState.reason;
-        const reviewPrompt = reviewPromptResult.text;
-        const reviewPromptSections = [
-          buildPromptSectionRecord({
-            deliveryId: event.id,
-            repo: `${apiOwner}/${apiRepo}`,
-            taskType: reviewRouting.taskType,
-            promptKind: "review.user-prompt",
-            sections: reviewPromptResult.sections,
-          }),
-        ];
-        visibleBudgetState.promptSectionRecords = reviewPromptSections;
-        logger.info(
-          {
-            ...baseLog,
-            gate: "review-derived-prompt-cache",
-            gateResult: reviewPromptDerivedCacheStatus,
-            ...(reviewPromptDerivedCacheReason ? { reason: reviewPromptDerivedCacheReason } : {}),
-          },
-          "Resolved review prompt derived-cache state",
-        );
-        const reviewPromptCacheEvent = buildPromptReviewCacheEvent({
-          deliveryId: event.id,
-          repo: `${apiOwner}/${apiRepo}`,
-          prNumber: pr.number,
-          state: reviewPromptCacheState,
-        });
-        visibleBudgetState.reviewCacheObservations.push(reviewPromptCacheEvent);
-        visibleBudgetState.refresh();
-        if (config.telemetry.enabled) {
-          await recordReviewCacheEventFailOpen({
-            telemetryStore,
-            logger,
-            entry: reviewPromptCacheEvent,
-          });
-        }
+        reviewPromptDerivedCacheStatus = reviewPromptRuntime.cacheStatus;
+        reviewPromptDerivedCacheReason = reviewPromptRuntime.cacheReason;
+        const reviewPrompt = reviewPromptRuntime.prompt;
+        const reviewPromptSections = reviewPromptRuntime.promptSections;
         reviewPhaseTimings.set(
           "retrieval/context assembly",
           createReviewPhaseTiming({
