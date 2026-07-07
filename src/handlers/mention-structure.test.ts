@@ -35,12 +35,14 @@ describe("mention handler structure", () => {
 
   test("keeps write-mode preflight publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Failed to look up existing PR for write idempotency; continuing");
     expect(source).not.toContain("const writeRateLimitCheck = writeRateLimit.check");
     expect(source).not.toContain("inFlightWriteKeys.add(writeOutputKey)");
-    expect(source).toContain("evaluateMentionWritePreflight");
-    expect(source).toContain("./mention-write-preflight.ts");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(prePromptGatesSource).toContain("evaluateMentionWritePreflight");
+    expect(prePromptGatesSource).toContain("./mention-write-preflight.ts");
   });
 
   test("keeps explicit review work runtime helpers out of the monster handler", () => {
@@ -356,22 +358,26 @@ describe("mention handler structure", () => {
 
   test("keeps conversation limit policy out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const conversationKey = `${mention.owner}/${mention.repo}#${mention.prNumber ?? mention.issueNumber}`;");
     expect(source).not.toContain("const turns = conversationTurnStore.getTurns(conversationKey);");
     expect(source).not.toContain("Conversation limit reached (${config.mention.conversation.maxTurnsPerPr} turns per PR).");
-    expect(source).toContain("./mention-conversation-limit.ts");
-    expect(source).toContain("evaluateMentionConversationLimit");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(prePromptGatesSource).toContain("./mention-conversation-limit.ts");
+    expect(prePromptGatesSource).toContain("evaluateMentionConversationLimit");
   });
 
   test("keeps mention processing log shaping out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const logSource = readFileSync(new URL("./mention-processing-log.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("\"Processing mention\"");
     expect(source).not.toContain("commentAuthor: mention.commentAuthor");
-    expect(source).toContain("logMentionProcessing");
-    expect(source).toContain("./mention-processing-log.ts");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(prePromptGatesSource).toContain("logMentionProcessing");
+    expect(prePromptGatesSource).toContain("./mention-processing-log.ts");
     expect(logSource).toContain("\"Processing mention\"");
     expect(logSource).toContain("commentAuthor");
   });
@@ -398,21 +404,41 @@ describe("mention handler structure", () => {
 
   test("keeps write request context gating out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("isWriteRequest && mention.prNumber === undefined && !isIssueThreadComment");
     expect(source).not.toContain("buildPrContextRequiredReply");
-    expect(source).toContain("./mention-write-context-gate.ts");
-    expect(source).toContain("evaluateMentionWriteContextGate");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(prePromptGatesSource).toContain("./mention-write-context-gate.ts");
+    expect(prePromptGatesSource).toContain("evaluateMentionWriteContextGate");
   });
 
   test("keeps disabled write-mode refusal publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Write intent detected but write-mode disabled; refusing to apply changes");
     expect(source).not.toContain("const retryCommand =");
     expect(source).not.toContain("buildWriteDisabledReply");
-    expect(source).toContain("maybePublishDisabledWriteModeRefusal");
-    expect(source).toContain("./mention-write-disabled.ts");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(prePromptGatesSource).toContain("maybePublishDisabledWriteModeRefusal");
+    expect(prePromptGatesSource).toContain("./mention-write-disabled.ts");
+  });
+
+  test("keeps pre-prompt mention gates and acknowledgements out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const writePreflight = await evaluateMentionWritePreflight({");
+    expect(source).not.toContain("const writeContextGate = evaluateMentionWriteContextGate({");
+    expect(source).not.toContain("if (await maybePublishDisabledWriteModeRefusal({");
+    expect(source).not.toContain("const conversationLimit = evaluateMentionConversationLimit({");
+    expect(source).not.toContain("await postMentionEyesReaction({");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(source).toContain("./mention-pre-prompt-gates.ts");
+    expect(prePromptGatesSource).toContain("evaluateMentionWritePreflight");
+    expect(prePromptGatesSource).toContain("maybePublishDisabledWriteModeRefusal");
+    expect(prePromptGatesSource).toContain("postMentionEyesReaction");
   });
 
   test("keeps write permission failure reply binding out of the monster handler", () => {
@@ -564,12 +590,14 @@ describe("mention handler structure", () => {
 
   test("keeps mention reaction endpoint branching out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const prePromptGatesSource = readFileSync(new URL("./mention-pre-prompt-gates.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("createForPullRequestReviewComment");
     expect(source).not.toContain("createForIssueComment");
     expect(source).not.toContain("Failed to add eyes reaction");
-    expect(source).toContain("postMentionEyesReaction");
-    expect(source).toContain("./mention-reactions.ts");
+    expect(source).toContain("runMentionPrePromptGates");
+    expect(prePromptGatesSource).toContain("postMentionEyesReaction");
+    expect(prePromptGatesSource).toContain("./mention-reactions.ts");
   });
 
   test("keeps issue triage context cooldown and validation out of the monster handler", () => {

@@ -12,14 +12,10 @@ import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
   maybeReplyWritePermissionFailure,
 } from "./mention-write-replies.ts";
-import { evaluateMentionWriteContextGate } from "./mention-write-context-gate.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { classifyError } from "../lib/errors.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
-import {
-  evaluateMentionConversationLimit,
-} from "./mention-conversation-limit.ts";
 import {
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
@@ -38,9 +34,6 @@ import {
   createMentionReviewWorkRuntime,
   usesCanonicalExplicitReviewHandle,
 } from "./mention-review-work-runtime.ts";
-import { evaluateMentionWritePreflight } from "./mention-write-preflight.ts";
-import { maybePublishDisabledWriteModeRefusal } from "./mention-write-disabled.ts";
-import { postMentionEyesReaction } from "./mention-reactions.ts";
 import { buildMentionTriageContext } from "./mention-triage-context.ts";
 import {
   createMentionFindingLookup,
@@ -75,8 +68,8 @@ import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
 import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
 import { handleMentionPostExecution } from "./mention-post-execution.ts";
-import { logMentionProcessing } from "./mention-processing-log.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
+import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -346,7 +339,7 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        const writePreflight = await evaluateMentionWritePreflight({
+        const prePromptGates = await runMentionPrePromptGates({
           writeEnabled,
           writeOutputKey,
           writeBranchName,
@@ -359,54 +352,20 @@ export function createMentionHandler(deps: {
           writeRateLimit,
           postMentionReply,
           logger,
-        });
-        acquiredWriteKey = writePreflight.acquiredWriteKey;
-        if (writePreflight.action === "stop") return;
-
-        const writeContextGate = evaluateMentionWriteContextGate({
           isWriteRequest,
           isIssueThreadComment,
-          prNumber: mention.prNumber,
-        });
-        if (!writeContextGate.allowed) {
-          await postMentionReply(writeContextGate.replyBody, writeContextGate.replyOptions);
-          return;
-        }
-
-        if (await maybePublishDisabledWriteModeRefusal({
-          isWriteRequest,
           isPlanOnly,
-          writeEnabled: config.write.enabled,
-          mention,
-          keyword: writeIntent.keyword,
+          writeConfigEnabled: config.write.enabled,
+          writeIntentKeyword: writeIntent.keyword,
           writeKeyword,
           writeRequest: writeIntent.request,
           appSlug,
-          logger,
-          postMentionReply,
-        })) return;
-
-        const conversationLimit = evaluateMentionConversationLimit({
-          owner: mention.owner,
-          repo: mention.repo,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-          inReplyToId: mention.inReplyToId,
           maxTurnsPerPr: config.mention.conversation.maxTurnsPerPr,
-          getTurns: (key) => conversationTurnStore.getTurns(key),
-        });
-        if (conversationLimit.limited) {
-          await postMentionReply(conversationLimit.replyBody);
-          return;
-        }
-
-        logMentionProcessing({
-          logger,
-          mention,
+          getConversationTurns: (key) => conversationTurnStore.getTurns(key),
           acceptClaudeAlias,
         });
-
-        await postMentionEyesReaction({ octokit, mention, logger });
+        acquiredWriteKey = prePromptGates.acquiredWriteKey;
+        if (prePromptGates.action === "stop") return;
 
         const {
           allowIssueCodePointers,
