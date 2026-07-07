@@ -5,6 +5,7 @@ import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 import {
   completeReviewRunFailOpen,
+  recordReviewPostExecutionSideEffects,
   scheduleContributorExpertiseUpdate,
   scheduleReviewHunkEmbedding,
 } from "./review-post-execution-side-effects.ts";
@@ -12,6 +13,128 @@ import {
 const fakeContributorStore = { kind: "store" } as unknown as ContributorProfileStore;
 const fakeCodeSnippetStore = { kind: "code-snippets" } as unknown as CodeSnippetStore;
 const fakeEmbeddingProvider = { kind: "embeddings" } as unknown as EmbeddingProvider;
+
+describe("recordReviewPostExecutionSideEffects", () => {
+  test("completes the run and schedules optional post-execution side effects", async () => {
+    const completeRun = mock(async (_runKey: string) => {});
+    const completeRunFailOpen = mock(async (params: Parameters<typeof completeReviewRunFailOpen>[0]) =>
+      completeReviewRunFailOpen(params)
+    );
+    const scheduleExpertiseUpdate = mock(() => "scheduled" as const);
+    const scheduleLearningMemoryBatch = mock(() => {});
+    const scheduleHunkEmbedding = mock(() => "scheduled" as const);
+    const logger = { warn: mock(() => {}) };
+
+    await recordReviewPostExecutionSideEffects({
+      knowledgeStore: { completeRun },
+      repo: "octo/repo",
+      owner: "octo",
+      prNumber: 42,
+      prAuthor: "mona",
+      prTitle: "Change a",
+      baseSha: "base",
+      headSha: "head",
+      filesChanged: ["src/a.h"],
+      changedFilesForLanguageContext: ["src/a.cc", "src/a.h"],
+      findings: [{
+        title: "Finding",
+        filePath: "src/a.h",
+        severity: "medium",
+        category: "bug",
+        suppressed: false,
+      }],
+      reviewId: 7,
+      diffContent: "diff --git a/src/a.h b/src/a.h",
+      hunkEmbeddingConfig: { enabled: true, maxHunksPerPr: 10, minChangedLines: 1, excludePatterns: [] },
+      contributorProfileStore: fakeContributorStore,
+      learningMemoryStore: {
+        hasMemoryConflict: mock(async () => false),
+        writeMemory: mock(async () => {}),
+      },
+      codeSnippetStore: fakeCodeSnippetStore,
+      embeddingProvider: fakeEmbeddingProvider,
+      logger: logger as unknown as Logger,
+      logContext: { deliveryId: "delivery-1" },
+      completeRunFailOpen,
+      scheduleExpertiseUpdate,
+      scheduleLearningMemoryBatch,
+      scheduleHunkEmbedding,
+    });
+
+    expect(completeRunFailOpen).toHaveBeenCalledWith({
+      knowledgeStore: { completeRun },
+      repo: "octo/repo",
+      prNumber: 42,
+      baseSha: "base",
+      headSha: "head",
+      logger,
+      logContext: { deliveryId: "delivery-1" },
+    });
+    expect(scheduleExpertiseUpdate).toHaveBeenCalledWith({
+      contributorProfileStore: fakeContributorStore,
+      githubUsername: "mona",
+      filesChanged: ["src/a.h"],
+      logger,
+    });
+    expect(scheduleLearningMemoryBatch).toHaveBeenCalledWith(expect.objectContaining({
+      owner: "octo",
+      repo: "octo/repo",
+      reviewId: 7,
+      prNumber: 42,
+      store: expect.any(Object),
+      embeddingProvider: fakeEmbeddingProvider,
+      logger,
+      logContext: { deliveryId: "delivery-1" },
+    }));
+    const learningMemoryCalls = scheduleLearningMemoryBatch.mock.calls as unknown as Array<[{
+      classifyLanguage: (filePath: string) => string | null | undefined;
+    }]>;
+    const learningMemoryParams = learningMemoryCalls[0]?.[0];
+    expect(learningMemoryParams?.classifyLanguage("src/a.h")).toBe("cpp");
+    expect(scheduleHunkEmbedding).toHaveBeenCalledWith({
+      diffContent: "diff --git a/src/a.h b/src/a.h",
+      repo: "octo/repo",
+      owner: "octo",
+      prNumber: 42,
+      prTitle: "Change a",
+      codeSnippetStore: fakeCodeSnippetStore,
+      embeddingProvider: fakeEmbeddingProvider,
+      config: { enabled: true, maxHunksPerPr: 10, minChangedLines: 1, excludePatterns: [] },
+      logger,
+      logContext: { deliveryId: "delivery-1" },
+    });
+  });
+
+  test("skips optional side effects when stores or findings are unavailable", async () => {
+    const scheduleExpertiseUpdate = mock(() => "scheduled" as const);
+    const scheduleLearningMemoryBatch = mock(() => {});
+    const scheduleHunkEmbedding = mock(() => "skipped" as const);
+
+    await recordReviewPostExecutionSideEffects({
+      repo: "octo/repo",
+      owner: "octo",
+      prNumber: 42,
+      prAuthor: "mona",
+      prTitle: "Change a",
+      baseSha: "base",
+      headSha: "head",
+      filesChanged: [],
+      changedFilesForLanguageContext: [],
+      findings: [],
+      diffContent: null,
+      hunkEmbeddingConfig: { enabled: false, maxHunksPerPr: 10, minChangedLines: 1, excludePatterns: [] },
+      logger: { warn: mock(() => {}) } as unknown as Logger,
+      logContext: {},
+      scheduleExpertiseUpdate,
+      scheduleLearningMemoryBatch,
+      scheduleHunkEmbedding,
+    });
+
+    expect(scheduleExpertiseUpdate).not.toHaveBeenCalled();
+    expect(scheduleLearningMemoryBatch).not.toHaveBeenCalled();
+    expect(scheduleHunkEmbedding).toHaveBeenCalled();
+  });
+});
 
 describe("completeReviewRunFailOpen", () => {
   test("marks the idempotency run complete with the canonical run key", async () => {

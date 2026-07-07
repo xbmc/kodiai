@@ -277,28 +277,38 @@ describe("review handler structure", () => {
   test("keeps review learning-memory batch orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const learningMemorySource = readFileSync(new URL("./review-learning-memory.ts", import.meta.url), "utf8");
+    const sideEffectsSource = readFileSync(new URL("./review-post-execution-side-effects.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("writeReviewLearningMemory({");
     expect(source).not.toContain("Learning memory write batch complete");
     expect(source).not.toContain("Promise.resolve().then(async () =>");
     expect(source).not.toContain("Learning memory write pipeline failed (fail-open)");
-    expect(source).toContain("scheduleReviewLearningMemoryBatch");
-    expect(source).toContain("./review-learning-memory.ts");
+    expect(source).not.toContain("scheduleReviewLearningMemoryBatch({");
+    expect(source).toContain("recordReviewPostExecutionSideEffects");
+    expect(sideEffectsSource).toContain("scheduleReviewLearningMemoryBatch");
+    expect(sideEffectsSource).toContain("./review-learning-memory.ts");
     expect(learningMemorySource).toContain("writeReviewLearningMemoryBatch");
     expect(learningMemorySource).toContain("Learning memory write pipeline failed (fail-open)");
   });
 
   test("keeps post-execution side-effect mechanics out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const sideEffectsSource = readFileSync(new URL("./review-post-execution-side-effects.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("knowledgeStore.completeRun(runKey)");
     expect(source).not.toContain("updateExpertiseIncremental({");
     expect(source).not.toContain("const diffFiles = splitDiffByFile(diffContext.diffContent)");
     expect(source).not.toContain("embedReviewDiffHunks({");
-    expect(source).toContain("completeReviewRunFailOpen");
-    expect(source).toContain("scheduleContributorExpertiseUpdate");
-    expect(source).toContain("scheduleReviewHunkEmbedding");
+    expect(source).not.toContain("completeReviewRunFailOpen({");
+    expect(source).not.toContain("scheduleContributorExpertiseUpdate({");
+    expect(source).not.toContain("scheduleReviewLearningMemoryBatch({");
+    expect(source).not.toContain("scheduleReviewHunkEmbedding({");
+    expect(source).toContain("recordReviewPostExecutionSideEffects");
     expect(source).toContain("./review-post-execution-side-effects.ts");
+    expect(sideEffectsSource).toContain("completeReviewRunFailOpen");
+    expect(sideEffectsSource).toContain("scheduleContributorExpertiseUpdate");
+    expect(sideEffectsSource).toContain("scheduleReviewLearningMemoryBatch");
+    expect(sideEffectsSource).toContain("scheduleReviewHunkEmbedding");
   });
 
   test("keeps published-output evidence bundle logging out of the monster handler", () => {

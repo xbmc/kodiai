@@ -13,7 +13,7 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import type { DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
-import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
+import { analyzeDiff } from "../execution/diff-analysis.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
@@ -21,9 +21,6 @@ import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-sto
 import { formatErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
-import {
-  scheduleReviewLearningMemoryBatch,
-} from "./review-learning-memory.ts";
 import {
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
@@ -142,9 +139,7 @@ import {
   persistReviewKnowledge,
 } from "./review-knowledge-persistence.ts";
 import {
-  completeReviewRunFailOpen,
-  scheduleContributorExpertiseUpdate,
-  scheduleReviewHunkEmbedding,
+  recordReviewPostExecutionSideEffects,
 } from "./review-post-execution-side-effects.ts";
 import {
   buildReviewTimeoutResilienceTelemetryEntry,
@@ -1401,59 +1396,25 @@ export function createReviewHandler(deps: {
           }
         }
 
-        // Mark run as completed for idempotency tracking
-        if (knowledgeStore) {
-          await completeReviewRunFailOpen({
-            knowledgeStore,
-            repo: `${apiOwner}/${apiRepo}`,
-            prNumber: pr.number,
-            baseSha: pr.base.sha,
-            headSha: pr.head.sha,
-            logger,
-            logContext: baseLog,
-          });
-        }
-
-        // Fire-and-forget incremental expertise update (PROF-04)
-        if (contributorProfileStore) {
-          scheduleContributorExpertiseUpdate({
-            contributorProfileStore,
-            githubUsername: pr.user.login,
-            filesChanged: reviewFiles,
-            logger,
-          });
-        }
-
-        // Async learning memory write (LEARN-06)
-        // Write accepted and suppressed findings to learning memory with embeddings.
-        // This is async and fail-open -- errors do not affect the review outcome.
-        if (learningMemoryStore && embeddingProvider && processedFindings.length > 0) {
-          scheduleReviewLearningMemoryBatch({
-            findings: processedFindings,
-            owner: apiOwner,
-            repo: `${apiOwner}/${apiRepo}`,
-            reviewId,
-            prNumber: pr.number,
-            store: learningMemoryStore,
-            embeddingProvider,
-            logger,
-            logContext: baseLog,
-            // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
-            classifyLanguage: (filePath) => classifyFileLanguageWithContext(filePath, changedFiles),
-          });
-        }
-
-        // Async hunk embedding (SNIP-01): embed PR diff hunks for future retrieval.
-        // Fire-and-forget: does not block review completion.
-        scheduleReviewHunkEmbedding({
-          diffContent: diffContext.diffContent,
+        await recordReviewPostExecutionSideEffects({
+          knowledgeStore,
           repo: `${apiOwner}/${apiRepo}`,
           owner: apiOwner,
           prNumber: pr.number,
+          prAuthor: pr.user.login,
           prTitle: pr.title,
+          baseSha: pr.base.sha,
+          headSha: pr.head.sha,
+          filesChanged: reviewFiles,
+          changedFilesForLanguageContext: changedFiles,
+          findings: processedFindings,
+          reviewId,
+          diffContent: diffContext.diffContent,
+          hunkEmbeddingConfig: config.knowledge.retrieval.hunkEmbedding,
+          contributorProfileStore,
+          learningMemoryStore,
           codeSnippetStore,
           embeddingProvider,
-          config: config.knowledge.retrieval.hunkEmbedding,
           logger,
           logContext: baseLog,
         });
