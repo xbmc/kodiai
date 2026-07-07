@@ -216,6 +216,7 @@ import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-evidence.ts";
+import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1875,17 +1876,15 @@ export function createReviewHandler(deps: {
                 }
               }
 
-              logger.info(
-                {
-                  deliveryId: event.id,
-                  prNumber: pr.number,
-                  retryFiles: retryFiles.length,
-                  scopeRatio: retryScopeRatio,
-                  retryTimeout,
-                  retryRiskLevel: retryTimeoutEstimate.riskLevel,
-                },
-                "Enqueueing retry with reduced scope",
-              );
+              logReviewTimeoutRetryEnqueue({
+                logger,
+                deliveryId: event.id,
+                prNumber: pr.number,
+                retryFiles: retryFiles.length,
+                scopeRatio: retryScopeRatio,
+                retryTimeout,
+                retryRiskLevel: retryTimeoutEstimate.riskLevel,
+              });
 
               if (timeoutFirstPass?.zeroEvidenceFailure && knowledgeStore?.saveCheckpoint) {
                 await knowledgeStore.saveCheckpoint({

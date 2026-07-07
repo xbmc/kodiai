@@ -652,6 +652,17 @@ describe("review handler structure", () => {
     expect(evidenceSource).toContain("boundedReason");
   });
 
+  test("keeps timeout retry enqueue logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const evidenceSource = readFileSync(new URL("./review-timeout-retry-enqueue-log.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Enqueueing retry with reduced scope");
+    expect(source).toContain("logReviewTimeoutRetryEnqueue");
+    expect(source).toContain("./review-timeout-retry-enqueue-log.ts");
+    expect(evidenceSource).toContain("Enqueueing retry with reduced scope");
+    expect(evidenceSource).toContain("retryRiskLevel");
+  });
+
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
