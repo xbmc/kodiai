@@ -15,16 +15,8 @@ import {
 } from "./mention-write-replies.ts";
 import { evaluateMentionWriteContextGate } from "./mention-write-context-gate.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
-import { type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
-import { createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import { classifyError } from "../lib/errors.ts";
-import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
-import {
-  createConversationTurnStore,
-  createTriageCooldownStore,
-  createWriteRateLimitStore,
-} from "../lib/mention-state-stores.ts";
 import {
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
@@ -95,8 +87,8 @@ import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-
 import { resolveMentionForkContext } from "./mention-fork-context.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
 import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
-import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
 import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
+import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -129,10 +121,7 @@ export function createMentionHandler(deps: {
   /** Optional in-memory coordinator for same-PR review-family publish rights. */
   reviewWorkCoordinator?: ReviewWorkCoordinator;
   /** Optional derived-context cache store overrides for mention-context reuse tests/fail-open wiring. */
-  mentionDerivedContextCacheOptions?: Pick<
-    SearchCacheOptions<PromptBuildResult>,
-    "ttlMs" | "maxSize" | "now" | "store" | "inFlightStore"
-  >;
+  mentionDerivedContextCacheOptions?: MentionDerivedContextCacheOptions;
   /** Optional formatter-suggestion subflow override for mention orchestration tests. */
   formatterSuggestionSubflow?: typeof runFormatterSuggestionSubflow;
   /** Optional addon-review dispatcher override for addon-repo explicit review routing tests. */
@@ -160,35 +149,21 @@ export function createMentionHandler(deps: {
     logger,
   } = deps;
 
-  const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
-  const reviewWorkCoordinator = resolveReviewWorkCoordinator({
-    injected: injectedReviewWorkCoordinator,
-    handler: "mention",
+  const {
+    guardrailAuditStore,
+    reviewWorkCoordinator,
+    mentionDerivedContextCache,
+    getMentionDerivedContextCacheErrorCount,
+    writeRateLimitStore,
+    conversationTurnStore,
+    inFlightWriteKeys,
+    triageCooldownStore,
+  } = createMentionHandlerRuntime({
+    sql,
+    reviewWorkCoordinator: injectedReviewWorkCoordinator,
+    mentionDerivedContextCacheOptions,
     logger,
   });
-
-  let mentionDerivedContextCacheErrorCount = 0;
-  const mentionDerivedContextCache = createSearchCache<PromptBuildResult>({
-    ...mentionDerivedContextCacheOptions,
-    onError: (error) => {
-      mentionDerivedContextCacheErrorCount += 1;
-      logger.warn(
-        {
-          err: error,
-          gate: "mention-derived-context-cache",
-          gateResult: "degraded",
-        },
-        "Mention derived-context cache degraded; bypassing cache for this request",
-      );
-    },
-  });
-
-  const writeRateLimitStore = createWriteRateLimitStore();
-  const conversationTurnStore = createConversationTurnStore();
-
-  const inFlightWriteKeys = new Set<string>();
-
-  const triageCooldownStore = createTriageCooldownStore();
 
 
 
@@ -581,7 +556,7 @@ export function createMentionHandler(deps: {
           maxThreadChars: config.mention.conversation.contextBudgetChars,
           findingLookup,
           cache: mentionDerivedContextCache,
-          getCacheErrorCount: () => mentionDerivedContextCacheErrorCount,
+          getCacheErrorCount: getMentionDerivedContextCacheErrorCount,
           logger,
         });
 

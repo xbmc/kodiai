@@ -58,11 +58,13 @@ describe("mention handler structure", () => {
 
   test("keeps handler-local review coordinator fallback policy out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./mention-handler-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();");
     expect(source).not.toContain("Review work coordinator not injected; using a private handler-local fallback");
-    expect(source).toContain("resolveReviewWorkCoordinator");
-    expect(source).toContain("./review-work-coordinator-fallback.ts");
+    expect(source).toContain("createMentionHandlerRuntime");
+    expect(runtimeSource).toContain("resolveReviewWorkCoordinator");
+    expect(runtimeSource).toContain("./review-work-coordinator-fallback.ts");
   });
 
   test("keeps canonical explicit-review handle matching out of the monster handler", () => {
@@ -568,12 +570,26 @@ describe("mention handler structure", () => {
   test("keeps mention-derived context cache orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("createSearchCache<PromptBuildResult>");
+    expect(source).not.toContain("let mentionDerivedContextCacheErrorCount = 0;");
     expect(source).not.toContain("buildMentionContextFingerprint(octokit, mention");
     expect(source).not.toContain("mentionDerivedContextCache.getOrLoad");
     expect(source).not.toContain("mentionDerivedContextCacheErrorCount > cacheErrorsBeforeLookup");
     expect(source).not.toContain("context-build-failed");
+    expect(source).toContain("createMentionHandlerRuntime");
     expect(source).toContain("buildMentionDerivedContext");
     expect(source).toContain("./mention-derived-context.ts");
+  });
+
+  test("keeps handler-local mention runtime store construction out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("createWriteRateLimitStore()");
+    expect(source).not.toContain("createConversationTurnStore()");
+    expect(source).not.toContain("createTriageCooldownStore()");
+    expect(source).not.toContain("new Set<string>()");
+    expect(source).toContain("createMentionHandlerRuntime");
+    expect(source).toContain("./mention-handler-runtime.ts");
   });
 
   test("keeps same-repo PR write branch updates out of the monster handler", () => {
