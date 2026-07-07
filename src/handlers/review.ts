@@ -1,9 +1,3 @@
-import type {
-  PullRequestOpenedEvent,
-  PullRequestReadyForReviewEvent,
-  PullRequestReviewRequestedEvent,
-  PullRequestSynchronizeEvent,
-} from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
@@ -37,9 +31,6 @@ import {
 } from "../lib/review-continuation-lifecycle.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
 import {
-  buildReviewOutputKey,
-} from "../review-orchestration/review-idempotency.ts";
-import {
   writeReviewLearningMemoryBatch,
 } from "./review-learning-memory.ts";
 import {
@@ -55,9 +46,6 @@ import {
 } from "../lib/review-finding-metadata.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
-import {
-  buildReviewFamilyKey,
-} from "../jobs/review-work-coordinator.ts";
 import type { ContributorProfileStore } from "../contributor/types.ts";
 import {
   createDegradedReviewReducerResult,
@@ -173,8 +161,6 @@ import {
   publishReviewExecutionErrorFallback,
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
-import { createReviewWorkRuntime } from "./review-work-runtime.ts";
-import { evaluateNoReviewSkipGate } from "./review-no-review-skip.ts";
 import { maybePostReviewCostWarning } from "./review-cost-warning.ts";
 import { publishBoundedFirstPassReview } from "./review-partial-publication.ts";
 import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
@@ -197,8 +183,6 @@ import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
-import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
-import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
@@ -250,9 +234,12 @@ import {
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
-import { resolveReviewDraftToneContext } from "./review-draft-tone.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
 import { prepareReviewRetryWorkspace, prepareReviewWorkspace } from "./review-workspace-preparation.ts";
+import {
+  resolveReviewEventRuntime,
+  type ReviewWebhookPayload,
+} from "./review-event-runtime.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -401,119 +388,31 @@ export function createReviewHandler(deps: {
   });
 
   async function handleReview(event: WebhookEvent): Promise<void> {
-    const payload = event.payload as unknown as
-      | PullRequestOpenedEvent
-      | PullRequestReadyForReviewEvent
-      | PullRequestReviewRequestedEvent
-      | PullRequestSynchronizeEvent;
-
-    const pr = payload.pull_request;
-    const action = payload.action;
-    const baseLog = {
-      deliveryId: event.id,
-      installationId: event.installationId,
-      action,
-      prNumber: pr.number,
-      owner: payload.repository.owner.login,
-      repo: payload.repository.name,
-    };
-    const reviewOutputKey = buildReviewOutputKey({
-      installationId: event.installationId,
-      owner: payload.repository.owner.login,
-      repo: payload.repository.name,
-      prNumber: pr.number,
-      action,
-      deliveryId: event.id,
-      headSha: pr.head.sha ?? "unknown-head-sha",
-    });
-
-    const { isDraft } = resolveReviewDraftToneContext({
-      action,
-      prDraft: Boolean(pr.draft),
-      baseLog,
+    const payload = event.payload as unknown as ReviewWebhookPayload;
+    const reviewEventRuntime = await resolveReviewEventRuntime({
+      event,
+      payload,
+      githubApp,
+      reviewWorkCoordinator,
       logger,
     });
-
-    const noReviewSkipGate = await evaluateNoReviewSkipGate({
-      prTitle: pr.title,
-      owner: payload.repository.owner.login,
-      repo: payload.repository.name,
-      prNumber: pr.number,
+    if (reviewEventRuntime.action === "skip") return;
+    const {
+      pr,
+      eventAction: action,
       baseLog,
-      botHandles: [githubApp.getAppSlug(), "claude"],
-      getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-      logger,
-    });
-    if (noReviewSkipGate.action === "skip") return;
-
-    if (action === "review_requested") {
-      const reviewRequestedGate = evaluateReviewRequestedGate({
-        payload: payload as unknown as Record<string, unknown>,
-        appSlug: githubApp.getAppSlug(),
-        baseLog,
-        logger,
-      });
-      if (reviewRequestedGate.action === "skip") return;
-    }
-
-    // API target is always the base (upstream) repo
-    const apiOwner = payload.repository.owner.login;
-    const apiRepo = payload.repository.name;
-
-    const reviewClonePlan = resolveReviewClonePlan({
+      reviewOutputKey,
+      isDraft,
       apiOwner,
       apiRepo,
-      repositoryFullName: payload.repository.full_name,
-      baseRef: pr.base.ref,
-      headRef: pr.head.ref,
-      headRepo: pr.head.repo,
-    });
-    const {
       cloneOwner,
       cloneRepo,
       cloneRef,
-      isFork,
-      isDeletedFork,
       usesPrRef,
-      workspaceStrategy,
-    } = reviewClonePlan;
-
-    logger.info(
-      {
-        prNumber: pr.number,
-        apiOwner,
-        apiRepo,
-        cloneOwner,
-        cloneRepo,
-        cloneRef,
-        isFork,
-        isDeletedFork,
-        usesPrRef,
-        workspaceStrategy,
-        action,
-        deliveryId: event.id,
-        installationId: event.installationId,
-      },
-      "Processing PR review",
-    );
-
-    logger.info(
-      { ...baseLog, gate: "enqueue", gateResult: "started" },
-      "Review enqueue started",
-    );
-
-    const reviewFamilyKey = buildReviewFamilyKey(apiOwner, apiRepo, pr.number);
-    const reviewWorkAttempt = reviewWorkCoordinator.claim({
-      familyKey: reviewFamilyKey,
-      source: "automatic-review",
-      lane: "review",
-      deliveryId: event.id,
-      phase: "claimed",
-    });
-    const reviewWorkRuntime = createReviewWorkRuntime({
-      attempt: reviewWorkAttempt,
-      coordinator: reviewWorkCoordinator,
-    });
+      reviewFamilyKey,
+      reviewWorkAttempt,
+      reviewWorkRuntime,
+    } = reviewEventRuntime;
     const {
       setPhase: setReviewWorkPhase,
       setPhaseForAttempt: setReviewWorkPhaseForAttempt,

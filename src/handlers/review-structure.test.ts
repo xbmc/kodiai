@@ -2,6 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
 describe("review handler structure", () => {
+  test("keeps the review handler below the current decomposition line budget", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source.split("\n").length).toBeLessThanOrEqual(2800);
+  });
+
   test("keeps Review Details body assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
@@ -21,12 +27,14 @@ describe("review handler structure", () => {
 
   test("keeps review work lifecycle helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const eventRuntimeSource = readFileSync(new URL("./review-event-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("function finalizeReviewWorkAttempt");
     expect(source).not.toContain("function setReviewWorkPhaseForAttempt");
     expect(source).not.toContain("function setReviewWorkPhase");
     expect(source).not.toContain("function canPublishVisibleOutput");
-    expect(source).toContain("./review-work-runtime.ts");
+    expect(source).toContain("./review-event-runtime.ts");
+    expect(eventRuntimeSource).toContain("./review-work-runtime.ts");
   });
 
   test("keeps handler-local review coordinator fallback policy out of the monster handler", () => {
@@ -450,13 +458,15 @@ describe("review handler structure", () => {
 
   test("keeps no-review skip acknowledgment publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const eventRuntimeSource = readFileSync(new URL("./review-event-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("/\\[no-review\\]/i.test(pr.title)");
     expect(source).not.toContain("gate: \"keyword-skip\"");
     expect(source).not.toContain("Review skipped per `[no-review]` in PR title.");
     expect(source).not.toContain("Failed to publish no-review skip acknowledgment");
-    expect(source).toContain("./review-no-review-skip.ts");
-    expect(source).toContain("evaluateNoReviewSkipGate");
+    expect(source).toContain("./review-event-runtime.ts");
+    expect(eventRuntimeSource).toContain("./review-no-review-skip.ts");
+    expect(eventRuntimeSource).toContain("evaluateNoReviewSkipGate");
   });
 
   test("keeps review cost warning publication out of the monster handler", () => {
@@ -774,24 +784,28 @@ describe("review handler structure", () => {
 
   test("keeps review-requested target gating out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const eventRuntimeSource = readFileSync(new URL("./review-event-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("\"requested_reviewer\" in reviewRequestedPayload");
     expect(source).not.toContain("normalizeReviewerLogin(requestedReviewerLogin)");
     expect(source).not.toContain("Skipping review_requested event for non-kodiai reviewer");
     expect(source).not.toContain("Skipping review_requested event because only a team was requested");
-    expect(source).toContain("evaluateReviewRequestedGate");
-    expect(source).toContain("./review-requested-gate.ts");
+    expect(source).toContain("./review-event-runtime.ts");
+    expect(eventRuntimeSource).toContain("evaluateReviewRequestedGate");
+    expect(eventRuntimeSource).toContain("./review-requested-gate.ts");
   });
 
   test("keeps review clone planning out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const eventRuntimeSource = readFileSync(new URL("./review-event-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let cloneOwner: string;");
     expect(source).not.toContain("const isDeletedFork = !headRepo;");
     expect(source).not.toContain("cloneRef = pr.base.ref;");
     expect(source).not.toContain("cloneRef = pr.head.ref;");
-    expect(source).toContain("resolveReviewClonePlan");
-    expect(source).toContain("./review-clone-plan.ts");
+    expect(source).toContain("./review-event-runtime.ts");
+    expect(eventRuntimeSource).toContain("resolveReviewClonePlan");
+    expect(eventRuntimeSource).toContain("./review-clone-plan.ts");
   });
 
   test("keeps workspace preparation and trusted config loading out of the monster handler", () => {
@@ -819,11 +833,13 @@ describe("review handler structure", () => {
 
   test("keeps draft PR tone decision and logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const eventRuntimeSource = readFileSync(new URL("./review-event-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const isDraft = action === \"ready_for_review\" ? false : Boolean(pr.draft);");
     expect(source).not.toContain("Reviewing draft PR with draft tone");
-    expect(source).toContain("resolveReviewDraftToneContext");
-    expect(source).toContain("./review-draft-tone.ts");
+    expect(source).toContain("./review-event-runtime.ts");
+    expect(eventRuntimeSource).toContain("resolveReviewDraftToneContext");
+    expect(eventRuntimeSource).toContain("./review-draft-tone.ts");
   });
 
   test("keeps durable run-state idempotency gating out of the monster handler", () => {
