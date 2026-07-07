@@ -510,6 +510,17 @@ describe("review handler structure", () => {
     expect(promptContextSource).toContain("TASK_TYPES.REVIEW_SMALL_DIFF");
   });
 
+  test("keeps retry review prompt context assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const promptContextSource = readFileSync(new URL("./review-prompt-build-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const retryPromptBuildContext = {");
+    expect(source).toContain("buildRetryReviewPromptContext");
+    expect(source).toContain("./review-prompt-build-context.ts");
+    expect(promptContextSource).toContain("buildRetryReviewPromptContext");
+    expect(promptContextSource).toContain("retryPromptCompaction");
+  });
+
   test("keeps no-review skip acknowledgment publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const eventRuntimeSource = readFileSync(new URL("./review-event-runtime.ts", import.meta.url), "utf8");

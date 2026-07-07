@@ -93,7 +93,6 @@ import {
 } from "../review-orchestration/review-specialist-publication-log.ts";
 import {
   buildReviewPromptFingerprint,
-  type ReviewPromptBuildContext,
 } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
 import {
@@ -152,7 +151,7 @@ import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import { buildReviewRuntimePlan } from "./review-runtime-plan.ts";
 import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
-import { buildInitialReviewPromptContext } from "./review-prompt-build-context.ts";
+import { buildInitialReviewPromptContext, buildRetryReviewPromptContext } from "./review-prompt-build-context.ts";
 import { persistReviewKnowledge } from "./review-knowledge-persistence.ts";
 import {
   completeReviewRunFailOpen,
@@ -2022,7 +2021,7 @@ export function createReviewHandler(deps: {
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
                     let retryReviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
                     let retryReviewPromptDerivedCacheReason: string | null = null;
-                    const retryPromptBuildContext = {
+                    const retryPromptBuildContext = buildRetryReviewPromptContext({
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
@@ -2044,42 +2043,21 @@ export function createReviewHandler(deps: {
                       diffAnalysis,
                       diffContent: diffContext.diffContent,
                       matchedPathInstructions,
-                      incrementalContext: incrementalResult?.mode === "incremental" ? {
-                        lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
-                        changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
-                        unresolvedPriorFindings: priorFindingCtx?.unresolvedOnUnchangedCode ?? [],
-                      } : null,
+                      incrementalResult,
+                      priorFindingContext: priorFindingCtx,
                       retrievalContext: retrievalCtx,
-                      reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
-                      wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
-                      unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+                      reviewPrecedents: reviewPrecedentsForPrompt,
+                      wikiKnowledge: wikiKnowledgeForPrompt,
+                      unifiedResults: unifiedResultsForPrompt,
                       contextWindow: contextWindowForPrompt,
-                      filesByLanguage: diffAnalysis?.filesByLanguage,
                       outputLanguage: config.review.outputLanguage,
                       prLabels,
                       focusHints: parsedIntent.unrecognized,
                       conventionalType: parsedIntent.conventionalType,
-                      deltaContext: incrementalResult?.mode === "incremental" && priorFindings.length > 0
-                        ? {
-                            lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
-                            changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
-                            priorFindings: priorFindings.map((f) => ({
-                              filePath: f.filePath,
-                              title: f.title,
-                              severity: f.severity,
-                              category: f.category,
-                            })),
-                          }
-                        : null,
-                      largePRContext: null,
-                      gitDiffInstructionsAvailable: false,
-                      publishToolNames: [
-                        "mcp__github_comment__create_comment",
-                        "mcp__github_inline_comment__create_inline_comment",
-                      ],
+                      priorFindings,
                       contributorExperienceContract: authorClassification.contract,
                       authorExpertise: authorClassification.contract.state === "profile-backed"
-                        ? authorClassification.expertise?.map((e) => ({
+                        ? authorClassification.expertise?.map(e => ({
                             dimension: e.dimension,
                             topic: e.topic,
                             score: e.score,
@@ -2088,36 +2066,16 @@ export function createReviewHandler(deps: {
                       depBumpContext,
                       searchRateLimitDegradation: authorClassification.searchEnrichment,
                       isDraft,
-                      // Review pattern clustering (CLST-03) — reuse from initial review
-                      clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
-                      // PR-issue linking (PRLINK-03) — reuse from initial review
+                      clusterPatterns: clusterPatternsForPrompt,
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
                       repoDoctrine: repoDoctrineProjection,
-                      smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
-                      retryPromptCompaction: retryContinuationCompaction
-                        ? {
-                            observation: retryContinuationCompaction,
-                            checkpointSummaries: checkpoint
-                              ? [{
-                                  reviewOutputKey: checkpoint.reviewOutputKey,
-                                  filesReviewed: checkpoint.filesReviewed,
-                                  findingCount: checkpoint.findingCount,
-                                  totalFiles: checkpoint.totalFiles,
-                                  summaryDraft: checkpoint.summaryDraft,
-                                }]
-                              : [],
-                            promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords).map((outcome) => ({
-                              sectionName: outcome.sectionName,
-                              status: outcome.status,
-                              reason: outcome.reason,
-                              includedChars: outcome.includedChars,
-                              trimmedChars: outcome.trimmedChars,
-                            })),
-                            cacheSafetySignalNames: Array.from(new Set(visibleBudgetState.reviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []))).sort((a, b) => a.localeCompare(b)),
-                          }
-                        : null,
-                    } satisfies ReviewPromptBuildContext;
+                      taskType: reviewRouting.taskType,
+                      retryContinuationCompaction: retryContinuationCompaction ?? null,
+                      checkpoint,
+                      promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords),
+                      cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []),
+                    });
                     const retryPromptCacheState: ReviewPromptCacheState = {
                       status: retryReviewPromptDerivedCacheStatus,
                       reason: retryReviewPromptDerivedCacheReason,
