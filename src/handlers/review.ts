@@ -24,14 +24,12 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
-import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
-import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
+import { buildPromptSectionRecord } from "../execution/prompt-section-metrics.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
@@ -145,9 +143,7 @@ import { type DepBumpContext } from "../lib/dep-bump-detector.ts";
 import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import {
-  createSearchCache,
   type SearchCache,
-  type SearchCacheOptions,
 } from "../lib/search-cache.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
@@ -254,10 +250,9 @@ import {
 } from "./review-continuation-family-state-projection.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
-import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
-import { resolveReviewAuthorPrCountSearchCache } from "./review-author-search-cache.ts";
 import { resolveReviewDraftToneContext } from "./review-draft-tone.ts";
+import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -317,10 +312,7 @@ export function createReviewHandler(deps: {
   /** Optional injection for deterministic tests. */
   searchCacheFactory?: () => SearchCache<number>;
   /** Optional derived prompt cache store overrides for review prompt reuse tests/fail-open wiring. */
-  reviewPromptDerivedCacheOptions?: Pick<
-    SearchCacheOptions<PromptBuildResult>,
-    "ttlMs" | "maxSize" | "now" | "store" | "inFlightStore"
-  >;
+  reviewPromptDerivedCacheOptions?: ReviewPromptDerivedCacheOptions;
   /** Optional prompt builder override for review prompt reuse tests. */
   reviewPromptBuilder?: typeof buildReviewPromptDetails;
   /** Optional code snippet store for hunk embedding. */
@@ -392,33 +384,19 @@ export function createReviewHandler(deps: {
     logger,
   } = deps;
 
-  const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
-  const structuralImpactCache = createStructuralImpactCache();
-  const reviewWorkCoordinator = resolveReviewWorkCoordinator({
-    injected: injectedReviewWorkCoordinator,
-    handler: "review",
-    logger,
-  });
-
-  let reviewPromptDerivedCacheErrorCount = 0;
-  const reviewPromptDerivedCache = createSearchCache<PromptBuildResult>({
-    ...reviewPromptDerivedCacheOptions,
-    onError: (error) => {
-      reviewPromptDerivedCacheErrorCount += 1;
-      logger.warn(
-        {
-          err: error,
-          gate: "review-derived-prompt-cache",
-          gateResult: "degraded",
-        },
-        "Review derived prompt cache degraded; bypassing cache for this request",
-      );
-    },
-  });
-
-  const authorPrCountSearchCache = resolveReviewAuthorPrCountSearchCache({
+  const {
+    guardrailAuditStore,
+    structuralImpactCache,
+    reviewWorkCoordinator,
+    reviewPromptDerivedCache,
+    getReviewPromptDerivedCacheErrorCount,
+    authorPrCountSearchCache,
+  } = createReviewHandlerRuntime({
+    sql,
+    reviewWorkCoordinator: injectedReviewWorkCoordinator,
     injectedSearchCache,
     searchCacheFactory,
+    reviewPromptDerivedCacheOptions,
     logger,
   });
 
@@ -1215,7 +1193,7 @@ export function createReviewHandler(deps: {
           statusTarget: reviewPromptCacheState,
           promptBuilder: reviewPromptBuilder,
           cache: reviewPromptDerivedCache,
-          getCacheErrorCount: () => reviewPromptDerivedCacheErrorCount,
+          getCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
           buildFingerprint: buildReviewPromptFingerprint,
           logger,
         });
@@ -2406,7 +2384,7 @@ export function createReviewHandler(deps: {
                       statusTarget: retryPromptCacheState,
                       promptBuilder: reviewPromptBuilder,
                       cache: reviewPromptDerivedCache,
-                      getCacheErrorCount: () => reviewPromptDerivedCacheErrorCount,
+                      getCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
                       buildFingerprint: buildReviewPromptFingerprint,
                       logger,
                     });

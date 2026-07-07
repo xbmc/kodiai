@@ -34,8 +34,22 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();");
     expect(source).not.toContain("Review work coordinator not injected; using a private handler-local fallback");
-    expect(source).toContain("resolveReviewWorkCoordinator");
-    expect(source).toContain("./review-work-coordinator-fallback.ts");
+    expect(source).toContain("createReviewHandlerRuntime");
+    expect(source).toContain("./review-handler-runtime.ts");
+  });
+
+  test("keeps handler-local review runtime setup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-handler-runtime.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("createGuardrailAuditStore(sql)");
+    expect(source).not.toContain("createStructuralImpactCache()");
+    expect(source).not.toContain("createSearchCache<PromptBuildResult>");
+    expect(source).not.toContain("let reviewPromptDerivedCacheErrorCount = 0;");
+    expect(source).toContain("createReviewHandlerRuntime");
+    expect(runtimeSource).toContain("createGuardrailAuditStore");
+    expect(runtimeSource).toContain("createStructuralImpactCache");
+    expect(runtimeSource).toContain("resolveReviewWorkCoordinator");
   });
 
   test("keeps review execution completion log shaping out of the monster handler", () => {
@@ -211,12 +225,14 @@ describe("review handler structure", () => {
 
   test("keeps author PR-count search cache fail-open setup out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-handler-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let authorPrCountSearchCache: SearchCache<number> | undefined;");
     expect(source).not.toContain("authorPrCountSearchCache = injectedSearchCache;");
     expect(source).not.toContain("Search cache initialization failed (fail-open, continuing without search cache)");
-    expect(source).toContain("resolveReviewAuthorPrCountSearchCache");
-    expect(source).toContain("./review-author-search-cache.ts");
+    expect(source).toContain("createReviewHandlerRuntime");
+    expect(runtimeSource).toContain("resolveReviewAuthorPrCountSearchCache");
+    expect(runtimeSource).toContain("./review-author-search-cache.ts");
   });
 
   test("keeps visible budget projection state out of the monster handler", () => {
