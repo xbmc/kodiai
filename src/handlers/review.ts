@@ -105,6 +105,7 @@ import {
   recordReviewPostExecutionSideEffects,
 } from "./review-post-execution-side-effects.ts";
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
+import { buildReviewPostExecutionTelemetryPublicationContext } from "./review-post-execution-telemetry-context.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
@@ -1046,6 +1047,11 @@ export function createReviewHandler(deps: {
         });
         canonicalReviewDetailsBody = firstPassReviewDetailsPublication.canonicalReviewDetailsBody;
 
+        const postExecutionTelemetryPublicationContext = buildReviewPostExecutionTelemetryPublicationContext({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+          appSlug: githubApp.getAppSlug(),
+        });
         await recordReviewPostExecutionTelemetry({
           telemetryEnabled: config.telemetry.enabled,
           telemetryStore,
@@ -1063,8 +1069,8 @@ export function createReviewHandler(deps: {
           costWarningUsd: config.telemetry.costWarningUsd,
           canPublishVisibleOutput,
           setReviewWorkPhase,
-          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-          botHandles: [githubApp.getAppSlug(), "claude"],
+          getOctokit: postExecutionTelemetryPublicationContext.getOctokit,
+          botHandles: postExecutionTelemetryPublicationContext.botHandles,
         });
 
         const reviewId = await persistReviewKnowledgeIfAvailable({

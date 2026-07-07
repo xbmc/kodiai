@@ -363,6 +363,19 @@ describe("review handler structure", () => {
     expect(postExecutionSource).toContain("maybePostReviewCostWarning");
   });
 
+  test("keeps post-execution telemetry publication adapters out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const adapterSource = readFileSync(
+      new URL("./review-post-execution-telemetry-context.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n          botHandles: [githubApp.getAppSlug(), \"claude\"],");
+    expect(source).toContain("buildReviewPostExecutionTelemetryPublicationContext");
+    expect(source).toContain("./review-post-execution-telemetry-context.ts");
+    expect(adapterSource).toContain("export function buildReviewPostExecutionTelemetryPublicationContext");
+  });
+
   test("keeps author expertise prompt projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const authorContextSource = readFileSync(new URL("./review-author-context.ts", import.meta.url), "utf8");
