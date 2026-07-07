@@ -147,12 +147,13 @@ function findCommentListMethodAliases(source: string): string[] {
 
 function findDestructuredPropertyAliases(properties: string, property: string): string[] {
   const aliases = new Set<string>();
+  const escaped = escapeRegExp(property);
   const propertyPattern = new RegExp(
-    String.raw`(?:^|,)\s*${escapeRegExp(property)}(?:\s*:\s*(\w+))?\s*(?=,|$)`,
+    String.raw`(?:^|,)\s*(?:(["'])${escaped}\1|${escaped})(?:\s*:\s*(\w+))?\s*(?=,|$)`,
     "g",
   );
   for (const match of properties.matchAll(propertyPattern)) {
-    aliases.add(match[1] ?? property);
+    aliases.add(match[2] ?? property);
   }
 
   return [...aliases];
@@ -204,9 +205,19 @@ describe("comment marker scan architecture", () => {
         const { data } = await reviews.listReviews({ owner, repo, pull_number });
         return data.find((review) => review.body?.includes(marker));
       `,
+      "src/handlers/unsafe-quoted-destructured-namespace-list-alias.ts": `
+        const { "pulls": reviews } = params.octokit.rest;
+        const { data } = await reviews.listReviews({ owner, repo, pull_number });
+        return data.find((review) => review.body?.includes(marker));
+      `,
       "src/handlers/unsafe-destructured-list-alias.ts": `
         const { listComments } = params.octokit.rest.issues;
         const { data } = await listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes(marker));
+      `,
+      "src/handlers/unsafe-quoted-destructured-list-alias.ts": `
+        const { "listComments": fetchComments } = params.octokit.rest.issues;
+        const { data } = await fetchComments({ owner, repo, issue_number });
         return data.find((comment) => comment.body?.includes(marker));
       `,
       "src/handlers/safe.ts": `
@@ -224,6 +235,8 @@ describe("comment marker scan architecture", () => {
       "src/handlers/unsafe-literal-marker.ts",
       "src/handlers/unsafe-namespace-list-alias.ts",
       "src/handlers/unsafe-property-octokit.ts",
+      "src/handlers/unsafe-quoted-destructured-list-alias.ts",
+      "src/handlers/unsafe-quoted-destructured-namespace-list-alias.ts",
       "src/handlers/unsafe.ts",
     ]);
   });

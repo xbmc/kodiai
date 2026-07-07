@@ -462,12 +462,13 @@ function findGitHubGraphqlMutationAliases(source: string): Map<string, string> {
 
 function findDestructuredPropertyAliases(properties: string, property: string): string[] {
   const aliases = new Set<string>();
+  const escaped = escapeRegExp(property);
   const propertyPattern = new RegExp(
-    String.raw`(?:^|,)\s*${escapeRegExp(property)}(?:\s*:\s*(\w+))?\s*(?=,|$)`,
+    String.raw`(?:^|,)\s*(?:(["'])${escaped}\1|${escaped})(?:\s*:\s*(\w+))?\s*(?=,|$)`,
     "g",
   );
   for (const match of properties.matchAll(propertyPattern)) {
-    aliases.add(match[1] ?? property);
+    aliases.add(match[2] ?? property);
   }
 
   return [...aliases];

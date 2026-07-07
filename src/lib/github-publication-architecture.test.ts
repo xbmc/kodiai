@@ -24,6 +24,10 @@ describe("GitHub publication architecture", () => {
           const { listComments, createComment: postComment } = params.octokit.rest.issues;
           await postComment({ owner, repo, issue_number, body });
         `,
+        "src/handlers/unsafe-quoted-destructured.ts": `
+          const { "createComment": postComment } = params.octokit.rest.issues;
+          await postComment({ owner, repo, issue_number, body });
+        `,
         "src/handlers/unsafe-aliased.ts": `
           const createReview = octokit.rest.pulls.createReview;
           await createReview({ owner, repo, pull_number, body, event: "COMMENT" });
@@ -43,6 +47,10 @@ describe("GitHub publication architecture", () => {
         "src/handlers/unsafe-destructured-namespace-alias.ts": `
           const { pulls: reviews } = params.octokit.rest;
           await reviews.createReview({ owner, repo, pull_number, body, event: "COMMENT" });
+        `,
+        "src/handlers/unsafe-quoted-destructured-namespace-alias.ts": `
+          const { "issues": issueApi } = params.octokit.rest;
+          await issueApi.createComment({ owner, repo, issue_number, body });
         `,
         "src/handlers/unsafe-payload-alias.ts": `
           const payload = { owner, repo, issue_number, body };
@@ -240,6 +248,14 @@ describe("GitHub publication architecture", () => {
       },
       {
         file: "src/handlers/unsafe-property-octokit.ts",
+        method: "issues.createComment",
+      },
+      {
+        file: "src/handlers/unsafe-quoted-destructured-namespace-alias.ts",
+        method: "issues.createComment",
+      },
+      {
+        file: "src/handlers/unsafe-quoted-destructured.ts",
         method: "issues.createComment",
       },
       {
