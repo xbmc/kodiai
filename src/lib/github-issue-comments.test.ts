@@ -498,6 +498,47 @@ describe("review comment marker helpers", () => {
       line: 33,
     });
   });
+
+  test("preserves review comment metadata for marker matches", async () => {
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({
+            data: [{
+              id: 501,
+              body: "found <!-- marker -->",
+              html_url: "https://github.test/acme/repo/pull/42#discussion_r501",
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-01-01T00:05:00Z",
+              in_reply_to_id: 400,
+              path: "src/example.ts",
+              line: 12,
+              user: { login: "reviewer" },
+            }],
+          }),
+        },
+      },
+    };
+
+    const matches = await findReviewCommentsByMarkerPaged(octokit, {
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      marker: "<!-- marker -->",
+    });
+
+    expect(matches).toEqual([{
+      id: 501,
+      body: "found <!-- marker -->",
+      html_url: "https://github.test/acme/repo/pull/42#discussion_r501",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:05:00Z",
+      in_reply_to_id: 400,
+      path: "src/example.ts",
+      line: 12,
+      user: { login: "reviewer" },
+    }]);
+  });
 });
 
 describe("findPullReviewByMarkerPaged", () => {

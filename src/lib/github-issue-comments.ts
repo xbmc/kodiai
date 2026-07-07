@@ -91,9 +91,16 @@ type IssueCommentMarkerCandidate = {
 export type ReviewCommentMarkerMatch = {
   id: number;
   body?: string | null;
+  html_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  in_reply_to_id?: number;
   path?: string | null;
   line?: number | null;
   start_line?: number | null;
+  user?: {
+    login?: string | null;
+  } | null;
 };
 
 export type ReviewCommentPaged = {
@@ -367,13 +374,7 @@ async function scanReviewCommentsByMarkerPaged(
     maxItems?: number;
     sort?: "created" | "updated";
     direction?: "asc" | "desc";
-    onMatch: (comment: {
-      id?: number;
-      body?: string | null;
-      path?: string | null;
-      line?: number | null;
-      start_line?: number | null;
-    }) => boolean;
+    onMatch: (comment: ReviewCommentPaged) => boolean;
   },
 ): Promise<MarkerScanResult> {
   let found = false;
@@ -391,7 +392,7 @@ async function scanReviewCommentsByMarkerPaged(
         ...(params.sort ? { sort: params.sort } : {}),
         ...(params.direction ? { direction: params.direction } : {}),
       });
-      return data;
+      return data as ReviewCommentPaged[];
     },
     onItem: (comment) => {
       if (comment.body?.includes(params.marker) === true) {
@@ -622,9 +623,14 @@ export async function findReviewCommentsByMarkerPaged(
       matches.push({
         id: comment.id,
         body: comment.body,
+        html_url: comment.html_url,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        in_reply_to_id: comment.in_reply_to_id,
         path: comment.path,
         line: comment.line,
         start_line: comment.start_line,
+        user: comment.user,
       });
       return false;
     },
