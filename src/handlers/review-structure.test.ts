@@ -448,6 +448,15 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-details-degraded-fallback.ts");
   });
 
+  test("keeps timeout Review Details publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("timeout canonical Review Details merge");
+    expect(source).not.toContain("Failed to update timeout canonical review surface with Review Details");
+    expect(source).toContain("publishTimeoutReviewDetailsMerge");
+    expect(source).toContain("./review-details-timeout-publication.ts");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

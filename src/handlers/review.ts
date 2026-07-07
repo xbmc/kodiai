@@ -252,6 +252,7 @@ import { publishPublishedReviewDetailsMerge } from "./review-details-published-m
 import { publishMovedToDetailsReviewDetailsMerge } from "./review-details-moved-to-details-merge.ts";
 import { publishStandaloneReviewDetailsFallback } from "./review-details-standalone-fallback.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
+import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2320,74 +2321,33 @@ export function createReviewHandler(deps: {
                 "Published bounded first-pass review on timeout",
               );
 
-              try {
-                if (canPublishVisibleOutput("timeout canonical Review Details merge")) {
-                  await upsertCanonicalReviewSurface({
-                    octokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    preferredKind: "issue_comment",
-                    canonicalSurface: partialCommentId
-                      ? { kind: "issue_comment", commentId: partialCommentId, body: partialBody }
-                      : undefined,
-                    summaryBody: partialBody,
-                    reviewDetailsBlock: renderReviewDetailsBody({
-                      timeoutProgress: timeoutReviewDetails,
-                      reviewFirstPass: timeoutFirstPass,
-                      timeoutBudget: appliedTimeoutBudget
-                        ? {
-                            remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                            infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                            totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                          }
-                        : null,
-                    }),
-                    botHandles: [githubApp.getAppSlug(), "claude"],
-                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                    reviewBoundedness,
-                    recheckCanPublish: () => canPublishVisibleOutput("timeout canonical Review Details merge"),
-                  });
-                }
-              } catch (reviewDetailsErr) {
-                logger.warn(
-                  {
-                    ...baseLog,
-                    gate: "review-details-output",
-                    gateResult: "degraded-fallback",
-                    reviewOutputKey,
-                    err: reviewDetailsErr,
-                  },
-                  "Failed to update timeout canonical review surface with Review Details; using degraded fallback comment",
-                );
-
-                await publishDegradedReviewDetailsFallbackFailOpen({
-                  octokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  renderBody: () =>
-                    renderReviewDetailsBody({
-                      timeoutProgress: timeoutReviewDetails,
-                      reviewFirstPass: timeoutFirstPass,
-                      timeoutBudget: appliedTimeoutBudget
-                        ? {
-                            remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                            infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                            totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                          }
-                        : null,
-                    }),
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  publishReason: "timeout degraded Review Details fallback comment",
-                  failureMessage: "Failed to publish degraded Review Details fallback comment for timeout partial output",
-                  baseLog,
-                  logger,
-                  canPublishVisibleOutput,
-                });
-              }
+              await publishTimeoutReviewDetailsMerge({
+                octokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                partialCommentId,
+                partialBody,
+                botHandles: [githubApp.getAppSlug(), "claude"],
+                timeoutReviewDetailsRuntime: {
+                  timeoutProgress: timeoutReviewDetails,
+                  reviewFirstPass: timeoutFirstPass,
+                  timeoutBudget: appliedTimeoutBudget
+                    ? {
+                        remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                        infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                        totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                      }
+                    : null,
+                },
+                authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                reviewBoundedness,
+                baseLog,
+                logger,
+                canPublishVisibleOutput,
+                renderReviewDetailsBody,
+              });
 
               // Structured resilience telemetry (best-effort)
               if (config.telemetry.enabled) {
