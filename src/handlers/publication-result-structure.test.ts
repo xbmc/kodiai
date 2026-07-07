@@ -344,4 +344,18 @@ describe("publication result structure", () => {
     expect(continuationSource).toContain("const quietSettlement = await settleRetryWithNoAdditionalResults");
     expect(continuationSource).toContain("quietSettlement.value");
   });
+
+  test("keeps cost warning publication helpers on shared Result shape", () => {
+    for (const helper of [
+      "./review-cost-warning.ts",
+      "./mention-cost-warning.ts",
+    ]) {
+      const source = readFileSync(new URL(helper, import.meta.url), "utf8");
+
+      expect(source, helper).toContain("type Result");
+      expect(source, helper).toContain("CostWarningPublicationResult");
+      expect(source, helper).toMatch(/Result<\w+CostWarningPublicationStatus/);
+      expect(source, helper).toMatch(/\bok\(/);
+    }
+  });
 });

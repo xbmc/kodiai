@@ -27,7 +27,7 @@ describe("review cost warning", () => {
       },
     } as any;
 
-    await maybePostReviewCostWarning({
+    const result = await maybePostReviewCostWarning({
       costUsd: 6.123456,
       thresholdUsd: 5,
       owner: "xbmc",
@@ -40,6 +40,10 @@ describe("review cost warning", () => {
       logger: { warn: () => {} },
     });
 
+    expect(result).toEqual({
+      ok: true,
+      value: { status: "published", published: true },
+    });
     expect(createComment).toHaveBeenCalledTimes(1);
     expect(createComment.mock.calls[0]![0]).toMatchObject({
       owner: "xbmc",
@@ -52,7 +56,7 @@ describe("review cost warning", () => {
   test("does not publish when the visible-output gate is closed", async () => {
     const createComment = mock(async () => ({ data: { id: 99 } }));
 
-    await maybePostReviewCostWarning({
+    const result = await maybePostReviewCostWarning({
       costUsd: 6,
       thresholdUsd: 5,
       owner: "xbmc",
@@ -67,6 +71,10 @@ describe("review cost warning", () => {
       logger: { warn: () => {} },
     });
 
+    expect(result).toEqual({
+      ok: true,
+      value: { status: "skipped", published: false },
+    });
     expect(createComment).not.toHaveBeenCalled();
   });
 });

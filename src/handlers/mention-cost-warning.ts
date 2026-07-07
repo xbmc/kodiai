@@ -1,9 +1,18 @@
 import type { Octokit } from "@octokit/rest";
 import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
+import { ok, type Result } from "../lib/result.ts";
 
 type CostWarningLogger = {
   warn(fields: Record<string, unknown>, message?: string): void;
 };
+
+export type MentionCostWarningPublicationStatus =
+  | { status: "skipped"; published: false }
+  | { status: "published"; published: true }
+  | { status: "failed"; published: false };
+
+export type MentionCostWarningPublicationResult =
+  Result<MentionCostWarningPublicationStatus, never>;
 
 export function buildMentionCostWarningBody(params: {
   costUsd: number;
@@ -26,7 +35,7 @@ export async function postMentionCostWarning(params: {
   costUsd: number;
   thresholdUsd: number;
   botHandles: string[];
-}): Promise<void> {
+}): Promise<MentionCostWarningPublicationResult> {
   const octokit = await params.getOctokit();
   await createIssueCommentWithPublicationPipeline(octokit, {
     owner: params.owner,
@@ -39,6 +48,7 @@ export async function postMentionCostWarning(params: {
     botHandles: params.botHandles,
     preserveKodiaiMarkers: true,
   });
+  return ok({ status: "published", published: true });
 }
 
 export async function maybePostMentionCostWarning(params: {
@@ -54,13 +64,13 @@ export async function maybePostMentionCostWarning(params: {
   getOctokit: () => Promise<Octokit>;
   botHandles: string[];
   logger: CostWarningLogger;
-}): Promise<void> {
+}): Promise<MentionCostWarningPublicationResult> {
   if (
     params.thresholdUsd <= 0
     || params.costUsd === undefined
     || params.costUsd <= params.thresholdUsd
   ) {
-    return;
+    return ok({ status: "skipped", published: false });
   }
 
   params.logger.warn(
@@ -81,10 +91,10 @@ export async function maybePostMentionCostWarning(params: {
         params.reviewOutputKey,
       )
     ) {
-      return;
+      return ok({ status: "skipped", published: false });
     }
 
-    await postMentionCostWarning({
+    return await postMentionCostWarning({
       getOctokit: params.getOctokit,
       owner: params.owner,
       repo: params.repo,
@@ -95,5 +105,6 @@ export async function maybePostMentionCostWarning(params: {
     });
   } catch (err) {
     params.logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
+    return ok({ status: "failed", published: false });
   }
 }

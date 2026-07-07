@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   buildMentionCostWarningBody,
+  maybePostMentionCostWarning,
   postMentionCostWarning,
 } from "./mention-cost-warning.ts";
 
@@ -27,7 +28,7 @@ describe("mention cost warning", () => {
       },
     } as any;
 
-    await postMentionCostWarning({
+    const result = await postMentionCostWarning({
       getOctokit: async () => octokit,
       owner: "xbmc",
       repo: "kodiai",
@@ -37,6 +38,10 @@ describe("mention cost warning", () => {
       botHandles: ["kodiai"],
     });
 
+    expect(result).toEqual({
+      ok: true,
+      value: { status: "published", published: true },
+    });
     expect(createComment).toHaveBeenCalledTimes(1);
     expect(createComment.mock.calls[0]![0]).toMatchObject({
       owner: "xbmc",
@@ -44,5 +49,32 @@ describe("mention cost warning", () => {
       issue_number: 42,
       body: expect.stringContaining("This execution cost $6.1235 USD"),
     });
+  });
+
+  test("returns skipped Result when explicit review publication gate is closed", async () => {
+    const createComment = mock(async () => ({ data: { id: 99 } }));
+
+    const result = await maybePostMentionCostWarning({
+      costUsd: 6,
+      thresholdUsd: 5,
+      owner: "xbmc",
+      repo: "kodiai",
+      issueNumber: 42,
+      prNumber: 42,
+      explicitReviewRequest: true,
+      reviewOutputKey: "review-key",
+      canPublishExplicitReviewOutput: () => false,
+      getOctokit: async () => ({
+        rest: { issues: { createComment } },
+      } as any),
+      botHandles: ["kodiai"],
+      logger: { warn: () => {} },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: "skipped", published: false },
+    });
+    expect(createComment).not.toHaveBeenCalled();
   });
 });

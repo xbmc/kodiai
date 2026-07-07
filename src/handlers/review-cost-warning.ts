@@ -1,9 +1,18 @@
 import type { Octokit } from "@octokit/rest";
 import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
+import { ok, type Result } from "../lib/result.ts";
 
 type CostWarningLogger = {
   warn(fields: Record<string, unknown>, message?: string): void;
 };
+
+export type ReviewCostWarningPublicationStatus =
+  | { status: "skipped"; published: false }
+  | { status: "published"; published: true }
+  | { status: "failed"; published: false };
+
+export type ReviewCostWarningPublicationResult =
+  Result<ReviewCostWarningPublicationStatus, never>;
 
 export function buildReviewCostWarningBody(params: {
   costUsd: number;
@@ -29,13 +38,13 @@ export async function maybePostReviewCostWarning(params: {
   getOctokit: () => Promise<Octokit>;
   botHandles: string[];
   logger: CostWarningLogger;
-}): Promise<void> {
+}): Promise<ReviewCostWarningPublicationResult> {
   if (
     params.thresholdUsd <= 0
     || params.costUsd === undefined
     || params.costUsd <= params.thresholdUsd
   ) {
-    return;
+    return ok({ status: "skipped", published: false });
   }
 
   params.logger.warn(
@@ -50,7 +59,7 @@ export async function maybePostReviewCostWarning(params: {
 
   try {
     if (!params.canPublishVisibleOutput("cost warning comment")) {
-      return;
+      return ok({ status: "skipped", published: false });
     }
 
     params.setReviewWorkPhase("publish");
@@ -66,7 +75,9 @@ export async function maybePostReviewCostWarning(params: {
       botHandles: params.botHandles,
       preserveKodiaiMarkers: true,
     });
+    return ok({ status: "published", published: true });
   } catch (err) {
     params.logger.warn({ err }, "Failed to publish review cost warning comment (non-blocking)");
+    return ok({ status: "failed", published: false });
   }
 }
