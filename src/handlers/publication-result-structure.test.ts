@@ -103,4 +103,19 @@ describe("publication result structure", () => {
     expect(source).toMatch(/\berr\(/);
     expect(preparationSource).toContain("if (!candidateInlinePublication.ok)");
   });
+
+  test("keeps mention post-executor publication boundary on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./mention-post-executor-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const handlerSource = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("MentionPostExecutorPublicationResult = Result<");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toMatch(/\berr\(/);
+    expect(handlerSource).toContain("if (!postExecutorPublication.ok)");
+    expect(handlerSource).toContain("postExecutorPublication.value.writeOutputHandled");
+  });
 });

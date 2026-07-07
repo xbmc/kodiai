@@ -448,7 +448,10 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
           postFormatterVisibleDiagnostic,
           reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
         });
-        if (postExecutorPublication.writeOutputHandled) {
+        if (!postExecutorPublication.ok) {
+          throw postExecutorPublication.err.error;
+        }
+        if (postExecutorPublication.value.writeOutputHandled) {
           return;
         }
       } catch (err) {

@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import type {
   FormatterSuggestionMentionRunner,
   FormatterSuggestionVisibleDiagnosticPoster,
@@ -24,9 +25,18 @@ import type { MentionWriteRequestContext } from "./mention-write-request-context
 
 type RouteMentionWriteOutputParams = Parameters<typeof routeMentionWriteOutputIfEnabled>[0];
 
-export type MentionPostExecutorPublicationResult = {
+export type MentionPostExecutorPublicationValue = {
   writeOutputHandled: boolean;
 };
+
+export type MentionPostExecutorPublicationError = {
+  error: unknown;
+};
+
+export type MentionPostExecutorPublicationResult = Result<
+  MentionPostExecutorPublicationValue,
+  MentionPostExecutorPublicationError
+>;
 
 export function buildMentionPostExecutorPublicationAdapters(params: {
   installationId: number;
@@ -161,7 +171,7 @@ export async function publishMentionPostExecutorOutputs(params: {
     maybeReplyWritePermissionFailure,
     writeRateLimit: params.writeRateLimit,
   })) {
-    return { writeOutputHandled: true };
+    return ok({ writeOutputHandled: true });
   }
 
   publicationState = {
@@ -210,8 +220,8 @@ export async function publishMentionPostExecutorOutputs(params: {
     logger: params.logger,
   });
   if (!combinedFormatterPublication.ok) {
-    throw combinedFormatterPublication.err.error;
+    return err({ error: combinedFormatterPublication.err.error });
   }
 
-  return { writeOutputHandled: false };
+  return ok({ writeOutputHandled: false });
 }
