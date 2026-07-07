@@ -146,7 +146,7 @@ import {
   buildReviewTimeoutClassificationContextParams,
   resolveReviewTimeoutClassificationContext,
 } from "./review-timeout-classification-context.ts";
-import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
+import { publishBoundedFirstPassTimeoutOutput, resolveBoundedFirstPassTimeoutPublicationState } from "./review-bounded-first-pass-timeout-publication.ts";
 import {
   buildReviewTimeoutRetryEnqueueParams,
   buildReviewTimeoutRetryPreEnqueueParams,
@@ -1269,11 +1269,10 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
               hadInlineOutput: hasPublishedInlines,
               timeoutClassificationTelemetry,
             });
-            partialCommentId = boundedFirstPassPublication.partialCommentId;
-            publishedPartialReview = boundedFirstPassPublication.publishedPartialReview;
-            if (boundedFirstPassPublication.continuationProjectionDegraded) {
-              continuationProjectionDegraded = true;
-            }
+            const boundedFirstPassPublicationState = resolveBoundedFirstPassTimeoutPublicationState(boundedFirstPassPublication, continuationProjectionDegraded);
+            partialCommentId = boundedFirstPassPublicationState.partialCommentId;
+            publishedPartialReview = boundedFirstPassPublicationState.publishedPartialReview;
+            continuationProjectionDegraded = boundedFirstPassPublicationState.continuationProjectionDegraded;
 
             const retryEnqueueContext = resolveReviewRetryEnqueueContext({
               deliveryId: event.id,

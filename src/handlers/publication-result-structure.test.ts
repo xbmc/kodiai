@@ -164,4 +164,20 @@ describe("publication result structure", () => {
     expect(source).toContain("if (!fallbackPublication.ok)");
     expect(source).toContain("fallbackPublication.value");
   });
+
+  test("keeps bounded first-pass timeout publication orchestration on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const handlerSource = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("BoundedFirstPassTimeoutPublicationResult");
+    expect(source).toContain("Result<BoundedFirstPassTimeoutPublicationValue");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toContain("if (!publication.ok)");
+    expect(handlerSource).toContain("resolveBoundedFirstPassTimeoutPublicationState");
+    expect(handlerSource).toContain("boundedFirstPassPublicationState.partialCommentId");
+  });
 });

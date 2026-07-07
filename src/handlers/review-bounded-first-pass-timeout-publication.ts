@@ -4,6 +4,7 @@ import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import type { ReviewFirstPassPayload } from "../lib/review-first-pass.ts";
 import type { TimeoutReviewDetailsProgress } from "../lib/review-details-formatting.ts";
+import { ok, type Result } from "../lib/result.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { ReviewDetailsBodyRuntimeParams } from "./review-details-body.ts";
 import type { ReviewDetailsPublicationRuntime } from "./review-details-publication-runtime.ts";
@@ -14,6 +15,33 @@ import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 import { logBoundedFirstPassPublicationFailure } from "./review-bounded-first-pass-publication-failure-log.ts";
 import { recordReviewTimeoutResilienceTelemetry } from "./review-timeout-resilience-telemetry.ts";
+
+export type BoundedFirstPassTimeoutPublicationValue = {
+  partialCommentId: number | undefined;
+  publishedPartialReview: boolean;
+  continuationProjectionDegraded: boolean;
+};
+
+export type BoundedFirstPassTimeoutPublicationResult =
+  Result<BoundedFirstPassTimeoutPublicationValue, never>;
+
+export function resolveBoundedFirstPassTimeoutPublicationState(
+  publication: BoundedFirstPassTimeoutPublicationResult,
+  continuationProjectionDegraded: boolean,
+): BoundedFirstPassTimeoutPublicationValue {
+  if (!publication.ok) {
+    return {
+      partialCommentId: undefined,
+      publishedPartialReview: false,
+      continuationProjectionDegraded: true,
+    };
+  }
+  return {
+    ...publication.value,
+    continuationProjectionDegraded: continuationProjectionDegraded
+      || publication.value.continuationProjectionDegraded,
+  };
+}
 
 export async function publishBoundedFirstPassTimeoutOutput(params: {
   timeoutFirstPass: ReviewFirstPassPayload | null;
@@ -52,21 +80,17 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
   executionConclusion: string;
   hadInlineOutput: boolean;
   timeoutClassificationTelemetry: ReviewTimeoutClassificationTelemetryFields;
-}): Promise<{
-  partialCommentId: number | undefined;
-  publishedPartialReview: boolean;
-  continuationProjectionDegraded: boolean;
-}> {
+}): Promise<BoundedFirstPassTimeoutPublicationResult> {
   if (
     params.timeoutFirstPass?.state !== "bounded-first-pass" ||
     params.deferredPublicOutputForContinuation ||
     params.partialBody === undefined
   ) {
-    return {
+    return ok({
       partialCommentId: undefined,
       publishedPartialReview: false,
       continuationProjectionDegraded: false,
-    };
+    });
   }
 
   const partialPublication = await publishBoundedFirstPassReview({
@@ -86,20 +110,20 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
       deliveryId: params.deliveryId,
       prNumber: params.prNumber,
     });
-    return {
+    return ok({
       partialCommentId: undefined,
       publishedPartialReview: false,
       continuationProjectionDegraded: false,
-    };
+    });
   }
 
   const partialCommentId = partialPublication.value.commentId;
   if (partialCommentId === undefined) {
-    return {
+    return ok({
       partialCommentId: undefined,
       publishedPartialReview: false,
       continuationProjectionDegraded: false,
-    };
+    });
   }
 
   await persistPartialReviewCheckpoint({
@@ -181,9 +205,9 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
     timeoutClassificationTelemetry: params.timeoutClassificationTelemetry,
   });
 
-  return {
+  return ok({
     partialCommentId,
     publishedPartialReview: true,
     continuationProjectionDegraded: timeoutResilienceTelemetry.projectionDegraded,
-  };
+  });
 }
