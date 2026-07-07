@@ -157,7 +157,7 @@ export async function publishMentionPostExecutorOutputs(params: {
     botHandles: params.botHandles,
   });
 
-  if (await routeMentionWriteOutputIfEnabled({
+  const writeOutputRouting = await routeMentionWriteOutputIfEnabled({
     workspace: params.workspace,
     workspaceToken: params.workspaceToken,
     octokit: params.octokit,
@@ -174,7 +174,11 @@ export async function publishMentionPostExecutorOutputs(params: {
     postMentionReply: params.postMentionReply,
     maybeReplyWritePermissionFailure,
     writeRateLimit: params.writeRateLimit,
-  })) {
+  });
+  if (!writeOutputRouting.ok) {
+    return err({ error: writeOutputRouting.err });
+  }
+  if (writeOutputRouting.value.routed) {
     return ok({ writeOutputHandled: true });
   }
 

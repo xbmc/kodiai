@@ -422,4 +422,21 @@ describe("publication result structure", () => {
     expect(sameRepoSource).toContain("permissionReply.value.status === \"handled\"");
     expect(botSource).toContain("permissionReply.value.status === \"handled\"");
   });
+
+  test("keeps mention write-output enabled routing on shared Result shape", () => {
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(
+      new URL("./mention-post-executor-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(routingSource).toContain("MentionWriteOutputEnabledRoutingResult");
+    expect(routingSource).toContain("Result<MentionWriteOutputEnabledRoutingStatus");
+    expect(routingSource).not.toContain("}): Promise<boolean> {");
+    expect(routingSource).toContain("const writeOutput = await routeMentionWriteOutput");
+    expect(routingSource).toContain("if (!writeOutput.ok)");
+    expect(postExecutorSource).toContain("const writeOutputRouting = await routeMentionWriteOutputIfEnabled");
+    expect(postExecutorSource).toContain("if (!writeOutputRouting.ok)");
+    expect(postExecutorSource).toContain("writeOutputRouting.value.routed");
+  });
 });

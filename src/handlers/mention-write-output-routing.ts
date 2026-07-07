@@ -4,7 +4,7 @@ import {
 } from "../jobs/workspace.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import {
   buildNoFileChangesReply,
   createIssueWriteFailurePoster,
@@ -48,6 +48,8 @@ type PullsListOctokit = {
 type PublishMentionForkWriteOutput = typeof defaultPublishMentionForkWriteOutput;
 type AttemptSameRepoPrWrite = typeof defaultAttemptSameRepoPrWrite;
 type PublishMentionBotWritePullRequest = typeof defaultPublishMentionBotWritePullRequest;
+type MentionWriteOutputEnabledRoutingStatus = { routed: boolean };
+type MentionWriteOutputEnabledRoutingResult = Result<MentionWriteOutputEnabledRoutingStatus>;
 type MentionWriteOutputRoutingResult = Result<{ status: "handled" }>;
 
 export async function routeMentionWriteOutputIfEnabled(params: {
@@ -84,13 +86,13 @@ export async function routeMentionWriteOutputIfEnabled(params: {
     postReply: PostMentionReply;
   }) => Promise<WritePermissionFailureReplyResult>;
   writeRateLimit: MentionWriteRateLimitRuntime;
-}): Promise<boolean> {
+}): Promise<MentionWriteOutputEnabledRoutingResult> {
   const { writeContext } = params;
   if (!writeContext.writeEnabled || !writeContext.writeOutputKey || !writeContext.writeBranchName) {
-    return false;
+    return ok({ routed: false });
   }
 
-  await routeMentionWriteOutput({
+  const writeOutput = await routeMentionWriteOutput({
     workspaceDir: params.workspace.dir,
     workspaceToken: params.workspaceToken,
     octokit: params.octokit,
@@ -116,8 +118,11 @@ export async function routeMentionWriteOutputIfEnabled(params: {
     maybeReplyWritePermissionFailure: params.maybeReplyWritePermissionFailure,
     recordWriteRateLimitSuccess: (owner, repo) => params.writeRateLimit.recordSuccess(owner, repo),
   });
+  if (!writeOutput.ok) {
+    return err(writeOutput.err);
+  }
 
-  return true;
+  return ok({ routed: true });
 }
 
 export async function routeMentionWriteOutput(params: {

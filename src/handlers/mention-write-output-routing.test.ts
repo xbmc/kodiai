@@ -180,7 +180,7 @@ describe("routeMentionWriteOutput", () => {
 });
 
 describe("routeMentionWriteOutputIfEnabled", () => {
-  test("returns false without routing when write output is not publishable", async () => {
+  test("returns a skipped Result without routing when write output is not publishable", async () => {
     const routed = await routeMentionWriteOutputIfEnabled({
       workspace: {
         dir: "/tmp/kodiai-workspace",
@@ -234,6 +234,6 @@ describe("routeMentionWriteOutputIfEnabled", () => {
       },
     });
 
-    expect(routed).toBe(false);
+    expect(routed).toEqual({ ok: true, value: { routed: false } });
   });
 });
