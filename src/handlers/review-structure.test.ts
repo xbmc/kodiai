@@ -197,11 +197,12 @@ describe("review handler structure", () => {
 
   test("keeps retry no-additional-results settlement policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Retry produced no additional results -- keeping original partial review");
     expect(source).not.toContain("resolveQuietSettledContinuationFamilyState({");
-    expect(source).toContain("settleRetryWithNoAdditionalResults");
-    expect(source).toContain("./review-retry-settlement.ts");
+    expect(source).toContain("settleRetryContinuationResults");
+    expect(retryContinuationSettlementSource).toContain("settleRetryWithNoAdditionalResults");
 
     const retrySettlementSource = readFileSync(new URL("./review-retry-settlement.ts", import.meta.url), "utf8");
     expect(retrySettlementSource).toContain("resolveQuietSettledContinuationFamilyState");
@@ -715,29 +716,47 @@ describe("review handler structure", () => {
 
   test("keeps retry Review Details publication orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
     const retryMergeSource = readFileSync(new URL("./review-retry-merge-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("retry canonical Review Details merge");
     expect(source).not.toContain("Failed to update retry canonical review surface with Review Details");
     expect(source).not.toContain("retry degraded Review Details fallback comment");
-    expect(source).toContain("./review-retry-merge-publication.ts");
+    expect(source).toContain("./review-retry-continuation-settlement.ts");
+    expect(retryContinuationSettlementSource).toContain("./review-retry-merge-publication.ts");
     expect(retryMergeSource).toContain("./review-details-retry-publication.ts");
     expect(retryMergeSource).toContain("publishRetryReviewDetailsMerge");
   });
 
   test("keeps retry merge publication settlement out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryOctokit = await githubApp.getInstallationOctokit");
     expect(source).not.toContain("const retryReviewDetailsPublication = await publishRetryReviewDetailsMerge({");
     expect(source).not.toContain("resolveMergedContinuationFamilyState({");
     expect(source).not.toContain("Retry Review Details publication failed");
-    expect(source).toContain("publishRetryMergeContinuationResults");
-    expect(source).toContain("./review-retry-merge-publication.ts");
+    expect(source).toContain("settleRetryContinuationResults");
+    expect(retryContinuationSettlementSource).toContain("publishRetryMergeContinuationResults");
 
     const retryMergeSource = readFileSync(new URL("./review-retry-merge-publication.ts", import.meta.url), "utf8");
     expect(retryMergeSource).toContain("publishRetryReviewDetailsMerge");
     expect(retryMergeSource).toContain("resolveMergedContinuationFamilyState");
+  });
+
+  test("keeps retry continuation settlement orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retrySettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const settlementDecision = settleReviewContinuation({");
+    expect(source).not.toContain("const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({");
+    expect(source).not.toContain("settlementReason: \"no-meaningful-delta\"");
+    expect(source).not.toContain("Retry settlement skipped because the base checkpoint was missing");
+    expect(source).not.toContain("Retry merge skipped because bounded first-pass state became non-publishable");
+    expect(source).toContain("settleRetryContinuationResults");
+    expect(source).toContain("./review-retry-continuation-settlement.ts");
+    expect(retrySettlementSource).toContain("settleReviewContinuation");
+    expect(retrySettlementSource).toContain("publishRetryMergeContinuationResults");
   });
 
   test("keeps first-pass Review Details publication branching out of the monster handler", () => {
@@ -775,23 +794,25 @@ describe("review handler structure", () => {
 
   test("keeps continuation revision delta classification out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("knowledgeStore.getPriorReviewFindings({\n                              repo: `${apiOwner}/${apiRepo}`");
     expect(source).not.toContain("currentFindings: currentFindings.map((finding) => ({");
     expect(source).not.toContain("Continuation delta classification failed (fail-open, merging without revision labels)");
-    expect(source).toContain("resolveReviewContinuationRevisionCounts");
-    expect(source).toContain("./review-continuation-revision-counts.ts");
+    expect(source).toContain("settleRetryContinuationResults");
+    expect(retryContinuationSettlementSource).toContain("resolveReviewContinuationRevisionCounts");
   });
 
   test("keeps retry continuation merge body context out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const mergedFirstPass = normalizeReviewFirstPass({");
     expect(source).not.toContain("const summaryDraftForMerge =");
     expect(source).not.toContain("const maxTurnsContinuationCompleted =");
     expect(source).not.toContain("const mergedBody = maxTurnsContinuationCompleted");
-    expect(source).toContain("resolveReviewContinuationMergeContext");
-    expect(source).toContain("./review-continuation-merge-context.ts");
+    expect(source).toContain("settleRetryContinuationResults");
+    expect(retryContinuationSettlementSource).toContain("resolveReviewContinuationMergeContext");
   });
 
   test("keeps clean review approval body assembly out of the monster handler", () => {

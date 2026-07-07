@@ -20,9 +20,6 @@ import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
-import {
-  settleReviewContinuation,
-} from "../lib/review-continuation-lifecycle.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
 import {
   writeReviewLearningMemoryBatch,
@@ -194,8 +191,6 @@ import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
 import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
-import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
-import { resolveReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
@@ -207,8 +202,7 @@ import { resolveReviewTimeoutContinuationState } from "./review-timeout-continua
 import {
   resolvePendingContinuationFamilyState,
 } from "./review-continuation-family-state-projection.ts";
-import { settleRetryWithNoAdditionalResults } from "./review-retry-settlement.ts";
-import { publishRetryMergeContinuationResults } from "./review-retry-merge-publication.ts";
+import { settleRetryContinuationResults } from "./review-retry-continuation-settlement.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
@@ -2124,147 +2118,38 @@ export function createReviewHandler(deps: {
                         getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
                       });
 
-                    if (
-                      retryResult.conclusion === "success" ||
-                      (retryResult.isTimeout && retryHasResults)
-                    ) {
-                      if (!checkpoint) {
-                        await settleRetryWithoutCanonicalUpdate({
-                          attemptId: retryReviewWorkAttempt.attemptId,
-                          reviewOutputKey: retryReviewOutputKey,
-                          deliveryId: retryDeliveryId,
-                          reason: "missing-base-checkpoint",
-                          logMessage: "Retry settlement skipped because the base checkpoint was missing",
-                        });
-                        return;
-                      }
-
-                      const settlementDecision = settleReviewContinuation({
-                        reviewOutputKey,
-                        continuationReviewOutputKey: retryReviewOutputKey,
-                        baseCheckpoint: checkpoint,
-                        continuationCheckpoint: retryCheckpoint,
-                        continuationPublished: retryResult.published ?? false,
-                      });
-
-                      if (settlementDecision.decision === "merge-continuation") {
-                        const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
-                          repo: `${apiOwner}/${apiRepo}`,
-                          prNumber: pr.number,
-                          reviewOutputKey,
-                          logger,
-                          baseLog,
-                          getPriorReviewFindings: knowledgeStore?.getPriorReviewFindings,
-                          extractFindings: async () => await extractFindingsFromReviewComments({
-                            octokit: await githubApp.getInstallationOctokit(event.installationId),
-                            owner: apiOwner,
-                            repo: apiRepo,
-                            prNumber: pr.number,
-                            reviewOutputKey,
-                            logger,
-                            baseLog,
-                          }),
-                        });
-
-                        if (
-                          continuationRevisionCounts
-                          && continuationRevisionCounts.new === 0
-                          && continuationRevisionCounts.stillOpen === 0
-                          && continuationRevisionCounts.resolved === 0
-                        ) {
-                          await settleRetryWithNoAdditionalResults({
-                            logger,
-                            deliveryId: retryDeliveryId,
-                            prNumber: pr.number,
-                            retryConclusion: retryResult.conclusion,
-                            settlementReason: "no-meaningful-delta",
-                            quietSettlement: {
-                              attemptId: retryReviewWorkAttempt.attemptId,
-                              reviewOutputKey: retryReviewOutputKey,
-                              persistContinuationFamilyState,
-                            },
-                            discardCheckpoints: () => discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]),
-                          });
-                          return;
-                        }
-
-                        const mergeContext = resolveReviewContinuationMergeContext({
-                          reviewBoundedness,
-                          mergedCheckpoint: settlementDecision.mergedCheckpoint,
-                          retryCheckpoint,
-                          baseCheckpoint: checkpoint,
-                          firstPassOutcome: {
-                            conclusion: result.conclusion,
-                            stopReason: result.stopReason,
-                            failureSubtype: result.failureSubtype,
-                            isTimeout: result.isTimeout,
-                            published: true,
-                          },
-                          timeoutFirstPassBoundedReason: timeoutFirstPass?.boundedReason,
-                          timeoutDurationSeconds: timeoutDuration,
-                          retryFilesCount: retryFiles.length,
-                          reviewOutputKey,
-                          continuationRevisionCounts,
-                        });
-
-                        if (mergeContext.status === "non-publishable") {
-                          await settleRetryWithoutCanonicalUpdate({
-                            attemptId: retryReviewWorkAttempt.attemptId,
-                            reviewOutputKey: retryReviewOutputKey,
-                            deliveryId: retryDeliveryId,
-                            reason: mergeContext.reason,
-                            logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
-                          });
-                          return;
-                        }
-
-                        await publishRetryMergeContinuationResults({
-                          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
-                          getAppSlug: () => githubApp.getAppSlug(),
-                          owner: apiOwner,
-                          repo: apiRepo,
-                          prNumber: pr.number,
-                          attemptId: retryReviewWorkAttempt.attemptId,
-                          deliveryId: retryDeliveryId,
-                          reviewOutputKey,
-                          retryReviewOutputKey,
-                          retryConclusion: retryResult.conclusion,
-                          partialCommentId,
-                          settlementReason: settlementDecision.reason,
-                          mergeContext,
-                          knowledgeStore,
-                          authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                          reviewBoundedness,
-                          baseLog,
-                          logger,
-                          canPublishReviewWorkOutput,
-                          setPublishPhase: () => setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish"),
-                          renderReviewDetailsBody,
-                          settleRetryWithoutCanonicalUpdate,
-                          persistContinuationFamilyState,
-                        });
-                      } else {
-                        await settleRetryWithNoAdditionalResults({
-                          logger,
-                          deliveryId: retryDeliveryId,
-                          prNumber: pr.number,
-                          retryConclusion: retryResult.conclusion,
-                          settlementReason: settlementDecision.reason,
-                          quietSettlement: {
-                            attemptId: retryReviewWorkAttempt.attemptId,
-                            reviewOutputKey: retryReviewOutputKey,
-                            persistContinuationFamilyState,
-                          },
-                        });
-                      }
-                    } else {
-                      await settleRetryWithNoAdditionalResults({
-                        logger,
-                        deliveryId: retryDeliveryId,
-                        prNumber: pr.number,
-                        retryConclusion: retryResult.conclusion,
-                      });
-                    }
+                    await settleRetryContinuationResults({
+                      retryCompletedWithResults:
+                        retryResult.conclusion === "success" ||
+                        (retryResult.isTimeout === true && retryHasResults),
+                      getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+                      getAppSlug: () => githubApp.getAppSlug(),
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      attemptId: retryReviewWorkAttempt.attemptId,
+                      deliveryId: retryDeliveryId,
+                      reviewOutputKey,
+                      retryReviewOutputKey,
+                      retryResult,
+                      firstPassOutcome: result,
+                      baseCheckpoint: checkpoint,
+                      retryCheckpoint,
+                      partialCommentId,
+                      retryFilesCount: retryFiles.length,
+                      timeoutDurationSeconds: timeoutDuration,
+                      timeoutFirstPassBoundedReason: timeoutFirstPass?.boundedReason,
+                      knowledgeStore,
+                      authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                      reviewBoundedness,
+                      baseLog,
+                      logger,
+                      canPublishReviewWorkOutput,
+                      setPublishPhase: () => setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish"),
+                      renderReviewDetailsBody,
+                      settleRetryWithoutCanonicalUpdate,
+                      persistContinuationFamilyState,
+                    });
 
                   } catch (retryErr) {
                     logger.error(
