@@ -529,6 +529,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-executor-state.ts");
   });
 
+  test("keeps initial review executor context projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const contextSource = readFileSync(new URL("./review-execution-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const result = await executor.execute({");
+    expect(source).not.toContain("triggerBody: reviewPrompt,\n          prompt: reviewPrompt");
+    expect(source).toContain("executor.execute(buildReviewExecutionContext({");
+    expect(source).toContain("./review-execution-context.ts");
+    expect(contextSource).toContain("export function buildReviewExecutionContext");
+  });
+
   test("keeps executor phase timing map mutation out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const phaseTimingSource = readFileSync(new URL("../review-orchestration/review-phase-timing.ts", import.meta.url), "utf8");

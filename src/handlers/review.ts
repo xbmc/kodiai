@@ -173,6 +173,7 @@ import {
   logReviewPlanPublication,
 } from "./review-plan-publication-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
+import { buildReviewExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
 import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
@@ -964,33 +965,27 @@ export function createReviewHandler(deps: {
 
         // Execute review via Claude
         setReviewWorkPhase("executor-dispatch");
-        const result = await executor.execute({
+        const result = await executor.execute(buildReviewExecutionContext({
           workspace,
           installationId: event.installationId,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
-          commentId: undefined,
-          botHandles: [githubApp.getAppSlug(), "claude"],
-          eventType: `pull_request.${payload.action}`,
+          appSlug: githubApp.getAppSlug(),
+          action: payload.action,
           taskType: reviewRouting.taskType,
-          triggerBody: reviewPrompt,
-          prompt: reviewPrompt,
-          promptSections: reviewPromptSections,
+          reviewPrompt,
+          reviewPromptSections,
           reviewOutputKey,
           deliveryId: event.id,
           candidateVerificationContext,
           knowledgeStore,
-          totalFiles: changedFiles.length,
-          enableCheckpointTool: checkpointEnabled,
-          enableCandidateFindingTool: true,
+          changedFileCount: changedFiles.length,
+          checkpointEnabled,
           prDiffCommentabilityIndex,
-          // TMO-04: total timeout = infra overhead cushion + complexity-scaled remote runtime budget
-          dynamicTimeoutSeconds: appliedTimeoutBudget
-            ? appliedTimeoutBudget.totalTimeoutSeconds
-            : undefined,
-          maxTurnsOverride: reviewMaxTurnsOverride,
-        });
+          appliedTimeoutBudget,
+          reviewMaxTurnsOverride,
+        }));
         const executorState = projectReviewExecutorState({
           result,
           currentPromptSectionRecords: visibleBudgetState.promptSectionRecords,
