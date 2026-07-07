@@ -221,6 +221,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-publication-context.ts");
   });
 
+  test("keeps timeout execution-conclusion projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const recentTimeouts = await telemetryStore.countRecentTimeouts?.");
+    expect(source).not.toContain("const isChronicTimeout = recentTimeouts >= 3;");
+    expect(source).not.toContain("const executionConclusion = result.isTimeout && result.published");
+    expect(source).toContain("resolveReviewTimeoutExecutionContext");
+    expect(source).toContain("./review-timeout-execution-context.ts");
+  });
+
   test("keeps partial review checkpoint persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const orchestrationSource = readFileSync(

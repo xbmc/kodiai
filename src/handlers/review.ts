@@ -144,6 +144,7 @@ import {
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
+import { resolveReviewTimeoutExecutionContext } from "./review-timeout-execution-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 import { settleRetryContinuationResults } from "./review-retry-continuation-settlement.ts";
@@ -1219,20 +1220,21 @@ export function createReviewHandler(deps: {
               }),
             });
 
-            // Step 2: Check chronic timeout threshold before publishing
-            const recentTimeouts = await telemetryStore.countRecentTimeouts?.(
-              `${apiOwner}/${apiRepo}`,
-              pr.user.login,
-            ) ?? 0;
-            const isChronicTimeout = recentTimeouts >= 3;
-
-            const executionConclusion = result.isTimeout && result.published
-              ? "timeout_partial"
-              : result.isTimeout
-                ? "timeout"
-                : turnBudgetExhausted
-                  ? "max_turns"
-                  : result.conclusion;
+            const {
+              recentTimeouts,
+              isChronicTimeout,
+              executionConclusion,
+            } = await resolveReviewTimeoutExecutionContext({
+              repo: `${apiOwner}/${apiRepo}`,
+              prAuthor: pr.user.login,
+              outcome: {
+                isTimeout: result.isTimeout,
+                published: result.published,
+                conclusion: result.conclusion,
+              },
+              turnBudgetExhausted,
+              countRecentTimeouts: (repo, prAuthor) => telemetryStore.countRecentTimeouts?.(repo, prAuthor),
+            });
 
             const retryContext = resolveReviewTimeoutRetryContext({
               reviewOutputKey,
