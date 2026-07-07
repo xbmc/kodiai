@@ -100,19 +100,25 @@ describe("mention handler structure", () => {
 
   test("keeps mention execution completion logging out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const logMentionExecutionCompleted = (): void =>");
     expect(source).not.toContain("buildMentionExecutionCompletedLogFields({");
-    expect(source).toContain("createMentionExecutionCompletedLogger");
+    expect(source).not.toContain("createMentionExecutionCompletedLogger({");
+    expect(source).toContain("handleMentionPostExecution");
+    expect(postExecutionSource).toContain("createMentionExecutionCompletedLogger({");
   });
 
   test("keeps mention execution completion state projection out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const publicationStateSource = readFileSync(new URL("./mention-publication-state.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("getState: () => ({\n            surface: mention.surface");
     expect(source).not.toContain("issueNumber: mention.issueNumber,\n            result,");
-    expect(source).toContain("buildMentionExecutionCompletedState");
+    expect(source).not.toContain("buildMentionExecutionCompletedState({");
+    expect(source).toContain("handleMentionPostExecution");
+    expect(postExecutionSource).toContain("buildMentionExecutionCompletedState({");
     expect(publicationStateSource).toContain("export function buildMentionExecutionCompletedState");
   });
 
@@ -131,25 +137,29 @@ describe("mention handler structure", () => {
 
   test("keeps mention execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const mentionPostExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("executionIdentity: `${event.id}:reuse.mention-derived-context`");
     expect(source).not.toContain("Mention reuse telemetry write failed (non-blocking)");
-    expect(source).toContain("recordMentionPostExecutionTelemetry");
-    expect(source).toContain("./mention-post-execution-telemetry.ts");
+    expect(source).toContain("handleMentionPostExecution");
+    expect(source).toContain("./mention-post-execution.ts");
+    expect(mentionPostExecutionSource).toContain("recordMentionPostExecutionTelemetry");
     expect(postExecutionSource).toContain("recordMentionExecutionTelemetry");
     expect(postExecutionSource).toContain("./mention-telemetry.ts");
   });
 
   test("keeps post-execution telemetry and cost-warning orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const mentionPostExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("if (config.telemetry.enabled)");
     expect(source).not.toContain("maybePostMentionCostWarning({");
     expect(source).not.toContain("recordMentionExecutionTelemetry({");
-    expect(source).toContain("recordMentionPostExecutionTelemetry");
-    expect(source).toContain("./mention-post-execution-telemetry.ts");
+    expect(source).toContain("handleMentionPostExecution");
+    expect(source).toContain("./mention-post-execution.ts");
+    expect(mentionPostExecutionSource).toContain("recordMentionPostExecutionTelemetry");
     expect(postExecutionSource).toContain("recordMentionExecutionTelemetry");
     expect(postExecutionSource).toContain("maybePostMentionCostWarning");
   });
@@ -368,11 +378,13 @@ describe("mention handler structure", () => {
 
   test("keeps successful conversation turn recording out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const postExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("recordSuccessfulMentionConversationTurn({");
     expect(source).not.toContain("conversationTurnStore.recordSuccessfulTurn(conversationKey)");
     expect(source).not.toContain("const conversationKey = buildMentionConversationKey({");
-    expect(source).toContain("recordSuccessfulMentionConversationTurn");
-    expect(source).toContain("./mention-conversation-recording.ts");
+    expect(source).toContain("handleMentionPostExecution");
+    expect(postExecutionSource).toContain("recordSuccessfulMentionConversationTurn({");
   });
 
   test("keeps finding lookup adapter binding out of the monster handler", () => {
@@ -424,12 +436,14 @@ describe("mention handler structure", () => {
 
   test("keeps cost warning publication out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const mentionPostExecutionSource = readFileSync(new URL("./mention-post-execution.ts", import.meta.url), "utf8");
     const postExecutionSource = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("This execution cost");
     expect(source).not.toContain("costWarningUsd: 5.0");
     expect(source).not.toContain("explicit mention review cost warning comment");
-    expect(source).toContain("recordMentionPostExecutionTelemetry");
+    expect(source).toContain("handleMentionPostExecution");
+    expect(mentionPostExecutionSource).toContain("recordMentionPostExecutionTelemetry");
     expect(postExecutionSource).toContain("./mention-cost-warning.ts");
     expect(postExecutionSource).toContain("maybePostMentionCostWarning");
   });

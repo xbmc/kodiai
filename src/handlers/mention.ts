@@ -20,13 +20,10 @@ import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
   evaluateMentionConversationLimit,
 } from "./mention-conversation-limit.ts";
-import { recordSuccessfulMentionConversationTurn } from "./mention-conversation-recording.ts";
 import {
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
 import {
-  buildMentionExecutionCompletedState,
-  createMentionExecutionCompletedLogger,
   type MentionExecutionFailureSubtype,
   resolveMentionExecutionPublicationState,
 } from "./mention-publication-state.ts";
@@ -77,7 +74,7 @@ import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } f
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
 import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
-import { recordMentionPostExecutionTelemetry } from "./mention-post-execution-telemetry.ts";
+import { handleMentionPostExecution } from "./mention-post-execution.ts";
 import { logMentionProcessing } from "./mention-processing-log.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
 
@@ -664,55 +661,31 @@ export function createMentionHandler(deps: {
           reviewPublishRightsLost: reviewWorkRuntime.reviewPublishRightsLost,
         });
 
-        const logMentionExecutionCompleted = createMentionExecutionCompletedLogger({
+        const mentionPostExecution = await handleMentionPostExecution({
           logger,
-          getState: () => buildMentionExecutionCompletedState({
-            mention,
-            result,
+          mention,
+          result,
+          getPublicationState: () => ({
             mentionFailureSubtype,
             mentionExecutionErrorCategory,
             mentionOutputPublished,
             publishResolution,
             publishFailureCategory,
             publishFallbackDelivery,
-            writeEnabled,
-            mentionDerivedContextCacheStatus,
-            mentionDerivedContextCacheReason,
-            explicitReviewRequest,
-            reviewOutputKey,
           }),
-        });
-        if (!shouldDeferCompletionLog) {
-          logMentionExecutionCompleted();
-        }
-
-        recordSuccessfulMentionConversationTurn({
-          owner: mention.owner,
-          repo: mention.repo,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-          inReplyToId: mention.inReplyToId,
-          conclusion: result.conclusion,
-          recordSuccessfulTurn: (key) => conversationTurnStore.recordSuccessfulTurn(key),
-        });
-
-        await recordMentionPostExecutionTelemetry({
-          telemetryEnabled: config.telemetry.enabled,
-          telemetryStore,
-          logger,
-          deliveryId: event.id,
-          owner: mention.owner,
-          repo: mention.repo,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-          eventType: `${event.name}.${action ?? ""}`,
-          result,
-          promptSections,
-          derivedContextCacheStatus: mentionDerivedContextCacheStatus,
-          derivedContextCacheReason: mentionDerivedContextCacheReason ?? undefined,
-          costWarningUsd: config.telemetry.costWarningUsd,
+          writeEnabled,
+          mentionDerivedContextCacheStatus,
+          mentionDerivedContextCacheReason,
           explicitReviewRequest,
           reviewOutputKey,
+          shouldDeferCompletionLog,
+          recordSuccessfulTurn: (key) => conversationTurnStore.recordSuccessfulTurn(key),
+          telemetryEnabled: config.telemetry.enabled,
+          telemetryStore,
+          deliveryId: event.id,
+          eventType: `${event.name}.${action ?? ""}`,
+          promptSections,
+          costWarningUsd: config.telemetry.costWarningUsd,
           canPublishExplicitReviewOutput,
           getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
           botHandles: possibleHandles,
@@ -765,7 +738,7 @@ export function createMentionHandler(deps: {
         }));
 
         if (shouldDeferCompletionLog) {
-          logMentionExecutionCompleted();
+          mentionPostExecution.logMentionExecutionCompleted();
         }
 
         const combinedFormatterPublication = await publishCombinedReviewAndFormatMentionFormatterResult({
