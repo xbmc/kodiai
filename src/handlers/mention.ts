@@ -35,6 +35,7 @@ import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
 import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
 import { runMentionExecutorDispatchPhase } from "./mention-executor-dispatch-phase.ts";
 import { prepareMentionRequestExecutionContext } from "./mention-request-preparation.ts";
+import { buildMentionSetupOctokitAdapters } from "./mention-setup-octokit.ts";
 import {
   buildMentionPostExecutorPublicationAdapters,
   publishMentionPostExecutorOutputs,
@@ -165,7 +166,11 @@ export function createMentionHandler(deps: {
       let reviewOutputKey: string | undefined;
 
       try {
-        const octokit = await githubApp.getInstallationOctokit(event.installationId);
+        const mentionSetupOctokitAdapters = buildMentionSetupOctokitAdapters({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+        });
+        const octokit = await mentionSetupOctokitAdapters.getOctokit();
         const { postMentionReply, postMentionError } = createMentionPublisher({
           octokit,
           mention,

@@ -11,14 +11,19 @@ describe("mention handler structure", () => {
   test("keeps GitHub mention publication helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const publicationSource = readFileSync(new URL("./mention-publication.ts", import.meta.url), "utf8");
+    const setupOctokitSource = readFileSync(new URL("./mention-setup-octokit.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("async function postMentionReply");
     expect(source).not.toContain("async function postMentionError");
     expect(source).not.toContain("async function postMentionHandlerError");
+    expect(source).not.toContain("const octokit = await githubApp.getInstallationOctokit(event.installationId);");
+    expect(source).toContain("buildMentionSetupOctokitAdapters");
     expect(source).not.toContain("createReviewReplyWithPublicationPipeline");
     expect(source).not.toContain("createIssueCommentWithPublicationPipeline");
     expect(source).not.toContain("createPullReviewWithPublicationPipeline");
+    expect(source).toContain("./mention-setup-octokit.ts");
     expect(source).toContain("./mention-publication.ts");
+    expect(setupOctokitSource).toContain("export function buildMentionSetupOctokitAdapters");
     expect(publicationSource).toContain("export async function postMentionHandlerError");
     expect(publicationSource).toContain("export async function publishExplicitMentionReviewApproval");
   });
