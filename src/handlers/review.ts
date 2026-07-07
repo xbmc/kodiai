@@ -25,7 +25,6 @@ import {
   writeReviewLearningMemoryBatch,
 } from "./review-learning-memory.ts";
 import {
-  classifyRetryFailure,
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
 } from "../lib/review-details-formatting.ts";
@@ -119,9 +118,6 @@ import {
   type ShadowSpecialistReviewDetailsProjection,
 } from "../specialists/shadow-specialist-review-details.ts";
 import {
-  discardCheckpointsFailOpen,
-} from "./review-handler-utils.ts";
-import {
   type ReviewDetailsBodyBaseParams,
 } from "./review-details-body.ts";
 import {
@@ -203,6 +199,11 @@ import {
   resolvePendingContinuationFamilyState,
 } from "./review-continuation-family-state-projection.ts";
 import { settleRetryContinuationResults } from "./review-retry-continuation-settlement.ts";
+import {
+  finalizeRetryJobAttempt,
+  handleRetryEnqueueFailure,
+  handleRetryJobFailure,
+} from "./review-retry-failure-handling.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
@@ -2152,34 +2153,27 @@ export function createReviewHandler(deps: {
                     });
 
                   } catch (retryErr) {
-                    logger.error(
-                      {
-                        err: retryErr,
+                    await handleRetryJobFailure({
+                      error: retryErr,
+                      retryAttempt: {
+                        attemptId: retryReviewWorkAttempt.attemptId,
+                        reviewOutputKey: retryReviewOutputKey,
                         deliveryId: retryDeliveryId,
-                        prNumber: pr.number,
-                        ...classifyRetryFailure(retryErr),
                       },
-                      "Retry failed with error",
-                    );
-                    await finalizeContinuationAttempt({
-                      attemptId: retryReviewWorkAttempt.attemptId,
-                      fallbackOutcome: "blocked",
-                      fallbackStopReason: "no-follow-up",
-                      reviewOutputKey: retryReviewOutputKey,
+                      prNumber: pr.number,
+                      logger,
+                      finalizeContinuationAttempt,
                     });
                   } finally {
-                    if (retryWorkspace) {
-                      await retryWorkspace.cleanup();
-                    }
-
-                    try {
-                      reviewWorkCoordinator.complete(retryReviewWorkAttempt.attemptId);
-                    } finally {
-                      // Best-effort checkpoint cleanup even on retry failure.
-                      // Retry attempts are capped at 1, so leaving checkpoint rows
-                      // behind provides little value and can accumulate stale state.
-                      discardCheckpointsFailOpen(knowledgeStore, logger, [retryReviewOutputKey, reviewOutputKey]);
-                    }
+                    await finalizeRetryJobAttempt({
+                      retryWorkspace,
+                      reviewWorkCoordinator,
+                      attemptId: retryReviewWorkAttempt.attemptId,
+                      knowledgeStore,
+                      logger,
+                      reviewOutputKey,
+                      retryReviewOutputKey,
+                    });
                   }
                 }, {
                   deliveryId: retryDeliveryId,
@@ -2190,17 +2184,18 @@ export function createReviewHandler(deps: {
                   jobType: "pull-request-review-retry",
                   prNumber: pr.number,
                 }).catch(async (err) => {
-                  await finalizeContinuationAttempt({
-                    attemptId: retryReviewWorkAttempt.attemptId,
-                    fallbackOutcome: "blocked",
-                    fallbackStopReason: "no-follow-up",
-                    reviewOutputKey: retryReviewOutputKey,
+                  await handleRetryEnqueueFailure({
+                    error: err,
+                    parentDeliveryId: event.id,
+                    prNumber: pr.number,
+                    retryAttempt: {
+                      attemptId: retryReviewWorkAttempt.attemptId,
+                      reviewOutputKey: retryReviewOutputKey,
+                    },
+                    reviewWorkCoordinator,
+                    logger,
+                    finalizeContinuationAttempt,
                   });
-                  reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId);
-                  logger.error(
-                    { err, deliveryId: event.id, prNumber: pr.number, ...classifyRetryFailure(err) },
-                    "Failed to enqueue retry job",
-                  );
                 });
             }
           }

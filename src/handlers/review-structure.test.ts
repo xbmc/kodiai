@@ -759,6 +759,23 @@ describe("review handler structure", () => {
     expect(retrySettlementSource).toContain("publishRetryMergeContinuationResults");
   });
 
+  test("keeps retry failure and enqueue cleanup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryFailureSource = readFileSync(new URL("./review-retry-failure-handling.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("\"Retry failed with error\"");
+    expect(source).not.toContain("\"Failed to enqueue retry job\"");
+    expect(source).not.toContain("reviewWorkCoordinator.complete(retryReviewWorkAttempt.attemptId)");
+    expect(source).not.toContain("reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId)");
+    expect(source).not.toContain("Best-effort checkpoint cleanup even on retry failure");
+    expect(source).toContain("handleRetryJobFailure");
+    expect(source).toContain("handleRetryEnqueueFailure");
+    expect(source).toContain("finalizeRetryJobAttempt");
+    expect(source).toContain("./review-retry-failure-handling.ts");
+    expect(retryFailureSource).toContain("classifyRetryFailure");
+    expect(retryFailureSource).toContain("discardCheckpointsFailOpen");
+  });
+
   test("keeps first-pass Review Details publication branching out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
