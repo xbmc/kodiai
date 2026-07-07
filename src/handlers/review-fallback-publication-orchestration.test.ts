@@ -107,10 +107,13 @@ describe("publishReviewFallbackOutputs", () => {
 
   test("maps execution error fallback publication into a state patch", async () => {
     await expect(publishReviewFallbackOutputs(baseParams())).resolves.toEqual({
-      reviewOutputPublished: true,
-      reviewPublishResolution: "error-fallback",
-      reviewPublishFallbackDelivery: "error-comment-created",
-    } satisfies ReviewFallbackPublicationStatePatch);
+      ok: true,
+      value: {
+        reviewOutputPublished: true,
+        reviewPublishResolution: "error-fallback",
+        reviewPublishFallbackDelivery: "error-comment-created",
+      } satisfies ReviewFallbackPublicationStatePatch,
+    });
   });
 
   test("does not update state when execution error fallback publication is skipped", async () => {
@@ -125,7 +128,10 @@ describe("publishReviewFallbackOutputs", () => {
           },
         })
       ),
-    }))).resolves.toEqual({});
+    }))).resolves.toEqual({
+      ok: true,
+      value: {},
+    });
   });
 
   test("maps generic failure fallback errors into a state patch", async () => {
@@ -146,10 +152,13 @@ describe("publishReviewFallbackOutputs", () => {
         })
       ),
     }))).resolves.toEqual({
-      reviewOutputPublished: false,
-      reviewPublishResolution: "failure-fallback-failed",
-      reviewPublishFallbackDelivery: "error-comment-failed",
-    } satisfies ReviewFallbackPublicationStatePatch);
+      ok: true,
+      value: {
+        reviewOutputPublished: false,
+        reviewPublishResolution: "failure-fallback-failed",
+        reviewPublishFallbackDelivery: "error-comment-failed",
+      } satisfies ReviewFallbackPublicationStatePatch,
+    });
   });
 
   test("uses execution fallback and not generic failure fallback for turn-budget exhaustion", async () => {
@@ -184,10 +193,13 @@ describe("publishReviewFallbackOutputs", () => {
       publishExecutionErrorFallback,
       publishFailureFallback,
     }))).resolves.toEqual({
-      reviewOutputPublished: true,
-      reviewPublishResolution: "turn-limit-fallback",
-      reviewPublishFallbackDelivery: "turn-limit-comment-created",
-    } satisfies ReviewFallbackPublicationStatePatch);
+      ok: true,
+      value: {
+        reviewOutputPublished: true,
+        reviewPublishResolution: "turn-limit-fallback",
+        reviewPublishFallbackDelivery: "turn-limit-comment-created",
+      } satisfies ReviewFallbackPublicationStatePatch,
+    });
     expect(publishExecutionErrorFallback).toHaveBeenCalledTimes(1);
     expect(publishFailureFallback).not.toHaveBeenCalled();
   });
@@ -200,8 +212,11 @@ describe("publishReviewFallbackOutputs", () => {
         errorMessage: undefined,
       },
     }))).resolves.toEqual({
-      reviewOutputPublished: true,
-      reviewPublishResolution: "clean-review-comment",
-    } satisfies ReviewFallbackPublicationStatePatch);
+      ok: true,
+      value: {
+        reviewOutputPublished: true,
+        reviewPublishResolution: "clean-review-comment",
+      } satisfies ReviewFallbackPublicationStatePatch,
+    });
   });
 });

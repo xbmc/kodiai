@@ -6,6 +6,7 @@ import type { ErrorCategory } from "../lib/errors.ts";
 import type { MergeConfidence } from "../lib/merge-confidence.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import type { TimeoutBudgetDetails } from "../lib/review-details-formatting.ts";
+import { ok, type Result } from "../lib/result.ts";
 import type { VisibleBudgetProjection } from "../review-visible-budget/visible-budget-behavior.ts";
 import type { ReviewDetailsPublicationRuntime } from "./review-details-publication-runtime.ts";
 import {
@@ -26,6 +27,8 @@ export type ReviewFallbackPublicationStatePatch = {
   reviewPublishResolution?: string;
   reviewPublishFallbackDelivery?: string;
 };
+
+export type ReviewFallbackPublicationResult = Result<ReviewFallbackPublicationStatePatch, never>;
 
 export type ReviewFallbackExecutionErrorContext = {
   category: ErrorCategory;
@@ -161,7 +164,7 @@ export async function publishReviewFallbackOutputs(params: {
   publishExecutionErrorFallback?: typeof publishReviewExecutionErrorFallback;
   publishFailureFallback?: typeof publishReviewFailureFallback;
   publishCleanReviewApproval?: typeof publishCleanReviewApproval;
-}): Promise<ReviewFallbackPublicationStatePatch> {
+}): Promise<ReviewFallbackPublicationResult> {
   const patch: ReviewFallbackPublicationStatePatch = {};
 
   if (
@@ -261,7 +264,7 @@ export async function publishReviewFallbackOutputs(params: {
     }
   }
 
-  return patch;
+  return ok(patch);
 }
 
 export function applyReviewFallbackPublicationStatePatch(
@@ -287,8 +290,7 @@ export async function publishAndApplyReviewFallbackOutputs(
   },
 ): Promise<void> {
   const { publicationState, ...publicationParams } = params;
-  applyReviewFallbackPublicationStatePatch(
-    publicationState,
-    await publishReviewFallbackOutputs(publicationParams),
-  );
+  const fallbackPublication = await publishReviewFallbackOutputs(publicationParams);
+  if (!fallbackPublication.ok) return;
+  applyReviewFallbackPublicationStatePatch(publicationState, fallbackPublication.value);
 }

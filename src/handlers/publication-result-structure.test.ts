@@ -150,4 +150,18 @@ describe("publication result structure", () => {
     expect(postExecutorSource).toContain("if (!explicitReviewPublicationOrchestration.ok)");
     expect(postExecutorSource).toContain("explicitReviewPublicationOrchestration.value");
   });
+
+  test("keeps review fallback publication orchestration on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-fallback-publication-orchestration.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("ReviewFallbackPublicationResult");
+    expect(source).toContain("Result<ReviewFallbackPublicationStatePatch");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toContain("if (!fallbackPublication.ok)");
+    expect(source).toContain("fallbackPublication.value");
+  });
 });
