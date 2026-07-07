@@ -335,7 +335,7 @@ describe("mention handler structure", () => {
 
     expect(source).not.toContain("acceptedBodyLower");
     expect(source).not.toContain(".map((h) => (h.startsWith(\"@\") ? h : `@${h}`))");
-    expect(source).toContain("./mention-config-request-gate.ts");
+    expect(source).toContain("./mention-request-preparation.ts");
     expect(gateSource).toContain("./mention-request-context.ts");
     expect(requestContextSource).toContain("./mention-handle-match.ts");
     expect(requestContextSource).toContain("buildAcceptedMentionHandles");
@@ -363,7 +363,8 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("const userQuestion = stripMention(mention.commentBody, acceptedHandles);");
     expect(source).not.toContain("const formatterSuggestionRequest = detectFormatterSuggestionRequest(userQuestion);");
     expect(source).not.toContain("userQuestion.trim().length === 0");
-    expect(source).toContain("resolveMentionConfigRequestGate");
+    expect(source).toContain("prepareMentionRequestExecutionContext");
+    expect(source).toContain("./mention-request-preparation.ts");
     expect(gateSource).toContain("resolveMentionRequestContext");
     expect(gateSource).toContain("./mention-request-context.ts");
   });
@@ -377,8 +378,8 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("Mention does not match accepted handles for repo; skipping");
     expect(source).not.toContain("Mention contained no question after stripping mention; skipping");
     expect(source).not.toContain("const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;");
-    expect(source).toContain("resolveMentionConfigRequestGate");
-    expect(source).toContain("./mention-config-request-gate.ts");
+    expect(source).toContain("prepareMentionRequestExecutionContext");
+    expect(source).toContain("./mention-request-preparation.ts");
     expect(gateSource).toContain("resolveMentionRequestContext");
     expect(gateSource).toContain("isMentionAuthorAllowed");
   });
@@ -391,8 +392,23 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("const writeIntent = resolveMentionWriteIntent({");
     expect(source).not.toContain("const writeKeyword = writeIntent.keyword ?? \"apply\";");
     expect(source).not.toContain("buildMentionWriteContext({");
-    expect(source).toContain("resolveMentionWriteRequestContext");
-    expect(source).toContain("./mention-write-request-context.ts");
+    expect(source).toContain("prepareMentionRequestExecutionContext");
+    expect(source).toContain("./mention-request-preparation.ts");
+  });
+
+  test("keeps mention request preparation orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./mention-request-preparation.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("resolveMentionConfigRequestGate({");
+    expect(source).not.toContain("resolveMentionWriteRequestContext({");
+    expect(source).not.toContain("routeAddonRuleReviewMention({");
+    expect(source).toContain("prepareMentionRequestExecutionContext");
+    expect(source).toContain("./mention-request-preparation.ts");
+    expect(preparationSource).toContain("export async function prepareMentionRequestExecutionContext");
+    expect(preparationSource).toContain("resolveMentionConfigRequestGate({");
+    expect(preparationSource).toContain("resolveMentionWriteRequestContext({");
+    expect(preparationSource).toContain("routeAddonRuleReviewMention({");
   });
 
   test("keeps allowed-users matching out of the monster handler", () => {
@@ -402,7 +418,8 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("const normalizedAuthor =");
     expect(source).not.toContain("config.mention.allowedUsers.map((u) => u.toLowerCase())");
     expect(source).not.toContain("allowed.includes(normalizedAuthor)");
-    expect(source).toContain("resolveMentionConfigRequestGate");
+    expect(source).toContain("prepareMentionRequestExecutionContext");
+    expect(source).toContain("./mention-request-preparation.ts");
     expect(gateSource).toContain("./mention-allowed-users.ts");
     expect(gateSource).toContain("isMentionAuthorAllowed");
   });

@@ -12,7 +12,6 @@ import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
   maybeReplyWritePermissionFailure,
 } from "./mention-write-replies.ts";
-import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
@@ -41,17 +40,16 @@ import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts"
 import { routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
-import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
 import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
-import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
 import { handleMentionPostExecution } from "./mention-post-execution.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
 import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
 import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
 import { runMentionExecutorDispatchPhase } from "./mention-executor-dispatch-phase.ts";
+import { prepareMentionRequestExecutionContext } from "./mention-request-preparation.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -238,26 +236,24 @@ export function createMentionHandler(deps: {
 
         const findingLookup = createMentionFindingLookup(deps.knowledgeStore);
 
-        const mentionConfigRequestGate = resolveMentionConfigRequestGate({
-          mention,
-          mentionConfig: config.mention,
+        const mentionRequestPreparation = await prepareMentionRequestExecutionContext({
+          event,
           appSlug,
+          mention,
+          config,
+          addonRepos,
+          getPullRequest: (args) => octokit.rest.pulls.get(args),
+          dispatchAddonReview: addonReviewDispatcher,
           logger,
         });
-        if (mentionConfigRequestGate.action === "stop") return;
-        const { acceptClaudeAlias, requestContext: mentionRequestContext } = mentionConfigRequestGate;
-        const acceptedHandles = mentionRequestContext.acceptedHandles;
-        const { userQuestion, formatterSuggestionRequest } = mentionRequestContext;
-
-        const mentionWriteRequestContext = resolveMentionWriteRequestContext({
-          eventName: event.name,
-          installationId: event.installationId,
-          appSlug,
-          mention,
+        if (mentionRequestPreparation.action === "stop") return;
+        const {
+          acceptClaudeAlias,
+          acceptedHandles,
           userQuestion,
-          formatterSuggestionRequestMode: formatterSuggestionRequest?.mode,
-          writeConfigEnabled: config.write.enabled,
-        });
+          formatterSuggestionRequest,
+          mentionWriteRequestContext,
+        } = mentionRequestPreparation;
         const {
           isIssueThreadComment,
           isPrSurface,
@@ -273,18 +269,6 @@ export function createMentionHandler(deps: {
           writeSource,
         } = mentionWriteRequestContext;
         explicitReviewRequest = mentionWriteRequestContext.explicitReviewRequest;
-        if (explicitReviewRequest && mention.prNumber !== undefined && await routeAddonRuleReviewMention({
-          event,
-          owner: mention.owner,
-          repo: mention.repo,
-          prNumber: mention.prNumber,
-          addonRepos,
-          getPullRequest: (args) => octokit.rest.pulls.get(args),
-          dispatch: addonReviewDispatcher,
-          logger,
-        })) {
-          return;
-        }
 
         const {
           runFormatterSuggestionForMention,
