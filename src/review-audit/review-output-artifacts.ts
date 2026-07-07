@@ -12,6 +12,7 @@ import {
   type PullReviewPaged,
   type ReviewCommentPaged,
 } from "../lib/github-issue-comments.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import {
   classifyReviewOutputLane,
   type ReviewArtifactSource,
@@ -70,13 +71,21 @@ export type ExactReviewOutputProofStatus =
   | "wrong_review_state"
   | "body_drift";
 
-export type ExactReviewOutputProof = {
-  ok: boolean;
-  status: ExactReviewOutputProofStatus;
+export type ExactReviewOutputProofValue = {
+  status: "ok";
+  artifact: ReviewOutputArtifact;
+  validation: CollapsedApproveReviewBodyValidation;
+  issues: [];
+};
+
+export type ExactReviewOutputProofError = {
+  status: Exclude<ExactReviewOutputProofStatus, "ok">;
   artifact: ReviewOutputArtifact | null;
   validation: CollapsedApproveReviewBodyValidation | null;
   issues: string[];
 };
+
+export type ExactReviewOutputProof = Result<ExactReviewOutputProofValue, ExactReviewOutputProofError>;
 
 export type ReviewOutputArtifactsOctokit = {
   rest: {
@@ -412,25 +421,23 @@ export function evaluateExactReviewOutputProof(
   const totalArtifacts = collection.artifacts.length;
 
   if (totalArtifacts === 0) {
-    return {
-      ok: false,
+    return err({
       status: "missing_artifact",
       artifact: null,
       validation: null,
       issues: ["No GitHub artifacts matched the requested reviewOutputKey."],
-    };
+    });
   }
 
   if (totalArtifacts !== 1) {
-    return {
-      ok: false,
+    return err({
       status: "duplicate_artifacts",
       artifact: null,
       validation: null,
       issues: [
         `Expected exactly one visible GitHub artifact for reviewOutputKey, found ${totalArtifacts} (reviewComments=${collection.artifactCounts.reviewComments} issueComments=${collection.artifactCounts.issueComments} reviews=${collection.artifactCounts.reviews}).`,
       ],
-    };
+    });
   }
 
   const artifact = collection.artifacts[0]!;
@@ -450,8 +457,7 @@ export function evaluateExactReviewOutputProof(
   }
 
   if (metadataIssues.length > 0) {
-    return {
-      ok: false,
+    return err({
       status: "invalid_artifact_metadata",
       artifact,
       validation: artifact.body
@@ -461,31 +467,29 @@ export function evaluateExactReviewOutputProof(
           })
         : null,
       issues: metadataIssues,
-    };
+    });
   }
 
   if (artifact.source !== "review") {
-    return {
-      ok: false,
+    return err({
       status: "wrong_artifact_source",
       artifact,
       validation: null,
       issues: [
         `Expected the sole matching GitHub artifact to be a pull request review, found ${artifact.source}.`,
       ],
-    };
+    });
   }
 
   if (artifact.reviewState !== "APPROVED") {
-    return {
-      ok: false,
+    return err({
       status: "wrong_review_state",
       artifact,
       validation: null,
       issues: [
         `Expected the sole matching review to have state APPROVED, found ${artifact.reviewState}.`,
       ],
-    };
+    });
   }
 
   const validation = validateCollapsedApproveReviewBody({
@@ -493,20 +497,18 @@ export function evaluateExactReviewOutputProof(
     body: artifact.body,
   });
   if (!validation.valid) {
-    return {
-      ok: false,
+    return err({
       status: "body_drift",
       artifact,
       validation,
       issues: [...validation.issues],
-    };
+    });
   }
 
-  return {
-    ok: true,
+  return ok({
     status: "ok",
     artifact,
     validation,
     issues: [],
-  };
+  });
 }

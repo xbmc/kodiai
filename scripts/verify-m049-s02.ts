@@ -11,6 +11,7 @@ import {
   validateCollapsedApproveReviewBody,
   ReviewOutputArtifactCollectionError,
   type ExactReviewOutputProof,
+  type ExactReviewOutputProofError,
   type ReviewOutputArtifact,
   type ReviewOutputArtifactCollection,
   type ReviewOutputArtifactCounts,
@@ -363,8 +364,8 @@ function createBaseReport(params: {
   };
 }
 
-function mapGitHubProofFailure(proof: ExactReviewOutputProof): M049S02StatusCode {
-  switch (proof.status) {
+function mapGitHubProofFailure(error: ExactReviewOutputProofError): M049S02StatusCode {
+  switch (error.status) {
     case "missing_artifact":
       return "m049_s02_no_matching_artifact";
     case "duplicate_artifacts":
@@ -374,13 +375,11 @@ function mapGitHubProofFailure(proof: ExactReviewOutputProof): M049S02StatusCode
     case "wrong_review_state":
       return "m049_s02_wrong_review_state";
     case "invalid_artifact_metadata":
-      return proof.issues.some((issue) => issue.includes("reviewState"))
+      return error.issues.some((issue: string) => issue.includes("reviewState"))
         ? "m049_s02_wrong_review_state"
         : "m049_s02_body_drift";
     case "body_drift":
       return "m049_s02_body_drift";
-    case "ok":
-      return "m049_s02_ok";
   }
 }
 
@@ -456,7 +455,7 @@ function buildBodyContract(params: {
   proof: ExactReviewOutputProof;
 }): CollapsedApproveReviewBodyValidation | null {
   if (!params.artifact) {
-    return params.proof.validation ?? null;
+    return params.proof.ok ? params.proof.value.validation : params.proof.err.validation ?? null;
   }
 
   return validateCollapsedApproveReviewBody({
@@ -582,9 +581,10 @@ export async function evaluateM049S02(params: {
   }
 
   const proof = evaluateExactReviewOutputProof(collection);
+  const proofArtifact = proof.ok ? proof.value.artifact : proof.err.artifact;
   const bodyContract = buildBodyContract({
     reviewOutputKey: validated.reviewOutputKey,
-    artifact: proof.artifact,
+    artifact: proofArtifact,
     proof,
   });
 
@@ -594,16 +594,18 @@ export async function evaluateM049S02(params: {
       generatedAt,
       reviewOutputKey: validated.reviewOutputKey,
       deliveryId: validated.deliveryId,
-      statusCode: mapGitHubProofFailure(proof),
+      statusCode: mapGitHubProofFailure(proof.err),
       success: false,
       githubAccess,
       azureAccess: params.azureAccess ?? "missing",
       artifactCounts: collection.artifactCounts,
-      artifact: proof.artifact,
+      artifact: proof.err.artifact,
       bodyContract,
-      issues: proof.issues,
+      issues: proof.err.issues,
     });
   }
+
+  const verifiedArtifact = proof.value.artifact;
 
   let workspaceIds = params.workspaceIds ?? [];
   let azureAccess = params.azureAccess ?? (workspaceIds.length > 0 ? "available" : "missing");
@@ -619,7 +621,7 @@ export async function evaluateM049S02(params: {
       githubAccess,
       azureAccess,
       artifactCounts: collection.artifactCounts,
-      artifact: proof.artifact,
+      artifact: verifiedArtifact,
       bodyContract,
       issues: ["Azure Log Analytics access is unavailable for explicit audit correlation."],
     });
@@ -641,7 +643,7 @@ export async function evaluateM049S02(params: {
         githubAccess,
         azureAccess: "unavailable",
         artifactCounts: collection.artifactCounts,
-        artifact: proof.artifact,
+        artifact: verifiedArtifact,
         bodyContract,
         issues: [`Azure workspace discovery failed: ${message}`],
       });
@@ -659,7 +661,7 @@ export async function evaluateM049S02(params: {
       githubAccess,
       azureAccess,
       artifactCounts: collection.artifactCounts,
-      artifact: proof.artifact,
+      artifact: verifiedArtifact,
       bodyContract,
       issues: ["No Azure Log Analytics workspaces are available for explicit audit correlation."],
     });
@@ -686,7 +688,7 @@ export async function evaluateM049S02(params: {
         githubAccess,
         azureAccess,
         artifactCounts: collection.artifactCounts,
-        artifact: proof.artifact,
+        artifact: verifiedArtifact,
         bodyContract,
         auditSourceAvailability: explicitEvidence.sourceAvailability,
         queryText: queryResult.query,
@@ -711,7 +713,7 @@ export async function evaluateM049S02(params: {
         githubAccess,
         azureAccess,
         artifactCounts: collection.artifactCounts,
-        artifact: proof.artifact,
+        artifact: verifiedArtifact,
         bodyContract,
         auditSourceAvailability: explicitEvidence.sourceAvailability,
         queryText: queryResult.query,
@@ -735,7 +737,7 @@ export async function evaluateM049S02(params: {
       githubAccess,
       azureAccess,
       artifactCounts: collection.artifactCounts,
-      artifact: proof.artifact,
+      artifact: verifiedArtifact,
       bodyContract,
       auditSourceAvailability: explicitEvidence.sourceAvailability,
       queryText: queryResult.query,
@@ -757,7 +759,7 @@ export async function evaluateM049S02(params: {
       githubAccess,
       azureAccess: "unavailable",
       artifactCounts: collection.artifactCounts,
-      artifact: proof.artifact,
+      artifact: verifiedArtifact,
       bodyContract,
       issues: [`Azure Log Analytics query failed: ${message}`],
     });

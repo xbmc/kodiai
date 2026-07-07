@@ -354,12 +354,13 @@ describe("review output artifact helpers", () => {
     });
     const result = evaluateExactReviewOutputProof(collection);
 
-    expect(result.status).toBe("ok");
     expect(result.ok).toBe(true);
-    expect(result.artifact?.source).toBe("review");
-    expect(result.artifact?.reviewState).toBe("APPROVED");
-    expect(result.validation?.valid).toBe(true);
-    expect(result.issues).toEqual([]);
+    if (!result.ok) throw result.err;
+    expect(result.value.status).toBe("ok");
+    expect(result.value.artifact.source).toBe("review");
+    expect(result.value.artifact.reviewState).toBe("APPROVED");
+    expect(result.value.validation.valid).toBe(true);
+    expect(result.value.issues).toEqual([]);
   });
 
   test("evaluateExactReviewOutputProof names duplicate visible outputs instead of collapsing them into missing-artifact", async () => {
@@ -392,11 +393,12 @@ describe("review output artifact helpers", () => {
       }),
     );
 
-    expect(result.status).toBe("duplicate_artifacts");
     expect(result.ok).toBe(false);
-    expect(result.issues[0]).toContain("Expected exactly one visible GitHub artifact");
-    expect(result.issues[0]).toContain("issueComments=1");
-    expect(result.issues[0]).toContain("reviews=1");
+    if (result.ok) throw new Error("expected duplicate artifact proof to fail");
+    expect(result.err.status).toBe("duplicate_artifacts");
+    expect(result.err.issues[0]).toContain("Expected exactly one visible GitHub artifact");
+    expect(result.err.issues[0]).toContain("issueComments=1");
+    expect(result.err.issues[0]).toContain("reviews=1");
   });
 
   test("evaluateExactReviewOutputProof names the wrong GitHub surface when the only match is not a review", async () => {
@@ -418,9 +420,10 @@ describe("review output artifact helpers", () => {
       }),
     );
 
-    expect(result.status).toBe("wrong_artifact_source");
     expect(result.ok).toBe(false);
-    expect(result.issues).toContain("Expected the sole matching GitHub artifact to be a pull request review, found issue-comment.");
+    if (result.ok) throw new Error("expected wrong surface proof to fail");
+    expect(result.err.status).toBe("wrong_artifact_source");
+    expect(result.err.issues).toContain("Expected the sole matching GitHub artifact to be a pull request review, found issue-comment.");
   });
 
   test("evaluateExactReviewOutputProof names the wrong review state when the sole review is not APPROVED", async () => {
@@ -446,9 +449,10 @@ describe("review output artifact helpers", () => {
       }),
     );
 
-    expect(result.status).toBe("wrong_review_state");
     expect(result.ok).toBe(false);
-    expect(result.issues).toContain("Expected the sole matching review to have state APPROVED, found COMMENTED.");
+    if (result.ok) throw new Error("expected wrong state proof to fail");
+    expect(result.err.status).toBe("wrong_review_state");
+    expect(result.err.issues).toContain("Expected the sole matching review to have state APPROVED, found COMMENTED.");
   });
 
   test("evaluateExactReviewOutputProof names visible-body drift when the sole APPROVED review body no longer matches contract", async () => {
@@ -478,10 +482,11 @@ describe("review output artifact helpers", () => {
       }),
     );
 
-    expect(result.status).toBe("body_drift");
     expect(result.ok).toBe(false);
-    expect(result.validation?.valid).toBe(false);
-    expect(result.issues).toContain("Approval body must include 'Evidence:'.");
+    if (result.ok) throw new Error("expected body drift proof to fail");
+    expect(result.err.status).toBe("body_drift");
+    expect(result.err.validation?.valid).toBe(false);
+    expect(result.err.issues).toContain("Approval body must include 'Evidence:'.");
   });
 
   test("evaluateExactReviewOutputProof surfaces invalid metadata when a matching review lacks URL, timestamp, or state", () => {
@@ -549,13 +554,19 @@ describe("review output artifact helpers", () => {
       ],
     });
 
-    expect(missingUrl.status).toBe("invalid_artifact_metadata");
-    expect(missingUrl.issues).toContain("Matching artifact is missing sourceUrl.");
+    expect(missingUrl.ok).toBe(false);
+    if (missingUrl.ok) throw new Error("expected missing URL proof to fail");
+    expect(missingUrl.err.status).toBe("invalid_artifact_metadata");
+    expect(missingUrl.err.issues).toContain("Matching artifact is missing sourceUrl.");
 
-    expect(missingTimestamp.status).toBe("invalid_artifact_metadata");
-    expect(missingTimestamp.issues).toContain("Matching artifact is missing updatedAt timestamp.");
+    expect(missingTimestamp.ok).toBe(false);
+    if (missingTimestamp.ok) throw new Error("expected missing timestamp proof to fail");
+    expect(missingTimestamp.err.status).toBe("invalid_artifact_metadata");
+    expect(missingTimestamp.err.issues).toContain("Matching artifact is missing updatedAt timestamp.");
 
-    expect(missingState.status).toBe("invalid_artifact_metadata");
-    expect(missingState.issues).toContain("Matching review artifact is missing reviewState.");
+    expect(missingState.ok).toBe(false);
+    if (missingState.ok) throw new Error("expected missing state proof to fail");
+    expect(missingState.err.status).toBe("invalid_artifact_metadata");
+    expect(missingState.err.issues).toContain("Matching review artifact is missing reviewState.");
   });
 });

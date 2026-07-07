@@ -523,8 +523,13 @@ function artifactToReviewDetails(params: { artifact: ReviewOutputArtifact; proof
 
 function mapCollectionToSources(collection: ReviewOutputArtifactCollection): M070S06ReviewDetailsArtifact[] {
   const proof = evaluateExactReviewOutputProof(collection);
-  if (proof.artifact) {
-    return [artifactToReviewDetails({ artifact: proof.artifact, proofOk: proof.ok, aggregateEvidence: extractM070AggregateEvidenceFromArtifactBody(proof.artifact.body) })];
+  const proofArtifact = proof.ok ? proof.value.artifact : proof.err.artifact;
+  if (proofArtifact) {
+    return [artifactToReviewDetails({
+      artifact: proofArtifact,
+      proofOk: proof.ok,
+      aggregateEvidence: extractM070AggregateEvidenceFromArtifactBody(proofArtifact.body),
+    })];
   }
   return collection.artifacts.slice(0, 5).map((artifact) => artifactToReviewDetails({ artifact, proofOk: false, aggregateEvidence: extractM070AggregateEvidenceFromArtifactBody(artifact.body) }));
 }
