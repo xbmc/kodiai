@@ -29,7 +29,6 @@ import {
   type TimeoutBudgetDetails,
 } from "../lib/review-details-formatting.ts";
 import {
-  type ReviewArea,
   type FindingSeverity,
   type FindingCategory,
   fingerprintFindingTitle,
@@ -214,6 +213,7 @@ import {
 } from "./review-event-runtime.ts";
 import { createReviewJobRuntime } from "./review-job-runtime.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
+import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -826,17 +826,12 @@ export function createReviewHandler(deps: {
         });
         const reviewPlanConfigSnapshot = toReviewPlanConfigSnapshot(reviewPlan);
 
-        if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {
-          resolvedIgnoredAreas.push("style");
-        }
-
-        if (parsedIntent.focusAreas.length > 0) {
-          for (const area of parsedIntent.focusAreas as ReviewArea[]) {
-            if (!resolvedFocusAreas.includes(area)) {
-              resolvedFocusAreas.push(area);
-            }
-          }
-        }
+        applyReviewPrIntentAreas({
+          styleOk: parsedIntent.styleOk,
+          focusAreas: parsedIntent.focusAreas,
+          resolvedFocusAreas,
+          resolvedIgnoredAreas,
+        });
 
         logger.info(
           {

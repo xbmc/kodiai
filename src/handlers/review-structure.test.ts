@@ -644,6 +644,19 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-pr-intent.ts");
   });
 
+  test("keeps PR intent focus/style area application out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const intentAreasSource = readFileSync(new URL("./review-pr-intent-areas.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("parsedIntent.styleOk && !resolvedIgnoredAreas.includes(\"style\")");
+    expect(source).not.toContain("for (const area of parsedIntent.focusAreas as ReviewArea[])");
+    expect(source).not.toContain("resolvedFocusAreas.push(area)");
+    expect(source).toContain("applyReviewPrIntentAreas");
+    expect(source).toContain("./review-pr-intent-areas.ts");
+    expect(intentAreasSource).toContain("styleOk");
+    expect(intentAreasSource).toContain("focusAreas");
+  });
+
   test("keeps author classification side-effect orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
