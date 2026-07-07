@@ -34,7 +34,10 @@ function makeParams(
       canPublishCalls.push(reason);
       return true;
     },
-    upsertDegradedReviewDetailsFallbackCommentFn: async () => 901,
+    upsertDegradedReviewDetailsFallbackCommentFn: async () => ({
+      ok: true,
+      value: { published: true, commentId: 901 },
+    }),
     ...overrides,
     testState: {
       warnings,
@@ -49,7 +52,7 @@ describe("publishDegradedReviewDetailsFallbackFailOpen", () => {
     const params = makeParams({
       upsertDegradedReviewDetailsFallbackCommentFn: async (input) => {
         upsertCalls.push(input as Record<string, unknown>);
-        return 901;
+        return { ok: true, value: { published: true, commentId: 901 } };
       },
     });
 
@@ -79,7 +82,7 @@ describe("publishDegradedReviewDetailsFallbackFailOpen", () => {
       },
       upsertDegradedReviewDetailsFallbackCommentFn: async () => {
         upsertCalled = true;
-        return 901;
+        return { ok: true, value: { published: true, commentId: 901 } };
       },
     });
 
@@ -93,9 +96,10 @@ describe("publishDegradedReviewDetailsFallbackFailOpen", () => {
   test("logs fallback publication failures without throwing", async () => {
     const error = new Error("publish failed");
     const params = makeParams({
-      upsertDegradedReviewDetailsFallbackCommentFn: async () => {
-        throw error;
-      },
+      upsertDegradedReviewDetailsFallbackCommentFn: async () => ({
+        ok: false,
+        err: { published: false, error },
+      }),
     });
 
     await publishDegradedReviewDetailsFallbackFailOpen(params);

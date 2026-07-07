@@ -50,7 +50,10 @@ function makeParams(overrides: Partial<Parameters<typeof publishPublishedReviewD
       commentId: 900,
       body: "summary-with-details",
     }),
-    upsertDegradedReviewDetailsFallbackCommentFn: async () => 901,
+    upsertDegradedReviewDetailsFallbackCommentFn: async () => ({
+      ok: true,
+      value: { published: true, commentId: 901 },
+    }),
     ...overrides,
     testState: {
       warnings,

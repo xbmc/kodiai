@@ -236,7 +236,7 @@ async function mergeCleanReviewDetailsIntoExistingOutput(input: {
   }
 
   params.setReviewWorkPhase("publish");
-  const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
+  const reviewDetailsPublication = await upsertDegradedReviewDetailsFallbackComment({
     octokit: input.octokit,
     owner: params.owner,
     repo: params.repo,
@@ -247,6 +247,20 @@ async function mergeCleanReviewDetailsIntoExistingOutput(input: {
     recheckCanPublish: () =>
       params.canPublishVisibleOutput("degraded Review Details fallback comment"),
   });
+  if (!reviewDetailsPublication.ok) {
+    params.logger.error(
+      {
+        err: reviewDetailsPublication.err.error,
+        prNumber: params.prNumber,
+        reviewOutputKey: params.reviewOutputKey,
+      },
+      "Failed to publish clean-review degraded Review Details fallback comment",
+    );
+  }
+  const reviewDetailsCommentId = reviewDetailsPublication.ok
+    && reviewDetailsPublication.value.published
+    ? reviewDetailsPublication.value.commentId
+    : undefined;
 
   if (typeof reviewDetailsCommentId === "number") {
     params.logReviewDetailsPublicationCompleted({

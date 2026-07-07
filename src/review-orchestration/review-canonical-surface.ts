@@ -15,12 +15,25 @@ import {
 import { buildReviewOutputMarker } from "./review-idempotency.ts";
 import { buildReviewDetailsMarker } from "../lib/review-details-formatting.ts";
 import { mergeReviewDetailsIntoSummaryBody } from "./review-details-summary-merge.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 
 export type CanonicalReviewSurface =
   | { kind: "issue_comment"; commentId: number; body: string }
   | { kind: "pull_review"; reviewId: number; body: string };
 
 export type CanonicalSurfaceKind = CanonicalReviewSurface["kind"];
+export type DegradedReviewDetailsFallbackPublicationValue = {
+  published: boolean;
+  commentId: number | undefined;
+};
+export type DegradedReviewDetailsFallbackPublicationError = {
+  published: false;
+  error: unknown;
+};
+export type DegradedReviewDetailsFallbackPublicationResult = Result<
+  DegradedReviewDetailsFallbackPublicationValue,
+  DegradedReviewDetailsFallbackPublicationError
+>;
 const MARKER_LOOKUP_PAGE_SIZE = 100;
 
 export function getCanonicalReviewSurfaceId(surface: CanonicalReviewSurface): number {
@@ -293,41 +306,45 @@ export async function upsertDegradedReviewDetailsFallbackComment(params: {
   body: string;
   botHandles: string[];
   recheckCanPublish?: () => boolean;
-}): Promise<number | undefined> {
-  const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
-  const marker = buildReviewDetailsMarker(reviewOutputKey);
+}): Promise<DegradedReviewDetailsFallbackPublicationResult> {
+  try {
+    const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
+    const marker = buildReviewDetailsMarker(reviewOutputKey);
 
-  const existingComment = await findIssueCommentByMarkerPaged(octokit, {
-    owner,
-    repo,
-    issueNumber: prNumber,
-    marker,
-    perPage: MARKER_LOOKUP_PAGE_SIZE,
-  });
-
-  if (params.recheckCanPublish && !params.recheckCanPublish()) {
-    return undefined;
-  }
-
-  if (existingComment) {
-    await updateIssueCommentWithPublicationPipeline(octokit, {
+    const existingComment = await findIssueCommentByMarkerPaged(octokit, {
       owner,
       repo,
-      comment_id: existingComment.id,
+      issueNumber: prNumber,
+      marker,
+      perPage: MARKER_LOOKUP_PAGE_SIZE,
+    });
+
+    if (params.recheckCanPublish && !params.recheckCanPublish()) {
+      return ok({ published: false, commentId: undefined });
+    }
+
+    if (existingComment) {
+      await updateIssueCommentWithPublicationPipeline(octokit, {
+        owner,
+        repo,
+        comment_id: existingComment.id,
+        body,
+        botHandles,
+        preserveKodiaiMarkers: true,
+      });
+      return ok({ published: true, commentId: existingComment.id });
+    }
+
+    const response = await createIssueCommentWithPublicationPipeline(octokit, {
+      owner,
+      repo,
+      issue_number: prNumber,
       body,
       botHandles,
       preserveKodiaiMarkers: true,
     });
-    return existingComment.id;
+    return ok({ published: true, commentId: response.data.id });
+  } catch (error) {
+    return err({ published: false, error });
   }
-
-  const response = await createIssueCommentWithPublicationPipeline(octokit, {
-    owner,
-    repo,
-    issue_number: prNumber,
-    body,
-    botHandles,
-    preserveKodiaiMarkers: true,
-  });
-  return response.data.id;
 }

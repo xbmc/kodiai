@@ -37,7 +37,7 @@ export async function publishStandaloneReviewDetailsFallback(params: {
     params.updateFinalizedReviewDetailsCommentFn ?? updateFinalizedReviewDetailsComment;
 
   params.setReviewWorkPhase("publish");
-  const reviewDetailsCommentId = await upsertDegraded({
+  const reviewDetailsPublication = await upsertDegraded({
     octokit: params.octokit,
     owner: params.owner,
     repo: params.repo,
@@ -48,6 +48,10 @@ export async function publishStandaloneReviewDetailsFallback(params: {
     recheckCanPublish: () =>
       params.canPublishVisibleOutput("degraded Review Details fallback comment"),
   });
+  const reviewDetailsCommentId = reviewDetailsPublication.ok
+    && reviewDetailsPublication.value.published
+    ? reviewDetailsPublication.value.commentId
+    : undefined;
 
   if (typeof reviewDetailsCommentId === "number") {
     params.logReviewDetailsPublicationCompleted({

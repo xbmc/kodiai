@@ -29,7 +29,7 @@ export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
     params.upsertDegradedReviewDetailsFallbackCommentFn ?? upsertDegradedReviewDetailsFallbackComment;
 
   try {
-    await upsertDegraded({
+    const fallbackResult = await upsertDegraded({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -39,6 +39,19 @@ export async function publishDegradedReviewDetailsFallbackFailOpen(params: {
       botHandles: params.botHandles,
       recheckCanPublish: () => params.canPublishVisibleOutput(params.publishReason),
     });
+    if (fallbackResult.ok) {
+      return;
+    }
+    params.logger.warn(
+      {
+        ...params.baseLog,
+        gate: "review-details-output",
+        gateResult: "failed",
+        reviewOutputKey: params.reviewOutputKey,
+        err: fallbackResult.err.error,
+      },
+      params.failureMessage,
+    );
   } catch (fallbackErr) {
     params.logger.warn(
       {

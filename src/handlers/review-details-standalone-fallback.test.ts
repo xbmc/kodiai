@@ -34,7 +34,10 @@ function makeParams(
     renderReviewDetailsBody: () => "details-final",
     finalizePublicationPhaseTiming: () => phases.push("finalize"),
     logReviewDetailsPublicationCompleted: (entry) => completedLogs.push(entry),
-    upsertDegradedReviewDetailsFallbackCommentFn: async () => 901,
+    upsertDegradedReviewDetailsFallbackCommentFn: async () => ({
+      ok: true,
+      value: { published: true, commentId: 901 },
+    }),
     updateFinalizedReviewDetailsCommentFn: async () => undefined,
     ...overrides,
     testState: {
@@ -52,7 +55,7 @@ describe("publishStandaloneReviewDetailsFallback", () => {
     const params = makeParams({
       upsertDegradedReviewDetailsFallbackCommentFn: async (input) => {
         upsertCalls.push(input as Record<string, unknown>);
-        return 901;
+        return { ok: true, value: { published: true, commentId: 901 } };
       },
       updateFinalizedReviewDetailsCommentFn: async (input) => {
         updateCalls.push(input as Record<string, unknown>);
@@ -90,7 +93,7 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       canPublishVisibleOutput: () => false,
       upsertDegradedReviewDetailsFallbackCommentFn: async () => {
         upsertCalled = true;
-        return 901;
+        return { ok: true, value: { published: true, commentId: 901 } };
       },
       updateFinalizedReviewDetailsCommentFn: async () => {
         updateCalled = true;
@@ -109,7 +112,10 @@ describe("publishStandaloneReviewDetailsFallback", () => {
   test("finalizes timing without refreshing when fallback returns no comment id", async () => {
     let updateCalled = false;
     const params = makeParams({
-      upsertDegradedReviewDetailsFallbackCommentFn: async () => undefined,
+      upsertDegradedReviewDetailsFallbackCommentFn: async () => ({
+        ok: true,
+        value: { published: false, commentId: undefined },
+      }),
       updateFinalizedReviewDetailsCommentFn: async () => {
         updateCalled = true;
       },

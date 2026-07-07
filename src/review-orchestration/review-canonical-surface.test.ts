@@ -136,7 +136,7 @@ describe("findCanonicalReviewSurface", () => {
       },
     };
 
-    const id = await upsertDegradedReviewDetailsFallbackComment({
+    const result = await upsertDegradedReviewDetailsFallbackComment({
       octokit: octokit as never,
       owner: "acme",
       repo: "repo",
@@ -146,10 +146,76 @@ describe("findCanonicalReviewSurface", () => {
       botHandles: ["kodiai"],
     });
 
-    expect(id).toBe(450);
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: true,
+        commentId: 450,
+      },
+    });
     expect(pagesSeen).toEqual([1, 2]);
     expect(updatedBodies).toHaveLength(1);
     expect(updatedBodies[0]?.body).toContain("new details");
     expect(created).toBe(false);
+  });
+
+  test("returns an explicit skipped result when publish rights are superseded", async () => {
+    const result = await upsertDegradedReviewDetailsFallbackComment({
+      octokit: {
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => {
+              throw new Error("should not publish");
+            },
+          },
+        },
+      } as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey: "review-key",
+      body: "new details",
+      botHandles: ["kodiai"],
+      recheckCanPublish: () => false,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: false,
+        commentId: undefined,
+      },
+    });
+  });
+
+  test("returns an explicit error result when fallback publication fails", async () => {
+    const error = new Error("create failed");
+    const result = await upsertDegradedReviewDetailsFallbackComment({
+      octokit: {
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => {
+              throw error;
+            },
+          },
+        },
+      } as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey: "review-key",
+      body: "new details",
+      botHandles: ["kodiai"],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      err: {
+        published: false,
+        error,
+      },
+    });
   });
 });

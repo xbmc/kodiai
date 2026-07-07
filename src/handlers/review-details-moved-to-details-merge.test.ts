@@ -45,7 +45,10 @@ function makeParams(overrides: Partial<Parameters<typeof publishMovedToDetailsRe
       commentId: 900,
       body: "details-initial",
     }),
-    upsertDegradedReviewDetailsFallbackCommentFn: async () => 901,
+    upsertDegradedReviewDetailsFallbackCommentFn: async () => ({
+      ok: true,
+      value: { published: true, commentId: 901 },
+    }),
     ...overrides,
     testState: {
       warnings,

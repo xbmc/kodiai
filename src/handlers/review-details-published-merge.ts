@@ -75,7 +75,7 @@ export async function publishPublishedReviewDetailsMerge(params: {
 
     if (params.canPublishVisibleOutput("degraded Review Details fallback comment")) {
       params.setReviewWorkPhase("publish");
-      const fallbackCommentId = await upsertDegraded({
+      const fallbackPublication = await upsertDegraded({
         octokit: params.octokit,
         owner: params.owner,
         repo: params.repo,
@@ -86,6 +86,10 @@ export async function publishPublishedReviewDetailsMerge(params: {
         recheckCanPublish: () =>
           params.canPublishVisibleOutput("degraded Review Details fallback comment"),
       });
+      const fallbackCommentId = fallbackPublication.ok
+        && fallbackPublication.value.published
+        ? fallbackPublication.value.commentId
+        : undefined;
       if (typeof fallbackCommentId === "number") {
         params.logReviewDetailsPublicationCompleted({
           surfaceKind: "issue_comment",
