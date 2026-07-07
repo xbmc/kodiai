@@ -38,6 +38,18 @@ describe("review handler structure", () => {
     expect(source).toContain("createReviewExecutionCompletedLogger");
   });
 
+  test("keeps review execution outcome fallback policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const exhaustedTurnBudget =");
+    expect(source).not.toContain("result.stopReason === \"max_turns\"");
+    expect(source).not.toContain("result.failureSubtype === \"error_max_turns\"");
+    expect(source).not.toContain("const category = exhaustedTurnBudget");
+    expect(source).not.toContain("const timeoutDuration = appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds;");
+    expect(source).toContain("resolveReviewExecutionOutcomeContext");
+    expect(source).toContain("./review-execution-outcome.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

@@ -36,7 +36,7 @@ import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { evaluateFeedbackSuppressions } from "../feedback/index.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
-import { classifyError, formatErrorComment } from "../lib/errors.ts";
+import { formatErrorComment } from "../lib/errors.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment, formatCompletedContinuationReviewComment } from "../lib/partial-review-formatter.ts";
@@ -246,6 +246,7 @@ import { resolveReviewFindingPublicationContext } from "./review-finding-publica
 import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
 import { logReviewCandidatePublicationAdapterContext } from "./review-candidate-publication-adapter-context.ts";
 import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-context.ts";
+import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2106,29 +2107,23 @@ export function createReviewHandler(deps: {
           );
         }
 
-        const exhaustedTurnBudget =
-          result.stopReason === "max_turns" ||
-          result.failureSubtype === "error_max_turns";
+        const executionOutcome = resolveReviewExecutionOutcomeContext({
+          result,
+          totalTimeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds,
+          defaultTimeoutSeconds: config.timeoutSeconds,
+          timeoutComplexityReasoning: timeoutEstimate?.reasoning,
+        });
+        const turnBudgetExhausted = executionOutcome.exhaustedTurnBudget;
 
         // Post error or partial-review comment if execution failed, timed out, or exhausted review turns.
-        if (result.conclusion === "error" || (result.conclusion === "failure" && exhaustedTurnBudget)) {
-          const category = exhaustedTurnBudget
-            ? "timeout"
-            : classifyError(
-                new Error(result.errorMessage ?? "Unknown error"),
-                result.isTimeout ?? false,
-                result.published ?? false,
-              );
-
-          const timeoutDuration = appliedTimeoutBudget?.totalTimeoutSeconds ?? config.timeoutSeconds;
-          const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
-
+        if (executionOutcome.shouldHandleErrorOrTurnLimit) {
+          const { category, timeoutDuration, complexityInfo } = executionOutcome;
           let publishedPartialReview = false;
           let partialCommentId: number | undefined;
           let fallbackRetryState: string | undefined;
           let deferredPublicOutputForContinuation = false;
 
-          if (result.isTimeout || exhaustedTurnBudget) {
+          if (result.isTimeout || turnBudgetExhausted) {
             // Step 1: Read checkpoint/progress data
             const checkpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
             const hasPublishedInlines = result.published ?? false;
@@ -2180,7 +2175,7 @@ export function createReviewHandler(deps: {
               ? "timeout_partial"
               : result.isTimeout
                 ? "timeout"
-                : exhaustedTurnBudget
+                : turnBudgetExhausted
                   ? "max_turns"
                   : result.conclusion;
 
@@ -2383,7 +2378,7 @@ export function createReviewHandler(deps: {
             };
 
             const octokit = extractionOctokit;
-            deferredPublicOutputForContinuation = exhaustedTurnBudget
+            deferredPublicOutputForContinuation = turnBudgetExhausted
               && retryPlan?.decision === "schedule-continuation"
               && !hasPublishedInlines;
             if (
@@ -3371,7 +3366,7 @@ export function createReviewHandler(deps: {
               owner: apiOwner,
               repo: apiRepo,
               prNumber: pr.number,
-              exhaustedTurnBudget,
+              exhaustedTurnBudget: turnBudgetExhausted,
               retryScheduled: fallbackRetryState?.startsWith("scheduled") === true,
               category,
               errorMessage: result.errorMessage,
@@ -3391,7 +3386,7 @@ export function createReviewHandler(deps: {
           }
         }
 
-        if (result.conclusion === "failure" && !(result.published ?? false) && !exhaustedTurnBudget) {
+        if (result.conclusion === "failure" && !(result.published ?? false) && !turnBudgetExhausted) {
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           const failurePublication = await publishReviewFailureFallback({
             octokit,
