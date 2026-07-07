@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import type { EmbeddingProvider, LearningMemoryRecord, LearningMemoryStore } from "../knowledge/types.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
-import { err, ok, type Result } from "../lib/result.ts";
+import { err as resultErr, ok, type Result } from "../lib/result.ts";
 
 export type ReviewLearningMemorySkipReason =
   | "missing-finding-id"
@@ -284,7 +284,7 @@ export async function writeReviewLearningMemory(
 
     const embeddingResult = await embeddingProvider.generate(decision.embeddingText, "document");
     if (!embeddingResult) {
-      return err(new Error("Learning memory embedding generation returned no result"));
+      return resultErr(new Error("Learning memory embedding generation returned no result"));
     }
 
     const memoryRecord = decision.toRecord({
@@ -310,7 +310,7 @@ export async function writeReviewLearningMemory(
       },
       "Learning memory write failed for finding (fail-open)",
     );
-    return { ok: false, err };
+    return resultErr(err);
   }
 }
 

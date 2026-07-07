@@ -43,6 +43,7 @@ export const EXPLICIT_TEST_TARGET_MAP = {
   "src/handlers/mention-config-trust.test.ts": "src/handlers/mention.ts",
   "src/handlers/mention-structure.test.ts": "src/handlers/mention.ts",
   "src/handlers/publication-result-structure.test.ts": "src/lib/result.ts",
+  "src/lib/result-architecture.test.ts": "src/lib/result.ts",
   "src/handlers/review-candidate-verification-evidence.test.ts": "src/handlers/review-m070-integration-harness.ts",
   "src/handlers/review-candidate-verification-integration.test.ts": "src/handlers/review-m070-integration-harness.ts",
   "src/handlers/review-candidate-verification-publication.test.ts": "src/handlers/review-m070-integration-harness.ts",
