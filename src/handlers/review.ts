@@ -148,6 +148,7 @@ import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
 import { prepareReviewWorkspace } from "./review-workspace-preparation.ts";
+import { createReviewWorkspacePhaseHooks } from "./review-workspace-phase-hooks.ts";
 import {
   resolveReviewEventRuntime,
   type ReviewWebhookPayload,
@@ -393,8 +394,10 @@ export function createReviewHandler(deps: {
 
       let workspace: Workspace | undefined;
       try {
-        setReviewWorkPhase("workspace-create");
-        timingState.workspacePhaseStartedAt = Date.now();
+        const workspacePhaseHooks = createReviewWorkspacePhaseHooks({
+          setReviewWorkPhase,
+        });
+        timingState.workspacePhaseStartedAt = workspacePhaseHooks.workspacePhaseStartedAt;
         const preparedWorkspace = await prepareReviewWorkspace({
           workspaceManager,
           installationId: event.installationId,
@@ -408,7 +411,7 @@ export function createReviewHandler(deps: {
           fallbackHeadRepoFullName: pr.head.repo?.full_name ?? null,
           fallbackHeadRef: pr.head.ref,
           fetchRemoteTrackingBranchFn,
-          onBeforeFinalizeConfig: () => setReviewWorkPhase("load-config"),
+          onBeforeFinalizeConfig: workspacePhaseHooks.onBeforeFinalizeConfig,
           logger,
         });
         workspace = preparedWorkspace.workspace;

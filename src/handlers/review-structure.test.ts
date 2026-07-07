@@ -89,6 +89,18 @@ describe("review handler structure", () => {
     expect(runtimeSource).toContain("createReviewContinuationFamilyStateManager");
   });
 
+  test("keeps review workspace phase hooks out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const hooksSource = readFileSync(new URL("./review-workspace-phase-hooks.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("setReviewWorkPhase(\"workspace-create\");\n        timingState.workspacePhaseStartedAt = Date.now();");
+    expect(source).not.toContain("onBeforeFinalizeConfig: () => setReviewWorkPhase(\"load-config\")");
+    expect(source).toContain("createReviewWorkspacePhaseHooks");
+    expect(source).toContain("./review-workspace-phase-hooks.ts");
+    expect(hooksSource).toContain("workspace-create");
+    expect(hooksSource).toContain("load-config");
+  });
+
   test("keeps review job queue context projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const jobContextSource = readFileSync(new URL("./review-job-context.ts", import.meta.url), "utf8");
