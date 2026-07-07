@@ -398,3 +398,24 @@ export async function writeReviewLearningMemoryBatch(params: {
 
   return summary;
 }
+
+type WriteReviewLearningMemoryBatch = (
+  params: Parameters<typeof writeReviewLearningMemoryBatch>[0],
+) => Promise<ReviewLearningMemoryBatchSummary>;
+
+export function scheduleReviewLearningMemoryBatch(
+  params: Parameters<typeof writeReviewLearningMemoryBatch>[0] & {
+    writeBatch?: WriteReviewLearningMemoryBatch;
+  },
+): void {
+  const { writeBatch = writeReviewLearningMemoryBatch, ...batchParams } = params;
+
+  Promise.resolve().then(async () => {
+    await writeBatch(batchParams);
+  }).catch((err) => {
+    params.logger.warn(
+      { ...params.logContext, err },
+      "Learning memory write pipeline failed (fail-open)",
+    );
+  });
+}

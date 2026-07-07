@@ -258,11 +258,16 @@ describe("review handler structure", () => {
 
   test("keeps review learning-memory batch orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const learningMemorySource = readFileSync(new URL("./review-learning-memory.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("writeReviewLearningMemory({");
     expect(source).not.toContain("Learning memory write batch complete");
-    expect(source).toContain("writeReviewLearningMemoryBatch");
+    expect(source).not.toContain("Promise.resolve().then(async () =>");
+    expect(source).not.toContain("Learning memory write pipeline failed (fail-open)");
+    expect(source).toContain("scheduleReviewLearningMemoryBatch");
     expect(source).toContain("./review-learning-memory.ts");
+    expect(learningMemorySource).toContain("writeReviewLearningMemoryBatch");
+    expect(learningMemorySource).toContain("Learning memory write pipeline failed (fail-open)");
   });
 
   test("keeps post-execution side-effect mechanics out of the monster handler", () => {

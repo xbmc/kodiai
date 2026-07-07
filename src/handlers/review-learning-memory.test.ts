@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import {
   buildReviewLearningMemoryRecord,
   isReviewLearningMemorySkip,
+  scheduleReviewLearningMemoryBatch,
   writeReviewLearningMemoryBatch,
   writeReviewLearningMemory,
   type BuildReviewLearningMemoryRecordInput,
@@ -288,6 +289,54 @@ describe("writeReviewLearningMemoryBatch", () => {
         total: 3,
       },
       "Learning memory write batch complete",
+    );
+  });
+});
+
+describe("scheduleReviewLearningMemoryBatch", () => {
+  test("runs the batch writer asynchronously and logs fail-open errors", async () => {
+    const logger = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}) };
+    const batchError = new Error("embedding outage");
+    const writeBatch = mock(async () => {
+      throw batchError;
+    });
+
+    scheduleReviewLearningMemoryBatch({
+      findings: [
+        { commentId: 1, filePath: "src/a.ts", title: "A", severity: "major", category: "correctness", suppressed: false },
+      ],
+      owner: "owner",
+      repo: "owner/repo",
+      reviewId: 42,
+      prNumber: 17,
+      store: {
+        async hasMemoryConflict() {
+          return false;
+        },
+        async writeMemory() {},
+      },
+      embeddingProvider: {
+        async generate() {
+          return { embedding: new Float32Array([1]), model: "model", dimensions: 1 };
+        },
+        model: "model",
+        dimensions: 1,
+      },
+      logger,
+      logContext: { deliveryId: "delivery-1" },
+      classifyLanguage: () => "typescript",
+      writeBatch,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(writeBatch).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        deliveryId: "delivery-1",
+        err: batchError,
+      },
+      "Learning memory write pipeline failed (fail-open)",
     );
   });
 });

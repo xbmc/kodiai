@@ -22,7 +22,7 @@ import { formatErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
 import {
-  writeReviewLearningMemoryBatch,
+  scheduleReviewLearningMemoryBatch,
 } from "./review-learning-memory.ts";
 import {
   type TimeoutReviewDetailsProgress,
@@ -1424,26 +1424,18 @@ export function createReviewHandler(deps: {
         // Write accepted and suppressed findings to learning memory with embeddings.
         // This is async and fail-open -- errors do not affect the review outcome.
         if (learningMemoryStore && embeddingProvider && processedFindings.length > 0) {
-          // Fire and forget: don't await, don't block review completion
-          Promise.resolve().then(async () => {
-            await writeReviewLearningMemoryBatch({
-              findings: processedFindings,
-              owner: apiOwner,
-              repo: `${apiOwner}/${apiRepo}`,
-              reviewId,
-              prNumber: pr.number,
-              store: learningMemoryStore,
-              embeddingProvider,
-              logger,
-              logContext: baseLog,
-              // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
-              classifyLanguage: (filePath) => classifyFileLanguageWithContext(filePath, changedFiles),
-            });
-          }).catch((err) => {
-            logger.warn(
-              { ...baseLog, err },
-              'Learning memory write pipeline failed (fail-open)',
-            );
+          scheduleReviewLearningMemoryBatch({
+            findings: processedFindings,
+            owner: apiOwner,
+            repo: `${apiOwner}/${apiRepo}`,
+            reviewId,
+            prNumber: pr.number,
+            store: learningMemoryStore,
+            embeddingProvider,
+            logger,
+            logContext: baseLog,
+            // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
+            classifyLanguage: (filePath) => classifyFileLanguageWithContext(filePath, changedFiles),
           });
         }
 
