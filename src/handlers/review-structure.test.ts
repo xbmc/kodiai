@@ -1437,6 +1437,15 @@ describe("review handler structure", () => {
     expect(adaptersSource).toContain("export function buildReviewRetryOutcomeCheckpointLookup");
   });
 
+  test("keeps review execution resource cleanup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const cleanupSource = readFileSync(new URL("./review-execution-cleanup.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("await workspace.cleanup();");
+    expect(source).toContain("cleanupReviewExecutionResources");
+    expect(cleanupSource).toContain("export async function cleanupReviewExecutionResources");
+  });
+
   test("keeps continuation revision delta classification out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");

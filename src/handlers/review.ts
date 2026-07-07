@@ -152,6 +152,7 @@ import { resolveReviewTimeoutExecutionContext } from "./review-timeout-execution
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
+import { cleanupReviewExecutionResources } from "./review-execution-cleanup.ts";
 import { prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 import { createReviewWorkspacePhaseHooks } from "./review-workspace-phase-hooks.ts";
 import {
@@ -1648,9 +1649,7 @@ export function createReviewHandler(deps: {
           logger,
         });
 
-        if (workspace) {
-          await workspace.cleanup();
-        }
+        await cleanupReviewExecutionResources({ workspace });
       }
     }, buildReviewJobQueueContext({
       deliveryId: event.id,
