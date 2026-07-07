@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 import { retryTransient } from "../lib/transient-retry.ts";
-import { abortSignalWithTimeout } from "../lib/with-timeout.ts";
+import { runWithAbortSignalTimeout } from "../lib/with-timeout.ts";
 
 interface CreateSlackClientInput {
   botToken: string;
@@ -29,6 +29,9 @@ class SlackApiRequestError extends Error {
 function isRetryableSlackWriteError(error: unknown): boolean {
   if (error instanceof SlackApiRequestError) {
     return error.status === 429 || error.status >= 500 || error.slackError === "ratelimited";
+  }
+  if (error instanceof Error && /Slack API .+: request timed out after \d+ms/.test(error.message)) {
+    return true;
   }
   return error instanceof TypeError || error instanceof DOMException;
 }
@@ -61,15 +64,20 @@ async function postSlackMethodWithRetry<T extends SlackApiResponse>(params: {
 }): Promise<{ payload: T; response: Response }> {
   return await retryTransient(
     async () => {
-      const response = await params.fetchImpl(`https://slack.com/api/${params.method}`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${params.botToken}`,
-          "content-type": "application/json; charset=utf-8",
-        },
-        body: params.body ? JSON.stringify(params.body) : undefined,
-        signal: abortSignalWithTimeout(params.timeoutMs),
-      });
+      const response = await runWithAbortSignalTimeout(
+        `Slack API ${params.method}`,
+        params.timeoutMs,
+        (signal) =>
+          params.fetchImpl(`https://slack.com/api/${params.method}`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${params.botToken}`,
+              "content-type": "application/json; charset=utf-8",
+            },
+            body: params.body ? JSON.stringify(params.body) : undefined,
+            signal,
+          }),
+      );
 
       const payload = await parseSlackPayload(response, params.method) as T;
       if (!response.ok) {

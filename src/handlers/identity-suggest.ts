@@ -16,7 +16,7 @@ import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 import { dedupeInflight } from "../lib/inflight-dedupe.ts";
 import { parseRetryAfterDelayMs } from "../lib/retry-after.ts";
 import { retryTransient } from "../lib/transient-retry.ts";
-import { abortSignalWithTimeout } from "../lib/with-timeout.ts";
+import { runWithAbortSignalTimeout } from "../lib/with-timeout.ts";
 
 type SlackMember = {
   userId: string;
@@ -103,6 +103,9 @@ function isRetryableSlackError(error: unknown): boolean {
     if (isSlackMissingScopeError(error.slackError)) return false;
     return error.status === 429 || error.status >= 500 || error.slackError === "ratelimited";
   }
+  if (error instanceof Error && /^Slack .+: request timed out after \d+ms$/.test(error.message)) {
+    return true;
+  }
   // Fetch rejects aborted/network-failed requests as TypeError/DOMException before Slack can return JSON.
   return error instanceof TypeError || error instanceof DOMException;
 }
@@ -117,10 +120,12 @@ async function fetchSlackJson<T extends SlackJsonResponse>(
   init: RequestInit,
   label: string,
 ): Promise<{ response: Response; data: T }> {
-  const response = await fetch(url, {
-    ...init,
-    signal: abortSignalWithTimeout(10_000),
-  });
+  const response = await runWithAbortSignalTimeout(label, 10_000, (signal) =>
+    fetch(url, {
+      ...init,
+      signal,
+    })
+  );
   let data: T;
   try {
     data = (await response.json()) as T;

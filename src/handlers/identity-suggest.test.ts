@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import type { Logger } from "pino";
 import * as identitySuggest from "./identity-suggest.ts";
 import type {
@@ -149,6 +150,27 @@ describe("suggestIdentityLink", () => {
       { includeOptedOut: true },
     ]);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("uses the shared cancellable timeout primitive for Slack fetches", () => {
+    const source = readFileSync(new URL("./identity-suggest.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("async function fetchSlackJson"),
+      source.indexOf("async function fetchSlackJsonReadWithRetry"),
+    );
+
+    expect(implementation).toContain("runWithAbortSignalTimeout");
+    expect(implementation).not.toContain("abortSignalWithTimeout");
+  });
+
+  test("keeps shared Slack timeout errors retryable", () => {
+    const source = readFileSync(new URL("./identity-suggest.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("function isRetryableSlackError"),
+      source.indexOf("function slackRetryAfterDelayMs"),
+    );
+
+    expect(implementation).toContain("request timed out after");
   });
 
   test("opted-out linked profiles are treated as existing and do not receive a DM", async () => {

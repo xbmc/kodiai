@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { abortSignalWithTimeout } from "../lib/with-timeout.ts";
 import { buildWikiApiUrl, withWikiRequestPolicy, type FetchFn } from "./wiki-fetch.ts";
 
@@ -29,6 +30,17 @@ describe("buildWikiApiUrl", () => {
 });
 
 describe("withWikiRequestPolicy", () => {
+  test("uses the shared cancellable timeout primitive for default wiki request timeouts", () => {
+    const source = readFileSync(new URL("./wiki-fetch.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("export function withWikiRequestPolicy"),
+      source.indexOf("function retryDelayMs"),
+    );
+
+    expect(implementation).toContain("runWithAbortSignalTimeout");
+    expect(implementation).not.toContain("abortSignalWithTimeout");
+  });
+
   test("adds the Kodiai user agent when headers are omitted", async () => {
     const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
     const fetchFn: FetchFn = async (input, init) => {

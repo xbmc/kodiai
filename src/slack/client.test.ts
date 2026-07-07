@@ -1,7 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createSlackClient } from "./client.ts";
 
 describe("createSlackClient", () => {
+  test("uses the shared cancellable timeout primitive for Slack API calls", () => {
+    const source = readFileSync(new URL("./client.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("async function postSlackMethodWithRetry"),
+      source.indexOf("async function postSlackJsonWithRetry"),
+    );
+
+    expect(implementation).toContain("runWithAbortSignalTimeout");
+    expect(implementation).not.toContain("abortSignalWithTimeout");
+  });
+
   test("reads token scopes from auth.test response header", async () => {
     const client = createSlackClient({
       botToken: "xoxb-test-token",
@@ -46,6 +58,38 @@ describe("createSlackClient", () => {
 
     expect(calls).toBe(2);
     expect(scopes).toEqual(["chat:write", "reactions:write"]);
+  });
+
+  test("retries Slack API calls after an aborting request timeout", async () => {
+    let calls = 0;
+    const client = createSlackClient({
+      botToken: "xoxb-test-token",
+      timeoutMs: 1,
+      fetchImpl: async (_url, init) => {
+        calls++;
+        if (calls === 1) {
+          await new Promise<void>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          });
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "x-oauth-scopes": "chat:write",
+          },
+        });
+      },
+    });
+
+    const scopes = await client.getTokenScopes();
+
+    expect(calls).toBe(2);
+    expect(scopes).toEqual(["chat:write"]);
   });
 
   test("adds working reaction payload via Slack reactions.add", async () => {
