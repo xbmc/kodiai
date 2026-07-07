@@ -39,4 +39,19 @@ describe("publication result structure", () => {
     expect(source).toContain("return ok({ published: false, commentId: undefined })");
     expect(source).toContain("return err({ published: false, error })");
   });
+
+  test("keeps mention write adapters on shared Result shape", () => {
+    for (const helper of [
+      "./mention-fork-write-output.ts",
+      "./mention-same-repo-write.ts",
+      "./mention-bot-pr-write.ts",
+      "./mention-write-output-routing.ts",
+    ]) {
+      const source = readFileSync(new URL(helper, import.meta.url), "utf8");
+
+      expect(source, helper).toContain("type Result");
+      expect(source, helper).toMatch(/Promise<[^>]*Result/);
+      expect(source, helper).toMatch(/\bok\(/);
+    }
+  });
 });

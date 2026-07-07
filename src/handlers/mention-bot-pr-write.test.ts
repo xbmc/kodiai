@@ -86,7 +86,7 @@ describe("publishMentionBotWritePullRequest", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("status: success");
     expect(replies[0]).toContain("pr_url: https://github.com/acme/widgets/pull/9");
@@ -119,7 +119,7 @@ describe("publishMentionBotWritePullRequest", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("Existing PR: https://github.com/acme/widgets/pull/8");
     expect(failures).toEqual([]);
@@ -142,7 +142,7 @@ describe("publishMentionBotWritePullRequest", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(publishAttempts).toBe(2);
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("https://github.com/acme/widgets/pull/10");
@@ -164,7 +164,7 @@ describe("publishMentionBotWritePullRequest", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(failures).toEqual(["issue-linkback"]);
     expect(recorded).toBeFalse();
   });

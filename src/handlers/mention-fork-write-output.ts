@@ -6,6 +6,7 @@ import {
   WritePolicyError,
 } from "../jobs/workspace.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
+import { ok, type Result } from "../lib/result.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import { summarizeWriteRequest } from "../lib/write-request-formatting.ts";
 import { buildMentionWriteCommitMessage } from "./mention-write-formatters.ts";
@@ -70,6 +71,10 @@ type PublishMentionWritePullRequest = (params: {
   botHandles: string[];
 }) => Promise<{ data: { html_url: string } }>;
 
+export type ForkWriteOutputStatus = {
+  status: "handled" | "fall-through";
+};
+
 export async function publishMentionForkWriteOutput(params: {
   workspaceDir: string;
   octokit: unknown;
@@ -104,9 +109,9 @@ export async function publishMentionForkWriteOutput(params: {
   buildMentionWritePullRequestDraft?: typeof defaultBuildMentionWritePullRequestDraft;
   publishMentionWritePullRequest?: PublishMentionWritePullRequest;
   recordWriteRateLimitSuccess: (owner: string, repo: string) => void;
-}): Promise<{ status: "handled" | "fall-through" }> {
+}): Promise<Result<ForkWriteOutputStatus>> {
   if (!params.forkContext || !params.gistPublisher?.enabled) {
-    return { status: "fall-through" };
+    return ok({ status: "fall-through" });
   }
 
   const collectWorkspaceChangedFiles = params.collectWorkspaceChangedFiles ?? defaultCollectWorkspaceChangedFiles;
@@ -134,7 +139,7 @@ export async function publishMentionForkWriteOutput(params: {
         changedFiles,
         buildStagedPatchForGist,
       });
-      if (handled) return { status: "handled" };
+      if (handled) return ok({ status: "handled" });
     } catch (gistErr) {
       params.logger.warn(
         { err: gistErr, owner: params.mention.owner, repo: params.mention.repo },
@@ -226,7 +231,7 @@ export async function publishMentionForkWriteOutput(params: {
       },
       "Evidence bundle",
     );
-    return { status: "handled" };
+    return ok({ status: "handled" });
   } catch (forkPrErr) {
     params.logger.warn(
       { err: forkPrErr, owner: params.mention.owner, repo: params.mention.repo },
@@ -237,7 +242,7 @@ export async function publishMentionForkWriteOutput(params: {
       const refusal = buildWritePolicyRefusalMessage(forkPrErr, params.allowPaths);
       const replyBody = buildWritePolicyRefusalReply({ refusal });
       await params.postMentionReply(replyBody);
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
 
     try {
@@ -271,7 +276,7 @@ export async function publishMentionForkWriteOutput(params: {
           "Evidence bundle",
         );
         params.recordWriteRateLimitSuccess(params.mention.owner, params.mention.repo);
-        return { status: "handled" };
+        return ok({ status: "handled" });
       }
     } catch (fallbackErr) {
       params.logger.error(
@@ -285,7 +290,7 @@ export async function publishMentionForkWriteOutput(params: {
     { owner: params.mention.owner, repo: params.mention.repo },
     "Fork-based write mode failed completely; falling through to legacy direct-push path",
   );
-  return { status: "fall-through" };
+  return ok({ status: "fall-through" });
 }
 
 async function publishPrimaryGist(params: {

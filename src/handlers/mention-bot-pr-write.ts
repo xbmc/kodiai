@@ -3,6 +3,7 @@ import {
   createBranchCommitAndPush as defaultCreateBranchCommitAndPush,
   WritePolicyError,
 } from "../jobs/workspace.ts";
+import { ok, type Result } from "../lib/result.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import { buildMentionWriteCommitMessage } from "./mention-write-formatters.ts";
 import {
@@ -73,6 +74,10 @@ type PublishMentionWritePullRequest = (params: {
   botHandles: string[];
 }) => Promise<{ data: { html_url: string } }>;
 
+export type BotWritePullRequestStatus = {
+  status: "handled";
+};
+
 export async function publishMentionBotWritePullRequest(params: {
   workspaceDir: string;
   workspaceToken?: string;
@@ -103,7 +108,7 @@ export async function publishMentionBotWritePullRequest(params: {
   buildMentionWritePullRequestDraft?: BuildMentionWritePullRequestDraft;
   publishMentionWritePullRequest?: PublishMentionWritePullRequest;
   recordWriteRateLimitSuccess: (owner: string, repo: string) => void;
-}): Promise<{ status: "handled" }> {
+}): Promise<Result<BotWritePullRequestStatus>> {
   const createBranchCommitAndPush = params.createBranchCommitAndPush ?? defaultCreateBranchCommitAndPush;
   const buildMentionWritePullRequestDraft =
     params.buildMentionWritePullRequestDraft ?? defaultBuildMentionWritePullRequestDraft;
@@ -143,7 +148,7 @@ export async function publishMentionBotWritePullRequest(params: {
       const refusal = buildWritePolicyRefusalMessage(err, params.allowPaths);
       const replyBody = buildWritePolicyRefusalReply({ refusal });
       await params.postMentionReply(replyBody);
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
 
     if (await params.maybeReplyWritePermissionFailure({
@@ -151,7 +156,7 @@ export async function publishMentionBotWritePullRequest(params: {
       retryCommand: params.retryCommand,
       postReply: params.postMentionReply,
     })) {
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
 
     if (err instanceof Error && looksLikeExistingBranchFailure(err)) {
@@ -167,7 +172,7 @@ export async function publishMentionBotWritePullRequest(params: {
         if (existing?.html_url) {
           const replyBody = buildExistingPrReply({ prUrl: existing.html_url });
           await params.postMentionReply(replyBody);
-          return { status: "handled" };
+          return ok({ status: "handled" });
         }
       } catch (lookupErr) {
         params.logger.warn(
@@ -178,7 +183,7 @@ export async function publishMentionBotWritePullRequest(params: {
     }
 
     await params.postIssueWriteFailure("branch-push", err);
-    return { status: "handled" };
+    return ok({ status: "handled" });
   }
 
   const prDraft: MentionWritePullRequestDraft = await buildMentionWritePullRequestDraft({
@@ -217,7 +222,7 @@ export async function publishMentionBotWritePullRequest(params: {
         retryCommand: params.retryCommand,
         postReply: params.postMentionReply,
       })) {
-        return { status: "handled" };
+        return ok({ status: "handled" });
       }
 
       if (attempt < maxPrCreateAttempts) {
@@ -238,7 +243,7 @@ export async function publishMentionBotWritePullRequest(params: {
       }
 
       await params.postIssueWriteFailure("create-pr", err);
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
   }
 
@@ -247,7 +252,7 @@ export async function publishMentionBotWritePullRequest(params: {
       "create-pr",
       new Error("GitHub pulls.create response did not include html_url"),
     );
-    return { status: "handled" };
+    return ok({ status: "handled" });
   }
 
   const issueLinkbackUrl =
@@ -263,7 +268,7 @@ export async function publishMentionBotWritePullRequest(params: {
     await params.postMentionReply(replyBody);
   } catch (err) {
     await params.postIssueWriteFailure("issue-linkback", err);
-    return { status: "handled" };
+    return ok({ status: "handled" });
   }
 
   params.logger.info(
@@ -288,7 +293,7 @@ export async function publishMentionBotWritePullRequest(params: {
 
   params.recordWriteRateLimitSuccess(params.mention.owner, params.mention.repo);
 
-  return { status: "handled" };
+  return ok({ status: "handled" });
 }
 
 function looksLikeExistingBranchFailure(err: Error): boolean {

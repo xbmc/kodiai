@@ -89,7 +89,7 @@ describe("publishMentionForkWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("Patch gist: https://gist.github.com/acme/patch");
     expect(replies[0]).toContain("Files changed: README.md");
@@ -120,7 +120,7 @@ describe("publishMentionForkWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(assertedForkOwner).toBe("acme-bot");
     expect(publishedHead).toBe("acme-bot:kodiai/write/acme-widgets-5");
     expect(replies[0]).toContain("Opened PR: https://github.com/acme/widgets/pull/11");
@@ -141,7 +141,7 @@ describe("publishMentionForkWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("Could not create a PR from the fork");
     expect(replies[0]).toContain("https://gist.github.com/acme/patch");
@@ -160,7 +160,7 @@ describe("publishMentionForkWriteOutput", () => {
       },
     }));
 
-    expect(result.status).toBe("fall-through");
+    expect(result).toEqual({ ok: true, value: { status: "fall-through" } });
     expect(
       warnCalls.some((entry) => entry.message === "Fork-based write mode failed completely; falling through to legacy direct-push path"),
     ).toBeTrue();

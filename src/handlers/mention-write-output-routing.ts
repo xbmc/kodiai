@@ -131,7 +131,7 @@ export async function routeMentionWriteOutput(params: {
     postMentionReply: params.postMentionReply,
     recordWriteRateLimitSuccess: params.recordWriteRateLimitSuccess,
   });
-  if (forkWriteOutput.status === "handled") {
+  if (forkWriteOutput.ok && forkWriteOutput.value.status === "handled") {
     return ok({ status: "handled" });
   }
 
@@ -168,7 +168,7 @@ export async function routeMentionWriteOutput(params: {
     postMentionReply: params.postMentionReply,
     maybeReplyWritePermissionFailure: params.maybeReplyWritePermissionFailure,
   });
-  if (sameRepoPrWriteResult.status === "handled") {
+  if (sameRepoPrWriteResult.ok && sameRepoPrWriteResult.value.status === "handled") {
     return ok({ status: "handled" });
   }
 

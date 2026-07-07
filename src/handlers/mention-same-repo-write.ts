@@ -5,6 +5,7 @@ import {
   pushHeadToRemoteRef as defaultPushHeadToRemoteRef,
   WritePolicyError,
 } from "../jobs/workspace.ts";
+import { ok, type Result } from "../lib/result.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import { buildMentionWriteCommitMessage } from "./mention-write-formatters.ts";
 import {
@@ -33,7 +34,7 @@ type WritePolicy = {
   secretScanEnabled: boolean;
 };
 
-type SameRepoWriteOperationResult = {
+export type SameRepoWriteOperationStatus = {
   status: "handled" | "fall-through" | "not-applicable";
 };
 
@@ -95,9 +96,9 @@ export async function attemptSameRepoPrWrite(params: {
   remoteHeadContainsMarker?: RemoteHeadContainsMarker;
   commitAndPushToRemoteRef?: CommitAndPushToRemoteRef;
   pushHeadToRemoteRef?: PushHeadToRemoteRef;
-}): Promise<SameRepoWriteOperationResult> {
+}): Promise<Result<SameRepoWriteOperationStatus>> {
   if (params.mention.prNumber === undefined || !params.sameRepoHead || !params.mention.headRef) {
-    return { status: "not-applicable" };
+    return ok({ status: "not-applicable" });
   }
 
   const headRef = params.mention.headRef;
@@ -116,7 +117,7 @@ export async function attemptSameRepoPrWrite(params: {
     });
     if (alreadyApplied) {
       await logAndReplyAlreadyApplied(params, params.sourcePrUrl);
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
   } catch (err) {
     params.logger.warn(
@@ -181,13 +182,13 @@ export async function attemptSameRepoPrWrite(params: {
         "Applied changes but failed to post confirmation reply",
       );
     }
-    return { status: "handled" };
+    return ok({ status: "handled" });
   } catch (err) {
     if (err instanceof WritePolicyError) {
       const refusal = buildWritePolicyRefusalMessage(err, params.allowPaths);
       const replyBody = buildWritePolicyRefusalReply({ refusal });
       await params.postMentionReply(replyBody);
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
 
     if (await params.maybeReplyWritePermissionFailure({
@@ -195,7 +196,7 @@ export async function attemptSameRepoPrWrite(params: {
       retryCommand: params.retryCommand,
       postReply: params.postMentionReply,
     })) {
-      return { status: "handled" };
+      return ok({ status: "handled" });
     }
 
     try {
@@ -207,7 +208,7 @@ export async function attemptSameRepoPrWrite(params: {
       });
       if (alreadyApplied) {
         await logAndReplyAlreadyApplied(params, params.sourcePrUrl);
-        return { status: "handled" };
+        return ok({ status: "handled" });
       }
     } catch (lookupErr) {
       params.logger.warn(
@@ -233,7 +234,7 @@ export async function attemptSameRepoPrWrite(params: {
         retryCommand: params.retryCommand,
         postReply: params.postMentionReply,
       })) {
-        return { status: "handled" };
+        return ok({ status: "handled" });
       }
       params.logger.error(
         { err: pushErr, prNumber: params.mention.prNumber, branchName: params.writeBranchName },
@@ -242,7 +243,7 @@ export async function attemptSameRepoPrWrite(params: {
       throw err;
     }
 
-    return { status: "fall-through" };
+    return ok({ status: "fall-through" });
   }
 }
 

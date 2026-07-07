@@ -75,7 +75,7 @@ describe("attemptSameRepoPrWrite", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(commitCalls).toBe(0);
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("Already applied");
@@ -102,7 +102,7 @@ describe("attemptSameRepoPrWrite", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(operations).toEqual(["checkout:feature/widgets", "push:feature/widgets"]);
     expect(replies).toHaveLength(1);
     expect(replies[0]).toContain("Updated PR: https://github.com/acme/widgets/pull/7");
@@ -132,7 +132,7 @@ describe("attemptSameRepoPrWrite", () => {
       },
     }));
 
-    expect(result.status).toBe("handled");
+    expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(markerLookups).toBe(2);
     expect(fallbackPushCalls).toBe(0);
     expect(replies).toHaveLength(1);
@@ -151,7 +151,7 @@ describe("attemptSameRepoPrWrite", () => {
       },
     }));
 
-    expect(result.status).toBe("fall-through");
+    expect(result).toEqual({ ok: true, value: { status: "fall-through" } });
     expect(operations).toEqual(["fallback:kodiai/write/acme-widgets-7"]);
   });
 });

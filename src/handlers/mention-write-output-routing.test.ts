@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ok } from "../lib/result.ts";
 import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 import type { MentionEvent } from "./mention-types.ts";
 
@@ -73,9 +74,9 @@ function createBaseParams(
     maybeReplyWritePermissionFailure: async () => false,
     recordWriteRateLimitSuccess: () => undefined,
     getGitStatusPorcelain: async () => " M src/file.ts\n",
-    publishMentionForkWriteOutput: async () => ({ status: "fall-through" }),
-    attemptSameRepoPrWrite: async () => ({ status: "fall-through" }),
-    publishMentionBotWritePullRequest: async () => ({ status: "handled" }),
+    publishMentionForkWriteOutput: async () => ok({ status: "fall-through" }),
+    attemptSameRepoPrWrite: async () => ok({ status: "fall-through" }),
+    publishMentionBotWritePullRequest: async () => ok({ status: "handled" }),
   };
 
   return { ...params, ...overrides };
@@ -95,15 +96,15 @@ describe("routeMentionWriteOutput", () => {
       getGitStatusPorcelain: async () => "  \n",
       publishMentionForkWriteOutput: async () => {
         forkCalls += 1;
-        return { status: "fall-through" };
+        return ok({ status: "fall-through" });
       },
       attemptSameRepoPrWrite: async () => {
         sameRepoCalls += 1;
-        return { status: "fall-through" };
+        return ok({ status: "fall-through" });
       },
       publishMentionBotWritePullRequest: async () => {
         botPrCalls += 1;
-        return { status: "handled" };
+        return ok({ status: "handled" });
       },
     }));
 
@@ -122,15 +123,15 @@ describe("routeMentionWriteOutput", () => {
     const result = await routeMentionWriteOutput(createBaseParams({
       publishMentionForkWriteOutput: async (params) => {
         expect(params.writeOutputKey).toBe("write-key");
-        return { status: "handled" };
+        return ok({ status: "handled" });
       },
       attemptSameRepoPrWrite: async () => {
         sameRepoCalls += 1;
-        return { status: "fall-through" };
+        return ok({ status: "fall-through" });
       },
       publishMentionBotWritePullRequest: async () => {
         botPrCalls += 1;
-        return { status: "handled" };
+        return ok({ status: "handled" });
       },
     }));
 
@@ -143,15 +144,15 @@ describe("routeMentionWriteOutput", () => {
     let botPrCalls = 0;
 
     const result = await routeMentionWriteOutput(createBaseParams({
-      publishMentionForkWriteOutput: async () => ({ status: "fall-through" }),
+      publishMentionForkWriteOutput: async () => ok({ status: "fall-through" }),
       attemptSameRepoPrWrite: async (params) => {
         expect(params.sameRepoHead).toBe(true);
         expect(params.sourcePrUrl).toBe("https://github.com/acme/widget/pull/42");
-        return { status: "handled" };
+        return ok({ status: "handled" });
       },
       publishMentionBotWritePullRequest: async () => {
         botPrCalls += 1;
-        return { status: "handled" };
+        return ok({ status: "handled" });
       },
     }));
 
@@ -163,13 +164,13 @@ describe("routeMentionWriteOutput", () => {
     let botPrCalls = 0;
 
     const result = await routeMentionWriteOutput(createBaseParams({
-      publishMentionForkWriteOutput: async () => ({ status: "fall-through" }),
-      attemptSameRepoPrWrite: async () => ({ status: "not-applicable" }),
+      publishMentionForkWriteOutput: async () => ok({ status: "fall-through" }),
+      attemptSameRepoPrWrite: async () => ok({ status: "not-applicable" }),
       publishMentionBotWritePullRequest: async (params) => {
         botPrCalls += 1;
         expect(params.isIssueWritePublishFlow).toBe(false);
         expect(params.botHandles).toEqual(["kodiai", "claude"]);
-        return { status: "handled" };
+        return ok({ status: "handled" });
       },
     }));
 
