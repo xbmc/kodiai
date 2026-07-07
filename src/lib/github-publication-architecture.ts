@@ -132,6 +132,28 @@ export function findDirectGitHubPublicationWrites(
           findings.push({ file, method: `request:${httpMethod} ${route}` });
         }
       }
+
+      const objectRequestCallPattern = new RegExp(String.raw`${requestCalleePattern}\s*\(`, "gs");
+      for (const match of source.matchAll(objectRequestCallPattern)) {
+        if (match.index === undefined) {
+          continue;
+        }
+
+        const argumentStart = findNextNonWhitespaceIndex(source, match.index + match[0].length);
+        if (argumentStart === null || source[argumentStart] !== "{") {
+          continue;
+        }
+
+        const requestObject = readBalancedObjectLiteral(source, argumentStart);
+        if (!requestObject) {
+          continue;
+        }
+
+        const objectRequest = parseBodyBearingRequestObject(requestObject, bodyBearingPayloadAliases);
+        if (objectRequest) {
+          findings.push({ file, method: `request:${objectRequest.httpMethod} ${objectRequest.route}` });
+        }
+      }
     }
 
     const graphqlCalleePatterns = [
@@ -233,6 +255,37 @@ function readBalancedObjectLiteral(source: string, openBraceIndex: number): stri
   }
 
   return null;
+}
+
+function findNextNonWhitespaceIndex(source: string, startIndex: number): number | null {
+  for (let index = startIndex; index < source.length; index += 1) {
+    if (!/\s/.test(source[index] ?? "")) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function parseBodyBearingRequestObject(
+  requestObject: string,
+  bodyBearingPayloadAliases: string[],
+): { httpMethod: string; route: string } | null {
+  const methodMatch = requestObject.match(/\bmethod\s*:\s*["'](POST|PATCH|PUT)["']/);
+  const routeMatch = requestObject.match(/\b(?:url|route)\s*:\s*([`"'])([^`"']*\/repos\/[^`"']*)\1/);
+  if (!methodMatch?.[1] || !routeMatch?.[2]) {
+    return null;
+  }
+
+  const hasBody =
+    /\bbody\b/.test(requestObject)
+    || bodyBearingPayloadAliases.some((alias) =>
+      new RegExp(String.raw`\.\.\.\s*${escapeRegExp(alias)}\b`).test(requestObject)
+    );
+  if (!hasBody) {
+    return null;
+  }
+
+  return { httpMethod: methodMatch[1], route: routeMatch[2] };
 }
 
 function findPublicationMethodAliases(source: string, namespace: string, name: string): string[] {
