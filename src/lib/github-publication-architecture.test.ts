@@ -20,6 +20,10 @@ describe("GitHub publication architecture", () => {
           const { createComment } = params.octokit.rest.issues;
           await createComment({ owner, repo, issue_number, body });
         `,
+        "src/handlers/unsafe-destructured-with-siblings.ts": `
+          const { listComments, createComment: postComment } = params.octokit.rest.issues;
+          await postComment({ owner, repo, issue_number, body });
+        `,
         "src/handlers/unsafe-aliased.ts": `
           const createReview = octokit.rest.pulls.createReview;
           await createReview({ owner, repo, pull_number, body, event: "COMMENT" });
@@ -99,6 +103,11 @@ describe("GitHub publication architecture", () => {
           const payload = { owner, repo, issue_number, body };
           await githubRequest("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", payload);
         `,
+        "src/handlers/unsafe-request-destructured-with-siblings.ts": `
+          const { graphql, request: githubRequest } = params.octokit;
+          const payload = { owner, repo, issue_number, body };
+          await githubRequest("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", payload);
+        `,
         "src/lib/github-publication.ts": "await octokit.rest.issues.createComment({ owner, repo, issue_number, body });",
         "src/handlers/safe.ts": "await createIssueCommentWithPublicationPipeline(octokit, { owner, repo, issue_number, body });",
       },
@@ -120,6 +129,10 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-bracket-namespace.ts",
         method: "pulls.createReview",
+      },
+      {
+        file: "src/handlers/unsafe-destructured-with-siblings.ts",
+        method: "issues.createComment",
       },
       {
         file: "src/handlers/unsafe-destructured.ts",
@@ -167,6 +180,10 @@ describe("GitHub publication architecture", () => {
       },
       {
         file: "src/handlers/unsafe-request-destructured-alias.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      },
+      {
+        file: "src/handlers/unsafe-request-destructured-with-siblings.ts",
         method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
       },
       {

@@ -201,11 +201,13 @@ function findPublicationMethodAliases(source: string, namespace: string, name: s
   const namespaceAccess = buildPropertyAccessPattern(namespace);
   const methodAccess = buildPropertyAccessPattern(name);
   const destructuredPattern = new RegExp(
-    String.raw`\{\s*${name}(?:\s*:\s*(\w+))?\s*\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}`,
+    String.raw`\{([^}]*)\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}`,
     "g",
   );
   for (const match of source.matchAll(destructuredPattern)) {
-    aliases.add(match[1] ?? name);
+    for (const alias of findDestructuredPropertyAliases(match[1] ?? "", name)) {
+      aliases.add(alias);
+    }
   }
 
   const assignmentPattern = new RegExp(
@@ -224,11 +226,13 @@ function findPublicationMethodAliases(source: string, namespace: string, name: s
 function findGitHubRequestAliases(source: string): string[] {
   const aliases = new Set<string>();
   const destructuredPattern = new RegExp(
-    String.raw`\{\s*request(?:\s*:\s*(\w+))?\s*\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}`,
+    String.raw`\{([^}]*)\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}`,
     "g",
   );
   for (const match of source.matchAll(destructuredPattern)) {
-    aliases.add(match[1] ?? "request");
+    for (const alias of findDestructuredPropertyAliases(match[1] ?? "", "request")) {
+      aliases.add(alias);
+    }
   }
 
   const requestAccess = buildPropertyAccessPattern("request");
@@ -240,6 +244,19 @@ function findGitHubRequestAliases(source: string): string[] {
     if (match[1]) {
       aliases.add(match[1]);
     }
+  }
+
+  return [...aliases];
+}
+
+function findDestructuredPropertyAliases(properties: string, property: string): string[] {
+  const aliases = new Set<string>();
+  const propertyPattern = new RegExp(
+    String.raw`(?:^|,)\s*${escapeRegExp(property)}(?:\s*:\s*(\w+))?\s*(?=,|$)`,
+    "g",
+  );
+  for (const match of properties.matchAll(propertyPattern)) {
+    aliases.add(match[1] ?? property);
   }
 
   return [...aliases];
