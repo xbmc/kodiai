@@ -18,7 +18,6 @@ import type { createExecutor } from "../execution/executor.ts";
 import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
 import type {
   KnowledgeStore,
-  ContinuationFamilyProjectionStatus,
 } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
@@ -250,6 +249,11 @@ import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context
 import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
+import {
+  resolveMergedContinuationFamilyState,
+  resolvePendingContinuationFamilyState,
+  resolveQuietSettledContinuationFamilyState,
+} from "./review-continuation-family-state-projection.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2336,13 +2340,10 @@ export function createReviewHandler(deps: {
                 });
               }
 
-              await persistContinuationFamilyState({
-                authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
-                authoritativeOutcome: "continuation-pending",
-                finalStopReason: "awaiting-continuation",
-                projectionStatus: "pending",
+              await persistContinuationFamilyState(resolvePendingContinuationFamilyState({
+                attemptId: retryReviewWorkAttempt.attemptId,
                 reviewOutputKey: retryReviewOutputKey,
-              });
+              }));
 
               // Fire-and-forget enqueue -- do not await the retry result.
               // Claim before queueing so the retry is visible in family diagnostics
@@ -2655,13 +2656,10 @@ export function createReviewHandler(deps: {
                             },
                             "Retry produced no additional results -- keeping original partial review",
                           );
-                          await persistContinuationFamilyState({
-                            authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
-                            authoritativeOutcome: "quiet-settled",
-                            finalStopReason: "settled-without-update",
-                            projectionStatus: "canonical",
+                          await persistContinuationFamilyState(resolveQuietSettledContinuationFamilyState({
+                            attemptId: retryReviewWorkAttempt.attemptId,
                             reviewOutputKey: retryReviewOutputKey,
-                          });
+                          }));
                           discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
                           return;
                         }
@@ -2746,13 +2744,11 @@ export function createReviewHandler(deps: {
                             retryReviewDetailsPublication.logMessage,
                           );
 
-                          await persistContinuationFamilyState({
-                            authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
-                            authoritativeOutcome: "merged",
-                            finalStopReason: "merged-continuation-results",
+                          await persistContinuationFamilyState(resolveMergedContinuationFamilyState({
+                            attemptId: retryReviewWorkAttempt.attemptId,
                             projectionStatus: retryReviewDetailsPublication.projectionStatus,
                             reviewOutputKey: retryReviewOutputKey,
-                          });
+                          }));
 
                           // Cleanup checkpoint data after successful merge
                           discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
@@ -2767,13 +2763,10 @@ export function createReviewHandler(deps: {
                           },
                           "Retry produced no additional results -- keeping original partial review",
                         );
-                        await persistContinuationFamilyState({
-                          authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
-                          authoritativeOutcome: "quiet-settled",
-                          finalStopReason: "settled-without-update",
-                          projectionStatus: "canonical",
+                        await persistContinuationFamilyState(resolveQuietSettledContinuationFamilyState({
+                          attemptId: retryReviewWorkAttempt.attemptId,
                           reviewOutputKey: retryReviewOutputKey,
-                        });
+                        }));
                       }
                     } else {
                       logger.info(

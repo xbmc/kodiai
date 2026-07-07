@@ -107,6 +107,21 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-continuation-state.ts");
   });
 
+  test("keeps retry continuation-family state projections out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("authoritativeOutcome: \"continuation-pending\"");
+    expect(source).not.toContain("authoritativeOutcome: \"quiet-settled\"");
+    expect(source).not.toContain("authoritativeOutcome: \"merged\"");
+    expect(source).not.toContain("finalStopReason: \"awaiting-continuation\"");
+    expect(source).not.toContain("finalStopReason: \"settled-without-update\"");
+    expect(source).not.toContain("finalStopReason: \"merged-continuation-results\"");
+    expect(source).toContain("resolvePendingContinuationFamilyState");
+    expect(source).toContain("resolveQuietSettledContinuationFamilyState");
+    expect(source).toContain("resolveMergedContinuationFamilyState");
+    expect(source).toContain("./review-continuation-family-state-projection.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
