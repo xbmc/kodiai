@@ -24,7 +24,6 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
-import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
@@ -55,7 +54,7 @@ import {
   fingerprintFindingTitle,
 } from "../lib/review-finding-metadata.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
-import { fetchAndCheckoutPullRequestHeadRef, fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
+import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
   buildReviewFamilyKey,
 } from "../jobs/review-work-coordinator.ts";
@@ -253,6 +252,7 @@ import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
 import { resolveReviewDraftToneContext } from "./review-draft-tone.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
+import { prepareReviewRetryWorkspace, prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -588,58 +588,25 @@ export function createReviewHandler(deps: {
       try {
         setReviewWorkPhase("workspace-create");
         workspacePhaseStartedAt = Date.now();
-        // Create workspace with enough shallow history to usually include the base merge point.
-        workspace = await workspaceManager.create(event.installationId, {
+        const preparedWorkspace = await prepareReviewWorkspace({
+          workspaceManager,
+          installationId: event.installationId,
           owner: cloneOwner,
           repo: cloneRepo,
           ref: cloneRef,
           depth: REVIEW_WORKSPACE_FETCH_DEPTH,
+          usesPrRef,
+          prNumber: pr.number,
+          baseRef: pr.base.ref,
+          fallbackHeadRepoFullName: pr.head.repo?.full_name ?? null,
+          fallbackHeadRef: pr.head.ref,
+          fetchRemoteTrackingBranchFn,
+          onBeforeFinalizeConfig: () => setReviewWorkPhase("load-config"),
+          logger,
         });
-
-        const trustedBaseRepoConfig = usesPrRef
-          ? await loadRepoConfig(workspace.dir)
-          : null;
-
-        // Fork PR / deleted fork: fetch PR head ref from base repo
-        if (usesPrRef) {
-          await fetchAndCheckoutPullRequestHeadRef({
-            dir: workspace.dir,
-            prNumber: pr.number,
-            localBranch: "pr-review",
-            token: workspace.token,
-            fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
-            fallbackRef: pr.head.ref,
-            depth: REVIEW_WORKSPACE_FETCH_DEPTH,
-          });
-        }
-
-        // Fetch base branch so git diff origin/BASE...HEAD works.
-        // Explicit refspec needed because --single-branch clones don't track other branches.
-        await fetchRemoteTrackingBranchFn({
-          dir: workspace.dir,
-          branch: pr.base.ref,
-          token: workspace.token,
-          depth: REVIEW_WORKSPACE_FETCH_DEPTH,
-        });
-
-        setReviewWorkPhase("load-config");
-        // Load repo config (.kodiai.yml) with defaults. For fork PRs, the active
-        // policy comes from the trusted base checkout, not the untrusted PR head.
-        const { config, warnings } = trustedBaseRepoConfig ?? (await loadRepoConfig(workspace.dir));
-        for (const w of warnings) {
-          logger.warn(
-            { section: w.section, issues: w.issues },
-            "Config warning detected",
-          );
-        }
-        reviewPhaseTimings.set(
-          "workspace preparation",
-          createReviewPhaseTiming({
-            name: "workspace preparation",
-            status: "completed",
-            durationMs: Math.max(0, Date.now() - (workspacePhaseStartedAt ?? Date.now())),
-          }),
-        );
+        workspace = preparedWorkspace.workspace;
+        const { config } = preparedWorkspace;
+        reviewPhaseTimings.set("workspace preparation", preparedWorkspace.workspacePreparationPhase);
 
         const triggerConfigGate = evaluateReviewTriggerConfigGate({
           action,
@@ -2243,30 +2210,20 @@ export function createReviewHandler(deps: {
                   let retryWorkspace: Workspace | undefined;
                   try {
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "workspace-create");
-                    retryWorkspace = await workspaceManager.create(event.installationId, {
+                    retryWorkspace = await prepareReviewRetryWorkspace({
+                      workspaceManager,
+                      installationId: event.installationId,
                       owner: cloneOwner,
                       repo: cloneRepo,
                       ref: cloneRef,
                       depth: REVIEW_WORKSPACE_FETCH_DEPTH,
-                    });
-
-                    if (usesPrRef) {
-                      await fetchAndCheckoutPullRequestHeadRef({
-                        dir: retryWorkspace.dir,
-                        prNumber: pr.number,
-                        localBranch: "pr-review-retry-1",
-                        token: retryWorkspace.token,
-                        fallbackRemoteUrl: pr.head.repo ? `https://github.com/${pr.head.repo.full_name}.git` : undefined,
-                        fallbackRef: pr.head.ref,
-                        depth: REVIEW_WORKSPACE_FETCH_DEPTH,
-                      });
-                    }
-
-                    await fetchRemoteTrackingBranchFn({
-                      dir: retryWorkspace.dir,
-                      branch: pr.base.ref,
-                      token: retryWorkspace.token,
-                      depth: REVIEW_WORKSPACE_FETCH_DEPTH,
+                      usesPrRef,
+                      prNumber: pr.number,
+                      baseRef: pr.base.ref,
+                      fallbackHeadRepoFullName: pr.head.repo?.full_name ?? null,
+                      fallbackHeadRef: pr.head.ref,
+                      localBranch: "pr-review-retry-1",
+                      fetchRemoteTrackingBranchFn,
                     });
 
                     const retryCustomInstructions = buildReviewRetryCustomInstructions({

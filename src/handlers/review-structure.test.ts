@@ -794,6 +794,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-clone-plan.ts");
   });
 
+  test("keeps workspace preparation and trusted config loading out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("workspaceManager.create(event.installationId");
+    expect(source).not.toContain("const trustedBaseRepoConfig = usesPrRef");
+    expect(source).not.toContain("fetchAndCheckoutPullRequestHeadRef({");
+    expect(source).not.toContain("fetchRemoteTrackingBranchFn({");
+    expect(source).not.toContain("const { config, warnings } = trustedBaseRepoConfig");
+    expect(source).toContain("prepareReviewWorkspace");
+    expect(source).toContain("./review-workspace-preparation.ts");
+  });
+
   test("keeps review trigger config gating out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
