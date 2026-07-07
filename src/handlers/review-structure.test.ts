@@ -86,6 +86,20 @@ describe("review handler structure", () => {
     expect(runtimeSource).toContain("createReviewContinuationFamilyStateManager");
   });
 
+  test("keeps review job queue context projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const jobContextSource = readFileSync(new URL("./review-job-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("jobType: \"pull-request-review\"");
+    expect(source).not.toContain("jobType: \"pull-request-review-retry\"");
+    expect(source).not.toContain("action: `review-retry`");
+    expect(source).toContain("buildReviewJobQueueContext");
+    expect(source).toContain("buildReviewRetryJobQueueContext");
+    expect(source).toContain("./review-job-context.ts");
+    expect(jobContextSource).toContain("export function buildReviewJobQueueContext");
+    expect(jobContextSource).toContain("export function buildReviewRetryJobQueueContext");
+  });
+
   test("keeps review execution outcome fallback policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

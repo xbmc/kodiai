@@ -216,6 +216,10 @@ import {
   type ReviewWebhookPayload,
 } from "./review-event-runtime.ts";
 import { createReviewJobRuntime } from "./review-job-runtime.ts";
+import {
+  buildReviewJobQueueContext,
+  buildReviewRetryJobQueueContext,
+} from "./review-job-context.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
@@ -2090,15 +2094,12 @@ export function createReviewHandler(deps: {
                       retryReviewOutputKey,
                     });
                   }
-                }, {
-                  deliveryId: retryDeliveryId,
+                }, buildReviewRetryJobQueueContext({
+                  retryDeliveryId,
                   eventName: event.name,
-                  action: `review-retry`,
-                  lane: "review",
-                  key: reviewFamilyKey,
-                  jobType: "pull-request-review-retry",
+                  reviewFamilyKey,
                   prNumber: pr.number,
-                }).catch(async (err) => {
+                })).catch(async (err) => {
                   await handleRetryEnqueueFailure({
                     error: err,
                     parentDeliveryId: event.id,
@@ -2244,15 +2245,13 @@ export function createReviewHandler(deps: {
           await workspace.cleanup();
         }
       }
-    }, {
+    }, buildReviewJobQueueContext({
       deliveryId: event.id,
       eventName: event.name,
       action,
-      lane: "review",
-      key: reviewFamilyKey,
-      jobType: "pull-request-review",
+      reviewFamilyKey,
       prNumber: pr.number,
-    });
+    }));
   } finally {
     reviewWorkRuntime.finalize();
   }
