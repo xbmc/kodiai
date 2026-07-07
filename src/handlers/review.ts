@@ -107,7 +107,6 @@ import { buildInitialReviewPromptRuntime, buildRetryReviewPromptRuntime } from "
 import {
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
-import { publishBoundedFirstPassReview } from "./review-partial-publication.ts";
 import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
@@ -169,7 +168,6 @@ import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-rec
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
 import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
-import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import {
   applyReviewFallbackPublicationStatePatch,
@@ -192,7 +190,6 @@ import {
 } from "./review-retry-failure-handling.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
-import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
 import { prepareReviewRetryWorkspace, prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 import {
@@ -209,13 +206,12 @@ import { buildReviewReducerInput } from "./review-reducer-input.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
-import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-evidence.ts";
 import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
-import { logBoundedFirstPassPublicationFailure } from "./review-bounded-first-pass-publication-failure-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completion-log.ts";
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
+import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1577,122 +1573,54 @@ export function createReviewHandler(deps: {
 
             const octokit = extractionOctokit;
             deferredPublicOutputForContinuation = timeoutPublicationContext.deferredPublicOutputForContinuation;
-            if (
-              timeoutFirstPass?.state === "bounded-first-pass"
-              && !deferredPublicOutputForContinuation
-              && partialBody !== undefined
-            ) {
-              const partialPublication = await publishBoundedFirstPassReview({
-                octokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                body: partialBody,
-                botHandles: [githubApp.getAppSlug(), "claude"],
-                canPublishVisibleOutput,
-                setReviewWorkPhase,
-              });
-              if (partialPublication.ok) {
-                partialCommentId = partialPublication.value.commentId;
-              } else {
-                logBoundedFirstPassPublicationFailure({
-                  logger,
-                  error: partialPublication.err.error,
-                  deliveryId: event.id,
-                  prNumber: pr.number,
-                });
-              }
-              if (partialCommentId !== undefined) {
-              await persistPartialReviewCheckpoint({
-                knowledgeStore,
-                logger,
-                checkpoint: {
-                  reviewOutputKey,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  prNumber: pr.number,
-                  filesReviewed: timeoutReviewedFiles,
-                  filesInspected: timeoutInspectedFiles,
-                  findingCount: timeoutFindingCount,
-                  summaryDraft,
-                  totalFiles: timeoutTotalFiles,
-                  partialCommentId,
-                },
-              });
-
-              publishedPartialReview = true;
-
-              logBoundedFirstPassReviewPublished({
-                logger,
-                deliveryId: event.id,
-                prNumber: pr.number,
-                partialCommentId,
-                boundedReason: timeoutFirstPass.boundedReason,
-                evidenceSource: timeoutFirstPass.evidenceSource,
-                coveredFiles: timeoutFirstPass.coveredScope?.reviewedFiles ?? null,
-                inspectedFiles: timeoutFirstPass.inspectedScope?.inspectedFiles ?? timeoutInspectedFiles.length,
-                remainingFiles: timeoutFirstPass.remainingScope?.remainingFiles ?? null,
-                findingCount: timeoutFindingCount,
-                hasPartialResults,
-                isChronicTimeout,
-                recentTimeouts,
-                retryState,
-                zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
-              });
-
-              await publishTimeoutReviewDetailsMerge({
-                octokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                reviewOutputKey,
-                partialCommentId,
-                partialBody,
-                botHandles: [githubApp.getAppSlug(), "claude"],
-                timeoutReviewDetailsRuntime: {
-                  timeoutProgress: timeoutReviewDetails,
-                  reviewFirstPass: timeoutFirstPass,
-                  timeoutBudget: appliedTimeoutBudget
-                    ? {
-                        remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                        infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                        totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                      }
-                    : null,
-                },
-                authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                reviewBoundedness,
-                baseLog,
-                logger,
-                canPublishVisibleOutput,
-                renderReviewDetailsBody,
-              });
-
-              const timeoutResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({
-                telemetryEnabled: config.telemetry.enabled,
-                telemetryStore,
-                logger,
-                deliveryId: event.id,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                prAuthor: pr.user.login,
-                eventType: `pull_request.${payload.action}`,
-                reviewOutputKey,
-                executionConclusion,
-                hadInlineOutput: hasPublishedInlines,
-                checkpointFilesReviewed: timeoutReviewedFiles.length,
-                checkpointFilesInspected: timeoutInspectedFiles.length,
-                checkpointFindingCount: timeoutFindingCount,
-                checkpointTotalFiles: timeoutTotalFiles,
-                partialCommentId,
-                recentTimeouts,
-                chronicTimeout: isChronicTimeout,
-                retry: { enqueued: false },
-                timeoutClassificationTelemetry,
-              });
-              if (timeoutResilienceTelemetry.projectionDegraded) {
-                continuationProjectionDegraded = true;
-              }
-              }
+            const boundedFirstPassPublication = await publishBoundedFirstPassTimeoutOutput({
+              timeoutFirstPass,
+              deferredPublicOutputForContinuation,
+              partialBody,
+              octokit,
+              owner: apiOwner,
+              repo: apiRepo,
+              prNumber: pr.number,
+              reviewOutputKey,
+              botHandles: [githubApp.getAppSlug(), "claude"],
+              canPublishVisibleOutput,
+              setReviewWorkPhase,
+              logger,
+              deliveryId: event.id,
+              knowledgeStore,
+              filesReviewed: timeoutReviewedFiles,
+              filesInspected: timeoutInspectedFiles,
+              findingCount: timeoutFindingCount,
+              summaryDraft,
+              totalFiles: timeoutTotalFiles,
+              hasPartialResults,
+              chronicTimeout: isChronicTimeout,
+              recentTimeouts,
+              retryState,
+              timeoutReviewDetails,
+              timeoutBudget: appliedTimeoutBudget
+                ? {
+                    remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                    infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                    totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                  }
+                : null,
+              authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+              reviewBoundedness,
+              baseLog,
+              renderReviewDetailsBody,
+              telemetryEnabled: config.telemetry.enabled,
+              telemetryStore,
+              prAuthor: pr.user.login,
+              eventType: `pull_request.${payload.action}`,
+              executionConclusion,
+              hadInlineOutput: hasPublishedInlines,
+              timeoutClassificationTelemetry,
+            });
+            partialCommentId = boundedFirstPassPublication.partialCommentId;
+            publishedPartialReview = boundedFirstPassPublication.publishedPartialReview;
+            if (boundedFirstPassPublication.continuationProjectionDegraded) {
+              continuationProjectionDegraded = true;
             }
 
             const retryEnqueueContext = resolveReviewRetryEnqueueContext({

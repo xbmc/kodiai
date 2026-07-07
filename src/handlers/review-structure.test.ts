@@ -213,11 +213,16 @@ describe("review handler structure", () => {
 
   test("keeps partial review checkpoint persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId)");
     expect(source).not.toContain("Checkpoint comment id update failed (non-blocking)");
-    expect(source).toContain("persistPartialReviewCheckpoint");
-    expect(source).toContain("./review-partial-checkpoint.ts");
+    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(orchestrationSource).toContain("persistPartialReviewCheckpoint");
+    expect(orchestrationSource).toContain("./review-partial-checkpoint.ts");
   });
 
   test("keeps retry enqueue field projection out of the monster handler", () => {
@@ -782,20 +787,48 @@ describe("review handler structure", () => {
 
   test("keeps bounded first-pass partial review publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const partialComment = await createIssueCommentWithPublicationPipeline");
     expect(source).not.toContain("partialCommentId = partialComment.data.id");
-    expect(source).toContain("./review-partial-publication.ts");
-    expect(source).toContain("publishBoundedFirstPassReview");
+    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(orchestrationSource).toContain("./review-partial-publication.ts");
+    expect(orchestrationSource).toContain("publishBoundedFirstPassReview");
+  });
+
+  test("keeps bounded first-pass timeout publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("const partialPublication = await publishBoundedFirstPassReview({");
+    expect(source).not.toContain("await persistPartialReviewCheckpoint({");
+    expect(source).not.toContain("logBoundedFirstPassReviewPublished({");
+    expect(source).not.toContain("await publishTimeoutReviewDetailsMerge({");
+    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(source).toContain("./review-bounded-first-pass-timeout-publication.ts");
+    expect(orchestrationSource).toContain("publishBoundedFirstPassReview");
+    expect(orchestrationSource).toContain("persistPartialReviewCheckpoint");
+    expect(orchestrationSource).toContain("publishTimeoutReviewDetailsMerge");
   });
 
   test("keeps bounded first-pass timeout evidence logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const evidenceSource = readFileSync(new URL("./review-bounded-first-pass-evidence.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("Published bounded first-pass review on timeout");
-    expect(source).toContain("logBoundedFirstPassReviewPublished");
-    expect(source).toContain("./review-bounded-first-pass-evidence.ts");
+    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(orchestrationSource).toContain("logBoundedFirstPassReviewPublished");
+    expect(orchestrationSource).toContain("./review-bounded-first-pass-evidence.ts");
     expect(evidenceSource).toContain("Published bounded first-pass review on timeout");
     expect(evidenceSource).toContain("boundedReason");
   });
@@ -825,10 +858,15 @@ describe("review handler structure", () => {
   test("keeps bounded first-pass publication failure logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const warningSource = readFileSync(new URL("./review-bounded-first-pass-publication-failure-log.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("Failed to publish bounded first-pass review");
-    expect(source).toContain("logBoundedFirstPassPublicationFailure");
-    expect(source).toContain("./review-bounded-first-pass-publication-failure-log.ts");
+    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(orchestrationSource).toContain("logBoundedFirstPassPublicationFailure");
+    expect(orchestrationSource).toContain("./review-bounded-first-pass-publication-failure-log.ts");
     expect(warningSource).toContain("Failed to publish bounded first-pass review");
     expect(warningSource).toContain("error");
   });
@@ -982,11 +1020,16 @@ describe("review handler structure", () => {
 
   test("keeps timeout Review Details publication orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("timeout canonical Review Details merge");
     expect(source).not.toContain("Failed to update timeout canonical review surface with Review Details");
-    expect(source).toContain("publishTimeoutReviewDetailsMerge");
-    expect(source).toContain("./review-details-timeout-publication.ts");
+    expect(source).toContain("publishBoundedFirstPassTimeoutOutput");
+    expect(orchestrationSource).toContain("publishTimeoutReviewDetailsMerge");
+    expect(orchestrationSource).toContain("./review-details-timeout-publication.ts");
   });
 
   test("keeps retry Review Details publication orchestration out of the monster handler", () => {
