@@ -2,17 +2,12 @@ import type { WebhookEvent } from "../webhook/types.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import type { DeltaClassification } from "../lib/delta-classifier.ts";
-import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import { formatErrorComment } from "../lib/errors.ts";
 import {
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
 } from "../lib/review-details-formatting.ts";
-import {
-  type FindingSeverity,
-  type FindingCategory,
-} from "../lib/review-finding-metadata.ts";
 import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
 import {
   reduceReviewFindings,
@@ -170,27 +165,7 @@ import {
 } from "./review-timeout-retry-scheduling.ts";
 import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filtered-inline-cleanup.ts";
 import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
-
-
-type ProcessedFinding = ExtractedFinding & {
-  suppressed: boolean;
-  confidence: number;
-  suppressionPattern?: string;
-  deprioritized?: boolean;
-  claimClassification?: FindingClaimClassification;
-  preDemotionSeverity?: FindingSeverity;
-  severityDemoted?: boolean;
-  demotionReason?: string;
-  filterAction?: "rewritten" | "suppressed" | "guardrail-suppressed" | "guardrail-rewritten";
-  originalTitle?: string;
-};
-
-
-
-
-
-
-
+import type { ProcessedFinding } from "./review-processed-finding.ts";
 
 /**
  * Create the review handler and register it with the event router.

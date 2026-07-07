@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1650);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1610);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
