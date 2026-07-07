@@ -44,7 +44,7 @@ function productionTypeScriptFiles(): Record<string, string> {
 
 function findDirectMarkerCommentScans(files: Record<string, string>): string[] {
   const markerBodyMatchPattern =
-    /(?:body\s*\?\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER|body\s*\?\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER)/s;
+    /(?:body\s*\?\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*(?:params\.)?marker|body\s*\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER|body\s*\?\.\s*includes\s*\(\s*[A-Z0-9_]*MARKER|body\s*\??\.\s*includes\s*\(\s*["']<!--\s*kodiai:)/s;
 
   return Object.entries(files)
     .filter(([file]) => !ALLOWED_DIRECT_MARKER_SCAN_FILES.has(file))
@@ -119,6 +119,10 @@ describe("comment marker scan architecture", () => {
         const { data } = await octokit.rest["pulls"]["listReviews"]({ owner, repo, pull_number });
         return data.find((review) => review.body?.includes(REVIEW_MARKER));
       `,
+      "src/handlers/unsafe-literal-marker.ts": `
+        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes("<!-- kodiai:ci-analysis:"));
+      `,
       "src/handlers/unsafe-list-alias.ts": `
         const listComments = params.octokit.rest.issues.listComments;
         const { data } = await listComments({ owner, repo, issue_number });
@@ -134,6 +138,7 @@ describe("comment marker scan architecture", () => {
     })).toEqual([
       "src/handlers/unsafe-bracket-access.ts",
       "src/handlers/unsafe-list-alias.ts",
+      "src/handlers/unsafe-literal-marker.ts",
       "src/handlers/unsafe-property-octokit.ts",
       "src/handlers/unsafe.ts",
     ]);
