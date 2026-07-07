@@ -421,6 +421,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-details-published-merge.ts");
   });
 
+  test("keeps moved-to-details Review Details merge orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("canonical Review Details moved-to-details preservation");
+    expect(source).not.toContain("Failed to publish canonical Review Details for moved-to-details candidates; using degraded fallback comment");
+    expect(source).not.toContain("Failed to refresh finalized moved-to-details Review Details surface");
+    expect(source).toContain("publishMovedToDetailsReviewDetailsMerge");
+    expect(source).toContain("./review-details-moved-to-details-merge.ts");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

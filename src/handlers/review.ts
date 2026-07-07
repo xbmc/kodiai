@@ -251,6 +251,7 @@ import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-out
 import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
 import { resolveReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
 import { publishPublishedReviewDetailsMerge } from "./review-details-published-merge.ts";
+import { publishMovedToDetailsReviewDetailsMerge } from "./review-details-moved-to-details-merge.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1746,86 +1747,27 @@ export function createReviewHandler(deps: {
               const hasMovedToDetailsFindings = reviewCandidatePublicationRuntime.counts.candidateMovedToDetails > 0;
               const approvalWillOwnCanonicalSurface = result.conclusion === "success" && !hasMovedToDetailsFindings;
 
-              if (hasMovedToDetailsFindings && canPublishVisibleOutput("canonical Review Details moved-to-details preservation")) {
-                let movedDetailsSurface: CanonicalReviewSurface | undefined;
-                try {
-                  setReviewWorkPhase("publish");
-                  movedDetailsSurface = await upsertCanonicalReviewSurface({
-                    octokit: extractionOctokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    preferredKind: "issue_comment",
-                    canonicalSurface: acceptedCanonicalSurface?.kind === "issue_comment"
-                      ? acceptedCanonicalSurface
-                      : undefined,
-                    body: fullDetailsBody,
-                    botHandles: [githubApp.getAppSlug(), "claude"],
-                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                    reviewBoundedness,
-                    recheckCanPublish: () =>
-                      canPublishVisibleOutput("canonical Review Details moved-to-details preservation"),
-                  });
-                  logCanonicalReviewDetailsPublicationCompleted(movedDetailsSurface);
-                } catch (appendErr) {
-                  logger.warn(
-                    { ...baseLog, gate: "review-details-output", gateResult: "moved-to-details-canonical-merge-failed", err: appendErr },
-                    "Failed to publish canonical Review Details for moved-to-details candidates; using degraded fallback comment",
-                  );
-                  if (canPublishVisibleOutput("degraded Review Details moved-to-details fallback comment")) {
-                    setReviewWorkPhase("publish");
-                    const fallbackCommentId = await upsertDegradedReviewDetailsFallbackComment({
-                      octokit: extractionOctokit,
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      prNumber: pr.number,
-                      reviewOutputKey,
-                      body: fullDetailsBody,
-                      botHandles: [githubApp.getAppSlug(), "claude"],
-                      recheckCanPublish: () =>
-                        canPublishVisibleOutput("degraded Review Details moved-to-details fallback comment"),
-                    });
-                    if (typeof fallbackCommentId === "number") {
-                      logReviewDetailsPublicationCompleted({
-                        surfaceKind: "issue_comment",
-                        commentId: fallbackCommentId,
-                        publicationMode: "degraded-fallback",
-                      });
-                    }
-                  }
-                }
-
-                if (movedDetailsSurface?.kind === "issue_comment") {
-                  finalizePublicationPhaseTiming();
-                  try {
-                    await upsertCanonicalReviewSurface({
-                      octokit: extractionOctokit,
-                      owner: apiOwner,
-                      repo: apiRepo,
-                      prNumber: pr.number,
-                      reviewOutputKey,
-                      preferredKind: "issue_comment",
-                      canonicalSurface: movedDetailsSurface,
-                      body: renderReviewDetailsBody(),
-                      botHandles: [githubApp.getAppSlug(), "claude"],
-                      requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                      reviewBoundedness,
-                      recheckCanPublish: () =>
-                        canPublishVisibleOutput("finalized moved-to-details Review Details timing update"),
-                    });
-                  } catch (appendErr) {
-                    logger.warn(
-                      {
-                        ...baseLog,
-                        gate: "review-details-output",
-                        gateResult: "finalized-moved-to-details-merge-failed",
-                        err: appendErr,
-                      },
-                      "Failed to refresh finalized moved-to-details Review Details surface",
-                    );
-                  }
-                }
+              if (hasMovedToDetailsFindings) {
+                await publishMovedToDetailsReviewDetailsMerge({
+                  octokit: extractionOctokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  fullDetailsBody,
+                  botHandles: [githubApp.getAppSlug(), "claude"],
+                  acceptedCanonicalSurface,
+                  authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                  reviewBoundedness,
+                  baseLog,
+                  logger,
+                  canPublishVisibleOutput,
+                  setReviewWorkPhase,
+                  renderReviewDetailsBody,
+                  finalizePublicationPhaseTiming,
+                  logReviewDetailsPublicationCompleted,
+                  logCanonicalReviewDetailsPublicationCompleted,
+                });
               } else if (!approvalWillOwnCanonicalSurface && canPublishVisibleOutput("degraded Review Details fallback comment")) {
                 setReviewWorkPhase("publish");
                 const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({
