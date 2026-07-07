@@ -17,7 +17,6 @@ import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
-import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import { type createRetriever } from "../knowledge/retrieval.ts";
 import {
   type TimeoutReviewDetailsProgress,
@@ -148,7 +147,10 @@ import {
   buildReviewTimeoutProgressAdapters,
   resolveReviewTimeoutProgressContext,
 } from "./review-timeout-progress-context.ts";
-import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
+import {
+  buildReviewContinuationTimeoutEstimator,
+  resolveReviewTimeoutRetryContext,
+} from "./review-timeout-retry-context.ts";
 import { buildReviewRetryOutcomeCheckpointLookup } from "./review-timeout-retry-adapters.ts";
 import {
   normalizeReviewTimeoutBudgetDetails,
@@ -1280,20 +1282,10 @@ export function createReviewHandler(deps: {
               checkpointPersistenceUnavailableForFamilyState:
                 Boolean(knowledgeStore?.upsertContinuationFamilyState) && !knowledgeStore?.saveCheckpoint,
               forceCheckpointEnabled: reviewRouting.taskType === TASK_TYPES.REVIEW_FULL,
-              estimateContinuationTimeout: ({ timeoutSeconds, files }) => {
-                const retryLinesChanged = files.reduce((sum, filePath) => {
-                  const stats = perFileStats.get(filePath);
-                  if (!stats) return sum;
-                  return sum + stats.added + stats.removed;
-                }, 0);
-                return estimateTimeoutRisk({
-                  fileCount: files.length,
-                  linesChanged: retryLinesChanged,
-                  languageComplexity,
-                  isLargePR: false,
-                  baseTimeoutSeconds: timeoutSeconds,
-                });
-              },
+              estimateContinuationTimeout: buildReviewContinuationTimeoutEstimator({
+                perFileStats,
+                languageComplexity,
+              }),
             });
             const { retryPlan, retryState, retrySummaryNote } = retryContext;
             let continuationProjectionDegraded = false;

@@ -1,6 +1,8 @@
 import type { CheckpointRecord } from "../knowledge/types.ts";
+import type { PerFileStats } from "../execution/diff-analysis.ts";
 import type { FileRiskScore } from "../lib/file-risk-scorer.ts";
 import type { ReviewFirstPassPayload } from "../lib/review-first-pass.ts";
+import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import {
   type ContinuationCompactionPlanningSignals,
   type ContinuationTimeoutEstimate,
@@ -13,6 +15,27 @@ import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 type ReviewTimeoutRetryEstimate = ContinuationTimeoutEstimate & {
   totalTimeoutSeconds?: number;
 };
+
+export function buildReviewContinuationTimeoutEstimator(params: {
+  perFileStats: PerFileStats;
+  languageComplexity: number;
+}): (estimateParams: EstimateContinuationTimeoutParams) => ReviewTimeoutRetryEstimate {
+  return ({ timeoutSeconds, files }) => {
+    const linesChanged = files.reduce((sum, filePath) => {
+      const stats = params.perFileStats.get(filePath);
+      if (!stats) return sum;
+      return sum + stats.added + stats.removed;
+    }, 0);
+
+    return estimateTimeoutRisk({
+      fileCount: files.length,
+      linesChanged,
+      languageComplexity: params.languageComplexity,
+      isLargePR: false,
+      baseTimeoutSeconds: timeoutSeconds,
+    });
+  };
+}
 
 export type ReviewTimeoutRetryContext = {
   timeoutFirstPass: ReviewFirstPassPayload | null;

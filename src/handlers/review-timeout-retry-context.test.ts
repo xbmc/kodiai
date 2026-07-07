@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import type { CheckpointRecord } from "../knowledge/types.ts";
 import type { ReviewFirstPassPayload } from "../lib/review-first-pass.ts";
 import type { FileRiskScore } from "../lib/file-risk-scorer.ts";
-import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
+import {
+  buildReviewContinuationTimeoutEstimator,
+  resolveReviewTimeoutRetryContext,
+} from "./review-timeout-retry-context.ts";
 
 function risk(filePath: string, score: number): FileRiskScore {
   return {
@@ -57,6 +60,25 @@ function zeroEvidenceFirstPass(): ReviewFirstPassPayload {
 }
 
 describe("resolveReviewTimeoutRetryContext", () => {
+  test("builds continuation timeout estimates from reduced-scope file stats", () => {
+    const estimate = buildReviewContinuationTimeoutEstimator({
+      perFileStats: new Map([
+        ["src/a.ts", { added: 20, removed: 5 }],
+        ["src/b.ts", { added: 10, removed: 3 }],
+        ["src/ignored.ts", { added: 999, removed: 999 }],
+      ]),
+      languageComplexity: 0.4,
+    });
+
+    const result = estimate({
+      timeoutSeconds: 120,
+      files: ["src/a.ts", "src/missing.ts", "src/b.ts"],
+    });
+
+    expect(result.reasoning).toContain("files: 3");
+    expect(result.reasoning).toContain("lines: 38");
+  });
+
   test("maps scheduled continuation plans to retry state and summary note", () => {
     const context = resolveReviewTimeoutRetryContext({
       reviewOutputKey: "review-key",
