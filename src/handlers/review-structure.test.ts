@@ -209,6 +209,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-prompt-cache-runtime.ts");
   });
 
+  test("keeps author PR-count search cache fail-open setup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let authorPrCountSearchCache: SearchCache<number> | undefined;");
+    expect(source).not.toContain("authorPrCountSearchCache = injectedSearchCache;");
+    expect(source).not.toContain("Search cache initialization failed (fail-open, continuing without search cache)");
+    expect(source).toContain("resolveReviewAuthorPrCountSearchCache");
+    expect(source).toContain("./review-author-search-cache.ts");
+  });
+
   test("keeps visible budget projection state out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

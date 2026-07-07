@@ -257,6 +257,7 @@ import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.t
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
+import { resolveReviewAuthorPrCountSearchCache } from "./review-author-search-cache.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -415,22 +416,11 @@ export function createReviewHandler(deps: {
     },
   });
 
-  let authorPrCountSearchCache: SearchCache<number> | undefined;
-  if (injectedSearchCache) {
-    authorPrCountSearchCache = injectedSearchCache;
-  } else {
-    try {
-      authorPrCountSearchCache = searchCacheFactory
-        ? searchCacheFactory()
-        : createSearchCache<number>();
-    } catch (err) {
-      logger.warn(
-        { err },
-        "Search cache initialization failed (fail-open, continuing without search cache)",
-      );
-      authorPrCountSearchCache = undefined;
-    }
-  }
+  const authorPrCountSearchCache = resolveReviewAuthorPrCountSearchCache({
+    injectedSearchCache,
+    searchCacheFactory,
+    logger,
+  });
 
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
