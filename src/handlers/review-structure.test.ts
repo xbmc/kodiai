@@ -73,6 +73,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-timeout-retry-context.ts");
   });
 
+  test("keeps timeout publication summary and partial body policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const summaryDraftBase = checkpoint?.summaryDraft");
+    expect(source).not.toContain("const summaryDraft = retrySummaryNote");
+    expect(source).not.toContain("const timeoutReviewDetails = {");
+    expect(source).not.toContain("deferredPublicOutputForContinuation = turnBudgetExhausted");
+    expect(source).not.toContain("const partialBody = formatPartialReviewComment({");
+    expect(source).toContain("resolveReviewTimeoutPublicationContext");
+    expect(source).toContain("./review-timeout-publication-context.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

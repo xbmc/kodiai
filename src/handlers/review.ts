@@ -39,7 +39,6 @@ import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-sto
 import { formatErrorComment } from "../lib/errors.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
-import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import {
   settleReviewContinuation,
 } from "../lib/review-continuation-lifecycle.ts";
@@ -248,6 +247,7 @@ import { publishRetryReviewDetailsMerge } from "./review-details-retry-publicati
 import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
+import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2069,48 +2069,43 @@ export function createReviewHandler(deps: {
               retryEnqueued: retryPlan?.decision === "schedule-continuation",
             });
 
-            // Step 3: Publish bounded first-pass output only when trustworthy structured evidence exists.
-            const summaryDraftBase = checkpoint?.summaryDraft ?? (hasPublishedInlines
-              ? "Review stopped after GitHub-visible findings were already posted."
-              : hasPartialResults
-                ? "Review stopped after structured first-pass progress was recorded."
-                : "Review stopped before producing trustworthy structured output.");
-            const summaryDraft = retrySummaryNote
-              ? `${summaryDraftBase}\n\n${retrySummaryNote}`
-              : summaryDraftBase;
-            fallbackRetryState = retryState;
-            const timeoutReviewDetails = {
-              analyzedFiles: timeoutInspectedFiles.length,
-              totalFiles: timeoutTotalFiles,
-              findingCount: timeoutFindingCount,
+            const timeoutPublicationContext = resolveReviewTimeoutPublicationContext({
+              reviewOutputKey,
+              checkpoint,
+              hasPublishedInlines,
+              hasPartialResults,
               retryState,
-            };
+              retrySummaryNote,
+              timeoutInspectedFiles,
+              timeoutFindingCount,
+              timeoutTotalFiles,
+              turnBudgetExhausted,
+              retryScheduled: retryPlan?.decision === "schedule-continuation",
+              timeoutFirstPass,
+              timeoutDurationSeconds: timeoutDuration,
+              timeoutBudget: appliedTimeoutBudget
+                ? {
+                    remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
+                    infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
+                    totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
+                  }
+                : null,
+              isChronicTimeout,
+            });
+            const {
+              summaryDraft,
+              timeoutReviewDetails,
+              partialBody,
+            } = timeoutPublicationContext;
+            fallbackRetryState = retryState;
 
             const octokit = extractionOctokit;
-            deferredPublicOutputForContinuation = turnBudgetExhausted
-              && retryPlan?.decision === "schedule-continuation"
-              && !hasPublishedInlines;
+            deferredPublicOutputForContinuation = timeoutPublicationContext.deferredPublicOutputForContinuation;
             if (
               timeoutFirstPass?.state === "bounded-first-pass"
               && !deferredPublicOutputForContinuation
+              && partialBody !== undefined
             ) {
-              const partialBody = formatPartialReviewComment({
-                summaryDraft,
-                firstPass: timeoutFirstPass,
-                reviewOutputKey,
-                timedOutAfterSeconds: timeoutDuration,
-                timeoutBudget: appliedTimeoutBudget
-                  ? {
-                      remoteRuntimeBudgetSeconds: appliedTimeoutBudget.remoteRuntimeBudgetSeconds,
-                      infraOverheadBudgetSeconds: appliedTimeoutBudget.infraOverheadBudgetSeconds,
-                      totalTimeoutSeconds: appliedTimeoutBudget.totalTimeoutSeconds,
-                    }
-                  : null,
-                isRetrySkipped: isChronicTimeout,
-                retrySkipReason: isChronicTimeout
-                  ? "Retry skipped -- this repo has timed out frequently for this author."
-                  : undefined,
-              });
               partialCommentId = await publishBoundedFirstPassReview({
                 octokit,
                 owner: apiOwner,
