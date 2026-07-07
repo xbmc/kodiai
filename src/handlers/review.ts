@@ -13,9 +13,7 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import type { DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
-import { analyzeDiff } from "../execution/diff-analysis.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
@@ -128,7 +126,6 @@ import {
   resolveReviewAuthorContext,
 } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
-import { resolveReviewStructuralImpactSelection } from "./review-structural-impact-selection.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
@@ -139,13 +136,6 @@ import {
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
-import { resolveReviewPriorFindingContext } from "./review-prior-finding-context.ts";
-import { resolveReviewRepoDoctrineContext } from "./review-repo-doctrine-context.ts";
-import { resolveReviewPathInstructions } from "./review-path-instructions.ts";
-import {
-  buildReviewFileRiskScores,
-  resolveReviewLargePrTriage,
-} from "./review-large-pr-triage.ts";
 import {
   buildReviewPlanPublication,
   logReviewPlanPublication,
@@ -204,6 +194,7 @@ import { logPublishedReviewOutputEvidence } from "./review-published-output-evid
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completion-log.ts";
+import { resolveReviewChangedFileContext } from "./review-changed-file-context.ts";
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
@@ -627,80 +618,43 @@ export function createReviewHandler(deps: {
         const numstatLines = diffContext.numstatLines;
         const diffContent = changedFiles.length <= 200 ? diffContext.diffContent : undefined;
 
-        const diffAnalysis = analyzeDiff({
+        const changedFileContext = await resolveReviewChangedFileContext({
           changedFiles,
-          numstatLines,
-          diffContent,
-          fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
-        });
-
-        const { riskScores, perFileStats } = buildReviewFileRiskScores({
           reviewFiles,
           numstatLines,
-          filesByCategory: diffAnalysis.filesByCategory,
-          riskWeights: config.largePR.riskWeights,
-        });
-
-        const structuralImpactSelection = await resolveReviewStructuralImpactSelection({
+          diffContent,
+          config,
           reviewGraphQuery,
           structuralImpactCache,
-          logger,
-          baseLog,
           owner: apiOwner,
           repo: apiRepo,
           workspaceKey: pr.head.sha,
           baseSha: pr.base.sha,
           headSha: pr.head.sha,
-          changedPaths: reviewFiles,
           canonicalRef: pr.base.ref,
-          fullReviewCount: config.largePR.fullReviewCount,
-          abbreviatedCount: config.largePR.abbreviatedCount,
-          totalLinesChanged:
-            (diffAnalysis?.metrics.totalLinesAdded ?? 0)
-            + (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
-          riskScores,
-        });
-        const graphSelection = structuralImpactSelection.graphSelection;
-        const graphBlastRadius: ReviewGraphBlastRadiusResult | null =
-          structuralImpactSelection.graphBlastRadius;
-        const graphQueryBypassedForTrivialChange =
-          structuralImpactSelection.graphQueryBypassedForTrivialChange;
-        const structuralImpactForReview: StructuralImpactPayload | null =
-          structuralImpactSelection.structuralImpactForReview;
-
-        const largePrTriage = resolveReviewLargePrTriage({
-          graphSelection,
-          reviewFiles,
-          changedFiles,
-          largePrConfig: config.largePR,
-          baseLog,
-          logger,
-        });
-        let { tieredFiles, promptFiles } = largePrTriage;
-
-        const matchedPathInstructions = resolveReviewPathInstructions({
-          pathInstructions: config.review.pathInstructions,
-          changedFiles,
-        });
-
-        const {
-          repoDoctrineProjection,
-          repoDoctrineReviewSurface,
-        } = resolveReviewRepoDoctrineContext({
-          doctrine: config.review.doctrine,
-          changedFiles,
-          baseLog,
-          logger,
-        });
-
-        const { priorFindings, priorFindingCtx } = await resolveReviewPriorFindingContext({
-          knowledgeStore,
           incrementalResult,
-          repo: `${apiOwner}/${apiRepo}`,
+          knowledgeStore,
           prNumber: pr.number,
           baseLog,
           logger,
         });
+        const {
+          diffAnalysis,
+          riskScores,
+          perFileStats,
+          graphBlastRadius,
+          graphQueryBypassedForTrivialChange,
+          structuralImpactForReview,
+          matchedPathInstructions,
+          priorFindings,
+          priorFindingCtx,
+          repoDoctrineProjection,
+          repoDoctrineReviewSurface,
+        } = changedFileContext;
+        let {
+          tieredFiles,
+          promptFiles,
+        } = changedFileContext;
 
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         const reviewRetrievalContext = await buildReviewRetrievalContext({

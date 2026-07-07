@@ -515,34 +515,40 @@ describe("review handler structure", () => {
 
   test("keeps structural-impact graph selection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const changedFileContextSource = readFileSync(new URL("./review-changed-file-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const trivialCheck = isTrivialChange({");
     expect(source).not.toContain("const structuralImpact = await fetchReviewStructuralImpact");
     expect(source).not.toContain("summarizeStructuralImpactDegradation(structuralImpact.payload)");
     expect(source).not.toContain("Review structural-impact integration failed (fail-open, continuing with file-risk selection)");
-    expect(source).toContain("resolveReviewStructuralImpactSelection");
-    expect(source).toContain("./review-structural-impact-selection.ts");
+    expect(source).toContain("resolveReviewChangedFileContext");
+    expect(changedFileContextSource).toContain("resolveReviewStructuralImpactSelection");
+    expect(changedFileContextSource).toContain("./review-structural-impact-selection.ts");
   });
 
   test("keeps large PR risk scoring and triage out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const changedFileContextSource = readFileSync(new URL("./review-changed-file-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const perFileStats = parseNumstatPerFile(numstatLines)");
     expect(source).not.toContain("const riskScores = computeFileRiskScores({");
     expect(source).not.toContain("let tieredFiles = triageFilesByRisk({");
     expect(source).not.toContain("gate: \"large-pr-triage\"");
-    expect(source).toContain("buildReviewFileRiskScores");
-    expect(source).toContain("resolveReviewLargePrTriage");
-    expect(source).toContain("./review-large-pr-triage.ts");
+    expect(source).toContain("resolveReviewChangedFileContext");
+    expect(changedFileContextSource).toContain("buildReviewFileRiskScores");
+    expect(changedFileContextSource).toContain("resolveReviewLargePrTriage");
+    expect(changedFileContextSource).toContain("./review-large-pr-triage.ts");
   });
 
   test("keeps path instruction matching out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const changedFileContextSource = readFileSync(new URL("./review-changed-file-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("config.review.pathInstructions.length > 0");
     expect(source).not.toContain("matchPathInstructions(config.review.pathInstructions, changedFiles)");
-    expect(source).toContain("resolveReviewPathInstructions");
-    expect(source).toContain("./review-path-instructions.ts");
+    expect(source).toContain("resolveReviewChangedFileContext");
+    expect(changedFileContextSource).toContain("resolveReviewPathInstructions");
+    expect(changedFileContextSource).toContain("./review-path-instructions.ts");
   });
 
   test("keeps review runtime planning out of the monster handler", () => {
@@ -1449,23 +1455,50 @@ describe("review handler structure", () => {
 
   test("keeps prior finding context lookup out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const changedFileContextSource = readFileSync(new URL("./review-changed-file-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let priorFindingCtx: PriorFindingContext | null = null;");
     expect(source).not.toContain("let priorFindings: PriorFinding[] = [];");
     expect(source).not.toContain("knowledgeStore.getPriorReviewFindings({\n              repo: `${apiOwner}/${apiRepo}`");
     expect(source).not.toContain("Prior finding context failed (fail-open, no dedup)");
-    expect(source).toContain("resolveReviewPriorFindingContext");
-    expect(source).toContain("./review-prior-finding-context.ts");
+    expect(source).toContain("resolveReviewChangedFileContext");
+    expect(changedFileContextSource).toContain("resolveReviewPriorFindingContext");
+    expect(changedFileContextSource).toContain("./review-prior-finding-context.ts");
   });
 
   test("keeps repo doctrine context resolution out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const changedFileContextSource = readFileSync(new URL("./review-changed-file-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("normalizeRepoDoctrineProjection(config.review.doctrine, changedFiles)");
     expect(source).not.toContain("toRepoDoctrineReviewSurfaceProjection(repoDoctrineProjection)");
     expect(source).not.toContain("Resolved bounded repository doctrine projection");
-    expect(source).toContain("resolveReviewRepoDoctrineContext");
-    expect(source).toContain("./review-repo-doctrine-context.ts");
+    expect(source).toContain("resolveReviewChangedFileContext");
+    expect(changedFileContextSource).toContain("resolveReviewRepoDoctrineContext");
+    expect(changedFileContextSource).toContain("./review-repo-doctrine-context.ts");
+  });
+
+  test("keeps changed-file review context orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const changedFileContextSource = readFileSync(new URL("./review-changed-file-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("analyzeDiff({");
+    expect(source).not.toContain("buildReviewFileRiskScores({");
+    expect(source).not.toContain("resolveReviewStructuralImpactSelection({");
+    expect(source).not.toContain("resolveReviewLargePrTriage({");
+    expect(source).not.toContain("resolveReviewPathInstructions({");
+    expect(source).not.toContain("resolveReviewRepoDoctrineContext({");
+    expect(source).not.toContain("resolveReviewPriorFindingContext({");
+    expect(source).toContain("resolveReviewChangedFileContext");
+    expect(source).toContain("./review-changed-file-context.ts");
+    expect(changedFileContextSource).toContain("export async function resolveReviewChangedFileContext");
+    expect(changedFileContextSource).toContain("analyzeDiff({");
+    expect(changedFileContextSource).toContain("buildReviewFileRiskScores({");
+    expect(changedFileContextSource).toContain("resolveReviewStructuralImpactSelection({");
+    expect(changedFileContextSource).toContain("resolveReviewLargePrTriage({");
+    expect(changedFileContextSource).toContain("resolveReviewPathInstructions({");
+    expect(changedFileContextSource).toContain("resolveReviewRepoDoctrineContext({");
+    expect(changedFileContextSource).toContain("resolveReviewPriorFindingContext({");
   });
 
   test("keeps skipPaths matching and skip logging out of the monster handler", () => {
