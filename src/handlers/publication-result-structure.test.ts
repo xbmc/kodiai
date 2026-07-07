@@ -214,4 +214,23 @@ describe("publication result structure", () => {
     expect(handlerSource).toContain("resolveFirstPassReviewDetailsPublicationBody");
     expect(handlerSource).toContain("firstPassReviewDetailsPublication");
   });
+
+  test("keeps published-output Review Details merge on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-details-published-merge.ts", import.meta.url),
+      "utf8",
+    );
+    const firstPassSource = readFileSync(
+      new URL("./review-details-first-pass-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("PublishedReviewDetailsMergeResult");
+    expect(source).toContain("Result<PublishedReviewDetailsMergeStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(firstPassSource).toContain("const publishedMerge = await publishPublished");
+    expect(firstPassSource).toContain("if (!publishedMerge.ok)");
+    expect(firstPassSource).toContain("publishedMerge.value");
+  });
 });

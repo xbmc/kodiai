@@ -79,7 +79,7 @@ export async function publishFirstPassReviewDetails(params: {
 
     if (params.resultPublished) {
       const publishPublished = params.publishPublishedReviewDetailsMergeFn ?? publishPublishedReviewDetailsMerge;
-      await publishPublished({
+      const publishedMerge = await publishPublished({
         octokit: params.octokit,
         owner: params.owner,
         repo: params.repo,
@@ -99,6 +99,11 @@ export async function publishFirstPassReviewDetails(params: {
         logReviewDetailsPublicationCompleted: params.logReviewDetailsPublicationCompleted,
         logCanonicalReviewDetailsPublicationCompleted: params.logCanonicalReviewDetailsPublicationCompleted,
       });
+      if (!publishedMerge.ok) return ok({ canonicalReviewDetailsBody: null });
+      const publishedMergeStatus = publishedMerge.value;
+      if (publishedMergeStatus.delivery === "skipped") {
+        return ok({ canonicalReviewDetailsBody: fullDetailsBody });
+      }
       return ok({ canonicalReviewDetailsBody: fullDetailsBody });
     }
 

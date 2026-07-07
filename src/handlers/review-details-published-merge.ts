@@ -2,6 +2,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { ok, type Result } from "../lib/result.ts";
 import {
   type CanonicalReviewSurface,
   upsertCanonicalReviewSurface,
@@ -11,6 +12,13 @@ import type { ReviewDetailsPublicationRuntime } from "./review-details-publicati
 
 type UpsertCanonicalReviewSurface = typeof upsertCanonicalReviewSurface;
 type UpsertDegradedReviewDetailsFallbackComment = typeof upsertDegradedReviewDetailsFallbackComment;
+
+export type PublishedReviewDetailsMergeStatus = {
+  delivery: "canonical-merge" | "degraded-fallback" | "skipped";
+  published: boolean;
+};
+
+export type PublishedReviewDetailsMergeResult = Result<PublishedReviewDetailsMergeStatus, never>;
 
 export async function publishPublishedReviewDetailsMerge(params: {
   octokit: Octokit;
@@ -33,14 +41,15 @@ export async function publishPublishedReviewDetailsMerge(params: {
   logCanonicalReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logCanonicalReviewDetailsPublicationCompleted"];
   upsertCanonicalReviewSurfaceFn?: UpsertCanonicalReviewSurface;
   upsertDegradedReviewDetailsFallbackCommentFn?: UpsertDegradedReviewDetailsFallbackComment;
-}): Promise<void> {
+}): Promise<PublishedReviewDetailsMergeResult> {
   if (!params.canPublishVisibleOutput("canonical Review Details merge")) {
-    return;
+    return ok({ delivery: "skipped", published: false });
   }
 
   const upsertCanonical = params.upsertCanonicalReviewSurfaceFn ?? upsertCanonicalReviewSurface;
   const upsertDegraded = params.upsertDegradedReviewDetailsFallbackCommentFn ?? upsertDegradedReviewDetailsFallbackComment;
   let canonicalIssueComment: CanonicalReviewSurface | undefined;
+  let degradedFallbackPublished = false;
 
   try {
     params.setReviewWorkPhase("publish");
@@ -91,6 +100,7 @@ export async function publishPublishedReviewDetailsMerge(params: {
         ? fallbackPublication.value.commentId
         : undefined;
       if (typeof fallbackCommentId === "number") {
+        degradedFallbackPublished = true;
         params.logReviewDetailsPublicationCompleted({
           surfaceKind: "issue_comment",
           commentId: fallbackCommentId,
@@ -101,7 +111,10 @@ export async function publishPublishedReviewDetailsMerge(params: {
   }
 
   if (canonicalIssueComment?.kind !== "issue_comment") {
-    return;
+    return ok({
+      delivery: canonicalIssueComment === undefined ? "degraded-fallback" : "canonical-merge",
+      published: canonicalIssueComment !== undefined || degradedFallbackPublished,
+    });
   }
 
   params.finalizePublicationPhaseTiming();
@@ -133,4 +146,5 @@ export async function publishPublishedReviewDetailsMerge(params: {
       "Failed to refresh finalized canonical Review Details surface",
     );
   }
+  return ok({ delivery: "canonical-merge", published: true });
 }

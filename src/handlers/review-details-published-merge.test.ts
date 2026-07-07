@@ -79,7 +79,12 @@ describe("publishPublishedReviewDetailsMerge", () => {
       },
     });
 
-    await publishPublishedReviewDetailsMerge(params);
+    const result = await publishPublishedReviewDetailsMerge(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "canonical-merge", published: true },
+    });
 
     const state = params.testState;
     expect(upsertCalls).toHaveLength(2);
@@ -98,7 +103,12 @@ describe("publishPublishedReviewDetailsMerge", () => {
       },
     });
 
-    await publishPublishedReviewDetailsMerge(params);
+    const result = await publishPublishedReviewDetailsMerge(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: true },
+    });
 
     const state = params.testState;
     expect(state.phases).toEqual(["publish", "publish"]);
@@ -124,7 +134,12 @@ describe("publishPublishedReviewDetailsMerge", () => {
       },
     });
 
-    await publishPublishedReviewDetailsMerge(params);
+    const result = await publishPublishedReviewDetailsMerge(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "skipped", published: false },
+    });
 
     const state = params.testState;
     expect(upsertCalled).toBe(false);
