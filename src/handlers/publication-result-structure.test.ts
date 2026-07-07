@@ -13,7 +13,9 @@ describe("publication result structure", () => {
     for (const helper of publicationResultHelpers) {
       const source = readFileSync(new URL(helper, import.meta.url), "utf8");
 
+      expect(source, helper).not.toMatch(/return\s*\{\s*\n\s*ok:\s*true,/);
       expect(source, helper).not.toMatch(/return\s*\{\s*\n\s*ok:\s*false,/);
+      expect(source, helper).toContain("ok(");
       expect(source, helper).toContain("err(");
     }
   });

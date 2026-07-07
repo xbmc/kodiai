@@ -1,6 +1,61 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { MentionErrorPostResult } from "./mention-publication-state.ts";
-import { publishMentionErrorFallback } from "./mention-result-fallback-publication.ts";
+import {
+  publishMentionErrorFallback,
+  publishMentionSuccessFallback,
+} from "./mention-result-fallback-publication.ts";
+
+describe("publishMentionSuccessFallback", () => {
+  test("posts a success fallback and returns a successful Result", async () => {
+    const postMentionReply = mock(async (_body: string) => undefined);
+
+    const result = await publishMentionSuccessFallback({
+      explicitReviewRequest: false,
+      hasUnpublishedFindings: false,
+      findingLines: [],
+      resultText: "Done",
+      skipReason: undefined,
+      reviewOutputKey: "review-output-key",
+      canPublishExplicitReviewOutput: () => true,
+      postMentionReply,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: true,
+        resolution: "success-fallback",
+        fallbackDelivery: null,
+      },
+    });
+    expect(postMentionReply).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns a successful skipped Result when publish rights are lost", async () => {
+    const postMentionReply = mock(async (_body: string) => undefined);
+
+    const result = await publishMentionSuccessFallback({
+      explicitReviewRequest: true,
+      hasUnpublishedFindings: false,
+      findingLines: [],
+      resultText: "Done",
+      skipReason: undefined,
+      reviewOutputKey: "review-output-key",
+      canPublishExplicitReviewOutput: () => false,
+      postMentionReply,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: false,
+        resolution: "skipped",
+        fallbackDelivery: null,
+      },
+    });
+    expect(postMentionReply).not.toHaveBeenCalled();
+  });
+});
 
 describe("publishMentionErrorFallback", () => {
   test("posts an execution error fallback and returns a successful Result", async () => {

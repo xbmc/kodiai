@@ -20,7 +20,7 @@ import {
 
 export type MentionErrorFallbackPublicationResult = {
   published: boolean;
-  resolution: Extract<MentionPublishResolution, "error-fallback"> | "skipped";
+  resolution: Extract<MentionPublishResolution, "success-fallback" | "error-fallback"> | "skipped";
   fallbackDelivery: MentionErrorDelivery | null;
 };
 
@@ -35,6 +35,8 @@ export type MentionErrorFallbackPublicationStatus = Result<
   MentionErrorFallbackPublicationError
 >;
 
+export type MentionSuccessFallbackPublicationStatus = Result<MentionErrorFallbackPublicationResult>;
+
 export async function publishMentionSuccessFallback(params: {
   explicitReviewRequest: boolean;
   hasUnpublishedFindings: boolean;
@@ -44,12 +46,16 @@ export async function publishMentionSuccessFallback(params: {
   reviewOutputKey: string | undefined;
   canPublishExplicitReviewOutput: (reason: string, reviewOutputKey: string | undefined) => boolean;
   postMentionReply: (replyBody: string) => Promise<void>;
-}): Promise<boolean> {
+}): Promise<MentionSuccessFallbackPublicationStatus> {
   if (
     params.explicitReviewRequest &&
     !params.canPublishExplicitReviewOutput("explicit mention review fallback reply", params.reviewOutputKey)
   ) {
-    return false;
+    return ok({
+      published: false,
+      resolution: "skipped",
+      fallbackDelivery: null,
+    });
   }
 
   const fallbackBody = buildMentionSuccessFallbackBody({
@@ -60,7 +66,11 @@ export async function publishMentionSuccessFallback(params: {
     skipReason: params.skipReason,
   });
   await params.postMentionReply(fallbackBody);
-  return true;
+  return ok({
+    published: true,
+    resolution: "success-fallback",
+    fallbackDelivery: null,
+  });
 }
 
 export async function publishMentionErrorFallback(params: {

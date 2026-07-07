@@ -12,6 +12,7 @@ export type MentionPublishResolution =
   | "duplicate-suppressed"
   | "publish-failure-fallback"
   | "publish-failure-comment-failed"
+  | "success-fallback"
   | "error-fallback"
   | "error-comment-failed"
   | "turn-limit-fallback"

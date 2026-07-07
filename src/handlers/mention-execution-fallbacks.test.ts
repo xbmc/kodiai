@@ -34,8 +34,8 @@ describe("publishMentionExecutionFallbacks", () => {
 
     expect(postMentionReply).toHaveBeenCalledTimes(1);
     expect(state).toEqual({
-      mentionOutputPublished: false,
-      publishResolution: "none",
+      mentionOutputPublished: true,
+      publishResolution: "success-fallback",
       publishFallbackDelivery: null,
     });
   });

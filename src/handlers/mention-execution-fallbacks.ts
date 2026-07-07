@@ -54,7 +54,7 @@ export async function publishMentionExecutionFallbacks(params: MentionExecutionF
     && publishResolution !== "publish-failure-comment-failed"
     && !params.reviewPublishRightsLost
   ) {
-    await publishMentionSuccessFallback({
+    const successFallbackPublication = await publishMentionSuccessFallback({
       explicitReviewRequest: params.explicitReviewRequest,
       hasUnpublishedFindings: params.hasUnpublishedFindings,
       findingLines: params.findingLines,
@@ -64,6 +64,11 @@ export async function publishMentionExecutionFallbacks(params: MentionExecutionF
       canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
       postMentionReply: params.postMentionReply,
     });
+    if (successFallbackPublication.ok && successFallbackPublication.value.resolution !== "skipped") {
+      mentionOutputPublished = successFallbackPublication.value.published;
+      publishResolution = successFallbackPublication.value.resolution;
+      publishFallbackDelivery = successFallbackPublication.value.fallbackDelivery;
+    }
   }
 
   if (params.result.conclusion === "error" && !params.reviewPublishRightsLost) {
