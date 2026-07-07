@@ -9,6 +9,7 @@ type IssueEditParams = NonNullable<Parameters<Octokit["rest"]["issues"]["update"
 type PullCreateParams = NonNullable<Parameters<Octokit["rest"]["pulls"]["create"]>[0]>;
 type ReviewReplyParams = NonNullable<Parameters<Octokit["rest"]["pulls"]["createReplyForReviewComment"]>[0]>;
 type ReviewCommentParams = NonNullable<Parameters<Octokit["rest"]["pulls"]["createReviewComment"]>[0]>;
+type ReviewCommentUpdateParams = NonNullable<Parameters<Octokit["rest"]["pulls"]["updateReviewComment"]>[0]>;
 type PullReviewParams = NonNullable<Parameters<Octokit["rest"]["pulls"]["createReview"]>[0]>;
 type PullReviewUpdateParams = {
   owner: string;
@@ -118,6 +119,17 @@ export async function createReviewCommentWithPublicationPipeline(
     ...request,
     body: publishableBody(body, { botHandles, preserveKodiaiMarkers }),
   } as ReviewCommentParams);
+}
+
+export async function updateReviewCommentWithPublicationPipeline(
+  octokit: Octokit,
+  params: Omit<ReviewCommentUpdateParams, "body"> & { body: string } & PublicationOptions,
+) {
+  const { botHandles, preserveKodiaiMarkers, body, ...request } = params;
+  return await octokit.rest.pulls.updateReviewComment({
+    ...request,
+    body: publishableBody(body, { botHandles, preserveKodiaiMarkers }),
+  } as ReviewCommentUpdateParams);
 }
 
 export async function createPullReviewWithPublicationPipeline(

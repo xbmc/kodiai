@@ -12,6 +12,7 @@ import {
   updateIssueCommentWithPublicationPipeline,
   updateIssueWithPublicationPipeline,
   updatePullReviewWithPublicationPipeline,
+  updateReviewCommentWithPublicationPipeline,
 } from "./github-publication.ts";
 
 function createOctokitHarness() {
@@ -50,6 +51,10 @@ function createOctokitHarness() {
           createReviewComment: async (params: Record<string, unknown>) => {
             calls.push({ method: "pulls.createReviewComment", params });
             return { data: { id: 404, path: params.path } };
+          },
+          updateReviewComment: async (params: Record<string, unknown>) => {
+            calls.push({ method: "pulls.updateReviewComment", params });
+            return { data: { id: params.comment_id } };
           },
           createReview: async (params: Record<string, unknown>) => {
             calls.push({ method: "pulls.createReview", params });
@@ -263,6 +268,25 @@ describe("github publication pipeline helpers", () => {
     expect(calls[0]?.params.body).toContain("<!-- kodiai:review-output-key:test -->");
     expect(calls[0]?.params.body).toContain("kodiai update");
     expect(calls[0]?.params.body).not.toContain("@kodiai update");
+    expect(calls[0]?.params.body).toContain("[REDACTED_GITHUB_TOKEN]");
+  });
+
+  test("sanitizes review comment updates through the shared publication pipeline", async () => {
+    const { octokit, calls } = createOctokitHarness();
+
+    await updateReviewCommentWithPublicationPipeline(octokit, {
+      owner: "xbmc",
+      repo: "kodiai",
+      comment_id: 12,
+      body: "@kodiai update gh\u200bu_" + "F".repeat(36),
+      botHandles: ["kodiai"],
+      preserveKodiaiMarkers: true,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe("pulls.updateReviewComment");
+    expect(calls[0]?.params.body).toContain("kodiai update");
+    expect(calls[0]?.params.body).not.toContain("@kodiai");
     expect(calls[0]?.params.body).toContain("[REDACTED_GITHUB_TOKEN]");
   });
 });
