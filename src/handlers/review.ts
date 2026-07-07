@@ -145,7 +145,10 @@ import {
   scheduleContributorExpertiseUpdate,
   scheduleReviewHunkEmbedding,
 } from "./review-post-execution-side-effects.ts";
-import { recordReviewResilienceEventFailOpen } from "./review-resilience-telemetry.ts";
+import {
+  buildReviewTimeoutResilienceTelemetryEntry,
+  recordReviewResilienceEventFailOpen,
+} from "./review-resilience-telemetry.ts";
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
@@ -1767,13 +1770,12 @@ export function createReviewHandler(deps: {
                 const resilienceTelemetryResult = await recordReviewResilienceEventFailOpen({
                   telemetryStore,
                   logger,
-                  entry: {
+                  entry: buildReviewTimeoutResilienceTelemetryEntry({
                     deliveryId: event.id,
                     repo: `${apiOwner}/${apiRepo}`,
                     prNumber: pr.number,
                     prAuthor: pr.user.login,
                     eventType: `pull_request.${payload.action}`,
-                    kind: "timeout",
                     reviewOutputKey,
                     executionConclusion,
                     hadInlineOutput: hasPublishedInlines,
@@ -1784,9 +1786,9 @@ export function createReviewHandler(deps: {
                     partialCommentId,
                     recentTimeouts,
                     chronicTimeout: isChronicTimeout,
-                    retryEnqueued: false,
-                    ...timeoutClassificationTelemetry,
-                  },
+                    retry: { enqueued: false },
+                    timeoutClassificationTelemetry,
+                  }),
                 });
                 if (!resilienceTelemetryResult.ok) {
                   continuationProjectionDegraded = true;
@@ -1848,13 +1850,12 @@ export function createReviewHandler(deps: {
                 const resilienceTelemetryResult = await recordReviewResilienceEventFailOpen({
                   telemetryStore,
                   logger,
-                  entry: {
+                  entry: buildReviewTimeoutResilienceTelemetryEntry({
                     deliveryId: event.id,
                     repo: `${apiOwner}/${apiRepo}`,
                     prNumber: pr.number,
                     prAuthor: pr.user.login,
                     eventType: `pull_request.${payload.action}`,
-                    kind: "timeout",
                     reviewOutputKey,
                     executionConclusion,
                     hadInlineOutput: hasPublishedInlines,
@@ -1865,14 +1866,16 @@ export function createReviewHandler(deps: {
                     partialCommentId,
                     recentTimeouts,
                     chronicTimeout: isChronicTimeout,
-                    retryEnqueued: true,
-                    retryFilesCount: retryFiles.length,
-                    retryScopeRatio,
-                    retryTimeoutSeconds: retryTimeout,
-                    retryRiskLevel: retryTimeoutEstimate.riskLevel,
-                    retryCheckpointEnabled,
-                    ...timeoutClassificationTelemetry,
-                  },
+                    retry: {
+                      enqueued: true,
+                      filesCount: retryFiles.length,
+                      scopeRatio: retryScopeRatio,
+                      timeoutSeconds: retryTimeout,
+                      riskLevel: retryTimeoutEstimate.riskLevel,
+                      checkpointEnabled: retryCheckpointEnabled,
+                    },
+                    timeoutClassificationTelemetry,
+                  }),
                 });
                 if (!resilienceTelemetryResult.ok) {
                   continuationProjectionDegraded = true;

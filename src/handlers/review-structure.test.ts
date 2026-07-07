@@ -253,6 +253,8 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("await telemetryStore.recordResilienceEvent?.({");
+    expect(source).not.toMatch(/recordReviewResilienceEventFailOpen\(\{[\s\S]{0,200}entry:\s*\{/);
+    expect(source).toContain("buildReviewTimeoutResilienceTelemetryEntry");
     expect(source).toContain("recordReviewResilienceEventFailOpen");
     expect(source).toContain("./review-resilience-telemetry.ts");
   });
