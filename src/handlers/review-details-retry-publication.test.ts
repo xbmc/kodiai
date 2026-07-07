@@ -79,9 +79,12 @@ describe("publishRetryReviewDetailsMerge", () => {
     const result = await publishRetryReviewDetailsMerge(params);
 
     expect(result).toEqual({
-      status: "published",
-      projectionStatus: "canonical",
-      logMessage: "Retry complete -- updated partial review comment with merged results",
+      ok: true,
+      value: {
+        status: "published",
+        projectionStatus: "canonical",
+        logMessage: "Retry complete -- updated partial review comment with merged results",
+      },
     });
     expect(upsertCalls).toHaveLength(1);
     const [upsertCall] = upsertCalls as [Record<string, unknown>];
@@ -114,7 +117,7 @@ describe("publishRetryReviewDetailsMerge", () => {
 
     const result = await publishRetryReviewDetailsMerge(params);
 
-    expect(result).toEqual({ status: "settled-without-canonical-update" });
+    expect(result).toEqual({ ok: true, value: { status: "settled-without-canonical-update" } });
     expect(params.testState.settlements).toEqual([
       {
         attemptId: "attempt-1",
@@ -142,9 +145,12 @@ describe("publishRetryReviewDetailsMerge", () => {
     const result = await publishRetryReviewDetailsMerge(params);
 
     expect(result).toEqual({
-      status: "published",
-      projectionStatus: "degraded",
-      logMessage: "Retry complete -- published final review comment with merged results; Review Details published via degraded fallback comment",
+      ok: true,
+      value: {
+        status: "published",
+        projectionStatus: "degraded",
+        logMessage: "Retry complete -- published final review comment with merged results; Review Details published via degraded fallback comment",
+      },
     });
     expect(params.testState.warnings).toHaveLength(1);
     const [warning] = params.testState.warnings as [{ data: Record<string, unknown>; message: string }];

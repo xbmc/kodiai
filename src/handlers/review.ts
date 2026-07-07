@@ -2617,7 +2617,16 @@ export function createReviewHandler(deps: {
                             settleRetryWithoutCanonicalUpdate,
                           });
 
-                          if (retryReviewDetailsPublication.status === "settled-without-canonical-update") {
+                          if (!retryReviewDetailsPublication.ok) {
+                            logger.warn(
+                              { ...baseLog, err: retryReviewDetailsPublication.err },
+                              "Retry Review Details publication failed",
+                            );
+                            return;
+                          }
+
+                          const retryReviewDetailsPublicationStatus = retryReviewDetailsPublication.value;
+                          if (retryReviewDetailsPublicationStatus.status === "settled-without-canonical-update") {
                             return;
                           }
 
@@ -2629,14 +2638,14 @@ export function createReviewHandler(deps: {
                               retryFilesReviewed: mergeContext.retryFilesReviewed,
                               partialCommentId,
                               settlementReason: settlementDecision.reason,
-                              projectionStatus: retryReviewDetailsPublication.projectionStatus,
+                              projectionStatus: retryReviewDetailsPublicationStatus.projectionStatus,
                             },
-                            retryReviewDetailsPublication.logMessage,
+                            retryReviewDetailsPublicationStatus.logMessage,
                           );
 
                           await persistContinuationFamilyState(resolveMergedContinuationFamilyState({
                             attemptId: retryReviewWorkAttempt.attemptId,
-                            projectionStatus: retryReviewDetailsPublication.projectionStatus,
+                            projectionStatus: retryReviewDetailsPublicationStatus.projectionStatus,
                             reviewOutputKey: retryReviewOutputKey,
                           }));
 

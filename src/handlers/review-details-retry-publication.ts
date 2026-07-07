@@ -10,17 +10,20 @@ import type { ReviewDetailsPublicationRuntime } from "./review-details-publicati
 import {
   publishDegradedReviewDetailsFallbackFailOpen,
 } from "./review-details-degraded-fallback.ts";
+import { ok as resultOk, type Result } from "../lib/result.ts";
 
 type UpsertCanonicalReviewSurface = typeof upsertCanonicalReviewSurface;
 type PublishDegradedReviewDetailsFallbackFailOpen = typeof publishDegradedReviewDetailsFallbackFailOpen;
 
-export type RetryReviewDetailsPublicationResult =
+export type RetryReviewDetailsPublicationStatus =
   | {
     status: "published";
     projectionStatus: ContinuationFamilyProjectionStatus;
     logMessage: string;
   }
   | { status: "settled-without-canonical-update" };
+
+export type RetryReviewDetailsPublicationResult = Result<RetryReviewDetailsPublicationStatus>;
 
 export async function publishRetryReviewDetailsMerge(params: {
   octokit: Octokit;
@@ -101,14 +104,14 @@ export async function publishRetryReviewDetailsMerge(params: {
         reason: "publish-superseded",
         logMessage: "Retry settlement skipped because publish rights were superseded",
       });
-      return { status: "settled-without-canonical-update" };
+      return resultOk({ status: "settled-without-canonical-update" });
     }
 
-    return {
+    return resultOk({
       status: "published",
       projectionStatus: "canonical",
       logMessage: canonicalLogMessage,
-    };
+    });
   } catch (reviewDetailsErr) {
     params.logger.warn(
       {
@@ -139,10 +142,10 @@ export async function publishRetryReviewDetailsMerge(params: {
         params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
     });
 
-    return {
+    return resultOk({
       status: "published",
       projectionStatus: "degraded",
       logMessage: degradedLogMessage,
-    };
+    });
   }
 }
