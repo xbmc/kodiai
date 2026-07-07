@@ -249,6 +249,7 @@ import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-c
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
+import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2223,37 +2224,37 @@ export function createReviewHandler(deps: {
               }
             }
 
-            if (timeoutFirstPass?.state === "zero-evidence-failure") {
+            const retryEnqueueContext = resolveReviewRetryEnqueueContext({
+              deliveryId: event.id,
+              retryPlan,
+            });
+            const timeoutContinuationState = resolveReviewTimeoutContinuationState({
+              attemptId: reviewWorkAttempt.attemptId,
+              timeoutFirstPass,
+              retryScheduled: retryEnqueueContext !== null,
+              continuationProjectionDegraded,
+            });
+
+            if (timeoutContinuationState.zeroEvidenceWarning) {
               logger.warn(
                 {
                   deliveryId: event.id,
                   prNumber: pr.number,
-                  boundedReason: timeoutFirstPass.boundedReason,
-                  evidenceSource: timeoutFirstPass.evidenceSource,
-                  zeroEvidenceFailure: true,
+                  ...timeoutContinuationState.zeroEvidenceWarning,
                   reviewOutputKey,
                 },
                 "Constrained timeout remained a zero-evidence hard failure",
               );
             }
 
-            if (retryPlan?.decision !== "schedule-continuation") {
-              await persistContinuationFamilyState({
-                authoritativeAttemptId: reviewWorkAttempt.attemptId,
-                authoritativeOutcome: "blocked",
-                finalStopReason: "no-follow-up",
-                projectionStatus: continuationProjectionDegraded ? "degraded" : "canonical",
-              });
+            if (timeoutContinuationState.blockedFamilyState) {
+              await persistContinuationFamilyState(timeoutContinuationState.blockedFamilyState);
             }
 
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
             // Retry is only useful when no GitHub-visible output was published.
             // If inline comments were already posted, avoid a retry that could
             // create additional noise or duplicates.
-            const retryEnqueueContext = resolveReviewRetryEnqueueContext({
-              deliveryId: event.id,
-              retryPlan,
-            });
             if (retryEnqueueContext) {
               const {
                 retryReviewOutputKey,

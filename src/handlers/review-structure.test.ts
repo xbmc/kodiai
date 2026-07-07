@@ -96,6 +96,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-retry-enqueue-context.ts");
   });
 
+  test("keeps timeout continuation-family state policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (timeoutFirstPass?.state === \"zero-evidence-failure\")");
+    expect(source).not.toContain("if (retryPlan?.decision !== \"schedule-continuation\")");
+    expect(source).not.toContain("authoritativeOutcome: \"blocked\"");
+    expect(source).not.toContain("projectionStatus: continuationProjectionDegraded ? \"degraded\" : \"canonical\"");
+    expect(source).toContain("resolveReviewTimeoutContinuationState");
+    expect(source).toContain("./review-timeout-continuation-state.ts");
+  });
+
   test("keeps review execution telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
