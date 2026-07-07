@@ -220,6 +220,7 @@ import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logBoundedFirstPassPublicationFailure } from "./review-bounded-first-pass-publication-failure-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
+import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completion-log.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -839,22 +840,19 @@ export function createReviewHandler(deps: {
           resolvedIgnoredAreas,
         });
 
-        logger.info(
-          {
-            ...baseLog,
-            gate: "diff-analysis",
-            totalFiles: diffAnalysis.metrics.totalFiles,
-            isLargePR: diffAnalysis.isLargePR,
-              riskSignals: diffAnalysis.riskSignals.length,
-              matchedInstructions: matchedPathInstructions.length,
-              detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}).length,
-              profile: config.review.profile ?? null,
-              diffCollectionStrategy: diffContext.strategy,
-              mergeBaseRecovered: diffContext.mergeBaseRecovered,
-              diffCollectionAttempts: diffContext.deepenAttempts,
-            },
-            "Diff analysis and context enrichment complete",
-          );
+        logReviewDiffAnalysisCompleted({
+          logger,
+          baseLog,
+          totalFiles: diffAnalysis.metrics.totalFiles,
+          isLargePR: diffAnalysis.isLargePR,
+          riskSignals: diffAnalysis.riskSignals.length,
+          matchedInstructions: matchedPathInstructions.length,
+          detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}).length,
+          profile: config.review.profile ?? null,
+          diffCollectionStrategy: diffContext.strategy,
+          mergeBaseRecovered: diffContext.mergeBaseRecovered,
+          diffCollectionAttempts: diffContext.deepenAttempts,
+        });
 
         // Extract PR labels for intent scoping (FORMAT-07)
         const prLabels = (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [];

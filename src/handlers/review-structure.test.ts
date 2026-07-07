@@ -696,6 +696,17 @@ describe("review handler structure", () => {
     expect(logSource).toContain("gateResult");
   });
 
+  test("keeps diff-analysis completion logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const logSource = readFileSync(new URL("./review-diff-analysis-completion-log.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Diff analysis and context enrichment complete");
+    expect(source).toContain("logReviewDiffAnalysisCompleted");
+    expect(source).toContain("./review-diff-analysis-completion-log.ts");
+    expect(logSource).toContain("Diff analysis and context enrichment complete");
+    expect(logSource).toContain("diffCollectionAttempts");
+  });
+
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
