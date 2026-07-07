@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import type { MergeConfidence } from "../lib/merge-confidence.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { err as resultErr, ok, type Result } from "../lib/result.ts";
 import type { VisibleBudgetProjection } from "../review-visible-budget/visible-budget-behavior.ts";
 import {
   type CanonicalSurfaceKind,
@@ -20,6 +21,8 @@ import { buildCleanReviewApprovalBody } from "./review-clean-approval.ts";
 export type CleanReviewPublicationResult =
   | { published: false; resolution: "skipped" }
   | { published: true; resolution: "auto-approval" | "clean-review-comment" };
+
+export type CleanReviewPublicationStatus = Result<CleanReviewPublicationResult, unknown>;
 
 export async function publishCleanReviewApproval(params: {
   resultPublished: boolean;
@@ -45,7 +48,7 @@ export async function publishCleanReviewApproval(params: {
   finalizePublicationPhaseTiming: ReviewDetailsPublicationRuntime["finalizePublicationPhaseTiming"];
   logReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logReviewDetailsPublicationCompleted"];
   logCanonicalReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logCanonicalReviewDetailsPublicationCompleted"];
-}): Promise<CleanReviewPublicationResult> {
+}): Promise<CleanReviewPublicationStatus> {
   try {
     if (params.resultPublished) {
       params.logger.info(
@@ -57,7 +60,7 @@ export async function publishCleanReviewApproval(params: {
         },
         "Skipping auto-approval because review output was published",
       );
-      return { published: false, resolution: "skipped" };
+      return ok({ published: false, resolution: "skipped" });
     }
 
     const octokit = await params.getOctokit();
@@ -89,14 +92,14 @@ export async function publishCleanReviewApproval(params: {
         idempotencyExistingLocation: idempotencyCheck.existingLocation,
         params,
       });
-      return { published: false, resolution: "skipped" };
+      return ok({ published: false, resolution: "skipped" });
     }
 
     const cleanReviewPublicationReason = params.autoApprove
       ? "auto-approval"
       : "clean review publication";
     if (!params.canPublishVisibleOutput(cleanReviewPublicationReason)) {
-      return { published: false, resolution: "skipped" };
+      return ok({ published: false, resolution: "skipped" });
     }
 
     params.setReviewWorkPhase("publish");
@@ -177,7 +180,7 @@ export async function publishCleanReviewApproval(params: {
         : "Published clean review comment (no issues found)",
     );
 
-    return { published: true, resolution };
+    return ok({ published: true, resolution });
   } catch (err) {
     params.logger.error(
       { err, prNumber: params.prNumber },
@@ -185,7 +188,7 @@ export async function publishCleanReviewApproval(params: {
         ? "Failed to submit approval"
         : "Failed to publish clean review comment",
     );
-    return { published: false, resolution: "skipped" };
+    return resultErr(err);
   }
 }
 

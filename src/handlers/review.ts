@@ -2763,9 +2763,12 @@ export function createReviewHandler(deps: {
             logReviewDetailsPublicationCompleted,
             logCanonicalReviewDetailsPublicationCompleted,
           });
-          if (cleanReviewPublication.published) {
+          const cleanReviewPublicationState = cleanReviewPublication.ok
+            ? cleanReviewPublication.value
+            : { published: false as const, resolution: "skipped" as const };
+          if (cleanReviewPublicationState.published) {
             reviewOutputPublished = true;
-            reviewPublishResolution = cleanReviewPublication.resolution;
+            reviewPublishResolution = cleanReviewPublicationState.resolution;
           }
         }
       } catch (err) {
