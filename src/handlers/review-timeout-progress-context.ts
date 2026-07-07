@@ -7,6 +7,20 @@ import {
 } from "../lib/review-first-pass.ts";
 import type { ExtractedFinding } from "../review-orchestration/review-comment-finding-extraction.ts";
 
+type ReviewTimeoutProgressKnowledgeStore = {
+  getCheckpoint?: (reviewOutputKey: string) => Promise<CheckpointRecord | null>;
+};
+
+type ReviewTimeoutProgressExtractionParams = {
+  octokit: unknown;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+  logger: unknown;
+  baseLog: Record<string, unknown>;
+};
+
 export type ReviewTimeoutProgressContext = {
   checkpoint: CheckpointRecord | null;
   hasPublishedInlines: boolean;
@@ -18,6 +32,22 @@ export type ReviewTimeoutProgressContext = {
   timeoutFirstPass: ReviewFirstPassPayload | null;
   hasPartialResults: boolean;
 };
+
+export function buildReviewTimeoutProgressAdapters<TExtraction extends ReviewTimeoutProgressExtractionParams>(params: {
+  knowledgeStore: ReviewTimeoutProgressKnowledgeStore | undefined;
+  extractFindingsFromReviewComments: (params: TExtraction) => Promise<ExtractedFinding[]>;
+  extraction: TExtraction;
+}): {
+  getCheckpoint: (reviewOutputKey: string) => Promise<CheckpointRecord | null>;
+  extractInlineFindings: () => Promise<ExtractedFinding[]>;
+} {
+  return {
+    getCheckpoint: async (reviewOutputKey) =>
+      (await params.knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null,
+    extractInlineFindings: async () =>
+      await params.extractFindingsFromReviewComments(params.extraction),
+  };
+}
 
 export async function resolveReviewTimeoutProgressContext(params: {
   reviewOutputKey: string;

@@ -191,6 +191,9 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const timeoutInlineFindings = hasPublishedInlines");
     expect(source).not.toContain("const timeoutReviewedFiles = Array.from(new Set([");
     expect(source).not.toContain("const timeoutFirstPass = normalizeReviewFirstPass({");
+    expect(source).not.toContain("getCheckpoint: async (key) => (await knowledgeStore?.getCheckpoint?.(key)) ?? null");
+    expect(source).not.toContain("extractInlineFindings: async () => await extractFindingsFromReviewComments({");
+    expect(source).toContain("buildReviewTimeoutProgressAdapters");
     expect(source).toContain("resolveReviewTimeoutProgressContext");
     expect(source).toContain("./review-timeout-progress-context.ts");
   });

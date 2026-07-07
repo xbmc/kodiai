@@ -138,7 +138,10 @@ import {
   publishAndApplyReviewFallbackOutputs,
   type ReviewFallbackExecutionErrorContext,
 } from "./review-fallback-publication-orchestration.ts";
-import { resolveReviewTimeoutProgressContext } from "./review-timeout-progress-context.ts";
+import {
+  buildReviewTimeoutProgressAdapters,
+  resolveReviewTimeoutProgressContext,
+} from "./review-timeout-progress-context.ts";
 import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context.ts";
 import {
   normalizeReviewTimeoutBudgetDetails,
@@ -1174,6 +1177,19 @@ export function createReviewHandler(deps: {
           let partialCommentId: number | undefined;
 
           if (result.isTimeout || turnBudgetExhausted) {
+            const timeoutProgressAdapters = buildReviewTimeoutProgressAdapters({
+              knowledgeStore,
+              extractFindingsFromReviewComments,
+              extraction: {
+                octokit: extractionOctokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                logger,
+                baseLog,
+              },
+            });
             const {
               checkpoint,
               hasPublishedInlines,
@@ -1195,16 +1211,8 @@ export function createReviewHandler(deps: {
                 isTimeout: result.isTimeout,
                 published: result.published,
               },
-              getCheckpoint: async (key) => (await knowledgeStore?.getCheckpoint?.(key)) ?? null,
-              extractInlineFindings: async () => await extractFindingsFromReviewComments({
-                octokit: extractionOctokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                reviewOutputKey,
-                logger,
-                baseLog,
-              }),
+              getCheckpoint: timeoutProgressAdapters.getCheckpoint,
+              extractInlineFindings: timeoutProgressAdapters.extractInlineFindings,
             });
 
             const {
