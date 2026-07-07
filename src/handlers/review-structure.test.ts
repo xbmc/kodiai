@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1493);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1485);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -627,14 +627,19 @@ describe("review handler structure", () => {
 
   test("keeps retrieval context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retrievalSource = readFileSync(new URL("./review-retrieval-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const variants = buildRetrievalVariants({");
     expect(source).not.toContain("const result = await retriever.retrieve({");
     expect(source).not.toContain("buildRetrievalReviewCacheEvent({");
     expect(source).not.toContain("await telemetryStore.recordRetrievalQuality({");
     expect(source).not.toContain("Retrieval context generation failed (fail-open, proceeding without retrieval)");
-    expect(source).toContain("buildReviewRetrievalContext");
+    expect(source).not.toContain("const reviewRetrievalContext = await buildReviewRetrievalContext({");
+    expect(source).not.toContain("const retrievalCtx = reviewRetrievalContext.retrievalContext;");
+    expect(source).toContain("resolveReviewRetrievalPromptContext");
     expect(source).toContain("./review-retrieval-context.ts");
+    expect(retrievalSource).toContain("export async function resolveReviewRetrievalPromptContext");
+    expect(retrievalSource).toContain("buildReviewRetrievalContext");
   });
 
   test("keeps retrieval phase timing completion out of the monster handler", () => {

@@ -2,6 +2,10 @@ import type { Logger } from "pino";
 import type { createRetriever } from "../knowledge/retrieval.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { ContributorExperienceContract } from "../contributor/experience-contract.ts";
+import type { ReviewAuthorClassification } from "../contributor/review-author-resolution.ts";
+import type { DiffAnalysis } from "../execution/diff-analysis.ts";
+import type { RepoConfig } from "../execution/config.ts";
+import type { ParsedPRIntent } from "../lib/pr-intent-parser.ts";
 import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.ts";
 import type { WikiKnowledgeMatch } from "../knowledge/wiki-retrieval.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
@@ -37,6 +41,84 @@ export type ReviewRetrievalContextResult = {
   unifiedResults: UnifiedRetrievalChunk[];
   contextWindow?: string;
 };
+
+type ReviewRetrievalPromptConfig = Pick<RepoConfig, "knowledge" | "telemetry">;
+
+type BuildReviewRetrievalContext = typeof buildReviewRetrievalContext;
+
+export type ReviewRetrievalPromptContextResult = {
+  reviewRetrievalContext: ReviewRetrievalContextResult;
+  retrievalCtx: ReviewRetrievalContextResult["retrievalContext"];
+  visibleBudgetState: ReviewRetrievalContextResult["visibleBudgetState"];
+  reviewPrecedentsForPrompt: ReviewRetrievalContextResult["reviewPrecedents"];
+  wikiKnowledgeForPrompt: ReviewRetrievalContextResult["wikiKnowledge"];
+  unifiedResultsForPrompt: ReviewRetrievalContextResult["unifiedResults"];
+  contextWindowForPrompt: ReviewRetrievalContextResult["contextWindow"];
+};
+
+export async function resolveReviewRetrievalPromptContext(params: {
+  retriever?: ReturnType<typeof createRetriever>;
+  apiOwner: string;
+  apiRepo: string;
+  pr: {
+    number: number;
+    title: string;
+    body?: string | null;
+  };
+  event: {
+    id: string;
+    name: string;
+  };
+  workspaceDir: string;
+  parsedIntent: Pick<ParsedPRIntent, "conventionalType">;
+  diffAnalysis: Pick<DiffAnalysis, "filesByLanguage" | "riskSignals">;
+  reviewFiles: string[];
+  authorContract: ReviewAuthorClassification["contract"];
+  config: ReviewRetrievalPromptConfig;
+  telemetryStore: Pick<
+    TelemetryStore,
+    "recordRateLimitEvent" | "recordRetrievalQuality" | "recordReviewCacheEvent"
+  >;
+  logger: Pick<Logger, "warn">;
+  baseLog: Record<string, unknown>;
+  buildContext?: BuildReviewRetrievalContext;
+}): Promise<ReviewRetrievalPromptContextResult> {
+  const buildContext = params.buildContext ?? buildReviewRetrievalContext;
+  const reviewRetrievalContext = await buildContext({
+    retriever: params.retriever,
+    repo: `${params.apiOwner}/${params.apiRepo}`,
+    owner: params.apiOwner,
+    prNumber: params.pr.number,
+    deliveryId: params.event.id,
+    eventName: params.event.name,
+    workspaceDir: params.workspaceDir,
+    prTitle: params.pr.title,
+    prBody: params.pr.body ?? undefined,
+    conventionalType: params.parsedIntent.conventionalType?.type ?? null,
+    prLanguages: Object.keys(params.diffAnalysis.filesByLanguage ?? {}),
+    riskSignals: params.diffAnalysis.riskSignals ?? [],
+    filePaths: params.reviewFiles,
+    authorContract: params.authorContract,
+    retrievalConfig: {
+      topK: params.config.knowledge.retrieval.topK,
+      maxContextChars: params.config.knowledge.retrieval.maxContextChars,
+    },
+    telemetryEnabled: params.config.telemetry.enabled,
+    telemetryStore: params.telemetryStore,
+    logger: params.logger,
+    baseLog: params.baseLog,
+  });
+
+  return {
+    reviewRetrievalContext,
+    retrievalCtx: reviewRetrievalContext.retrievalContext,
+    visibleBudgetState: reviewRetrievalContext.visibleBudgetState,
+    reviewPrecedentsForPrompt: reviewRetrievalContext.reviewPrecedents,
+    wikiKnowledgeForPrompt: reviewRetrievalContext.wikiKnowledge,
+    unifiedResultsForPrompt: reviewRetrievalContext.unifiedResults,
+    contextWindowForPrompt: reviewRetrievalContext.contextWindow,
+  };
+}
 
 export async function buildReviewRetrievalContext(params: {
   retriever?: ReturnType<typeof createRetriever>;

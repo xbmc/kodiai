@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
+import {
+  buildReviewRetrievalContext,
+  resolveReviewRetrievalPromptContext,
+} from "./review-retrieval-context.ts";
 
 function makeLogger() {
   const warnings: Array<{ obj: unknown; msg: string }> = [];
@@ -247,5 +250,104 @@ describe("buildReviewRetrievalContext", () => {
     expect(warnings.map((entry) => entry.msg)).toContain(
       "Retrieval context generation failed (fail-open, proceeding without retrieval)",
     );
+  });
+});
+
+describe("resolveReviewRetrievalPromptContext", () => {
+  test("derives retrieval inputs from review state and exposes prompt-facing aliases", async () => {
+    const buildCalls: unknown[] = [];
+    const expectedResult = {
+      retrievalContext: {
+        maxChars: 1200,
+        findings: [],
+      },
+      visibleBudgetState: { refresh: () => null, reviewCacheObservations: [] },
+      reviewPrecedents: [{ chunkText: "precedent" }],
+      wikiKnowledge: [{ chunkText: "wiki" }],
+      unifiedResults: [{ id: "wiki:1" }],
+      contextWindow: "[wiki]\nchunk",
+    };
+
+    const result = await resolveReviewRetrievalPromptContext({
+      retriever: { retrieve: async () => makeRetrieveResult() } as any,
+      apiOwner: "owner",
+      apiRepo: "repo",
+      pr: {
+        number: 10,
+        title: "Improve cache reuse",
+        body: null,
+      },
+      event: {
+        id: "delivery-1",
+        name: "pull_request.opened",
+      },
+      workspaceDir: "/tmp/workspace",
+      parsedIntent: {
+        conventionalType: { type: "fix" } as any,
+      },
+      diffAnalysis: {
+        filesByLanguage: {
+          typescript: ["src/app.ts"],
+          markdown: ["README.md"],
+        },
+        riskSignals: ["cache", "concurrency"],
+      },
+      reviewFiles: ["src/app.ts"],
+      authorContract: {
+        state: "profile-backed",
+        promptTier: "senior",
+        promptPolicy: { kind: "profile-backed-senior" },
+      } as any,
+      config: {
+        knowledge: {
+          retrieval: {
+            topK: 7,
+            maxContextChars: 2400,
+          },
+        },
+        telemetry: {
+          enabled: true,
+        },
+      } as any,
+      telemetryStore: {} as any,
+      logger: makeLogger().logger as any,
+      baseLog: { deliveryId: "delivery-1" },
+      buildContext: async (params) => {
+        buildCalls.push(params);
+        return expectedResult as any;
+      },
+    });
+
+    expect(buildCalls).toEqual([
+      expect.objectContaining({
+        repo: "owner/repo",
+        owner: "owner",
+        prNumber: 10,
+        deliveryId: "delivery-1",
+        eventName: "pull_request.opened",
+        workspaceDir: "/tmp/workspace",
+        prTitle: "Improve cache reuse",
+        prBody: undefined,
+        conventionalType: "fix",
+        prLanguages: ["typescript", "markdown"],
+        riskSignals: ["cache", "concurrency"],
+        filePaths: ["src/app.ts"],
+        retrievalConfig: {
+          topK: 7,
+          maxContextChars: 2400,
+        },
+        telemetryEnabled: true,
+        baseLog: { deliveryId: "delivery-1" },
+      }),
+    ]);
+    expect(result).toEqual({
+      reviewRetrievalContext: expectedResult,
+      retrievalCtx: expectedResult.retrievalContext,
+      visibleBudgetState: expectedResult.visibleBudgetState,
+      reviewPrecedentsForPrompt: expectedResult.reviewPrecedents,
+      wikiKnowledgeForPrompt: expectedResult.wikiKnowledge,
+      unifiedResultsForPrompt: expectedResult.unifiedResults,
+      contextWindowForPrompt: expectedResult.contextWindow,
+    } as any);
   });
 });

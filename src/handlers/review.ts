@@ -50,7 +50,7 @@ import {
 import { resolveReviewDetailsBodyBase } from "./review-details-body-base.ts";
 import { buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies } from "./review-handler-failure-publication-adapter.ts";
 import { resolveReviewIdempotencyContext } from "./review-idempotency-context.ts";
-import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
+import { resolveReviewRetrievalPromptContext } from "./review-retrieval-context.ts";
 import { resolveReviewDependencyBumpFlowContext } from "./review-dependency-bump-flow.ts";
 import {
   persistReviewKnowledgeIfAvailable,
@@ -511,37 +511,29 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           promptFiles,
         } = changedFileContext;
 
-        // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
-        const reviewRetrievalContext = await buildReviewRetrievalContext({
+        const {
+          retrievalCtx,
+          visibleBudgetState,
+          reviewPrecedentsForPrompt,
+          wikiKnowledgeForPrompt,
+          unifiedResultsForPrompt,
+          contextWindowForPrompt,
+        } = await resolveReviewRetrievalPromptContext({
           retriever,
-          repo: `${apiOwner}/${apiRepo}`,
-          owner: apiOwner,
-          prNumber: pr.number,
-          deliveryId: event.id,
-          eventName: event.name,
+          apiOwner,
+          apiRepo,
+          pr,
+          event,
           workspaceDir: workspace.dir,
-          prTitle: pr.title,
-          prBody: pr.body ?? undefined,
-          conventionalType: parsedIntent.conventionalType?.type ?? null,
-          prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
-          riskSignals: diffAnalysis.riskSignals ?? [],
-          filePaths: reviewFiles,
+          parsedIntent,
+          diffAnalysis,
+          reviewFiles,
           authorContract: authorClassification.contract,
-          retrievalConfig: {
-            topK: config.knowledge.retrieval.topK,
-            maxContextChars: config.knowledge.retrieval.maxContextChars,
-          },
-          telemetryEnabled: config.telemetry.enabled,
+          config,
           telemetryStore,
           logger,
           baseLog,
         });
-        const retrievalCtx = reviewRetrievalContext.retrievalContext;
-        const visibleBudgetState = reviewRetrievalContext.visibleBudgetState;
-        const reviewPrecedentsForPrompt = reviewRetrievalContext.reviewPrecedents;
-        const wikiKnowledgeForPrompt = reviewRetrievalContext.wikiKnowledge;
-        const unifiedResultsForPrompt = reviewRetrievalContext.unifiedResults;
-        const contextWindowForPrompt = reviewRetrievalContext.contextWindow;
 
         const planningContext = resolveReviewPlanningContext({
           parsedIntent: {
