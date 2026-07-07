@@ -135,13 +135,18 @@ describe("review handler structure", () => {
   test("keeps review reducer fail-open runtime out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const runtimeSource = readFileSync(new URL("./review-reducer-runtime.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("malformed-review-reducer-result");
     expect(source).not.toContain("reducer-exception");
     expect(source).not.toContain("createDegradedReviewReducerResult");
     expect(source).not.toContain("logReviewReducerResult({");
-    expect(source).toContain("runReviewReducerFailOpen");
-    expect(source).toContain("./review-reducer-runtime.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("runReviewReducerFailOpen");
+    expect(preparationSource).toContain("./review-reducer-runtime.ts");
     expect(runtimeSource).toContain("createDegradedReviewReducerResult");
     expect(runtimeSource).toContain("logReviewReducerResult");
   });
@@ -149,12 +154,17 @@ describe("review handler structure", () => {
   test("keeps review reducer input projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const inputSource = readFileSync(new URL("./review-reducer-input.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const commentSlopFindings = toCommentSlopReducerFindings");
     expect(source).not.toContain("const candidateReducerFindings = toReviewCandidateReducerDrafts");
     expect(source).not.toContain("const reviewReducerInput: ReviewReducerInput = {");
-    expect(source).toContain("buildReviewReducerInput");
-    expect(source).toContain("./review-reducer-input.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("buildReviewReducerInput");
+    expect(preparationSource).toContain("./review-reducer-input.ts");
     expect(inputSource).toContain("export function buildReviewReducerInput");
     expect(inputSource).toContain("toCommentSlopReducerFindings");
     expect(inputSource).toContain("toReviewCandidateReducerDrafts");
@@ -685,52 +695,99 @@ describe("review handler structure", () => {
 
   test("keeps candidate finding extraction context out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const reviewCandidateFindingResult = resolveReviewCandidateFindingResult({");
     expect(source).not.toContain("const extractedFindings = shouldProcessReviewOutput");
-    expect(source).toContain("resolveReviewCandidateFindingContext");
-    expect(source).toContain("./review-candidate-finding-context.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("resolveReviewCandidateFindingContext");
+    expect(preparationSource).toContain("./review-candidate-finding-context.ts");
   });
 
   test("keeps feedback suppression fallback policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const feedbackSuppression = knowledgeStore");
     expect(source).not.toContain("suppressedFingerprints: new Set<string>()");
     expect(source).not.toContain("suppressedPatternCount: 0, patterns: []");
-    expect(source).toContain("resolveReviewFeedbackSuppression");
-    expect(source).toContain("./review-feedback-suppression.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("resolveReviewFeedbackSuppression");
+    expect(preparationSource).toContain("./review-feedback-suppression.ts");
   });
 
   test("keeps graph-validation LLM routing out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const graphValidationLLM = graphBlastRadius && config.review.graphValidation.enabled");
     expect(source).not.toContain("const { createTaskRouter } = await import(\"../llm/task-router.ts\")");
     expect(source).not.toContain("const genResult = await generateWithFallback({");
-    expect(source).toContain("resolveReviewGraphValidationLLM");
-    expect(source).toContain("./review-graph-validation-llm.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("resolveReviewGraphValidationLLM");
+    expect(preparationSource).toContain("./review-graph-validation-llm.ts");
   });
 
   test("keeps candidate approval adapter context out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const directFallbackAllowed = reviewCandidateFindingResult.status !== \"shadow\"");
     expect(source).not.toContain("const reviewCandidateApprovalResult: ReviewCandidateApprovalResult = coordinateReviewCandidateApproval({");
     expect(source).not.toContain("adaptApprovedCandidatesForInlinePublication({");
-    expect(source).toContain("resolveReviewCandidateApprovalContext");
-    expect(source).toContain("./review-candidate-approval-context.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("resolveReviewCandidateApprovalContext");
+    expect(preparationSource).toContain("./review-candidate-approval-context.ts");
   });
 
   test("keeps candidate inline publication orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("const candidatePublisherResults = new Map<string, InlineReviewPublicationResult>();");
     expect(source).not.toContain("createCandidateVerificationPublicationEvidenceCollector(");
     expect(source).not.toContain("candidate-approved inline review comments");
     expect(source).not.toContain("Candidate publication skipped because review publish rights were superseded.");
-    expect(source).toContain("publishReviewCandidateInlineComments");
-    expect(source).toContain("./review-candidate-inline-publication.ts");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("publishReviewCandidateInlineComments");
+    expect(preparationSource).toContain("./review-candidate-inline-publication.ts");
+  });
+
+  test("keeps candidate publication preparation orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("resolveReviewCandidateFindingContext({");
+    expect(source).not.toContain("resolveReviewFeedbackSuppression({");
+    expect(source).not.toContain("resolveReviewGraphValidationLLM({");
+    expect(source).not.toContain("buildReviewReducerInput({");
+    expect(source).not.toContain("runReviewReducerFailOpen({");
+    expect(source).not.toContain("resolveReviewCandidateApprovalContext({");
+    expect(source).not.toContain("publishReviewCandidateInlineComments({");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(source).toContain("./review-candidate-publication-preparation.ts");
+    expect(preparationSource).toContain("export async function resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("resolveReviewCandidateFindingContext({");
+    expect(preparationSource).toContain("runReviewReducerFailOpen({");
+    expect(preparationSource).toContain("publishReviewCandidateInlineComments({");
   });
 
   test("keeps candidate publication runtime projection out of the monster handler", () => {

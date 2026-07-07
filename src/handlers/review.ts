@@ -40,12 +40,6 @@ import {
   type ReviewPlanBuilder,
 } from "../review-orchestration/review-plan.ts";
 import {
-  type ReviewCandidateApprovalResult,
-} from "../review-orchestration/review-candidate-approval.ts";
-import {
-  type ReviewCandidatePublicationAdapterResult,
-} from "../review-orchestration/review-candidate-publication-adapter.ts";
-import {
   formatTimeoutErrorDetail,
   recordReviewExecutorPhaseTimings,
 } from "../review-orchestration/review-phase-timing.ts";
@@ -130,9 +124,7 @@ import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
 import { buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
-import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
-import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
-import { publishReviewCandidateInlineComments } from "./review-candidate-inline-publication.ts";
+import { resolveReviewCandidatePublicationPreparation } from "./review-candidate-publication-preparation.ts";
 import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
 import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
 import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
@@ -160,8 +152,6 @@ import {
   handleRetryEnqueueFailure,
   handleRetryJobFailure,
 } from "./review-retry-failure-handling.ts";
-import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
-import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { createReviewHandlerRuntime, type ReviewPromptDerivedCacheOptions } from "./review-handler-runtime.ts";
 import { prepareReviewRetryWorkspace, prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 import {
@@ -173,8 +163,6 @@ import {
   buildReviewJobQueueContext,
   buildReviewRetryJobQueueContext,
 } from "./review-job-context.ts";
-import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
-import { buildReviewReducerInput } from "./review-reducer-input.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
@@ -831,115 +819,56 @@ export function createReviewHandler(deps: {
           upstreamCorrelationKey: String(candidateVerificationContext.correlationKey),
         });
 
-        const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
         const reviewOutputSucceeded = result.conclusion === "success";
-        const reviewCandidateFindingContext = await resolveReviewCandidateFindingContext({
+        const {
+          extractionOctokit,
+          reviewCandidateFindingResult,
+          reviewCandidateFindingDetailsSummary,
+          reviewCandidateFindingConfigSnapshot,
+          extractedFindings,
+          feedbackSuppression,
+          reducerResult,
+          directFallbackAllowed,
+          directPublicationAttempted,
+          reviewCandidateApprovalResult,
+          reviewCandidatePublicationAdapter,
+          candidatePublisherResults,
+          reviewCandidateVerificationPublicationEvidence: preparedCandidateVerificationPublicationEvidence,
+        } = await resolveReviewCandidatePublicationPreparation({
+          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
           candidateFinding: result.candidateFinding,
-          executionSucceeded: reviewOutputSucceeded,
-          octokit: extractionOctokit,
+          reviewOutputSucceeded,
+          resultPublished: result.published === true,
+          initialCandidateVerificationPublicationEvidence: reviewCandidateVerificationPublicationEvidence,
           logger,
           baseLog,
           owner: apiOwner,
           repo: apiRepo,
-          prNumber: pr.number,
+          pr,
           deliveryId: event.id,
           reviewOutputKey,
-        });
-        const reviewCandidateFindingResult = reviewCandidateFindingContext.result;
-        const reviewCandidateFindingDetailsSummary = reviewCandidateFindingContext.detailsSummary;
-        const reviewCandidateFindingConfigSnapshot = reviewCandidateFindingContext.configSnapshot;
-        const extractedFindings = reviewCandidateFindingContext.extractedFindings;
-
-        // Feedback-driven suppression (FEED-01 through FEED-10)
-        // Evaluated once and passed into the reducer so publication/deletion side effects remain outside.
-        const feedbackSuppression = await resolveReviewFeedbackSuppression({
           knowledgeStore,
-          repo: `${apiOwner}/${apiRepo}`,
-          config: config.feedback.autoSuppress,
-          logger,
-        });
-
-        const graphValidationLLM = resolveReviewGraphValidationLLM({
-          enabled: config.review.graphValidation.enabled,
-          hasGraphBlastRadius: Boolean(graphBlastRadius),
-          repo: `${apiOwner}/${apiRepo}`,
-          deliveryId: event.id,
-          logger,
-        });
-
-        const reviewReducerInput = buildReviewReducerInput({
-          extractedFindings,
-          reviewCandidateFindingResult,
+          config,
           workspaceDir: workspace.dir,
-          filesByCategory: diffAnalysis?.filesByCategory,
-          filesByLanguage: diffAnalysis?.filesByLanguage,
-          languageRules: config.languageRules,
-          reviewSuppressions: config.review.suppressions,
-          minConfidence: config.review.minConfidence,
-          prioritizationWeights: config.review.prioritization,
-          feedbackSuppression,
-          priorFindingContext: priorFindingCtx,
+          diffAnalysis,
           diffContent: diffContext.diffContent,
-          prBody: pr.body ?? null,
           commitMessages: commitMessagesForLinking,
           tieredFiles,
           graphBlastRadius,
-          graphValidationEnabled: config.review.graphValidation.enabled,
           riskScores,
           resolvedMaxComments,
-          logger,
-          baseLog,
-          repo: `${apiOwner}/${apiRepo}`,
+          priorFindingContext: priorFindingCtx,
           clusterModelStore,
           embeddingProvider,
           guardrailAuditStore,
-          guardrailStrictness: config.guardrails?.strictness ?? "standard",
-          graphValidationLLM,
-          repoDoctrine: repoDoctrineReviewSurface,
-        });
-
-        const reducerResult = await runReviewReducerFailOpen({
-          reducer: reviewReducer,
-          input: reviewReducerInput,
-          graphValidationEnabled: config.review.graphValidation.enabled,
-          logger,
-          baseLog,
-        });
-
-        const reviewCandidateApprovalContext = resolveReviewCandidateApprovalContext({
-          candidates: reviewCandidateFindingResult,
-          reducer: reducerResult,
-          resultPublished: result.published === true,
-          extractedFindingCount: extractedFindings.length,
-          minConfidence: config.review.minConfidence,
-          prDiffText: diffContext.diffContent,
-          maxFixSuggestions: resolvedMaxComments,
-          logger,
-        });
-        const directFallbackAllowed = reviewCandidateApprovalContext.directFallbackAllowed;
-        const directPublicationAttempted = reviewCandidateApprovalContext.directPublicationAttempted;
-        const reviewCandidateApprovalResult: ReviewCandidateApprovalResult = reviewCandidateApprovalContext.approval;
-        const reviewCandidatePublicationAdapter: ReviewCandidatePublicationAdapterResult =
-          reviewCandidateApprovalContext.publicationAdapter;
-
-        const candidateInlinePublication = await publishReviewCandidateInlineComments({
-          payloads: reviewCandidatePublicationAdapter.payloads,
+          repoDoctrineReviewSurface,
+          reviewReducer,
           canPublishVisibleOutput,
-          getOctokit: async () => extractionOctokit,
-          owner: apiOwner,
-          repo: apiRepo,
-          prNumber: pr.number,
-          botHandles: [githubApp.getAppSlug(), "claude"],
-          reviewOutputKey,
-          deliveryId: event.id,
-          logger,
+          appSlug: githubApp.getAppSlug(),
           candidateVerificationContext,
           prDiffCommentabilityIndex,
         });
-        const candidatePublisherResults = candidateInlinePublication.results;
-        reviewCandidateVerificationPublicationEvidence =
-          candidateInlinePublication.candidateVerificationPublicationEvidence
-          ?? reviewCandidateVerificationPublicationEvidence;
+        reviewCandidateVerificationPublicationEvidence = preparedCandidateVerificationPublicationEvidence;
 
         const reviewCandidatePublicationContext = resolveReviewCandidatePublicationRuntimeContext({
           approval: reviewCandidateApprovalResult,
