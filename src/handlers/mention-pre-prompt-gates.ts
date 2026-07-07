@@ -67,7 +67,7 @@ export async function runMentionPrePromptGates(params: {
     return { action: "stop", acquiredWriteKey };
   }
 
-  if (await maybePublishDisabledWriteModeRefusal({
+  const disabledWriteRefusal = await maybePublishDisabledWriteModeRefusal({
     isWriteRequest: params.isWriteRequest,
     isPlanOnly: params.isPlanOnly,
     writeEnabled: params.writeConfigEnabled,
@@ -78,7 +78,11 @@ export async function runMentionPrePromptGates(params: {
     appSlug: params.appSlug,
     logger: params.logger,
     postMentionReply: params.postMentionReply,
-  })) {
+  });
+  if (!disabledWriteRefusal.ok) {
+    return { action: "continue", acquiredWriteKey };
+  }
+  if (disabledWriteRefusal.value.refused) {
     return { action: "stop", acquiredWriteKey };
   }
 

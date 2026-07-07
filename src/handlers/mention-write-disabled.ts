@@ -1,6 +1,13 @@
 import type { Logger } from "pino";
+import { ok, type Result } from "../lib/result.ts";
 import type { MentionEvent } from "./mention-types.ts";
 import { buildWriteDisabledReply } from "./mention-write-replies.ts";
+
+export type DisabledWriteModeRefusalStatus =
+  | { status: "skipped"; refused: false }
+  | { status: "refused"; refused: true };
+
+export type DisabledWriteModeRefusalResult = Result<DisabledWriteModeRefusalStatus, never>;
 
 export async function maybePublishDisabledWriteModeRefusal(params: {
   isWriteRequest: boolean;
@@ -13,9 +20,9 @@ export async function maybePublishDisabledWriteModeRefusal(params: {
   appSlug: string;
   logger: Pick<Logger, "info">;
   postMentionReply: (replyBody: string, options?: { sanitizeMentions?: boolean }) => Promise<void>;
-}): Promise<boolean> {
+}): Promise<DisabledWriteModeRefusalResult> {
   if (!params.isWriteRequest || params.isPlanOnly || params.writeEnabled) {
-    return false;
+    return ok({ status: "skipped", refused: false });
   }
 
   params.logger.info(
@@ -43,5 +50,5 @@ export async function maybePublishDisabledWriteModeRefusal(params: {
     buildWriteDisabledReply({ retryCommand }),
     { sanitizeMentions: false },
   );
-  return true;
+  return ok({ status: "refused", refused: true });
 }

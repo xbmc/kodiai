@@ -358,4 +358,22 @@ describe("publication result structure", () => {
       expect(source, helper).toMatch(/\bok\(/);
     }
   });
+
+  test("keeps disabled write-mode refusal publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./mention-write-disabled.ts", import.meta.url), "utf8");
+    const prePromptSource = readFileSync(
+      new URL("./mention-pre-prompt-gates.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("DisabledWriteModeRefusalResult");
+    expect(source).toContain("Result<DisabledWriteModeRefusalStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(prePromptSource).toContain(
+      "const disabledWriteRefusal = await maybePublishDisabledWriteModeRefusal",
+    );
+    expect(prePromptSource).toContain("if (!disabledWriteRefusal.ok)");
+    expect(prePromptSource).toContain("disabledWriteRefusal.value.refused");
+  });
 });
