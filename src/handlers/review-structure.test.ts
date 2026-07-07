@@ -1462,8 +1462,11 @@ describe("review handler structure", () => {
     const adapterSource = readFileSync(new URL("./review-handler-failure-publication-adapter.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("publishHandlerFailureError: async () => await publishReviewHandlerFailureError({");
+    expect(source).not.toContain("publishHandlerFailureError: buildReviewHandlerFailurePublicationAdapter({\n            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),");
+    expect(source).toContain("buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies");
     expect(source).toContain("buildReviewHandlerFailurePublicationAdapter");
     expect(source).toContain("./review-handler-failure-publication-adapter.ts");
+    expect(adapterSource).toContain("export function buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies");
     expect(adapterSource).toContain("export function buildReviewHandlerFailurePublicationAdapter");
   });
 
