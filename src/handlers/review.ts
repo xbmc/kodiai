@@ -100,8 +100,7 @@ import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.t
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import {
-  buildReviewKnowledgeRecord,
-  persistReviewKnowledge,
+  persistReviewKnowledgeIfAvailable,
 } from "./review-knowledge-persistence.ts";
 import {
   recordReviewPostExecutionSideEffects,
@@ -1066,59 +1065,52 @@ export function createReviewHandler(deps: {
           botHandles: [githubApp.getAppSlug(), "claude"],
         });
 
-        let reviewId: number | undefined;
-
-        if (knowledgeStore) {
-          const knowledgePersistence = await persistReviewKnowledge({
-            knowledgeStore,
-            logger,
+        const reviewId = await persistReviewKnowledgeIfAvailable({
+          knowledgeStore,
+          logger,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          reviewOutputKey,
+          record: {
             repo: `${apiOwner}/${apiRepo}`,
             prNumber: pr.number,
-            reviewOutputKey,
-            reviewRecord: buildReviewKnowledgeRecord({
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              headSha: pr.head.sha,
-              deliveryId: event.id,
-              filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
-              linesChanged,
-              findingCounts,
-              findingsTotal: processedFindings.length,
-              suppressionsApplied,
-              reviewConfig: {
-                mode: config.review.mode,
-                severityMinLevel: config.review.severity.minLevel,
-                focusAreas: config.review.focusAreas,
-                maxComments: config.review.maxComments,
-                suppressionCount: config.review.suppressions.length,
-                minConfidence: config.review.minConfidence,
-                profile: config.review.profile,
-              },
-              shareGlobal: config.knowledge.shareGlobal,
-              reviewPlan: reviewPlanConfigSnapshot,
-              reviewReducer: {
-                status: reducerResult.status,
-                counts: reducerResult.counts,
-                reason: reducerResult.reason,
-              },
-              reviewCandidateFinding: reviewCandidateFindingConfigSnapshot,
-              reviewCandidatePublication: reviewCandidatePublicationRuntime.safeConfigSnapshot,
-              reviewCandidatePublicationFlow,
-              durationMs: result.durationMs,
-              model: config.model,
-              conclusion: result.conclusion,
-            }),
-            processedFindings,
-            suppressionMatchCounts,
-            visibleFindingCount: visibleFindings.length,
-            lowConfidenceFindingCount: lowConfidenceFindings.length,
+            headSha: pr.head.sha,
+            deliveryId: event.id,
+            filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
+            linesChanged,
+            findingCounts,
+            findingsTotal: processedFindings.length,
             suppressionsApplied,
+            reviewConfig: {
+              mode: config.review.mode,
+              severityMinLevel: config.review.severity.minLevel,
+              focusAreas: config.review.focusAreas,
+              maxComments: config.review.maxComments,
+              suppressionCount: config.review.suppressions.length,
+              minConfidence: config.review.minConfidence,
+              profile: config.review.profile,
+            },
             shareGlobal: config.knowledge.shareGlobal,
-          });
-          if (knowledgePersistence.ok) {
-            reviewId = knowledgePersistence.value.reviewId;
-          }
-        }
+            reviewPlan: reviewPlanConfigSnapshot,
+            reviewReducer: {
+              status: reducerResult.status,
+              counts: reducerResult.counts,
+              reason: reducerResult.reason,
+            },
+            reviewCandidateFinding: reviewCandidateFindingConfigSnapshot,
+            reviewCandidatePublication: reviewCandidatePublicationRuntime.safeConfigSnapshot,
+            reviewCandidatePublicationFlow,
+            durationMs: result.durationMs,
+            model: config.model,
+            conclusion: result.conclusion,
+          },
+          processedFindings,
+          suppressionMatchCounts,
+          visibleFindingCount: visibleFindings.length,
+          lowConfidenceFindingCount: lowConfidenceFindings.length,
+          suppressionsApplied,
+          shareGlobal: config.knowledge.shareGlobal,
+        });
 
         await recordReviewPostExecutionSideEffects({
           knowledgeStore,

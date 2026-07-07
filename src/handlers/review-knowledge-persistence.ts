@@ -90,6 +90,14 @@ export type ReviewKnowledgeRecordParams = {
   conclusion: string;
 };
 
+export type OptionalReviewKnowledgePersistenceParams = Omit<
+  Parameters<typeof persistReviewKnowledge>[0],
+  "knowledgeStore" | "reviewRecord"
+> & {
+  knowledgeStore: ReviewKnowledgeStore | undefined;
+  record: ReviewKnowledgeRecordParams;
+};
+
 function sanitizeConfigSnapshotValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => sanitizeConfigSnapshotValue(item));
@@ -294,4 +302,17 @@ export async function persistReviewKnowledge(params: {
     );
     return resultErr(error);
   }
+}
+
+export async function persistReviewKnowledgeIfAvailable(
+  params: OptionalReviewKnowledgePersistenceParams,
+): Promise<number | undefined> {
+  if (!params.knowledgeStore) return undefined;
+  const { knowledgeStore, record, ...persistenceParams } = params;
+  const result = await persistReviewKnowledge({
+    ...persistenceParams,
+    knowledgeStore,
+    reviewRecord: buildReviewKnowledgeRecord(record),
+  });
+  return result.ok ? result.value.reviewId : undefined;
 }

@@ -4,6 +4,7 @@ import { fingerprintFindingTitle } from "../lib/review-finding-metadata.ts";
 import {
   buildReviewKnowledgeConfigSnapshot,
   buildReviewKnowledgeRecord,
+  persistReviewKnowledgeIfAvailable,
   persistReviewKnowledge,
 } from "./review-knowledge-persistence.ts";
 
@@ -347,5 +348,118 @@ describe("persistReviewKnowledge", () => {
       { err, repo: "octo/repo", prNumber: 42 },
       "Knowledge store write failed (non-fatal)",
     );
+  });
+});
+
+describe("persistReviewKnowledgeIfAvailable", () => {
+  test("returns undefined without a knowledge store", async () => {
+    const logger = { debug: mock(() => {}), warn: mock(() => {}) };
+
+    const result = await persistReviewKnowledgeIfAvailable({
+      knowledgeStore: undefined,
+      logger,
+      repo: "octo/repo",
+      prNumber: 42,
+      reviewOutputKey: "review-key",
+      record: {
+        repo: "octo/repo",
+        prNumber: 42,
+        headSha: "abc123",
+        deliveryId: "delivery-1",
+        filesAnalyzed: 1,
+        linesChanged: 10,
+        findingCounts: { critical: 0, major: 0, medium: 0, minor: 0 },
+        findingsTotal: 0,
+        suppressionsApplied: 0,
+        reviewConfig: {
+          mode: "enhanced",
+          severityMinLevel: "medium",
+          focusAreas: [],
+          maxComments: 5,
+          suppressionCount: 0,
+          minConfidence: 0.7,
+          profile: "balanced",
+        },
+        shareGlobal: false,
+        reviewPlan: null,
+        reviewReducer: { status: "ready", counts: {} },
+        reviewCandidateFinding: null,
+        reviewCandidatePublication: null,
+        reviewCandidatePublicationFlow: null,
+        durationMs: 10,
+        model: "claude-test",
+        conclusion: "success",
+      },
+      processedFindings: [],
+      suppressionMatchCounts: new Map(),
+      visibleFindingCount: 0,
+      lowConfidenceFindingCount: 0,
+      suppressionsApplied: 0,
+      shareGlobal: false,
+    });
+
+    expect(result).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("builds the review record and returns the persisted review id", async () => {
+    const store = {
+      recordReview: mock(async (_entry: ReviewRecord) => 321),
+      recordFindings: mock(async (_entries: unknown[]) => {}),
+      recordSuppressionLog: mock(async (_entries: unknown[]) => {}),
+      recordGlobalPattern: mock(async (_entry: unknown) => {}),
+    };
+    const logger = { debug: mock(() => {}), warn: mock(() => {}) };
+
+    const result = await persistReviewKnowledgeIfAvailable({
+      knowledgeStore: store,
+      logger,
+      repo: "octo/repo",
+      prNumber: 42,
+      reviewOutputKey: "review-key",
+      record: {
+        repo: "octo/repo",
+        prNumber: 42,
+        headSha: "abc123",
+        deliveryId: "delivery-1",
+        filesAnalyzed: 1,
+        linesChanged: 10,
+        findingCounts: { critical: 0, major: 1, medium: 0, minor: 0 },
+        findingsTotal: 1,
+        suppressionsApplied: 0,
+        reviewConfig: {
+          mode: "enhanced",
+          severityMinLevel: "medium",
+          focusAreas: ["correctness"],
+          maxComments: 5,
+          suppressionCount: 0,
+          minConfidence: 0.7,
+          profile: "balanced",
+        },
+        shareGlobal: false,
+        reviewPlan: { status: "ready" },
+        reviewReducer: { status: "ready", counts: { output: 1 } },
+        reviewCandidateFinding: null,
+        reviewCandidatePublication: null,
+        reviewCandidatePublicationFlow: null,
+        durationMs: 10,
+        model: "claude-test",
+        conclusion: "success",
+      },
+      processedFindings: [],
+      suppressionMatchCounts: new Map(),
+      visibleFindingCount: 0,
+      lowConfidenceFindingCount: 0,
+      suppressionsApplied: 0,
+      shareGlobal: false,
+    });
+
+    expect(result).toBe(321);
+    expect(store.recordReview).toHaveBeenCalledWith(expect.objectContaining({
+      repo: "octo/repo",
+      prNumber: 42,
+      findingsMajor: 1,
+      configSnapshot: expect.stringContaining("\"focusAreas\":[\"correctness\"]"),
+    }));
   });
 });

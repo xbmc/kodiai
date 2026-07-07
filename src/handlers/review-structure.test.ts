@@ -410,11 +410,13 @@ describe("review handler structure", () => {
     expect(source).not.toContain("configSnapshot: JSON.stringify({");
     expect(source).not.toContain("reviewRecord: {");
     expect(source).not.toContain("buildReviewKnowledgeConfigSnapshot({");
-    expect(source).toContain("persistReviewKnowledge");
-    expect(source).toContain("buildReviewKnowledgeRecord");
+    expect(source).not.toContain("const knowledgePersistence = await persistReviewKnowledge({");
+    expect(source).not.toContain("buildReviewKnowledgeRecord({");
+    expect(source).toContain("persistReviewKnowledgeIfAvailable");
     expect(source).toContain("./review-knowledge-persistence.ts");
     expect(persistenceSource).toContain("buildReviewKnowledgeConfigSnapshot");
     expect(persistenceSource).toContain("buildReviewKnowledgeRecord");
+    expect(persistenceSource).toContain("persistReviewKnowledgeIfAvailable");
   });
 
   test("keeps review learning-memory batch orchestration out of the monster handler", () => {
