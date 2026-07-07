@@ -3,6 +3,7 @@ import type { ReviewRecord } from "../knowledge/types.ts";
 import { fingerprintFindingTitle } from "../lib/review-finding-metadata.ts";
 import {
   buildReviewKnowledgeConfigSnapshot,
+  buildReviewKnowledgeRecord,
   persistReviewKnowledge,
 } from "./review-knowledge-persistence.ts";
 
@@ -89,6 +90,66 @@ describe("buildReviewKnowledgeConfigSnapshot", () => {
     });
     expect(snapshot).not.toContain("RAW BODY MUST NOT LEAK");
     expect(snapshot).not.toContain("diff --git");
+  });
+});
+
+describe("buildReviewKnowledgeRecord", () => {
+  test("maps review summary fields and builds a sanitized config snapshot", () => {
+    const record = buildReviewKnowledgeRecord({
+      repo: "octo/repo",
+      prNumber: 42,
+      headSha: "abc123",
+      deliveryId: "delivery-1",
+      filesAnalyzed: 3,
+      linesChanged: 99,
+      findingCounts: {
+        critical: 1,
+        major: 2,
+        medium: 3,
+        minor: 4,
+      },
+      findingsTotal: 10,
+      suppressionsApplied: 2,
+      reviewConfig: {
+        mode: "enhanced",
+        severityMinLevel: "medium",
+        focusAreas: ["security"],
+        maxComments: 7,
+        suppressionCount: 5,
+        minConfidence: 0.75,
+        profile: "balanced",
+      },
+      shareGlobal: false,
+      reviewPlan: { status: "ready", rawPrompt: "do not store" },
+      reviewReducer: { status: "ready", counts: { output: 10 } },
+      reviewCandidateFinding: { enabled: true },
+      reviewCandidatePublication: { mode: "candidate-approved", body: "raw body" },
+      reviewCandidatePublicationFlow: { outcome: "published" },
+      durationMs: 1234,
+      model: "claude-test",
+      conclusion: "success",
+    });
+
+    expect(record).toMatchObject({
+      repo: "octo/repo",
+      prNumber: 42,
+      headSha: "abc123",
+      deliveryId: "delivery-1",
+      filesAnalyzed: 3,
+      linesChanged: 99,
+      findingsCritical: 1,
+      findingsMajor: 2,
+      findingsMedium: 3,
+      findingsMinor: 4,
+      findingsTotal: 10,
+      suppressionsApplied: 2,
+      durationMs: 1234,
+      model: "claude-test",
+      conclusion: "success",
+    });
+    expect(record.configSnapshot).toContain("\"shareGlobal\":false");
+    expect(record.configSnapshot).not.toContain("do not store");
+    expect(record.configSnapshot).not.toContain("raw body");
   });
 });
 

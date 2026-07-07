@@ -100,7 +100,7 @@ import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.t
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import {
-  buildReviewKnowledgeConfigSnapshot,
+  buildReviewKnowledgeRecord,
   persistReviewKnowledge,
 } from "./review-knowledge-persistence.ts";
 import {
@@ -1075,45 +1075,39 @@ export function createReviewHandler(deps: {
             repo: `${apiOwner}/${apiRepo}`,
             prNumber: pr.number,
             reviewOutputKey,
-            reviewRecord: {
+            reviewRecord: buildReviewKnowledgeRecord({
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
               headSha: pr.head.sha,
               deliveryId: event.id,
               filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
-              linesChanged:
-                linesChanged,
-              findingsCritical: findingCounts.critical,
-              findingsMajor: findingCounts.major,
-              findingsMedium: findingCounts.medium,
-              findingsMinor: findingCounts.minor,
+              linesChanged,
+              findingCounts,
               findingsTotal: processedFindings.length,
               suppressionsApplied,
-              configSnapshot: buildReviewKnowledgeConfigSnapshot({
-                reviewConfig: {
-                  mode: config.review.mode,
-                  severityMinLevel: config.review.severity.minLevel,
-                  focusAreas: config.review.focusAreas,
-                  maxComments: config.review.maxComments,
-                  suppressionCount: config.review.suppressions.length,
-                  minConfidence: config.review.minConfidence,
-                  profile: config.review.profile,
-                },
-                shareGlobal: config.knowledge.shareGlobal,
-                reviewPlan: reviewPlanConfigSnapshot,
-                reviewReducer: {
-                  status: reducerResult.status,
-                  counts: reducerResult.counts,
-                  reason: reducerResult.reason,
-                },
-                reviewCandidateFinding: reviewCandidateFindingConfigSnapshot,
-                reviewCandidatePublication: reviewCandidatePublicationRuntime.safeConfigSnapshot,
-                reviewCandidatePublicationFlow,
-              }),
+              reviewConfig: {
+                mode: config.review.mode,
+                severityMinLevel: config.review.severity.minLevel,
+                focusAreas: config.review.focusAreas,
+                maxComments: config.review.maxComments,
+                suppressionCount: config.review.suppressions.length,
+                minConfidence: config.review.minConfidence,
+                profile: config.review.profile,
+              },
+              shareGlobal: config.knowledge.shareGlobal,
+              reviewPlan: reviewPlanConfigSnapshot,
+              reviewReducer: {
+                status: reducerResult.status,
+                counts: reducerResult.counts,
+                reason: reducerResult.reason,
+              },
+              reviewCandidateFinding: reviewCandidateFindingConfigSnapshot,
+              reviewCandidatePublication: reviewCandidatePublicationRuntime.safeConfigSnapshot,
+              reviewCandidatePublicationFlow,
               durationMs: result.durationMs,
               model: config.model,
               conclusion: result.conclusion,
-            },
+            }),
             processedFindings,
             suppressionMatchCounts,
             visibleFindingCount: visibleFindings.length,

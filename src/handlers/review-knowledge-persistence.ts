@@ -63,6 +63,33 @@ export type ReviewKnowledgeFinding = {
 export type ReviewKnowledgePersistenceResult =
   Result<{ reviewId: number }>;
 
+export type ReviewKnowledgeRecordParams = {
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  deliveryId: string;
+  filesAnalyzed: number;
+  linesChanged: number;
+  findingCounts: {
+    critical: number;
+    major: number;
+    medium: number;
+    minor: number;
+  };
+  findingsTotal: number;
+  suppressionsApplied: number;
+  reviewConfig: ReviewKnowledgeConfigSnapshotParams["reviewConfig"];
+  shareGlobal: boolean;
+  reviewPlan: unknown;
+  reviewReducer: ReviewKnowledgeConfigSnapshotParams["reviewReducer"];
+  reviewCandidateFinding: unknown;
+  reviewCandidatePublication: unknown;
+  reviewCandidatePublicationFlow: unknown;
+  durationMs: number | undefined;
+  model: string;
+  conclusion: string;
+};
+
 function sanitizeConfigSnapshotValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => sanitizeConfigSnapshotValue(item));
@@ -98,6 +125,37 @@ export function buildReviewKnowledgeConfigSnapshot(
     reviewCandidatePublication: sanitizeConfigSnapshotValue(params.reviewCandidatePublication),
     reviewCandidatePublicationFlow: sanitizeConfigSnapshotValue(params.reviewCandidatePublicationFlow),
   });
+}
+
+export function buildReviewKnowledgeRecord(
+  params: ReviewKnowledgeRecordParams,
+): ReviewRecord {
+  return {
+    repo: params.repo,
+    prNumber: params.prNumber,
+    headSha: params.headSha,
+    deliveryId: params.deliveryId,
+    filesAnalyzed: params.filesAnalyzed,
+    linesChanged: params.linesChanged,
+    findingsCritical: params.findingCounts.critical,
+    findingsMajor: params.findingCounts.major,
+    findingsMedium: params.findingCounts.medium,
+    findingsMinor: params.findingCounts.minor,
+    findingsTotal: params.findingsTotal,
+    suppressionsApplied: params.suppressionsApplied,
+    configSnapshot: buildReviewKnowledgeConfigSnapshot({
+      reviewConfig: params.reviewConfig,
+      shareGlobal: params.shareGlobal,
+      reviewPlan: params.reviewPlan,
+      reviewReducer: params.reviewReducer,
+      reviewCandidateFinding: params.reviewCandidateFinding,
+      reviewCandidatePublication: params.reviewCandidatePublication,
+      reviewCandidatePublicationFlow: params.reviewCandidatePublicationFlow,
+    }),
+    durationMs: params.durationMs,
+    model: params.model,
+    conclusion: params.conclusion,
+  };
 }
 
 export async function persistReviewKnowledge(params: {
