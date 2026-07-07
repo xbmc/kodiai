@@ -974,7 +974,7 @@ export function createMentionHandler(deps: {
         );
 
         try {
-          await publishMentionHandlerFailureError({
+          const handlerFailurePublication = await publishMentionHandlerFailureError({
             githubApp,
             installationId: event.installationId,
             mention,
@@ -986,6 +986,12 @@ export function createMentionHandler(deps: {
             canPublishExplicitReviewOutput,
             error: err,
           });
+          if (!handlerFailurePublication.ok) {
+            logger.error(
+              { err: handlerFailurePublication.err.error },
+              "Failed to post error comment",
+            );
+          }
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment");
         }

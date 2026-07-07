@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { MentionEvent } from "./mention-types.ts";
 import type { MentionErrorPostResult } from "./mention-publication-state.ts";
 import {
   publishMentionErrorFallback,
+  publishMentionHandlerFailureError,
   publishMentionSuccessFallback,
 } from "./mention-result-fallback-publication.ts";
 
@@ -54,6 +56,98 @@ describe("publishMentionSuccessFallback", () => {
       },
     });
     expect(postMentionReply).not.toHaveBeenCalled();
+  });
+});
+
+describe("publishMentionHandlerFailureError", () => {
+  function mention(): MentionEvent {
+    return {
+      surface: "issue_comment",
+      issueNumber: 42,
+    } as MentionEvent;
+  }
+
+  test("posts a handler failure error and returns a successful Result", async () => {
+    const postMentionHandlerError = mock(async (params: { errorBody: string }) => {
+      expect(params.errorBody).toContain("Kodiai encountered an error");
+      expect(params.errorBody).toContain("Kodiai could not complete the request");
+    });
+
+    const result = await publishMentionHandlerFailureError({
+      githubApp: {} as never,
+      installationId: 123,
+      mention: mention(),
+      possibleHandles: ["kodiai"],
+      explicitReviewRequest: true,
+      reviewOutputKey: "review-output-key",
+      canPublishExplicitReviewOutput: () => true,
+      logger: {} as never,
+      error: new Error("handler exploded"),
+      postMentionHandlerError,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: true,
+        resolution: "handler-failure-error",
+      },
+    });
+    expect(postMentionHandlerError).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns a skipped Result when explicit review publish rights are lost", async () => {
+    const postMentionHandlerError = mock(async () => undefined);
+
+    const result = await publishMentionHandlerFailureError({
+      githubApp: {} as never,
+      installationId: 123,
+      mention: mention(),
+      possibleHandles: ["kodiai"],
+      explicitReviewRequest: true,
+      reviewOutputKey: "review-output-key",
+      canPublishExplicitReviewOutput: () => false,
+      logger: {} as never,
+      error: new Error("handler exploded"),
+      postMentionHandlerError,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: false,
+        resolution: "skipped",
+      },
+    });
+    expect(postMentionHandlerError).not.toHaveBeenCalled();
+  });
+
+  test("returns an error Result when handler failure publication fails", async () => {
+    const publishError = new Error("comment failed");
+
+    const result = await publishMentionHandlerFailureError({
+      githubApp: {} as never,
+      installationId: 123,
+      mention: mention(),
+      possibleHandles: ["kodiai"],
+      explicitReviewRequest: false,
+      reviewOutputKey: undefined,
+      canPublishExplicitReviewOutput: () => true,
+      logger: {} as never,
+      error: new Error("handler exploded"),
+      postMentionHandlerError: mock(async () => {
+        throw publishError;
+      }),
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      err: {
+        published: false,
+        resolution: "handler-failure-error-failed",
+        error: publishError,
+      },
+    });
   });
 });
 

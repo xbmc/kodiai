@@ -37,6 +37,22 @@ export type MentionErrorFallbackPublicationStatus = Result<
 
 export type MentionSuccessFallbackPublicationStatus = Result<MentionErrorFallbackPublicationResult>;
 
+export type MentionHandlerFailureErrorPublicationValue = {
+  published: boolean;
+  resolution: "handler-failure-error" | "skipped";
+};
+
+export type MentionHandlerFailureErrorPublicationError = {
+  published: false;
+  resolution: "handler-failure-error-failed";
+  error: unknown;
+};
+
+export type MentionHandlerFailureErrorPublicationStatus = Result<
+  MentionHandlerFailureErrorPublicationValue,
+  MentionHandlerFailureErrorPublicationError
+>;
+
 export async function publishMentionSuccessFallback(params: {
   explicitReviewRequest: boolean;
   hasUnpublishedFindings: boolean;
@@ -127,7 +143,8 @@ export async function publishMentionHandlerFailureError(params: {
   canPublishExplicitReviewOutput: (reason: string, reviewOutputKey: string | undefined) => boolean;
   logger: Parameters<typeof postMentionHandlerError>[0]["logger"];
   error: unknown;
-}): Promise<void> {
+  postMentionHandlerError?: typeof postMentionHandlerError;
+}): Promise<MentionHandlerFailureErrorPublicationStatus> {
   if (
     params.explicitReviewRequest &&
     !params.canPublishExplicitReviewOutput(
@@ -135,19 +152,36 @@ export async function publishMentionHandlerFailureError(params: {
       params.reviewOutputKey,
     )
   ) {
-    return;
+    return ok({
+      published: false,
+      resolution: "skipped",
+    });
   }
 
   const category = classifyError(params.error, false);
   const detail = params.error instanceof Error ? params.error.message : "An unexpected error occurred";
   const errorBody = buildMentionErrorFallbackBody({ category, detail });
-  await postMentionHandlerError({
-    githubApp: params.githubApp,
-    installationId: params.installationId,
-    mention: params.mention,
-    possibleHandles: params.possibleHandles,
-    logger: params.logger,
-    guardrailAuditStore: params.guardrailAuditStore,
-    errorBody,
+  const publishHandlerError = params.postMentionHandlerError ?? postMentionHandlerError;
+  try {
+    await publishHandlerError({
+      githubApp: params.githubApp,
+      installationId: params.installationId,
+      mention: params.mention,
+      possibleHandles: params.possibleHandles,
+      logger: params.logger,
+      guardrailAuditStore: params.guardrailAuditStore,
+      errorBody,
+    });
+  } catch (error) {
+    return err({
+      published: false,
+      resolution: "handler-failure-error-failed",
+      error,
+    });
+  }
+
+  return ok({
+    published: true,
+    resolution: "handler-failure-error",
   });
 }
