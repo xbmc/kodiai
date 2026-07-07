@@ -641,6 +641,17 @@ describe("review handler structure", () => {
     expect(source).toContain("publishBoundedFirstPassReview");
   });
 
+  test("keeps bounded first-pass timeout evidence logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const evidenceSource = readFileSync(new URL("./review-bounded-first-pass-evidence.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Published bounded first-pass review on timeout");
+    expect(source).toContain("logBoundedFirstPassReviewPublished");
+    expect(source).toContain("./review-bounded-first-pass-evidence.ts");
+    expect(evidenceSource).toContain("Published bounded first-pass review on timeout");
+    expect(evidenceSource).toContain("boundedReason");
+  });
+
   test("keeps review output idempotency gate out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

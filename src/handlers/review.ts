@@ -215,6 +215,7 @@ import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
+import { logBoundedFirstPassReviewPublished } from "./review-bounded-first-pass-evidence.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1709,25 +1710,23 @@ export function createReviewHandler(deps: {
 
               publishedPartialReview = true;
 
-              logger.info(
-                {
-                  deliveryId: event.id,
-                  prNumber: pr.number,
-                  partialCommentId,
-                  boundedReason: timeoutFirstPass.boundedReason,
-                  evidenceSource: timeoutFirstPass.evidenceSource,
-                  coveredFiles: timeoutFirstPass.coveredScope?.reviewedFiles ?? null,
-                  inspectedFiles: timeoutFirstPass.inspectedScope?.inspectedFiles ?? timeoutInspectedFiles.length,
-                  remainingFiles: timeoutFirstPass.remainingScope?.remainingFiles ?? null,
-                  findingCount: timeoutFindingCount,
-                  hasPartialResults,
-                  isChronicTimeout,
-                  recentTimeouts,
-                  retryState,
-                  zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
-                },
-                "Published bounded first-pass review on timeout",
-              );
+              logBoundedFirstPassReviewPublished({
+                logger,
+                deliveryId: event.id,
+                prNumber: pr.number,
+                partialCommentId,
+                boundedReason: timeoutFirstPass.boundedReason,
+                evidenceSource: timeoutFirstPass.evidenceSource,
+                coveredFiles: timeoutFirstPass.coveredScope?.reviewedFiles ?? null,
+                inspectedFiles: timeoutFirstPass.inspectedScope?.inspectedFiles ?? timeoutInspectedFiles.length,
+                remainingFiles: timeoutFirstPass.remainingScope?.remainingFiles ?? null,
+                findingCount: timeoutFindingCount,
+                hasPartialResults,
+                isChronicTimeout,
+                recentTimeouts,
+                retryState,
+                zeroEvidenceFailure: timeoutFirstPass.zeroEvidenceFailure,
+              });
 
               await publishTimeoutReviewDetailsMerge({
                 octokit,
