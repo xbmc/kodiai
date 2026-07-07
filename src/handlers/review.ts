@@ -107,13 +107,12 @@ import { buildInitialReviewPromptRuntime, buildRetryReviewPromptRuntime } from "
 import {
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
-import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import { buildReviewRuntimePlan } from "./review-runtime-plan.ts";
 import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
-import { buildInitialReviewPromptContext, buildRetryReviewPromptContext } from "./review-prompt-build-context.ts";
+import { buildInitialReviewPromptContext } from "./review-prompt-build-context.ts";
 import {
   buildReviewKnowledgeConfigSnapshot,
   persistReviewKnowledge,
@@ -208,6 +207,7 @@ import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completio
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
+import { buildReviewRetryPromptBuildContext } from "./review-retry-prompt-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1657,7 +1657,6 @@ export function createReviewHandler(deps: {
                 retryCheckpointEnabled,
                 retryScopeRatio,
                 retryDeliveryId,
-                retryContinuationCompaction,
               } = retryEnqueueContext;
               const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
                 familyKey: reviewFamilyKey,
@@ -1722,16 +1721,10 @@ export function createReviewHandler(deps: {
                       fetchRemoteTrackingBranchFn,
                     });
 
-                    const retryCustomInstructions = buildReviewRetryCustomInstructions({
-                      basePrompt: config.review.prompt,
-                      isTimeout: result.isTimeout === true,
-                      checkpointEnabled: retryCheckpointEnabled,
-                    });
-
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
                     let retryReviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
                     let retryReviewPromptDerivedCacheReason: string | null = null;
-                    const retryPromptBuildContext = buildRetryReviewPromptContext({
+                    const retryPromptBuildContext = buildReviewRetryPromptBuildContext({
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
@@ -1740,9 +1733,6 @@ export function createReviewHandler(deps: {
                       prAuthor: pr.user.login,
                       baseBranch: pr.base.ref,
                       headBranch: pr.head.ref,
-                      changedFiles: retryFiles,
-                      customInstructions: retryCustomInstructions,
-                      checkpointEnabled: retryCheckpointEnabled,
                       mode: config.review.mode,
                       severityMinLevel: resolvedSeverityMinLevel,
                       focusAreas: resolvedFocusAreas,
@@ -1775,10 +1765,11 @@ export function createReviewHandler(deps: {
                       structuralImpact: structuralImpactForReview,
                       repoDoctrine: repoDoctrineProjection,
                       taskType: reviewRouting.taskType,
-                      retryContinuationCompaction: retryContinuationCompaction ?? null,
                       checkpoint,
-                      promptBudgetOutcomes: buildPromptBudgetOutcomes(visibleBudgetState.promptSectionRecords),
-                      cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap((observation) => observation.safetySignalNames ?? []),
+                      basePrompt: config.review.prompt,
+                      isTimeout: result.isTimeout === true,
+                      retryEnqueueContext,
+                      visibleBudgetState,
                     });
                     const retryPromptRuntime = await buildRetryReviewPromptRuntime({
                       deliveryId: retryDeliveryId,

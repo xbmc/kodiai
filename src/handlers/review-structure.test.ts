@@ -751,10 +751,15 @@ describe("review handler structure", () => {
   test("keeps retry review prompt context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptContextSource = readFileSync(new URL("./review-prompt-build-context.ts", import.meta.url), "utf8");
+    const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryPromptBuildContext = {");
-    expect(source).toContain("buildRetryReviewPromptContext");
-    expect(source).toContain("./review-prompt-build-context.ts");
+    expect(source).not.toContain("buildRetryReviewPromptContext({");
+    expect(source).not.toContain("cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap");
+    expect(source).toContain("buildReviewRetryPromptBuildContext");
+    expect(source).toContain("./review-retry-prompt-context.ts");
+    expect(retryPromptContextSource).toContain("buildRetryReviewPromptContext");
+    expect(retryPromptContextSource).toContain("./review-prompt-build-context.ts");
     expect(promptContextSource).toContain("buildRetryReviewPromptContext");
     expect(promptContextSource).toContain("retryPromptCompaction");
   });
@@ -1139,12 +1144,14 @@ describe("review handler structure", () => {
 
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("This is a retry of a timed-out review with reduced scope.");
     expect(source).not.toContain("This is a retry of a review that exhausted max turns with reduced scope.");
     expect(source).not.toContain("save_review_checkpoint with a summaryDraft");
-    expect(source).toContain("buildReviewRetryCustomInstructions");
-    expect(source).toContain("./review-retry-instructions.ts");
+    expect(source).toContain("buildReviewRetryPromptBuildContext");
+    expect(retryPromptContextSource).toContain("buildReviewRetryCustomInstructions");
+    expect(retryPromptContextSource).toContain("./review-retry-instructions.ts");
   });
 
   test("keeps retry execution outcome telemetry out of the monster handler", () => {
