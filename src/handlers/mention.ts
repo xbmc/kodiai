@@ -60,7 +60,10 @@ import {
   findLatestReviewPredecessor,
   prepareMentionCheckoutAndLoadConfig,
 } from "./mention-workspace.ts";
-import { createMentionReviewWorkRuntime } from "./mention-review-work-runtime.ts";
+import {
+  createMentionReviewWorkRuntime,
+  usesCanonicalExplicitReviewHandle,
+} from "./mention-review-work-runtime.ts";
 import { createMentionWriteRateLimitRuntime } from "./mention-write-rate-limit.ts";
 import { evaluateMentionWritePreflight } from "./mention-write-preflight.ts";
 import { maybePublishDisabledWriteModeRefusal } from "./mention-write-disabled.ts";
@@ -276,11 +279,11 @@ export function createMentionHandler(deps: {
       const reviewWorkAttempt = reviewWorkRuntime.attempt;
       let explicitReviewRequest = false;
       let reviewOutputKey: string | undefined;
-      const explicitReviewUsesCanonicalHandle =
-        reviewWorkAttempt !== undefined && (
-          mention.commentBody.toLowerCase().includes(`@${appSlug.toLowerCase()}`)
-          || mention.commentBody.toLowerCase().includes("@kodai")
-        );
+      const explicitReviewUsesCanonicalHandle = usesCanonicalExplicitReviewHandle({
+        attempt: reviewWorkAttempt,
+        appSlug,
+        commentBody: mention.commentBody,
+      });
 
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);

@@ -46,6 +46,15 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-review-work-runtime.ts");
   });
 
+  test("keeps canonical explicit-review handle matching out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("mention.commentBody.toLowerCase().includes");
+    expect(source).not.toContain("`@${appSlug.toLowerCase()}`");
+    expect(source).not.toContain("mention.commentBody.toLowerCase().includes(\"@kodai\")");
+    expect(source).toContain("usesCanonicalExplicitReviewHandle");
+  });
+
   test("keeps write rate limit success key construction out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 

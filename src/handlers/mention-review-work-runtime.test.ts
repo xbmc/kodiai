@@ -6,7 +6,10 @@ import {
   type ReviewWorkAttempt,
 } from "../jobs/review-work-coordinator.ts";
 import type { MentionEvent } from "./mention-types.ts";
-import { createMentionReviewWorkRuntime } from "./mention-review-work-runtime.ts";
+import {
+  createMentionReviewWorkRuntime,
+  usesCanonicalExplicitReviewHandle,
+} from "./mention-review-work-runtime.ts";
 
 function createMention(): MentionEvent {
   return {
@@ -43,6 +46,32 @@ function claimAttempt(coordinator: ReviewWorkCoordinator): ReviewWorkAttempt {
 }
 
 describe("mention review work runtime", () => {
+  test("recognizes canonical explicit review handles only when review work is claimed", () => {
+    const coordinator = createReviewWorkCoordinator();
+    const attempt = claimAttempt(coordinator);
+
+    expect(usesCanonicalExplicitReviewHandle({
+      attempt,
+      appSlug: "kodiai",
+      commentBody: "Please @KODIAI review this",
+    })).toBe(true);
+    expect(usesCanonicalExplicitReviewHandle({
+      attempt,
+      appSlug: "kodiai",
+      commentBody: "Please @kodai review this",
+    })).toBe(true);
+    expect(usesCanonicalExplicitReviewHandle({
+      attempt: undefined,
+      appSlug: "kodiai",
+      commentBody: "Please @kodiai review this",
+    })).toBe(false);
+    expect(usesCanonicalExplicitReviewHandle({
+      attempt,
+      appSlug: "kodiai",
+      commentBody: "Please @claude review this",
+    })).toBe(false);
+  });
+
   test("releases an uncommitted queued review attempt on finalize", () => {
     const coordinator = createReviewWorkCoordinator();
     const attempt = claimAttempt(coordinator);

@@ -17,6 +17,20 @@ export type MentionReviewWorkRuntime = {
   finalize(): void;
 };
 
+export function usesCanonicalExplicitReviewHandle(params: {
+  attempt: ReviewWorkAttempt | undefined;
+  appSlug: string;
+  commentBody: string;
+}): boolean {
+  if (!params.attempt) {
+    return false;
+  }
+
+  const commentBodyLower = params.commentBody.toLowerCase();
+  return commentBodyLower.includes(`@${params.appSlug.toLowerCase()}`)
+    || commentBodyLower.includes("@kodai");
+}
+
 export function createMentionReviewWorkRuntime(params: {
   attempt: ReviewWorkAttempt | undefined;
   coordinator: ReviewWorkCoordinator;
