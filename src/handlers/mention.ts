@@ -20,7 +20,6 @@ import { classifyError } from "../lib/errors.ts";
 import {
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
-import { isMentionAuthorAllowed } from "./mention-allowed-users.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
   evaluateMentionConversationLimit,
@@ -73,7 +72,6 @@ import {
 import { projectExplicitMentionReviewLifecycle } from "./mention-explicit-review-lifecycle.ts";
 import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
 import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-review-publish-decision.ts";
-import { resolveMentionRequestContext } from "./mention-request-context.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
@@ -87,6 +85,7 @@ import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
+import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -271,72 +270,17 @@ export function createMentionHandler(deps: {
           writeRateLimit,
         } = workspaceRuntime;
 
-        // Check mention.enabled
-        if (!config.mention.enabled) {
-          logger.info(
-            { owner: mention.owner, repo: mention.repo },
-            "Mentions disabled in config, skipping",
-          );
-          return;
-        }
-
         const findingLookup = createMentionFindingLookup(deps.knowledgeStore);
 
-        // Check mention.allowedUsers (CONFIG-07)
-        if (!isMentionAuthorAllowed(mention.commentAuthor, config.mention.allowedUsers)) {
-          logger.info(
-            {
-              owner: mention.owner,
-              repo: mention.repo,
-              commentAuthor: mention.commentAuthor,
-              gate: "mention-allowed-users",
-              gateResult: "skipped",
-              skipReason: "user-not-allowlisted",
-            },
-            "Mention author not in allowedUsers, skipping",
-          );
-          return;
-        }
-
-        // Global alias: treat @claude as an always-on alias for mentions.
-        // (Repo-level opt-out remains possible via mention.acceptClaudeAlias=false,
-        // but the alias is enabled by default to support immediate cutover.)
-        const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;
-        const mentionRequestContext = resolveMentionRequestContext({
+        const mentionConfigRequestGate = resolveMentionConfigRequestGate({
+          mention,
+          mentionConfig: config.mention,
           appSlug,
-          acceptClaudeAlias,
-          commentBody: mention.commentBody,
+          logger,
         });
+        if (mentionConfigRequestGate.action === "stop") return;
+        const { acceptClaudeAlias, requestContext: mentionRequestContext } = mentionConfigRequestGate;
         const acceptedHandles = mentionRequestContext.acceptedHandles;
-        if (mentionRequestContext.action === "skip" && mentionRequestContext.reason === "handle-mismatch") {
-          logger.info(
-            {
-              surface: mention.surface,
-              owner: mention.owner,
-              repo: mention.repo,
-              issueNumber: mention.issueNumber,
-              prNumber: mention.prNumber,
-              acceptClaudeAlias,
-            },
-            "Mention does not match accepted handles for repo; skipping",
-          );
-          return;
-        }
-
-        if (mentionRequestContext.action === "skip") {
-          logger.info(
-            {
-              surface: mention.surface,
-              owner: mention.owner,
-              repo: mention.repo,
-              issueNumber: mention.issueNumber,
-              prNumber: mention.prNumber,
-              acceptClaudeAlias,
-            },
-            "Mention contained no question after stripping mention; skipping",
-          );
-          return;
-        }
         const { userQuestion, formatterSuggestionRequest } = mentionRequestContext;
 
         const mentionWriteRequestContext = resolveMentionWriteRequestContext({

@@ -226,11 +226,13 @@ describe("mention handler structure", () => {
 
   test("keeps accepted mention handle normalization out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const gateSource = readFileSync(new URL("./mention-config-request-gate.ts", import.meta.url), "utf8");
     const requestContextSource = readFileSync(new URL("./mention-request-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("acceptedBodyLower");
     expect(source).not.toContain(".map((h) => (h.startsWith(\"@\") ? h : `@${h}`))");
-    expect(source).toContain("./mention-request-context.ts");
+    expect(source).toContain("./mention-config-request-gate.ts");
+    expect(gateSource).toContain("./mention-request-context.ts");
     expect(requestContextSource).toContain("./mention-handle-match.ts");
     expect(requestContextSource).toContain("buildAcceptedMentionHandles");
     expect(requestContextSource).toContain("mentionBodyMatchesAcceptedHandles");
@@ -251,13 +253,30 @@ describe("mention handler structure", () => {
 
   test("keeps post-config mention request context parsing out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const gateSource = readFileSync(new URL("./mention-config-request-gate.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const acceptedHandles = buildAcceptedMentionHandles({ appSlug, acceptClaudeAlias });");
     expect(source).not.toContain("const userQuestion = stripMention(mention.commentBody, acceptedHandles);");
     expect(source).not.toContain("const formatterSuggestionRequest = detectFormatterSuggestionRequest(userQuestion);");
     expect(source).not.toContain("userQuestion.trim().length === 0");
-    expect(source).toContain("resolveMentionRequestContext");
-    expect(source).toContain("./mention-request-context.ts");
+    expect(source).toContain("resolveMentionConfigRequestGate");
+    expect(gateSource).toContain("resolveMentionRequestContext");
+    expect(gateSource).toContain("./mention-request-context.ts");
+  });
+
+  test("keeps mention config and request skip gating out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const gateSource = readFileSync(new URL("./mention-config-request-gate.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Mentions disabled in config, skipping");
+    expect(source).not.toContain("Mention author not in allowedUsers, skipping");
+    expect(source).not.toContain("Mention does not match accepted handles for repo; skipping");
+    expect(source).not.toContain("Mention contained no question after stripping mention; skipping");
+    expect(source).not.toContain("const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;");
+    expect(source).toContain("resolveMentionConfigRequestGate");
+    expect(source).toContain("./mention-config-request-gate.ts");
+    expect(gateSource).toContain("resolveMentionRequestContext");
+    expect(gateSource).toContain("isMentionAuthorAllowed");
   });
 
   test("keeps mention write request projection out of the monster handler", () => {
@@ -274,12 +293,14 @@ describe("mention handler structure", () => {
 
   test("keeps allowed-users matching out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const gateSource = readFileSync(new URL("./mention-config-request-gate.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const normalizedAuthor =");
     expect(source).not.toContain("config.mention.allowedUsers.map((u) => u.toLowerCase())");
     expect(source).not.toContain("allowed.includes(normalizedAuthor)");
-    expect(source).toContain("./mention-allowed-users.ts");
-    expect(source).toContain("isMentionAuthorAllowed");
+    expect(source).toContain("resolveMentionConfigRequestGate");
+    expect(gateSource).toContain("./mention-allowed-users.ts");
+    expect(gateSource).toContain("isMentionAuthorAllowed");
   });
 
   test("keeps conversation limit policy out of the monster handler", () => {
