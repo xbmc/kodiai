@@ -214,6 +214,7 @@ import { createReviewJobRuntime } from "./review-job-runtime.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
+import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1454,22 +1455,17 @@ export function createReviewHandler(deps: {
           logContext: baseLog,
         });
 
-        if (result.conclusion === "success" && result.published) {
-          logger.info(
-            {
-              evidenceType: "review",
-              outcome: "published-output",
-              deliveryId: event.id,
-              installationId: event.installationId,
-              owner: apiOwner,
-              repoName: apiRepo,
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              reviewOutputKey,
-            },
-            "Evidence bundle",
-          );
-        }
+        logPublishedReviewOutputEvidence({
+          result,
+          logger,
+          deliveryId: event.id,
+          installationId: event.installationId,
+          owner: apiOwner,
+          repoName: apiRepo,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          reviewOutputKey,
+        });
 
         const executionOutcome = resolveReviewExecutionOutcomeContext({
           result,

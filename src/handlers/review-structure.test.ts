@@ -283,6 +283,18 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-post-execution-side-effects.ts");
   });
 
+  test("keeps published-output evidence bundle logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const evidenceSource = readFileSync(new URL("./review-published-output-evidence.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("outcome: \"published-output\"");
+    expect(source).not.toContain("\"Evidence bundle\"");
+    expect(source).toContain("logPublishedReviewOutputEvidence");
+    expect(source).toContain("./review-published-output-evidence.ts");
+    expect(evidenceSource).toContain("outcome: \"published-output\"");
+    expect(evidenceSource).toContain("\"Evidence bundle\"");
+  });
+
   test("keeps review cache telemetry fail-open helper out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
