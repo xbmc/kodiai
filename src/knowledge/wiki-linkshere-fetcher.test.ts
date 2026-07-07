@@ -33,7 +33,8 @@ async function flushPromises(): Promise<void> {
 
 async function advanceLinkshereIntervals(count: number): Promise<void> {
   for (let i = 0; i < count; i++) {
-    vi.advanceTimersByTime(LINKSHERE_RATE_LIMIT_MS);
+    await flushPromises();
+    vi.advanceTimersToNextTimer();
     await flushPromises();
   }
 }

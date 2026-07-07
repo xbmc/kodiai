@@ -137,7 +137,10 @@ describe("runWithAbortSignalTimeout", () => {
       runWithAbortSignalTimeout(
         "stubborn operation",
         1,
-        async () => await new Promise<string>(() => undefined),
+        async () => {
+          await sleep(100);
+          return "late";
+        },
       ).then(
         () => "resolved",
         (error) => String(error),
