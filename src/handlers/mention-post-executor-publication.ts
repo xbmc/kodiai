@@ -174,28 +174,32 @@ export async function publishMentionPostExecutorOutputs(params: {
     return ok({ writeOutputHandled: true });
   }
 
+  const fallbackPublication = await publishMentionExecutionFallbacks({
+    writeEnabled: params.writeEnabled,
+    reviewPublishRightsLost: params.reviewPublishRightsLost,
+    mentionOutputPublished: publicationState.mentionOutputPublished,
+    publishResolution: publicationState.publishResolution,
+    publishFallbackDelivery: publicationState.publishFallbackDelivery,
+    result,
+    explicitReviewRequest: params.explicitReviewRequest,
+    hasUnpublishedFindings: explicitReviewPublishEvaluation.hasUnpublishedFindings,
+    findingLines: explicitReviewResultFindingLines,
+    skipReason: explicitReviewPublishEvaluation.skipReason,
+    routingReason: params.explicitReviewRoutingReason,
+    reviewOutputKey: params.reviewOutputKey,
+    surface: params.mention.surface,
+    issueNumber: params.mention.issueNumber,
+    canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
+    postMentionReply: params.postMentionReply,
+    postMentionError: params.postMentionError,
+    logger: params.logger,
+  });
+  if (!fallbackPublication.ok) {
+    return err({ error: fallbackPublication.err });
+  }
   publicationState = {
     ...publicationState,
-    ...await publishMentionExecutionFallbacks({
-      writeEnabled: params.writeEnabled,
-      reviewPublishRightsLost: params.reviewPublishRightsLost,
-      mentionOutputPublished: publicationState.mentionOutputPublished,
-      publishResolution: publicationState.publishResolution,
-      publishFallbackDelivery: publicationState.publishFallbackDelivery,
-      result,
-      explicitReviewRequest: params.explicitReviewRequest,
-      hasUnpublishedFindings: explicitReviewPublishEvaluation.hasUnpublishedFindings,
-      findingLines: explicitReviewResultFindingLines,
-      skipReason: explicitReviewPublishEvaluation.skipReason,
-      routingReason: params.explicitReviewRoutingReason,
-      reviewOutputKey: params.reviewOutputKey,
-      surface: params.mention.surface,
-      issueNumber: params.mention.issueNumber,
-      canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
-      postMentionReply: params.postMentionReply,
-      postMentionError: params.postMentionError,
-      logger: params.logger,
-    }),
+    ...fallbackPublication.value,
   };
 
   if (publicationState.shouldDeferCompletionLog) {

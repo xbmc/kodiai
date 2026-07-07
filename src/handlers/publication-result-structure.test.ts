@@ -118,4 +118,18 @@ describe("publication result structure", () => {
     expect(handlerSource).toContain("if (!postExecutorPublication.ok)");
     expect(handlerSource).toContain("postExecutorPublication.value.writeOutputHandled");
   });
+
+  test("keeps mention execution fallback publication boundary on shared Result shape", () => {
+    const source = readFileSync(new URL("./mention-execution-fallbacks.ts", import.meta.url), "utf8");
+    const postExecutorSource = readFileSync(
+      new URL("./mention-post-executor-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("MentionExecutionFallbackPublicationResult = Result<");
+    expect(source).toMatch(/\bok\(/);
+    expect(postExecutorSource).toContain("if (!fallbackPublication.ok)");
+    expect(postExecutorSource).toContain("...fallbackPublication.value");
+  });
 });

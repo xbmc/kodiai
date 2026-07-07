@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { ok, type Result } from "../lib/result.ts";
 import type { ExplicitMentionReviewPublishSkipReason } from "../review-orchestration/explicit-mention-review-publish.ts";
 import {
   type MentionErrorDelivery,
@@ -26,6 +27,8 @@ export type MentionExecutionFallbackState = {
   publishFallbackDelivery: MentionErrorDelivery | null;
 };
 
+export type MentionExecutionFallbackPublicationResult = Result<MentionExecutionFallbackState>;
+
 export async function publishMentionExecutionFallbacks(params: MentionExecutionFallbackState & {
   writeEnabled: boolean;
   reviewPublishRightsLost: boolean;
@@ -42,7 +45,7 @@ export async function publishMentionExecutionFallbacks(params: MentionExecutionF
   postMentionReply: (replyBody: string) => Promise<void>;
   postMentionError: (errorBody: string) => Promise<MentionErrorPostResult>;
   logger: Logger;
-}): Promise<MentionExecutionFallbackState> {
+}): Promise<MentionExecutionFallbackPublicationResult> {
   let mentionOutputPublished = params.mentionOutputPublished;
   let publishResolution = params.publishResolution;
   let publishFallbackDelivery = params.publishFallbackDelivery;
@@ -115,9 +118,9 @@ export async function publishMentionExecutionFallbacks(params: MentionExecutionF
     }
   }
 
-  return {
+  return ok({
     mentionOutputPublished,
     publishResolution,
     publishFallbackDelivery,
-  };
+  });
 }

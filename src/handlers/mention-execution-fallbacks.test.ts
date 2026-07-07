@@ -33,7 +33,9 @@ describe("publishMentionExecutionFallbacks", () => {
     });
 
     expect(postMentionReply).toHaveBeenCalledTimes(1);
-    expect(state).toEqual({
+    expect(state.ok).toBe(true);
+    if (!state.ok) throw state.err;
+    expect(state.value).toEqual({
       mentionOutputPublished: true,
       publishResolution: "success-fallback",
       publishFallbackDelivery: null,
@@ -89,7 +91,9 @@ describe("publishMentionExecutionFallbacks", () => {
       logger,
     });
 
-    expect(state).toEqual({
+    expect(state.ok).toBe(true);
+    if (!state.ok) throw state.err;
+    expect(state.value).toEqual({
       mentionOutputPublished: true,
       publishResolution: "error-fallback",
       publishFallbackDelivery: "error-comment-updated",
@@ -118,7 +122,9 @@ describe("publishMentionExecutionFallbacks", () => {
       logger,
     });
 
-    expect(state).toEqual({
+    expect(state.ok).toBe(true);
+    if (!state.ok) throw state.err;
+    expect(state.value).toEqual({
       mentionOutputPublished: false,
       publishResolution: "turn-limit-fallback-failed",
       publishFallbackDelivery: "error-comment-failed",
@@ -150,6 +156,8 @@ describe("publishMentionExecutionFallbacks", () => {
     });
 
     expect(postMentionError).not.toHaveBeenCalled();
-    expect(state.publishResolution).toBe("none");
+    expect(state.ok).toBe(true);
+    if (!state.ok) throw state.err;
+    expect(state.value.publishResolution).toBe("none");
   });
 });
