@@ -33,7 +33,6 @@ import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
-import { evaluateFeedbackSuppressions } from "../feedback/index.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
@@ -255,6 +254,7 @@ import {
   resolveQuietSettledContinuationFamilyState,
 } from "./review-continuation-family-state-projection.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
+import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1410,14 +1410,12 @@ export function createReviewHandler(deps: {
 
         // Feedback-driven suppression (FEED-01 through FEED-10)
         // Evaluated once and passed into the reducer so publication/deletion side effects remain outside.
-        const feedbackSuppression = knowledgeStore
-          ? await evaluateFeedbackSuppressions({
-              store: knowledgeStore,
-              repo: `${apiOwner}/${apiRepo}`,
-              config: config.feedback.autoSuppress,
-              logger,
-            })
-          : { suppressedFingerprints: new Set<string>(), suppressedPatternCount: 0, patterns: [] };
+        const feedbackSuppression = await resolveReviewFeedbackSuppression({
+          knowledgeStore,
+          repo: `${apiOwner}/${apiRepo}`,
+          config: config.feedback.autoSuppress,
+          logger,
+        });
 
         const graphValidationLLM = resolveReviewGraphValidationLLM({
           enabled: config.review.graphValidation.enabled,

@@ -310,6 +310,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-candidate-finding-context.ts");
   });
 
+  test("keeps feedback suppression fallback policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const feedbackSuppression = knowledgeStore");
+    expect(source).not.toContain("suppressedFingerprints: new Set<string>()");
+    expect(source).not.toContain("suppressedPatternCount: 0, patterns: []");
+    expect(source).toContain("resolveReviewFeedbackSuppression");
+    expect(source).toContain("./review-feedback-suppression.ts");
+  });
+
   test("keeps graph-validation LLM routing out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
