@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(2800);
+    expect(source.split("\n").length).toBeLessThanOrEqual(2750);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -62,11 +62,28 @@ describe("review handler structure", () => {
 
   test("keeps review execution completion log shaping out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-job-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("function logReviewExecutionCompleted");
     expect(source).not.toContain("let reviewExecutionLogged = false;");
     expect(source).not.toContain("const expectedTurnLimitOutcome = isExpectedTurnLimitOutcome(executorResult);");
-    expect(source).toContain("createReviewExecutionCompletedLogger");
+    expect(source).toContain("./review-job-runtime.ts");
+    expect(runtimeSource).toContain("createReviewExecutionCompletedLogger");
+  });
+
+  test("keeps queued review job runtime setup out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("./review-job-runtime.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("new Map<ReviewPhaseName, ReviewPhaseTiming>()");
+    expect(source).not.toContain("buildQueueWaitPhase(queueMetadata)");
+    expect(source).not.toContain("const totalPhaseStartAt = isValidQueueWaitMetadata(queueMetadata)");
+    expect(source).not.toContain("let reviewPublishFallbackDelivery: string | undefined;");
+    expect(source).not.toContain("createReviewContinuationFamilyStateManager({");
+    expect(source).toContain("createReviewJobRuntime");
+    expect(source).toContain("./review-job-runtime.ts");
+    expect(runtimeSource).toContain("createReviewExecutionCompletedLogger");
+    expect(runtimeSource).toContain("createReviewContinuationFamilyStateManager");
   });
 
   test("keeps review execution outcome fallback policy out of the monster handler", () => {

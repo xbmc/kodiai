@@ -2,11 +2,6 @@ import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
-import type {
-  ExecutorPhaseTiming,
-  ReviewPhaseName,
-  ReviewPhaseTiming,
-} from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { PromptSectionRecord, TelemetryStore } from "../telemetry/types.ts";
@@ -64,16 +59,12 @@ import {
 import {
   type ReviewCandidatePublicationAdapterResult,
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
-import { createReviewContinuationFamilyStateManager } from "../review-orchestration/review-continuation-family-state.ts";
 import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-timeout-classification.ts";
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
-  buildExecutorUnavailablePhases,
-  buildQueueWaitPhase,
   buildReviewDetailsPhaseTimingSummary,
   createReviewPhaseTiming,
   formatTimeoutErrorDetail,
-  isValidQueueWaitMetadata,
 } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
 import {
@@ -146,9 +137,6 @@ import {
   discardCheckpointsFailOpen,
   recordReviewCacheEventFailOpen,
 } from "./review-handler-utils.ts";
-import {
-  createReviewExecutionCompletedLogger,
-} from "./review-publication-state.ts";
 import {
   type ReviewDetailsBodyBaseParams,
 } from "./review-details-body.ts";
@@ -240,6 +228,7 @@ import {
   resolveReviewEventRuntime,
   type ReviewWebhookPayload,
 } from "./review-event-runtime.ts";
+import { createReviewJobRuntime } from "./review-job-runtime.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -420,55 +409,32 @@ export function createReviewHandler(deps: {
 
     try {
       await jobQueue.enqueue(event.installationId, async (queueMetadata) => {
-      const reviewPhaseTimings = new Map<ReviewPhaseName, ReviewPhaseTiming>();
-      reviewPhaseTimings.set("queue wait", buildQueueWaitPhase(queueMetadata));
-      const reviewStartedAt = Date.now();
-      const totalPhaseStartAt = isValidQueueWaitMetadata(queueMetadata)
-        ? queueMetadata.queuedAtMs
-        : reviewStartedAt;
-      let workspacePhaseStartedAt: number | undefined;
-      let retrievalPhaseStartedAt: number | undefined;
-      let publicationPhaseStartedAt: number | undefined;
-      let executorPhaseTimings: ExecutorPhaseTiming[] = buildExecutorUnavailablePhases(
-        "executor phase timings unavailable",
-      );
-      let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
-      let reviewOutputPublished = false;
-      let reviewExecutorPublished = false;
-      let reviewPublishResolution = "none";
-      let reviewPublishFallbackDelivery: string | undefined;
-
-      const logReviewExecutionCompleted = createReviewExecutionCompletedLogger({
-        logger,
-        getState: () => ({
-          prNumber: pr.number,
-          executorResult,
-          reviewOutputPublished,
-          reviewExecutorPublished,
-          reviewPublishResolution,
-          reviewPublishFallbackDelivery,
-        }),
-      });
-
-      const continuationFamilyState = createReviewContinuationFamilyStateManager({
+      const reviewJobRuntime = createReviewJobRuntime({
+        queueMetadata,
         logger,
         baseLog,
+        prNumber: pr.number,
+        deliveryId: event.id,
         reviewFamilyKey,
         reviewOutputKey,
         knowledgeStore,
         reviewWorkCoordinator,
+        reviewWorkRuntime,
       });
+      const {
+        reviewPhaseTimings,
+        timingState,
+        publicationState,
+        logReviewExecutionCompleted,
+        continuationFamilyState,
+        canPublishVisibleOutput,
+      } = reviewJobRuntime;
       const {
         persistContinuationFamilyState,
         settleRetryWithoutCanonicalUpdate,
         finalizeContinuationAttempt,
         canPublishReviewWorkOutput,
       } = continuationFamilyState;
-
-      const canPublishVisibleOutput = reviewWorkRuntime.createVisibleOutputGate({
-        deliveryId: event.id,
-        canPublishReviewWorkOutput,
-      });
 
       const runStateGate = await evaluateReviewRunStateGate({
         knowledgeStore,
@@ -486,7 +452,7 @@ export function createReviewHandler(deps: {
       let workspace: Workspace | undefined;
       try {
         setReviewWorkPhase("workspace-create");
-        workspacePhaseStartedAt = Date.now();
+        timingState.workspacePhaseStartedAt = Date.now();
         const preparedWorkspace = await prepareReviewWorkspace({
           workspaceManager,
           installationId: event.installationId,
@@ -593,7 +559,7 @@ export function createReviewHandler(deps: {
           logger,
         });
 
-        retrievalPhaseStartedAt = Date.now();
+        timingState.retrievalPhaseStartedAt = Date.now();
         const {
           diffContext,
           diffContentForValidation,
@@ -1105,7 +1071,7 @@ export function createReviewHandler(deps: {
           createReviewPhaseTiming({
             name: "retrieval/context assembly",
             status: "completed",
-            durationMs: Math.max(0, Date.now() - (retrievalPhaseStartedAt ?? Date.now())),
+            durationMs: Math.max(0, Date.now() - (timingState.retrievalPhaseStartedAt ?? Date.now())),
           }),
         );
 
@@ -1142,17 +1108,17 @@ export function createReviewHandler(deps: {
           result,
           currentPromptSectionRecords: visibleBudgetState.promptSectionRecords,
         });
-        executorResult = executorState.executorResult;
-        reviewExecutorPublished = executorState.reviewExecutorPublished;
-        reviewOutputPublished = executorState.reviewOutputPublished;
-        reviewPublishResolution = executorState.reviewPublishResolution;
+        publicationState.executorResult = executorState.executorResult;
+        publicationState.reviewExecutorPublished = executorState.reviewExecutorPublished;
+        publicationState.reviewOutputPublished = executorState.reviewOutputPublished;
+        publicationState.reviewPublishResolution = executorState.reviewPublishResolution;
         visibleBudgetState.promptSectionRecords = executorState.promptSectionRecords;
         visibleBudgetState.refresh();
-        executorPhaseTimings = executorState.executorPhaseTimings;
-        for (const phase of executorPhaseTimings) {
+        timingState.executorPhaseTimings = executorState.executorPhaseTimings;
+        for (const phase of timingState.executorPhaseTimings) {
           reviewPhaseTimings.set(phase.name, phase);
         }
-        publicationPhaseStartedAt = Date.now();
+        timingState.publicationPhaseStartedAt = Date.now();
 
         let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
 
@@ -1442,8 +1408,8 @@ export function createReviewHandler(deps: {
           reviewValidationTruth: reviewValidationTruthProjection,
           phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
             phases: reviewPhaseTimings,
-            publicationPhaseStartedAt,
-            totalPhaseStartAt,
+            publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
+            totalPhaseStartAt: timingState.totalPhaseStartAt,
           }),
           lineCountSource: reviewDetailsLineCounts.source,
         } satisfies ReviewDetailsBodyBaseParams;
@@ -1463,7 +1429,7 @@ export function createReviewHandler(deps: {
           getVisibleBudgetProjection: () => visibleBudgetState.refresh(),
           filteredFindings: filterResult.filtered,
           reviewPhaseTimings,
-          getPublicationPhaseStartedAt: () => publicationPhaseStartedAt,
+          getPublicationPhaseStartedAt: () => timingState.publicationPhaseStartedAt,
         });
 
         const firstPassReviewDetailsPublication = await publishFirstPassReviewDetails({
@@ -2614,9 +2580,9 @@ export function createReviewHandler(deps: {
             });
             const errorPublicationState = errorPublication.ok ? errorPublication.value : errorPublication.err;
             if (errorPublicationState.resolution !== "skipped") {
-              reviewOutputPublished = errorPublicationState.published;
-              reviewPublishResolution = errorPublicationState.resolution;
-              reviewPublishFallbackDelivery = errorPublicationState.fallbackDelivery;
+              publicationState.reviewOutputPublished = errorPublicationState.published;
+              publicationState.reviewPublishResolution = errorPublicationState.resolution;
+              publicationState.reviewPublishFallbackDelivery = errorPublicationState.fallbackDelivery;
             }
           }
         }
@@ -2633,10 +2599,10 @@ export function createReviewHandler(deps: {
             setReviewWorkPhase,
           });
           const failurePublicationState = failurePublication.ok ? failurePublication.value : failurePublication.err;
-          reviewPublishFallbackDelivery = failurePublicationState.fallbackDelivery;
+          publicationState.reviewPublishFallbackDelivery = failurePublicationState.fallbackDelivery;
           if (failurePublicationState.resolution !== "skipped") {
-            reviewOutputPublished = failurePublicationState.published;
-            reviewPublishResolution = failurePublicationState.resolution;
+            publicationState.reviewOutputPublished = failurePublicationState.published;
+            publicationState.reviewPublishResolution = failurePublicationState.resolution;
           }
         }
 
@@ -2673,18 +2639,18 @@ export function createReviewHandler(deps: {
             ? cleanReviewPublication.value
             : { published: false as const, resolution: "skipped" as const };
           if (cleanReviewPublicationState.published) {
-            reviewOutputPublished = true;
-            reviewPublishResolution = cleanReviewPublicationState.resolution;
+            publicationState.reviewOutputPublished = true;
+            publicationState.reviewPublishResolution = cleanReviewPublicationState.resolution;
           }
         }
       } catch (err) {
-        publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
+        timingState.publicationPhaseStartedAt = await handleReviewHandlerFailureRecovery({
           error: err,
           prNumber: pr.number,
           reviewPhaseTimings,
-          workspacePhaseStartedAt,
-          retrievalPhaseStartedAt,
-          publicationPhaseStartedAt,
+          workspacePhaseStartedAt: timingState.workspacePhaseStartedAt,
+          retrievalPhaseStartedAt: timingState.retrievalPhaseStartedAt,
+          publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
           logger,
           publishHandlerFailureError: async () => await publishReviewHandlerFailureError({
             octokit: await githubApp.getInstallationOctokit(event.installationId),
@@ -2698,7 +2664,7 @@ export function createReviewHandler(deps: {
           }),
         });
       } finally {
-        for (const phase of executorPhaseTimings) {
+        for (const phase of timingState.executorPhaseTimings) {
           if (!reviewPhaseTimings.has(phase.name)) {
             reviewPhaseTimings.set(phase.name, phase);
           }
@@ -2708,19 +2674,19 @@ export function createReviewHandler(deps: {
 
         finalizeReviewPhaseSummary({
           reviewPhaseTimings,
-          workspacePhaseStartedAt,
-          retrievalPhaseStartedAt,
-          publicationPhaseStartedAt,
-          totalPhaseStartAt,
-          executorResult,
+          workspacePhaseStartedAt: timingState.workspacePhaseStartedAt,
+          retrievalPhaseStartedAt: timingState.retrievalPhaseStartedAt,
+          publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
+          totalPhaseStartAt: timingState.totalPhaseStartAt,
+          executorResult: publicationState.executorResult,
           deliveryId: event.id,
           reviewOutputKey,
           installationId: event.installationId,
           repo: `${apiOwner}/${apiRepo}`,
           prNumber: pr.number,
-          reviewOutputPublished,
-          reviewPublishResolution,
-          reviewPublishFallbackDelivery,
+          reviewOutputPublished: publicationState.reviewOutputPublished,
+          reviewPublishResolution: publicationState.reviewPublishResolution,
+          reviewPublishFallbackDelivery: publicationState.reviewPublishFallbackDelivery,
           logger,
         });
 
