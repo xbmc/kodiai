@@ -448,11 +448,13 @@ describe("review handler structure", () => {
   test("keeps initial review prompt cache runtime out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewPromptCacheState: ReviewPromptCacheState =");
     expect(source).not.toContain("const reviewPromptCacheEvent = buildPromptReviewCacheEvent({");
     expect(source).not.toContain("\"Resolved review prompt derived-cache state\"");
-    expect(source).toContain("buildInitialReviewPromptRuntime");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(preparationSource).toContain("buildInitialReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("buildInitialReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("Resolved review prompt derived-cache state");
   });
@@ -494,10 +496,12 @@ describe("review handler structure", () => {
   test("keeps retrieval phase timing completion out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const phaseTimingSource = readFileSync(new URL("../review-orchestration/review-phase-timing.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("reviewPhaseTimings.set(\n          \"retrieval/context assembly\"");
     expect(source).not.toContain("name: \"retrieval/context assembly\",\n            status: \"completed\"");
-    expect(source).toContain("completeReviewRetrievalContextPhaseTiming");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(preparationSource).toContain("completeReviewRetrievalContextPhaseTiming");
     expect(phaseTimingSource).toContain("completeReviewRetrievalContextPhaseTiming");
   });
 
@@ -761,22 +765,46 @@ describe("review handler structure", () => {
 
   test("keeps prompt enrichment lookups out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const prText = [pr.title, pr.body ?? \"\", ...promptFiles.slice(0, 20)].join(\"\\n\")");
     expect(source).not.toContain("clusterPatternsForPrompt = await clusterMatcher({");
     expect(source).not.toContain("const diffSummaryParts: string[] = [];");
     expect(source).not.toContain("linkedIssueResult = await linkPRToIssues({");
-    expect(source).toContain("buildReviewPromptEnrichment");
-    expect(source).toContain("./review-prompt-enrichment.ts");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(source).toContain("./review-initial-prompt-preparation.ts");
+    expect(preparationSource).toContain("buildReviewPromptEnrichment");
+    expect(preparationSource).toContain("./review-prompt-enrichment.ts");
+  });
+
+  test("keeps initial review prompt preparation orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("buildReviewPromptEnrichment({");
+    expect(source).not.toContain("buildInitialReviewPromptContext({");
+    expect(source).not.toContain("buildInitialReviewPromptRuntime({");
+    expect(source).not.toContain("completeReviewRetrievalContextPhaseTiming({");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(source).toContain("./review-initial-prompt-preparation.ts");
+    expect(preparationSource).toContain("export async function prepareInitialReviewPrompt");
+    expect(preparationSource).toContain("buildReviewPromptEnrichment({");
+    expect(preparationSource).toContain("buildInitialReviewPromptContext({");
+    expect(preparationSource).toContain("buildInitialReviewPromptRuntime({");
+    expect(preparationSource).toContain("completeReviewRetrievalContextPhaseTiming({");
+    expect(preparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
   });
 
   test("keeps initial review prompt context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptContextSource = readFileSync(new URL("./review-prompt-build-context.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewPromptBuildContext = {");
-    expect(source).toContain("buildInitialReviewPromptContext");
-    expect(source).toContain("./review-prompt-build-context.ts");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(source).toContain("./review-initial-prompt-preparation.ts");
+    expect(preparationSource).toContain("buildInitialReviewPromptContext");
+    expect(preparationSource).toContain("./review-prompt-build-context.ts");
     expect(promptContextSource).toContain("ReviewPromptBuildContext");
     expect(promptContextSource).toContain("TASK_TYPES.REVIEW_SMALL_DIFF");
   });

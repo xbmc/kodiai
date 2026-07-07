@@ -46,7 +46,6 @@ import {
   type ReviewCandidatePublicationAdapterResult,
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
 import {
-  completeReviewRetrievalContextPhaseTiming,
   formatTimeoutErrorDetail,
   recordReviewExecutorPhaseTimings,
 } from "../review-orchestration/review-phase-timing.ts";
@@ -100,15 +99,13 @@ import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
 import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
-import { buildInitialReviewPromptRuntime, buildRetryReviewPromptRuntime } from "./review-prompt-cache-runtime.ts";
+import { buildRetryReviewPromptRuntime } from "./review-prompt-cache-runtime.ts";
 import {
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
-import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
-import { buildInitialReviewPromptContext } from "./review-prompt-build-context.ts";
 import {
   buildReviewKnowledgeConfigSnapshot,
   persistReviewKnowledge,
@@ -188,6 +185,7 @@ import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evide
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { resolveReviewChangedFileContext } from "./review-changed-file-context.ts";
 import { resolveReviewPlanningContext } from "./review-planning-context.ts";
+import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.ts";
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
@@ -731,48 +729,22 @@ export function createReviewHandler(deps: {
         tieredFiles = planningContext.tieredFiles;
         promptFiles = planningContext.promptFiles;
 
-        // Extract PR labels for intent scoping (FORMAT-07)
-        const prLabels = (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [];
-
-        const promptEnrichment = await buildReviewPromptEnrichment({
-          repo: `${apiOwner}/${apiRepo}`,
-          prTitle: pr.title,
-          prBody: pr.body ?? null,
-          commitMessages: commitMessagesForLinking,
-          promptFiles,
-          filesByCategory: diffAnalysis?.filesByCategory,
-          clusterMatcher,
-          issueStore,
-          embeddingProvider,
-          logger,
-          baseLog,
-        });
-        const clusterPatternsForPrompt = promptEnrichment.clusterPatterns;
-        const linkedIssueResult = promptEnrichment.linkedIssues;
-
-        setReviewWorkPhase("prompt-build");
-        // Build review prompt
-        let reviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
-        let reviewPromptDerivedCacheReason: string | null = null;
-        const reviewPromptBuildContext = buildInitialReviewPromptContext({
+        const {
+          prLabels,
+          clusterPatternsForPrompt,
+          linkedIssueResult,
+          reviewPromptDerivedCacheStatus,
+          reviewPromptDerivedCacheReason,
+          reviewPrompt,
+          reviewPromptSections,
+        } = await prepareInitialReviewPrompt({
           owner: apiOwner,
           repo: apiRepo,
-          prNumber: pr.number,
-          prTitle: pr.title,
-          prBody: pr.body ?? "",
-          prAuthor: pr.user.login,
-          baseBranch: pr.base.ref,
-          headBranch: pr.head.ref,
-          changedFiles: promptFiles,
-          customInstructions: config.review.prompt,
-          checkpointEnabled,
-          mode: config.review.mode,
-          severityMinLevel: resolvedSeverityMinLevel,
-          focusAreas: resolvedFocusAreas,
-          ignoredAreas: resolvedIgnoredAreas,
-          maxComments: resolvedMaxComments,
-          suppressions: config.review.suppressions,
-          minConfidence: config.review.minConfidence,
+          pr,
+          eventId: event.id,
+          config,
+          promptFiles,
+          commitMessages: commitMessagesForLinking,
           diffAnalysis,
           diffContent,
           matchedPathInstructions,
@@ -783,49 +755,36 @@ export function createReviewHandler(deps: {
           wikiKnowledge: wikiKnowledgeForPrompt,
           unifiedResults: unifiedResultsForPrompt,
           contextWindow: contextWindowForPrompt,
-          outputLanguage: config.review.outputLanguage,
-          prLabels,
-          focusHints: parsedIntent.unrecognized,
-          conventionalType: parsedIntent.conventionalType,
+          parsedIntent,
           priorFindings,
           tieredFiles,
-          contributorExperienceContract: authorClassification.contract,
-          authorExpertise: projectReviewAuthorExpertiseForPrompt(authorClassification),
+          authorClassification,
           depBumpContext,
-          searchRateLimitDegradation: authorClassification.searchEnrichment,
           isDraft,
-          clusterPatterns: clusterPatternsForPrompt,
-          linkedIssues: linkedIssueResult,
           graphBlastRadius,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
-          repoDoctrine: repoDoctrineProjection,
+          repoDoctrineProjection,
           taskType: reviewRouting.taskType,
-        });
-        const reviewPromptRuntime = await buildInitialReviewPromptRuntime({
-          deliveryId: event.id,
-          repo: `${apiOwner}/${apiRepo}`,
-          prNumber: pr.number,
-          headSha: pr.head.sha,
-          taskType: reviewRouting.taskType,
-          context: reviewPromptBuildContext,
+          checkpointEnabled,
+          resolvedSeverityMinLevel,
+          resolvedFocusAreas,
+          resolvedIgnoredAreas,
+          resolvedMaxComments,
+          clusterMatcher,
+          issueStore,
+          embeddingProvider,
           promptBuilder: reviewPromptBuilder,
-          cache: reviewPromptDerivedCache,
-          getCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
-          buildFingerprint: buildReviewPromptFingerprint,
+          promptCache: reviewPromptDerivedCache,
+          getPromptCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
+          buildPromptFingerprint: buildReviewPromptFingerprint,
           visibleBudgetState,
-          telemetryEnabled: config.telemetry.enabled,
           telemetryStore,
+          reviewPhaseTimings,
+          retrievalPhaseStartedAt: timingState.retrievalPhaseStartedAt,
+          setReviewWorkPhase,
           logger,
           baseLog,
-        });
-        reviewPromptDerivedCacheStatus = reviewPromptRuntime.cacheStatus;
-        reviewPromptDerivedCacheReason = reviewPromptRuntime.cacheReason;
-        const reviewPrompt = reviewPromptRuntime.prompt;
-        const reviewPromptSections = reviewPromptRuntime.promptSections;
-        completeReviewRetrievalContextPhaseTiming({
-          phases: reviewPhaseTimings,
-          retrievalPhaseStartedAt: timingState.retrievalPhaseStartedAt ?? Date.now(),
         });
 
         // Execute review via Claude
