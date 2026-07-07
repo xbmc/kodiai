@@ -11,7 +11,7 @@ import type {
 import type { LearningMemoryStore, EmbeddingProvider } from "../knowledge/types.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
-import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
+import type { DeltaClassification } from "../lib/delta-classifier.ts";
 import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
@@ -31,7 +31,6 @@ import {
 import {
   type FindingSeverity,
   type FindingCategory,
-  fingerprintFindingTitle,
 } from "../lib/review-finding-metadata.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { fetchRemoteTrackingBranch } from "../jobs/workspace.ts";
@@ -214,6 +213,7 @@ import {
 import { createReviewJobRuntime } from "./review-job-runtime.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
+import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1189,29 +1189,18 @@ export function createReviewHandler(deps: {
           detailsSummary: reviewCandidatePublicationAdapterDetailsSummary,
         });
 
-        // Delta classification (REV-03)
-        // Only classify deltas in incremental mode when prior findings exist.
-        let deltaClassification: DeltaClassification | null = null;
-        if (incrementalResult?.mode === "incremental" && priorFindingCtx) {
-          try {
-            const priorFindings = await knowledgeStore!.getPriorReviewFindings({
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-            });
-            if (priorFindings.length > 0) {
-              deltaClassification = classifyFindingDeltas({
-                currentFindings: processedFindings,
-                priorFindings,
-                fingerprintFn: fingerprintFindingTitle,
-              });
-            }
-          } catch (err) {
-            logger.warn(
-              { ...baseLog, err },
-              "Delta classification failed (fail-open, publishing without delta labels)",
-            );
-          }
-        }
+        const deltaClassification: DeltaClassification | null = await resolveReviewDeltaClassification({
+          enabled: incrementalResult?.mode === "incremental" && priorFindingCtx !== null,
+          currentFindings: processedFindings,
+          getPriorReviewFindings: knowledgeStore?.getPriorReviewFindings
+            ? () => knowledgeStore.getPriorReviewFindings!({
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+              })
+            : undefined,
+          logger,
+          baseLog,
+        });
 
         if (reviewOutputSucceeded && filteredInlineFindings.length > 0) {
           await removeFilteredInlineComments({
