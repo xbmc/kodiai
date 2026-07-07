@@ -145,17 +145,42 @@ export async function runWithAbortSignalTimeout<T>(
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const timeout = createAbortControllerWithTimeout(label, timeoutMs);
+  const timeoutErrorMessage = `${label}: request timed out after ${timeoutMs}ms`;
+  const work = Promise.resolve().then(() => run(timeout.controller.signal));
+  work.catch(() => {});
+
+  let removeAbortListener: (() => void) | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    if (timeout.controller.signal.aborted) {
+      reject(new Error(timeoutErrorMessage, {
+        cause: timeout.controller.signal.reason,
+      }));
+      return;
+    }
+
+    const onAbort = () => {
+      reject(new Error(timeoutErrorMessage, {
+        cause: timeout.controller.signal.reason,
+      }));
+    };
+    timeout.controller.signal.addEventListener("abort", onAbort, { once: true });
+    removeAbortListener = () => timeout.controller.signal.removeEventListener("abort", onAbort);
+  });
 
   try {
-    return await run(timeout.controller.signal);
+    return await Promise.race([work, timeoutPromise]);
   } catch (error) {
     if (timeout.controller.signal.aborted) {
-      throw new Error(`${label}: request timed out after ${timeoutMs}ms`, {
+      if (error instanceof Error && error.message === timeoutErrorMessage) {
+        throw error;
+      }
+      throw new Error(timeoutErrorMessage, {
         cause: error,
       });
     }
     throw error;
   } finally {
+    removeAbortListener?.();
     timeout.clear();
   }
 }

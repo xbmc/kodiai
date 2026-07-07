@@ -132,6 +132,22 @@ describe("rejectWithTimeout", () => {
 });
 
 describe("runWithAbortSignalTimeout", () => {
+  test("rejects on deadline even when the operation ignores the abort signal", async () => {
+    const result = await Promise.race([
+      runWithAbortSignalTimeout(
+        "stubborn operation",
+        1,
+        async () => await new Promise<string>(() => undefined),
+      ).then(
+        () => "resolved",
+        (error) => String(error),
+      ),
+      sleep(25).then(() => "test timed out waiting for wrapper"),
+    ]);
+
+    expect(result).toContain("stubborn operation: request timed out after 1ms");
+  });
+
   test("aborts the supplied signal and wraps aborted failures", async () => {
     await expect(runWithAbortSignalTimeout(
       "fetch thing",
