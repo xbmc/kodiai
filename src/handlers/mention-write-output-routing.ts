@@ -5,7 +5,11 @@ import {
 import type { Workspace } from "../jobs/types.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import { ok, type Result } from "../lib/result.ts";
-import { buildNoFileChangesReply, createIssueWriteFailurePoster } from "./mention-write-replies.ts";
+import {
+  buildNoFileChangesReply,
+  createIssueWriteFailurePoster,
+  type WritePermissionFailureReplyResult,
+} from "./mention-write-replies.ts";
 import type { MentionEvent } from "./mention-types.ts";
 import type { MentionWriteRequestContext } from "./mention-write-request-context.ts";
 import type { MentionWriteRateLimitRuntime } from "./mention-write-rate-limit.ts";
@@ -78,7 +82,7 @@ export async function routeMentionWriteOutputIfEnabled(params: {
     err: unknown;
     retryCommand: string;
     postReply: PostMentionReply;
-  }) => Promise<boolean>;
+  }) => Promise<WritePermissionFailureReplyResult>;
   writeRateLimit: MentionWriteRateLimitRuntime;
 }): Promise<boolean> {
   const { writeContext } = params;
@@ -143,7 +147,7 @@ export async function routeMentionWriteOutput(params: {
     err: unknown;
     retryCommand: string;
     postReply: PostMentionReply;
-  }) => Promise<boolean>;
+  }) => Promise<WritePermissionFailureReplyResult>;
   recordWriteRateLimitSuccess: (owner: string, repo: string) => void;
   getGitStatusPorcelain?: (workspaceDir: string) => Promise<string>;
   publishMentionForkWriteOutput?: PublishMentionForkWriteOutput;

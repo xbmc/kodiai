@@ -56,7 +56,7 @@ function baseParams(overrides: Partial<Parameters<typeof publishMentionBotWriteP
     logger: logger as never,
     postMentionReply: async () => undefined,
     postIssueWriteFailure: async () => undefined,
-    maybeReplyWritePermissionFailure: async () => false,
+    maybeReplyWritePermissionFailure: async () => ok({ status: "not-applicable" }),
     createBranchCommitAndPush: async () => ({ branchName: "kodiai/write/acme-widgets-5", headSha: "abc123" }),
     buildMentionWritePullRequestDraft: async () => ({
       title: "Fix widgets",

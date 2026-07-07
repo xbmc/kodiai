@@ -11,6 +11,7 @@ import {
   buildIssueWriteSuccessReply,
   buildWritePolicyRefusalReply,
   type IssueWriteFailureStep,
+  type WritePermissionFailureReplyResult,
 } from "./mention-write-replies.ts";
 import {
   buildMentionWritePullRequestDraft as defaultBuildMentionWritePullRequestDraft,
@@ -104,7 +105,7 @@ export async function publishMentionBotWritePullRequest(params: {
     err: unknown;
     retryCommand: string;
     postReply: PostMentionReply;
-  }) => Promise<boolean>;
+  }) => Promise<WritePermissionFailureReplyResult>;
   createBranchCommitAndPush?: CreateBranchCommitAndPush;
   buildMentionWritePullRequestDraft?: BuildMentionWritePullRequestDraft;
   publishMentionWritePullRequest?: PublishMentionWritePullRequest;
@@ -152,11 +153,12 @@ export async function publishMentionBotWritePullRequest(params: {
       return ok({ status: "handled" });
     }
 
-    if (await params.maybeReplyWritePermissionFailure({
+    const permissionReply = await params.maybeReplyWritePermissionFailure({
       err,
       retryCommand: params.retryCommand,
       postReply: params.postMentionReply,
-    })) {
+    });
+    if (permissionReply.ok && permissionReply.value.status === "handled") {
       return ok({ status: "handled" });
     }
 
@@ -221,11 +223,12 @@ export async function publishMentionBotWritePullRequest(params: {
       createdPr = response.value.data;
       break;
     } catch (err) {
-      if (await params.maybeReplyWritePermissionFailure({
+      const permissionReply = await params.maybeReplyWritePermissionFailure({
         err,
         retryCommand: params.retryCommand,
         postReply: params.postMentionReply,
-      })) {
+      });
+      if (permissionReply.ok && permissionReply.value.status === "handled") {
         return ok({ status: "handled" });
       }
 

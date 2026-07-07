@@ -71,7 +71,7 @@ function createBaseParams(
     postMentionReply: async (body) => {
       replies.push(body);
     },
-    maybeReplyWritePermissionFailure: async () => false,
+    maybeReplyWritePermissionFailure: async () => ok({ status: "not-applicable" }),
     recordWriteRateLimitSuccess: () => undefined,
     getGitStatusPorcelain: async () => " M src/file.ts\n",
     publishMentionForkWriteOutput: async () => ok({ status: "fall-through" }),
@@ -225,7 +225,7 @@ describe("routeMentionWriteOutputIfEnabled", () => {
       postMentionReply: async () => {
         throw new Error("should not post");
       },
-      maybeReplyWritePermissionFailure: async () => false,
+      maybeReplyWritePermissionFailure: async () => ok({ status: "not-applicable" }),
       writeRateLimit: {
         check: () => ({ allowed: true }),
         recordSuccess: () => {

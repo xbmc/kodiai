@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ok } from "../lib/result.ts";
 import { attemptSameRepoPrWrite } from "./mention-same-repo-write.ts";
 
 function createLogger() {
@@ -51,7 +52,7 @@ function baseParams(overrides: Partial<Parameters<typeof attemptSameRepoPrWrite>
     retryCommand: "apply:",
     logger: logger as never,
     postMentionReply: async () => undefined,
-    maybeReplyWritePermissionFailure: async () => false,
+    maybeReplyWritePermissionFailure: async () => ok({ status: "not-applicable" }),
     checkoutPrHead: async () => undefined,
     remoteHeadContainsMarker: async () => false,
     commitAndPushToRemoteRef: async () => ({ headSha: "abc123" }),

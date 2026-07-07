@@ -12,6 +12,7 @@ import {
   buildAlreadyAppliedReply,
   buildUpdatedPrReply,
   buildWritePolicyRefusalReply,
+  type WritePermissionFailureReplyResult,
 } from "./mention-write-replies.ts";
 import {
   buildWriteOutputIdempotencyMarker,
@@ -91,7 +92,7 @@ export async function attemptSameRepoPrWrite(params: {
     err: unknown;
     retryCommand: string;
     postReply: PostMentionReply;
-  }) => Promise<boolean>;
+  }) => Promise<WritePermissionFailureReplyResult>;
   checkoutPrHead?: CheckoutPrHead;
   remoteHeadContainsMarker?: RemoteHeadContainsMarker;
   commitAndPushToRemoteRef?: CommitAndPushToRemoteRef;
@@ -191,11 +192,12 @@ export async function attemptSameRepoPrWrite(params: {
       return ok({ status: "handled" });
     }
 
-    if (await params.maybeReplyWritePermissionFailure({
+    const permissionReply = await params.maybeReplyWritePermissionFailure({
       err,
       retryCommand: params.retryCommand,
       postReply: params.postMentionReply,
-    })) {
+    });
+    if (permissionReply.ok && permissionReply.value.status === "handled") {
       return ok({ status: "handled" });
     }
 
@@ -229,11 +231,12 @@ export async function attemptSameRepoPrWrite(params: {
         token: params.workspaceToken,
       });
     } catch (pushErr) {
-      if (await params.maybeReplyWritePermissionFailure({
+      const permissionReply = await params.maybeReplyWritePermissionFailure({
         err: pushErr,
         retryCommand: params.retryCommand,
         postReply: params.postMentionReply,
-      })) {
+      });
+      if (permissionReply.ok && permissionReply.value.status === "handled") {
         return ok({ status: "handled" });
       }
       params.logger.error(

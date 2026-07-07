@@ -127,7 +127,7 @@ describe("mention write replies", () => {
       err: { status: 403 },
       retryCommand: "@kodiai apply: fix it",
       postReply,
-    })).resolves.toBe(true);
+    })).resolves.toEqual({ ok: true, value: { status: "handled" } });
 
     expect(posted).toHaveLength(1);
     expect(posted[0]?.body).toContain("@kodiai apply: fix it");
@@ -137,7 +137,7 @@ describe("mention write replies", () => {
       err: new Error("timeout"),
       retryCommand: "@kodiai apply: fix it",
       postReply,
-    })).resolves.toBe(false);
+    })).resolves.toEqual({ ok: true, value: { status: "not-applicable" } });
 
     expect(posted).toHaveLength(1);
   });

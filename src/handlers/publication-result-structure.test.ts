@@ -404,4 +404,22 @@ describe("publication result structure", () => {
     expect(source).toContain("if (!primaryGistPublication.ok)");
     expect(source).toContain("primaryGistPublication.value.handled");
   });
+
+  test("keeps write permission remediation publication on shared Result shape", () => {
+    const repliesSource = readFileSync(new URL("./mention-write-replies.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
+    const sameRepoSource = readFileSync(new URL("./mention-same-repo-write.ts", import.meta.url), "utf8");
+    const botSource = readFileSync(new URL("./mention-bot-pr-write.ts", import.meta.url), "utf8");
+
+    expect(repliesSource).toContain("type Result");
+    expect(repliesSource).toContain("WritePermissionFailureReplyResult");
+    expect(repliesSource).toContain("Result<WritePermissionFailureReplyStatus");
+    expect(repliesSource).toMatch(/\bok\(/);
+    expect(repliesSource).not.toContain("}): Promise<boolean> {");
+    expect(routingSource).toContain("WritePermissionFailureReplyResult");
+    expect(sameRepoSource).toContain("WritePermissionFailureReplyResult");
+    expect(botSource).toContain("WritePermissionFailureReplyResult");
+    expect(sameRepoSource).toContain("permissionReply.value.status === \"handled\"");
+    expect(botSource).toContain("permissionReply.value.status === \"handled\"");
+  });
 });

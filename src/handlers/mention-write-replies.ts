@@ -1,6 +1,11 @@
 import { wrapInDetails } from "../lib/formatting.ts";
+import { ok, type Result } from "../lib/result.ts";
 
 export type IssueWriteFailureStep = "branch-push" | "create-pr" | "issue-linkback";
+export type WritePermissionFailureReplyStatus = {
+  status: "handled" | "not-applicable";
+};
+export type WritePermissionFailureReplyResult = Result<WritePermissionFailureReplyStatus>;
 
 export function toErrorSignalText(value: unknown): string {
   if (typeof value === "string") {
@@ -239,15 +244,15 @@ export async function maybeReplyWritePermissionFailure(params: {
   err: unknown;
   retryCommand: string;
   postReply: (body: string, options?: { sanitizeMentions?: boolean }) => Promise<void>;
-}): Promise<boolean> {
+}): Promise<WritePermissionFailureReplyResult> {
   if (!isLikelyWritePermissionFailure(params.err)) {
-    return false;
+    return ok({ status: "not-applicable" });
   }
   await params.postReply(
     buildWritePermissionFailureReply({ retryCommand: params.retryCommand }),
     { sanitizeMentions: false },
   );
-  return true;
+  return ok({ status: "handled" });
 }
 
 export async function handleIssueWritePublishFailure(params: {
