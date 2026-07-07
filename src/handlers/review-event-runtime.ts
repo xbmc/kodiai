@@ -4,6 +4,7 @@ import type {
   PullRequestReviewRequestedEvent,
   PullRequestSynchronizeEvent,
 } from "@octokit/webhooks-types";
+import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import {
@@ -23,6 +24,17 @@ export type ReviewWebhookPayload =
   | PullRequestReadyForReviewEvent
   | PullRequestReviewRequestedEvent
   | PullRequestSynchronizeEvent;
+
+export function buildReviewNoReviewSkipGateAdapters(params: {
+  installationId: number;
+  appSlug: string;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+}): Pick<Parameters<typeof evaluateNoReviewSkipGate>[0], "botHandles" | "getOctokit"> {
+  return {
+    botHandles: [params.appSlug, "claude"],
+    getOctokit: () => params.getInstallationOctokit(params.installationId),
+  };
+}
 
 export async function resolveReviewEventRuntime(params: {
   event: WebhookEvent;
@@ -61,14 +73,19 @@ export async function resolveReviewEventRuntime(params: {
     logger,
   });
 
+  const noReviewSkipGateAdapters = buildReviewNoReviewSkipGateAdapters({
+    installationId: event.installationId,
+    appSlug: githubApp.getAppSlug(),
+    getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+  });
   const noReviewSkipGate = await evaluateNoReviewSkipGate({
     prTitle: pr.title,
     owner: apiOwner,
     repo: apiRepo,
     prNumber: pr.number,
     baseLog,
-    botHandles: [githubApp.getAppSlug(), "claude"],
-    getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+    botHandles: noReviewSkipGateAdapters.botHandles,
+    getOctokit: noReviewSkipGateAdapters.getOctokit,
     logger,
   });
   if (noReviewSkipGate.action === "skip") {

@@ -1018,6 +1018,10 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-event-runtime.ts");
     expect(eventRuntimeSource).toContain("./review-no-review-skip.ts");
     expect(eventRuntimeSource).toContain("evaluateNoReviewSkipGate");
+    expect(eventRuntimeSource).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n    logger,");
+    expect(eventRuntimeSource).not.toContain("botHandles: [githubApp.getAppSlug(), \"claude\"],");
+    expect(eventRuntimeSource).toContain("buildReviewNoReviewSkipGateAdapters");
+    expect(eventRuntimeSource).toContain("export function buildReviewNoReviewSkipGateAdapters");
   });
 
   test("keeps review cost warning publication out of the monster handler", () => {
