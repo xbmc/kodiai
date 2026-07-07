@@ -29,6 +29,84 @@ export function buildReviewTimeoutRetrySettlementAdapters(params: {
   };
 }
 
+export function buildReviewTimeoutRetryPreEnqueueParams(params: {
+  telemetryEnabled: boolean;
+  telemetryStore: PreEnqueueParams["telemetryStore"];
+  logger: PreEnqueueParams["logger"];
+  deliveryId: string;
+  owner: string;
+  repo: string;
+  pr: { number: number; user: { login: string } };
+  eventAction: string;
+  reviewOutputKey: string;
+  executionConclusion: string;
+  hasPublishedInlines: boolean;
+  timeoutReviewedFiles: string[];
+  timeoutInspectedFiles: string[];
+  timeoutFindingCount: number;
+  summaryDraft: string;
+  timeoutTotalFiles: number;
+  partialCommentId: number | undefined;
+  recentTimeouts: number;
+  isChronicTimeout: boolean;
+  timeoutClassificationTelemetry: PreEnqueueParams["timeoutClassificationTelemetry"];
+  timeoutFirstPass: PreEnqueueParams["timeoutFirstPass"];
+  knowledgeStore: PreEnqueueParams["knowledgeStore"];
+  persistContinuationFamilyState: PreEnqueueParams["persistContinuationFamilyState"];
+}): PreEnqueueParams {
+  return {
+    telemetryEnabled: params.telemetryEnabled,
+    telemetryStore: params.telemetryStore,
+    logger: params.logger,
+    deliveryId: params.deliveryId,
+    repo: `${params.owner}/${params.repo}`,
+    prNumber: params.pr.number,
+    prAuthor: params.pr.user.login,
+    eventType: `pull_request.${params.eventAction}`,
+    reviewOutputKey: params.reviewOutputKey,
+    executionConclusion: params.executionConclusion,
+    hadInlineOutput: params.hasPublishedInlines,
+    checkpointFilesReviewed: params.timeoutReviewedFiles,
+    checkpointFilesInspected: params.timeoutInspectedFiles,
+    checkpointFindingCount: params.timeoutFindingCount,
+    checkpointSummaryDraft: params.summaryDraft,
+    checkpointTotalFiles: params.timeoutTotalFiles,
+    partialCommentId: params.partialCommentId,
+    recentTimeouts: params.recentTimeouts,
+    chronicTimeout: params.isChronicTimeout,
+    timeoutClassificationTelemetry: params.timeoutClassificationTelemetry,
+    timeoutFirstPass: params.timeoutFirstPass,
+    knowledgeStore: params.knowledgeStore,
+    persistContinuationFamilyState: params.persistContinuationFamilyState,
+  };
+}
+
+export function buildReviewTimeoutRetryEnqueueParams(params: {
+  jobQueue: EnqueueRetryParams["jobQueue"];
+  installationId: number;
+  parentDeliveryId: string;
+  eventName: string;
+  reviewFamilyKey: string;
+  pr: { number: number };
+  reviewOutputKey: string;
+  knowledgeStore: EnqueueRetryParams["knowledgeStore"];
+  logger: EnqueueRetryParams["logger"];
+  finalizeContinuationAttempt: EnqueueRetryParams["finalizeContinuationAttempt"];
+}): EnqueueRetryParams {
+  return {
+    jobQueue: params.jobQueue,
+    installationId: params.installationId,
+    parentDeliveryId: params.parentDeliveryId,
+    eventName: params.eventName,
+    reviewFamilyKey: params.reviewFamilyKey,
+    prNumber: params.pr.number,
+    reviewOutputKey: params.reviewOutputKey,
+    knowledgeStore: params.knowledgeStore,
+    logger: params.logger,
+    finalizeContinuationAttempt: params.finalizeContinuationAttempt,
+  };
+}
+
 export async function scheduleReviewTimeoutRetryContinuation(params: {
   retryEnqueueContext: ReviewRetryEnqueueContext;
   reviewWorkCoordinator: Pick<ReviewWorkCoordinator, "claim" | "complete" | "release">;

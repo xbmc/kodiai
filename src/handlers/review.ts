@@ -145,6 +145,8 @@ import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import {
+  buildReviewTimeoutRetryEnqueueParams,
+  buildReviewTimeoutRetryPreEnqueueParams,
   buildReviewTimeoutRetrySettlementAdapters,
   scheduleReviewTimeoutRetryContinuation,
 } from "./review-timeout-retry-scheduling.ts";
@@ -1298,52 +1300,48 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
               persistContinuationFamilyState,
             });
 
-            // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
-            // Retry is only useful when no GitHub-visible output was published.
-            // If inline comments were already posted, avoid a retry that could
-            // create additional noise or duplicates.
             if (retryEnqueueContext) {
               const retryScheduling = await scheduleReviewTimeoutRetryContinuation({
                 retryEnqueueContext,
                 reviewFamilyKey,
                 reviewWorkCoordinator,
-                preEnqueue: {
+                preEnqueue: buildReviewTimeoutRetryPreEnqueueParams({
                   telemetryEnabled: config.telemetry.enabled,
                   telemetryStore,
                   logger,
                   deliveryId: event.id,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  prNumber: pr.number,
-                  prAuthor: pr.user.login,
-                  eventType: `pull_request.${payload.action}`,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  pr,
+                  eventAction: payload.action,
                   reviewOutputKey,
                   executionConclusion,
-                  hadInlineOutput: hasPublishedInlines,
-                  checkpointFilesReviewed: timeoutReviewedFiles,
-                  checkpointFilesInspected: timeoutInspectedFiles,
-                  checkpointFindingCount: timeoutFindingCount,
-                  checkpointSummaryDraft: summaryDraft,
-                  checkpointTotalFiles: timeoutTotalFiles,
+                  hasPublishedInlines,
+                  timeoutReviewedFiles,
+                  timeoutInspectedFiles,
+                  timeoutFindingCount,
+                  summaryDraft,
+                  timeoutTotalFiles,
                   partialCommentId,
                   recentTimeouts,
-                  chronicTimeout: isChronicTimeout,
+                  isChronicTimeout,
                   timeoutClassificationTelemetry,
                   timeoutFirstPass,
                   knowledgeStore,
                   persistContinuationFamilyState,
-                },
-                enqueue: {
+                }),
+                enqueue: buildReviewTimeoutRetryEnqueueParams({
                   jobQueue,
                   installationId: event.installationId,
                   parentDeliveryId: event.id,
                   eventName: event.name,
                   reviewFamilyKey,
-                  prNumber: pr.number,
+                  pr,
                   reviewOutputKey,
                   knowledgeStore,
                   logger,
                   finalizeContinuationAttempt,
-                },
+                }),
                 buildRetryJobParams: (retryAttemptId) => buildReviewTimeoutRetryJobParams({
                   retryAttemptId,
                   retryEnqueueContext,

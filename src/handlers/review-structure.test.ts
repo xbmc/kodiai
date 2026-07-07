@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1535);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1533);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -1923,12 +1923,18 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const retryReviewWorkAttempt = reviewWorkCoordinator.claim({");
     expect(source).not.toContain("recordReviewTimeoutRetryPreEnqueueSideEffects({");
     expect(source).not.toContain("retryAttemptId: retryReviewWorkAttempt.attemptId");
+    expect(source).not.toContain("preEnqueue: {\n                  telemetryEnabled: config.telemetry.enabled");
+    expect(source).not.toContain("enqueue: {\n                  jobQueue");
     expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n                    getAppSlug: () => githubApp.getAppSlug(),");
     expect(source).not.toContain("setPublishPhase: () => setReviewWorkPhaseForAttempt(retryAttemptId, \"publish\")");
+    expect(source).toContain("buildReviewTimeoutRetryPreEnqueueParams");
+    expect(source).toContain("buildReviewTimeoutRetryEnqueueParams");
     expect(source).toContain("buildReviewTimeoutRetrySettlementAdapters");
     expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(source).toContain("./review-timeout-retry-scheduling.ts");
     expect(schedulingSource).toContain("export function buildReviewTimeoutRetrySettlementAdapters");
+    expect(schedulingSource).toContain("export function buildReviewTimeoutRetryPreEnqueueParams");
+    expect(schedulingSource).toContain("export function buildReviewTimeoutRetryEnqueueParams");
     expect(schedulingSource).toContain("reviewWorkCoordinator.claim({");
     expect(schedulingSource).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects({");
     expect(schedulingSource).toContain("enqueueRetryJob({");
