@@ -3,6 +3,7 @@ import {
   buildReviewRequestedEyesReactionAdapters,
   maybePostReviewRequestedEyesReaction,
   postReviewRequestedEyesReaction,
+  publishReviewRequestedEyesReactionFromHandlerDependencies,
 } from "./review-reactions.ts";
 
 function makeLogger() {
@@ -137,6 +138,45 @@ describe("maybePostReviewRequestedEyesReaction", () => {
     });
 
     expect(octokitCalls).toBe(1);
+    expect(reactionCalls).toEqual([
+      {
+        owner: "acme",
+        repo: "repo",
+        issue_number: 42,
+        content: "eyes",
+      },
+    ]);
+    expect(warnCalls).toEqual([]);
+  });
+
+  test("publishes review-requested reaction from handler dependencies", async () => {
+    const reactionCalls: unknown[] = [];
+    const installationCalls: number[] = [];
+    const { logger, warnCalls } = makeLogger();
+
+    await publishReviewRequestedEyesReactionFromHandlerDependencies({
+      action: "review_requested",
+      installationId: 123,
+      getInstallationOctokit: async (installationId) => {
+        installationCalls.push(installationId);
+        return {
+          rest: {
+            reactions: {
+              createForIssue: async (params: unknown) => {
+                reactionCalls.push(params);
+                return {};
+              },
+            },
+          },
+        } as never;
+      },
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      logger: logger as never,
+    });
+
+    expect(installationCalls).toEqual([123]);
     expect(reactionCalls).toEqual([
       {
         owner: "acme",

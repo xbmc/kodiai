@@ -49,3 +49,27 @@ export async function maybePostReviewRequestedEyesReaction(params: {
     logger: params.logger,
   });
 }
+
+export async function publishReviewRequestedEyesReactionFromHandlerDependencies(params: {
+  action: string;
+  installationId: number;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  logger: Pick<Logger, "warn">;
+}): Promise<void> {
+  const adapters = buildReviewRequestedEyesReactionAdapters({
+    installationId: params.installationId,
+    getInstallationOctokit: params.getInstallationOctokit,
+  });
+
+  await maybePostReviewRequestedEyesReaction({
+    action: params.action,
+    getOctokit: adapters.getOctokit,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    logger: params.logger,
+  });
+}
