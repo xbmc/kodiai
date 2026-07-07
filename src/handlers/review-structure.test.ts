@@ -865,8 +865,11 @@ describe("review handler structure", () => {
     expect(source).not.toContain("runReviewReducerFailOpen({");
     expect(source).not.toContain("resolveReviewCandidateApprovalContext({");
     expect(source).not.toContain("publishReviewCandidateInlineComments({");
+    expect(source).not.toContain("} = await resolveReviewCandidatePublicationPreparation({\n          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),");
+    expect(source).toContain("buildReviewCandidatePublicationPreparationAdapters");
     expect(source).toContain("resolveReviewCandidatePublicationPreparation");
     expect(source).toContain("./review-candidate-publication-preparation.ts");
+    expect(preparationSource).toContain("export function buildReviewCandidatePublicationPreparationAdapters");
     expect(preparationSource).toContain("export async function resolveReviewCandidatePublicationPreparation");
     expect(preparationSource).toContain("resolveReviewCandidateFindingContext({");
     expect(preparationSource).toContain("runReviewReducerFailOpen({");

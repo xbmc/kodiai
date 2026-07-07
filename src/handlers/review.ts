@@ -121,7 +121,10 @@ import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { applyReviewExecutorState, projectReviewExecutorState } from "./review-executor-state.ts";
 import { buildReviewExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
-import { resolveReviewCandidatePublicationPreparation } from "./review-candidate-publication-preparation.ts";
+import {
+  buildReviewCandidatePublicationPreparationAdapters,
+  resolveReviewCandidatePublicationPreparation,
+} from "./review-candidate-publication-preparation.ts";
 import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candidate-publication-runtime-context.ts";
 import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
 import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
@@ -827,6 +830,11 @@ export function createReviewHandler(deps: {
         });
 
         const reviewOutputSucceeded = result.conclusion === "success";
+        const candidatePublicationPreparationAdapters = buildReviewCandidatePublicationPreparationAdapters({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+          appSlug: githubApp.getAppSlug(),
+        });
         const {
           extractionOctokit,
           reviewCandidateFindingResult,
@@ -842,7 +850,7 @@ export function createReviewHandler(deps: {
           candidatePublisherResults,
           reviewCandidateVerificationPublicationEvidence: preparedCandidateVerificationPublicationEvidence,
         } = await resolveReviewCandidatePublicationPreparation({
-          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          getOctokit: candidatePublicationPreparationAdapters.getOctokit,
           candidateFinding: result.candidateFinding,
           reviewOutputSucceeded,
           resultPublished: result.published === true,
@@ -871,7 +879,7 @@ export function createReviewHandler(deps: {
           repoDoctrineReviewSurface,
           reviewReducer,
           canPublishVisibleOutput,
-          appSlug: githubApp.getAppSlug(),
+          appSlug: candidatePublicationPreparationAdapters.appSlug,
           candidateVerificationContext,
           prDiffCommentabilityIndex,
         });

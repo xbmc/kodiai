@@ -48,6 +48,17 @@ export type ReviewCandidatePublicationPreparationResult = {
   reviewCandidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceSummary;
 };
 
+export function buildReviewCandidatePublicationPreparationAdapters(params: {
+  installationId: number;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+  appSlug: string;
+}): Pick<Parameters<typeof resolveReviewCandidatePublicationPreparation>[0], "getOctokit" | "appSlug"> {
+  return {
+    getOctokit: () => params.getInstallationOctokit(params.installationId),
+    appSlug: params.appSlug,
+  };
+}
+
 export async function resolveReviewCandidatePublicationPreparation(params: {
   getOctokit: () => Promise<Octokit>;
   candidateFinding: unknown;
