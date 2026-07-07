@@ -4,7 +4,7 @@ import {
   postOrUpdateErrorComment as defaultPostOrUpdateErrorComment,
   type ErrorCommentPublicationStatus,
 } from "../lib/errors.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import { buildReviewFailureFallbackBody } from "./review-fallback-body.ts";
 import { describeReviewErrorCommentDelivery } from "./review-publication-state.ts";
 
@@ -74,12 +74,9 @@ export async function publishReviewFailureFallback(params: {
     });
   }
 
-  return {
-    ok: false,
-    err: {
-      published: false,
-      resolution: "failure-fallback-failed",
-      fallbackDelivery,
-    },
-  };
+  return err({
+    published: false,
+    resolution: "failure-fallback-failed",
+    fallbackDelivery,
+  });
 }

@@ -5,7 +5,7 @@ import {
   type ErrorCategory,
   type ErrorCommentPublicationStatus,
 } from "../lib/errors.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import type { TimeoutBudgetDetails } from "../lib/review-details-formatting.ts";
 import {
   buildReviewExecutionErrorFallbackBody,
@@ -111,16 +111,13 @@ export async function publishReviewExecutionErrorFallback(params: {
     });
   }
 
-  return {
-    ok: false,
-    err: {
-      published: false,
-      resolution: params.exhaustedTurnBudget
-        ? "turn-limit-fallback-undelivered"
-        : "error-comment-failed",
-      fallbackDelivery,
-    },
-  };
+  return err({
+    published: false,
+    resolution: params.exhaustedTurnBudget
+      ? "turn-limit-fallback-undelivered"
+      : "error-comment-failed",
+    fallbackDelivery,
+  });
 }
 
 export async function publishReviewHandlerFailureError(params: {

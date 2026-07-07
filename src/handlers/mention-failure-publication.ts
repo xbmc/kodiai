@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import {
   mentionErrorDeliveryFromResult,
   type MentionErrorDelivery,
@@ -77,14 +77,11 @@ export async function publishMentionFailureFallback(params: {
         });
       }
 
-      return {
-        ok: false,
-        err: {
-          published: false,
-          resolution: "turn-limit-fallback-failed",
-          fallbackDelivery,
-        },
-      };
+      return err({
+        published: false,
+        resolution: "turn-limit-fallback-failed",
+        fallbackDelivery,
+      });
     }
 
     if (fallbackResult.ok) {
@@ -95,14 +92,11 @@ export async function publishMentionFailureFallback(params: {
       });
     }
 
-    return {
-      ok: false,
-      err: {
-        published: false,
-        resolution: "failure-fallback-failed",
-        fallbackDelivery,
-      },
-    };
+    return err({
+      published: false,
+      resolution: "failure-fallback-failed",
+      fallbackDelivery,
+    });
   } catch (postErr) {
     if (exhaustedTurnBudget) {
       params.logger.warn(
@@ -116,13 +110,10 @@ export async function publishMentionFailureFallback(params: {
       );
     }
 
-    return {
-      ok: false,
-      err: {
-        published: false,
-        resolution: "skipped",
-        fallbackDelivery: null,
-      },
-    };
+    return err({
+      published: false,
+      resolution: "skipped",
+      fallbackDelivery: null,
+    });
   }
 }

@@ -1,7 +1,7 @@
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { GuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { classifyError } from "../lib/errors.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import type {
   ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
@@ -99,14 +99,11 @@ export async function publishMentionErrorFallback(params: {
     });
   }
 
-  return {
-    ok: false,
-    err: {
-      published: false,
-      resolution: "error-comment-failed",
-      fallbackDelivery,
-    },
-  };
+  return err({
+    published: false,
+    resolution: "error-comment-failed",
+    fallbackDelivery,
+  });
 }
 
 export async function publishMentionHandlerFailureError(params: {

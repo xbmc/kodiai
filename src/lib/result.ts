@@ -6,7 +6,7 @@ export function ok<T, E = Error>(value: T): Result<T, E> {
   return { ok: true, value };
 }
 
-export function err<E extends Error>(error: E): Result<never, E> {
+export function err<E>(error: E): Result<never, E> {
   return { ok: false, err: error };
 }
 
