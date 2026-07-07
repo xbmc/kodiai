@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
+import { err, ok } from "../lib/result.ts";
 import type { ReviewCandidateApprovalResult } from "../review-orchestration/review-candidate-approval.ts";
 import type { ReviewCandidatePublicationAdapterResult } from "../review-orchestration/review-candidate-publication-adapter.ts";
 import type { ReviewCandidateFindingExecutionResult } from "../review-orchestration/review-candidate-finding.ts";
@@ -157,7 +158,7 @@ describe("resolveReviewCandidateApprovalContext", () => {
       },
       adaptForPublication: (input) => {
         adaptCalls.push(input);
-        return adapter;
+        return ok(adapter);
       },
     });
 
@@ -198,7 +199,7 @@ describe("resolveReviewCandidateApprovalContext", () => {
         coordinateCalls.push(input);
         return makeApproval();
       },
-      adaptForPublication: () => makeAdapter(),
+      adaptForPublication: () => ok(makeAdapter()),
     });
 
     expect(context.directFallbackAllowed).toBe(false);
@@ -209,5 +210,22 @@ describe("resolveReviewCandidateApprovalContext", () => {
         attemptedDirectFallback: false,
       },
     });
+  });
+
+  test("surfaces failed publication adapter results instead of unstructured partial state", () => {
+    const adapterError = new Error("adapter failed");
+
+    expect(() =>
+      resolveReviewCandidateApprovalContext({
+        candidates: makeCandidates({ status: "unavailable" }),
+        reducer: makeReducer(),
+        resultPublished: false,
+        extractedFindingCount: 0,
+        minConfidence: 50,
+        logger: {} as Logger,
+        coordinateApproval: () => makeApproval(),
+        adaptForPublication: () => err(adapterError),
+      })
+    ).toThrow(adapterError);
   });
 });

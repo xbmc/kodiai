@@ -14,6 +14,7 @@ import {
 } from "../review-lifecycle/same-pr-fix-eligibility.ts";
 import type { SamePrFixTruthEvidence } from "../review-lifecycle/validation-truth.ts";
 import type { FindingCategory, FindingSeverity } from "../lib/review-finding-metadata.ts";
+import { ok, type Result } from "../lib/result.ts";
 import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 import type {
   ReviewCandidateApprovalCandidateReference,
@@ -137,6 +138,8 @@ export type ReviewCandidatePublicationAdapterResult = {
   payloads: PublishableReviewCandidateInlinePayload[];
   summary: ReviewCandidatePublicationAdapterSummary;
 };
+
+export type ReviewCandidatePublicationAdapterOutcome = Result<ReviewCandidatePublicationAdapterResult>;
 
 export type ReviewCandidatePublishedResultSummary = {
   counts: {
@@ -338,6 +341,12 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
   };
 
   return { payloads, summary };
+}
+
+export function adaptApprovedCandidatesForInlinePublicationResult(
+  input: Parameters<typeof adaptApprovedCandidatesForInlinePublication>[0],
+): ReviewCandidatePublicationAdapterOutcome {
+  return ok(adaptApprovedCandidatesForInlinePublication(input));
 }
 
 export function convertPublishedCandidateResultsToProcessedFindings(input: {
