@@ -55,7 +55,6 @@ import {
 import {
   type ExtractedFinding,
   extractFindingsFromReviewComments,
-  removeFilteredInlineComments,
 } from "../review-orchestration/review-comment-finding-extraction.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
@@ -167,6 +166,7 @@ import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { scheduleReviewTimeoutRetryContinuation } from "./review-timeout-retry-scheduling.ts";
+import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filtered-inline-cleanup.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -935,16 +935,15 @@ export function createReviewHandler(deps: {
           baseLog,
         });
 
-        if (reviewOutputSucceeded && filteredInlineFindings.length > 0) {
-          await removeFilteredInlineComments({
-            octokit: extractionOctokit,
-            owner: apiOwner,
-            repo: apiRepo,
-            findings: filteredInlineFindings,
-            logger,
-            baseLog,
-          });
-        }
+        await removeFilteredInlineCommentsForSuccessfulReview({
+          reviewOutputSucceeded,
+          filteredInlineFindings,
+          octokit: extractionOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          logger,
+          baseLog,
+        });
 
         const {
           findingCounts,

@@ -1544,6 +1544,17 @@ describe("review handler structure", () => {
     expect(lifecycleContextSource).toContain("./review-validation-truth.ts");
   });
 
+  test("keeps filtered inline comment cleanup policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const cleanupSource = readFileSync(new URL("./review-filtered-inline-cleanup.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("removeFilteredInlineComments({");
+    expect(source).not.toContain("reviewOutputSucceeded && filteredInlineFindings.length > 0");
+    expect(source).toContain("removeFilteredInlineCommentsForSuccessfulReview");
+    expect(source).toContain("./review-filtered-inline-cleanup.ts");
+    expect(cleanupSource).toContain("removeFilteredInlineComments");
+  });
+
   test("keeps review-requested reaction publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
