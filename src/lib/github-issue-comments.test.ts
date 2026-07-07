@@ -438,6 +438,46 @@ describe("findIssueCommentByMarkerPaged", () => {
     expect(calls.map((call) => call.page)).toEqual([1, 2]);
   });
 
+  test("forwards issue comment sort and direction while finding a marker", async () => {
+    const calls: Array<{
+      page?: number;
+      per_page?: number;
+      sort?: string;
+      direction?: string;
+    }> = [];
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async (params: {
+            page?: number;
+            per_page?: number;
+            sort?: string;
+            direction?: string;
+          }) => {
+            calls.push(params);
+            return {
+              data: [{ id: 10, body: "found <!-- marker -->" }],
+            };
+          },
+        },
+      },
+    };
+
+    const result = await findIssueCommentByMarkerPaged(octokit, {
+      owner: "acme",
+      repo: "repo",
+      issueNumber: 42,
+      marker: "<!-- marker -->",
+      sort: "created",
+      direction: "desc",
+    });
+
+    expect(result?.id).toBe(10);
+    expect(calls).toEqual([
+      expect.objectContaining({ page: 1, per_page: 100, sort: "created", direction: "desc" }),
+    ]);
+  });
+
   test("collects all issue comments matching a marker across pages", async () => {
     const octokit = {
       rest: {

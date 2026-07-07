@@ -326,25 +326,14 @@ async function upsertCIComment(
   let existingCommentId: number | null = null;
 
   try {
-    existingCommentId = (await findIssueCommentByMarkerPaged(
-      {
-        rest: {
-          issues: {
-            listComments: (args) => octokit.rest.issues.listComments({
-              ...args,
-              sort: "created",
-              direction: "desc",
-            }),
-          },
-        },
-      },
-      {
-        owner,
-        repo,
-        issueNumber: prNumber,
-        marker,
-      },
-    ))?.id ?? null;
+    existingCommentId = (await findIssueCommentByMarkerPaged(octokit, {
+      owner,
+      repo,
+      issueNumber: prNumber,
+      marker,
+      sort: "created",
+      direction: "desc",
+    }))?.id ?? null;
   } catch {
     logger.debug(
       { deliveryId, prNumber },

@@ -527,6 +527,8 @@ export async function findIssueCommentByMarkerPaged(
     issueNumber: number;
     marker: string;
     perPage?: number;
+    sort?: "created" | "updated";
+    direction?: "asc" | "desc";
   },
 ): Promise<IssueCommentMarkerMatch | undefined> {
   let match: IssueCommentMarkerMatch | undefined;
@@ -558,6 +560,8 @@ export async function findIssueCommentsByMarkerPaged(
     issueNumber: number;
     marker: string;
     perPage?: number;
+    sort?: "created" | "updated";
+    direction?: "asc" | "desc";
   },
 ): Promise<IssueCommentMarkerMatch[]> {
   const matches: IssueCommentMarkerMatch[] = [];
