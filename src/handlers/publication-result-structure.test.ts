@@ -329,4 +329,19 @@ describe("publication result structure", () => {
     expect(source).toContain("publishRetryMergeContinuationResultsFn");
     expect(retryJobSource).toContain("settleRetryContinuationResults");
   });
+
+  test("keeps no-additional-results retry settlement on shared Result shape", () => {
+    const source = readFileSync(new URL("./review-retry-settlement.ts", import.meta.url), "utf8");
+    const continuationSource = readFileSync(
+      new URL("./review-retry-continuation-settlement.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("RetryNoAdditionalResultsSettlementResult");
+    expect(source).toContain("Result<RetryNoAdditionalResultsSettlementStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(continuationSource).toContain("const quietSettlement = await settleRetryWithNoAdditionalResults");
+    expect(continuationSource).toContain("quietSettlement.value");
+  });
 });

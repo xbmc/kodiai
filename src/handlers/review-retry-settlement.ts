@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { ok, type Result } from "../lib/result.ts";
 import { resolveQuietSettledContinuationFamilyState } from "./review-continuation-family-state-projection.ts";
 
 type QuietRetrySettlementPersistence = {
@@ -9,6 +10,16 @@ type QuietRetrySettlementPersistence = {
   ) => Promise<void>;
 };
 
+export type RetryNoAdditionalResultsSettlementStatus = {
+  status: "quiet-settled";
+  persistedContinuationState: boolean;
+  discardedCheckpoints: boolean;
+  reason: string;
+};
+
+export type RetryNoAdditionalResultsSettlementResult =
+  Result<RetryNoAdditionalResultsSettlementStatus, never>;
+
 export async function settleRetryWithNoAdditionalResults(params: {
   logger: Pick<Logger, "info">;
   deliveryId: string;
@@ -17,7 +28,7 @@ export async function settleRetryWithNoAdditionalResults(params: {
   settlementReason?: string;
   quietSettlement?: QuietRetrySettlementPersistence;
   discardCheckpoints?: () => void;
-}): Promise<void> {
+}): Promise<RetryNoAdditionalResultsSettlementResult> {
   params.logger.info(
     {
       deliveryId: params.deliveryId,
@@ -35,4 +46,10 @@ export async function settleRetryWithNoAdditionalResults(params: {
     }));
   }
   params.discardCheckpoints?.();
+  return ok({
+    status: "quiet-settled",
+    persistedContinuationState: params.quietSettlement !== undefined,
+    discardedCheckpoints: params.discardCheckpoints !== undefined,
+    reason: params.settlementReason ?? "no-retry-results",
+  });
 }

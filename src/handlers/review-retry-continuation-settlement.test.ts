@@ -86,7 +86,13 @@ describe("settleRetryContinuationResults", () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: "quiet-settled", published: false, reason: "no-retry-results" },
+      value: {
+        status: "quiet-settled",
+        published: false,
+        persistedContinuationState: false,
+        discardedCheckpoints: false,
+        reason: "no-retry-results",
+      },
     });
   });
 

@@ -15,12 +15,15 @@ import {
   publishRetryMergeContinuationResults,
   type RetryMergeContinuationPublicationStatus,
 } from "./review-retry-merge-publication.ts";
-import { settleRetryWithNoAdditionalResults } from "./review-retry-settlement.ts";
+import {
+  settleRetryWithNoAdditionalResults,
+  type RetryNoAdditionalResultsSettlementStatus,
+} from "./review-retry-settlement.ts";
 
 type PublishRetryMergeContinuationResults = typeof publishRetryMergeContinuationResults;
 
 export type RetryContinuationSettlementStatus =
-  | { status: "quiet-settled"; published: false; reason: string }
+  | (RetryNoAdditionalResultsSettlementStatus & { published: false })
   | { status: "settled-without-canonical-update"; published: false; reason: string }
   | RetryMergeContinuationPublicationStatus;
 
@@ -65,13 +68,22 @@ export async function settleRetryContinuationResults(params: {
   publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
 }): Promise<RetryContinuationSettlementResult> {
   if (!params.retryCompletedWithResults) {
-    await settleRetryWithNoAdditionalResults({
+    const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
       deliveryId: params.deliveryId,
       prNumber: params.prNumber,
       retryConclusion: params.retryResult.conclusion,
     });
-    return ok({ status: "quiet-settled", published: false, reason: "no-retry-results" });
+    if (!quietSettlement.ok) {
+      return ok({
+        status: "quiet-settled",
+        published: false,
+        persistedContinuationState: false,
+        discardedCheckpoints: false,
+        reason: "no-retry-results",
+      });
+    }
+    return ok({ ...quietSettlement.value, published: false });
   }
 
   if (!params.baseCheckpoint) {
@@ -98,7 +110,7 @@ export async function settleRetryContinuationResults(params: {
   });
 
   if (settlementDecision.decision !== "merge-continuation") {
-    await settleRetryWithNoAdditionalResults({
+    const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
       deliveryId: params.deliveryId,
       prNumber: params.prNumber,
@@ -110,11 +122,16 @@ export async function settleRetryContinuationResults(params: {
         persistContinuationFamilyState: params.persistContinuationFamilyState,
       },
     });
-    return ok({
-      status: "quiet-settled",
-      published: false,
-      reason: settlementDecision.reason,
-    });
+    if (!quietSettlement.ok) {
+      return ok({
+        status: "quiet-settled",
+        published: false,
+        persistedContinuationState: false,
+        discardedCheckpoints: false,
+        reason: settlementDecision.reason,
+      });
+    }
+    return ok({ ...quietSettlement.value, published: false });
   }
 
   const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
@@ -141,7 +158,7 @@ export async function settleRetryContinuationResults(params: {
     && continuationRevisionCounts.stillOpen === 0
     && continuationRevisionCounts.resolved === 0
   ) {
-    await settleRetryWithNoAdditionalResults({
+    const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
       deliveryId: params.deliveryId,
       prNumber: params.prNumber,
@@ -157,11 +174,16 @@ export async function settleRetryContinuationResults(params: {
         params.retryReviewOutputKey,
       ]),
     });
-    return ok({
-      status: "quiet-settled",
-      published: false,
-      reason: "no-meaningful-delta",
-    });
+    if (!quietSettlement.ok) {
+      return ok({
+        status: "quiet-settled",
+        published: false,
+        persistedContinuationState: false,
+        discardedCheckpoints: false,
+        reason: "no-meaningful-delta",
+      });
+    }
+    return ok({ ...quietSettlement.value, published: false });
   }
 
   const mergeContext = resolveReviewContinuationMergeContext({
