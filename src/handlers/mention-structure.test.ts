@@ -395,14 +395,29 @@ describe("mention handler structure", () => {
 
   test("keeps explicit review prompt and routing assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptRuntimeSource = readFileSync(new URL("./mention-prompt-runtime.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const explicitReviewPrNumber = mention.prNumber");
     expect(source).not.toContain("const promptDiffContext = mention.baseRef");
     expect(source).not.toContain("const diffAnalysis = analyzeDiff({");
     expect(source).not.toContain("Mention review routing decision");
     expect(source).not.toContain("buildReviewPromptDetails({");
-    expect(source).toContain("buildMentionExplicitReviewPrompt");
-    expect(source).toContain("./mention-explicit-review-prompt.ts");
+    expect(source).toContain("resolveMentionPromptRuntimeContext");
+    expect(source).toContain("./mention-prompt-runtime.ts");
+    expect(promptRuntimeSource).toContain("buildMentionExplicitReviewPrompt");
+    expect(promptRuntimeSource).toContain("./mention-explicit-review-prompt.ts");
+  });
+
+  test("keeps mention prompt runtime branching out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let prompt: string;");
+    expect(source).not.toContain("let explicitReviewPromptFileCount: number | undefined;");
+    expect(source).not.toContain("if (explicitReviewRequest && mention.prNumber !== undefined) {");
+    expect(source).not.toContain("const mentionPromptResult = buildMentionPromptDetails({");
+    expect(source).not.toContain("promptSections = [");
+    expect(source).toContain("resolveMentionPromptRuntimeContext");
+    expect(source).toContain("./mention-prompt-runtime.ts");
   });
 
   test("keeps PR diff prefetch fail-open orchestration out of the monster handler", () => {

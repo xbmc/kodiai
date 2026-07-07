@@ -37,14 +37,8 @@ import {
   buildMentionWriteContext,
 } from "./mention-write-keys.ts";
 import { evaluateMentionWriteContextGate } from "./mention-write-context-gate.ts";
-import { buildMentionPromptDetails } from "../execution/mention-prompt.ts";
-import type { PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import { routeAddonRuleReviewMention } from "./addon-review-routing.ts";
-import { TASK_TYPES } from "../llm/task-types.ts";
-import {
-  type ReviewTaskRouting,
-} from "../lib/review-routing.ts";
-import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
+import { type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { createSearchCache, type SearchCacheOptions } from "../lib/search-cache.ts";
 import {
@@ -117,7 +111,6 @@ import {
 } from "./mention-retrieval-context.ts";
 import { recordMentionExecutionTelemetry } from "./mention-telemetry.ts";
 import { projectExplicitMentionReviewValidationTruth } from "./mention-validation-truth.ts";
-import { buildMentionExplicitReviewPrompt } from "./mention-explicit-review-prompt.ts";
 import {
   resolveMentionPrDiffContext,
   type MentionPrDiffContext,
@@ -129,6 +122,7 @@ import { resolveMentionRequestContext } from "./mention-request-context.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
+import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -793,85 +787,50 @@ export function createMentionHandler(deps: {
         });
 
         setReviewWorkPhase("prompt-build");
-        let prompt: string;
-        let promptSections: import("../telemetry/types.ts").PromptSectionRecord[] = [];
-        let explicitReviewPromptFileCount: number | undefined;
-        let explicitReviewDynamicTimeoutSeconds: number | undefined;
-        let explicitReviewMaxTurnsOverride: number | undefined;
-        let explicitReviewPrDiffCommentabilityIndex: PrDiffCommentabilityIndex | undefined;
-        let explicitReviewHeadSha: string | undefined;
-        let explicitReviewBaseSha: string | undefined;
-        let explicitReviewRouting: ReviewTaskRouting = {
-          taskType: TASK_TYPES.REVIEW_FULL,
-          routingReason: "standard",
-        };
-        if (explicitReviewRequest && mention.prNumber !== undefined) {
-          const explicitReviewPrompt = await buildMentionExplicitReviewPrompt({
-            mention: mention as MentionEvent & { prNumber: number },
-            config,
-            deliveryId: event.id,
-            workspaceDir: workspace.dir,
-            workspaceToken: workspace.token,
-            retrievalContext,
-            reviewPrecedents: reviewPrecedentsForPrompt,
-            wikiKnowledge: wikiKnowledgeForPrompt,
-            unifiedResults: unifiedResultsForPrompt,
-            contextWindow: contextWindowForPrompt,
-            logger,
-            getPullRequest: async (args) => {
-              const { data } = await octokit.rest.pulls.get(args);
-              return data;
-            },
-            fetchPullRequestFiles: async (args) => await fetchAllPullRequestFiles({
-              octokit,
-              owner: args.owner,
-              repo: args.repo,
-              pullNumber: args.pullNumber,
-            }),
-          });
-          prompt = explicitReviewPrompt.prompt;
-          promptSections = explicitReviewPrompt.promptSections;
-          explicitReviewPromptFileCount = explicitReviewPrompt.promptFileCount;
-          explicitReviewDynamicTimeoutSeconds = explicitReviewPrompt.dynamicTimeoutSeconds;
-          explicitReviewMaxTurnsOverride = explicitReviewPrompt.maxTurnsOverride;
-          explicitReviewPrDiffCommentabilityIndex = explicitReviewPrompt.prDiffCommentabilityIndex;
-          explicitReviewHeadSha = explicitReviewPrompt.headSha;
-          explicitReviewBaseSha = explicitReviewPrompt.baseSha;
-          explicitReviewRouting = explicitReviewPrompt.routing;
-        } else {
-          const mentionPromptResult = buildMentionPromptDetails({
-            mention,
-            mentionContext,
-            retrievalContext,
-            userQuestion: writeIntent.request,
-            findingContext,
-            customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
-              .filter((s) => (s ?? "").trim().length > 0)
-              .join("\n\n"),
-            outputLanguage: config.review.outputLanguage,
-            unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
-            contextWindow: contextWindowForPrompt,
-            triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
-            prDiffContext,
-          });
-          prompt = mentionPromptResult.text;
-          promptSections = [
-            buildPromptSectionRecord({
-              deliveryId: event.id,
-              repo: `${mention.owner}/${mention.repo}`,
-              taskType: "mention.response",
-              promptKind: "mention.context",
-              sections: mentionContextSectionMetrics,
-            }),
-            buildPromptSectionRecord({
-              deliveryId: event.id,
-              repo: `${mention.owner}/${mention.repo}`,
-              taskType: "mention.response",
-              promptKind: "mention.user-prompt",
-              sections: mentionPromptResult.sections,
-            }),
-          ].filter((record) => record.sections.length > 0);
-        }
+        const mentionPromptRuntime = await resolveMentionPromptRuntimeContext({
+          explicitReviewRequest,
+          mention,
+          config,
+          deliveryId: event.id,
+          workspaceDir: workspace.dir,
+          workspaceToken: workspace.token,
+          retrievalContext,
+          reviewPrecedents: reviewPrecedentsForPrompt,
+          wikiKnowledge: wikiKnowledgeForPrompt,
+          unifiedResults: unifiedResultsForPrompt,
+          contextWindow: contextWindowForPrompt,
+          logger,
+          getPullRequest: async (args) => {
+            const { data } = await octokit.rest.pulls.get(args);
+            return data;
+          },
+          fetchPullRequestFiles: async (args) => await fetchAllPullRequestFiles({
+            octokit,
+            owner: args.owner,
+            repo: args.repo,
+            pullNumber: args.pullNumber,
+          }),
+          mentionContext,
+          mentionContextSectionMetrics,
+          userQuestion: writeIntent.request,
+          findingContext,
+          planOnlyInstructions,
+          writeInstructions,
+          outputLanguage: config.review.outputLanguage,
+          triageContext,
+          prDiffContext,
+        });
+        const {
+          prompt,
+          promptSections,
+          explicitReviewPromptFileCount,
+          explicitReviewDynamicTimeoutSeconds,
+          explicitReviewMaxTurnsOverride,
+          explicitReviewPrDiffCommentabilityIndex,
+          explicitReviewHeadSha,
+          explicitReviewBaseSha,
+          explicitReviewRouting,
+        } = mentionPromptRuntime;
 
         const executorPlan = resolveMentionExecutorPlan({
           mention,
