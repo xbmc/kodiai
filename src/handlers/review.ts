@@ -152,6 +152,7 @@ import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
 import { buildReviewRuntimePlan } from "./review-runtime-plan.ts";
 import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
+import { buildInitialReviewPromptContext } from "./review-prompt-build-context.ts";
 import { persistReviewKnowledge } from "./review-knowledge-persistence.ts";
 import {
   completeReviewRunFailOpen,
@@ -891,7 +892,7 @@ export function createReviewHandler(deps: {
         // Build review prompt
         let reviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
         let reviewPromptDerivedCacheReason: string | null = null;
-        const reviewPromptBuildContext = {
+        const reviewPromptBuildContext = buildInitialReviewPromptContext({
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -903,7 +904,6 @@ export function createReviewHandler(deps: {
           changedFiles: promptFiles,
           customInstructions: config.review.prompt,
           checkpointEnabled,
-          // Review mode & severity control
           mode: config.review.mode,
           severityMinLevel: resolvedSeverityMinLevel,
           focusAreas: resolvedFocusAreas,
@@ -914,55 +914,19 @@ export function createReviewHandler(deps: {
           diffAnalysis,
           diffContent,
           matchedPathInstructions,
-          // Incremental re-review context (REV-01)
-          incrementalContext: incrementalResult?.mode === "incremental" ? {
-            lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
-            changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
-            unresolvedPriorFindings: priorFindingCtx?.unresolvedOnUnchangedCode ?? [],
-          } : null,
-          // Learning memory retrieval context (LEARN-07)
+          incrementalResult,
+          priorFindingContext: priorFindingCtx,
           retrievalContext: retrievalCtx,
-          // Review comment precedents (KI-05/KI-06)
-          reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
-          wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
-          // Unified cross-corpus retrieval (KI-13/KI-17)
-          unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+          reviewPrecedents: reviewPrecedentsForPrompt,
+          wikiKnowledge: wikiKnowledgeForPrompt,
+          unifiedResults: unifiedResultsForPrompt,
           contextWindow: contextWindowForPrompt,
-          // Multi-language context and localized output (LANG-01)
-          filesByLanguage: diffAnalysis?.filesByLanguage,
           outputLanguage: config.review.outputLanguage,
-           // PR labels for intent scoping (FORMAT-07)
-           prLabels,
-           // INTENT-01: Treat unrecognized bracket tags as focus hints
-           focusHints: parsedIntent.unrecognized,
-           conventionalType: parsedIntent.conventionalType,
-           // Delta re-review context (FORMAT-14/15/16)
-           deltaContext: incrementalResult?.mode === "incremental" && priorFindings.length > 0
-             ? {
-                 lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
-                 changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
-                 priorFindings: priorFindings.map(f => ({
-                   filePath: f.filePath,
-                   title: f.title,
-                   severity: f.severity,
-                   category: f.category,
-                 })),
-               }
-             : null,
-          // Large PR file triage context (LARGE-01 through LARGE-08)
-          largePRContext: tieredFiles.isLargePR ? {
-            fullReviewFiles: tieredFiles.full.map(f => f.filePath),
-            abbreviatedFiles: tieredFiles.abbreviated.map(f => f.filePath),
-            mentionOnlyCount: tieredFiles.mentionOnly.length,
-            totalFiles: tieredFiles.totalFiles,
-          } : null,
-          gitDiffInstructionsAvailable: false,
-          publishToolNames: [
-            "mcp__github_comment__create_comment",
-            "mcp__github_inline_comment__create_inline_comment",
-          ],
-          candidateFindingToolName: "record_candidate_finding",
-          candidateFindingMode: "preferred",
+          prLabels,
+          focusHints: parsedIntent.unrecognized,
+          conventionalType: parsedIntent.conventionalType,
+          priorFindings,
+          tieredFiles,
           contributorExperienceContract: authorClassification.contract,
           authorExpertise: authorClassification.contract.state === "profile-backed"
             ? authorClassification.expertise?.map(e => ({
@@ -974,17 +938,14 @@ export function createReviewHandler(deps: {
           depBumpContext,
           searchRateLimitDegradation: authorClassification.searchEnrichment,
           isDraft,
-          // Review pattern clustering (CLST-03)
-          clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
-          // PR-issue linking (PRLINK-03)
+          clusterPatterns: clusterPatternsForPrompt,
           linkedIssues: linkedIssueResult,
-          // Graph-derived review context (M040/S03): inject bounded blast-radius section when available
-          graphBlastRadius: graphBlastRadius ?? undefined,
+          graphBlastRadius,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
           repoDoctrine: repoDoctrineProjection,
-          smallDiffReview: reviewRouting.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
-        } satisfies ReviewPromptBuildContext;
+          taskType: reviewRouting.taskType,
+        });
         const reviewPromptCacheState: ReviewPromptCacheState = {
           status: reviewPromptDerivedCacheStatus,
           reason: reviewPromptDerivedCacheReason,

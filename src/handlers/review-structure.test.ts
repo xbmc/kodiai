@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(2690);
+    expect(source.split("\n").length).toBeLessThanOrEqual(2650);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -497,6 +497,17 @@ describe("review handler structure", () => {
     expect(source).not.toContain("linkedIssueResult = await linkPRToIssues({");
     expect(source).toContain("buildReviewPromptEnrichment");
     expect(source).toContain("./review-prompt-enrichment.ts");
+  });
+
+  test("keeps initial review prompt context assembly out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const promptContextSource = readFileSync(new URL("./review-prompt-build-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const reviewPromptBuildContext = {");
+    expect(source).toContain("buildInitialReviewPromptContext");
+    expect(source).toContain("./review-prompt-build-context.ts");
+    expect(promptContextSource).toContain("ReviewPromptBuildContext");
+    expect(promptContextSource).toContain("TASK_TYPES.REVIEW_SMALL_DIFF");
   });
 
   test("keeps no-review skip acknowledgment publication out of the monster handler", () => {
