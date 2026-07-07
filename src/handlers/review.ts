@@ -92,9 +92,7 @@ import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
 import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
-import {
-  publishReviewHandlerFailureError,
-} from "./review-error-publication.ts";
+import { buildReviewHandlerFailurePublicationAdapter } from "./review-handler-failure-publication-adapter.ts";
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
@@ -1615,8 +1613,8 @@ export function createReviewHandler(deps: {
           retrievalPhaseStartedAt: timingState.retrievalPhaseStartedAt,
           publicationPhaseStartedAt: timingState.publicationPhaseStartedAt,
           logger,
-          publishHandlerFailureError: async () => await publishReviewHandlerFailureError({
-            octokit: await githubApp.getInstallationOctokit(event.installationId),
+          publishHandlerFailureError: buildReviewHandlerFailurePublicationAdapter({
+            getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
             owner: apiOwner,
             repo: apiRepo,
             prNumber: pr.number,

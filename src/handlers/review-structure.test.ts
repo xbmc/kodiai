@@ -1446,6 +1446,16 @@ describe("review handler structure", () => {
     expect(cleanupSource).toContain("export async function cleanupReviewExecutionResources");
   });
 
+  test("keeps handler failure publication adapter binding out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const adapterSource = readFileSync(new URL("./review-handler-failure-publication-adapter.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("publishHandlerFailureError: async () => await publishReviewHandlerFailureError({");
+    expect(source).toContain("buildReviewHandlerFailurePublicationAdapter");
+    expect(source).toContain("./review-handler-failure-publication-adapter.ts");
+    expect(adapterSource).toContain("export function buildReviewHandlerFailurePublicationAdapter");
+  });
+
   test("keeps continuation revision delta classification out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryContinuationSettlementSource = readFileSync(new URL("./review-retry-continuation-settlement.ts", import.meta.url), "utf8");
@@ -1552,13 +1562,15 @@ describe("review handler structure", () => {
 
   test("keeps review handler failure error publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const adapterSource = readFileSync(new URL("./review-handler-failure-publication-adapter.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const errorBody = buildReviewHandlerFailureErrorBody");
     expect(source).not.toContain("await postOrUpdateErrorComment(errOctokit");
     expect(source).not.toContain("posted error comment after handler failure");
     expect(source).not.toContain("suppressed error comment after handler failure because publish rights were lost");
-    expect(source).toContain("publishReviewHandlerFailureError");
-    expect(source).toContain("./review-error-publication.ts");
+    expect(source).toContain("buildReviewHandlerFailurePublicationAdapter");
+    expect(adapterSource).toContain("publishReviewHandlerFailureError");
+    expect(adapterSource).toContain("./review-error-publication.ts");
   });
 
   test("keeps review handler failure recovery policy out of the monster handler", () => {

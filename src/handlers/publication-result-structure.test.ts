@@ -67,4 +67,23 @@ describe("publication result structure", () => {
     expect(source).toMatch(/\bok\(/);
     expect(source).toMatch(/\berr\(/);
   });
+
+  test("keeps review candidate publication adapter boundary on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("../review-orchestration/review-candidate-publication-adapter.ts", import.meta.url),
+      "utf8",
+    );
+    const contextSource = readFileSync(
+      new URL("./review-candidate-approval-context.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("ReviewCandidatePublicationAdapterOutcome");
+    expect(source).toContain("Result<ReviewCandidatePublicationAdapterResult>");
+    expect(source).toContain("adaptApprovedCandidatesForInlinePublicationResult");
+    expect(source).toMatch(/\bok\(/);
+    expect(contextSource).toContain("adaptApprovedCandidatesForInlinePublicationResult");
+    expect(contextSource).toContain("if (!publicationAdapterResult.ok)");
+  });
 });
