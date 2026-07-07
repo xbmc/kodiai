@@ -167,6 +167,7 @@ import { resolveReviewTimeoutClassificationContext } from "./review-timeout-clas
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { scheduleReviewTimeoutRetryContinuation } from "./review-timeout-retry-scheduling.ts";
 import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filtered-inline-cleanup.ts";
+import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1027,12 +1028,10 @@ export function createReviewHandler(deps: {
           authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
           reviewBoundedness,
           baseLog,
-          attemptLogFields: {
-            deltaNew: deltaClassification?.counts.new ?? null,
-            deltaResolved: deltaClassification?.counts.resolved ?? null,
-            deltaStillOpen: deltaClassification?.counts.stillOpen ?? null,
-            provenanceCount: retrievalCtx?.findings.length ?? null,
-          },
+          attemptLogFields: buildReviewDetailsAttemptLogFields({
+            deltaCounts: deltaClassification?.counts ?? null,
+            retrievalFindingCount: retrievalCtx?.findings.length ?? null,
+          }),
           logger,
           canPublishVisibleOutput,
           setReviewWorkPhase,

@@ -1350,6 +1350,20 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-details-first-pass-publication.ts");
   });
 
+  test("keeps first-pass Review Details attempt log projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const projectionSource = readFileSync(
+      new URL("./review-details-attempt-log-fields.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("deltaNew: deltaClassification?.counts.new ?? null");
+    expect(source).not.toContain("provenanceCount: retrievalCtx?.findings.length ?? null");
+    expect(source).toContain("buildReviewDetailsAttemptLogFields");
+    expect(source).toContain("./review-details-attempt-log-fields.ts");
+    expect(projectionSource).toContain("export function buildReviewDetailsAttemptLogFields");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
