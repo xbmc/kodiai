@@ -65,6 +65,7 @@ export function findDirectGitHubPublicationWrites(
       continue;
     }
     const bodyBearingPayloadAliases = findBodyBearingPayloadAliases(source);
+    const bodyBearingRequestObjectAliases = findBodyBearingRequestObjectAliases(source, bodyBearingPayloadAliases);
 
     for (const method of BODY_BEARING_GITHUB_PUBLICATION_METHODS) {
       const [namespace, name] = method.split(".") as [string, string];
@@ -154,6 +155,17 @@ export function findDirectGitHubPublicationWrites(
           findings.push({ file, method: `request:${objectRequest.httpMethod} ${objectRequest.route}` });
         }
       }
+
+      const objectRequestAliasCallPattern = new RegExp(
+        String.raw`${requestCalleePattern}\s*\(\s*([A-Za-z_$][\w$]*)\s*[,)]`,
+        "gs",
+      );
+      for (const match of source.matchAll(objectRequestAliasCallPattern)) {
+        const objectRequest = bodyBearingRequestObjectAliases.get(match[1] ?? "");
+        if (objectRequest) {
+          findings.push({ file, method: `request:${objectRequest.httpMethod} ${objectRequest.route}` });
+        }
+      }
     }
 
     const graphqlCalleePatterns = [
@@ -213,6 +225,37 @@ function findBodyBearingPayloadAliases(source: string): string[] {
   }
 
   return [...aliases];
+}
+
+function findBodyBearingRequestObjectAliases(
+  source: string,
+  bodyBearingPayloadAliases: string[],
+): Map<string, { httpMethod: string; route: string }> {
+  const aliases = new Map<string, { httpMethod: string; route: string }>();
+  const declarationPattern = /\b(?:const|let|var)\s+(\w+)(?:\s*:[^=]+)?\s*=\s*\{/g;
+  for (const match of source.matchAll(declarationPattern)) {
+    const alias = match[1];
+    if (!alias || match.index === undefined) {
+      continue;
+    }
+
+    const initializerStart = source.indexOf("{", match.index);
+    if (initializerStart === -1) {
+      continue;
+    }
+
+    const initializer = readBalancedObjectLiteral(source, initializerStart);
+    if (!initializer) {
+      continue;
+    }
+
+    const requestObject = parseBodyBearingRequestObject(initializer, bodyBearingPayloadAliases);
+    if (requestObject) {
+      aliases.set(alias, requestObject);
+    }
+  }
+
+  return aliases;
 }
 
 function readBalancedObjectLiteral(source: string, openBraceIndex: number): string | null {

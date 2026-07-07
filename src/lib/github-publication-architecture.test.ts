@@ -99,6 +99,17 @@ describe("GitHub publication architecture", () => {
             body,
           });
         `,
+        "src/handlers/unsafe-request-object-alias.ts": `
+          const requestOptions = {
+            method: "POST",
+            url: "/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            owner,
+            repo,
+            issue_number,
+            body,
+          };
+          await octokit.request(requestOptions);
+        `,
         "src/handlers/unsafe-request-assignment-alias.ts": `
           const request = octokit.request;
           await request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", { owner, repo, issue_number, body });
@@ -201,6 +212,10 @@ describe("GitHub publication architecture", () => {
       },
       {
         file: "src/handlers/unsafe-request-destructured-with-siblings.ts",
+        method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      },
+      {
+        file: "src/handlers/unsafe-request-object-alias.ts",
         method: "request:POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
       },
       {
