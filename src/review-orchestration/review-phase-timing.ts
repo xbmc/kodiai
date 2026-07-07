@@ -120,6 +120,22 @@ export function completeReviewPublicationPhaseTiming(params: {
   return true;
 }
 
+export function completeReviewRetrievalContextPhaseTiming(params: {
+  phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
+  retrievalPhaseStartedAt: number;
+  now?: () => number;
+}): void {
+  const nowFn = params.now ?? (() => Date.now());
+  params.phases.set(
+    "retrieval/context assembly",
+    createReviewPhaseTiming({
+      name: "retrieval/context assembly",
+      status: "completed",
+      durationMs: Math.max(0, nowFn() - params.retrievalPhaseStartedAt),
+    }),
+  );
+}
+
 export function buildReviewDetailsPhaseTimingSummary(params: {
   phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
   publicationPhaseStartedAt?: number;

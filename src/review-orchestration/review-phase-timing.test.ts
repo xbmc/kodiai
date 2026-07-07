@@ -4,6 +4,7 @@ import {
   buildOrderedReviewPhaseSummary,
   buildQueueWaitPhase,
   buildReviewDetailsPhaseTimingSummary,
+  completeReviewRetrievalContextPhaseTiming,
   completeReviewPublicationPhaseTiming,
   formatTimeoutErrorDetail,
   isValidQueueWaitMetadata,
@@ -116,5 +117,35 @@ describe("completeReviewPublicationPhaseTiming", () => {
     });
 
     expect(phases.get("publication")?.durationMs).toBe(0);
+  });
+});
+
+describe("completeReviewRetrievalContextPhaseTiming", () => {
+  test("records completed retrieval/context duration from the phase start", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+
+    completeReviewRetrievalContextPhaseTiming({
+      phases,
+      retrievalPhaseStartedAt: 1000,
+      now: () => 1225,
+    });
+
+    expect(phases.get("retrieval/context assembly")).toEqual({
+      name: "retrieval/context assembly",
+      status: "completed",
+      durationMs: 225,
+    });
+  });
+
+  test("clamps negative retrieval/context duration to zero", () => {
+    const phases = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+
+    completeReviewRetrievalContextPhaseTiming({
+      phases,
+      retrievalPhaseStartedAt: 1225,
+      now: () => 1000,
+    });
+
+    expect(phases.get("retrieval/context assembly")?.durationMs).toBe(0);
   });
 });

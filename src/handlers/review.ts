@@ -55,7 +55,7 @@ import { classifyReviewTimeoutOutcome } from "../review-orchestration/review-tim
 import { logReviewTimeoutClassification } from "../review-orchestration/review-timeout-classification-log.ts";
 import {
   buildReviewDetailsPhaseTimingSummary,
-  createReviewPhaseTiming,
+  completeReviewRetrievalContextPhaseTiming,
   formatTimeoutErrorDetail,
 } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
@@ -955,14 +955,10 @@ export function createReviewHandler(deps: {
         reviewPromptDerivedCacheReason = reviewPromptRuntime.cacheReason;
         const reviewPrompt = reviewPromptRuntime.prompt;
         const reviewPromptSections = reviewPromptRuntime.promptSections;
-        reviewPhaseTimings.set(
-          "retrieval/context assembly",
-          createReviewPhaseTiming({
-            name: "retrieval/context assembly",
-            status: "completed",
-            durationMs: Math.max(0, Date.now() - (timingState.retrievalPhaseStartedAt ?? Date.now())),
-          }),
-        );
+        completeReviewRetrievalContextPhaseTiming({
+          phases: reviewPhaseTimings,
+          retrievalPhaseStartedAt: timingState.retrievalPhaseStartedAt ?? Date.now(),
+        });
 
         // Execute review via Claude
         setReviewWorkPhase("executor-dispatch");

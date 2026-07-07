@@ -388,6 +388,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-retrieval-context.ts");
   });
 
+  test("keeps retrieval phase timing completion out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const phaseTimingSource = readFileSync(new URL("../review-orchestration/review-phase-timing.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("reviewPhaseTimings.set(\n          \"retrieval/context assembly\"");
+    expect(source).not.toContain("name: \"retrieval/context assembly\",\n            status: \"completed\"");
+    expect(source).toContain("completeReviewRetrievalContextPhaseTiming");
+    expect(phaseTimingSource).toContain("completeReviewRetrievalContextPhaseTiming");
+  });
+
   test("keeps dependency bump context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
