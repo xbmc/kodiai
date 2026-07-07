@@ -14,9 +14,6 @@ import {
   createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
 import {
-  isCodeSeekingMentionRequest,
-} from "./mention-request-classification.ts";
-import {
   maybeReplyWritePermissionFailure,
   summarizeErrorForDiagnostics,
 } from "./mention-write-replies.ts";
@@ -104,6 +101,7 @@ import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-p
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
 import { resolveMentionForkContext } from "./mention-fork-context.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
+import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -600,19 +598,15 @@ export function createMentionHandler(deps: {
 
         await postMentionEyesReaction({ octokit, mention, logger });
 
-        // Build mention context (conversation + PR metadata + inline diff context)
-        // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
-        const allowIssueCodePointers = isIssueThreadComment && isCodeSeekingMentionRequest(writeIntent.request);
-        // A mention on a PR is about that PR. Two consequences, both keyed off the
-        // single fact "is this on a PR?":
-        //  - always ground the reply in the PR diff — without it a vague follow-up
-        //    ("provide additional details") had no code to anchor on and fixated on
-        //    whatever retrieval surfaced (once an unrelated issue);
-        //  - suppress the repo issue corpus — issue BM25 has no relevance floor and
-        //    can inject an unrelated issue on common-word matches.
-        const isPrMention = mention.prNumber !== undefined;
-        const allowPrDiffContext = isPrMention;
-        const includeIssueCorpus = !isPrMention;
+        const {
+          allowIssueCodePointers,
+          allowPrDiffContext,
+          includeIssueCorpus,
+        } = resolveMentionPromptContextRouting({
+          isIssueThreadComment,
+          prNumber: mention.prNumber,
+          writeRequest: writeIntent.request,
+        });
         let {
           mentionContext,
           mentionContextSectionMetrics,

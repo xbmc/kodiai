@@ -513,6 +513,17 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-code-pointers.ts");
   });
 
+  test("keeps mention prompt context routing policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const allowIssueCodePointers =");
+    expect(source).not.toContain("const isPrMention = mention.prNumber !== undefined;");
+    expect(source).not.toContain("const allowPrDiffContext = isPrMention;");
+    expect(source).not.toContain("const includeIssueCorpus = !isPrMention;");
+    expect(source).toContain("resolveMentionPromptContextRouting");
+    expect(source).toContain("./mention-prompt-context-routing.ts");
+  });
+
   test("keeps mention-derived context cache orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
