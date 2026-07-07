@@ -2,8 +2,10 @@ import { describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import {
   buildReviewFallbackPublicationAdapters,
+  publishAndApplyReviewFallbackOutputs,
   publishReviewFallbackOutputs,
   type ReviewFallbackPublicationStatePatch,
+  type ReviewFallbackPublicationStateTarget,
 } from "./review-fallback-publication-orchestration.ts";
 
 function baseParams(
@@ -217,6 +219,33 @@ describe("publishReviewFallbackOutputs", () => {
         reviewOutputPublished: true,
         reviewPublishResolution: "clean-review-comment",
       } satisfies ReviewFallbackPublicationStatePatch,
+    });
+  });
+
+  test("returns Result after applying fallback publication state patch", async () => {
+    const publicationState: ReviewFallbackPublicationStateTarget = {
+      reviewOutputPublished: false,
+      reviewPublishResolution: "none",
+      reviewPublishFallbackDelivery: undefined,
+    };
+
+    const result = await publishAndApplyReviewFallbackOutputs({
+      ...baseParams(),
+      publicationState,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        reviewOutputPublished: true,
+        reviewPublishResolution: "error-fallback",
+        reviewPublishFallbackDelivery: "error-comment-created",
+      },
+    });
+    expect(publicationState).toEqual({
+      reviewOutputPublished: true,
+      reviewPublishResolution: "error-fallback",
+      reviewPublishFallbackDelivery: "error-comment-created",
     });
   });
 });

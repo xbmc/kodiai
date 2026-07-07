@@ -288,9 +288,10 @@ export async function publishAndApplyReviewFallbackOutputs(
   params: Parameters<typeof publishReviewFallbackOutputs>[0] & {
     publicationState: ReviewFallbackPublicationStateTarget;
   },
-): Promise<void> {
+): Promise<ReviewFallbackPublicationResult> {
   const { publicationState, ...publicationParams } = params;
   const fallbackPublication = await publishReviewFallbackOutputs(publicationParams);
-  if (!fallbackPublication.ok) return;
+  if (!fallbackPublication.ok) return fallbackPublication;
   applyReviewFallbackPublicationStatePatch(publicationState, fallbackPublication.value);
+  return fallbackPublication;
 }

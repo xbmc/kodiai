@@ -160,6 +160,7 @@ describe("publication result structure", () => {
     expect(source).toContain("type Result");
     expect(source).toContain("ReviewFallbackPublicationResult");
     expect(source).toContain("Result<ReviewFallbackPublicationStatePatch");
+    expect(source).toContain("): Promise<ReviewFallbackPublicationResult> {");
     expect(source).toMatch(/\bok\(/);
     expect(source).toContain("if (!fallbackPublication.ok)");
     expect(source).toContain("fallbackPublication.value");
