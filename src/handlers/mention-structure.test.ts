@@ -98,14 +98,26 @@ describe("mention handler structure", () => {
   test("keeps combined review-and-format log shaping out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const dispatchSource = readFileSync(new URL("./mention-execution-dispatch.ts", import.meta.url), "utf8");
+    const combinedFormatSource = readFileSync(new URL("./mention-combined-format-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewPartialFailure =");
     expect(source).not.toContain("const formatterPartialFailure =");
     expect(source).not.toContain("expectedBoundedCleanFormatter");
     expect(source).not.toContain("combinedPartialFailure: reviewPartialFailure");
     expect(source).not.toContain("formatterPartialFailure: formatterResult.partialFailure ?? false");
-    expect(source).toContain("buildCombinedReviewAndFormatMentionLogFields");
+    expect(source).not.toContain("buildCombinedReviewAndFormatMentionLogFields");
+    expect(combinedFormatSource).toContain("buildCombinedReviewAndFormatMentionLogFields");
     expect(dispatchSource).toContain("buildCombinedReviewAndFormatThrownMentionLogFields");
+  });
+
+  test("keeps combined review-and-format formatter completion orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (executorPlan.isCombinedFormatterSuggestionRequest)");
+    expect(source).not.toContain("const formatterResult = await runFormatterSuggestionForMention(\"review-and-format\")");
+    expect(source).not.toContain("Combined review-and-format mention request completed");
+    expect(source).toContain("publishCombinedReviewAndFormatMentionFormatterResult");
+    expect(source).toContain("./mention-combined-format-publication.ts");
   });
 
   test("keeps format-only formatter log shaping out of the monster handler", () => {

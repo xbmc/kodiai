@@ -62,7 +62,6 @@ import {
   runFormatterSuggestionSubflow,
 } from "./formatter-suggestion-orchestration.ts";
 import {
-  buildCombinedReviewAndFormatMentionLogFields,
   classifyMentionExecutionFailureSubtype,
   createMentionExecutionCompletedLogger,
   type MentionErrorDelivery,
@@ -113,6 +112,7 @@ import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
+import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -1071,39 +1071,23 @@ export function createMentionHandler(deps: {
           logMentionExecutionCompleted();
         }
 
-        if (executorPlan.isCombinedFormatterSuggestionRequest) {
-          const formatterResult = await runFormatterSuggestionForMention("review-and-format");
-          const { visibleReplyPosted, visibleReplyFailed } = await postFormatterVisibleDiagnostic({
-            formatterResult,
-            formatterMode: "review-and-format",
-          });
-
-          logger.info(
-            buildCombinedReviewAndFormatMentionLogFields({
-              mention: {
-                surface: mention.surface,
-                owner: mention.owner,
-                repo: mention.repo,
-                issueNumber: mention.issueNumber,
-                prNumber: mention.prNumber,
-              },
-              deliveryId: event.id,
-              reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
-              result: {
-                conclusion: result.conclusion,
-                stopReason: result.stopReason,
-                failureSubtype: result.failureSubtype,
-              },
-              publishResolution,
-              publishFailureCategory,
-              publishFallbackDelivery,
-              formatterResult,
-              visibleReplyPosted,
-              visibleReplyFailed,
-            }),
-            "Combined review-and-format mention request completed",
-          );
-        }
+        await publishCombinedReviewAndFormatMentionFormatterResult({
+          enabled: executorPlan.isCombinedFormatterSuggestionRequest,
+          runFormatterSuggestionForMention,
+          postFormatterVisibleDiagnostic,
+          mention,
+          deliveryId: event.id,
+          reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
+          result: {
+            conclusion: result.conclusion,
+            stopReason: result.stopReason,
+            failureSubtype: result.failureSubtype,
+          },
+          publishResolution,
+          publishFailureCategory,
+          publishFallbackDelivery,
+          logger,
+        });
       } catch (err) {
         logger.error(
           { err, surface: mention.surface, issueNumber: mention.issueNumber },
