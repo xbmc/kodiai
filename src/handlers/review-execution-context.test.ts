@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ExecutionContext } from "../execution/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
-import { buildReviewExecutionContext } from "./review-execution-context.ts";
+import { buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
 
 describe("buildReviewExecutionContext", () => {
   test("projects the initial review executor context", () => {
@@ -102,5 +102,70 @@ describe("buildReviewExecutionContext", () => {
     expect(context.dynamicTimeoutSeconds).toBeUndefined();
     expect(context.enableCheckpointTool).toBe(false);
     expect(context.candidateVerificationContext).toBeUndefined();
+  });
+
+  test("projects the timeout retry review executor context", () => {
+    const workspace: ExecutionContext["workspace"] = {
+      dir: "/tmp/retry-review-workspace",
+      cleanup: async () => undefined,
+    };
+    const retryPromptSections = [{
+      repo: "xbmc/kodiai",
+      taskType: "review.full",
+      promptKind: "review-retry",
+      sections: [],
+    }];
+    const prDiffCommentabilityIndex = {
+      commentableRightLinesByPath: new Map([["src/retry.ts", new Set([22])]]),
+    } as never;
+    const knowledgeStore = { kind: "knowledge-store" } as unknown as KnowledgeStore;
+
+    expect(buildReviewRetryExecutionContext({
+      workspace,
+      installationId: 123,
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      appSlug: "kodiai",
+      taskType: "review.full",
+      retryPrompt: "retry prompt body",
+      retryPromptSections,
+      retryReviewOutputKey: "retry-output-key",
+      retryDeliveryId: "delivery-1-retry-1",
+      retryTimeoutSeconds: 450,
+      reviewMaxTurnsOverride: 33,
+      knowledgeStore,
+      timeoutTotalFiles: 7,
+      retryCheckpointEnabled: true,
+      prDiffCommentabilityIndex,
+    })).toEqual({
+      workspace,
+      installationId: 123,
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      commentId: undefined,
+      botHandles: ["kodiai", "claude"],
+      eventType: "pull_request.review-retry",
+      taskType: "review.full",
+      triggerBody: "",
+      prompt: "retry prompt body",
+      promptSections: retryPromptSections,
+      reviewOutputKey: "retry-output-key",
+      deliveryId: "delivery-1-retry-1",
+      candidateVerificationContext: {
+        docsConfigTruth: null,
+        deliveryId: "delivery-1-retry-1",
+        reviewOutputKey: "retry-output-key",
+        correlationKey: expect.stringMatching(/^[a-f0-9]{16}$/),
+      },
+      dynamicTimeoutSeconds: 450,
+      maxTurnsOverride: 33,
+      knowledgeStore,
+      totalFiles: 7,
+      enableCheckpointTool: true,
+      prDiffCommentabilityIndex,
+      enableCommentTools: false,
+    });
   });
 });

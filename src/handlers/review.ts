@@ -76,9 +76,6 @@ import {
 } from "../review-orchestration/comment-slop-detector.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
-  buildShadowSpecialistCorrelationKey,
-} from "../review-orchestration/review-specialist-publication-log.ts";
-import {
   buildReviewPromptFingerprint,
 } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
@@ -173,7 +170,7 @@ import {
   logReviewPlanPublication,
 } from "./review-plan-publication-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
-import { buildReviewExecutionContext } from "./review-execution-context.ts";
+import { buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
 import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
@@ -1975,67 +1972,53 @@ export function createReviewHandler(deps: {
                     const retryPromptSections = retryPromptRuntime.promptSections;
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
-                    const retryResult = await executor.execute({
+                    const retryResult = await executor.execute(buildReviewRetryExecutionContext({
                       workspace: retryWorkspace,
                       installationId: event.installationId,
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
-                      commentId: undefined,
-                      botHandles: [githubApp.getAppSlug(), "claude"],
-                      eventType: "pull_request.review-retry",
+                      appSlug: githubApp.getAppSlug(),
                       taskType: reviewRouting.taskType,
-                      triggerBody: "",
-                      prompt: retryPrompt,
-                      promptSections: retryPromptSections,
-                      reviewOutputKey: retryReviewOutputKey,
-                      deliveryId: retryDeliveryId,
-                      candidateVerificationContext: {
-                        docsConfigTruth: null,
-                        deliveryId: retryDeliveryId,
-                        reviewOutputKey: retryReviewOutputKey,
-                        correlationKey: buildShadowSpecialistCorrelationKey({
-                          deliveryId: retryDeliveryId,
-                          reviewOutputKey: retryReviewOutputKey,
-                          prNumber: pr.number,
-                        }),
-                      },
-                      dynamicTimeoutSeconds: retryTimeout,
-                      maxTurnsOverride: reviewMaxTurnsOverride,
+                      retryPrompt,
+                      retryPromptSections,
+                      retryReviewOutputKey,
+                      retryDeliveryId,
+                      retryTimeoutSeconds: retryTimeout,
+                      reviewMaxTurnsOverride,
                       knowledgeStore,
-                      totalFiles: timeoutTotalFiles,
-                      enableCheckpointTool: retryCheckpointEnabled,
+                      timeoutTotalFiles,
+                      retryCheckpointEnabled,
                       prDiffCommentabilityIndex,
-                      enableCommentTools: false,
-                    });
+                    }));
 
-                      const {
-                        retryCheckpoint,
-                        retryHasResults,
-                        retryTimeoutClassification,
-                      } = await resolveReviewRetryExecutionOutcome({
-                        telemetryEnabled: config.telemetry.enabled,
-                        telemetryStore,
-                        logger,
-                        retryDeliveryId,
-                        parentDeliveryId: event.id,
-                        repo: `${apiOwner}/${apiRepo}`,
-                        prNumber: pr.number,
-                        prAuthor: pr.user.login,
-                        retryReviewOutputKey,
-                        retryResult,
-                        retryPromptSections,
-                        retryReviewPromptDerivedCacheStatus,
-                        retryReviewPromptDerivedCacheReason: retryReviewPromptDerivedCacheReason ?? undefined,
-                        retryFilesCount: retryFiles.length,
-                        retryScopeRatio,
-                        retryTimeoutSeconds: retryTimeout,
-                        retryRiskLevel: retryTimeoutEstimate.riskLevel,
-                        retryCheckpointEnabled,
-                        partialCommentId,
-                        timeoutTotalFiles,
-                        getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
-                      });
+                    const {
+                      retryCheckpoint,
+                      retryHasResults,
+                      retryTimeoutClassification,
+                    } = await resolveReviewRetryExecutionOutcome({
+                      telemetryEnabled: config.telemetry.enabled,
+                      telemetryStore,
+                      logger,
+                      retryDeliveryId,
+                      parentDeliveryId: event.id,
+                      repo: `${apiOwner}/${apiRepo}`,
+                      prNumber: pr.number,
+                      prAuthor: pr.user.login,
+                      retryReviewOutputKey,
+                      retryResult,
+                      retryPromptSections,
+                      retryReviewPromptDerivedCacheStatus,
+                      retryReviewPromptDerivedCacheReason: retryReviewPromptDerivedCacheReason ?? undefined,
+                      retryFilesCount: retryFiles.length,
+                      retryScopeRatio,
+                      retryTimeoutSeconds: retryTimeout,
+                      retryRiskLevel: retryTimeoutEstimate.riskLevel,
+                      retryCheckpointEnabled,
+                      partialCommentId,
+                      timeoutTotalFiles,
+                      getCheckpoint: (key) => knowledgeStore?.getCheckpoint?.(key) ?? Promise.resolve(null),
+                    });
 
                     await settleRetryContinuationResults({
                       retryCompletedWithResults:

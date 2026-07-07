@@ -540,6 +540,18 @@ describe("review handler structure", () => {
     expect(contextSource).toContain("export function buildReviewExecutionContext");
   });
 
+  test("keeps retry review executor context projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const contextSource = readFileSync(new URL("./review-execution-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const retryResult = await executor.execute({");
+    expect(source).not.toContain("eventType: \"pull_request.review-retry\"");
+    expect(source).not.toContain("triggerBody: \"\",\n                      prompt: retryPrompt");
+    expect(source).not.toContain("buildShadowSpecialistCorrelationKey({\n                          deliveryId: retryDeliveryId");
+    expect(source).toContain("executor.execute(buildReviewRetryExecutionContext({");
+    expect(contextSource).toContain("export function buildReviewRetryExecutionContext");
+  });
+
   test("keeps executor phase timing map mutation out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const phaseTimingSource = readFileSync(new URL("../review-orchestration/review-phase-timing.ts", import.meta.url), "utf8");
