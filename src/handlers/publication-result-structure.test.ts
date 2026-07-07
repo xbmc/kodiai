@@ -392,4 +392,16 @@ describe("publication result structure", () => {
     expect(forkSource).toContain("if (!response.ok)");
     expect(forkSource).toContain("const createdPrUrl = response.value.data.html_url");
   });
+
+  test("keeps primary gist write publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./mention-fork-write-output.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("PrimaryGistPublicationResult");
+    expect(source).toContain("Result<PrimaryGistPublicationStatus");
+    expect(source).not.toContain("}): Promise<boolean> {");
+    expect(source).not.toContain("const handled = await publishPrimaryGist");
+    expect(source).toContain("const primaryGistPublication = await publishPrimaryGist");
+    expect(source).toContain("if (!primaryGistPublication.ok)");
+    expect(source).toContain("primaryGistPublication.value.handled");
+  });
 });

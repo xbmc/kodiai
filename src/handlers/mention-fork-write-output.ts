@@ -6,7 +6,7 @@ import {
   WritePolicyError,
 } from "../jobs/workspace.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import { summarizeWriteRequest } from "../lib/write-request-formatting.ts";
 import { buildMentionWriteCommitMessage } from "./mention-write-formatters.ts";
@@ -76,6 +76,13 @@ export type ForkWriteOutputStatus = {
   status: "handled" | "fall-through";
 };
 
+type PrimaryGistPublicationStatus = {
+  status: "handled";
+  handled: true;
+};
+
+type PrimaryGistPublicationResult = Result<PrimaryGistPublicationStatus, unknown>;
+
 export async function publishMentionForkWriteOutput(params: {
   workspaceDir: string;
   octokit: unknown;
@@ -133,19 +140,20 @@ export async function publishMentionForkWriteOutput(params: {
   const useGist = shouldUseGist({ keyword: params.writeKeyword }, changedFiles);
 
   if (useGist) {
-    try {
-      const handled = await publishPrimaryGist({
-        ...params,
-        gistPublisher: params.gistPublisher,
-        changedFiles,
-        buildStagedPatchForGist,
-      });
-      if (handled) return ok({ status: "handled" });
-    } catch (gistErr) {
+    const primaryGistPublication = await publishPrimaryGist({
+      ...params,
+      gistPublisher: params.gistPublisher,
+      changedFiles,
+      buildStagedPatchForGist,
+    });
+    if (!primaryGistPublication.ok) {
       params.logger.warn(
-        { err: gistErr, owner: params.mention.owner, repo: params.mention.repo },
+        { err: primaryGistPublication.err, owner: params.mention.owner, repo: params.mention.repo },
         "Gist creation failed; falling through to PR path",
       );
+    }
+    if (primaryGistPublication.ok && primaryGistPublication.value.handled) {
+      return ok({ status: "handled" });
     }
   }
 
@@ -311,52 +319,56 @@ async function publishPrimaryGist(params: {
   postMentionReply: PostMentionReply;
   buildStagedPatchForGist: (workspaceDir: string) => Promise<PatchResult>;
   recordWriteRateLimitSuccess: (owner: string, repo: string) => void;
-}): Promise<boolean> {
-  const patchResult = await params.buildStagedPatchForGist(params.workspaceDir);
-  const patch = patchResult.stdout;
+}): Promise<PrimaryGistPublicationResult> {
+  try {
+    const patchResult = await params.buildStagedPatchForGist(params.workspaceDir);
+    const patch = patchResult.stdout;
 
-  if (patch.trim().length === 0) {
-    const replyBody = buildEmptyPatchReply();
-    await params.postMentionReply(replyBody);
-    return true;
-  }
-  if (patchResult.stdoutTruncated) {
-    const replyBody = buildPatchTooLargeReply();
-    await params.postMentionReply(replyBody);
-    return true;
-  }
+    if (patch.trim().length === 0) {
+      const replyBody = buildEmptyPatchReply();
+      await params.postMentionReply(replyBody);
+      return ok({ status: "handled", handled: true });
+    }
+    if (patchResult.stdoutTruncated) {
+      const replyBody = buildPatchTooLargeReply();
+      await params.postMentionReply(replyBody);
+      return ok({ status: "handled", handled: true });
+    }
 
-  const requestSummary = summarizeWriteRequest(params.writeRequest);
-  const gist = await params.gistPublisher.createPatchGist({
-    owner: params.mention.owner,
-    repo: params.mention.repo,
-    summary: requestSummary,
-    patch,
-  });
-
-  const gistReplyBody = buildPatchGistReply({
-    gistUrl: gist.htmlUrl,
-    changedFiles: params.changedFiles,
-  });
-  await params.postMentionReply(gistReplyBody);
-
-  params.logger.info(
-    {
-      evidenceType: "write-mode",
-      outcome: "created-gist",
-      deliveryId: params.deliveryId,
-      installationId: params.installationId,
+    const requestSummary = summarizeWriteRequest(params.writeRequest);
+    const gist = await params.gistPublisher.createPatchGist({
       owner: params.mention.owner,
-      repoName: params.mention.repo,
-      repo: `${params.mention.owner}/${params.mention.repo}`,
+      repo: params.mention.repo,
+      summary: requestSummary,
+      patch,
+    });
+
+    const gistReplyBody = buildPatchGistReply({
       gistUrl: gist.htmlUrl,
-      gistId: gist.id,
       changedFiles: params.changedFiles,
-      writeOutputKey: params.writeOutputKey,
-      triggerCommentUrl: params.triggerCommentUrl,
-    },
-    "Evidence bundle",
-  );
-  params.recordWriteRateLimitSuccess(params.mention.owner, params.mention.repo);
-  return true;
+    });
+    await params.postMentionReply(gistReplyBody);
+
+    params.logger.info(
+      {
+        evidenceType: "write-mode",
+        outcome: "created-gist",
+        deliveryId: params.deliveryId,
+        installationId: params.installationId,
+        owner: params.mention.owner,
+        repoName: params.mention.repo,
+        repo: `${params.mention.owner}/${params.mention.repo}`,
+        gistUrl: gist.htmlUrl,
+        gistId: gist.id,
+        changedFiles: params.changedFiles,
+        writeOutputKey: params.writeOutputKey,
+        triggerCommentUrl: params.triggerCommentUrl,
+      },
+      "Evidence bundle",
+    );
+    params.recordWriteRateLimitSuccess(params.mention.owner, params.mention.repo);
+    return ok({ status: "handled", handled: true });
+  } catch (error) {
+    return err(error);
+  }
 }
