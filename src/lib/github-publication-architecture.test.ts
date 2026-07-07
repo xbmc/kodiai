@@ -132,6 +132,10 @@ describe("GitHub publication architecture", () => {
         "src/handlers/unsafe-graphql-body.ts": `
           await octokit.graphql("mutation($id:ID!,$body:String!){ addComment(input:{subjectId:$id, body:$body}) { clientMutationId } }", { id, body });
         `,
+        "src/handlers/unsafe-graphql-mutation-alias.ts": `
+          const mutation = "mutation($id:ID!,$body:String!){ addComment(input:{subjectId:$id, body:$body}) { clientMutationId } }";
+          await octokit.graphql(mutation, { id, body });
+        `,
         "src/lib/github-publication.ts": "await octokit.rest.issues.createComment({ owner, repo, issue_number, body });",
         "src/handlers/safe.ts": "await createIssueCommentWithPublicationPipeline(octokit, { owner, repo, issue_number, body });",
       },
@@ -164,6 +168,10 @@ describe("GitHub publication architecture", () => {
       },
       {
         file: "src/handlers/unsafe-graphql-body.ts",
+        method: "graphql:addComment",
+      },
+      {
+        file: "src/handlers/unsafe-graphql-mutation-alias.ts",
         method: "graphql:addComment",
       },
       {

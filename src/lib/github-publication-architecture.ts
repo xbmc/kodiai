@@ -66,6 +66,7 @@ export function findDirectGitHubPublicationWrites(
     }
     const bodyBearingPayloadAliases = findBodyBearingPayloadAliases(source);
     const bodyBearingRequestObjectAliases = findBodyBearingRequestObjectAliases(source, bodyBearingPayloadAliases);
+    const graphqlMutationAliases = findGitHubGraphqlMutationAliases(source);
 
     for (const method of BODY_BEARING_GITHUB_PUBLICATION_METHODS) {
       const [namespace, name] = method.split(".") as [string, string];
@@ -174,12 +175,12 @@ export function findDirectGitHubPublicationWrites(
     ];
     for (const graphqlCalleePattern of graphqlCalleePatterns) {
       const graphqlCallPattern = new RegExp(
-        String.raw`${graphqlCalleePattern}\s*\(\s*([` + "`" + String.raw`"'])([\s\S]*?)\1\s*,\s*(\{[^)]*(?:\bbody\b|\.\.\.\s*[A-Za-z_$][\w$]*)[^)]*\}|[A-Za-z_$][\w$]*)`,
+        String.raw`${graphqlCalleePattern}\s*\(\s*(?:([` + "`" + String.raw`"'])([\s\S]*?)\1|([A-Za-z_$][\w$]*))\s*,\s*(\{[^)]*(?:\bbody\b|\.\.\.\s*[A-Za-z_$][\w$]*)[^)]*\}|[A-Za-z_$][\w$]*)`,
         "gs",
       );
       for (const match of source.matchAll(graphqlCallPattern)) {
-        const mutation = match[2] ?? "";
-        const requestPayload = match[3] ?? "";
+        const mutation = match[2] ?? graphqlMutationAliases.get(match[3] ?? "") ?? "";
+        const requestPayload = match[4] ?? "";
         const mutationName = BODY_BEARING_GITHUB_GRAPHQL_MUTATIONS.find((name) =>
           new RegExp(String.raw`\b${escapeRegExp(name)}\b`).test(mutation)
         );
@@ -408,6 +409,25 @@ function findGitHubGraphqlAliases(source: string): string[] {
   }
 
   return [...aliases];
+}
+
+function findGitHubGraphqlMutationAliases(source: string): Map<string, string> {
+  const aliases = new Map<string, string>();
+  const declarationPattern = /\b(?:const|let|var)\s+(\w+)(?:\s*:[^=]+)?\s*=\s*([`"'])([\s\S]*?)\2/g;
+  for (const match of source.matchAll(declarationPattern)) {
+    const alias = match[1];
+    const mutation = match[3];
+    if (!alias || !mutation) {
+      continue;
+    }
+    if (BODY_BEARING_GITHUB_GRAPHQL_MUTATIONS.some((name) =>
+      new RegExp(String.raw`\b${escapeRegExp(name)}\b`).test(mutation)
+    )) {
+      aliases.set(alias, mutation);
+    }
+  }
+
+  return aliases;
 }
 
 function findDestructuredPropertyAliases(properties: string, property: string): string[] {
