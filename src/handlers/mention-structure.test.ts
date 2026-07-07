@@ -212,6 +212,18 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-executor-plan.ts");
   });
 
+  test("keeps mention handler failure recovery out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const recoverySource = readFileSync(new URL("./mention-handler-failure-recovery.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("\"Mention handler failed\"");
+    expect(source).not.toContain("const handlerFailurePublication = await publishMentionHandlerFailureError({");
+    expect(source).not.toContain("\"Failed to post error comment\"");
+    expect(source).toContain("handleMentionHandlerFailureRecovery");
+    expect(source).toContain("./mention-handler-failure-recovery.ts");
+    expect(recoverySource).toContain("publishMentionHandlerFailureError");
+  });
+
   test("keeps accepted mention handle normalization out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const requestContextSource = readFileSync(new URL("./mention-request-context.ts", import.meta.url), "utf8");

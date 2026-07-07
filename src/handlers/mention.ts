@@ -40,9 +40,7 @@ import {
 import {
   createMentionPublisher,
 } from "./mention-publication.ts";
-import {
-  publishMentionHandlerFailureError,
-} from "./mention-result-fallback-publication.ts";
+import { handleMentionHandlerFailureRecovery } from "./mention-handler-failure-recovery.ts";
 import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
   createMentionWorkspaceRuntime,
@@ -942,33 +940,18 @@ export function createMentionHandler(deps: {
           throw combinedFormatterPublication.err.error;
         }
       } catch (err) {
-        logger.error(
-          { err, surface: mention.surface, issueNumber: mention.issueNumber },
-          "Mention handler failed",
-        );
-
-        try {
-          const handlerFailurePublication = await publishMentionHandlerFailureError({
-            githubApp,
-            installationId: event.installationId,
-            mention,
-            possibleHandles,
-            logger,
-            guardrailAuditStore,
-            explicitReviewRequest,
-            reviewOutputKey,
-            canPublishExplicitReviewOutput,
-            error: err,
-          });
-          if (!handlerFailurePublication.ok) {
-            logger.error(
-              { err: handlerFailurePublication.err.error },
-              "Failed to post error comment",
-            );
-          }
-        } catch (commentErr) {
-          logger.error({ err: commentErr }, "Failed to post error comment");
-        }
+        await handleMentionHandlerFailureRecovery({
+          error: err,
+          githubApp,
+          installationId: event.installationId,
+          mention,
+          possibleHandles,
+          logger,
+          guardrailAuditStore,
+          explicitReviewRequest,
+          reviewOutputKey,
+          canPublishExplicitReviewOutput,
+        });
       } finally {
         await cleanupMentionExecutionResources({
           acquiredWriteKey,
