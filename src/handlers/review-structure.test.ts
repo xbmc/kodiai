@@ -444,6 +444,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-continuation-revision-counts.ts");
   });
 
+  test("keeps retry continuation merge body context out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const mergedFirstPass = normalizeReviewFirstPass({");
+    expect(source).not.toContain("const summaryDraftForMerge =");
+    expect(source).not.toContain("const maxTurnsContinuationCompleted =");
+    expect(source).not.toContain("const mergedBody = maxTurnsContinuationCompleted");
+    expect(source).toContain("resolveReviewContinuationMergeContext");
+    expect(source).toContain("./review-continuation-merge-context.ts");
+  });
+
   test("keeps clean review approval body assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const cleanApprovalSource = readFileSync(new URL("./review-clean-approval.ts", import.meta.url), "utf8");

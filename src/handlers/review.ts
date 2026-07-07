@@ -39,7 +39,7 @@ import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-sto
 import { formatErrorComment } from "../lib/errors.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
-import { formatPartialReviewComment, formatCompletedContinuationReviewComment } from "../lib/partial-review-formatter.ts";
+import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import {
   normalizeReviewFirstPass,
   type ReviewFirstPassPayload,
@@ -249,6 +249,7 @@ import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-rec
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
 import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
 import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
+import { resolveReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -3007,56 +3008,35 @@ export function createReviewHandler(deps: {
                           return;
                         }
 
-                        const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
-                        const mergedFirstPass = normalizeReviewFirstPass({
-                          boundedness: reviewBoundedness,
-                          checkpoint: settlementDecision.mergedCheckpoint,
-                          outcome: {
+                        const mergeContext = resolveReviewContinuationMergeContext({
+                          reviewBoundedness,
+                          mergedCheckpoint: settlementDecision.mergedCheckpoint,
+                          retryCheckpoint,
+                          baseCheckpoint: checkpoint,
+                          firstPassOutcome: {
                             conclusion: result.conclusion,
                             stopReason: result.stopReason,
                             failureSubtype: result.failureSubtype,
                             isTimeout: result.isTimeout,
                             published: true,
                           },
+                          timeoutFirstPassBoundedReason: timeoutFirstPass?.boundedReason,
+                          timeoutDurationSeconds: timeoutDuration,
+                          retryFilesCount: retryFiles.length,
+                          reviewOutputKey,
+                          continuationRevisionCounts,
                         });
 
-                        if (mergedFirstPass?.state !== "bounded-first-pass") {
+                        if (mergeContext.status === "non-publishable") {
                           await settleRetryWithoutCanonicalUpdate({
                             attemptId: retryReviewWorkAttempt.attemptId,
                             reviewOutputKey: retryReviewOutputKey,
                             deliveryId: retryDeliveryId,
-                            reason: "non-publishable-merged-first-pass",
+                            reason: mergeContext.reason,
                             logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
                           });
                           return;
                         }
-
-                        const summaryDraftForMerge =
-                          settlementDecision.mergedCheckpoint.summaryDraft ||
-                          retryCheckpoint?.summaryDraft ||
-                          checkpoint?.summaryDraft ||
-                          "Review completed with reduced scope.";
-                        const mergedReviewedFiles = settlementDecision.mergedCheckpoint.filesReviewed.length;
-                        const mergedTotalFiles = settlementDecision.mergedCheckpoint.totalFiles;
-                        const maxTurnsContinuationCompleted = timeoutFirstPass?.boundedReason === "max-turns"
-                          && mergedTotalFiles > 0
-                          && mergedReviewedFiles >= mergedTotalFiles;
-                        const mergedBody = maxTurnsContinuationCompleted
-                          ? formatCompletedContinuationReviewComment({
-                              summaryDraft: summaryDraftForMerge,
-                              reviewOutputKey,
-                              totalFiles: mergedTotalFiles,
-                              continuationRevisionCounts,
-                            })
-                          : formatPartialReviewComment({
-                              summaryDraft: summaryDraftForMerge,
-                              firstPass: mergedFirstPass,
-                              reviewOutputKey,
-                              timedOutAfterSeconds: timeoutDuration,
-                              isRetryResult: true,
-                              retryFilesReviewed,
-                              continuationRevisionCounts,
-                            });
 
                         const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
                         const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
@@ -3086,12 +3066,12 @@ export function createReviewHandler(deps: {
                                 ? {
                                     kind: "issue_comment",
                                     commentId: commentIdToUpdate,
-                                    body: mergedBody,
+                                    body: mergeContext.body,
                                   }
                                 : undefined,
-                              summaryBody: mergedBody,
+                              summaryBody: mergeContext.body,
                               reviewDetailsBlock: renderReviewDetailsBody({
-                                reviewFirstPass: maxTurnsContinuationCompleted ? null : mergedFirstPass,
+                                reviewFirstPass: mergeContext.reviewDetailsFirstPass,
                               }),
                               botHandles: [githubApp.getAppSlug(), "claude"],
                               requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
@@ -3146,7 +3126,7 @@ export function createReviewHandler(deps: {
                                   prNumber: pr.number,
                                   reviewOutputKey,
                                   body: renderReviewDetailsBody({
-                                    reviewFirstPass: maxTurnsContinuationCompleted ? null : mergedFirstPass,
+                                    reviewFirstPass: mergeContext.reviewDetailsFirstPass,
                                   }),
                                   botHandles: [githubApp.getAppSlug(), "claude"],
                                   recheckCanPublish: () =>
@@ -3176,7 +3156,7 @@ export function createReviewHandler(deps: {
                               deliveryId: retryDeliveryId,
                               prNumber: pr.number,
                               retryConclusion: retryResult.conclusion,
-                              retryFilesReviewed,
+                              retryFilesReviewed: mergeContext.retryFilesReviewed,
                               partialCommentId,
                               settlementReason: settlementDecision.reason,
                               projectionStatus: retryMergeProjectionStatus,
