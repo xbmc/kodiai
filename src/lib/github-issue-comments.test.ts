@@ -89,6 +89,31 @@ function findCommentListMethodAliases(source: string): string[] {
       aliases.add(match[1]);
     }
   }
+
+  const destructuredPattern = new RegExp(
+    String.raw`\{([^}]*)\}\s*=\s*${octokitReceiverPattern}(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*["'][A-Za-z_$][\w$]*["']\s*\])*\s*${restAccess}\s*${namespaceAccess}`,
+    "g",
+  );
+  for (const match of source.matchAll(destructuredPattern)) {
+    for (const property of ["listComments", "listReviewComments", "listReviews"]) {
+      for (const alias of findDestructuredPropertyAliases(match[1] ?? "", property)) {
+        aliases.add(alias);
+      }
+    }
+  }
+  return [...aliases];
+}
+
+function findDestructuredPropertyAliases(properties: string, property: string): string[] {
+  const aliases = new Set<string>();
+  const propertyPattern = new RegExp(
+    String.raw`(?:^|,)\s*${escapeRegExp(property)}(?:\s*:\s*(\w+))?\s*(?=,|$)`,
+    "g",
+  );
+  for (const match of properties.matchAll(propertyPattern)) {
+    aliases.add(match[1] ?? property);
+  }
+
   return [...aliases];
 }
 
@@ -128,6 +153,11 @@ describe("comment marker scan architecture", () => {
         const { data } = await listComments({ owner, repo, issue_number });
         return data.find((comment) => comment.body?.includes(marker));
       `,
+      "src/handlers/unsafe-destructured-list-alias.ts": `
+        const { listComments } = params.octokit.rest.issues;
+        const { data } = await listComments({ owner, repo, issue_number });
+        return data.find((comment) => comment.body?.includes(marker));
+      `,
       "src/handlers/safe.ts": `
         return findIssueCommentByMarkerPaged(octokit, { owner, repo, issueNumber, marker });
       `,
@@ -137,6 +167,7 @@ describe("comment marker scan architecture", () => {
       `,
     })).toEqual([
       "src/handlers/unsafe-bracket-access.ts",
+      "src/handlers/unsafe-destructured-list-alias.ts",
       "src/handlers/unsafe-list-alias.ts",
       "src/handlers/unsafe-literal-marker.ts",
       "src/handlers/unsafe-property-octokit.ts",
