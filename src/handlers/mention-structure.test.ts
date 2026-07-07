@@ -49,21 +49,26 @@ describe("mention handler structure", () => {
 
   test("keeps explicit review work runtime helpers out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const sessionSource = readFileSync(new URL("./mention-review-work-session.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("function finalizeQueuedReviewWorkAttempt");
     expect(source).not.toContain("function setReviewWorkPhase");
     expect(source).not.toContain("function canPublishExplicitReviewOutput");
-    expect(source).toContain("./mention-review-work-runtime.ts");
+    expect(source).toContain("./mention-review-work-session.ts");
+    expect(sessionSource).toContain("./mention-review-work-runtime.ts");
   });
 
   test("keeps explicit review work claim and predecessor logging out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const queuedReviewWorkAttempt = reviewPrNumber !== undefined && isExplicitReviewRequest");
+    expect(source).not.toContain("claimMentionReviewWorkAttempt({");
+    expect(source).not.toContain("createMentionReviewWorkRuntime({");
+    expect(source).not.toContain("usesCanonicalExplicitReviewHandle({");
     expect(source).not.toContain("findLatestReviewPredecessor(");
     expect(source).not.toContain("Explicit review claim found a stale predecessor attempt");
-    expect(source).toContain("claimMentionReviewWorkAttempt");
-    expect(source).toContain("./mention-review-work-claim.ts");
+    expect(source).toContain("createMentionReviewWorkSession");
+    expect(source).toContain("./mention-review-work-session.ts");
   });
 
   test("keeps handler-local review coordinator fallback policy out of the monster handler", () => {
@@ -79,11 +84,13 @@ describe("mention handler structure", () => {
 
   test("keeps canonical explicit-review handle matching out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const sessionSource = readFileSync(new URL("./mention-review-work-session.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("mention.commentBody.toLowerCase().includes");
     expect(source).not.toContain("`@${appSlug.toLowerCase()}`");
     expect(source).not.toContain("mention.commentBody.toLowerCase().includes(\"@kodai\")");
-    expect(source).toContain("usesCanonicalExplicitReviewHandle");
+    expect(source).toContain("createMentionReviewWorkSession");
+    expect(sessionSource).toContain("usesCanonicalExplicitReviewHandle");
   });
 
   test("keeps write rate limit success key construction out of the monster handler", () => {

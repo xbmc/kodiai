@@ -21,15 +21,11 @@ import { handleMentionHandlerFailureRecovery } from "./mention-handler-failure-r
 import {
   createMentionWorkspaceRuntime,
 } from "./mention-workspace-runtime.ts";
-import {
-  createMentionReviewWorkRuntime,
-  usesCanonicalExplicitReviewHandle,
-} from "./mention-review-work-runtime.ts";
+import { createMentionReviewWorkSession } from "./mention-review-work-session.ts";
 import { createMentionFindingLookup } from "./mention-finding-context.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
-import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
@@ -140,37 +136,29 @@ export function createMentionHandler(deps: {
       isExplicitReviewRequest,
       mentionQueueKey,
     } = triggerContext;
-    const queuedReviewWorkAttempt = claimMentionReviewWorkAttempt({
+    const reviewWorkSession = createMentionReviewWorkSession({
       coordinator: reviewWorkCoordinator,
       mention,
       reviewPrNumber,
       isExplicitReviewRequest,
       deliveryId: event.id,
-      logger,
-    });
-    const reviewWorkRuntime = createMentionReviewWorkRuntime({
-      attempt: queuedReviewWorkAttempt,
-      coordinator: reviewWorkCoordinator,
-      mention,
+      appSlug,
       logger,
     });
     const {
-      setPhase: setReviewWorkPhase,
+      runtime: reviewWorkRuntime,
+      reviewWorkAttempt,
+      explicitReviewUsesCanonicalHandle,
+      setReviewWorkPhase,
       canPublishExplicitReviewOutput,
-    } = reviewWorkRuntime;
+    } = reviewWorkSession;
 
     try {
       await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
       let acquiredWriteKey: string | undefined;
-      const reviewWorkAttempt = reviewWorkRuntime.attempt;
       let explicitReviewRequest = false;
       let reviewOutputKey: string | undefined;
-      const explicitReviewUsesCanonicalHandle = usesCanonicalExplicitReviewHandle({
-        attempt: reviewWorkAttempt,
-        appSlug,
-        commentBody: mention.commentBody,
-      });
 
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
