@@ -36,6 +36,14 @@ describe("GitHub publication architecture", () => {
           const pulls = octokit.rest["pulls"];
           await pulls["createReview"]({ owner, repo, pull_number, body, event: "COMMENT" });
         `,
+        "src/handlers/unsafe-destructured-namespace.ts": `
+          const { issues } = octokit.rest;
+          await issues.createComment({ owner, repo, issue_number, body });
+        `,
+        "src/handlers/unsafe-destructured-namespace-alias.ts": `
+          const { pulls: reviews } = params.octokit.rest;
+          await reviews.createReview({ owner, repo, pull_number, body, event: "COMMENT" });
+        `,
         "src/handlers/unsafe-payload-alias.ts": `
           const payload = { owner, repo, issue_number, body };
           await octokit.rest.issues.createComment(payload);
@@ -169,6 +177,14 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-bracket-namespace.ts",
         method: "pulls.createReview",
+      },
+      {
+        file: "src/handlers/unsafe-destructured-namespace-alias.ts",
+        method: "pulls.createReview",
+      },
+      {
+        file: "src/handlers/unsafe-destructured-namespace.ts",
+        method: "issues.createComment",
       },
       {
         file: "src/handlers/unsafe-destructured-with-siblings.ts",

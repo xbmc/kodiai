@@ -365,6 +365,16 @@ function findPublicationMethodAliases(source: string, namespace: string, name: s
 
 function findPublicationNamespaceAliases(source: string, namespace: string): string[] {
   const aliases = new Set<string>();
+  const destructuredPattern = new RegExp(
+    String.raw`\{([^}]*)\}\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\b`,
+    "g",
+  );
+  for (const match of source.matchAll(destructuredPattern)) {
+    for (const alias of findDestructuredPropertyAliases(match[1] ?? "", namespace)) {
+      aliases.add(alias);
+    }
+  }
+
   const namespaceAccess = buildPropertyAccessPattern(namespace);
   const assignmentPattern = new RegExp(
     String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}`,
