@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(2720);
+    expect(source.split("\n").length).toBeLessThanOrEqual(2690);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -362,6 +362,18 @@ describe("review handler structure", () => {
     expect(source).not.toContain("candidateFinding: {\n              mode: \"preferred\"");
     expect(source).toContain("buildReviewPlanPublication");
     expect(source).toContain("./review-plan-publication-context.ts");
+  });
+
+  test("keeps review plan publication logging policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planPublicationSource = readFileSync(new URL("./review-plan-publication-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Review plan ready");
+    expect(source).not.toContain("Review plan builder failed; continuing with degraded plan metadata");
+    expect(source).not.toContain("serializeReviewPlanBuilderError(reviewPlanPublication.error)");
+    expect(source).toContain("logReviewPlanPublication");
+    expect(planPublicationSource).toContain("logReviewPlanPublication");
+    expect(planPublicationSource).toContain("serializeReviewPlanBuilderError");
   });
 
   test("keeps executor result state projection out of the monster handler", () => {

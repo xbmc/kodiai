@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import {
   buildReviewPlanPublicationContext,
   resolveGraphValidationPlanStatus,
@@ -6,6 +7,10 @@ import {
   type ReviewPlanPublicationContext,
 } from "../review-orchestration/review-plan.ts";
 import { toProductionLogTurnBudgetFields } from "../review-audit/production-log-projection.ts";
+import {
+  buildRepoDoctrineLogFields,
+  serializeReviewPlanBuilderError,
+} from "../review-orchestration/review-plan-doctrine-log.ts";
 
 export function buildReviewPlanPublication({
   builder,
@@ -116,4 +121,60 @@ export function buildReviewPlanPublication({
       routingReason: reviewRouting.routingReason,
     },
   });
+}
+
+export function logReviewPlanPublication(params: {
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+  publication: ReviewPlanPublicationContext;
+  reviewRouting: {
+    taskType: string;
+    routingReason: string;
+  };
+  reviewBoundedness?: {
+    disclosureRequired?: boolean;
+    reasonCodes?: string[];
+  } | null;
+  repoDoctrineProjection: Parameters<typeof buildRepoDoctrineLogFields>[0];
+}): void {
+  const { logger, baseLog, publication, reviewRouting, reviewBoundedness, repoDoctrineProjection } = params;
+  const { plan } = publication;
+
+  if (publication.status === "ready") {
+    logger.info(
+      {
+        ...baseLog,
+        gate: "review-plan",
+        gateResult: "ready",
+        planHash: plan.hash,
+        taskType: plan.task.taskType,
+        routingReason: plan.task.routingReason,
+        boundedDisclosureRequired: reviewBoundedness?.disclosureRequired ?? false,
+        boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
+        graphValidationStatus: plan.graphValidation.status,
+        candidateFindingMode: plan.candidateFinding.mode,
+        ...buildRepoDoctrineLogFields(repoDoctrineProjection),
+      },
+      "Review plan ready",
+    );
+    return;
+  }
+
+  logger.warn(
+    {
+      ...baseLog,
+      gate: "review-plan",
+      gateResult: "degraded",
+      planHash: plan.hash,
+      taskType: reviewRouting.taskType,
+      routingReason: reviewRouting.routingReason,
+      boundedDisclosureRequired: reviewBoundedness?.disclosureRequired ?? false,
+      boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
+      graphValidationStatus: plan.graphValidation.status,
+      candidateFindingMode: plan.candidateFinding.mode,
+      ...buildRepoDoctrineLogFields(repoDoctrineProjection),
+      error: serializeReviewPlanBuilderError(publication.error),
+    },
+    "Review plan builder failed; continuing with degraded plan metadata",
+  );
 }

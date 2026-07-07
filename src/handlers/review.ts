@@ -103,7 +103,6 @@ import {
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 import {
   buildRepoDoctrineLogFields,
-  serializeReviewPlanBuilderError,
   toReviewPlanConfigSnapshot,
 } from "../review-orchestration/review-plan-doctrine-log.ts";
 import {
@@ -183,7 +182,10 @@ import {
   buildReviewFileRiskScores,
   resolveReviewLargePrTriage,
 } from "./review-large-pr-triage.ts";
-import { buildReviewPlanPublication } from "./review-plan-publication-context.ts";
+import {
+  buildReviewPlanPublication,
+  logReviewPlanPublication,
+} from "./review-plan-publication-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
@@ -827,42 +829,14 @@ export function createReviewHandler(deps: {
           plan: reviewPlan,
           detailsSummary: reviewPlanDetailsSummary,
         } = reviewPlanPublication;
-        if (reviewPlanPublication.status === "ready") {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-plan",
-              gateResult: "ready",
-              planHash: reviewPlan.hash,
-              taskType: reviewPlan.task.taskType,
-              routingReason: reviewPlan.task.routingReason,
-              boundedDisclosureRequired: reviewBoundedness?.disclosureRequired ?? false,
-              boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
-              graphValidationStatus: reviewPlan.graphValidation.status,
-              candidateFindingMode: reviewPlan.candidateFinding.mode,
-              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
-            },
-            "Review plan ready",
-          );
-        } else {
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "review-plan",
-              gateResult: "degraded",
-              planHash: reviewPlan.hash,
-              taskType: reviewRouting.taskType,
-              routingReason: reviewRouting.routingReason,
-              boundedDisclosureRequired: reviewBoundedness?.disclosureRequired ?? false,
-              boundedReasonCodes: reviewBoundedness?.reasonCodes ?? [],
-              graphValidationStatus: reviewPlan.graphValidation.status,
-              candidateFindingMode: reviewPlan.candidateFinding.mode,
-              ...buildRepoDoctrineLogFields(repoDoctrineProjection),
-              error: serializeReviewPlanBuilderError(reviewPlanPublication.error),
-            },
-            "Review plan builder failed; continuing with degraded plan metadata",
-          );
-        }
+        logReviewPlanPublication({
+          logger,
+          baseLog,
+          publication: reviewPlanPublication,
+          reviewRouting,
+          reviewBoundedness,
+          repoDoctrineProjection,
+        });
         const reviewPlanConfigSnapshot = toReviewPlanConfigSnapshot(reviewPlan);
 
         if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {
