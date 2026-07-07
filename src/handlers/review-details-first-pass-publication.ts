@@ -142,7 +142,7 @@ export async function publishFirstPassReviewDetails(params: {
     if (!approvalWillOwnCanonicalSurface) {
       const publishStandalone =
         params.publishStandaloneReviewDetailsFallbackFn ?? publishStandaloneReviewDetailsFallback;
-      await publishStandalone({
+      const standaloneFallback = await publishStandalone({
         octokit: params.octokit,
         owner: params.owner,
         repo: params.repo,
@@ -156,6 +156,11 @@ export async function publishFirstPassReviewDetails(params: {
         finalizePublicationPhaseTiming: params.finalizePublicationPhaseTiming,
         logReviewDetailsPublicationCompleted: params.logReviewDetailsPublicationCompleted,
       });
+      if (!standaloneFallback.ok) return ok({ canonicalReviewDetailsBody: null });
+      const standaloneFallbackStatus = standaloneFallback.value;
+      if (standaloneFallbackStatus.delivery === "skipped") {
+        return ok({ canonicalReviewDetailsBody: fullDetailsBody });
+      }
     }
 
     return ok({ canonicalReviewDetailsBody: fullDetailsBody });

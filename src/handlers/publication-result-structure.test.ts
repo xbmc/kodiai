@@ -252,4 +252,23 @@ describe("publication result structure", () => {
     expect(firstPassSource).toContain("if (!movedToDetailsMerge.ok)");
     expect(firstPassSource).toContain("movedToDetailsMerge.value");
   });
+
+  test("keeps standalone Review Details fallback on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-details-standalone-fallback.ts", import.meta.url),
+      "utf8",
+    );
+    const firstPassSource = readFileSync(
+      new URL("./review-details-first-pass-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("StandaloneReviewDetailsFallbackResult");
+    expect(source).toContain("Result<StandaloneReviewDetailsFallbackStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(firstPassSource).toContain("const standaloneFallback = await publishStandalone");
+    expect(firstPassSource).toContain("if (!standaloneFallback.ok)");
+    expect(firstPassSource).toContain("standaloneFallback.value");
+  });
 });

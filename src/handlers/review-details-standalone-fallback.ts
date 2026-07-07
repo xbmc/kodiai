@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
+import { ok, type Result } from "../lib/result.ts";
 import {
   upsertDegradedReviewDetailsFallbackComment,
 } from "../review-orchestration/review-canonical-surface.ts";
@@ -10,6 +11,14 @@ import {
 
 type UpsertDegradedReviewDetailsFallbackComment = typeof upsertDegradedReviewDetailsFallbackComment;
 type UpdateFinalizedReviewDetailsComment = typeof updateFinalizedReviewDetailsComment;
+
+export type StandaloneReviewDetailsFallbackStatus = {
+  delivery: "degraded-fallback" | "skipped";
+  published: boolean;
+};
+
+export type StandaloneReviewDetailsFallbackResult =
+  Result<StandaloneReviewDetailsFallbackStatus, never>;
 
 export async function publishStandaloneReviewDetailsFallback(params: {
   octokit: Octokit;
@@ -26,9 +35,9 @@ export async function publishStandaloneReviewDetailsFallback(params: {
   logReviewDetailsPublicationCompleted: ReviewDetailsPublicationRuntime["logReviewDetailsPublicationCompleted"];
   upsertDegradedReviewDetailsFallbackCommentFn?: UpsertDegradedReviewDetailsFallbackComment;
   updateFinalizedReviewDetailsCommentFn?: UpdateFinalizedReviewDetailsComment;
-}): Promise<void> {
+}): Promise<StandaloneReviewDetailsFallbackResult> {
   if (!params.canPublishVisibleOutput("degraded Review Details fallback comment")) {
-    return;
+    return ok({ delivery: "skipped", published: false });
   }
 
   const upsertDegraded =
@@ -75,4 +84,8 @@ export async function publishStandaloneReviewDetailsFallback(params: {
       botHandles: params.botHandles,
     });
   }
+  return ok({
+    delivery: "degraded-fallback",
+    published: typeof reviewDetailsCommentId === "number",
+  });
 }

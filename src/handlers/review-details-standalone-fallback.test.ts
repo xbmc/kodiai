@@ -62,7 +62,12 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       },
     });
 
-    await publishStandaloneReviewDetailsFallback(params);
+    const result = await publishStandaloneReviewDetailsFallback(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: true },
+    });
 
     const state = params.testState;
     expect(upsertCalls).toHaveLength(1);
@@ -100,7 +105,12 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       },
     });
 
-    await publishStandaloneReviewDetailsFallback(params);
+    const result = await publishStandaloneReviewDetailsFallback(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "skipped", published: false },
+    });
 
     const state = params.testState;
     expect(upsertCalled).toBe(false);
@@ -121,7 +131,12 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       },
     });
 
-    await publishStandaloneReviewDetailsFallback(params);
+    const result = await publishStandaloneReviewDetailsFallback(params);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { delivery: "degraded-fallback", published: false },
+    });
 
     const state = params.testState;
     expect(updateCalled).toBe(false);
