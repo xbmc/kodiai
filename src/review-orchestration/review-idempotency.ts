@@ -1,10 +1,5 @@
 import type { Octokit } from "@octokit/rest";
-import {
-  scanIssueCommentMarkerPaged,
-  scanPullReviewMarkerPaged,
-  scanReviewCommentMarkerPaged,
-} from "../lib/github-issue-comments.ts";
-import { retryGitHubTransient } from "../lib/github-retry.ts";
+import { scanReviewOutputMarkers } from "./review-output-marker-scan.ts";
 
 export type ReviewOutputKeyInput = {
   installationId: number;
@@ -305,55 +300,16 @@ export async function ensureReviewOutputNotPublished(deps: {
   const marker = buildReviewOutputMarker(deps.reviewOutputKey);
   const scanStats: Partial<ReviewOutputScanStats> = {};
 
-  const [reviewCommentsScan, issueCommentsScan, reviewsScan] = await Promise.all([
-    scanReviewCommentMarkerPaged({
-      rest: {
-        pulls: {
-          listReviewComments: (args) =>
-            retryGitHubTransient(() => deps.octokit.rest.pulls.listReviewComments(args)),
-        },
-      },
-    }, {
-      owner: deps.owner,
-      repo: deps.repo,
-      prNumber: deps.prNumber,
-      marker,
-      perPage: DEFAULT_PER_PAGE,
-      maxItems: DEFAULT_MAX_SCAN_ITEMS,
-      sort: "created",
-      direction: "desc",
-    }),
-    scanIssueCommentMarkerPaged({
-      rest: {
-        issues: {
-          listComments: (args) =>
-            retryGitHubTransient(() => deps.octokit.rest.issues.listComments(args)),
-        },
-      },
-    }, {
-      owner: deps.owner,
-      repo: deps.repo,
-      issueNumber: deps.prNumber,
-      marker,
-      perPage: DEFAULT_PER_PAGE,
-      maxItems: DEFAULT_MAX_SCAN_ITEMS,
-    }),
-    scanPullReviewMarkerPaged({
-      rest: {
-        pulls: {
-          listReviews: (args) =>
-            retryGitHubTransient(() => deps.octokit.rest.pulls.listReviews(args)),
-        },
-      },
-    }, {
-      owner: deps.owner,
-      repo: deps.repo,
-      prNumber: deps.prNumber,
-      marker,
-      perPage: DEFAULT_PER_PAGE,
-      maxItems: DEFAULT_MAX_SCAN_ITEMS,
-    }),
-  ]);
+  const markerScan = await scanReviewOutputMarkers({
+    octokit: deps.octokit,
+    owner: deps.owner,
+    repo: deps.repo,
+    prNumber: deps.prNumber,
+    marker,
+    perPage: DEFAULT_PER_PAGE,
+    maxItems: DEFAULT_MAX_SCAN_ITEMS,
+  });
+  const { reviewComments: reviewCommentsScan, issueComments: issueCommentsScan, reviews: reviewsScan } = markerScan;
 
   scanStats.reviewComments = summarizeScan(reviewCommentsScan);
   scanStats.issueComments = summarizeScan(issueCommentsScan);

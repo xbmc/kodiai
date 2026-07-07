@@ -59,9 +59,12 @@ describe("review idempotency helpers", () => {
     const source = readFileSync(new URL("./review-idempotency.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("function scanForMarkerInPagedBodies");
-    expect(source).toContain("scanReviewCommentMarkerPaged");
-    expect(source).toContain("scanIssueCommentMarkerPaged");
-    expect(source).toContain("scanPullReviewMarkerPaged");
+    expect(source).not.toContain("scanReviewCommentMarkerPaged");
+    expect(source).not.toContain("scanIssueCommentMarkerPaged");
+    expect(source).not.toContain("scanPullReviewMarkerPaged");
+    expect(source).not.toContain("retryGitHubTransient");
+    expect(source).toContain("scanReviewOutputMarkers");
+    expect(source).toContain("./review-output-marker-scan.ts");
   });
 
   test("buildReviewOutputKey returns same key for identical inputs", () => {
