@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1545);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1535);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -296,13 +296,19 @@ describe("review handler structure", () => {
 
   test("keeps timeout continuation-family state policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const continuationStateSource = readFileSync(new URL("./review-timeout-continuation-state.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("if (timeoutFirstPass?.state === \"zero-evidence-failure\")");
     expect(source).not.toContain("if (retryPlan?.decision !== \"schedule-continuation\")");
     expect(source).not.toContain("authoritativeOutcome: \"blocked\"");
     expect(source).not.toContain("projectionStatus: continuationProjectionDegraded ? \"degraded\" : \"canonical\"");
-    expect(source).toContain("resolveReviewTimeoutContinuationState");
+    expect(source).not.toContain("const timeoutContinuationState = resolveReviewTimeoutContinuationState({");
+    expect(source).not.toContain("logReviewTimeoutZeroEvidenceWarning({");
+    expect(source).not.toContain("await persistContinuationFamilyState(timeoutContinuationState.blockedFamilyState)");
+    expect(source).toContain("applyReviewTimeoutContinuationStateSideEffects");
     expect(source).toContain("./review-timeout-continuation-state.ts");
+    expect(continuationStateSource).toContain("resolveReviewTimeoutContinuationState");
+    expect(continuationStateSource).toContain("logReviewTimeoutZeroEvidenceWarning");
   });
 
   test("keeps retry continuation-family state projections out of the monster handler", () => {
@@ -1154,11 +1160,14 @@ describe("review handler structure", () => {
 
   test("keeps zero-evidence timeout warning logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const continuationStateSource = readFileSync(new URL("./review-timeout-continuation-state.ts", import.meta.url), "utf8");
     const warningSource = readFileSync(new URL("./review-timeout-zero-evidence-log.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Constrained timeout remained a zero-evidence hard failure");
-    expect(source).toContain("logReviewTimeoutZeroEvidenceWarning");
-    expect(source).toContain("./review-timeout-zero-evidence-log.ts");
+    expect(source).toContain("applyReviewTimeoutContinuationStateSideEffects");
+    expect(source).toContain("./review-timeout-continuation-state.ts");
+    expect(continuationStateSource).toContain("logReviewTimeoutZeroEvidenceWarning");
+    expect(continuationStateSource).toContain("./review-timeout-zero-evidence-log.ts");
     expect(warningSource).toContain("Constrained timeout remained a zero-evidence hard failure");
     expect(warningSource).toContain("zeroEvidenceWarning");
   });

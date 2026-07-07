@@ -119,7 +119,7 @@ import {
   resolveReviewTimeoutExecutionContext,
 } from "./review-timeout-execution-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
-import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
+import { applyReviewTimeoutContinuationStateSideEffects } from "./review-timeout-continuation-state.ts";
 import { createReviewHandlerRuntime } from "./review-handler-runtime.ts";
 import { resolveReviewHandlerDependencies, type ReviewHandlerDependencies } from "./review-handler-dependencies.ts";
 import { cleanupReviewExecutionResources } from "./review-execution-cleanup.ts";
@@ -138,7 +138,6 @@ import {
   resolveReviewDeltaClassification,
 } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
-import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { resolveReviewChangedFileContext } from "./review-changed-file-context.ts";
 import { resolveReviewPlanningContext } from "./review-planning-context.ts";
@@ -1287,26 +1286,17 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             const retryOutcomeCheckpointLookup = buildReviewRetryOutcomeCheckpointLookup({
               knowledgeStore,
             });
-            const timeoutContinuationState = resolveReviewTimeoutContinuationState({
+            await applyReviewTimeoutContinuationStateSideEffects({
               attemptId: reviewWorkAttempt.attemptId,
               timeoutFirstPass,
               retryScheduled: retryEnqueueContext !== null,
               continuationProjectionDegraded,
+              logger,
+              deliveryId: event.id,
+              prNumber: pr.number,
+              reviewOutputKey,
+              persistContinuationFamilyState,
             });
-
-            if (timeoutContinuationState.zeroEvidenceWarning) {
-              logReviewTimeoutZeroEvidenceWarning({
-                logger,
-                deliveryId: event.id,
-                prNumber: pr.number,
-                reviewOutputKey,
-                zeroEvidenceWarning: timeoutContinuationState.zeroEvidenceWarning,
-              });
-            }
-
-            if (timeoutContinuationState.blockedFamilyState) {
-              await persistContinuationFamilyState(timeoutContinuationState.blockedFamilyState);
-            }
 
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
             // Retry is only useful when no GitHub-visible output was published.

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewFirstPassPayload } from "../lib/review-first-pass.ts";
-import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
+import {
+  applyReviewTimeoutContinuationStateSideEffects,
+  resolveReviewTimeoutContinuationState,
+} from "./review-timeout-continuation-state.ts";
 
 function zeroEvidenceFirstPass(): ReviewFirstPassPayload {
   return {
@@ -68,5 +71,67 @@ describe("resolveReviewTimeoutContinuationState", () => {
 
     expect(state.zeroEvidenceWarning).toBeNull();
     expect(state.blockedFamilyState).toBeNull();
+  });
+});
+
+describe("applyReviewTimeoutContinuationStateSideEffects", () => {
+  test("logs zero-evidence warnings and persists blocked family state", async () => {
+    const warnings: unknown[] = [];
+    const persisted: unknown[] = [];
+
+    await applyReviewTimeoutContinuationStateSideEffects({
+      attemptId: "attempt-1",
+      timeoutFirstPass: zeroEvidenceFirstPass(),
+      retryScheduled: false,
+      continuationProjectionDegraded: true,
+      logger: {
+        warn: (fields: unknown) => {
+          warnings.push(fields);
+        },
+      },
+      deliveryId: "delivery-1",
+      prNumber: 42,
+      reviewOutputKey: "review-output-1",
+      persistContinuationFamilyState: async (state) => {
+        persisted.push(state);
+      },
+    });
+
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        deliveryId: "delivery-1",
+        prNumber: 42,
+        reviewOutputKey: "review-output-1",
+        zeroEvidenceFailure: true,
+      }),
+    ]);
+    expect(persisted).toEqual([
+      {
+        authoritativeAttemptId: "attempt-1",
+        authoritativeOutcome: "blocked",
+        finalStopReason: "no-follow-up",
+        projectionStatus: "degraded",
+      },
+    ]);
+  });
+
+  test("does not persist blocked state when a retry is scheduled", async () => {
+    const persisted: unknown[] = [];
+
+    await applyReviewTimeoutContinuationStateSideEffects({
+      attemptId: "attempt-1",
+      timeoutFirstPass: boundedFirstPass(),
+      retryScheduled: true,
+      continuationProjectionDegraded: false,
+      logger: { warn: () => undefined },
+      deliveryId: "delivery-1",
+      prNumber: 42,
+      reviewOutputKey: "review-output-1",
+      persistContinuationFamilyState: async (state) => {
+        persisted.push(state);
+      },
+    });
+
+    expect(persisted).toEqual([]);
   });
 });
