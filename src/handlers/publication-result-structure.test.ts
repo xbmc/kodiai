@@ -6,6 +6,7 @@ const publicationResultHelpers = [
   "./mention-format-only-publication.ts",
   "./mention-combined-format-publication.ts",
   "./mention-explicit-review-publication.ts",
+  "./mention-publication.ts",
   "./mention-result-fallback-publication.ts",
   "./review-clean-approval-publication.ts",
   "./review-depends-publication.ts",
@@ -21,7 +22,7 @@ describe("publication result structure", () => {
 
       expect(source, helper).not.toMatch(/return\s*\{\s*\n\s*ok:\s*true,/);
       expect(source, helper).not.toMatch(/return\s*\{\s*\n\s*ok:\s*false,/);
-      expect(source, helper).toContain("ok(");
+      expect(source, helper).toMatch(/\bok\(|resultOk\(/);
       expect(source, helper).toMatch(/\berr\(|resultErr\(/);
     }
   });
