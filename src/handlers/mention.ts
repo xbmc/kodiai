@@ -64,6 +64,7 @@ import { publishExplicitMentionReviewIfEligible } from "./mention-explicit-revie
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
 import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
+import { buildMentionExecutionContext } from "./mention-execution-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
 import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
@@ -590,34 +591,23 @@ export function createMentionHandler(deps: {
         }
         const result = await executeMentionWithFormatterRecovery({
           execute: (context) => executor.execute(context),
-          context: {
+          context: buildMentionExecutionContext({
             workspace,
             installationId: event.installationId,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber,
-            issueNumber: mention.issueNumber,
-            // For inline review comment mentions, provide the triggering review comment id
-            // so the executor can enable the in-thread reply MCP tool.
-            commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
+            mention,
             deliveryId: event.id,
             botHandles: possibleHandles,
-            writeMode: writeEnabled,
-            taskType: executorPlan.taskType,
-            eventType: executorPlan.eventType,
-            triggerBody: executorPlan.triggerBody,
+            writeEnabled,
+            executorPlan,
             prompt,
             promptSections,
-            reviewOutputKey,
-            maxTurnsOverride: executorPlan.maxTurnsOverride,
-            dynamicTimeoutSeconds: explicitReviewDynamicTimeoutSeconds,
             knowledgeStore: deps.knowledgeStore,
             formatterSuggestionRequest,
-            totalFiles: explicitReviewPromptFileCount,
-            enableInlineTools: executorPlan.enableInlineTools,
-            enableCandidateFindingTool: executorPlan.enableCandidateFindingTool,
-            prDiffCommentabilityIndex: explicitReviewRequest ? explicitReviewPrDiffCommentabilityIndex : undefined,
-          },
+            explicitReviewPromptFileCount,
+            explicitReviewRequest,
+            explicitReviewDynamicTimeoutSeconds,
+            explicitReviewPrDiffCommentabilityIndex,
+          }),
           isCombinedFormatterSuggestionRequest: executorPlan.isCombinedFormatterSuggestionRequest,
           mention,
           deliveryId: event.id,

@@ -231,6 +231,18 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-executor-plan.ts");
   });
 
+  test("keeps mention executor context projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const contextSource = readFileSync(new URL("./mention-execution-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("commentId: mention.surface === \"pr_review_comment\"");
+    expect(source).not.toContain("prDiffCommentabilityIndex: explicitReviewRequest");
+    expect(source).not.toContain("writeMode: writeEnabled");
+    expect(source).toContain("buildMentionExecutionContext");
+    expect(source).toContain("./mention-execution-context.ts");
+    expect(contextSource).toContain("export function buildMentionExecutionContext");
+  });
+
   test("keeps mention handler failure recovery out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const recoverySource = readFileSync(new URL("./mention-handler-failure-recovery.ts", import.meta.url), "utf8");
