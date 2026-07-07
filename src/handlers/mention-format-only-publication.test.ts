@@ -44,7 +44,7 @@ describe("publishFormatOnlyMentionFormatterResult", () => {
     const diagnosticInputs: Array<{ formatterMode: string; formatterResult: FormatterSuggestionSubflowResult }> = [];
     const logs: Array<{ fields: Record<string, unknown>; message: string }> = [];
 
-    const handled = await publishFormatOnlyMentionFormatterResult({
+    const publication = await publishFormatOnlyMentionFormatterResult({
       isPrSurface: true,
       formatterSuggestionMode: "format-only",
       runFormatterSuggestionForMention: async (mode) => {
@@ -65,7 +65,14 @@ describe("publishFormatOnlyMentionFormatterResult", () => {
       },
     });
 
-    expect(handled).toBe(true);
+    expect(publication).toEqual({
+      ok: true,
+      value: {
+        handled: true,
+        visibleReplyPosted: true,
+        visibleReplyFailed: false,
+      },
+    });
     expect(runnerModes).toEqual(["format-only"]);
     expect(diagnosticInputs).toEqual([{ formatterResult, formatterMode: "format-only" }]);
     expect(logs).toHaveLength(1);
@@ -90,7 +97,7 @@ describe("publishFormatOnlyMentionFormatterResult", () => {
     let diagnosticCalled = false;
     let logged = false;
 
-    const handled = await publishFormatOnlyMentionFormatterResult({
+    const publication = await publishFormatOnlyMentionFormatterResult({
       isPrSurface: false,
       formatterSuggestionMode: "format-only",
       runFormatterSuggestionForMention: async () => {
@@ -111,9 +118,45 @@ describe("publishFormatOnlyMentionFormatterResult", () => {
       },
     });
 
-    expect(handled).toBe(false);
+    expect(publication).toEqual({
+      ok: true,
+      value: {
+        handled: false,
+        visibleReplyPosted: false,
+        visibleReplyFailed: false,
+      },
+    });
     expect(runnerCalled).toBe(false);
     expect(diagnosticCalled).toBe(false);
     expect(logged).toBe(false);
+  });
+
+  test("returns an error result when formatter publication throws", async () => {
+    const error = new Error("formatter failed");
+
+    const publication = await publishFormatOnlyMentionFormatterResult({
+      isPrSurface: true,
+      formatterSuggestionMode: "format-only",
+      runFormatterSuggestionForMention: async () => {
+        throw error;
+      },
+      postFormatterVisibleDiagnostic: async () => {
+        throw new Error("should not post");
+      },
+      mention: makeMention(),
+      deliveryId: "delivery-1",
+      reviewOutputAction: "mention-format-suggestions",
+      logger: {
+        info: () => undefined,
+      },
+    });
+
+    expect(publication).toEqual({
+      ok: false,
+      err: {
+        handled: true,
+        error,
+      },
+    });
   });
 });

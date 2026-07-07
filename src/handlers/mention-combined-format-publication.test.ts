@@ -44,7 +44,7 @@ describe("publishCombinedReviewAndFormatMentionFormatterResult", () => {
     const diagnosticInputs: Array<{ formatterMode: string; formatterResult: FormatterSuggestionSubflowResult }> = [];
     const logs: Array<{ fields: Record<string, unknown>; message: string }> = [];
 
-    const handled = await publishCombinedReviewAndFormatMentionFormatterResult({
+    const publication = await publishCombinedReviewAndFormatMentionFormatterResult({
       enabled: true,
       runFormatterSuggestionForMention: async (mode) => {
         runnerModes.push(mode);
@@ -71,7 +71,14 @@ describe("publishCombinedReviewAndFormatMentionFormatterResult", () => {
       },
     });
 
-    expect(handled).toBe(true);
+    expect(publication).toEqual({
+      ok: true,
+      value: {
+        handled: true,
+        visibleReplyPosted: true,
+        visibleReplyFailed: false,
+      },
+    });
     expect(runnerModes).toEqual(["review-and-format"]);
     expect(diagnosticInputs).toEqual([{ formatterResult, formatterMode: "review-and-format" }]);
     expect(logs).toHaveLength(1);
@@ -97,7 +104,7 @@ describe("publishCombinedReviewAndFormatMentionFormatterResult", () => {
     let diagnosticCalled = false;
     let logged = false;
 
-    const handled = await publishCombinedReviewAndFormatMentionFormatterResult({
+    const publication = await publishCombinedReviewAndFormatMentionFormatterResult({
       enabled: false,
       runFormatterSuggestionForMention: async () => {
         runnerCalled = true;
@@ -121,9 +128,48 @@ describe("publishCombinedReviewAndFormatMentionFormatterResult", () => {
       },
     });
 
-    expect(handled).toBe(false);
+    expect(publication).toEqual({
+      ok: true,
+      value: {
+        handled: false,
+        visibleReplyPosted: false,
+        visibleReplyFailed: false,
+      },
+    });
     expect(runnerCalled).toBe(false);
     expect(diagnosticCalled).toBe(false);
     expect(logged).toBe(false);
+  });
+
+  test("returns an error result when combined formatter publication throws", async () => {
+    const error = new Error("formatter failed");
+
+    const publication = await publishCombinedReviewAndFormatMentionFormatterResult({
+      enabled: true,
+      runFormatterSuggestionForMention: async () => {
+        throw error;
+      },
+      postFormatterVisibleDiagnostic: async () => {
+        throw new Error("should not post");
+      },
+      mention: makeMention(),
+      deliveryId: "delivery-1",
+      reviewOutputAction: "mention-format-suggestions",
+      result: { conclusion: "success" },
+      publishResolution: "executor",
+      publishFailureCategory: null,
+      publishFallbackDelivery: null,
+      logger: {
+        info: () => undefined,
+      },
+    });
+
+    expect(publication).toEqual({
+      ok: false,
+      err: {
+        handled: true,
+        error,
+      },
+    });
   });
 });

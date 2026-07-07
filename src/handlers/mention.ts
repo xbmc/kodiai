@@ -453,7 +453,7 @@ export function createMentionHandler(deps: {
           classifyFailure: (err) => classifyError(err, false),
         });
 
-        if (await publishFormatOnlyMentionFormatterResult({
+        const formatOnlyPublication = await publishFormatOnlyMentionFormatterResult({
           isPrSurface,
           formatterSuggestionMode: formatterSuggestionRequest?.mode,
           runFormatterSuggestionForMention,
@@ -462,7 +462,11 @@ export function createMentionHandler(deps: {
           deliveryId: event.id,
           reviewOutputAction: FORMATTER_REVIEW_OUTPUT_ACTION,
           logger,
-        })) {
+        });
+        if (!formatOnlyPublication.ok) {
+          throw formatOnlyPublication.err.error;
+        }
+        if (formatOnlyPublication.value.handled) {
           return;
         }
 
@@ -952,7 +956,7 @@ export function createMentionHandler(deps: {
           logMentionExecutionCompleted();
         }
 
-        await publishCombinedReviewAndFormatMentionFormatterResult({
+        const combinedFormatterPublication = await publishCombinedReviewAndFormatMentionFormatterResult({
           enabled: executorPlan.isCombinedFormatterSuggestionRequest,
           runFormatterSuggestionForMention,
           postFormatterVisibleDiagnostic,
@@ -969,6 +973,9 @@ export function createMentionHandler(deps: {
           publishFallbackDelivery,
           logger,
         });
+        if (!combinedFormatterPublication.ok) {
+          throw combinedFormatterPublication.err.error;
+        }
       } catch (err) {
         logger.error(
           { err, surface: mention.surface, issueNumber: mention.issueNumber },
