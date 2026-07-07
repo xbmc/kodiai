@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildReviewRequestedEyesReactionAdapters,
   maybePostReviewRequestedEyesReaction,
   postReviewRequestedEyesReaction,
 } from "./review-reactions.ts";
@@ -76,6 +77,19 @@ describe("postReviewRequestedEyesReaction", () => {
 });
 
 describe("maybePostReviewRequestedEyesReaction", () => {
+  test("builds reaction adapters from handler dependencies", async () => {
+    const octokit = { rest: {} } as never;
+    const adapters = buildReviewRequestedEyesReactionAdapters({
+      installationId: 123,
+      getInstallationOctokit: async (installationId) => {
+        expect(installationId).toBe(123);
+        return octokit;
+      },
+    });
+
+    await expect(adapters.getOctokit()).resolves.toBe(octokit);
+  });
+
   test("skips non-review-requested actions without fetching octokit", async () => {
     let octokitCalls = 0;
     const { logger, warnCalls } = makeLogger();

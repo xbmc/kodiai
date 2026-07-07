@@ -1652,13 +1652,17 @@ describe("review handler structure", () => {
 
   test("keeps review-requested reaction publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const reactionsSource = readFileSync(new URL("./review-reactions.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("await postReviewRequestedEyesReaction({");
     expect(source).not.toContain("Add eyes reaction only for explicit re-review requests.");
     expect(source).not.toContain("createForIssue({");
     expect(source).not.toContain("Failed to add eyes reaction to PR");
+    expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n          owner: apiOwner,\n          repo: apiRepo,\n          prNumber: pr.number,\n          logger,\n        });");
+    expect(source).toContain("buildReviewRequestedEyesReactionAdapters");
     expect(source).toContain("maybePostReviewRequestedEyesReaction");
     expect(source).toContain("./review-reactions.ts");
+    expect(reactionsSource).toContain("export function buildReviewRequestedEyesReactionAdapters");
   });
 
   test("keeps review-requested target gating out of the monster handler", () => {

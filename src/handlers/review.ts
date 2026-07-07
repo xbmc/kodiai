@@ -104,7 +104,10 @@ import {
 } from "./review-post-execution-side-effects.ts";
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { buildReviewPostExecutionTelemetryPublicationContext } from "./review-post-execution-telemetry-context.ts";
-import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
+import {
+  buildReviewRequestedEyesReactionAdapters,
+  maybePostReviewRequestedEyesReaction,
+} from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
@@ -467,9 +470,13 @@ export function createReviewHandler(deps: {
         const parsedIntent = prIntent.parsedIntent;
         const commitMessagesForLinking = prIntent.commitMessagesForLinking;
 
+        const reviewRequestedEyesReactionAdapters = buildReviewRequestedEyesReactionAdapters({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+        });
         await maybePostReviewRequestedEyesReaction({
           action,
-          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          getOctokit: reviewRequestedEyesReactionAdapters.getOctokit,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,

@@ -1,6 +1,15 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 
+export function buildReviewRequestedEyesReactionAdapters(params: {
+  installationId: number;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+}): Pick<Parameters<typeof maybePostReviewRequestedEyesReaction>[0], "getOctokit"> {
+  return {
+    getOctokit: () => params.getInstallationOctokit(params.installationId),
+  };
+}
+
 export async function postReviewRequestedEyesReaction(params: {
   octokit: Octokit;
   owner: string;
