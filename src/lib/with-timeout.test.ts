@@ -99,6 +99,17 @@ describe("raceWithAbortSignalTimeout", () => {
     expect(abortReason).toBeInstanceOf(Error);
     expect(String(abortReason)).toContain("adapter timed out after 1ms");
   });
+
+  test("uses the shared abort controller timeout primitive", () => {
+    const source = readFileSync(new URL("./with-timeout.ts", import.meta.url), "utf8");
+    const implementation = source.slice(
+      source.indexOf("export async function raceWithAbortSignalTimeout"),
+      source.indexOf("export type RejectWithTimeoutOptions"),
+    );
+
+    expect(implementation).toContain("createAbortControllerWithTimeout");
+    expect(implementation).not.toContain("new AbortController()");
+  });
 });
 
 describe("rejectWithTimeout", () => {

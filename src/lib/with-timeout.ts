@@ -75,15 +75,28 @@ export async function raceWithAbortSignalTimeout<T, TimedOut>(
   timeoutValue: TimedOut,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T | TimedOut> {
-  const controller = new AbortController();
-  const work = Promise.resolve().then(() => run(controller.signal));
-  return await raceWithTimeout(work, {
-    timeoutMs,
-    timeoutValue,
-    onTimeout: () => {
-      controller.abort(new Error(`${label} timed out after ${timeoutMs}ms`));
-    },
+  const timeout = createAbortControllerWithTimeout(label, timeoutMs);
+  const work = Promise.resolve().then(() => run(timeout.controller.signal));
+  work.catch(() => {});
+
+  let removeAbortListener: (() => void) | undefined;
+  const timeoutPromise = new Promise<TimedOut>((resolve) => {
+    if (timeout.controller.signal.aborted) {
+      resolve(timeoutValue);
+      return;
+    }
+
+    const onAbort = () => resolve(timeoutValue);
+    timeout.controller.signal.addEventListener("abort", onAbort, { once: true });
+    removeAbortListener = () => timeout.controller.signal.removeEventListener("abort", onAbort);
   });
+
+  try {
+    return await Promise.race([work, timeoutPromise]);
+  } finally {
+    removeAbortListener?.();
+    timeout.clear();
+  }
 }
 
 export type RejectWithTimeoutOptions = {
