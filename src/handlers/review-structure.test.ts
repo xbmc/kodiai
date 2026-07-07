@@ -388,6 +388,17 @@ describe("review handler structure", () => {
     expect(source).toContain("updateFinalizedReviewDetailsComment");
   });
 
+  test("keeps Review Details runtime count projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const findingCounts = { critical: 0, major: 0, medium: 0, minor: 0 };");
+    expect(source).not.toContain("let suppressionsApplied = 0;");
+    expect(source).not.toContain("findingCounts[finding.severity] += 1;");
+    expect(source).not.toContain("const hasReviewDetailsOperationalSignal =");
+    expect(source).toContain("resolveReviewDetailsRuntimeContext");
+    expect(source).toContain("./review-details-runtime-context.ts");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

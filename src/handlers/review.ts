@@ -58,7 +58,6 @@ import {
 } from "./review-learning-memory.ts";
 import {
   classifyRetryFailure,
-  resolveReviewDetailsLineCounts,
   type TimeoutReviewDetailsProgress,
   type TimeoutBudgetDetails,
 } from "../lib/review-details-formatting.ts";
@@ -246,6 +245,7 @@ import { resolveReviewCandidatePublicationRuntimeContext } from "./review-candid
 import { resolveReviewFindingPublicationContext } from "./review-finding-publication-context.ts";
 import { resolveReviewFindingLifecycleContext } from "./review-finding-lifecycle-context.ts";
 import { logReviewCandidatePublicationAdapterContext } from "./review-candidate-publication-adapter-context.ts";
+import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-context.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1623,28 +1623,22 @@ export function createReviewHandler(deps: {
           });
         }
 
-        const findingCounts = { critical: 0, major: 0, medium: 0, minor: 0 };
-        let suppressionsApplied = 0;
-        for (const finding of processedFindings) {
-          findingCounts[finding.severity] += 1;
-          if (finding.suppressed) suppressionsApplied += 1;
-        }
-        const reviewDetailsLineCounts = resolveReviewDetailsLineCounts({
+        const {
+          findingCounts,
+          suppressionsApplied,
+          reviewDetailsLineCounts,
+          linesChanged,
+          hasReviewDetailsOperationalSignal,
+        } = resolveReviewDetailsRuntimeContext({
+          processedFindings,
+          filteredInlineFindings,
           diffLinesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
           diffLinesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
           prApiLinesAdded: pr.additions ?? 0,
           prApiLinesRemoved: pr.deletions ?? 0,
+          reviewPlanDetailsSummary,
+          reviewCandidatePublicationRuntime,
         });
-        const linesChanged = reviewDetailsLineCounts.linesAdded + reviewDetailsLineCounts.linesRemoved;
-        const hasReviewDetailsOperationalSignal =
-          processedFindings.length > 0
-          || filteredInlineFindings.length > 0
-          || suppressionsApplied > 0
-          || reviewPlanDetailsSummary.text.includes("doctrine=applied")
-          || reviewCandidatePublicationRuntime.mode !== "blocked"
-          || reviewCandidatePublicationRuntime.reasons.some((reason) =>
-            reason !== "approval-blocked" && reason !== "no-candidate-publication-path"
-          );
 
         let canonicalReviewDetailsBody: string | null = null;
         const reviewDetailsBodyBase = {
