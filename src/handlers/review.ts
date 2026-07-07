@@ -214,8 +214,8 @@ import { resolveReviewTimeoutContinuationState } from "./review-timeout-continua
 import {
   resolveMergedContinuationFamilyState,
   resolvePendingContinuationFamilyState,
-  resolveQuietSettledContinuationFamilyState,
 } from "./review-continuation-family-state-projection.ts";
+import { settleRetryWithNoAdditionalResults } from "./review-retry-settlement.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
@@ -2209,20 +2209,19 @@ export function createReviewHandler(deps: {
                           && continuationRevisionCounts.stillOpen === 0
                           && continuationRevisionCounts.resolved === 0
                         ) {
-                          logger.info(
-                            {
-                              deliveryId: retryDeliveryId,
-                              prNumber: pr.number,
-                              retryConclusion: retryResult.conclusion,
-                              settlementReason: "no-meaningful-delta",
+                          await settleRetryWithNoAdditionalResults({
+                            logger,
+                            deliveryId: retryDeliveryId,
+                            prNumber: pr.number,
+                            retryConclusion: retryResult.conclusion,
+                            settlementReason: "no-meaningful-delta",
+                            quietSettlement: {
+                              attemptId: retryReviewWorkAttempt.attemptId,
+                              reviewOutputKey: retryReviewOutputKey,
+                              persistContinuationFamilyState,
                             },
-                            "Retry produced no additional results -- keeping original partial review",
-                          );
-                          await persistContinuationFamilyState(resolveQuietSettledContinuationFamilyState({
-                            attemptId: retryReviewWorkAttempt.attemptId,
-                            reviewOutputKey: retryReviewOutputKey,
-                          }));
-                          discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
+                            discardCheckpoints: () => discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]),
+                          });
                           return;
                         }
 
@@ -2325,29 +2324,26 @@ export function createReviewHandler(deps: {
                           discardCheckpointsFailOpen(knowledgeStore, logger, [reviewOutputKey, retryReviewOutputKey]);
                         }
                       } else {
-                        logger.info(
-                          {
-                            deliveryId: retryDeliveryId,
-                            prNumber: pr.number,
-                            retryConclusion: retryResult.conclusion,
-                            settlementReason: settlementDecision.reason,
-                          },
-                          "Retry produced no additional results -- keeping original partial review",
-                        );
-                        await persistContinuationFamilyState(resolveQuietSettledContinuationFamilyState({
-                          attemptId: retryReviewWorkAttempt.attemptId,
-                          reviewOutputKey: retryReviewOutputKey,
-                        }));
-                      }
-                    } else {
-                      logger.info(
-                        {
+                        await settleRetryWithNoAdditionalResults({
+                          logger,
                           deliveryId: retryDeliveryId,
                           prNumber: pr.number,
                           retryConclusion: retryResult.conclusion,
-                        },
-                        "Retry produced no additional results -- keeping original partial review",
-                      );
+                          settlementReason: settlementDecision.reason,
+                          quietSettlement: {
+                            attemptId: retryReviewWorkAttempt.attemptId,
+                            reviewOutputKey: retryReviewOutputKey,
+                            persistContinuationFamilyState,
+                          },
+                        });
+                      }
+                    } else {
+                      await settleRetryWithNoAdditionalResults({
+                        logger,
+                        deliveryId: retryDeliveryId,
+                        prNumber: pr.number,
+                        retryConclusion: retryResult.conclusion,
+                      });
                     }
 
                   } catch (retryErr) {

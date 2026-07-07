@@ -180,6 +180,7 @@ describe("review handler structure", () => {
 
   test("keeps retry continuation-family state projections out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retrySettlementSource = readFileSync(new URL("./review-retry-settlement.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("authoritativeOutcome: \"continuation-pending\"");
     expect(source).not.toContain("authoritativeOutcome: \"quiet-settled\"");
@@ -188,9 +189,22 @@ describe("review handler structure", () => {
     expect(source).not.toContain("finalStopReason: \"settled-without-update\"");
     expect(source).not.toContain("finalStopReason: \"merged-continuation-results\"");
     expect(source).toContain("resolvePendingContinuationFamilyState");
-    expect(source).toContain("resolveQuietSettledContinuationFamilyState");
     expect(source).toContain("resolveMergedContinuationFamilyState");
     expect(source).toContain("./review-continuation-family-state-projection.ts");
+    expect(retrySettlementSource).toContain("resolveQuietSettledContinuationFamilyState");
+  });
+
+  test("keeps retry no-additional-results settlement policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Retry produced no additional results -- keeping original partial review");
+    expect(source).not.toContain("resolveQuietSettledContinuationFamilyState({");
+    expect(source).toContain("settleRetryWithNoAdditionalResults");
+    expect(source).toContain("./review-retry-settlement.ts");
+
+    const retrySettlementSource = readFileSync(new URL("./review-retry-settlement.ts", import.meta.url), "utf8");
+    expect(retrySettlementSource).toContain("resolveQuietSettledContinuationFamilyState");
+    expect(retrySettlementSource).toContain("Retry produced no additional results -- keeping original partial review");
   });
 
   test("keeps review execution telemetry persistence out of the monster handler", () => {
