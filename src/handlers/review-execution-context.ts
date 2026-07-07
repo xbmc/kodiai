@@ -4,6 +4,10 @@ import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { TimeoutBudgetDetails } from "../lib/review-details-formatting.ts";
 import { buildShadowSpecialistCorrelationKey } from "../review-orchestration/review-specialist-publication-log.ts";
 
+export function buildReviewBotHandles(appSlug: string): string[] {
+  return [appSlug, "claude"];
+}
+
 export function buildReviewExecutionContext(params: {
   workspace: ExecutionContext["workspace"];
   installationId: number;
@@ -32,7 +36,7 @@ export function buildReviewExecutionContext(params: {
     repo: params.repo,
     prNumber: params.prNumber,
     commentId: undefined,
-    botHandles: [params.appSlug, "claude"],
+    botHandles: buildReviewBotHandles(params.appSlug),
     eventType: `pull_request.${params.action}`,
     taskType: params.taskType,
     triggerBody: params.reviewPrompt,
@@ -77,7 +81,7 @@ export function buildReviewRetryExecutionContext(params: {
     repo: params.repo,
     prNumber: params.prNumber,
     commentId: undefined,
-    botHandles: [params.appSlug, "claude"],
+    botHandles: buildReviewBotHandles(params.appSlug),
     eventType: "pull_request.review-retry",
     taskType: params.taskType,
     triggerBody: "",

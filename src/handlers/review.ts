@@ -123,7 +123,7 @@ import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { applyReviewExecutorState, projectReviewExecutorState } from "./review-executor-state.ts";
-import { buildReviewExecutionContext } from "./review-execution-context.ts";
+import { buildReviewBotHandles, buildReviewExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import {
   buildReviewCandidatePublicationPreparationAdapters,
@@ -410,6 +410,7 @@ export function createReviewHandler(deps: {
       });
       if (runStateGate.action === "skip") return;
 
+      const reviewBotHandles = buildReviewBotHandles(githubApp.getAppSlug());
       let workspace: Workspace | undefined;
       try {
         const workspacePhaseHooks = createReviewWorkspacePhaseHooks({
@@ -554,7 +555,7 @@ export function createReviewHandler(deps: {
           workspaceDir: workspace?.dir ?? null,
           logger,
           baseLog,
-          botHandles: [githubApp.getAppSlug(), "claude"],
+          botHandles: reviewBotHandles,
           canPublishVisibleOutput,
           setReviewWorkPhase,
           retriever,
@@ -1058,7 +1059,7 @@ export function createReviewHandler(deps: {
           repo: apiRepo,
           prNumber: pr.number,
           reviewOutputKey,
-          botHandles: [githubApp.getAppSlug(), "claude"],
+          botHandles: reviewBotHandles,
           acceptedCanonicalSurface,
           authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
           reviewBoundedness,
@@ -1373,7 +1374,7 @@ export function createReviewHandler(deps: {
               repo: apiRepo,
               prNumber: pr.number,
               reviewOutputKey,
-              botHandles: [githubApp.getAppSlug(), "claude"],
+              botHandles: reviewBotHandles,
               canPublishVisibleOutput,
               setReviewWorkPhase,
               logger,

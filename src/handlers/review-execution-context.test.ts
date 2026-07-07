@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { ExecutionContext } from "../execution/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { CandidateVerificationContext } from "../execution/mcp/review-output-publication-gate.ts";
-import { buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
+import { buildReviewBotHandles, buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
+
+describe("buildReviewBotHandles", () => {
+  test("projects the app slug and Claude alias used for review publication sanitization", () => {
+    expect(buildReviewBotHandles("kodiai")).toEqual(["kodiai", "claude"]);
+  });
+});
 
 describe("buildReviewExecutionContext", () => {
   test("projects the initial review executor context", () => {

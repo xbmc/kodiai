@@ -392,6 +392,15 @@ describe("review handler structure", () => {
     expect(adapterSource).toContain("export function buildReviewPostExecutionTelemetryPublicationContext");
   });
 
+  test("keeps review publication bot handle projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const executionContextSource = readFileSync(new URL("./review-execution-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("botHandles: [githubApp.getAppSlug(), \"claude\"],");
+    expect(source).toContain("buildReviewBotHandles");
+    expect(executionContextSource).toContain("export function buildReviewBotHandles");
+  });
+
   test("keeps author expertise prompt projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const authorContextSource = readFileSync(new URL("./review-author-context.ts", import.meta.url), "utf8");
