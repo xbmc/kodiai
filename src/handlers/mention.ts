@@ -78,6 +78,7 @@ import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts
 import { buildMentionJobQueueContext } from "./mention-job-context.ts";
 import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.ts";
 import { recordMentionPostExecutionTelemetry } from "./mention-post-execution-telemetry.ts";
+import { logMentionProcessing } from "./mention-processing-log.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -423,18 +424,11 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        logger.info(
-          {
-            surface: mention.surface,
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-            prNumber: mention.prNumber,
-            commentAuthor: mention.commentAuthor,
-            acceptClaudeAlias,
-          },
-          "Processing mention",
-        );
+        logMentionProcessing({
+          logger,
+          mention,
+          acceptClaudeAlias,
+        });
 
         await postMentionEyesReaction({ octokit, mention, logger });
 

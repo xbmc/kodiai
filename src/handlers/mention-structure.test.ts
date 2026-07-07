@@ -329,6 +329,18 @@ describe("mention handler structure", () => {
     expect(source).toContain("evaluateMentionConversationLimit");
   });
 
+  test("keeps mention processing log shaping out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const logSource = readFileSync(new URL("./mention-processing-log.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("\"Processing mention\"");
+    expect(source).not.toContain("commentAuthor: mention.commentAuthor");
+    expect(source).toContain("logMentionProcessing");
+    expect(source).toContain("./mention-processing-log.ts");
+    expect(logSource).toContain("\"Processing mention\"");
+    expect(logSource).toContain("commentAuthor");
+  });
+
   test("keeps successful conversation turn recording out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
