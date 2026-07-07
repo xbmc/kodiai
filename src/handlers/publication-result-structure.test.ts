@@ -295,4 +295,22 @@ describe("publication result structure", () => {
     expect(retrySource).toContain("const fallbackPublication = await publishFallback");
     expect(retrySource).toContain("fallbackPublication.value");
   });
+
+  test("keeps retry merge continuation publication orchestration on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-retry-merge-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const retrySettlementSource = readFileSync(
+      new URL("./review-retry-continuation-settlement.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("RetryMergeContinuationPublicationResult");
+    expect(source).toContain("Result<RetryMergeContinuationPublicationStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toContain("publishRetryReviewDetailsMergeFn");
+    expect(retrySettlementSource).toContain("publishRetryMergeContinuationResults");
+  });
 });

@@ -1,12 +1,28 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { ContinuationFamilyProjectionStatus, KnowledgeStore } from "../knowledge/types.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { ok, type Result } from "../lib/result.ts";
 import type { ReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
 import { resolveMergedContinuationFamilyState } from "./review-continuation-family-state-projection.ts";
 import type { ReviewDetailsPublicationRuntime } from "./review-details-publication-runtime.ts";
 import { publishRetryReviewDetailsMerge } from "./review-details-retry-publication.ts";
 import { discardCheckpointsFailOpen } from "./review-handler-utils.ts";
+
+type PublishRetryReviewDetailsMerge = typeof publishRetryReviewDetailsMerge;
+
+export type RetryMergeContinuationPublicationStatus =
+  | { status: "skipped"; published: false }
+  | { status: "settled-without-canonical-update"; published: false }
+  | {
+    status: "published";
+    published: true;
+    projectionStatus: ContinuationFamilyProjectionStatus;
+  }
+  | { status: "failed"; published: false };
+
+export type RetryMergeContinuationPublicationResult =
+  Result<RetryMergeContinuationPublicationStatus, never>;
 
 export async function publishRetryMergeContinuationResults(params: {
   getOctokit: () => Promise<Octokit>;
@@ -34,7 +50,8 @@ export async function publishRetryMergeContinuationResults(params: {
   persistContinuationFamilyState: (
     state: ReturnType<typeof resolveMergedContinuationFamilyState>,
   ) => Promise<void>;
-}): Promise<void> {
+  publishRetryReviewDetailsMergeFn?: PublishRetryReviewDetailsMerge;
+}): Promise<RetryMergeContinuationPublicationResult> {
   const retryOctokit = await params.getOctokit();
   const storedCheckpoint = (await params.knowledgeStore?.getCheckpoint?.(params.reviewOutputKey)) ?? null;
   const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? params.partialCommentId;
@@ -44,12 +61,13 @@ export async function publishRetryMergeContinuationResults(params: {
     "retry partial review merge",
     params.deliveryId,
   )) {
-    return;
+    return ok({ status: "skipped", published: false });
   }
 
   params.setPublishPhase();
 
-  const retryReviewDetailsPublication = await publishRetryReviewDetailsMerge({
+  const publishRetryDetails = params.publishRetryReviewDetailsMergeFn ?? publishRetryReviewDetailsMerge;
+  const retryReviewDetailsPublication = await publishRetryDetails({
     octokit: retryOctokit,
     owner: params.owner,
     repo: params.repo,
@@ -76,12 +94,12 @@ export async function publishRetryMergeContinuationResults(params: {
       { ...params.baseLog, err: retryReviewDetailsPublication.err },
       "Retry Review Details publication failed",
     );
-    return;
+    return ok({ status: "failed", published: false });
   }
 
   const retryReviewDetailsPublicationStatus = retryReviewDetailsPublication.value;
   if (retryReviewDetailsPublicationStatus.status === "settled-without-canonical-update") {
-    return;
+    return ok({ status: "settled-without-canonical-update", published: false });
   }
 
   params.logger.info(
@@ -104,4 +122,9 @@ export async function publishRetryMergeContinuationResults(params: {
   }));
 
   discardCheckpointsFailOpen(params.knowledgeStore, params.logger, [params.reviewOutputKey, params.retryReviewOutputKey]);
+  return ok({
+    status: "published",
+    published: true,
+    projectionStatus: retryReviewDetailsPublicationStatus.projectionStatus,
+  });
 }
