@@ -775,6 +775,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-trigger-config-gate.ts");
   });
 
+  test("keeps durable run-state idempotency gating out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("knowledgeStore.checkAndClaimRun({");
+    expect(source).not.toContain("gate: 'run-state-idempotency'");
+    expect(source).not.toContain("Run state idempotency check failed (fail-open, proceeding with review)");
+    expect(source).toContain("evaluateReviewRunStateGate");
+    expect(source).toContain("./review-run-state-gate.ts");
+  });
+
   test("keeps review skip-author gating out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

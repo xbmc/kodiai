@@ -207,6 +207,7 @@ import { resolveReviewStructuralImpactSelection } from "./review-structural-impa
 import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
 import { resolveReviewClonePlan } from "./review-clone-plan.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
+import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
 import {
   resolveReviewFilesForIncrementalReview,
@@ -614,53 +615,18 @@ export function createReviewHandler(deps: {
         canPublishReviewWorkOutput,
       });
 
-      // Durable run state idempotency check (REL-01)
-      // Check before expensive workspace creation. Uses SHA pair as identity key.
-      // Fail-open: if knowledgeStore is undefined or query throws, proceed with review.
-      if (knowledgeStore) {
-        try {
-          const runCheck = await knowledgeStore.checkAndClaimRun({
-            repo: `${apiOwner}/${apiRepo}`,
-            prNumber: pr.number,
-            baseSha: pr.base.sha,
-            headSha: pr.head.sha,
-            deliveryId: event.id,
-            action,
-          });
-
-          if (!runCheck.shouldProcess) {
-            logger.info(
-              {
-                ...baseLog,
-                gate: 'run-state-idempotency',
-                gateResult: 'skipped',
-                skipReason: runCheck.reason,
-                runKey: runCheck.runKey,
-              },
-              'Skipping review: run state indicates duplicate or already processed',
-            );
-            return;
-          }
-
-          if (runCheck.supersededRunKeys.length > 0) {
-            logger.info(
-              {
-                ...baseLog,
-                gate: 'run-state-idempotency',
-                gateResult: 'accepted',
-                runKey: runCheck.runKey,
-                supersededRunKeys: runCheck.supersededRunKeys,
-              },
-              'New run superseded prior runs (force-push detected)',
-            );
-          }
-        } catch (err) {
-          logger.warn(
-            { ...baseLog, err },
-            'Run state idempotency check failed (fail-open, proceeding with review)',
-          );
-        }
-      }
+      const runStateGate = await evaluateReviewRunStateGate({
+        knowledgeStore,
+        repo: `${apiOwner}/${apiRepo}`,
+        prNumber: pr.number,
+        baseSha: pr.base.sha,
+        headSha: pr.head.sha,
+        deliveryId: event.id,
+        action,
+        baseLog,
+        logger,
+      });
+      if (runStateGate.action === "skip") return;
 
       let workspace: Workspace | undefined;
       try {
