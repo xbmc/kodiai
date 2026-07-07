@@ -19,3 +19,24 @@ export async function postReviewRequestedEyesReaction(params: {
     params.logger.warn({ err, prNumber: params.prNumber }, "Failed to add eyes reaction to PR");
   }
 }
+
+export async function maybePostReviewRequestedEyesReaction(params: {
+  action: string;
+  getOctokit: () => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  logger: Pick<Logger, "warn">;
+}): Promise<void> {
+  if (params.action !== "review_requested") {
+    return;
+  }
+
+  await postReviewRequestedEyesReaction({
+    octokit: await params.getOctokit(),
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    logger: params.logger,
+  });
+}

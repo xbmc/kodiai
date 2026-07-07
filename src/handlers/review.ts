@@ -199,7 +199,7 @@ import {
 } from "./review-post-execution-side-effects.ts";
 import { recordReviewResilienceEventFailOpen } from "./review-resilience-telemetry.ts";
 import { recordReviewExecutionTelemetry } from "./review-telemetry.ts";
-import { postReviewRequestedEyesReaction } from "./review-reactions.ts";
+import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
@@ -702,17 +702,14 @@ export function createReviewHandler(deps: {
         const parsedIntent = prIntent.parsedIntent;
         const commitMessagesForLinking = prIntent.commitMessagesForLinking;
 
-        // Add eyes reaction only for explicit re-review requests.
-        // Do not react on opened/ready_for_review to avoid noise on the PR description.
-        if (action === "review_requested") {
-          await postReviewRequestedEyesReaction({
-            octokit: await githubApp.getInstallationOctokit(event.installationId),
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            logger,
-          });
-        }
+        await maybePostReviewRequestedEyesReaction({
+          action,
+          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          logger,
+        });
 
         const skipAuthorGate = evaluateReviewSkipAuthorGate({
           prNumber: pr.number,

@@ -748,9 +748,11 @@ describe("review handler structure", () => {
   test("keeps review-requested reaction publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("await postReviewRequestedEyesReaction({");
+    expect(source).not.toContain("Add eyes reaction only for explicit re-review requests.");
     expect(source).not.toContain("createForIssue({");
     expect(source).not.toContain("Failed to add eyes reaction to PR");
-    expect(source).toContain("postReviewRequestedEyesReaction");
+    expect(source).toContain("maybePostReviewRequestedEyesReaction");
     expect(source).toContain("./review-reactions.ts");
   });
 
