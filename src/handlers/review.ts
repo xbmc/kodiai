@@ -99,7 +99,6 @@ import {
   createReviewDetailsPublicationRuntime,
 } from "./review-details-publication-runtime.ts";
 import { buildReviewDetailsBodyBase } from "./review-details-body-base.ts";
-import { buildRetryReviewPromptRuntime } from "./review-prompt-cache-runtime.ts";
 import {
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
@@ -116,10 +115,7 @@ import {
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
-import {
-  projectReviewAuthorExpertiseForPrompt,
-  resolveReviewAuthorContext,
-} from "./review-author-context.ts";
+import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
@@ -189,7 +185,7 @@ import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
-import { buildReviewRetryPromptBuildContext } from "./review-retry-prompt-context.ts";
+import { prepareRetryReviewPrompt } from "./review-retry-prompt-preparation.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1570,25 +1566,24 @@ export function createReviewHandler(deps: {
                       fetchRemoteTrackingBranchFn,
                     });
 
-                    setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
-                    let retryReviewPromptDerivedCacheStatus: "hit" | "miss" | "degraded" | "bypass" = "bypass";
-                    let retryReviewPromptDerivedCacheReason: string | null = null;
-                    const retryPromptBuildContext = buildReviewRetryPromptBuildContext({
+                    const {
+                      retryReviewPromptDerivedCacheStatus,
+                      retryReviewPromptDerivedCacheReason,
+                      retryPrompt,
+                      retryPromptSections,
+                    } = await prepareRetryReviewPrompt({
                       owner: apiOwner,
                       repo: apiRepo,
-                      prNumber: pr.number,
-                      prTitle: pr.title,
-                      prBody: pr.body ?? "",
-                      prAuthor: pr.user.login,
-                      baseBranch: pr.base.ref,
-                      headBranch: pr.head.ref,
-                      mode: config.review.mode,
-                      severityMinLevel: resolvedSeverityMinLevel,
-                      focusAreas: resolvedFocusAreas,
-                      ignoredAreas: resolvedIgnoredAreas,
-                      maxComments: resolvedMaxComments,
-                      suppressions: config.review.suppressions,
-                      minConfidence: config.review.minConfidence,
+                      pr,
+                      retryAttemptId: retryReviewWorkAttempt.attemptId,
+                      retryDeliveryId,
+                      retryReviewOutputKey,
+                      config,
+                      taskType: reviewRouting.taskType,
+                      resolvedSeverityMinLevel,
+                      resolvedFocusAreas,
+                      resolvedIgnoredAreas,
+                      resolvedMaxComments,
                       diffAnalysis,
                       diffContent: diffContext.diffContent,
                       matchedPathInstructions,
@@ -1599,48 +1594,30 @@ export function createReviewHandler(deps: {
                       wikiKnowledge: wikiKnowledgeForPrompt,
                       unifiedResults: unifiedResultsForPrompt,
                       contextWindow: contextWindowForPrompt,
-                      outputLanguage: config.review.outputLanguage,
                       prLabels,
                       focusHints: parsedIntent.unrecognized,
                       conventionalType: parsedIntent.conventionalType,
                       priorFindings,
-                      contributorExperienceContract: authorClassification.contract,
-                      authorExpertise: projectReviewAuthorExpertiseForPrompt(authorClassification),
+                      authorClassification,
                       depBumpContext,
-                      searchRateLimitDegradation: authorClassification.searchEnrichment,
                       isDraft,
                       clusterPatterns: clusterPatternsForPrompt,
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
-                      repoDoctrine: repoDoctrineProjection,
-                      taskType: reviewRouting.taskType,
+                      repoDoctrineProjection,
                       checkpoint,
-                      basePrompt: config.review.prompt,
                       isTimeout: result.isTimeout === true,
                       retryEnqueueContext,
                       visibleBudgetState,
-                    });
-                    const retryPromptRuntime = await buildRetryReviewPromptRuntime({
-                      deliveryId: retryDeliveryId,
-                      repo: `${apiOwner}/${apiRepo}`,
-                      prNumber: pr.number,
-                      taskType: reviewRouting.taskType,
-                      reviewOutputKey: retryReviewOutputKey,
-                      context: retryPromptBuildContext,
                       promptBuilder: reviewPromptBuilder,
-                      cache: reviewPromptDerivedCache,
-                      getCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
-                      buildFingerprint: buildReviewPromptFingerprint,
-                      visibleBudgetState,
-                      telemetryEnabled: config.telemetry.enabled,
+                      promptCache: reviewPromptDerivedCache,
+                      getPromptCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
+                      buildPromptFingerprint: buildReviewPromptFingerprint,
                       telemetryStore,
+                      setReviewWorkPhaseForAttempt,
                       logger,
                       baseLog,
                     });
-                    retryReviewPromptDerivedCacheStatus = retryPromptRuntime.cacheStatus;
-                    retryReviewPromptDerivedCacheReason = retryPromptRuntime.cacheReason;
-                    const retryPrompt = retryPromptRuntime.prompt;
-                    const retryPromptSections = retryPromptRuntime.promptSections;
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute(buildReviewRetryExecutionContext({

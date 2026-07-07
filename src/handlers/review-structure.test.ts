@@ -314,12 +314,17 @@ describe("review handler structure", () => {
   test("keeps author expertise prompt projection out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const authorContextSource = readFileSync(new URL("./review-author-context.ts", import.meta.url), "utf8");
+    const initialPreparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryPreparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("authorClassification.expertise?.map");
     expect(source).not.toContain("dimension: e.dimension");
     expect(source).not.toContain("topic: e.topic");
     expect(source).not.toContain("score: e.score");
-    expect(source).toContain("projectReviewAuthorExpertiseForPrompt");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(initialPreparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
+    expect(retryPreparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
     expect(authorContextSource).toContain("projectReviewAuthorExpertiseForPrompt");
   });
 
@@ -427,20 +432,27 @@ describe("review handler structure", () => {
 
   test("keeps review prompt cache runtime out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const initialPreparationSource = readFileSync(new URL("./review-initial-prompt-preparation.ts", import.meta.url), "utf8");
+    const retryPreparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("async function buildReviewPromptResultWithCache");
     expect(source).not.toContain("const cacheErrorsBeforeLookup = reviewPromptDerivedCacheErrorCount;");
-    expect(source).toContain("./review-prompt-cache-runtime.ts");
+    expect(source).toContain("prepareInitialReviewPrompt");
+    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(initialPreparationSource).toContain("./review-prompt-cache-runtime.ts");
+    expect(retryPreparationSource).toContain("./review-prompt-cache-runtime.ts");
   });
 
   test("keeps retry review prompt cache runtime out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptCacheRuntimeSource = readFileSync(new URL("./review-prompt-cache-runtime.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryPromptCacheState: ReviewPromptCacheState =");
     expect(source).not.toContain("const retryPromptCacheEvent = buildPromptReviewCacheEvent({");
     expect(source).not.toContain("\"Resolved retry review prompt derived-cache state\"");
-    expect(source).toContain("buildRetryReviewPromptRuntime");
+    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(preparationSource).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("buildRetryReviewPromptRuntime");
     expect(promptCacheRuntimeSource).toContain("review-derived-prompt-cache");
   });
@@ -813,16 +825,34 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const promptContextSource = readFileSync(new URL("./review-prompt-build-context.ts", import.meta.url), "utf8");
     const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const retryPromptBuildContext = {");
     expect(source).not.toContain("buildRetryReviewPromptContext({");
     expect(source).not.toContain("cacheSafetySignalNames: visibleBudgetState.reviewCacheObservations.flatMap");
-    expect(source).toContain("buildReviewRetryPromptBuildContext");
-    expect(source).toContain("./review-retry-prompt-context.ts");
+    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(source).toContain("./review-retry-prompt-preparation.ts");
+    expect(preparationSource).toContain("buildReviewRetryPromptBuildContext");
+    expect(preparationSource).toContain("./review-retry-prompt-context.ts");
     expect(retryPromptContextSource).toContain("buildRetryReviewPromptContext");
     expect(retryPromptContextSource).toContain("./review-prompt-build-context.ts");
     expect(promptContextSource).toContain("buildRetryReviewPromptContext");
     expect(promptContextSource).toContain("retryPromptCompaction");
+  });
+
+  test("keeps retry review prompt preparation orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("buildReviewRetryPromptBuildContext({");
+    expect(source).not.toContain("buildRetryReviewPromptRuntime({");
+    expect(source).not.toContain("const retryPromptRuntime = await");
+    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(source).toContain("./review-retry-prompt-preparation.ts");
+    expect(preparationSource).toContain("export async function prepareRetryReviewPrompt");
+    expect(preparationSource).toContain("buildReviewRetryPromptBuildContext({");
+    expect(preparationSource).toContain("buildRetryReviewPromptRuntime({");
+    expect(preparationSource).toContain("projectReviewAuthorExpertiseForPrompt");
   });
 
   test("keeps no-review skip acknowledgment publication out of the monster handler", () => {
@@ -1210,11 +1240,13 @@ describe("review handler structure", () => {
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const retryPromptContextSource = readFileSync(new URL("./review-retry-prompt-context.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(new URL("./review-retry-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("This is a retry of a timed-out review with reduced scope.");
     expect(source).not.toContain("This is a retry of a review that exhausted max turns with reduced scope.");
     expect(source).not.toContain("save_review_checkpoint with a summaryDraft");
-    expect(source).toContain("buildReviewRetryPromptBuildContext");
+    expect(source).toContain("prepareRetryReviewPrompt");
+    expect(preparationSource).toContain("buildReviewRetryPromptBuildContext");
     expect(retryPromptContextSource).toContain("buildReviewRetryCustomInstructions");
     expect(retryPromptContextSource).toContain("./review-retry-instructions.ts");
   });
