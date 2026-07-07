@@ -10,15 +10,25 @@
  * with their own private `withTimeout` clones — some sentinel-based like this,
  * some that reject on timeout; those can migrate here over time.)
  */
+const MAX_TIMEOUT_DELAY_MS = 2_147_483_647;
+
+function normalizeTimeoutDelayMs(timeoutMs: number): number {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return 1;
+  }
+  return Math.min(MAX_TIMEOUT_DELAY_MS, Math.max(1, Math.ceil(timeoutMs)));
+}
+
 export async function withTimeout<T>(
   work: Promise<T>,
   timeoutMs: number,
 ): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
   work.catch(() => {});
+  const timeoutDelayMs = normalizeTimeoutDelayMs(timeoutMs);
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutSignal = Symbol("with-timeout");
   const timeoutPromise = new Promise<typeof timeoutSignal>((resolve) => {
-    timeoutHandle = setTimeout(() => resolve(timeoutSignal), timeoutMs);
+    timeoutHandle = setTimeout(() => resolve(timeoutSignal), timeoutDelayMs);
   });
   try {
     const outcome = await Promise.race([work, timeoutPromise]);
@@ -47,13 +57,14 @@ export async function raceWithTimeout<T, TimedOut>(
   options: RaceWithTimeoutOptions<TimedOut>,
 ): Promise<T | TimedOut> {
   work.catch(() => {});
+  const timeoutDelayMs = normalizeTimeoutDelayMs(options.timeoutMs);
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
   const timeoutPromise = new Promise<TimedOut>((resolve) => {
     timeoutHandle = setTimeout(() => {
       options.onTimeout?.();
       resolve(options.timeoutValue);
-    }, options.timeoutMs);
+    }, timeoutDelayMs);
   });
 
   try {
@@ -75,7 +86,8 @@ export async function raceWithAbortSignalTimeout<T, TimedOut>(
   timeoutValue: TimedOut,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T | TimedOut> {
-  const timeout = createAbortControllerWithTimeout(label, timeoutMs);
+  const timeoutDelayMs = normalizeTimeoutDelayMs(timeoutMs);
+  const timeout = createAbortControllerWithTimeout(label, timeoutDelayMs);
   const work = Promise.resolve().then(() => run(timeout.controller.signal));
   work.catch(() => {});
 
@@ -119,9 +131,10 @@ export async function rejectWithTimeout<T>(
   }
 
   work.catch(() => {});
+  const timeoutDelayMs = normalizeTimeoutDelayMs(options.timeoutMs);
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<T>((_resolve, reject) => {
-    timeoutHandle = setTimeout(() => reject(options.createTimeoutError()), options.timeoutMs);
+    timeoutHandle = setTimeout(() => reject(options.createTimeoutError()), timeoutDelayMs);
   });
 
   try {
@@ -145,7 +158,8 @@ export async function runWithAbortSignalTimeout<T>(
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const timeout = createAbortControllerWithTimeout(label, timeoutMs);
-  const timeoutErrorMessage = `${label}: request timed out after ${timeoutMs}ms`;
+  const timeoutDelayMs = normalizeTimeoutDelayMs(timeoutMs);
+  const timeoutErrorMessage = `${label}: request timed out after ${timeoutDelayMs}ms`;
   const work = Promise.resolve().then(() => run(timeout.controller.signal));
   work.catch(() => {});
 
@@ -186,7 +200,7 @@ export async function runWithAbortSignalTimeout<T>(
 }
 
 export function abortSignalWithTimeout(timeoutMs: number): AbortSignal {
-  return createAbortControllerWithTimeout("abort signal", timeoutMs).controller.signal;
+  return createAbortControllerWithTimeout("abort signal", normalizeTimeoutDelayMs(timeoutMs)).controller.signal;
 }
 
 export type AbortControllerTimeout = {
@@ -199,9 +213,10 @@ export function createAbortControllerWithTimeout(
   timeoutMs: number,
 ): AbortControllerTimeout {
   const controller = new AbortController();
+  const timeoutDelayMs = normalizeTimeoutDelayMs(timeoutMs);
   const timeoutHandle = setTimeout(() => {
-    controller.abort(new Error(`${label} timed out after ${timeoutMs}ms`));
-  }, timeoutMs);
+    controller.abort(new Error(`${label} timed out after ${timeoutDelayMs}ms`));
+  }, timeoutDelayMs);
 
   return {
     controller,
@@ -218,7 +233,7 @@ export type ScheduledTimeout = {
 };
 
 export function scheduleTimeout(run: () => void, timeoutMs: number): ScheduledTimeout {
-  const timeoutHandle = setTimeout(run, timeoutMs);
+  const timeoutHandle = setTimeout(run, normalizeTimeoutDelayMs(timeoutMs));
   return {
     clear: () => clearTimeout(timeoutHandle),
   };
@@ -229,7 +244,7 @@ export type ScheduledInterval = {
 };
 
 export function scheduleInterval(run: () => void, intervalMs: number): ScheduledInterval {
-  const intervalHandle = setInterval(run, intervalMs);
+  const intervalHandle = setInterval(run, normalizeTimeoutDelayMs(intervalMs));
   return {
     clear: () => clearInterval(intervalHandle),
   };
@@ -256,7 +271,7 @@ export function sleepWithAbortSignal(ms: number, signal?: AbortSignal): Promise<
     const timer = setTimeout(() => {
       signal?.removeEventListener?.("abort", onAbort);
       resolve(true);
-    }, ms);
+    }, normalizeTimeoutDelayMs(ms));
 
     signal?.addEventListener?.("abort", onAbort, { once: true });
   });

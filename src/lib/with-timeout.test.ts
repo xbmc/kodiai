@@ -174,6 +174,14 @@ describe("runWithAbortSignalTimeout", () => {
     )).resolves.toBe("ok");
   });
 
+  test("normalizes invalid timeout values before building the timeout error", async () => {
+    await expect(runWithAbortSignalTimeout(
+      "fetch thing",
+      Number.POSITIVE_INFINITY,
+      async () => new Promise<string>(() => undefined),
+    )).rejects.toThrow("fetch thing: request timed out after 1ms");
+  });
+
   test("uses the shared abort controller timeout primitive", () => {
     const source = readFileSync(new URL("./with-timeout.ts", import.meta.url), "utf8");
     const implementation = source.slice(
@@ -236,6 +244,29 @@ describe("createAbortControllerWithTimeout", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(timeout.controller.signal.aborted).toBe(false);
+  });
+
+  test("normalizes invalid timeout values to a finite one millisecond deadline", async () => {
+    const timeout = createAbortControllerWithTimeout("agent sdk", Number.POSITIVE_INFINITY);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const fail = setTimeout(() => reject(new Error("abort event did not fire")), 100);
+        timeout.controller.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(fail);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+
+      expect(timeout.controller.signal.aborted).toBe(true);
+      expect(String(timeout.controller.signal.reason)).toContain("agent sdk timed out after 1ms");
+    } finally {
+      timeout.clear();
+    }
   });
 });
 
